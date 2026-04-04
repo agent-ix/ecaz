@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust Checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
+
+      - name: Unit tests
+        run: cargo test
+
+      - name: Unsafe audit
+        run: bash scripts/check_unsafe_comments.sh
+
+  pgrx:
+    name: pgrx pg17
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+
+      - name: Install cargo-pgrx
+        run: cargo install cargo-pgrx --version 0.17.0 --locked
+
+      - name: Initialize pgrx for pg17
+        run: cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
+
+      - name: pg17 tests
+        run: cargo pgrx test pg17
+
+  licenses:
+    name: License Audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Check licenses
+        run: cargo deny check licenses

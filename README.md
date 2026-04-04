@@ -16,7 +16,7 @@ Existing options don't work for us:
 - VectorChord — AGPL/ELv2 licensing
 - pgvector — MIT but stores fp32 (no compression, 8x larger)
 
-This extension is MIT licensed, uses the `turbo-quant` crate for data-oblivious quantization (no training), and the `hnsw_rs` crate for graph construction.
+This extension is MIT licensed, implements its own data-oblivious TurboQuant quantizer core in-tree, and uses the `hnsw_rs` crate for graph construction.
 
 ## Usage
 
@@ -60,7 +60,6 @@ See `spec/spec.md` for the full technical specification and `~/dev/agent-memory-
 ## References
 
 - [TurboQuant paper (arXiv:2504.19874)](https://arxiv.org/abs/2504.19874)
-- [turbo-quant crate](https://lib.rs/crates/turbo-quant)
 - [hnsw_rs crate](https://crates.io/crates/hnsw_rs)
 - [pgvector source](https://github.com/pgvector/pgvector) (page layout reference)
 - [pgrx framework](https://docs.rs/pgrx/latest/pgrx/)

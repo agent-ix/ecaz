@@ -7,15 +7,15 @@
 //!
 //! ## Pipeline
 //!
-//! 1. [`mse::MseQuantizer`] — SRHT rotation + Lloyd-Max scalar codebook (b-1 bits/dim)
-//! 2. [`qjl::QjlQuantizer`] — Gaussian projection of the residual, 1-bit quantized, bit-packed
-//! 3. [`prod::ProdQuantizer`] — Orchestrates both stages, manages LUT-based scoring
+//! 1. [`rotation`] + [`mse`] — SRHT rotation + Lloyd-Max scalar codebook (b-1 bits/dim)
+//! 2. [`qjl`] — residual projection, 1-bit quantized and bit-packed
+//! 3. [`prod::ProdQuantizer`] — orchestrates both stages and exposes encode/decode/score APIs
 //!
 //! ## Storage format
 //!
 //! Packed code = `[mse_packed][qjl_packed]`
-//! - MSE: `ceil(n * (bits-1) / 8)` bytes, where n = dim.next_power_of_two()
-//! - QJL: `ceil(n / 8)` bytes
+//! - MSE: `ceil(dim * (bits-1) / 8)` bytes
+//! - QJL: `ceil(dim / 8)` bytes
 //! - Total at 1536-dim, 4-bit: 576 + 192 = 768 bytes
 //!
 //! ## Scoring

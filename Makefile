@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint test build install clean
+.PHONY: fmt fmt-check lint test pg-test deny audit-unsafe build install clean
 
 ## Format all source files
 fmt:
@@ -10,7 +10,7 @@ fmt-check:
 
 ## Run Clippy (deny warnings)
 lint:
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
 
 ## Run unit tests (no Postgres required)
 test:
@@ -19,6 +19,14 @@ test:
 ## Run pgrx integration tests (requires: cargo pgrx init)
 pg-test:
 	cargo pgrx test
+
+## Check dependency licenses
+deny:
+	cargo deny check licenses
+
+## Verify all unsafe blocks have nearby SAFETY comments
+audit-unsafe:
+	bash scripts/check_unsafe_comments.sh
 
 ## Build release shared library
 build:

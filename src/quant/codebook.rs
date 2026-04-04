@@ -17,14 +17,14 @@ fn log_gamma(z: f64) -> f64 {
     let p = [
         676.5203681218851,
         -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
         12.507343278226905,
         -0.13857109526572012,
-        9.9843695780195716e-6,
+        9.984_369_578_019_572e-6,
         1.5056327351493116e-7,
     ];
-    let mut y = 0.99999999999980993;
+    let mut y = 0.999_999_999_999_809_9;
     for (i, &val) in p.iter().enumerate() {
         y += val / (z + i as f64);
     }
@@ -82,8 +82,8 @@ pub fn lloyd_max(b: usize, d: usize, num_points: usize) -> Vec<f64> {
 
         for &(x, p) in &grid {
             let mut cluster_idx = 0;
-            for i in 0..(num_centroids - 1) {
-                if x > boundaries[i] {
+            for (i, boundary) in boundaries.iter().enumerate() {
+                if x > *boundary {
                     cluster_idx = i + 1;
                 }
             }

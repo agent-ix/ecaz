@@ -4,25 +4,29 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "pgrx_embed_tqvector"
+path = "./src/bin/pgrx_embed.rs"
 
 [features]
 default = ["pg17"]
-pg14 = ["pgrx/pg14"]
-pg15 = ["pgrx/pg15"]
-pg16 = ["pgrx/pg16"]
-pg17 = ["pgrx/pg17"]
+pg14 = ["pgrx/pg14", "pgrx-tests/pg14"]
+pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
+pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
+pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg_test = []
 
 [dependencies]
-pgrx = "0.12"
+pgrx = "0.17"
 hnsw_rs = "*"
 hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"
 
 [dev-dependencies]
-pgrx-tests = "0.12"
+pgrx-tests = "0.17"
 
 [profile.dev]
 panic = "unwind"
