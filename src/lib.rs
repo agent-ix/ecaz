@@ -2,191 +2,258 @@ use pgrx::prelude::*;
 
 pgrx::pg_module_magic!();
 
-/// A fixed-point quantitative value backed by a 64-bit integer.
-/// Stores values as integer * 10^(-scale) for lossless decimal arithmetic.
-#[derive(
-    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord,
-    PostgresType, PostgresEq, PostgresOrd,
-)]
-#[inoutfuncs]
-pub struct TurboQuant {
-    /// Raw integer mantissa
-    value: i64,
-    /// Decimal scale (number of digits after the decimal point)
-    scale: i16,
+// ---------------------------------------------------------------------------
+// tqvector — variable-length Postgres type wrapping a TurboQuant-compressed
+// vector.
+//
+// Wire format (little-endian):
+//   [dim: u16][bits: u8][seed: u64][codes: [u8; code_len(dim, bits)]]
+//
+// Text representation: "[dim=1536,bits=4,seed=42]:<hex>"
+//
+// Build order (per agent-memory-context.md):
+//   3a. Type (this file) — done
+//   3b. Distance functions + operators — stubs below, fill in once turbo-quant
+//       API is confirmed via `cargo doc --open`
+//   3c. HNSW index AM — next file
+//   3d. SQL bootstrap — sql/bootstrap.sql
+// ---------------------------------------------------------------------------
+
+/// Minimum header size: dim(2) + bits(1) + seed(8) = 11 bytes.
+const HEADER_BYTES: usize = 11;
+
+/// Number of code bytes for a given (dim, bits) pair.
+/// MSE stage uses (bits-1) bits per dimension; QJL adds 1 bit per dimension.
+/// Total = ceil(dim*(bits-1)/8) + ceil(dim/8).
+fn code_len(dim: usize, bits: u8) -> usize {
+    let mse_bits = (bits as usize).saturating_sub(1);
+    let mse_bytes = (dim * mse_bits + 7) / 8;
+    let qjl_bytes = (dim + 7) / 8;
+    mse_bytes + qjl_bytes
 }
 
-impl InOutFuncs for TurboQuant {
-    fn input(input: &core::ffi::CStr) -> Self
-    where
-        Self: Sized,
-    {
-        let s = input.to_str().expect("invalid UTF-8 in turboquant input");
-        TurboQuant::parse(s).unwrap_or_else(|e| panic!("invalid turboquant: {e}"))
-    }
+// ---------------------------------------------------------------------------
+// Text parse / format
+// ---------------------------------------------------------------------------
 
-    fn output(&self, buffer: &mut pgrx::StringInfo) {
-        buffer.push_str(&self.to_display_string());
-    }
-}
+fn parse_text(s: &str) -> Result<(u16, u8, u64, Vec<u8>), String> {
+    let s = s.trim();
+    let bracket_end = s.find(']').ok_or("missing ']'")?;
+    let header = &s[1..bracket_end];
+    let rest = s[bracket_end + 1..].trim_start_matches(':');
 
-impl TurboQuant {
-    pub fn new(value: i64, scale: i16) -> Self {
-        Self { value, scale }
-    }
+    let mut dim: Option<u16> = None;
+    let mut bits: Option<u8> = None;
+    let mut seed: u64 = 42;
 
-    /// Parse a decimal string like "123.456" into a TurboQuant.
-    pub fn parse(s: &str) -> Result<Self, String> {
-        let s = s.trim();
-        match s.find('.') {
-            None => {
-                let value: i64 = s.parse().map_err(|e| format!("parse error: {e}"))?;
-                Ok(Self { value, scale: 0 })
-            }
-            Some(dot_pos) => {
-                let frac = &s[dot_pos + 1..];
-                let scale = frac.len() as i16;
-                let combined = format!("{}{}", &s[..dot_pos], frac);
-                let value: i64 = combined.parse().map_err(|e| format!("parse error: {e}"))?;
-                Ok(Self { value, scale })
-            }
+    for part in header.split(',') {
+        let (k, v) = part.split_once('=').ok_or_else(|| format!("bad header field: {part}"))?;
+        match k.trim() {
+            "dim"  => dim  = Some(v.trim().parse().map_err(|e| format!("dim: {e}"))?),
+            "bits" => bits = Some(v.trim().parse().map_err(|e| format!("bits: {e}"))?),
+            "seed" => seed = v.trim().parse().map_err(|e| format!("seed: {e}"))?,
+            other  => return Err(format!("unknown header field: {other}")),
         }
     }
 
-    pub fn to_display_string(&self) -> String {
-        if self.scale == 0 {
-            return self.value.to_string();
-        }
-        let s = format!("{:0>width$}", self.value.abs(), width = self.scale as usize + 1);
-        let split = s.len() - self.scale as usize;
-        let sign = if self.value < 0 { "-" } else { "" };
-        format!("{}{}.{}", sign, &s[..split], &s[split..])
+    let dim  = dim.ok_or("missing dim")?;
+    let bits = bits.ok_or("missing bits")?;
+
+    let codes = hex::decode(rest).map_err(|e| format!("hex decode: {e}"))?;
+    let expected = code_len(dim as usize, bits);
+    if codes.len() != expected {
+        return Err(format!(
+            "code length mismatch: got {} bytes, expected {expected}",
+            codes.len()
+        ));
+    }
+    Ok((dim, bits, seed, codes))
+}
+
+fn format_text(dim: u16, bits: u8, seed: u64, codes: &[u8]) -> String {
+    format!("[dim={dim},bits={bits},seed={seed}]:{}", hex::encode(codes))
+}
+
+// ---------------------------------------------------------------------------
+// Binary pack / unpack
+// ---------------------------------------------------------------------------
+
+fn pack(dim: u16, bits: u8, seed: u64, codes: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(HEADER_BYTES + codes.len());
+    buf.extend_from_slice(&dim.to_le_bytes());
+    buf.push(bits);
+    buf.extend_from_slice(&seed.to_le_bytes());
+    buf.extend_from_slice(codes);
+    buf
+}
+
+fn unpack(data: &[u8]) -> Result<(u16, u8, u64, &[u8]), String> {
+    if data.len() < HEADER_BYTES {
+        return Err(format!(
+            "tqvector too short: {} bytes (need >= {HEADER_BYTES})",
+            data.len()
+        ));
+    }
+    let dim  = u16::from_le_bytes(data[0..2].try_into().unwrap());
+    let bits = data[2];
+    let seed = u64::from_le_bytes(data[3..11].try_into().unwrap());
+    let codes = &data[HEADER_BYTES..];
+    let expected = code_len(dim as usize, bits);
+    if codes.len() != expected {
+        return Err(format!(
+            "code length mismatch: got {} bytes, expected {expected}",
+            codes.len()
+        ));
+    }
+    Ok((dim, bits, seed, codes))
+}
+
+// ---------------------------------------------------------------------------
+// 3a — Type I/O functions
+// ---------------------------------------------------------------------------
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_in(input: &core::ffi::CStr) -> Vec<u8> {
+    let s = input.to_str().expect("invalid UTF-8 in tqvector input");
+    let (dim, bits, seed, codes) =
+        parse_text(s).unwrap_or_else(|e| pgrx::error!("invalid tqvector: {e}"));
+    pack(dim, bits, seed, &codes)
+}
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_out(vec: Vec<u8>) -> &'static core::ffi::CStr {
+    let (dim, bits, seed, codes) =
+        unpack(&vec).unwrap_or_else(|e| pgrx::error!("corrupt tqvector: {e}"));
+    let s = format_text(dim, bits, seed, codes);
+    let cstr = std::ffi::CString::new(s).unwrap();
+    unsafe {
+        let ptr = pg_sys::palloc(cstr.as_bytes_with_nul().len()) as *mut i8;
+        std::ptr::copy_nonoverlapping(cstr.as_ptr(), ptr, cstr.as_bytes_with_nul().len());
+        core::ffi::CStr::from_ptr(ptr)
+    }
+}
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_send(vec: Vec<u8>) -> Vec<u8> {
+    vec
+}
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_recv(buf: Vec<u8>) -> Vec<u8> {
+    unpack(&buf).unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"));
+    buf
+}
+
+// ---------------------------------------------------------------------------
+// 3a — Encode helper: fp32 array → tqvector
+// Called during INSERT to compress a raw float32 vector into a tqvector code.
+//
+// TODO: replace placeholder body with:
+//   turbo_quant::encode(&embedding, bits, seed)
+// once crate API is confirmed (`cargo add turbo-quant && cargo doc --open`).
+// Check whether the crate exposes encode() at the top level or via a struct.
+// ---------------------------------------------------------------------------
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
+    if !(2..=8).contains(&bits) {
+        pgrx::error!("bits must be 2–8, got {bits}");
+    }
+    let dim   = embedding.len();
+    let bits  = bits as u8;
+    let seed  = seed as u64;
+
+    // TODO: let codes = turbo_quant::encode(&embedding, bits, seed);
+    let codes = vec![0u8; code_len(dim, bits)]; // placeholder
+
+    pack(dim as u16, bits, seed, &codes)
+}
+
+// ---------------------------------------------------------------------------
+// 3b — Distance functions
+//
+// tqvector_inner_product    — used inside HNSW graph traversal
+// tqvector_negative_inner_product — for ORDER BY col <#> query ASC
+//
+// TODO: replace placeholder with:
+//   turbo_quant::score_ip(codes_a, codes_b, dim, bits)
+// or if the crate requires one decoded side:
+//   let decoded = turbo_quant::decode_approximate(codes_b, dim, bits, seed);
+//   turbo_quant::inner_product_estimate(codes_a, &decoded, dim, bits)
+// ---------------------------------------------------------------------------
+
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
+    let (dim_a, bits_a, _, codes_a) =
+        unpack(&a).unwrap_or_else(|e| pgrx::error!("tqvector_inner_product (a): {e}"));
+    let (dim_b, bits_b, _, codes_b) =
+        unpack(&b).unwrap_or_else(|e| pgrx::error!("tqvector_inner_product (b): {e}"));
+
+    if dim_a != dim_b || bits_a != bits_b {
+        pgrx::error!(
+            "tqvector dimension/bits mismatch: ({dim_a},{bits_a}) vs ({dim_b},{bits_b})"
+        );
     }
 
-    /// Rescale to a common scale for arithmetic.
-    fn rescale(a: Self, b: Self) -> (Self, Self) {
-        if a.scale == b.scale {
-            return (a, b);
-        }
-        if a.scale < b.scale {
-            let diff = (b.scale - a.scale) as u32;
-            let factor = 10i64.pow(diff);
-            (Self { value: a.value * factor, scale: b.scale }, b)
-        } else {
-            let diff = (a.scale - b.scale) as u32;
-            let factor = 10i64.pow(diff);
-            (a, Self { value: b.value * factor, scale: a.scale })
-        }
-    }
+    // TODO: turbo_quant::score_ip(codes_a, codes_b, dim_a as usize, bits_a)
+    let _ = (codes_a, codes_b);
+    0.0f32
 }
 
-// --- Arithmetic operators ---
-
-#[pg_operator(immutable, parallel_safe)]
-#[opname(+)]
-fn turboquant_add(a: TurboQuant, b: TurboQuant) -> TurboQuant {
-    let (a, b) = TurboQuant::rescale(a, b);
-    TurboQuant { value: a.value + b.value, scale: a.scale }
+#[pg_extern(immutable, strict, parallel_safe)]
+fn tqvector_negative_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
+    -tqvector_inner_product(a, b)
 }
 
-#[pg_operator(immutable, parallel_safe)]
-#[opname(-)]
-fn turboquant_sub(a: TurboQuant, b: TurboQuant) -> TurboQuant {
-    let (a, b) = TurboQuant::rescale(a, b);
-    TurboQuant { value: a.value - b.value, scale: a.scale }
-}
-
-#[pg_operator(immutable, parallel_safe)]
-#[opname(*)]
-fn turboquant_mul(a: TurboQuant, b: TurboQuant) -> TurboQuant {
-    TurboQuant {
-        value: a.value * b.value,
-        scale: a.scale + b.scale,
-    }
-}
-
-// --- Aggregate: sum ---
-
-#[pg_aggregate]
-impl Aggregate for TurboQuant {
-    type State = Option<TurboQuant>;
-    const NAME: &'static str = "turboquant_sum";
-
-    #[pgrx(parallel_safe, immutable)]
-    fn state(
-        mut current: Self::State,
-        v: Self,
-        _fcinfo: pg_sys::FunctionCallInfo,
-    ) -> Self::State {
-        Some(match current.take() {
-            None => v,
-            Some(acc) => turboquant_add(acc, v),
-        })
-    }
-}
-
-// --- Casts ---
-
-#[pg_extern(immutable, parallel_safe)]
-fn turboquant_from_float8(v: f64) -> TurboQuant {
-    TurboQuant::parse(&format!("{:.10}", v))
-        .unwrap_or_else(|e| panic!("cast error: {e}"))
-}
-
-#[pg_extern(immutable, parallel_safe)]
-fn turboquant_to_float8(v: TurboQuant) -> f64 {
-    v.to_display_string().parse().unwrap()
-}
-
-// --- Tests ---
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
     use super::*;
-    use pgrx::prelude::*;
 
-    #[pg_test]
-    fn test_parse_integer() {
-        let q = TurboQuant::parse("42").unwrap();
-        assert_eq!(q.value, 42);
-        assert_eq!(q.scale, 0);
+    #[test]
+    fn test_code_len_4bit_1536() {
+        // 4-bit, 1536-dim: MSE=3 bits/dim → 576 bytes; QJL=1 bit/dim → 192 bytes
+        assert_eq!(code_len(1536, 4), 768);
     }
 
-    #[pg_test]
-    fn test_parse_decimal() {
-        let q = TurboQuant::parse("3.14").unwrap();
-        assert_eq!(q.value, 314);
-        assert_eq!(q.scale, 2);
+    #[test]
+    fn test_code_len_8bit_1536() {
+        // 8-bit: MSE=7 bits/dim → 1344 bytes; QJL → 192 bytes
+        assert_eq!(code_len(1536, 8), 1536);
     }
 
-    #[pg_test]
-    fn test_display() {
-        let q = TurboQuant::parse("3.14").unwrap();
-        assert_eq!(q.to_display_string(), "3.14");
+    #[test]
+    fn test_pack_unpack_roundtrip() {
+        let codes = vec![0xABu8; code_len(4, 4)];
+        let packed = pack(4, 4, 42, &codes);
+        let (dim, bits, seed, c) = unpack(&packed).unwrap();
+        assert_eq!((dim, bits, seed), (4u16, 4u8, 42u64));
+        assert_eq!(c, codes.as_slice());
     }
 
-    #[pg_test]
-    fn test_add() {
-        let a = TurboQuant::parse("1.50").unwrap();
-        let b = TurboQuant::parse("2.25").unwrap();
-        let result = turboquant_add(a, b);
-        assert_eq!(result.to_display_string(), "3.75");
+    #[test]
+    fn test_text_roundtrip() {
+        let codes = vec![0u8; code_len(4, 4)];
+        let text  = format_text(4, 4, 42, &codes);
+        let (dim, bits, seed, c) = parse_text(&text).unwrap();
+        assert_eq!((dim, bits, seed), (4u16, 4u8, 42u64));
+        assert_eq!(c, codes);
     }
 
-    #[pg_test]
-    fn test_mul() {
-        let a = TurboQuant::parse("3.0").unwrap();
-        let b = TurboQuant::parse("2.0").unwrap();
-        let result = turboquant_mul(a, b);
-        assert_eq!(result.to_display_string(), "6.00");
+    #[test]
+    fn test_parse_text_rejects_wrong_code_length() {
+        // Manually construct text with wrong hex length
+        let text = "[dim=4,bits=4]:deadbeef"; // 4 bytes, but code_len(4,4) != 4
+        assert!(parse_text(text).is_err());
     }
 }
 
 #[cfg(test)]
 pub mod pg_test {
     pub fn setup(_options: Vec<&str>) {}
-    pub fn postgresql_conf_options() -> Vec<&'static str> {
-        vec![]
-    }
+    pub fn postgresql_conf_options() -> Vec<&'static str> { vec![] }
 }

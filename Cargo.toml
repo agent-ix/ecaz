@@ -1,5 +1,5 @@
 [package]
-name = "turboquant"
+name = "tqvector"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,6 +16,9 @@ pg_test = []
 
 [dependencies]
 pgrx = "0.12"
+turbo-quant = "0.1"
+hnsw_rs = "*"
+hex = "0.4"
 
 [dev-dependencies]
 pgrx-tests = "0.12"

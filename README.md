@@ -1,57 +1,70 @@
-# turboquant
+# tqvector
 
-A PostgreSQL extension written in Rust that adds the `turboquant` type — a lossless fixed-point decimal backed by a 64-bit integer mantissa and an explicit scale.
+A PostgreSQL extension written in Rust (pgrx) that registers the `tqvector` data type and `tqhnsw` index access method for approximate nearest neighbor search over TurboQuant-compressed vectors.
 
-## Design
+## What
 
-| Field   | Type  | Description                              |
-|---------|-------|------------------------------------------|
-| `value` | `i64` | Raw integer mantissa                     |
-| `scale` | `i16` | Decimal digits after the point           |
+- **`tqvector` type** — stores TurboQuant-compressed vector codes (8-10x smaller than fp32)
+- **`<#>` operator** — negative inner product for ORDER BY ASC (highest similarity first)
+- **`tqhnsw` index** — HNSW graph index over compressed codes, modeled on pgvector's page layout
+- **`encode_to_tqvector()`** — compress fp32 arrays to tqvector in SQL
 
-`1.50` is stored as `value=150, scale=2`. Arithmetic never goes through floating-point.
+## Why
 
-## Operations
+Existing options don't work for us:
+- pgvecto.rs — deprecated
+- VectorChord — AGPL/ELv2 licensing
+- pgvector — MIT but stores fp32 (no compression, 8x larger)
 
-| SQL Operator | Description         |
-|-------------|---------------------|
-| `+`         | Addition            |
-| `-`         | Subtraction         |
-| `*`         | Multiplication      |
-| `=`, `<`, `>`… | Comparison      |
+This extension is MIT licensed, uses the `turbo-quant` crate for data-oblivious quantization (no training), and the `hnsw_rs` crate for graph construction.
 
-Aggregate: `turboquant_sum(col)`.
+## Usage
 
-Casts: `float8 → turboquant`, `turboquant → float8`.
+```sql
+CREATE EXTENSION tqvector;
+
+-- Encode and store
+INSERT INTO memories (tq_code)
+VALUES (encode_to_tqvector(ARRAY[1.0, 2.0, ...]::float4[], 4, 42));
+
+-- Create HNSW index
+CREATE INDEX ON memories USING tqhnsw (tq_code) WITH (m=8, ef_construction=64);
+
+-- Query nearest neighbors
+SELECT * FROM memories
+ORDER BY tq_code <#> encode_to_tqvector($query::float4[], 4, 42)
+LIMIT 10;
+```
 
 ## Prerequisites
 
-- [Rust](https://rustup.rs/) (stable)
-- [pgrx](https://github.com/pgcentralfoundation/pgrx): `cargo install cargo-pgrx`
-- PostgreSQL dev headers
+- [Rust](https://rustup.rs/) stable
+- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx): `cargo install cargo-pgrx`
+- PostgreSQL 14–17 dev headers
 
-## Getting started
+## Getting Started
 
 ```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install pgrx toolchain
-cargo install cargo-pgrx
-cargo pgrx init   # downloads and builds a local Postgres
-
-# Run tests
-cargo pgrx test
-
-# Install into local Postgres
-cargo pgrx install
+cargo pgrx init          # builds a local Postgres for testing
+make fmt                 # format code
+make lint                # clippy (deny warnings)
+make test                # unit tests
+make pg-test             # pgrx integration tests
+make install             # install into local PG
 ```
 
-## SQL usage
+## Architecture
 
-```sql
-CREATE EXTENSION turboquant;
+See `spec/spec.md` for the full technical specification and `~/dev/agent-memory-context.md` for the system-level architecture.
 
-SELECT '3.14'::turboquant + '1.00'::turboquant;  -- 4.14
-SELECT turboquant_sum(price) FROM orders;
-```
+## References
+
+- [TurboQuant paper (arXiv:2504.19874)](https://arxiv.org/abs/2504.19874)
+- [turbo-quant crate](https://lib.rs/crates/turbo-quant)
+- [hnsw_rs crate](https://crates.io/crates/hnsw_rs)
+- [pgvector source](https://github.com/pgvector/pgvector) (page layout reference)
+- [pgrx framework](https://docs.rs/pgrx/latest/pgrx/)
+
+## License
+
+MIT

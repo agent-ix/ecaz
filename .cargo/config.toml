@@ -1,0 +1,8 @@
+[build]
+# Native SIMD for AVX2 (turbo-quant uses it; safe to require on dev machines)
+# Remove or change to "x86-64" for cross-compilation targets.
+rustflags = ["-C", "target-cpu=native"]
+
+[alias]
+lint = "clippy --all-targets --all-features -- -D warnings"
+fmt-check = "fmt --all -- --check"
