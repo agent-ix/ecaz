@@ -69,8 +69,7 @@ This specification does not govern:
 - The TurboQuant quantization algorithm itself (owned by `turbo-quant` crate and the research paper)
 - The HNSW graph construction algorithm itself (owned by `hnsw_rs` crate)
 - Application-level schema design (e.g., `agent_memories` table — owned by the agent memory system)
-- Query routing, write buffering, merge daemons, or prefetch daemons (owned by upstream system components)
-- PyO3 Python bindings (`turboquant_py` — separate component)
+- Query routing or application-level orchestration (owned by upstream system components)
 - Cosine similarity or L2 distance metrics (inner product only in v0.1)
 
 ---
@@ -98,26 +97,7 @@ This specification does not govern:
 - ~30 element tuples per 8KB Postgres page vs ~1 for pgvector
 - Significantly reduced I/O during graph traversal
 
-### 3.2 Phased Migration Strategy
-
-The extension is NOT a blocking prerequisite for the agent memory system. The system is designed for incremental cutover:
-
-**Phase 1 — No extension required (working today):**
-- `embedding vector(1536)` column — pgvector fp32 HNSW finds ~100 candidates
-- `tq_code bytea` column — TurboQuant compressed codes stored alongside
-- Python-side `rerank_batch()` re-scores candidates using TurboQuant codes
-- Net: ~5% recall improvement over raw HNSW for negligible latency
-- **Interim optimization**: replace `vector(1536)` with `halfvec(1536)` (pgvector fp16 type) to cut HNSW index from 88MB → 44MB per agent with zero code changes
-
-**Phase 2 — After extension is ready:**
-- `tqvector` column replaces both `embedding` and `tq_code`
-- HNSW runs natively over compressed codes inside the index AM
-- Storage drops from 6GB → ~200MB per million vectors
-- fp32/fp16 column deleted entirely
-
-The query router is useful on day one in phase 1. Building the extension does not block any other component.
-
-### 3.3 Query Strategy: HNSW vs Sequential Scan
+### 3.2 Query Strategy: HNSW vs Sequential Scan
 
 Not all queries require HNSW. TurboQuant sequential scan over compressed codes is fast enough for small agents:
 
@@ -128,7 +108,7 @@ Not all queries require HNSW. TurboQuant sequential scan over compressed codes i
 
 Sequential scan has **better recall** than HNSW because it scores every row — no graph traversal approximation. The query router chooses strategy based on `memory_count` from `agent_registry`. The extension must support both paths: sequential scan uses `tqvector_inner_product` as a plain function, HNSW uses it as the index distance function.
 
-### 3.4 HNSW m Parameter Decision Rules
+### 3.3 HNSW m Parameter Decision Rules
 
 | m | Index Size/Agent | Recall@10 | Use Case |
 |---|---|---|---|
@@ -136,7 +116,7 @@ Sequential scan has **better recall** than HNSW because it scores every row — 
 | 8 | ~34MB | ~97% | **Default choice** |
 | 4 | ~17MB | ~94% | Stub indexes only (always-warm, 20% sample) |
 
-### 3.5 Known API Risk: Code-to-Code Inner Product
+### 3.4 Known API Risk: Code-to-Code Inner Product
 
 The HNSW index AM distance function (`tqvector_inner_product`) must compare two encoded vectors during graph traversal — every edge evaluation calls this function.
 
@@ -146,17 +126,17 @@ The HNSW index AM distance function (`tqvector_inner_product`) must compare two 
 
 **Mitigation**: before building 3c (HNSW AM), validate the `turbo-quant` crate API. If code-to-code scoring is missing, either contribute it upstream or fork the crate. Do not proceed to page layout code with a known slow-path in the distance function.
 
-### 3.6 Scaling Boundary: Cross-Agent Fan-Out
+### 3.5 Scaling Boundary: Cross-Agent Fan-Out
 
 For cross-agent queries, the query router fans out to all shards. This works for the current partition count (16 shards) but flat fan-out degrades beyond ~200-500 shards. The extension itself does not own routing, but the query router must be designed for eventual hierarchical routing (regional aggregators). The extension SHALL NOT assume or enforce any fan-out strategy.
 
-### 3.7 Intended Users
+### 3.6 Intended Users
 
 - **Agent memory system**: primary consumer — stores and queries per-agent embedding memories
 - **Platform engineers**: install, configure, and monitor the extension in PostgreSQL clusters
 - **Application developers**: use `tqvector` type and `<#>` operator in SQL queries for ANN search
 
-### 3.8 Design Constraints
+### 3.7 Design Constraints
 
 - **MIT License**: the extension must be MIT licensed (we own it)
 - **No algorithm reimplementation**: use `turbo-quant` and `hnsw_rs` crates as dependencies; do not reimplement their internals
