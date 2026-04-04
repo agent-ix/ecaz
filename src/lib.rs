@@ -3,21 +3,43 @@ use pgrx::prelude::*;
 pgrx::pg_module_magic!();
 
 // ---------------------------------------------------------------------------
-// tqvector — variable-length Postgres type wrapping a TurboQuant-compressed
-// vector.
+// Module structure:
 //
-// Wire format (little-endian):
-//   [dim: u16][bits: u8][seed: u64][codes: [u8; code_len(dim, bits)]]
+//   src/
+//   ├── lib.rs              ← pgrx entry, type I/O, encode, distance, operators
+//   ├── quant/              ← quantizer core (extracted from TurboQuantDB)
+//   │   ├── mod.rs
+//   │   ├── codebook.rs     ← Lloyd-Max codebook generation
+//   │   ├── mse.rs          ← MSE quantizer (SRHT rotation + codebook)
+//   │   ├── qjl.rs          ← QJL quantizer (Gaussian projection, bit-packed)
+//   │   ├── prod.rs         ← ProdQuantizer orchestrator (encode, LUT score, pack/unpack)
+//   │   ├── hadamard.rs     ← Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
+//   │   └── rotation.rs     ← SRHT rotation (diagonal signs + FWHT)
+//   ├── am/                 ← HNSW index access method (raw pg_sys FFI)
+//   │   ├── mod.rs          ← tqhnsw_handler, capability flags
+//   │   ├── build.rs        ← ambuild, ambuildempty (uses hnsw_rs for construction)
+//   │   ├── insert.rs       ← aminsert (page-level graph update)
+//   │   ├── scan.rs         ← ambeginscan, amrescan, amgettuple, amendscan
+//   │   ├── vacuum.rs       ← ambulkdelete, amvacuumcleanup
+//   │   ├── cost.rs         ← amcostestimate
+//   │   └── page.rs         ← TqElementTuple, TqNeighborTuple, GenericXLog helpers
+//   ├── storage.rs          ← Packed code ↔ bytes for Postgres varlena/index pages
+//   └── distance.rs         ← Distance impl for hnsw_rs build + pg_extern wrappers
+//
+// Wire format (little-endian, per code):
+//   [mse_packed: ceil(n*(bits-1)/8) bytes][qjl_packed: ceil(n/8) bytes]
+//   where n = dim.next_power_of_two()
+//
+// Metadata (dim, bits, seed, gamma) stored per-code in the varlena header
+// or per-index for the AM. Not repeated in the packed code bytes.
 //
 // Text representation: "[dim=1536,bits=4,seed=42]:<hex>"
-//
-// Build order (per agent-memory-context.md):
-//   3a. Type (this file) — done
-//   3b. Distance functions + operators — stubs below, fill in once turbo-quant
-//       API is confirmed via `cargo doc --open`
-//   3c. HNSW index AM — next file
-//   3d. SQL bootstrap — sql/bootstrap.sql
 // ---------------------------------------------------------------------------
+
+mod quant;
+// mod am;        // TODO: HNSW index access method
+// mod storage;   // TODO: packed code ↔ bytes
+// mod distance;  // TODO: distance wrappers
 
 /// Minimum header size: dim(2) + bits(1) + seed(8) = 11 bytes.
 const HEADER_BYTES: usize = 11;

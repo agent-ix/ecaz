@@ -9,11 +9,9 @@ tags:
   - hnsw
   - turboquant
   - rust
+  - simd
 implementation_language: rust
 relationships:
-  - target: "crate://turbo-quant"
-    type: "calls"
-    cardinality: "1:1"
   - target: "crate://hnsw_rs"
     type: "calls"
     cardinality: "1:1"
@@ -38,10 +36,10 @@ standards_alignment:
 This document defines the **scope, intent, and governing requirements framework** for `tqvector`, a PostgreSQL extension written in Rust (pgrx) that registers a native `tqvector` data type and HNSW index access method over TurboQuant-compressed vectors.
 
 It establishes:
-- The problem space: native approximate nearest neighbor (ANN) search in PostgreSQL using TurboQuant quantization for 8–10x storage compression with provably unbiased inner product estimation
-- The boundaries of responsibility: type system, distance computation, index access method, SQL bootstrap — nothing above the Postgres extension boundary
+- The problem space: native approximate nearest neighbor (ANN) search in PostgreSQL using TurboQuant quantization for 8x storage compression with provably unbiased inner product estimation
+- The boundaries of responsibility: type system, quantizer core, distance computation, index access method, SQL bootstrap — nothing above the Postgres extension boundary
 - The authoritative structure for requirements, verification, and change control
-- The relationship between the TurboQuant algorithm (paper + `turbo-quant` crate), the HNSW graph structure (`hnsw_rs` crate + pgvector page layout), and the Postgres extension interface (pgrx)
+- The relationship between the TurboQuant algorithm (arXiv:2504.19874), the HNSW graph structure (`hnsw_rs` crate for bulk build + own page-level graph for runtime), and the Postgres extension interface (pgrx)
 
 This document is the **top-level requirements artifact** for the `tqvector` repository.
 
@@ -53,8 +51,10 @@ This document is the **top-level requirements artifact** for the `tqvector` repo
 
 This specification governs:
 - The `tqvector` PostgreSQL data type: wire format, text I/O, binary I/O, storage
-- Encoding: compression of fp32 vectors into TurboQuant bytecodes via the `turbo-quant` crate
-- Distance functions: asymmetric inner product estimation between `tqvector` values
+- **Quantizer core**: two-stage vector compression (MSE + QJL) implementing the TurboQuant algorithm — SRHT rotation, Lloyd-Max codebook generation, scalar quantization, Gaussian projection residual correction
+- **SIMD acceleration**: AVX2+FMA on x86_64 and NEON on aarch64 for FWHT, scoring, and bit operations, with scalar fallback
+- Encoding: compression of fp32 vectors into TurboQuant bytecodes via the quantizer core
+- Distance functions: LUT-based and code-to-code inner product estimation between `tqvector` values
 - SQL operators: `<#>` (negative inner product for ORDER BY ASC)
 - Operator classes for HNSW index integration
 - HNSW index access method (AM): all IndexAmRoutine callbacks — build, insert, scan, vacuum
@@ -66,8 +66,8 @@ This specification governs:
 ### 2.2 Out of Scope
 
 This specification does not govern:
-- The TurboQuant quantization algorithm itself (owned by `turbo-quant` crate and the research paper)
-- The HNSW graph construction algorithm itself (owned by `hnsw_rs` crate)
+- The TurboQuant research algorithm itself (owned by the paper: Zandieh et al., ICLR 2026)
+- The HNSW graph construction algorithm itself (owned by `hnsw_rs` crate, used for bulk build only)
 - Application-level schema design (e.g., `agent_memories` table — owned by the agent memory system)
 - Query routing or application-level orchestration (owned by upstream system components)
 - Cosine similarity or L2 distance metrics (inner product only in v0.1)
@@ -83,18 +83,18 @@ This specification does not govern:
 **Why build this instead of using existing extensions:**
 - **pgvecto.rs**: deprecated, superseded by VectorChord
 - **VectorChord**: AGPLv3 / ELv2 licensing — problematic for product use
-- **pgvector HNSW**: MIT licensed (reference for page layout), but stores fp32 vectors — no TurboQuant compression, 8–10x larger storage
+- **pgvector HNSW**: MIT licensed (reference for page layout), but stores fp32 vectors — no compression, 8x larger storage
 
 `tqvector` combines:
-1. The `turbo-quant` crate for data-oblivious quantization (no training, no fitting)
-2. The `hnsw_rs` crate for graph construction and traversal logic
+1. An **own quantizer core** implementing the TurboQuant two-stage algorithm (MSE + QJL) with AVX2+FMA and NEON SIMD acceleration
+2. The `hnsw_rs` crate for graph construction during bulk index build
 3. pgvector's page layout as the direct reference for Postgres storage integration
 4. pgrx for safe Rust ↔ Postgres FFI
 
 **Compression characteristics** (1536-dim, 4-bit):
 - Raw fp32: 6,144 bytes per vector
-- TurboQuant code: ~768 bytes per vector (8x compression)
-- ~30 element tuples per 8KB Postgres page vs ~1 for pgvector
+- TurboQuant code: 768 bytes per vector (8x compression)
+- ~9 element tuples per 8KB Postgres page vs ~1 for pgvector
 - Significantly reduced I/O during graph traversal
 
 ### 3.2 Query Strategy: HNSW vs Sequential Scan
@@ -116,15 +116,15 @@ Sequential scan has **better recall** than HNSW because it scores every row — 
 | 8 | ~34MB | ~97% | **Default choice** |
 | 4 | ~17MB | ~94% | Stub indexes only (always-warm, 20% sample) |
 
-### 3.4 Known API Risk: Code-to-Code Inner Product
+### 3.4 Scoring Architecture
 
-The HNSW index AM distance function (`tqvector_inner_product`) must compare two encoded vectors during graph traversal — every edge evaluation calls this function.
+The extension implements two scoring paths:
 
-**If `turbo-quant` exposes `inner_product_estimate(&[u8], &[u8])`** (both sides encoded): use it directly. Optimal performance.
+**LUT-based scoring (query-to-code)**: For HNSW scan and sequential scan where one side is the query vector. The query vector is pre-processed into a lookup table (LUT) once, then each candidate is scored via table lookups — O(n) with zero allocation per call. This is the primary hot path.
 
-**If not**: must call `decode_approximate` on one side first, then score. This adds allocation + computation to every graph edge traversal — potentially significant.
+**Code-to-code scoring (code-to-code)**: For HNSW graph traversal during build and insert, where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices and QJL bits. Lower fidelity than LUT-based but avoids decompression.
 
-**Mitigation**: before building 3c (HNSW AM), validate the `turbo-quant` crate API. If code-to-code scoring is missing, either contribute it upstream or fork the crate. Do not proceed to page layout code with a known slow-path in the distance function.
+Both paths are SIMD-accelerated (AVX2+FMA on x86_64, NEON on aarch64) with scalar fallback.
 
 ### 3.5 Scaling Boundary: Cross-Agent Fan-Out
 
@@ -139,9 +139,10 @@ For cross-agent queries, the query router fans out to all shards. This works for
 ### 3.7 Design Constraints
 
 - **MIT License**: the extension must be MIT licensed (we own it)
-- **No algorithm reimplementation**: use `turbo-quant` and `hnsw_rs` crates as dependencies; do not reimplement their internals
+- **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures optimal storage (768 bytes at 1536-dim 4-bit), zero-allocation scoring via LUT, and SIMD acceleration.
 - **pgvector page layout compatibility**: follow pgvector's page layout patterns exactly for element tuples and neighbor tuples (with `tqvector` code bytes replacing fp32 vector bytes)
 - **pgrx framework**: must compile under the pgrx build system and support pg14–pg17
+- **Dual-architecture SIMD**: AVX2+FMA for x86_64 and NEON for aarch64 (AWS Graviton), with runtime feature detection and scalar fallback on both architectures
 
 ---
 
@@ -154,6 +155,7 @@ spec/
 ├── usecase/                    # US-XXX
 ├── functional/                 # FR-XXX
 ├── non-functional/             # NFR-XXX
+├── adr/                        # Architecture Decision Records
 ├── tests.md                    # Bidirectional requirements ↔ tests mapping
 └── assets/                     # Diagrams, reference material
 ```
@@ -247,10 +249,17 @@ Offset  Size    Field       Description
 0       2       dim         Vector dimensionality (u16)
 2       1       bits        Quantization bits (u8, range 2–8)
 3       8       seed        Quantizer seed (u64)
-11      var     codes       TurboQuant bytecodes
+11      var     codes       Packed quantizer codes
 ```
 
-Code length: `ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes.
+Code bytes layout:
+```
+[mse_packed: ceil(dim * (bits-1) / 8) bytes][qjl_packed: ceil(dim / 8) bytes]
+```
+
+Total code length: `ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes.
+
+At 1536-dim, 4-bit: MSE = 576 bytes (3 bits/dim), QJL = 192 bytes (1 bit/dim) = **768 bytes total**.
 
 ### 8.2 HNSW Page Layout
 
@@ -272,6 +281,10 @@ Modeled on pgvector (reference: `src/hnswinsert.c`, `src/hnswscan.c`).
 ### 8.3 Quantizer Parameters
 
 The quantizer is **data-oblivious** — fully determined by `(dim, bits, seed)`. No training data, no calibration, no warm-up. A new table's first INSERT produces valid compressed codes immediately.
+
+The seed controls:
+- Diagonal sign vector in the SRHT rotation
+- Gaussian projection matrix in QJL (via ChaCha20 PRNG seeded with `seed`)
 
 ---
 
@@ -312,10 +325,10 @@ All page writes SHALL use `GenericXLogStart` / `GenericXLogRegisterBuffer` / `Ge
 ## 11. Traceability
 
 Bidirectional traceability SHALL be maintained between:
-- Stakeholder Requirements → User Stories / Functional Requirements
-- User Requirements → Functional Requirements
-- Functional Requirements → Acceptance Criteria
-- Acceptance Criteria → Test Cases
+- Stakeholder Requirements -> User Stories / Functional Requirements
+- User Requirements -> Functional Requirements
+- Functional Requirements -> Acceptance Criteria
+- Acceptance Criteria -> Test Cases
 
 ---
 
@@ -323,10 +336,11 @@ Bidirectional traceability SHALL be maintained between:
 
 | Verification Method | Scope |
 |---|---|
-| `cargo test` (unit) | Wire format pack/unpack, text parse/format, code length calculation |
-| `cargo pgrx test` (pg_test) | Type I/O round-trips, operator behavior, encode helper |
+| `cargo test` (unit) | Wire format pack/unpack, text parse/format, code length, codebook generation, FWHT, rotation, MSE encode/decode, QJL encode, SIMD correctness |
+| `cargo pgrx test` (pg_test) | Type I/O round-trips, operator behavior, encode helper, index build/scan/vacuum |
 | Integration tests | HNSW index build, scan, vacuum on realistic data |
-| Recall benchmarks | Recall@10 at 50k×1536 against known ground truth |
+| Recall benchmarks | Recall@10 at 50k x 1536 against known ground truth |
+| SIMD validation | Scalar vs SIMD output equivalence for all accelerated functions |
 
 ---
 
@@ -338,22 +352,49 @@ All requirements artifacts are configuration-controlled. Changes require impact 
 
 ## 14. Lifecycle Status
 
-Requirements declare status: DRAFT → APPROVED → IMPLEMENTED → VERIFIED → DEPRECATED.
+Requirements declare status: DRAFT -> APPROVED -> IMPLEMENTED -> VERIFIED -> DEPRECATED.
 
 ---
 
 ## 15. Governance Notes
 
 - Functional requirements SHALL precede code changes
-- The `turbo-quant` and `hnsw_rs` crate APIs are external dependencies — changes to their public API require a CR
+- The `hnsw_rs` crate API is an external dependency — changes to its public API require a CR
 - pgvector source is a reference, not a dependency — we translate page layout patterns, not link against it
+- The quantizer core is owned code — changes follow internal review process
 
 ---
 
-## 16. References
+## 16. Module Structure
+
+```
+src/
+├── lib.rs              # pgrx entry, type I/O, encode, distance, operators
+├── quant/              # Quantizer core
+│   ├── mod.rs          # Module definition, CodeIndex type
+│   ├── codebook.rs     # Lloyd-Max optimal scalar quantizer codebook generation
+│   ├── mse.rs          # MSE quantizer (SRHT rotation + codebook encoding)
+│   ├── qjl.rs          # QJL quantizer (Gaussian projection, 1-bit, bit-packed)
+│   ├── prod.rs         # ProdQuantizer orchestrator (encode, LUT score, pack/unpack)
+│   ├── hadamard.rs     # Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
+│   └── rotation.rs     # SRHT rotation (diagonal signs + FWHT)
+├── am/                 # HNSW index access method (raw pg_sys FFI)
+│   ├── mod.rs          # tqhnsw_handler, capability flags
+│   ├── build.rs        # ambuild, ambuildempty
+│   ├── insert.rs       # aminsert
+│   ├── scan.rs         # ambeginscan, amrescan, amgettuple, amendscan
+│   ├── vacuum.rs       # ambulkdelete, amvacuumcleanup
+│   ├── cost.rs         # amcostestimate
+│   └── page.rs         # TqElementTuple, TqNeighborTuple, GenericXLog helpers
+├── storage.rs          # Packed code <-> bytes for Postgres varlena/index pages
+└── distance.rs         # Distance impl for hnsw_rs build + pg_extern wrappers
+```
+
+---
+
+## 17. References
 
 - TurboQuant paper: [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) (Zandieh et al., ICLR 2026)
-- `turbo-quant` crate: https://lib.rs/crates/turbo-quant
 - `hnsw_rs` crate: https://crates.io/crates/hnsw_rs
 - pgvector source: https://github.com/pgvector/pgvector
 - pgvector storage layout: https://lantern.dev/blog/pgvector-storage
