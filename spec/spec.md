@@ -93,7 +93,8 @@ This specification does not govern:
 
 **Compression characteristics** (1536-dim, 4-bit):
 - Raw fp32: 6,144 bytes per vector
-- tqvector payload: 772 bytes per vector (4-byte gamma + 768 bytes packed codes)
+- tqvector quantized payload: 772 bytes per vector (4-byte gamma + 768 bytes code bytes)
+- tqvector total datum size: 783 bytes per vector including the 11-byte datum prefix (`dim`, `bits`, `seed`)
 - ~9 element tuples per 8KB Postgres page vs ~1 for pgvector
 - Significantly reduced I/O during graph traversal
 
@@ -327,7 +328,7 @@ All page writes SHALL use `GenericXLogStart` / `GenericXLogRegisterBuffer` / `Ge
 ## 11. Traceability
 
 Bidirectional traceability SHALL be maintained between:
-- Stakeholder Requirements -> User Stories / Functional Requirements
+- Stakeholder Requirements -> User Stories / Functional Requirements, either by explicit forward links on the stakeholder artifact or by derivable links from the traced child artifacts
 - User Requirements -> Functional Requirements
 - Functional Requirements -> Acceptance Criteria
 - Acceptance Criteria -> Test Cases

@@ -2,7 +2,7 @@
 id: ADR-007
 title: "Persist gamma and use raw-query scoring for the high-quality search path"
 status: DECIDED
-impact: HIGH for FR-001, FR-005, FR-006, FR-009, FR-013, FR-015
+impact: HIGH for FR-001, FR-005, FR-006, FR-009, FR-013, FR-015, FR-017, FR-018
 date: 2026-04-04
 ---
 # ADR-007: Persist gamma and use raw-query scoring for the high-quality search path

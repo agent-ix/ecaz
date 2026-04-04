@@ -8,7 +8,7 @@ date: 2026-04-03
 ---
 # ADR-001: turbo-quant crate lacks code-to-code inner product
 
-**SUPERSEDED by ADR-006.** The turbo-quant crate was dropped entirely in favor of an own quantizer implementation. The own implementation includes both LUT-based scoring (`score_ip_encoded`) and code-to-code scoring (`score_ip_encoded_lite`). See FR-005 and FR-015 for the scoring architecture.
+**SUPERSEDED by ADR-006.** The turbo-quant crate was dropped entirely in favor of an own quantizer implementation. The own implementation includes both LUT-based scoring (`score_ip_encoded`) and code-to-code scoring (`score_ip_encoded_lite`). See FR-005, FR-017, and FR-015 for the scoring architecture.
 
 ## Original Context
 
