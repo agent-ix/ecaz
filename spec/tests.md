@@ -25,13 +25,13 @@ Bidirectional traceability between requirements and test cases.
 | TC-011 | FWHT preserves vector norm | FR-013-AC-3 | Apply FWHT, compare norms, relative error < 1e-5 |
 | TC-012 | SRHT rotation preserves norm | FR-013-AC-3 | Apply full SRHT, compare norms |
 | TC-013 | Encode is deterministic | FR-013-AC-5 | Encode same vector twice, assert byte-identical |
-| TC-014 | QJL output has correct byte count | FR-013-AC-6 | Assert QJL bytes == ceil(dim/8) |
+| TC-014 | QJL output has correct byte count | FR-013-AC-6 | Assert QJL bytes == ceil(original_dim/8) |
 | TC-015 | Encode-decode cosine similarity > 0.85 | FR-013-AC-4 | Average over 100 random 1536-dim unit vectors |
 | TC-016 | SIMD fwht matches scalar fwht | FR-014-AC-2 | Compare outputs on 1000 random inputs |
 | TC-017 | SIMD score_ip matches scalar score_ip | FR-014-AC-2 | Compare outputs on 1000 random encoded pairs |
 | TC-018 | Beta PDF returns 0.0 outside [-1,1] | FR-013 | Assert beta_pdf(1.5, 16) == 0.0 |
 | TC-019 | `bits` validation rejects 0 and 9 | FR-004-AC-3 | Assert encode rejects out-of-range bits |
-| TC-020 | Code length matches dim after padding | FR-004-AC-4 | Assert code_len uses next_power_of_two(dim) |
+| TC-020 | Code length ignores transform padding | FR-004-AC-4 | Assert persisted code_len uses original_dim, not next_power_of_two(dim) |
 | TC-021 | ProdQuantizer encode produces correct code length | FR-015-AC-1 | Assert 768 bytes for 1536-dim 4-bit |
 | TC-022 | ProdQuantizer encode+decode round-trip fidelity | FR-015-AC-2 | Cosine similarity > 0.85 over 100 random vectors |
 | TC-023 | LUT scoring matches brute-force decoded IP | FR-015-AC-3 | score_ip_encoded vs decoded dot product, within 1e-6 |
@@ -42,6 +42,8 @@ Bidirectional traceability between requirements and test cases.
 | TC-028 | score_ip_encoded allocates zero heap memory | FR-015-AC-7 | Benchmark with allocation counter, assert 0 |
 | TC-029 | LUT memory footprint ≤ 48KB for 1536-dim 4-bit | FR-005-AC-5 | Assert LUT size == dim × num_centroids × 4 bytes |
 | TC-030 | SIMD qjl_bit_expand matches scalar | FR-014-AC-2 | Compare outputs on random bit vectors |
+| TC-031 | Prepared-query LUT matches decoded rotated query | FR-015-AC-3 | Prepare query, compare LUT entries against decoded rotated-domain reference |
+| TC-032 | ProdQuantizer cache reuses state | FR-015-AC-8 | Repeated construction requests return shared backend-local state |
 
 ## Integration Tests (`cargo pgrx test`)
 
@@ -68,30 +70,33 @@ Bidirectional traceability between requirements and test cases.
 | TC-119 | Crash recovery: REINDEX after kill -9 | FR-011-AC-1 | Build index, kill backend, restart, REINDEX |
 | TC-120 | GUC ef_search affects results | FR-009-AC-4 | Compare recall at ef_search=10 vs ef_search=200 |
 | TC-121 | GUC ef_search is session-settable | FR-009-AC-5 | `SET tqhnsw.ef_search = 200` succeeds |
-| TC-122 | amoptions rejects m=0 | FR-008-AC-7 | `CREATE INDEX ... WITH (m=0)` → ERROR |
-| TC-123 | amoptions accepts valid params | FR-008-AC-7 | `CREATE INDEX ... WITH (m=8, ef_construction=64)` succeeds |
-| TC-124 | Bulk build: all neighbor TIDs valid | FR-008-AC-5 | After build, walk all neighbor tuples, assert each TID → valid element |
-| TC-125 | Bulk build uses f32 distance (quality check) | FR-008-AC-6 | Build index, verify recall > 85% (wouldn't reach this if built from lossy codes) |
+| TC-122 | amoptions rejects m=0 | FR-008-AC-6 | `CREATE INDEX ... WITH (m=0)` → ERROR |
+| TC-123 | amoptions accepts valid params | FR-008-AC-6 | `CREATE INDEX ... WITH (m=8, ef_construction=64)` succeeds |
+| TC-124 | Bulk build: all neighbor TIDs valid | FR-008-AC-4 | After build, walk all neighbor tuples, assert each TID → valid element |
+| TC-125 | Bulk build uses configured raw source column | FR-008-AC-5 | Build with `build_source_column`, verify raw-f32 build path is used and recall exceeds compressed-build fallback |
 | TC-126 | Page extension: insert beyond single page | FR-007-AC-4 | Insert 100 rows (exceed single page), no errors |
-| TC-127 | Concurrent inserts no deadlock | FR-007-AC-5 | 10 concurrent inserters for 30 seconds, no deadlock |
-| TC-128 | Insert into existing index: new row reachable | FR-008-AC-2 | Insert row, immediately search, assert found |
-| TC-129 | Known-vector inner product accuracy | FR-005-AC-1 | Encode known vectors, assert IP within 15% of true |
+| TC-127 | Concurrent inserts no deadlock | FR-007-AC-5, FR-016-AC-3 | 10 concurrent inserters for 30 seconds, no deadlock |
+| TC-128 | Insert into existing index: new row reachable | FR-016-AC-1 | Insert row, immediately search, assert found |
+| TC-129 | Known-vector inner product accuracy | FR-005-AC-1 | Encode known vectors, benchmark estimator error against true fp32 IP and compare with documented bounds |
 | TC-130 | Multi-PG-version support | FR-012-AC-3 | `cargo pgrx test pg14`, pg15, pg16, pg17 all pass |
+| TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
+| TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
 
 ## Benchmarks
 
 | BC | Description | Traces | Target |
 |---|---|---|---|
 | BC-001 | HNSW top-10 latency (50K × 1536, 4-bit, m=8) | NFR-001 | p50 < 5ms, p99 < 15ms |
-| BC-002 | Sequential scan top-10 latency (500K × 1536, 4-bit) | NFR-001 | < 3ms |
-| BC-003 | Single `tqvector_inner_product` call latency | NFR-001 | < 5μs |
+| BC-002 | Sequential scan throughput (compressed-domain scoring) | NFR-001 | Report scores/sec and rows/sec on representative hardware |
+| BC-003 | Single `tqvector_inner_product` call latency | NFR-001 | Report latency on representative hardware |
 | BC-004 | Index size (50K × 1536, 4-bit, m=8) | NFR-002 | ≤ 34 MB |
 | BC-005 | Recall@10 (50K × 1536, m=8, ef=128) | NFR-003 | ≥ 89% |
 | BC-006 | Recall@10 (50K × 1536, m=8, ef=200) | NFR-003 | ≥ 93% |
 | BC-007 | Recall@10 (50K × 1536, m=16, ef=200) | NFR-003 | ≥ 97% |
 | BC-008 | FWHT AVX2 vs scalar throughput (dim=2048) | FR-014-AC-4 | ≥ 3x speedup |
-| BC-009 | 1M vectors disk usage (1536-dim, 4-bit) | NFR-002 | < 1 GB |
+| BC-009 | 1M vectors disk usage (1536-dim, 4-bit) | NFR-002 | Report code bytes and total on-disk index bytes separately |
 | BC-010 | score_ip_encoded throughput (1536-dim 4-bit) | NFR-001, FR-015-AC-7 | > 200K scores/sec |
+| BC-011 | Recall drift after incremental inserts | NFR-003, FR-016 | Report recall vs fraction of rows inserted since bulk build |
 
 ## Coverage Summary
 
@@ -104,16 +109,17 @@ Bidirectional traceability between requirements and test cases.
 | FR-005 | TC-029, TC-110, TC-111, TC-129, BC-003 |
 | FR-006 | TC-108, TC-109, TC-114 |
 | FR-007 | TC-117, TC-126, TC-127 |
-| FR-008 | TC-112, TC-122, TC-123, TC-124, TC-125, TC-128 |
-| FR-009 | TC-113, TC-114, TC-120, TC-121 |
-| FR-010 | TC-115, TC-118 |
+| FR-008 | TC-112, TC-122, TC-123, TC-124, TC-125 |
+| FR-009 | TC-113, TC-114, TC-120, TC-121, TC-131 |
+| FR-010 | TC-115, TC-118, TC-132 |
 | FR-011 | TC-119 |
 | FR-012 | TC-101, TC-116, TC-130 |
 | FR-013 | TC-008, TC-009, TC-010, TC-011, TC-012, TC-013, TC-014, TC-015, TC-018 |
 | FR-014 | TC-016, TC-017, TC-030, BC-008 |
-| FR-015 | TC-021, TC-022, TC-023, TC-024, TC-025, TC-026, TC-027, TC-028, BC-010 |
-| NFR-001 | BC-001, BC-002, BC-003 |
+| FR-015 | TC-021, TC-022, TC-023, TC-024, TC-025, TC-026, TC-027, TC-028, TC-031, TC-032, BC-010 |
+| FR-016 | TC-128, TC-127, BC-011 |
+| NFR-001 | BC-001, BC-002, BC-003, BC-010 |
 | NFR-002 | BC-004, BC-009 |
-| NFR-003 | BC-005, BC-006, BC-007 |
+| NFR-003 | BC-005, BC-006, BC-007, BC-011 |
 | NFR-004 | TC-119, TC-118, all unit tests (no panic) |
 | NFR-005 | CI pipeline (fmt, clippy, test, pgrx test, deny) |

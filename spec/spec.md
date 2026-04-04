@@ -103,10 +103,10 @@ Not all queries require HNSW. TurboQuant sequential scan over compressed codes i
 
 | Agent Size | Strategy | Latency | Recall |
 |---|---|---|---|
-| < 500K memories | Sequential scan over tqvector codes | ~3ms | 100% (exact) |
+| Small partitions / planner chooses seqscan | Sequential scan over tqvector codes | Throughput-bound, benchmarked separately | Approximate |
 | >= 500K memories | HNSW index scan | < 5ms p99 | ~94–99% (depends on m) |
 
-Sequential scan has **better recall** than HNSW because it scores every row — no graph traversal approximation. The query router chooses strategy based on `memory_count` from `agent_registry`. The extension must support both paths: sequential scan uses `tqvector_inner_product` as a plain function, HNSW uses it as the index distance function.
+Sequential scan can have **higher recall than HNSW** because it scores every row and avoids graph traversal approximation, but it is still bounded by compressed-domain scoring error unless raw fp32 vectors are available outside the extension. The extension must support both paths: sequential scan uses `tqvector_inner_product` as a plain function, while HNSW scan uses an internal prepared-query scorer. Query-router thresholds are owned by upstream components and SHALL be calibrated from measured throughput, not hard-coded in this specification.
 
 ### 3.3 HNSW m Parameter Decision Rules
 
@@ -120,9 +120,9 @@ Sequential scan has **better recall** than HNSW because it scores every row — 
 
 The extension implements two scoring paths:
 
-**LUT-based scoring (query-to-code)**: For HNSW scan and sequential scan where one side is the query vector. The query vector is pre-processed into a lookup table (LUT) once, then each candidate is scored via table lookups — O(n) with zero allocation per call. This is the primary hot path.
+**LUT-based scoring (prepared-query to code)**: For HNSW scan and optional sequential scan acceleration where one side is the logical query. The query `tqvector` is decoded to an approximate rotated-domain representation once, then compiled into a lookup table (LUT); each candidate is scored via table lookups — O(n) with zero allocation per call. This is the primary hot path for index scans.
 
-**Code-to-code scoring (code-to-code)**: For HNSW graph traversal during build and insert, where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices and QJL bits. Lower fidelity than LUT-based but avoids decompression.
+**Code-to-code scoring (code-to-code)**: For SQL ad-hoc comparison and HNSW runtime insert/search maintenance where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices and QJL bits. Lower fidelity than the prepared-query path but avoids decompression.
 
 Both paths are SIMD-accelerated (AVX2+FMA on x86_64, NEON on aarch64) with scalar fallback.
 
@@ -140,6 +140,7 @@ For cross-agent queries, the query router fans out to all shards. This works for
 
 - **MIT License**: the extension must be MIT licensed (we own it)
 - **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures optimal storage (768 bytes at 1536-dim 4-bit), zero-allocation scoring via LUT, and SIMD acceleration.
+- **Graph quality boundary**: bulk build MAY consume raw fp32 vectors from a caller-supplied source column or expression to construct a higher-quality HNSW graph, but the persisted index stores only `tqvector` codes. Runtime inserts operate on compressed codes unless an explicit raw-vector insert API is added in a later version.
 - **pgvector page layout compatibility**: follow pgvector's page layout patterns exactly for element tuples and neighbor tuples (with `tqvector` code bytes replacing fp32 vector bytes)
 - **pgrx framework**: must compile under the pgrx build system and support pg14–pg17
 - **Dual-architecture SIMD**: AVX2+FMA for x86_64 and NEON for aarch64 (AWS Graviton), with runtime feature detection and scalar fallback on both architectures
