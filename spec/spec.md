@@ -54,8 +54,8 @@ This specification governs:
 - **Quantizer core**: two-stage vector compression (MSE + QJL) implementing the TurboQuant algorithm — SRHT rotation, Lloyd-Max codebook generation, scalar quantization, Gaussian projection residual correction
 - **SIMD acceleration**: AVX2+FMA on x86_64 and NEON on aarch64 for FWHT, scoring, and bit operations, with scalar fallback
 - Encoding: compression of fp32 vectors into TurboQuant bytecodes via the quantizer core
-- Distance functions: LUT-based and code-to-code inner product estimation between `tqvector` values
-- SQL operators: `<#>` (negative inner product for ORDER BY ASC)
+- Distance functions: LUT-based raw-query-to-code scoring and lower-fidelity code-to-code scoring
+- SQL operators: `<#>` overloads for code-to-code comparison and raw-query search
 - Operator classes for HNSW index integration
 - HNSW index access method (AM): all IndexAmRoutine callbacks — build, insert, scan, vacuum
 - Page layout: metadata page, element tuples, neighbor tuples (modeled on pgvector)
@@ -93,7 +93,7 @@ This specification does not govern:
 
 **Compression characteristics** (1536-dim, 4-bit):
 - Raw fp32: 6,144 bytes per vector
-- TurboQuant code: 768 bytes per vector (8x compression)
+- tqvector payload: 772 bytes per vector (4-byte gamma + 768 bytes packed codes)
 - ~9 element tuples per 8KB Postgres page vs ~1 for pgvector
 - Significantly reduced I/O during graph traversal
 
@@ -106,7 +106,7 @@ Not all queries require HNSW. TurboQuant sequential scan over compressed codes i
 | Small partitions / planner chooses seqscan | Sequential scan over tqvector codes | Throughput-bound, benchmarked separately | Approximate |
 | >= 500K memories | HNSW index scan | < 5ms p99 | ~94–99% (depends on m) |
 
-Sequential scan can have **higher recall than HNSW** because it scores every row and avoids graph traversal approximation, but it is still bounded by compressed-domain scoring error unless raw fp32 vectors are available outside the extension. The extension must support both paths: sequential scan uses `tqvector_inner_product` as a plain function, while HNSW scan uses an internal prepared-query scorer. Query-router thresholds are owned by upstream components and SHALL be calibrated from measured throughput, not hard-coded in this specification.
+Sequential scan can have **higher recall than HNSW** because it scores every row and avoids graph traversal approximation, but it is still bounded by estimator error. The extension must support both paths: code-to-code comparison uses `tqvector_inner_product`, while high-quality search uses a raw-query prepared scorer over `(tqvector, float4[])`. Query-router thresholds are owned by upstream components and SHALL be calibrated from measured throughput, not hard-coded in this specification.
 
 ### 3.3 HNSW m Parameter Decision Rules
 
@@ -120,9 +120,9 @@ Sequential scan can have **higher recall than HNSW** because it scores every row
 
 The extension implements two scoring paths:
 
-**LUT-based scoring (prepared-query to code)**: For HNSW scan and optional sequential scan acceleration where one side is the logical query. The query `tqvector` is decoded to an approximate rotated-domain representation once, then compiled into a lookup table (LUT); each candidate is scored via table lookups — O(n) with zero allocation per call. This is the primary hot path for index scans.
+**LUT-based scoring (raw query to code)**: For HNSW scan and optional sequential scan acceleration where one side is a raw query embedding. The query vector is rotated/projected once, then compiled into a lookup table (LUT); each candidate is scored via table lookups plus a candidate-side QJL residual correction — O(d) with zero allocation per call. This is the primary hot path for index scans.
 
-**Code-to-code scoring (code-to-code)**: For SQL ad-hoc comparison and HNSW runtime insert/search maintenance where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices and QJL bits. Lower fidelity than the prepared-query path but avoids decompression.
+**Code-to-code scoring (code-to-code)**: For SQL ad-hoc comparison and HNSW runtime insert/search maintenance where both sides are stored compressed codes. Uses `score_ip_encoded_lite` — no decode step, operates directly on packed MSE indices. Lower fidelity than the prepared-query path because the QJL correction is omitted in v0.1, but it avoids query preparation and extra state.
 
 Both paths are SIMD-accelerated (AVX2+FMA on x86_64, NEON on aarch64) with scalar fallback.
 
@@ -139,7 +139,7 @@ For cross-agent queries, the query router fans out to all shards. This works for
 ### 3.7 Design Constraints
 
 - **MIT License**: the extension must be MIT licensed (we own it)
-- **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures optimal storage (768 bytes at 1536-dim 4-bit), zero-allocation scoring via LUT, and SIMD acceleration.
+- **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures compact storage (~783-byte datums at 1536-dim 4-bit), zero-allocation prepared-query scoring, and SIMD acceleration.
 - **Graph quality boundary**: bulk build MAY consume raw fp32 vectors from a caller-supplied source column or expression to construct a higher-quality HNSW graph, but the persisted index stores only `tqvector` codes. Runtime inserts operate on compressed codes unless an explicit raw-vector insert API is added in a later version.
 - **pgvector page layout compatibility**: follow pgvector's page layout patterns exactly for element tuples and neighbor tuples (with `tqvector` code bytes replacing fp32 vector bytes)
 - **pgrx framework**: must compile under the pgrx build system and support pg14–pg17
@@ -250,7 +250,8 @@ Offset  Size    Field       Description
 0       2       dim         Vector dimensionality (u16)
 2       1       bits        Quantization bits (u8, range 2–8)
 3       8       seed        Quantizer seed (u64)
-11      var     codes       Packed quantizer codes
+11      4       gamma       Residual norm scalar
+15      var     codes       Packed quantizer codes
 ```
 
 Code bytes layout:
@@ -260,7 +261,7 @@ Code bytes layout:
 
 Total code length: `ceil(dim * (bits-1) / 8) + ceil(dim / 8)` bytes.
 
-At 1536-dim, 4-bit: MSE = 576 bytes (3 bits/dim), QJL = 192 bytes (1 bit/dim) = **768 bytes total**.
+At 1536-dim, 4-bit: MSE = 576 bytes, QJL = 192 bytes, gamma = 4 bytes = **772 bytes payload**.
 
 ### 8.2 HNSW Page Layout
 

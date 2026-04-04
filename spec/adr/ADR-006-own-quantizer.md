@@ -12,7 +12,7 @@ date: 2026-04-04
 The `turbo-quant` crate (v0.1) was the original plan. Investigation revealed three problems:
 
 1. **Storage size**: PolarQuant stores f32 radii → ~5,017 bytes per code at 1536-dim 4-bit.
-   TurboQuantDB's MSE+QJL stores bit-packed integer codes → 768 bytes. 6.5x difference.
+   A packed MSE+QJL design with persisted residual scale is dramatically smaller and supports direct scoring.
 
 2. **Scoring performance**: `turbo-quant` regenerates the full m×d Gaussian projection matrix
    (2.25 MB at 1536-dim) on every `inner_product_estimate` call. TurboQuantDB uses pre-computed
@@ -64,4 +64,4 @@ Runtime feature detection with scalar fallback on both architectures.
 ### What this resolves
 
 - **ADR-001** (code-to-code): TurboQuantDB has `prepare_ip_query_from_codes` + `score_ip_encoded_lite` — code-to-code with zero decode
-- **ADR-005** (serialization): MSE codes are already bit-packed integers. Storage format is `pack_mse_indices` (576 bytes) + QJL bits (192 bytes) = 768 bytes. No conversion layer needed.
+- **ADR-005** (serialization): MSE codes are already bit-packed integers. Final persisted layout and scoring semantics are further constrained by ADR-007.

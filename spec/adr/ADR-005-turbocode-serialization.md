@@ -8,7 +8,7 @@ date: 2026-04-03
 ---
 # ADR-005: TurboCode serialization via serde + bincode
 
-**SUPERSEDED by ADR-006.** The turbo-quant crate and its PolarCode/TurboCode structs were dropped entirely. The own quantizer uses a simple bit-packed wire format — no serde or bincode needed.
+**SUPERSEDED by ADR-006 and further constrained by ADR-007.** The turbo-quant crate and its PolarCode/TurboCode structs were dropped entirely. The own quantizer uses a simple bit-packed wire format — no serde or bincode needed.
 
 ## Original Context
 
@@ -16,10 +16,10 @@ The turbo-quant crate stored codes as `PolarCode { radii: Vec<f32>, angle_indice
 
 ## Resolution
 
-ADR-006 decided to implement the quantizer core directly using the MSE+QJL approach. The wire format is now:
+ADR-006 decided to implement the quantizer core directly using the MSE+QJL approach. ADR-007 later finalized the persisted payload as:
 
 ```
-[mse_packed: ceil(dim * (bits-1) / 8) bytes][qjl_packed: ceil(dim / 8) bytes]
+[gamma: 4 bytes][mse_packed: ceil(dim * (bits-1) / 8) bytes][qjl_packed: ceil(dim / 8) bytes]
 ```
 
-At 1536-dim 4-bit: 576 + 192 = **768 bytes** (6.5x smaller than turbo-quant's format). See FR-001 for the complete wire format specification.
+At 1536-dim 4-bit: 4 + 576 + 192 = **772 bytes payload**. See FR-001 for the complete wire format specification.

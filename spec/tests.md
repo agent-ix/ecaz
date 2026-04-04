@@ -12,9 +12,9 @@ Bidirectional traceability between requirements and test cases.
 
 | TC | Description | Traces | Method |
 |---|---|---|---|
-| TC-001 | `code_len` returns correct byte count for 4-bit 1536-dim | FR-001-AC-3 | Assert `code_len(1536, 4) == 768` |
-| TC-002 | `code_len` returns correct byte count for 8-bit 1536-dim | FR-001-AC-3 | Assert `code_len(1536, 8) == 1536` |
-| TC-003 | `pack`/`unpack` round-trip preserves all fields | FR-001-AC-3 | Pack (4, 4, 42, codes), unpack, compare |
+| TC-001 | `payload_len` returns correct byte count for 4-bit 1536-dim | FR-001-AC-3 | Assert `payload_len(1536, 4) == 772` |
+| TC-002 | `payload_len` returns correct byte count for 8-bit 1536-dim | FR-001-AC-3 | Assert `payload_len(1536, 8) == 1540` |
+| TC-003 | `pack`/`unpack` round-trip preserves all fields | FR-001-AC-3 | Pack `(dim, bits, seed, gamma, codes)`, unpack, compare |
 | TC-004 | `format_text`/`parse_text` round-trip | FR-002-AC-1 | Format then parse, compare fields |
 | TC-005 | `parse_text` rejects wrong code length | FR-002-AC-3 | Assert parse returns Err on short hex |
 | TC-006 | `parse_text` rejects invalid hex | FR-002-AC-2 | Assert parse returns Err on "ZZZZ" |
@@ -31,10 +31,10 @@ Bidirectional traceability between requirements and test cases.
 | TC-017 | SIMD score_ip matches scalar score_ip | FR-014-AC-2 | Compare outputs on 1000 random encoded pairs |
 | TC-018 | Beta PDF returns 0.0 outside [-1,1] | FR-013 | Assert beta_pdf(1.5, 16) == 0.0 |
 | TC-019 | `bits` validation rejects 0 and 9 | FR-004-AC-3 | Assert encode rejects out-of-range bits |
-| TC-020 | Code length ignores transform padding | FR-004-AC-4 | Assert persisted code_len uses original_dim, not next_power_of_two(dim) |
-| TC-021 | ProdQuantizer encode produces correct code length | FR-015-AC-1 | Assert 768 bytes for 1536-dim 4-bit |
+| TC-020 | Payload length ignores transform padding | FR-004-AC-4 | Assert persisted payload_len uses original_dim, not next_power_of_two(dim) |
+| TC-021 | ProdQuantizer encode produces correct payload length | FR-015-AC-1 | Assert 772-byte payload for 1536-dim 4-bit |
 | TC-022 | ProdQuantizer encode+decode round-trip fidelity | FR-015-AC-2 | Cosine similarity > 0.85 over 100 random vectors |
-| TC-023 | LUT scoring matches brute-force decoded IP | FR-015-AC-3 | score_ip_encoded vs decoded dot product, within 1e-6 |
+| TC-023 | Prepared-query scoring matches declared formula | FR-015-AC-3 | score_ip_encoded vs explicit FR-013 formula, within 1e-6 |
 | TC-024 | Code-to-code scoring is symmetric | FR-015-AC-4 | score_ip_encoded_lite(a,b) == score_ip_encoded_lite(b,a) |
 | TC-025 | MSE pack/unpack round-trip at all bit widths | FR-015-AC-5 | Test bits 1–7, random indices, assert lossless |
 | TC-026 | QJL pack/unpack round-trip | FR-015-AC-5 | Random sign vectors, pack then unpack, compare |
@@ -44,22 +44,23 @@ Bidirectional traceability between requirements and test cases.
 | TC-030 | SIMD qjl_bit_expand matches scalar | FR-014-AC-2 | Compare outputs on random bit vectors |
 | TC-031 | Prepared-query LUT matches decoded rotated query | FR-015-AC-3 | Prepare query, compare LUT entries against decoded rotated-domain reference |
 | TC-032 | ProdQuantizer cache reuses state | FR-015-AC-8 | Repeated construction requests return shared backend-local state |
+| TC-033 | Code-to-code scorer ignores gamma and QJL | FR-015-AC-9 | Mutate only gamma and qjl bits, assert score_ip_encoded_lite unchanged |
 
 ## Integration Tests (`cargo pgrx test`)
 
 | TC | Description | Traces | Method |
 |---|---|---|---|
 | TC-101 | `tqvector` type visible in pg_type after CREATE EXTENSION | FR-001-AC-1, FR-012-AC-1 | SQL: `SELECT typname FROM pg_type WHERE typname = 'tqvector'` |
-| TC-102 | Text I/O round-trip through SQL | FR-002-AC-1 | `SELECT '[dim=4,bits=4,seed=42]:...'::tqvector::text` |
-| TC-103 | Text input rejects invalid hex | FR-002-AC-2 | `SELECT '[dim=4,bits=4]:ZZZZ'::tqvector` → ERROR |
+| TC-102 | Text I/O round-trip through SQL | FR-002-AC-1 | `SELECT '[dim=4,bits=4,seed=42,gamma=0.0]:...'::tqvector::text` |
+| TC-103 | Text input rejects invalid hex | FR-002-AC-2 | `SELECT '[dim=4,bits=4,gamma=0.0]:ZZZZ'::tqvector` → ERROR |
 | TC-104 | Binary send/recv round-trip | FR-003-AC-1 | COPY BINARY out then COPY BINARY in, compare |
 | TC-105 | `encode_to_tqvector` produces storable value | FR-004-AC-1 | INSERT encoded value into tqvector column, SELECT back |
 | TC-106 | `encode_to_tqvector` is deterministic | FR-004-AC-2 | Two calls, compare output bytes |
 | TC-107 | `encode_to_tqvector` rejects bits=0 | FR-004-AC-3 | Assert ERROR raised |
-| TC-108 | `<#>` operator parses in ORDER BY | FR-006-AC-1 | `SELECT ... ORDER BY col <#> $q LIMIT 10` |
-| TC-109 | `<#>` operator is commutative | FR-006-AC-3 | Assert `a <#> b = b <#> a` |
+| TC-108 | `<#>` query operator parses in ORDER BY | FR-006-AC-1 | `SELECT ... ORDER BY col <#> $q LIMIT 10` where `$q` is `float4[]` |
+| TC-109 | code-to-code `<#>` overload is commutative | FR-006-AC-3 | Assert `a <#> b = b <#> a` for `(tqvector, tqvector)` |
 | TC-110 | Dimension mismatch raises ERROR | FR-005-AC-2 | Compare tqvectors with different dim |
-| TC-111 | Inner product is symmetric | FR-005-AC-3 | Assert `ip(a,b) = ip(b,a)` |
+| TC-111 | Code-to-code inner product is symmetric | FR-005-AC-3 | Assert `ip(a,b) = ip(b,a)` |
 | TC-112 | CREATE INDEX USING tqhnsw succeeds | FR-008-AC-1 | Build index on 1000-row table |
 | TC-113 | Index scan returns top-k results | FR-009-AC-1 | `ORDER BY <#> LIMIT 10`, assert 10 rows |
 | TC-114 | EXPLAIN shows tqhnsw index scan | FR-009-AC-3, FR-006-AC-2 | Check EXPLAIN output |
@@ -77,7 +78,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-126 | Page extension: insert beyond single page | FR-007-AC-4 | Insert 100 rows (exceed single page), no errors |
 | TC-127 | Concurrent inserts no deadlock | FR-007-AC-5, FR-016-AC-3 | 10 concurrent inserters for 30 seconds, no deadlock |
 | TC-128 | Insert into existing index: new row reachable | FR-016-AC-1 | Insert row, immediately search, assert found |
-| TC-129 | Known-vector inner product accuracy | FR-005-AC-1 | Encode known vectors, benchmark estimator error against true fp32 IP and compare with documented bounds |
+| TC-129 | Known-vector estimator accuracy | FR-005-AC-1 | Benchmark code-to-code and query-to-code estimators separately against true fp32 IP |
 | TC-130 | Multi-PG-version support | FR-012-AC-3 | `cargo pgrx test pg14`, pg15, pg16, pg17 all pass |
 | TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
@@ -88,8 +89,8 @@ Bidirectional traceability between requirements and test cases.
 |---|---|---|---|
 | BC-001 | HNSW top-10 latency (50K × 1536, 4-bit, m=8) | NFR-001 | p50 < 5ms, p99 < 15ms |
 | BC-002 | Sequential scan throughput (compressed-domain scoring) | NFR-001 | Report scores/sec and rows/sec on representative hardware |
-| BC-003 | Single `tqvector_inner_product` call latency | NFR-001 | Report latency on representative hardware |
-| BC-004 | Index size (50K × 1536, 4-bit, m=8) | NFR-002 | ≤ 34 MB |
+| BC-003 | Single `tqvector_inner_product` and `tqvector_query_inner_product` latency | NFR-001 | Report both latencies on representative hardware |
+| BC-004 | Index size (50K × 1536, 4-bit, m=8) | NFR-002 | Report payload bytes, tuple bytes, and total relation size |
 | BC-005 | Recall@10 (50K × 1536, m=8, ef=128) | NFR-003 | ≥ 89% |
 | BC-006 | Recall@10 (50K × 1536, m=8, ef=200) | NFR-003 | ≥ 93% |
 | BC-007 | Recall@10 (50K × 1536, m=16, ef=200) | NFR-003 | ≥ 97% |
@@ -97,6 +98,21 @@ Bidirectional traceability between requirements and test cases.
 | BC-009 | 1M vectors disk usage (1536-dim, 4-bit) | NFR-002 | Report code bytes and total on-disk index bytes separately |
 | BC-010 | score_ip_encoded throughput (1536-dim 4-bit) | NFR-001, FR-015-AC-7 | > 200K scores/sec |
 | BC-011 | Recall drift after incremental inserts | NFR-003, FR-016 | Report recall vs fraction of rows inserted since bulk build |
+| BC-012 | Truncated-tail vs full-tail quality comparison | NFR-003, ADR-007 | Report Recall@10/100, NDCG@10, rank correlation, and storage delta |
+| BC-013 | Raw-query vs code-to-code scorer comparison | NFR-003, ADR-007 | Report quality gap and latency gap on identical query sets |
+| BC-014 | MSE+QJL vs MSE-only ablation | NFR-003, ADR-007 | Report quality gain attributable to the QJL term |
+| BC-015 | Warm-cache vs cold-cache HNSW latency | NFR-001 | Report both latency profiles under the same dataset and settings |
+
+## Benchmark Execution Rules
+
+- All benchmark reports SHALL identify the dataset, row count, dimensionality, query count, random seed, hardware, PostgreSQL version, compiler profile, and relevant PostgreSQL settings.
+- All quality benchmarks SHALL use brute-force exact fp32 inner product over the same raw vectors as ground truth.
+- All variant comparisons SHALL use the same query set, the same HNSW hyperparameters, and the same hardware/configuration.
+- Drift benchmarks SHALL report results at a minimum after 0%, 5%, 10%, and 20% of rows have been inserted since the last bulk build or REINDEX.
+- Tail-truncation benchmarks SHALL compare the current persisted layout against a tail-retaining offline reference variant.
+- Ablation benchmarks SHALL compare the full declared scorer against an MSE-only variant with `gamma = 0` and QJL ignored.
+- Latency benchmarks SHALL report warm-cache and cold-cache results separately when feasible.
+- Any benchmark used to justify a product decision SHALL be reproducible from a checked-in SQL script, harness, or benchmark command line.
 
 ## Coverage Summary
 
@@ -116,10 +132,10 @@ Bidirectional traceability between requirements and test cases.
 | FR-012 | TC-101, TC-116, TC-130 |
 | FR-013 | TC-008, TC-009, TC-010, TC-011, TC-012, TC-013, TC-014, TC-015, TC-018 |
 | FR-014 | TC-016, TC-017, TC-030, BC-008 |
-| FR-015 | TC-021, TC-022, TC-023, TC-024, TC-025, TC-026, TC-027, TC-028, TC-031, TC-032, BC-010 |
+| FR-015 | TC-021, TC-022, TC-023, TC-024, TC-025, TC-026, TC-027, TC-028, TC-031, TC-032, TC-033, BC-010 |
 | FR-016 | TC-128, TC-127, BC-011 |
-| NFR-001 | BC-001, BC-002, BC-003, BC-010 |
+| NFR-001 | BC-001, BC-002, BC-003, BC-010, BC-015 |
 | NFR-002 | BC-004, BC-009 |
-| NFR-003 | BC-005, BC-006, BC-007, BC-011 |
+| NFR-003 | BC-005, BC-006, BC-007, BC-011, BC-012, BC-013, BC-014 |
 | NFR-004 | TC-119, TC-118, all unit tests (no panic) |
 | NFR-005 | CI pipeline (fmt, clippy, test, pgrx test, deny) |
