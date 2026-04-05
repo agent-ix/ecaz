@@ -297,13 +297,15 @@ unsafe fn initialize_scan_entry_candidate(
     };
 
     let (_, neighbors) = unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
-    for neighbor_tid in neighbors.tids {
-        let neighbor = unsafe { graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len) };
+    if let Some(candidate) = select_successor_candidate(&neighbors.tids, |neighbor_tid| {
+        let neighbor = unsafe {
+            graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
+        };
         if neighbor.deleted || neighbor.heaptids.is_empty() {
-            continue;
+            return None;
         }
 
-        opaque.candidate_frontier.candidates[1] = ScanCandidate {
+        Some(ScanCandidate {
             element_tid: neighbor.tid,
             score: score_scan_element_result(
                 index_relation,
@@ -313,8 +315,9 @@ unsafe fn initialize_scan_entry_candidate(
                 &neighbor.code,
             ),
             score_valid: true,
-        };
-        break;
+        })
+    }) {
+        opaque.candidate_frontier.candidates[1] = candidate;
     }
 
     recompute_candidate_frontier_head(opaque);
@@ -356,6 +359,26 @@ fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCand
     opaque.candidate_frontier.candidates[head] = ScanCandidate::default();
     recompute_candidate_frontier_head(opaque);
     Some(consumed)
+}
+
+fn select_successor_candidate<F>(
+    neighbor_tids: &[page::ItemPointer],
+    mut candidate_for_tid: F,
+) -> Option<ScanCandidate>
+where
+    F: FnMut(page::ItemPointer) -> Option<ScanCandidate>,
+{
+    for neighbor_tid in neighbor_tids.iter().copied() {
+        if neighbor_tid == page::ItemPointer::INVALID {
+            continue;
+        }
+
+        if let Some(candidate) = candidate_for_tid(neighbor_tid) {
+            return Some(candidate);
+        }
+    }
+
+    None
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -1666,5 +1689,48 @@ mod tests {
             consume_candidate_frontier_head(&mut opaque).is_none(),
             "consuming an empty frontier should stay a no-op"
         );
+    }
+
+    #[test]
+    fn select_successor_candidate_skips_invalid_then_falls_through() {
+        let skipped = page::ItemPointer::INVALID;
+        let first_valid = page::ItemPointer {
+            block_number: 8,
+            offset_number: 1,
+        };
+        let second_valid = page::ItemPointer {
+            block_number: 8,
+            offset_number: 2,
+        };
+        let mut visited = Vec::new();
+
+        let candidate =
+            select_successor_candidate(&[skipped, first_valid, second_valid], |neighbor_tid| {
+                visited.push((neighbor_tid.block_number, neighbor_tid.offset_number));
+                if neighbor_tid == first_valid {
+                    return None;
+                }
+
+                Some(ScanCandidate {
+                    element_tid: neighbor_tid,
+                    score: 2.5,
+                    score_valid: true,
+                })
+            })
+            .expect("second valid neighbor should be selected after skipping invalid and empty");
+
+        assert_eq!(
+            visited,
+            vec![(first_valid.block_number, first_valid.offset_number), (
+                second_valid.block_number,
+                second_valid.offset_number
+            )],
+            "selection should skip INVALID neighbors and continue until a concrete candidate exists"
+        );
+        assert_eq!(
+            candidate.element_tid, second_valid,
+            "selection should return the first neighbor that produces a concrete candidate"
+        );
+        assert!(candidate.score_valid, "returned candidate should stay marked valid");
     }
 }
