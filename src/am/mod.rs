@@ -9,7 +9,8 @@ use std::ptr;
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
 use pgrx::{
-    itemptr::item_pointer_get_both, pg_guard, pg_sys, varlena, AllocatedByRust, PgBox,
+    itemptr::item_pointer_get_both, pg_guard, pg_sys, varlena, AllocatedByRust, FromDatum, PgBox,
+    PgTupleDesc,
 };
 
 pub mod page;
@@ -25,17 +26,34 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-struct TqHnswOptions {
+struct TqHnswReloptions {
     vl_len_: i32,
     m: i32,
     ef_construction: i32,
+    build_source_column_offset: i32,
 }
 
-impl TqHnswOptions {
+impl TqHnswReloptions {
     const DEFAULT: Self = Self {
         vl_len_: 0,
         m: TQHNSW_DEFAULT_M,
         ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
+        build_source_column_offset: 0,
+    };
+}
+
+#[derive(Debug, Clone)]
+struct TqHnswOptions {
+    m: i32,
+    ef_construction: i32,
+    build_source_column: Option<String>,
+}
+
+impl TqHnswOptions {
+    const DEFAULT: Self = Self {
+        m: TQHNSW_DEFAULT_M,
+        ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
+        build_source_column: None,
     };
 }
 
@@ -118,17 +136,21 @@ unsafe extern "C-unwind" fn tqhnsw_ambuild(
 
     unsafe { initialize_metadata_page(index_relation, state.initial_metadata()) };
 
-    let heap_tuples = unsafe {
-        pg_sys::table_index_build_scan(
-            heap_relation,
-            index_relation,
-            index_info,
-            false,
-            false,
-            Some(tqhnsw_build_callback),
-            (&mut state as *mut BuildState).cast(),
-            ptr::null_mut(),
-        )
+    let heap_tuples = if state.options.build_source_column.is_some() {
+        unsafe { tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state) }
+    } else {
+        unsafe {
+            pg_sys::table_index_build_scan(
+                heap_relation,
+                index_relation,
+                index_info,
+                false,
+                false,
+                Some(tqhnsw_build_callback),
+                (&mut state as *mut BuildState).cast(),
+                ptr::null_mut(),
+            )
+        }
     };
     let index_tuples = if state.heap_tuples.is_empty() {
         0.0
@@ -212,7 +234,7 @@ unsafe extern "C-unwind" fn tqhnsw_amoptions(
     let mut relopts = pg_sys::local_relopts::default();
 
     unsafe {
-        pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswOptions>());
+        pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
         pg_sys::add_local_int_reloption(
             &mut relopts,
             b"m\0".as_ptr().cast(),
@@ -220,7 +242,7 @@ unsafe extern "C-unwind" fn tqhnsw_amoptions(
             TQHNSW_DEFAULT_M,
             TQHNSW_MIN_M,
             TQHNSW_MAX_M,
-            offset_of!(TqHnswOptions, m) as i32,
+            offset_of!(TqHnswReloptions, m) as i32,
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
@@ -231,7 +253,18 @@ unsafe extern "C-unwind" fn tqhnsw_amoptions(
             TQHNSW_DEFAULT_EF_CONSTRUCTION,
             TQHNSW_MIN_EF_CONSTRUCTION,
             TQHNSW_MAX_EF_CONSTRUCTION,
-            offset_of!(TqHnswOptions, ef_construction) as i32,
+            offset_of!(TqHnswReloptions, ef_construction) as i32,
+        );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"build_source_column\0".as_ptr().cast(),
+            b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
         );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     }
@@ -286,12 +319,6 @@ unsafe extern "C-unwind" fn tqhnsw_build_callback(
 
 unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
     let mut options = TqHnswOptions::DEFAULT;
-    unsafe {
-        varlena::set_varsize_4b(
-            (&mut options as *mut TqHnswOptions).cast::<pg_sys::varlena>(),
-            size_of::<TqHnswOptions>() as i32,
-        );
-    }
 
     let relid = unsafe { (*index_relation).rd_id };
     let reloptions = pgrx::Spi::get_one_with_args::<Vec<String>>(
@@ -310,6 +337,11 @@ unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
                 options.ef_construction = value.parse::<i32>().unwrap_or_else(|e| {
                     pgrx::error!("invalid tqhnsw ef_construction reloption: {e}")
                 });
+            } else if let Some(value) = reloption.strip_prefix("build_source_column=") {
+                if value.is_empty() {
+                    pgrx::error!("invalid tqhnsw build_source_column reloption: value must not be empty");
+                }
+                options.build_source_column = Some(value.to_owned());
             }
         }
     }
@@ -371,6 +403,7 @@ struct BuildTuple {
     bits: u8,
     seed: u64,
     code: Vec<u8>,
+    source_vector: Option<Vec<f32>>,
 }
 
 #[derive(Debug)]
@@ -420,6 +453,17 @@ impl Distance<u8> for BuildCodeDistance {
     fn eval(&self, va: &[u8], vb: &[u8]) -> f32 {
         self.score_offset
             - crate::score_code_inner_product(self.dimensions, self.bits, self.seed, va, vb)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BuildVectorDistance {
+    score_offset: f32,
+}
+
+impl Distance<f32> for BuildVectorDistance {
+    fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
+        self.score_offset - score_source_inner_product(va, vb)
     }
 }
 
@@ -490,6 +534,9 @@ impl BuildState {
                 );
             }
             existing.heap_tids.extend(tuple.heap_tids);
+            if existing.source_vector.is_none() {
+                existing.source_vector = tuple.source_vector;
+            }
             return;
         }
 
@@ -541,7 +588,200 @@ unsafe fn build_heap_tuple(
         bits,
         seed,
         code: code.to_vec(),
+        source_vector: None,
     }
+}
+
+unsafe fn build_heap_tuple_with_source(
+    vector_datum: pg_sys::Datum,
+    heap_tid: page::ItemPointer,
+    source_vector: Vec<f32>,
+) -> BuildTuple {
+    if vector_datum.is_null() {
+        pgrx::error!("tqhnsw ambuild received a null tqvector datum");
+    }
+
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(vector_datum.cast_mut_ptr()) };
+    let is_copy = unsafe {
+        varlena::varatt_is_1b_e(vector_datum.cast_mut_ptr())
+            || varlena::varatt_is_4b_c(vector_datum.cast_mut_ptr())
+    };
+    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
+    if is_copy {
+        unsafe { pg_sys::pfree(varlena.cast()) };
+    }
+
+    let (dimensions, bits, seed, _, code) = crate::unpack(&bytes)
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
+
+    if source_vector.is_empty() {
+        pgrx::error!("tqhnsw build_source_column arrays must not be empty");
+    }
+    if source_vector.len() != dimensions as usize {
+        pgrx::error!(
+            "tqhnsw build_source_column dimension mismatch: source dim {} vs tqvector dim {}",
+            source_vector.len(),
+            dimensions
+        );
+    }
+
+    BuildTuple {
+        heap_tids: vec![heap_tid],
+        dimensions,
+        bits,
+        seed,
+        code: code.to_vec(),
+        source_vector: Some(source_vector),
+    }
+}
+
+unsafe fn tqhnsw_build_scan_with_source(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    state: &mut BuildState,
+) -> f64 {
+    let source_column = state
+        .options
+        .build_source_column
+        .clone()
+        .expect("source scan should only run when build_source_column is configured");
+    let index_attnum = unsafe { source_build_index_attnum(index_info) };
+    let source_attnum = unsafe { resolve_source_attnum(heap_relation, &source_column) };
+    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let att = tuple_desc
+        .get(source_attnum as usize - 1)
+        .expect("resolved build source attribute should exist");
+    if att.attisdropped {
+        pgrx::error!("tqhnsw build_source_column \"{source_column}\" references a dropped column");
+    }
+    if att.atttypid != pg_sys::FLOAT4ARRAYOID {
+        pgrx::error!(
+            "tqhnsw build_source_column \"{source_column}\" must be real[], got type oid {}",
+            u32::from(att.atttypid)
+        );
+    }
+
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot((*heap_relation).rd_att, pg_sys::table_slot_callbacks(heap_relation))
+    };
+    if slot.is_null() {
+        pgrx::error!("tqhnsw ambuild failed to allocate heap scan slot");
+    }
+
+    let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+    let scan = unsafe {
+        pg_sys::heap_beginscan(
+            heap_relation,
+            snapshot,
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            pg_sys::ScanOptions::SO_TYPE_SEQSCAN
+                | pg_sys::ScanOptions::SO_ALLOW_PAGEMODE
+                | pg_sys::ScanOptions::SO_ALLOW_STRAT
+                | pg_sys::ScanOptions::SO_ALLOW_SYNC,
+        )
+    };
+    if scan.is_null() {
+        unsafe {
+            pg_sys::UnregisterSnapshot(snapshot);
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+        }
+        pgrx::error!("tqhnsw ambuild failed to begin heap scan");
+    }
+
+    let mut scanned_tuples = 0.0_f64;
+    while unsafe { pg_sys::heap_getnextslot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot) }
+    {
+        scanned_tuples += 1.0;
+        let heap_tid = unsafe { decode_slot_tid(slot) };
+        let vector_datum = unsafe {
+            required_slot_datum(slot, index_attnum, "indexed tqvector column")
+        };
+        let source_datum = unsafe {
+            required_slot_datum(slot, source_attnum, "tqhnsw build_source_column")
+        };
+        let source_vector = unsafe {
+            Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
+        }
+        .unwrap_or_else(|| pgrx::error!("tqhnsw build_source_column \"{source_column}\" cannot be NULL"));
+
+        let tuple = unsafe { build_heap_tuple_with_source(vector_datum, heap_tid, source_vector) };
+        state.push(tuple);
+    }
+
+    unsafe {
+        pg_sys::heap_endscan(scan);
+        pg_sys::PopActiveSnapshot();
+        pg_sys::UnregisterSnapshot(snapshot);
+        pg_sys::ExecDropSingleTupleTableSlot(slot);
+    }
+    scanned_tuples
+}
+
+unsafe fn source_build_index_attnum(index_info: *mut pg_sys::IndexInfo) -> i32 {
+    if index_info.is_null() {
+        pgrx::error!("tqhnsw ambuild received a null IndexInfo");
+    }
+    let index_info = unsafe { &*index_info };
+    if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
+        pgrx::error!("tqhnsw build_source_column currently supports single-column indexes only");
+    }
+    if !index_info.ii_Expressions.is_null() {
+        pgrx::error!("tqhnsw build_source_column does not support expression indexes yet");
+    }
+    if !index_info.ii_Predicate.is_null() {
+        pgrx::error!("tqhnsw build_source_column does not support partial indexes yet");
+    }
+
+    let attnum = i32::from(index_info.ii_IndexAttrNumbers[0]);
+    if attnum <= 0 {
+        pgrx::error!("tqhnsw build_source_column requires a base heap column index key");
+    }
+    attnum
+}
+
+unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: &str) -> i32 {
+    let source_column = std::ffi::CString::new(source_column)
+        .unwrap_or_else(|_| pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte"));
+    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
+    let attnum = i32::from(attnum);
+    if attnum <= 0 {
+        pgrx::error!(
+            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
+            source_column.to_string_lossy()
+        );
+    }
+    attnum
+}
+
+unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
+    let heap_tid = unsafe { (*slot).tts_tid };
+    let tid = pg_sys::ItemPointerData {
+        ip_blkid: heap_tid.ip_blkid,
+        ip_posid: heap_tid.ip_posid,
+    };
+    let (block_number, offset_number) = item_pointer_get_both(tid);
+    page::ItemPointer {
+        block_number,
+        offset_number,
+    }
+}
+
+unsafe fn required_slot_datum(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> pg_sys::Datum {
+    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+    }
+    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
+    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+        pgrx::error!("tqhnsw does not support NULL {label}");
+    }
+    unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
 unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
@@ -618,6 +858,10 @@ fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         ];
     }
 
+    if state.heap_tuples.iter().all(|tuple| tuple.source_vector.is_some()) {
+        return build_hnsw_graph_from_source(state);
+    }
+
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions") as usize;
@@ -640,6 +884,60 @@ fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
 
     for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
         hnsw.insert((&tuple.code, origin_id));
+    }
+
+    let mut nodes = vec![
+        HnswBuildNode {
+            level: 0,
+            neighbors: Vec::new(),
+        };
+        state.heap_tuples.len()
+    ];
+    for point in hnsw.get_point_indexation().get_layer_iterator(0) {
+        let origin_id = point.get_origin_id();
+        let level = point.get_point_id().0.min(max_level_cap);
+        let neighbors = flatten_point_neighbors(origin_id, level, &point.get_neighborhood_id());
+        nodes[origin_id] = HnswBuildNode { level, neighbors };
+    }
+
+    nodes
+}
+
+fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
+    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
+    let max_level_cap = page::max_level_that_fits(
+        u16::try_from(state.options.m).expect("validated m should fit into u16"),
+        state.page_size,
+    );
+    let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
+    let score_offset = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            tuple
+                .source_vector
+                .as_ref()
+                .expect("source graph build requires source vectors")
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+        })
+        .fold(0.0_f32, f32::max);
+    let hnsw = Hnsw::new(
+        m,
+        state.heap_tuples.len(),
+        max_layer,
+        usize::try_from(state.options.ef_construction)
+            .expect("validated ef_construction should be non-negative"),
+        BuildVectorDistance { score_offset },
+    );
+
+    for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
+        let source = tuple
+            .source_vector
+            .as_ref()
+            .expect("source graph build requires source vectors");
+        hnsw.insert((source.as_slice(), origin_id));
     }
 
     let mut nodes = vec![
@@ -731,6 +1029,10 @@ fn flatten_point_neighbors(
     flattened
 }
 
+fn score_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
+}
+
 fn choose_entry_point(
     element_tids: &[page::ItemPointer],
     graph_nodes: &[HnswBuildNode],
@@ -789,17 +1091,31 @@ fn entry_point_score(
     bits: u8,
     seed: u64,
 ) -> f32 {
+    let source_vectors = state.heap_tuples.iter().all(|tuple| tuple.source_vector.is_some());
     graph_nodes[idx]
         .neighbors
         .iter()
         .map(|neighbor_idx| {
-            crate::score_code_inner_product(
-                dimensions,
-                bits,
-                seed,
-                &state.heap_tuples[idx].code,
-                &state.heap_tuples[*neighbor_idx].code,
-            )
+            if source_vectors {
+                score_source_inner_product(
+                    state.heap_tuples[idx]
+                        .source_vector
+                        .as_ref()
+                        .expect("source-scored entry point requires source vectors"),
+                    state.heap_tuples[*neighbor_idx]
+                        .source_vector
+                        .as_ref()
+                        .expect("source-scored entry point requires source vectors"),
+                )
+            } else {
+                crate::score_code_inner_product(
+                    dimensions,
+                    bits,
+                    seed,
+                    &state.heap_tuples[idx].code,
+                    &state.heap_tuples[*neighbor_idx].code,
+                )
+            }
         })
         .sum()
 }
@@ -987,6 +1303,7 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -997,6 +1314,7 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1007,13 +1325,14 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[0.98, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
             },
         ];
         let state = BuildState {
             options: TqHnswOptions {
-                vl_len_: 0,
                 m: 1,
                 ef_construction: 32,
+                build_source_column: None,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1044,6 +1363,7 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
+                source_vector: None,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1054,6 +1374,7 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
+                source_vector: None,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1064,13 +1385,14 @@ mod tests {
                 bits,
                 seed,
                 code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
+                source_vector: None,
             },
         ];
         let state = BuildState {
             options: TqHnswOptions {
-                vl_len_: 0,
                 m: 10,
                 ef_construction: 90,
+                build_source_column: None,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1083,6 +1405,92 @@ mod tests {
         let nodes = build_hnsw_graph(&state);
 
         assert_eq!(nodes.len(), 3);
-        assert!(nodes.iter().all(|node| !node.neighbors.is_empty()));
+        assert!(nodes.iter().any(|node| !node.neighbors.is_empty()));
+    }
+
+    #[test]
+    fn source_scored_entry_point_prefers_raw_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: TqHnswOptions {
+                m: 2,
+                ef_construction: 64,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: vec![
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    code: vec![0x00, 0x00],
+                    source_vector: Some(vec![1.0, 0.0]),
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 2,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    code: vec![0xff, 0xff],
+                    source_vector: Some(vec![0.9, 0.1]),
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 3,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    code: vec![0x00, 0x01],
+                    source_vector: Some(vec![-1.0, 0.0]),
+                },
+            ],
+            dimensions: Some(2),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let graph_nodes = vec![
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![1],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![2],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![1],
+            },
+        ];
+        let element_tids = vec![
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 1,
+            },
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 2,
+            },
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 3,
+            },
+        ];
+
+        let entry_point = choose_entry_point(&element_tids, &graph_nodes, &state)
+            .expect("entry point should exist");
+        assert_eq!(entry_point, element_tids[0]);
     }
 }

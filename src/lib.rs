@@ -616,6 +616,78 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_non_empty_index_build_supports_raw_source_column() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_source_build VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ARRAY[-1.0, 0.5, 0.0, 1.0], encode_to_tqvector(ARRAY[0.8, -0.4, 0.1, 0.7], 4, 42)),
+             (4, ARRAY[-0.8, 0.4, 0.2, 0.9], encode_to_tqvector(ARRAY[-0.7, -0.2, 0.3, 0.6], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_source_build_idx ON tqhnsw_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_source_build_idx'::regclass",
+        )
+        .expect("SPI query should succeed")
+        .expect("reloptions should exist");
+        assert!(reloptions.contains(&"build_source_column=source".to_string()));
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.m, 6);
+        assert_eq!(metadata.ef_construction, 80);
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
+                    if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                        Some((
+                            am::page::ItemPointer {
+                                block_number: page.block_number,
+                                offset_number: (idx + 1) as u16,
+                            },
+                            am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                                .expect("element tuple should decode"),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(elements.len(), 4);
+        assert!(
+            elements.iter().any(|(tid, _)| *tid == metadata.entry_point),
+            "entry point should identify an element tuple"
+        );
+        assert!(elements.iter().all(|(_, element)| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
     fn test_non_empty_index_build_spans_multiple_data_pages() {
         Spi::run(
             "CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)",
