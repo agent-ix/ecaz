@@ -21,5 +21,6 @@ Questions to answer:
 - Is there a smaller coverage slice that should go first?
 
 Status at `803bf5e`:
+- Questions above: closed for this stage as addressed.
 - Addressed by adding SQL-level regression tests for empty-index vacuum and repeated no-op vacuum calls.
 - No additional production helper surface was required.

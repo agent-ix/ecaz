@@ -24,6 +24,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `803bf5e`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Comments 1-5 and 8: not needed. These review notes validate the current no-op vacuum contract rather than identifying changes required in this stage.
 - Comment 6 addressed by adding empty-index vacuum coverage.
 - Comment 7 addressed by adding repeated-vacuum coverage.

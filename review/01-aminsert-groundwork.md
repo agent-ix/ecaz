@@ -29,6 +29,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `52de780`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Comment 1 addressed by serializing metadata initialization and validation under an exclusive metadata-page lock in `aminsert`.
 - Comment 4 addressed by adding a sequential empty-index second-insert regression test.
 - Comments 2, 3, and 5: not needed for now. They are optimization/future-invariant notes rather than defects in the current narrow insert path.

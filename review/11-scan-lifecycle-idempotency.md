@@ -21,5 +21,6 @@ Questions to answer:
 - Should the remaining `amgettuple` repeated-rescan note stay deferred until real tuple production exists?
 
 Status at `41cfdfa`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Addressed by adding repeated-`amendscan` regression coverage.
 - Remaining `amgettuple` repeated-rescan coverage is not needed for now because scan execution still fails at the capability boundary.

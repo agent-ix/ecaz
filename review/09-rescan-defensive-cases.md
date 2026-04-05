@@ -23,5 +23,6 @@ Questions to answer:
 - Is there a smaller scan-safety slice that should have gone first?
 
 Status at `0abf7d9`:
+- Questions above: closed for this stage as addressed.
 - Addressed by adding helper coverage and regression tests for all four requested defensive `amrescan` cases.
 - No code-path widening was needed beyond test-only helper entry points.

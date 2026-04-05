@@ -24,6 +24,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `0abf7d9`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Comments 1-6: not needed. These confirm the current `amrescan` validation contract rather than identifying new work for this stage.
 - Comment 7 addressed by adding explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Comment 8: not needed for now. Sticky `rescan_called` remains acceptable until real scan execution exists.

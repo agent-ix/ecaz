@@ -20,5 +20,6 @@ Questions to answer:
 - Is this the next smallest worthwhile review-driven slice?
 
 Status at `9444d4b`:
+- Questions above: closed for this stage as addressed.
 - Addressed by adding regression coverage that proves a rollover can be followed by reuse of the newly allocated tail page.
 - No production change was required; the existing append logic behaved correctly once the test setup matched real build layout.

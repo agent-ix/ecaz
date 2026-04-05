@@ -25,6 +25,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `41cfdfa`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Comments 1-5 and 7: not needed. These notes validate the current descriptor lifecycle rather than requiring changes.
 - Comment 6 addressed by adding repeated-`amendscan` idempotency coverage.
 

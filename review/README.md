@@ -55,7 +55,10 @@ Review instructions:
 - Focus on behavior, invariants, page/WAL safety, SQL-surface coherence, and missing tests.
 - Treat the current on-disk layout as intentional unless a small, concrete defect requires change.
 
-Requests:
+Open requests:
+- None right now. The next work item should be chosen as a new implementation slice rather than a pending review follow-up.
+
+Closed requests:
 - `01-aminsert-groundwork.md`
 - `02-tail-page-reuse-and-rollover.md`
 - `03-duplicate-coalescing-and-capacity.md`
@@ -67,3 +70,4 @@ Requests:
 - `09-rescan-defensive-cases.md`
 - `10-vacuum-noop-coverage.md`
 - `11-scan-lifecycle-idempotency.md`
+- `12-tail-page-rollover-followup.md`

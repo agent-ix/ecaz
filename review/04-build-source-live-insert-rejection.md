@@ -24,6 +24,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `9444d4b`:
+- Questions above: closed for this stage as skipped/not needed.
 - Comments 1-6: not needed for now. The review found the current rejection boundary correct and sufficiently covered for the current capability set.
 
 ### 1. The rejection is correctly placed and uses the right detection mechanism

@@ -26,6 +26,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `9444d4b`:
+- Questions above: closed for this stage as addressed or skipped/not needed.
 - Comments 1-4 and 6: not needed. These notes validate accepted current rollover behavior rather than identifying a correctness defect that needs code changes now.
 - Comment 5 addressed by adding rollover-followed-by-reuse regression coverage.
 

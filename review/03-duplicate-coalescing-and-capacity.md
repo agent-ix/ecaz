@@ -26,6 +26,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `9444d4b`:
+- Questions above: closed for this stage as skipped/not needed.
 - Comments 1-6: not needed for now. The review found the current duplicate-coalescing behavior safe within the current scope and did not identify a missing test that justifies more change.
 
 ### 1. Duplicate detection does a full sequential scan of all data pages (performance, not correctness)

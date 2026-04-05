@@ -24,6 +24,7 @@ Questions to answer:
 ## Review Comments
 
 Status at `41cfdfa`:
+- Questions above: closed for this stage as skipped/not needed.
 - Comments 1-5 and 7: not needed. These comments confirm the current gating behavior rather than identifying changes required before real scan execution exists.
 - Comment 6: not needed for now. Repeated-rescan coverage stays blocked on the current fatal `amgettuple` capability boundary and would add helper complexity without increasing behavioral confidence.
 
