@@ -408,8 +408,7 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
 
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
-            opaque.query_dimensions =
-                u16::try_from(query.len()).expect("query length should fit in u16");
+            store_scan_query(opaque, &query);
         })
     }
 }
@@ -453,11 +452,48 @@ unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanDesc) {
 
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
+                free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
                 pg_sys::pfree(opaque);
                 (*scan).opaque = ptr::null_mut();
             }
         })
     }
+}
+
+unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
+    free_scan_query(opaque);
+
+    let query_bytes = std::mem::size_of_val(query);
+    let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
+    if query_values.is_null() {
+        pgrx::error!("tqhnsw failed to allocate scan query state");
+    }
+
+    unsafe {
+        ptr::copy_nonoverlapping(query.as_ptr(), query_values, query.len());
+    }
+    opaque.query_dimensions = u16::try_from(query.len()).expect("query length should fit in u16");
+    opaque.query_values = query_values;
+}
+
+unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
+    if !opaque.query_values.is_null() {
+        unsafe { pg_sys::pfree(opaque.query_values.cast()) };
+        opaque.query_values = ptr::null_mut();
+    }
+    opaque.query_dimensions = 0;
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
+    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
+        return Vec::new();
+    }
+
+    let query = unsafe {
+        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+    };
+    query.to_vec()
 }
 
 unsafe extern "C-unwind" fn tqhnsw_build_callback(
@@ -1107,6 +1143,7 @@ struct BuildVectorDistance {
 struct TqScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
+    query_values: *mut f32,
 }
 
 impl Distance<f32> for BuildVectorDistance {
@@ -2049,7 +2086,7 @@ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool
 pub(crate) unsafe fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, u16) {
+) -> (bool, u16, Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2061,7 +2098,11 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let result = (opaque.rescan_called, opaque.query_dimensions);
+    let result = (
+        opaque.rescan_called,
+        opaque.query_dimensions,
+        read_scan_query(opaque),
+    );
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -2074,7 +2115,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     index_oid: pg_sys::Oid,
     first_query: Vec<f32>,
     second_query: Vec<f32>,
-) -> (bool, u16) {
+) -> (bool, u16, Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2094,7 +2135,11 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let result = (opaque.rescan_called, opaque.query_dimensions);
+    let result = (
+        opaque.rescan_called,
+        opaque.query_dimensions,
+        read_scan_query(opaque),
+    );
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };

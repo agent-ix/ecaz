@@ -1792,13 +1792,15 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
-        let (rescan_called, query_dimensions) =
+        let expected_query = vec![1.0, 0.0, 0.5, -1.0];
+        let (rescan_called, query_dimensions, stored_query) =
             unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         assert!(
             rescan_called,
             "amrescan should mark scan state as initialized"
         );
         assert_eq!(query_dimensions, 4);
+        assert_eq!(stored_query, expected_query);
     }
 
     #[pg_test]
@@ -1815,11 +1817,12 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_rescan_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (rescan_called, query_dimensions) = unsafe {
+        let second_query = vec![1.0, 0.0, 0.5];
+        let (rescan_called, query_dimensions, stored_query) = unsafe {
             am::debug_rescan_overwrites_query_dimensions(
                 index_oid,
                 vec![1.0, 0.0, 0.5, -1.0],
-                vec![1.0, 0.0, 0.5],
+                second_query.clone(),
             )
         };
         assert!(
@@ -1829,6 +1832,10 @@ mod tests {
         assert_eq!(
             query_dimensions, 3,
             "second amrescan should overwrite recorded query dimensions"
+        );
+        assert_eq!(
+            stored_query, second_query,
+            "second amrescan should overwrite the stored query payload"
         );
     }
 
