@@ -2437,6 +2437,49 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_exhaustion_state(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (Vec<(u32, u16)>, bool, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        tids.push(item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+    }
+
+    let exhausted_once = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let exhausted_twice = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (tids, exhausted_once, exhausted_twice)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::BackwardScanDirection) };
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
