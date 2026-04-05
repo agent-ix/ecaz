@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `3060639`
+Current head: `e405d34`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -58,6 +58,7 @@ Current tqhnsw state summary:
 - Linear scan coverage now explicitly verifies that a duplicate-heavy scan continues correctly across multiple data pages and mixed element/neighbor tuple pages.
 - `amrescan` now caches the current relation block count in scan-owned state so the bootstrap linear scan does not re-fetch it on every tuple-producing call.
 - `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
+- The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -92,6 +93,7 @@ Review triage at `46d00bb`:
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` with a regression that combines duplicate draining, neighbor-tuple skipping, and multi-page scan advancement.
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by caching the relation block count in scan state instead of re-reading it for each bootstrap scan step.
 - Remaining open feedback notes around page-lock batching and larger architectural changes are deferred while ordered scan execution groundwork continues.
+- Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -114,6 +116,7 @@ Open requests:
 - `24-relation-options-cache.md`
 - `25-zero-allocation-code-scoring.md`
 - `26-scan-prepared-query-cache.md`
+- `27-scan-current-result-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
