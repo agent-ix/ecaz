@@ -2588,6 +2588,70 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_rescan_builds_two_slot_candidate_frontier() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_candidate_frontier_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_candidate_frontier_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_candidate_frontier_state_idx ON tqhnsw_candidate_frontier_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_candidate_frontier_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let frontier =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert!(
+            frontier[0].0,
+            "first frontier slot should hold the seeded entry candidate"
+        );
+        assert_ne!(
+            frontier[0].1,
+            (u32::MAX, u16::MAX),
+            "first frontier slot should expose a concrete element tid"
+        );
+        assert_ne!(
+            frontier[0].2, 0.0,
+            "first frontier slot should carry a computed score"
+        );
+
+        if frontier[1].0 {
+            assert_ne!(
+                frontier[1].1,
+                (u32::MAX, u16::MAX),
+                "second frontier slot should expose a concrete element tid when present"
+            );
+            assert_ne!(
+                frontier[1].2, 0.0,
+                "second frontier slot should carry a computed score when present"
+            );
+        } else {
+            assert_eq!(
+                frontier[1].1,
+                (u32::MAX, u16::MAX),
+                "empty second frontier slot should clear its element tid"
+            );
+            assert_eq!(
+                frontier[1].2, 0.0,
+                "empty second frontier slot should clear its score"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
