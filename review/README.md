@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `079594e`
+Current head: `f595337`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -34,8 +34,9 @@ Current tqhnsw state summary:
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
+- `amgettuple` now returns `false` for valid rescans on empty indexes while keeping non-empty scan execution disabled.
 
-Review triage at `079594e`:
+Review triage at `f595337`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
 - Marked `01-aminsert-groundwork.md` comments 2, 3, and 5 as not needed for this stage because they are optimization or future-invariant notes rather than current defects.
@@ -57,7 +58,7 @@ Review instructions:
 - Treat the current on-disk layout as intentional unless a small, concrete defect requires change.
 
 Open requests:
-- None right now. The next work item should be chosen as a new implementation slice rather than a pending review follow-up.
+- `13-amgettuple-empty-index-noop.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
