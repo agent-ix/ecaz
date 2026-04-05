@@ -15,6 +15,7 @@ use crate::quant::prod::PreparedQuery;
 use self::options::TqHnswOptions;
 
 mod cost;
+mod build;
 mod options;
 pub mod page;
 mod routine;
@@ -28,62 +29,6 @@ const TQHNSW_DEFAULT_EF_CONSTRUCTION: i32 = 64;
 const TQHNSW_MIN_EF_CONSTRUCTION: i32 = 10;
 const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
-
-unsafe extern "C-unwind" fn tqhnsw_ambuild(
-    heap_relation: pg_sys::Relation,
-    index_relation: pg_sys::Relation,
-    index_info: *mut pg_sys::IndexInfo,
-) -> *mut pg_sys::IndexBuildResult {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut state = BuildState::new(index_relation);
-
-            initialize_metadata_page(index_relation, state.initial_metadata());
-
-            let heap_tuples = if state.options.build_source_column.is_some() {
-                tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state)
-            } else {
-                pg_sys::table_index_build_scan(
-                    heap_relation,
-                    index_relation,
-                    index_info,
-                    false,
-                    false,
-                    Some(tqhnsw_build_callback),
-                    (&mut state as *mut BuildState).cast(),
-                    ptr::null_mut(),
-                )
-            };
-            let index_tuples = if state.heap_tuples.is_empty() {
-                0.0
-            } else {
-                flush_build_state(index_relation, &state);
-                state.heap_tuples.len() as f64
-            };
-
-            if heap_tuples != state.scanned_tuples as f64 {
-                pgrx::error!(
-                    "tqhnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
-                    state.scanned_tuples
-                );
-            }
-
-            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
-            result.heap_tuples = heap_tuples;
-            result.index_tuples = index_tuples;
-            result.into_pg()
-        })
-    }
-}
-
-unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sys::Relation) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let state = BuildState::new(index_relation);
-            initialize_metadata_page(index_relation, state.initial_metadata());
-        })
-    }
-}
 
 unsafe extern "C-unwind" fn tqhnsw_aminsert(
     index_relation: pg_sys::Relation,
@@ -510,7 +455,7 @@ unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
     query.to_vec()
 }
 
-unsafe extern "C-unwind" fn tqhnsw_build_callback(
+pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
     _index: pg_sys::Relation,
     tid: pg_sys::ItemPointer,
     values: *mut pg_sys::Datum,
@@ -1150,7 +1095,7 @@ struct BuildTuple {
 }
 
 #[derive(Debug)]
-struct BuildState {
+pub(super) struct BuildState {
     options: TqHnswOptions,
     page_size: usize,
     scanned_tuples: usize,
@@ -1260,7 +1205,7 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 impl BuildState {
-    fn new(index_relation: pg_sys::Relation) -> Self {
+    pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
         let options = unsafe { options::relation_options(index_relation) };
         Self {
             options,
@@ -1273,7 +1218,7 @@ impl BuildState {
         }
     }
 
-    fn initial_metadata(&self) -> page::MetadataPage {
+    pub(super) fn initial_metadata(&self) -> page::MetadataPage {
         page::MetadataPage {
             m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
             ef_construction: u16::try_from(self.options.ef_construction)
