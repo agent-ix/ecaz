@@ -265,6 +265,7 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     opaque.entry_candidate = ScanCandidate::default();
+    opaque.successor_candidate = ScanCandidate::default();
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -294,6 +295,27 @@ unsafe fn initialize_scan_entry_candidate(
         ),
         score_valid: true,
     };
+
+    let (_, neighbors) = unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
+    for neighbor_tid in neighbors.tids {
+        let neighbor = unsafe { graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len) };
+        if neighbor.deleted || neighbor.heaptids.is_empty() {
+            continue;
+        }
+
+        opaque.successor_candidate = ScanCandidate {
+            element_tid: neighbor.tid,
+            score: score_scan_element_result(
+                index_relation,
+                heap_relation,
+                opaque,
+                neighbor.heaptids[0],
+                &neighbor.code,
+            ),
+            score_valid: true,
+        };
+        break;
+    }
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -522,6 +544,7 @@ struct TqScanOpaque {
     scan_code_len: usize,
     scan_block_count: u32,
     entry_candidate: ScanCandidate,
+    successor_candidate: ScanCandidate,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -544,6 +567,7 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             entry_candidate: ScanCandidate::default(),
+            successor_candidate: ScanCandidate::default(),
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -928,6 +952,51 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
         after_valid,
         after_tid,
         after_score,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_rescan_successor_candidate_state(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (
+    HeapTidCoords,
+    Vec<HeapTidCoords>,
+    bool,
+    HeapTidCoords,
+    f32,
+) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let metadata = unsafe { super::read_metadata_page(index_relation) };
+    let entry_tid = (metadata.entry_point.block_number, metadata.entry_point.offset_number);
+    let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let successor_valid = opaque.successor_candidate.score_valid;
+    let successor_tid = (
+        opaque.successor_candidate.element_tid.block_number,
+        opaque.successor_candidate.element_tid.offset_number,
+    );
+    let successor_score = opaque.successor_candidate.score;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        entry_tid,
+        entry_neighbors,
+        successor_valid,
+        successor_tid,
+        successor_score,
     )
 }
 

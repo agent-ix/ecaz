@@ -2524,6 +2524,70 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_successor_candidate_from_entry_adjacency() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_successor_candidate_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_successor_candidate_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_successor_candidate_state_idx ON tqhnsw_successor_candidate_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_successor_candidate_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (entry_tid, entry_neighbors, successor_valid, successor_tid, successor_score) =
+            unsafe {
+                am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+            };
+
+        assert_ne!(
+            entry_tid,
+            (u32::MAX, u16::MAX),
+            "non-empty index should expose a concrete entry point"
+        );
+        if entry_neighbors.is_empty() {
+            assert!(
+                !successor_valid,
+                "successor candidate should stay empty when the persisted entry adjacency is empty"
+            );
+            assert_eq!(
+                successor_tid,
+                (u32::MAX, u16::MAX),
+                "empty successor candidate should clear its tuple pointer"
+            );
+            assert_eq!(
+                successor_score, 0.0,
+                "empty successor candidate should clear its score"
+            );
+        } else {
+            assert!(
+                successor_valid,
+                "successor candidate should seed from persisted entry adjacency when a live neighbor exists"
+            );
+            assert!(
+                entry_neighbors.contains(&successor_tid),
+                "successor candidate should target one of the persisted entry-point neighbor refs"
+            );
+            assert_ne!(
+                successor_score, 0.0,
+                "seeded successor candidate should carry a computed score"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
