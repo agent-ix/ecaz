@@ -1552,6 +1552,73 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_callbacks_handle_empty_index() {
+        Spi::run("CREATE TABLE tqhnsw_vacuum_empty (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_empty_idx ON tqhnsw_vacuum_empty USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_empty_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(data_pages.len(), 0, "empty index should have no data pages");
+
+        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
+        assert_eq!(stats.num_pages, block_count);
+        assert!(
+            !stats.estimated_count,
+            "vacuum stats should report exact tuple counts"
+        );
+        assert_eq!(stats.num_index_tuples, 0.0);
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.pages_newly_deleted, 0);
+        assert_eq!(stats.pages_deleted, 0);
+        assert_eq!(stats.pages_free, 0);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_callbacks_are_stable_across_repeated_calls() {
+        Spi::run("CREATE TABLE tqhnsw_vacuum_repeat (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_repeat VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_repeat_idx ON tqhnsw_vacuum_repeat USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("DELETE FROM tqhnsw_vacuum_repeat WHERE id = 2").expect("delete should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_repeat_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let first_stats = unsafe { am::debug_vacuum_stats(index_oid) };
+        let second_stats = unsafe { am::debug_vacuum_stats(index_oid) };
+
+        assert_eq!(second_stats.num_pages, first_stats.num_pages);
+        assert_eq!(second_stats.estimated_count, first_stats.estimated_count);
+        assert_eq!(second_stats.num_index_tuples, first_stats.num_index_tuples);
+        assert_eq!(second_stats.tuples_removed, first_stats.tuples_removed);
+        assert_eq!(
+            second_stats.pages_newly_deleted,
+            first_stats.pages_newly_deleted
+        );
+        assert_eq!(second_stats.pages_deleted, first_stats.pages_deleted);
+        assert_eq!(second_stats.pages_free, first_stats.pages_free);
+    }
+
+    #[pg_test]
     fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
         Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
