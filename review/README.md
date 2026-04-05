@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `d57a2b5`
+Current head: `9ea08b4`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -151,6 +151,7 @@ Open requests:
 - `37-am-build-state-type-ownership.md`
 - `38-scan-current-result-scoring.md`
 - `39-am-scan-module-boundary.md`
+- `40-ci-workflow-hardening.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
