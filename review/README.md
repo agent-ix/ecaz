@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f7cf7f8`
+Current head: `3183e3b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -24,7 +24,9 @@ Current tqhnsw state summary:
   - rejects duplicate heap-TID overflow
   - rejects `build_source_column` indexes
 - Vacuum callbacks are benign no-ops that return current page/tuple stats.
-- Scan callbacks still hard-error.
+- `ambeginscan` allocates a real scan descriptor plus opaque state.
+- `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
+- `amgettuple` still hard-errors, so planner-visible scan execution remains disabled in practice.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -37,3 +39,5 @@ Requests:
 - `03-duplicate-coalescing-and-capacity.md`
 - `04-build-source-live-insert-rejection.md`
 - `05-vacuum-noop-callbacks.md`
+- `06-scan-descriptor-scaffolding.md`
+- `07-rescan-query-validation.md`
