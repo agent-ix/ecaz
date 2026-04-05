@@ -7,8 +7,32 @@ use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
 
 use super::{
-    initialize_metadata_page, page, wal, BuildState, BuildTuple, P_NEW, tqhnsw_build_callback,
+    average_source_representatives, initialize_metadata_page, options, page, wal, P_NEW,
+    tqhnsw_build_callback,
 };
+
+#[derive(Debug, Clone)]
+pub(super) struct BuildTuple {
+    pub(super) heap_tids: Vec<page::ItemPointer>,
+    pub(super) dimensions: u16,
+    pub(super) bits: u8,
+    pub(super) seed: u64,
+    pub(super) gamma: f32,
+    pub(super) code: Vec<u8>,
+    pub(super) source_vector: Option<Vec<f32>>,
+    pub(super) source_count: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct BuildState {
+    pub(super) options: options::TqHnswOptions,
+    pub(super) page_size: usize,
+    pub(super) scanned_tuples: usize,
+    pub(super) heap_tuples: Vec<BuildTuple>,
+    pub(super) dimensions: Option<u16>,
+    pub(super) bits: Option<u8>,
+    pub(super) seed: Option<u64>,
+}
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
     heap_relation: pg_sys::Relation,
@@ -63,6 +87,114 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sy
             let state = BuildState::new(index_relation);
             initialize_metadata_page(index_relation, state.initial_metadata());
         })
+    }
+}
+
+impl BuildState {
+    pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
+        let options = unsafe { options::relation_options(index_relation) };
+        Self {
+            options,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        }
+    }
+
+    pub(super) fn initial_metadata(&self) -> page::MetadataPage {
+        page::MetadataPage {
+            m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(self.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 0,
+            bits: 0,
+            max_level: 0,
+            seed: 0,
+        }
+    }
+
+    pub(super) fn push(&mut self, tuple: BuildTuple) {
+        self.scanned_tuples += tuple.heap_tids.len();
+
+        match (self.dimensions, self.bits, self.seed) {
+            (None, None, None) => {
+                self.dimensions = Some(tuple.dimensions);
+                self.bits = Some(tuple.bits);
+                self.seed = Some(tuple.seed);
+                if !page::element_tuple_fits_on_page(tuple.code.len(), self.page_size) {
+                    pgrx::error!(
+                        "tqhnsw element tuple for dim {} bits {} does not fit on a page",
+                        tuple.dimensions,
+                        tuple.bits
+                    );
+                }
+            }
+            (Some(dimensions), Some(bits), Some(seed)) => {
+                if tuple.dimensions != dimensions || tuple.bits != bits || tuple.seed != seed {
+                    pgrx::error!(
+                        "tqhnsw ambuild requires a single tqvector shape; saw ({},{},{}) after ({},{},{})",
+                        tuple.dimensions,
+                        tuple.bits,
+                        tuple.seed,
+                        dimensions,
+                        bits,
+                        seed
+                    );
+                }
+            }
+            _ => unreachable!("shape tracking must be initialized together"),
+        }
+
+        if let Some(existing) = self
+            .heap_tuples
+            .iter_mut()
+            .find(|existing| {
+                existing.gamma.to_bits() == tuple.gamma.to_bits() && existing.code == tuple.code
+            })
+        {
+            if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
+                pgrx::error!(
+                    "tqhnsw ambuild supports at most {} duplicate heap tids per encoded vector",
+                    page::HEAPTID_INLINE_CAPACITY
+                );
+            }
+            existing.heap_tids.extend(tuple.heap_tids);
+            match (&mut existing.source_vector, tuple.source_vector) {
+                (Some(existing_source), Some(tuple_source)) => {
+                    if existing.source_count == 0 || tuple.source_count == 0 {
+                        pgrx::error!(
+                            "tqhnsw build_source_column representatives must have non-zero counts"
+                        );
+                    }
+                    if existing_source.len() != tuple_source.len() {
+                        pgrx::error!(
+                            "tqhnsw build_source_column representative length mismatch: {} vs {}",
+                            existing_source.len(),
+                            tuple_source.len()
+                        );
+                    }
+                    average_source_representatives(
+                        existing_source,
+                        existing.source_count,
+                        &tuple_source,
+                        tuple.source_count,
+                    );
+                    existing.source_count += tuple.source_count;
+                }
+                (None, Some(tuple_source)) => {
+                    existing.source_vector = Some(tuple_source);
+                    existing.source_count = tuple.source_count;
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        self.heap_tuples.push(tuple);
     }
 }
 
