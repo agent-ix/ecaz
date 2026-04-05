@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `7fc13ae`
+Current head: `6a5c331`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -106,6 +106,9 @@ Current tqhnsw state summary:
 - `ProdQuantizer` now exposes `score_ip_from_parts(prepared, gamma, code_bytes)` and coverage verifies it matches the payload scorer while honoring the supplied gamma term.
 - Scan-owned state now also allocates a visited-element set, seeds it from the currently valid frontier candidates during `amrescan`, and frees it during `amendscan`.
 - Visited-state coverage now verifies that the seeded set matches the valid frontier candidate tids and stays stable through the current bootstrap linear scan.
+- The scan candidate frontier now lives in scan-owned heap memory as a `Vec<ScanCandidate>` referenced from scan opaque instead of one fixed two-slot struct field.
+- Frontier-head consumption now removes the current best candidate from that vector and compacts the remaining candidates before recomputing the head.
+- Frontier-consumption coverage now verifies the compaction behavior explicitly: when one valid candidate remains it reseats to slot 0, and when none remain the debug frontier snapshot clears completely.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -193,6 +196,7 @@ Open requests:
 - `51-persist-gamma-in-element-tuples.md`
 - `52-persisted-gamma-hot-path-cutover.md`
 - `53-scan-visited-seed-state.md`
+- `54-vector-backed-candidate-frontier.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
