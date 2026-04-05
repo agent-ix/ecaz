@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `0cc1041`
+Current head: `60cfbfa`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -155,6 +155,10 @@ Review triage at `46d00bb`:
 - Addressed the next ordered-scan groundwork slice by teaching the bootstrap scan to compute a current-result `<#>` value from the cached prepared query plus persisted candidate `gamma`.
 - Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
 - Addressed the next structural boundary by extracting scan execution into `src/am/scan.rs` so traversal work grows in the scan module instead of re-expanding `src/am/mod.rs`.
+- Frontier-head consumption now refills from the consumed candidate's adjacency when that adjacency exposes an unseen candidate, and otherwise shrinks cleanly without fabricating a replacement.
+- The benchmark and integration-test baseline now uses the narrow always-available `bench_api` surface instead of a separate `bench` feature gate.
+- Benchmark coverage now includes hot-path `score_ip_from_parts`, `score_ip_encoded_lite`, and `decode_approximate` criterion benches plus `score_ip_from_parts` iai-callgrind coverage.
+- Property and wrapper coverage now include SRHT roundtrip at real-world padded dimensions and direct equivalence coverage for `score_code_inner_product`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -208,6 +212,8 @@ Open requests:
 - `55-frontier-head-option-index.md`
 - `56-wider-bootstrap-frontier-seeding.md`
 - `57-bootstrap-frontier-refill-after-consume.md`
+- `58-benchmark-coverage-and-data-quality.md`
+- `59-consumed-candidate-refill-and-benchmark-baseline.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
