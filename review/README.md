@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `e405d34`
+Current head: `921bd5d`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -59,6 +59,7 @@ Current tqhnsw state summary:
 - `amrescan` now caches the current relation block count in scan-owned state so the bootstrap linear scan does not re-fetch it on every tuple-producing call.
 - `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
 - The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
+- Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -94,6 +95,7 @@ Review triage at `46d00bb`:
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by caching the relation block count in scan state instead of re-reading it for each bootstrap scan step.
 - Remaining open feedback notes around page-lock batching and larger architectural changes are deferred while ordered scan execution groundwork continues.
 - Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
+- Current-result state now has explicit lifecycle coverage, but score calculation remains deferred until the scan path can reconstruct or store the candidate payload needed for query scoring.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -117,6 +119,7 @@ Open requests:
 - `25-zero-allocation-code-scoring.md`
 - `26-scan-prepared-query-cache.md`
 - `27-scan-current-result-state.md`
+- `28-scan-current-result-lifecycle.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
