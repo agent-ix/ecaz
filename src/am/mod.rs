@@ -338,11 +338,21 @@ unsafe extern "C-unwind" fn tqhnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool 
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
-    _index_relation: pg_sys::Relation,
-    _nkeys: std::ffi::c_int,
-    _norderbys: std::ffi::c_int,
+    index_relation: pg_sys::Relation,
+    nkeys: std::ffi::c_int,
+    norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("ambeginscan")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
+            if scan.is_null() {
+                pgrx::error!("tqhnsw failed to allocate scan descriptor");
+            }
+
+            (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
+            scan
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amrescan(
@@ -362,8 +372,20 @@ unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amgettuple")) }
 }
 
-unsafe extern "C-unwind" fn tqhnsw_amendscan(_scan: pg_sys::IndexScanDesc) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amendscan")) }
+unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                return;
+            }
+
+            let opaque = (*scan).opaque;
+            if !opaque.is_null() {
+                pg_sys::pfree(opaque);
+                (*scan).opaque = ptr::null_mut();
+            }
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_build_callback(
@@ -972,6 +994,12 @@ impl Distance<u8> for BuildCodeDistance {
 #[derive(Debug, Clone, Copy)]
 struct BuildVectorDistance {
     score_offset: f32,
+}
+
+#[repr(C)]
+#[derive(Debug, Default)]
+struct TqScanOpaque {
+    rescan_called: bool,
 }
 
 impl Distance<f32> for BuildVectorDistance {
@@ -1875,6 +1903,21 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
 
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let has_opaque = unsafe { !(*scan).opaque.is_null() };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    let cleared_opaque = unsafe { (*scan).opaque.is_null() };
+
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (has_opaque, cleared_opaque)
 }
 
 #[cfg(test)]

@@ -1492,6 +1492,30 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
+        Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_scan_scaffold VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_scan_scaffold_idx ON tqhnsw_scan_scaffold USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_scan_scaffold_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (has_opaque, cleared_opaque) = unsafe { am::debug_begin_end_scan(index_oid) };
+        assert!(has_opaque, "ambeginscan should allocate scan opaque state");
+        assert!(cleared_opaque, "amendscan should release scan opaque state");
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(
