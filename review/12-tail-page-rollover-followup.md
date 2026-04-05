@@ -18,3 +18,7 @@ Questions to answer:
 - Does a rollover followed by another insert actually reuse the new tail page?
 - Is there any hidden metadata or tuple-linkage issue after the rollover boundary?
 - Is this the next smallest worthwhile review-driven slice?
+
+Status at `9444d4b`:
+- Addressed by adding regression coverage that proves a rollover can be followed by reuse of the newly allocated tail page.
+- No production change was required; the existing append logic behaved correctly once the test setup matched real build layout.

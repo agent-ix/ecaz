@@ -25,6 +25,9 @@ Questions to answer:
 
 ## Review Comments
 
+Status at `9444d4b`:
+- Comments 1-6: not needed for now. The review found the current duplicate-coalescing behavior safe within the current scope and did not identify a missing test that justifies more change.
+
 ### 1. Duplicate detection does a full sequential scan of all data pages (performance, not correctness)
 
 `find_duplicate_element_tid` (line 704-771) scans every data block from `FIRST_DATA_BLOCK_NUMBER` to `block_count`, reading each element tuple and comparing the full code byte-for-byte. For the current narrow scope this is acceptable, but it's O(n) per insert. The `dimensions` and `bits` parameters are passed in but unused (lines 768-769 `let _ = dimensions; let _ = bits;`), suggesting a future optimization path. No bug here.

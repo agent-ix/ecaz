@@ -25,6 +25,10 @@ Questions to answer:
 
 ## Review Comments
 
+Status at `9444d4b`:
+- Comments 1-4 and 6: not needed. These notes validate accepted current rollover behavior rather than identifying a correctness defect that needs code changes now.
+- Comment 5 addressed by adding rollover-followed-by-reuse regression coverage.
+
 ### 1. Free-space check uses `required_bytes` but PostgreSQL's `PageGetFreeSpace` accounts for different overhead
 
 At line 526-527, `required_bytes` is computed using `page::raw_tuple_storage_bytes`, which adds `TUPLE_HEADER_BYTES (4) + LINE_POINTER_BYTES (4)` plus alignment to 8. But `PageGetFreeSpace` (line 576) returns `pd_upper - pd_lower - sizeof(ItemIdData)` — it already accounts for one line pointer but not for tuple headers or alignment the same way the Rust-side model does.

@@ -23,6 +23,9 @@ Questions to answer:
 
 ## Review Comments
 
+Status at `9444d4b`:
+- Comments 1-6: not needed for now. The review found the current rejection boundary correct and sufficiently covered for the current capability set.
+
 ### 1. The rejection is correctly placed and uses the right detection mechanism
 
 At lines 206-210, the check reads `options.build_source_column` via `relation_options()`, which parses the index's `reloptions` from `pg_class`. If `build_source_column` is set to any non-empty string, the insert is rejected with a clear error message that names the specific column. This is the right approach — it checks the index definition, not the incoming data.

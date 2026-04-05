@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `41cfdfa`
+Current head: `9444d4b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -32,10 +32,16 @@ Current tqhnsw state summary:
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
+- Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 
-Review triage at `41cfdfa`:
+Review triage at `9444d4b`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
+- Marked `01-aminsert-groundwork.md` comments 2, 3, and 5 as not needed for this stage because they are optimization or future-invariant notes rather than current defects.
+- Addressed `02-tail-page-reuse-and-rollover.md` comment 5 with rollover-followed-by-reuse regression coverage.
+- Marked `02-tail-page-reuse-and-rollover.md` comments 1-4 and 6 as not needed for this stage because they validate accepted current behavior.
+- Marked `03-duplicate-coalescing-and-capacity.md` comments 1-6 as not needed for this stage because the review found no current correctness gap or missing test that justifies more change.
+- Marked `04-build-source-live-insert-rejection.md` comments 1-6 as not needed for this stage because the review found the current restriction correct and sufficiently covered.
 - Addressed `07-rescan-query-validation.md` comment 7 with explicit regression tests for the reviewed `amrescan` defensive cases.
 - Marked `07-rescan-query-validation.md` comments 1-6 and 8 as not needed for this stage because they are validation of current behavior or future-slice notes rather than actionable defects.
 - Addressed `05-vacuum-noop-callbacks.md` comments 6 and 7 with empty-index and repeated-vacuum regression coverage.
@@ -61,4 +67,3 @@ Requests:
 - `09-rescan-defensive-cases.md`
 - `10-vacuum-noop-coverage.md`
 - `11-scan-lifecycle-idempotency.md`
-- `12-tail-page-rollover-followup.md`

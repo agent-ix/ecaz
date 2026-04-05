@@ -31,7 +31,7 @@ Questions to answer:
 Status at `52de780`:
 - Comment 1 addressed by serializing metadata initialization and validation under an exclusive metadata-page lock in `aminsert`.
 - Comment 4 addressed by adding a sequential empty-index second-insert regression test.
-- Comments 2, 3, and 5 remain advisory only.
+- Comments 2, 3, and 5: not needed for now. They are optimization/future-invariant notes rather than defects in the current narrow insert path.
 
 ### 1. TOCTOU on metadata read vs. update (correctness concern)
 
