@@ -517,8 +517,8 @@ mod tests {
         assert_eq!(metadata.ef_construction, 90);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
-        assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+        assert!(metadata.max_level <= am::page::default_max_level_cap(metadata.m));
 
         let page_tuples = data_pages
             .iter()
@@ -589,10 +589,14 @@ mod tests {
             })
             .collect::<std::collections::HashMap<_, _>>();
         let element_ids = elements.iter().map(|(tid, _)| *tid).collect::<Vec<_>>();
-        let mut neighbor_counts = Vec::new();
+        let entry_element = elements
+            .iter()
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify an element tuple");
+        assert_eq!(entry_element.1.level, metadata.max_level);
 
         for (element_tid, element) in &elements {
-            assert_eq!(element.level, 0);
+            assert!(element.level <= metadata.max_level);
             assert!(!element.deleted);
             assert_eq!(element.heaptids.len(), 1);
             assert_ne!(element.heaptids[0], am::page::ItemPointer::INVALID);
@@ -602,28 +606,13 @@ mod tests {
                 .expect("neighbor tuple should exist");
             assert_eq!(neighbor.count as usize, neighbor.tids.len());
             assert!(!neighbor.tids.is_empty());
-            assert!(neighbor.tids.len() <= 2);
+            assert!(
+                neighbor.tids.len()
+                    <= am::page::neighbor_slots(element.level, metadata.m)
+            );
             assert!(!neighbor.tids.contains(element_tid));
             assert!(neighbor.tids.iter().all(|tid| element_ids.contains(tid)));
-            neighbor_counts.push(neighbor.tids.len());
-
-            for referenced_tid in &neighbor.tids {
-                let referenced_element = elements
-                    .iter()
-                    .find(|(candidate_tid, _)| candidate_tid == referenced_tid)
-                    .expect("neighbor should point to an element tuple");
-                let referenced_neighbors = neighbor_map
-                    .get(&referenced_element.1.neighbortid)
-                    .expect("referenced element should have a neighbor tuple");
-                assert!(
-                    referenced_neighbors.tids.contains(element_tid),
-                    "minimal connectivity should be symmetric"
-                );
-            }
         }
-
-        neighbor_counts.sort_unstable();
-        assert_eq!(neighbor_counts, vec![2, 2, 2]);
     }
 
     #[pg_test]
@@ -634,7 +623,7 @@ mod tests {
         .expect("table creation should succeed");
 
         let payload_len = code_len(4, 8);
-        for id in 1..=64 {
+        for id in 1..=128 {
             let code = (0..payload_len)
                 .map(|offset| ((id * 17 + offset as i32) & 0xff) as u8)
                 .collect::<Vec<_>>();
@@ -662,6 +651,7 @@ mod tests {
         assert!(block_count > 2, "build should span more than one data page");
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 8);
+        assert!(metadata.max_level <= am::page::default_max_level_cap(metadata.m));
 
         let page_tuples = data_pages
             .iter()
@@ -694,12 +684,13 @@ mod tests {
             .collect::<Vec<_>>();
         let neighbors = page_tuples
             .iter()
-            .filter_map(|(_, tuple)| {
+            .filter_map(|(tid, tuple)| {
                 if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
-                    Some(
+                    Some((
+                        *tid,
                         am::page::TqNeighborTuple::decode(tuple)
                             .expect("neighbor tuple should decode"),
-                    )
+                    ))
                 } else {
                     None
                 }
@@ -711,18 +702,30 @@ mod tests {
             .iter()
             .map(|(_, element)| element.heaptids.len())
             .sum::<usize>();
+        let entry_element = elements
+            .iter()
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify an element tuple");
 
         assert!(elements.len() > 1);
         assert_eq!(neighbors.len(), elements.len());
-        assert_eq!(covered_heap_tids, 64);
+        assert_eq!(covered_heap_tids, 128);
+        assert_eq!(entry_element.1.level, metadata.max_level);
         assert!(
             data_pages.iter().filter(|page| !page.tuples.is_empty()).count() > 1,
             "more than one populated data page should exist"
         );
 
-        for neighbor in &neighbors {
+        let neighbor_map = neighbors.into_iter().collect::<std::collections::HashMap<_, _>>();
+        for (_, element) in &elements {
+            let neighbor = neighbor_map
+                .get(&element.neighbortid)
+                .expect("neighbor tuple should exist");
             assert_eq!(neighbor.count as usize, neighbor.tids.len());
-            assert!((1..=4).contains(&neighbor.tids.len()));
+            assert!(
+                neighbor.tids.len()
+                    <= am::page::neighbor_slots(element.level, metadata.m)
+            );
             assert!(neighbor.tids.iter().all(|tid| element_tids.contains(tid)));
         }
     }
