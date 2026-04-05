@@ -113,6 +113,12 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine
 }
 
+fn unsupported_build_only_error(operation: &str) -> ! {
+    pgrx::error!(
+        "tqhnsw indexes are build-only for now: {operation} is not supported yet"
+    )
+}
+
 #[pg_guard]
 #[no_mangle]
 pub unsafe extern "C-unwind" fn tqhnsw_handler(
@@ -184,16 +190,48 @@ unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sys::Relation
 }
 
 unsafe extern "C-unwind" fn tqhnsw_aminsert(
-    _index_relation: pg_sys::Relation,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
-    _heap_tid: pg_sys::ItemPointer,
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
     _heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw aminsert is not implemented yet")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let heap_tid = decode_heap_tid(heap_tid);
+            let tuple = build_heap_tuple(values, isnull, heap_tid);
+            let mut metadata = read_metadata_page(index_relation);
+
+            if metadata.dimensions == 0 && metadata.bits == 0 {
+                metadata.dimensions = tuple.dimensions;
+                metadata.bits = tuple.bits;
+                metadata.seed = tuple.seed;
+            } else if tuple.dimensions != metadata.dimensions
+                || tuple.bits != metadata.bits
+                || tuple.seed != metadata.seed
+            {
+                pgrx::error!(
+                    "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                    metadata.dimensions,
+                    metadata.bits,
+                    metadata.seed,
+                    tuple.dimensions,
+                    tuple.bits,
+                    tuple.seed
+                );
+            }
+
+            let element_tid = append_heap_tuple(index_relation, &tuple);
+            if metadata.entry_point == page::ItemPointer::INVALID {
+                metadata.entry_point = element_tid;
+            }
+            update_metadata_page(index_relation, metadata);
+            false
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
@@ -202,18 +240,14 @@ unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     _callback: pg_sys::IndexBulkDeleteCallback,
     _callback_state: *mut std::ffi::c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw ambulkdelete is not implemented yet"))
-    }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("ambulkdelete")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     _info: *mut pg_sys::IndexVacuumInfo,
     _stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amvacuumcleanup is not implemented yet"))
-    }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amvacuumcleanup")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
@@ -294,9 +328,7 @@ unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     _nkeys: std::ffi::c_int,
     _norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw ambeginscan is not implemented yet"))
-    }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("ambeginscan")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amrescan(
@@ -306,20 +338,18 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
     _orderbys: pg_sys::ScanKey,
     _norderbys: std::ffi::c_int,
 ) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amrescan is not implemented yet"))
-    }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amrescan")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     _scan: pg_sys::IndexScanDesc,
     _direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amgettuple is not implemented yet")) }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amgettuple")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amendscan(_scan: pg_sys::IndexScanDesc) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amendscan is not implemented yet")) }
+    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amendscan")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_build_callback(
@@ -410,13 +440,127 @@ unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: p
     let metadata_bytes = metadata.encode();
     let special_size = (metadata_bytes.len() + 7) & !7;
     unsafe { pg_sys::PageInit(page, page_size, special_size) };
+    unsafe { write_metadata_bytes(page, &metadata_bytes) };
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn write_metadata_bytes(page: pg_sys::Page, metadata_bytes: &[u8]) {
     let page_contents = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
     unsafe {
         ptr::copy_nonoverlapping(metadata_bytes.as_ptr(), page_contents, metadata_bytes.len());
     }
+}
+
+unsafe fn update_metadata_page(index_relation: pg_sys::Relation, metadata: page::MetadataPage) {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            page::METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to open metadata buffer");
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let metadata_bytes = metadata.encode();
+    unsafe { write_metadata_bytes(page, &metadata_bytes) };
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn append_heap_tuple(
+    index_relation: pg_sys::Relation,
+    tuple: &BuildTuple,
+) -> page::ItemPointer {
+    let neighbor_payload = page::TqNeighborTuple {
+        count: 0,
+        tids: Vec::new(),
+    }
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode neighbor tuple: {e}"));
+    let mut staged_page = page::DataPage::new(page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+    staged_page
+        .insert_raw_tuple(neighbor_payload.clone())
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage aminsert neighbor tuple: {e}"));
+    if !staged_page.can_fit_raw_tuple(page::TqElementTuple::encoded_len(tuple.code.len())) {
+        pgrx::error!(
+            "tqhnsw aminsert does not yet support tuples that require more than one fresh data page"
+        );
+    }
+
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to allocate data buffer for aminsert");
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let neighbor_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            neighbor_payload.as_ptr().cast_mut().cast(),
+            neighbor_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if neighbor_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write neighbor tuple during aminsert");
+    }
+
+    let element_payload = page::TqElementTuple {
+        level: 0,
+        deleted: false,
+        heaptids: tuple.heap_tids.clone(),
+        neighbortid: page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        code: tuple.code.clone(),
+    }
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode element tuple: {e}"));
+    let element_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            element_payload.as_ptr().cast_mut().cast(),
+            element_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if element_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write element tuple during aminsert");
+    }
 
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    page::ItemPointer {
+        block_number,
+        offset_number: element_offset,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -514,6 +658,7 @@ impl BuildState {
             dimensions: 0,
             bits: 0,
             max_level: 0,
+            seed: 0,
         }
     }
 
@@ -911,6 +1056,7 @@ unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState
                 dimensions,
                 bits,
                 max_level,
+                seed: state.seed.expect("non-empty build should record seed"),
             },
         )
     };
@@ -1262,7 +1408,6 @@ pub(crate) unsafe fn debug_index_pages(
     (block_count, metadata, data_pages)
 }
 
-#[cfg(any(test, feature = "pg_test"))]
 unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(

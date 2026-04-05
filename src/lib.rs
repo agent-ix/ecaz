@@ -451,6 +451,53 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_planner_surface_stays_disabled() {
+        Spi::run("CREATE TABLE tqhnsw_no_scan_plan (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_no_scan_plan VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_no_scan_plan_idx ON tqhnsw_no_scan_plan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_no_scan_plan \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
+            "planner should not use tqhnsw for scans before scan callbacks exist: {plan}"
+        );
+    }
+
+    #[pg_test]
     fn test_empty_index_build_initializes_metadata_page() {
         Spi::run("CREATE TABLE tqhnsw_empty_build (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -483,6 +530,7 @@ mod tests {
         assert_eq!(metadata.dimensions, 0);
         assert_eq!(metadata.bits, 0);
         assert_eq!(metadata.max_level, 0);
+        assert_eq!(metadata.seed, 0);
     }
 
     #[pg_test]
@@ -517,6 +565,7 @@ mod tests {
         assert_eq!(metadata.ef_construction, 90);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
         assert!(metadata.max_level <= am::page::default_max_level_cap(metadata.m));
 
@@ -655,6 +704,7 @@ mod tests {
         assert_eq!(metadata.ef_construction, 80);
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
         let elements = data_pages
@@ -912,6 +962,7 @@ mod tests {
         assert!(block_count > 2, "build should span more than one data page");
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 8);
+        assert_eq!(metadata.seed, 42);
         assert!(metadata.max_level <= am::page::default_max_level_cap(metadata.m));
 
         let page_tuples = data_pages
@@ -1019,6 +1070,7 @@ mod tests {
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
 
         let elements = data_pages
             .iter()
@@ -1037,6 +1089,104 @@ mod tests {
             .collect::<Vec<_>>();
         heaptid_counts.sort_unstable();
         assert_eq!(heaptid_counts, vec![1, 2]);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_appends_new_element_tuple() {
+        Spi::run("CREATE TABLE tqhnsw_insert_append (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_append VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_append_idx ON tqhnsw_insert_append USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_append VALUES
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_append_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(elements.len(), 2);
+        assert!(elements.iter().all(|element| element.level == 0 || element.level <= metadata.max_level));
+        assert!(elements.iter().any(|element| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
+        Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_empty_insert_idx ON tqhnsw_empty_insert USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_empty_insert VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_empty_insert_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_eq!(metadata.max_level, 0);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        let tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        assert_eq!(tuple_count, 2, "aminsert should append one neighbor and one element tuple");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
+    fn test_tqhnsw_insert_rejects_mismatched_seed() {
+        Spi::run("CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_seed_mismatch_idx ON tqhnsw_insert_seed_mismatch USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 43))",
+        )
+        .expect("insert should fail");
     }
 
     #[pg_test]

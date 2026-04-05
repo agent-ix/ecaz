@@ -12,7 +12,7 @@ pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
 pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-const METADATA_BYTES: usize = 2 + 2 + 4 + 2 + 2 + 1 + 1;
+const METADATA_BYTES: usize = 2 + 2 + 4 + 2 + 2 + 1 + 1 + 8;
 
 const fn align_up(value: usize, alignment: usize) -> usize {
     let remainder = value % alignment;
@@ -65,6 +65,7 @@ pub struct MetadataPage {
     pub dimensions: u16,
     pub bits: u8,
     pub max_level: u8,
+    pub seed: u64,
 }
 
 impl MetadataPage {
@@ -76,6 +77,7 @@ impl MetadataPage {
         out.extend_from_slice(&self.dimensions.to_le_bytes());
         out.push(self.bits);
         out.push(self.max_level);
+        out.extend_from_slice(&self.seed.to_le_bytes());
         out
     }
 
@@ -96,6 +98,7 @@ impl MetadataPage {
             dimensions: u16::from_le_bytes(input[10..12].try_into().expect("dimension bytes")),
             bits: input[12],
             max_level: input[13],
+            seed: u64::from_le_bytes(input[14..22].try_into().expect("seed bytes")),
         })
     }
 
@@ -560,6 +563,7 @@ mod tests {
             dimensions: 1536,
             bits: 4,
             max_level: 5,
+            seed: 42,
         };
         let encoded = metadata.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();
@@ -575,6 +579,7 @@ mod tests {
             dimensions: 1536,
             bits: 4,
             max_level: 5,
+            seed: 42,
         };
 
         let page = metadata.encode_page(DEFAULT_PAGE_SIZE).unwrap();
