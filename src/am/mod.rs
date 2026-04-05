@@ -3,7 +3,6 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::ffi::c_void;
-use std::mem::{offset_of, size_of};
 use std::ptr;
 
 use hnsw_rs::anndists::dist::distances::Distance;
@@ -14,8 +13,10 @@ use pgrx::{
 };
 
 use crate::quant::prod::PreparedQuery;
+use self::options::TqHnswOptions;
 
 mod cost;
+mod options;
 pub mod page;
 mod vacuum;
 pub mod wal;
@@ -27,39 +28,6 @@ const TQHNSW_DEFAULT_EF_CONSTRUCTION: i32 = 64;
 const TQHNSW_MIN_EF_CONSTRUCTION: i32 = 10;
 const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct TqHnswReloptions {
-    vl_len_: i32,
-    m: i32,
-    ef_construction: i32,
-    build_source_column_offset: i32,
-}
-
-impl TqHnswReloptions {
-    const DEFAULT: Self = Self {
-        vl_len_: 0,
-        m: TQHNSW_DEFAULT_M,
-        ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
-        build_source_column_offset: 0,
-    };
-}
-
-#[derive(Debug, Clone)]
-struct TqHnswOptions {
-    m: i32,
-    ef_construction: i32,
-    build_source_column: Option<String>,
-}
-
-impl TqHnswOptions {
-    const DEFAULT: Self = Self {
-        m: TQHNSW_DEFAULT_M,
-        ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
-        build_source_column: None,
-    };
-}
 
 fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -98,7 +66,7 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amvacuumcleanup = Some(vacuum::tqhnsw_amvacuumcleanup);
     amroutine.amcanreturn = None;
     amroutine.amcostestimate = Some(cost::tqhnsw_amcostestimate);
-    amroutine.amoptions = Some(tqhnsw_amoptions);
+    amroutine.amoptions = Some(options::tqhnsw_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
     amroutine.amvalidate = Some(tqhnsw_amvalidate);
@@ -203,7 +171,7 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
         pgrx::pgrx_extern_c_guard(|| {
             let heap_tid = decode_heap_tid(heap_tid);
             let tuple = build_heap_tuple(values, isnull, heap_tid);
-            let options = relation_options(index_relation);
+            let options = options::relation_options(index_relation);
             let code_len = tuple.code.len();
 
             if let Some(source_column) = options.build_source_column {
@@ -251,51 +219,6 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 }
             });
             false
-        })
-    }
-}
-
-unsafe extern "C-unwind" fn tqhnsw_amoptions(
-    reloptions: pg_sys::Datum,
-    validate: bool,
-) -> *mut pg_sys::bytea {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            let mut relopts = pg_sys::local_relopts::default();
-
-            pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                b"m\0".as_ptr().cast(),
-                b"Maximum graph degree per layer.\0".as_ptr().cast(),
-                TQHNSW_DEFAULT_M,
-                TQHNSW_MIN_M,
-                TQHNSW_MAX_M,
-                offset_of!(TqHnswReloptions, m) as i32,
-            );
-            pg_sys::add_local_int_reloption(
-                &mut relopts,
-                b"ef_construction\0".as_ptr().cast(),
-                b"Candidate list width used during graph construction.\0"
-                    .as_ptr()
-                    .cast(),
-                TQHNSW_DEFAULT_EF_CONSTRUCTION,
-                TQHNSW_MIN_EF_CONSTRUCTION,
-                TQHNSW_MAX_EF_CONSTRUCTION,
-                offset_of!(TqHnswReloptions, ef_construction) as i32,
-            );
-            pg_sys::add_local_string_reloption(
-                &mut relopts,
-                b"build_source_column\0".as_ptr().cast(),
-                b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
-                    .as_ptr()
-                    .cast(),
-                ptr::null(),
-                None,
-                None,
-                offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
-            );
-            pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
         })
     }
 }
@@ -678,38 +601,6 @@ unsafe extern "C-unwind" fn tqhnsw_build_callback(
             let tuple = build_heap_tuple(values, isnull, heap_tid);
             state.push(tuple);
         })
-    }
-}
-
-unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
-    let rd_options = unsafe { (*index_relation).rd_options };
-    if rd_options.is_null() {
-        return TqHnswOptions::DEFAULT;
-    }
-
-    let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
-    let build_source_column = if reloptions.build_source_column_offset == 0 {
-        None
-    } else {
-        let value_ptr = unsafe {
-            rd_options
-                .cast::<u8>()
-                .add(reloptions.build_source_column_offset as usize)
-                .cast::<std::ffi::c_char>()
-        };
-        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-            .to_str()
-            .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw build_source_column reloption: {e}"));
-        if value.is_empty() {
-            pgrx::error!("invalid tqhnsw build_source_column reloption: value must not be empty");
-        }
-        Some(value.to_owned())
-    };
-
-    TqHnswOptions {
-        m: reloptions.m,
-        ef_construction: reloptions.ef_construction,
-        build_source_column,
     }
 }
 
@@ -1446,7 +1337,7 @@ impl Distance<f32> for BuildVectorDistance {
 
 impl BuildState {
     fn new(index_relation: pg_sys::Relation) -> Self {
-        let options = unsafe { relation_options(index_relation) };
+        let options = unsafe { options::relation_options(index_relation) };
         Self {
             options,
             page_size: pg_sys::BLCKSZ as usize,
@@ -2317,7 +2208,7 @@ pub(crate) unsafe fn debug_index_metadata(
 ) -> (u32, i32, i32, page::MetadataPage) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let options = unsafe { relation_options(index_relation) };
+    let options = unsafe { options::relation_options(index_relation) };
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
