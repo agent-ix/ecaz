@@ -1458,11 +1458,9 @@ unsafe fn build_heap_tuple(
         pgrx::error!("tqhnsw ambuild received a null tqvector datum");
     }
 
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(datum.cast_mut_ptr()) };
-    let is_copy = unsafe {
-        varlena::varatt_is_1b_e(datum.cast_mut_ptr())
-            || varlena::varatt_is_4b_c(datum.cast_mut_ptr())
-    };
+    let original = datum.cast_mut_ptr::<std::ffi::c_void>().cast::<pg_sys::varlena>();
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+    let is_copy = !std::ptr::eq(varlena, original);
     let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
     if is_copy {
         unsafe { pg_sys::pfree(varlena.cast()) };
@@ -1491,11 +1489,11 @@ unsafe fn build_heap_tuple_with_source(
         pgrx::error!("tqhnsw ambuild received a null tqvector datum");
     }
 
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(vector_datum.cast_mut_ptr()) };
-    let is_copy = unsafe {
-        varlena::varatt_is_1b_e(vector_datum.cast_mut_ptr())
-            || varlena::varatt_is_4b_c(vector_datum.cast_mut_ptr())
-    };
+    let original = vector_datum
+        .cast_mut_ptr::<std::ffi::c_void>()
+        .cast::<pg_sys::varlena>();
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+    let is_copy = !std::ptr::eq(varlena, original);
     let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
     if is_copy {
         unsafe { pg_sys::pfree(varlena.cast()) };

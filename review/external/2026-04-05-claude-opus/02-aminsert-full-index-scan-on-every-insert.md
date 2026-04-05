@@ -1,0 +1,45 @@
+# Review: aminsert Full Index Scan on Every Insert
+
+**File:** `src/am/mod.rs:993-1060` (`find_duplicate_element_tid`)
+**Severity:** High (performance, O(n) per insert)
+**Category:** Optimization
+
+## Finding
+
+Every `aminsert` call performs a full linear scan of all data pages to check for duplicate encoded vectors:
+
+```rust
+unsafe fn find_duplicate_element_tid(
+    index_relation: pg_sys::Relation,
+    dimensions: u16,
+    bits: u8,
+    code_len: usize,
+    code: &[u8],
+) -> Option<page::ItemPointer> {
+    // ...
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        // reads every page, acquires SHARE lock, decodes every element tuple
+        // compares full code byte vectors
+    }
+}
+```
+
+For an index with N elements spread across P pages, every insert:
+1. Reads every data page (I/O)
+2. Acquires and releases a SHARE lock on each page
+3. Decodes every element tuple
+4. Performs a byte-by-byte code comparison
+
+This makes bulk inserts O(n^2) in the number of index entries. For a 1M-row table, this means ~1 trillion byte comparisons during a full table reload.
+
+## Recommendation
+
+For the current "narrow live insert" path this is acceptable if live inserts are rare and the index is small. However, this needs explicit documentation about the expected use case and should be addressed before any workload with meaningful insert volume. Options:
+
+1. **Short term:** Add a code hash (e.g., u64 from first 8 bytes of the code) to element tuples or a separate hash index page, enabling O(1) duplicate lookup.
+2. **Medium term:** Use a bloom filter page that is maintained during build and insert.
+3. **Long term:** This is naturally resolved by proper HNSW graph insert which locates the neighborhood first.
+
+## Action Required
+
+Document the O(n) scan cost in the review packet / ADR. Consider whether the current insert path should refuse indexes above a certain size threshold.

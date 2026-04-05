@@ -1,0 +1,33 @@
+# Review: amvalidate Performs No Validation
+
+**File:** `src/am/mod.rs:336-338`
+**Severity:** Low (correctness gap)
+**Category:** Correctness
+
+## Finding
+
+```rust
+unsafe extern "C-unwind" fn tqhnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+    unsafe { pgrx::pgrx_extern_c_guard(|| true) }
+}
+```
+
+The `amvalidate` callback is called during `CREATE INDEX` to verify that the operator class is valid for this access method. The current implementation accepts any operator class.
+
+This means:
+1. A user could (theoretically) create a tqhnsw index on a non-tqvector column, and it would pass validation but fail at build time.
+2. An invalid opclass OID would be silently accepted.
+
+In practice, PostgreSQL's own catalog checks prevent most misuse, and the build callback would error on the first tuple if the column type is wrong.
+
+## Recommendation
+
+At minimum, validate that the opclass supports the `tqvector` type:
+- Check that the opclass references the `<#>` operator
+- Verify the opclass input type matches the tqvector type OID
+
+This is low priority since the error surfaces quickly at build time.
+
+## Action Required
+
+Low priority. Consider adding basic opclass validation when the operator class registration is finalized.

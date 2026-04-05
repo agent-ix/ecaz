@@ -1,0 +1,56 @@
+# Code Review: tqvector
+
+**Reviewer:** Claude Opus  
+**Date:** 2026-04-05  
+**Commit:** `79f695e` (head at time of review)
+
+## Summary
+
+Systematic review of the tqvector PostgreSQL extension covering the quantizer core (`src/quant/`), access method implementation (`src/am/`), type I/O and scoring surface (`src/lib.rs`), and build infrastructure.
+
+## Review Files
+
+### High Severity
+- [02 - aminsert full index scan on every insert](02-aminsert-full-index-scan-on-every-insert.md) — O(n) duplicate scan per insert
+- [06 - relation_options SPI in hot path](06-relation-options-spi-in-hot-path.md) — SPI query per aminsert instead of rd_options
+- [11 - aminsert metadata and data not atomic](11-aminsert-metadata-and-data-not-atomic.md) — separate WAL transactions for metadata + data
+- [18 - varlena detoast copy detection](18-varlena-detoast-check-inverted.md) — should use pointer comparison, not varatt flags
+
+### Medium Severity
+- [01 - quantizer cache unbounded growth](01-quantizer-cache-unbounded-growth.md)
+- [03 - with_locked_metadata unconditional write](03-with-locked-metadata-unconditional-write.md)
+- [04 - amgettuple reads metadata every call](04-linear-scan-reads-metadata-every-gettuple.md)
+- [07 - build holds all vectors in memory](07-build-all-vectors-in-memory.md)
+- [08 - hnsw_rs wildcard dependency](08-hnsw-rs-wildcard-dependency.md)
+- [09 - codebook index bounds at decode](09-codebook-index-out-of-bounds.md)
+- [14 - dimension u16 truncation](14-encoding-dimension-u16-truncation.md)
+- [16 - score_code_inner_product allocates per call](16-score-code-inner-product-allocates-per-call.md)
+- [20 - build source scan snapshot leak on error](20-build-source-scan-snapshot-leak-on-error.md)
+
+### Low Severity
+- [05 - scan buffer safety (verified correct)](05-scan-buffer-held-across-return.md)
+- [10 - offset_number u16 overflow](10-page-layout-offset-number-u16-overflow.md)
+- [12 - neighbor_slots overflow (verified safe)](12-neighbor-slots-integer-overflow.md)
+- [13 - flush_build reinitializes metadata](13-flush-build-reinitializes-metadata.md)
+- [15 - Lloyd-Max empty cluster handling](15-lloyd-max-empty-cluster-degenerate.md)
+- [17 - BuildCodeDistance offset (verified correct)](17-build-code-distance-offset-correctness.md)
+- [19 - scan opaque alloc0 vs Default](19-scan-opaque-alloc0-vs-default.md)
+- [21 - flatten_point_neighbors layer boundary](21-flatten-point-neighbors-layer-mismatch.md)
+- [22 - amvalidate always returns true](22-amvalidate-always-returns-true.md)
+
+## Priority Recommendations
+
+**Fix before any insert-heavy workload:**
+1. Replace SPI-based `relation_options` with direct `rd_options` access (#06)
+2. Fix varlena detoast copy detection to use pointer comparison (#18)
+3. Cache metadata in scan opaque to avoid per-gettuple reads (#04)
+
+**Fix before benchmarking:**
+4. Add zero-allocation code-to-code scoring path (#16)
+5. Skip metadata WAL write when unmodified (#03)
+
+**Document / ADR before v1.0:**
+6. Non-atomic metadata + data WAL in aminsert (#11)
+7. O(n) duplicate scan on insert (#02)
+8. Memory requirements for build (#07)
+9. Add dimension validation in encode_to_tqvector (#14)

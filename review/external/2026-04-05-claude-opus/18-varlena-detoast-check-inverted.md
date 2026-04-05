@@ -1,0 +1,58 @@
+# Review: Varlena Detoast Copy Detection May Be Inverted
+
+**File:** `src/lib.rs` (not directly, but `src/am/mod.rs:1461-1468`)
+**Severity:** High (potential memory corruption or double-free)
+**Category:** Memory safety
+
+## Finding
+
+In `build_heap_tuple`:
+
+```rust
+let varlena = unsafe { pg_sys::pg_detoast_datum_packed(datum.cast_mut_ptr()) };
+let is_copy = unsafe {
+    varlena::varatt_is_1b_e(datum.cast_mut_ptr())
+        || varlena::varatt_is_4b_c(datum.cast_mut_ptr())
+};
+let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
+if is_copy {
+    unsafe { pg_sys::pfree(varlena.cast()) };
+}
+```
+
+The intent is: if `pg_detoast_datum_packed` allocated a new copy (because the original was toasted), free the copy after extracting the bytes.
+
+The check uses `varatt_is_1b_e` (external TOAST pointer) and `varatt_is_4b_c` (compressed) on the **original datum**, not on the detoasted result. The logic is: if the original was an external TOAST pointer or compressed, then `pg_detoast_datum_packed` must have allocated a new datum, so we need to free it.
+
+**This is the correct pattern** -- you check the original to determine if detoasting produced a copy. `pg_detoast_datum_packed` returns the original pointer if no detoasting was needed, or a newly-allocated copy if it was.
+
+However, there's a subtle issue: `pg_detoast_datum_packed` can also return a packed (1-byte header) version of a 4-byte header datum without allocation. The `varatt_is_4b_c` check (compressed 4-byte header) would correctly identify this case.
+
+**Wait -- re-examining:** `varatt_is_1b_e` checks for an external TOAST pointer stored in short varlena format. `varatt_is_4b_c` checks for compressed 4-byte format. Both of these ARE cases where `pg_detoast_datum_packed` allocates. But there are other cases:
+- `varatt_is_4b_u` (uncompressed 4-byte): no detoast needed if inline, but `pg_detoast_datum_packed` might convert to 1-byte header without allocation (it returns the same pointer if the datum is already inline).
+
+Actually, I need to reconsider. The standard PostgreSQL pattern for this is:
+
+```c
+varlena *new_val = pg_detoast_datum_packed(original);
+// ... use new_val ...
+if (new_val != original) pfree(new_val);
+```
+
+The simpler and more correct check is pointer comparison: `if varlena != datum.cast_mut_ptr()`.
+
+The current approach with `varatt_is_1b_e || varatt_is_4b_c` is an approximation that may miss some allocation cases or incorrectly identify non-allocation cases.
+
+## Recommendation
+
+Replace the `is_copy` check with a pointer comparison:
+
+```rust
+let is_copy = varlena as *const _ != datum.cast_mut_ptr() as *const _;
+```
+
+This is the canonical PostgreSQL pattern and handles all edge cases correctly.
+
+## Action Required
+
+Fix both `build_heap_tuple` (line 1461) and `build_heap_tuple_with_source` (line 1494) to use pointer comparison for detoast copy detection.
