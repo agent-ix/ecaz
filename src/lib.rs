@@ -160,9 +160,7 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
         ));
     }
 
-    let prefix = unsafe {
-        pg_sys::pq_getmsgbytes(msg, MIN_BINARY_BYTES as i32) as *const u8
-    };
+    let prefix = unsafe { pg_sys::pq_getmsgbytes(msg, MIN_BINARY_BYTES as i32) as *const u8 };
     let prefix = unsafe { std::slice::from_raw_parts(prefix, MIN_BINARY_BYTES) };
 
     let expected_len = expected_binary_len(prefix)?;
@@ -179,9 +177,7 @@ unsafe fn recv_tqvector_message(msg: pg_sys::StringInfo) -> Result<Vec<u8>, Stri
 
     let code_bytes_len = expected_len - MIN_BINARY_BYTES;
     if code_bytes_len > 0 {
-        let codes = unsafe {
-            pg_sys::pq_getmsgbytes(msg, code_bytes_len as i32) as *const u8
-        };
+        let codes = unsafe { pg_sys::pq_getmsgbytes(msg, code_bytes_len as i32) as *const u8 };
         let codes = unsafe { std::slice::from_raw_parts(codes, code_bytes_len) };
         bytes.extend_from_slice(codes);
     }
@@ -432,11 +428,10 @@ mod tests {
 
     #[pg_test]
     fn test_access_method_is_registered() {
-        let amname = Spi::get_one::<String>(
-            "SELECT amname::text FROM pg_am WHERE amname = 'tqhnsw'",
-        )
-        .expect("SPI query should succeed")
-        .expect("access method should exist");
+        let amname =
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'tqhnsw'")
+                .expect("SPI query should succeed")
+                .expect("access method should exist");
         assert_eq!(amname, "tqhnsw");
     }
 
@@ -514,16 +509,18 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
 
-        let first_page = Spi::get_one::<Vec<u8>>(
-            "SELECT get_raw_page('tqhnsw_empty_build_idx', 0)::bytea",
-        )
-        .expect("SPI query should succeed")
-        .expect("raw index page should exist");
+        let first_page =
+            Spi::get_one::<Vec<u8>>("SELECT get_raw_page('tqhnsw_empty_build_idx', 0)::bytea")
+                .expect("SPI query should succeed")
+                .expect("raw index page should exist");
 
         let metadata = am::page::MetadataPage::decode_page(&first_page)
             .expect("metadata page should decode from raw relation bytes");
 
-        assert_eq!(reloptions, vec!["m=12".to_string(), "ef_construction=80".to_string()]);
+        assert_eq!(
+            reloptions,
+            vec!["m=12".to_string(), "ef_construction=80".to_string()]
+        );
         assert_eq!(metadata.m, 12);
         assert_eq!(metadata.ef_construction, 80);
         assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
@@ -535,10 +532,8 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_writes_minimal_data_pages() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_nonempty_build (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_nonempty_build (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_nonempty_build VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
@@ -552,15 +547,17 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_nonempty_build_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_nonempty_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
 
         let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
 
-        assert!(block_count >= 2, "non-empty build should allocate a data page");
+        assert!(
+            block_count >= 2,
+            "non-empty build should allocate a data page"
+        );
         assert_eq!(metadata.m, 10);
         assert_eq!(metadata.ef_construction, 90);
         assert_eq!(metadata.dimensions, 4);
@@ -584,7 +581,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(page_tuples.len(), 6, "each heap row should emit one neighbor and one element tuple");
+        assert_eq!(
+            page_tuples.len(),
+            6,
+            "each heap row should emit one neighbor and one element tuple"
+        );
 
         let neighbor_tids = page_tuples
             .iter()
@@ -600,13 +601,11 @@ mod tests {
             .iter()
             .filter_map(|(tid, tuple)| {
                 if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
-                    Some(
-                        (
-                            *tid,
-                            am::page::TqElementTuple::decode(tuple, code_len(4, 4))
-                                .expect("element tuple should decode"),
-                        ),
-                    )
+                    Some((
+                        *tid,
+                        am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                            .expect("element tuple should decode"),
+                    ))
                 } else {
                     None
                 }
@@ -653,10 +652,7 @@ mod tests {
                 .get(&element.neighbortid)
                 .expect("neighbor tuple should exist");
             assert_eq!(neighbor.count as usize, neighbor.tids.len());
-            assert!(
-                neighbor.tids.len()
-                    <= am::page::neighbor_slots(element.level, metadata.m)
-            );
+            assert!(neighbor.tids.len() <= am::page::neighbor_slots(element.level, metadata.m));
             assert!(!neighbor.tids.contains(element_tid));
             assert!(neighbor.tids.iter().all(|tid| element_ids.contains(tid)));
         }
@@ -693,11 +689,10 @@ mod tests {
         .expect("reloptions should exist");
         assert!(reloptions.contains(&"build_source_column=source".to_string()));
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_source_build_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_source_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.m, 6);
@@ -710,20 +705,23 @@ mod tests {
         let elements = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: (idx + 1) as u16,
-                            },
-                            am::page::TqElementTuple::decode(tuple, code_len(4, 4))
-                                .expect("element tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                            Some((
+                                am::page::ItemPointer {
+                                    block_number: page.block_number,
+                                    offset_number: (idx + 1) as u16,
+                                },
+                                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                                    .expect("element tuple should decode"),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect::<Vec<_>>();
 
@@ -732,7 +730,9 @@ mod tests {
             elements.iter().any(|(tid, _)| *tid == metadata.entry_point),
             "entry point should identify an element tuple"
         );
-        assert!(elements.iter().all(|(_, element)| element.heaptids.len() == 1));
+        assert!(elements
+            .iter()
+            .all(|(_, element)| element.heaptids.len() == 1));
     }
 
     #[pg_test]
@@ -778,7 +778,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(elements.len(), 2, "duplicate encoded vectors should share one element tuple");
+        assert_eq!(
+            elements.len(),
+            2,
+            "duplicate encoded vectors should share one element tuple"
+        );
         let mut heaptid_counts = elements
             .iter()
             .map(|element| element.heaptids.len())
@@ -928,10 +932,8 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_spans_multiple_data_pages() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
 
         let payload_len = code_len(4, 8);
         for id in 1..=128 {
@@ -952,11 +954,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_multipage_build_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_multipage_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
 
         let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert!(block_count > 2, "build should span more than one data page");
@@ -1024,30 +1025,31 @@ mod tests {
         assert_eq!(covered_heap_tids, 128);
         assert_eq!(entry_element.1.level, metadata.max_level);
         assert!(
-            data_pages.iter().filter(|page| !page.tuples.is_empty()).count() > 1,
+            data_pages
+                .iter()
+                .filter(|page| !page.tuples.is_empty())
+                .count()
+                > 1,
             "more than one populated data page should exist"
         );
 
-        let neighbor_map = neighbors.into_iter().collect::<std::collections::HashMap<_, _>>();
+        let neighbor_map = neighbors
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
         for (_, element) in &elements {
             let neighbor = neighbor_map
                 .get(&element.neighbortid)
                 .expect("neighbor tuple should exist");
             assert_eq!(neighbor.count as usize, neighbor.tids.len());
-            assert!(
-                neighbor.tids.len()
-                    <= am::page::neighbor_slots(element.level, metadata.m)
-            );
+            assert!(neighbor.tids.len() <= am::page::neighbor_slots(element.level, metadata.m));
             assert!(neighbor.tids.iter().all(|tid| element_tids.contains(tid)));
         }
     }
 
     #[pg_test]
     fn test_non_empty_index_build_coalesces_duplicate_vectors() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_duplicate_build (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_duplicate_build (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_duplicate_build VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
@@ -1061,11 +1063,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_duplicate_build_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_duplicate_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
@@ -1082,7 +1083,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(elements.len(), 2, "duplicate encoded vectors should share one element tuple");
+        assert_eq!(
+            elements.len(),
+            2,
+            "duplicate encoded vectors should share one element tuple"
+        );
         let mut heaptid_counts = elements
             .iter()
             .map(|element| element.heaptids.len())
@@ -1111,11 +1116,10 @@ mod tests {
         )
         .expect("insert should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_append_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_append_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
@@ -1132,14 +1136,18 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(elements.len(), 2);
-        assert!(elements.iter().all(|element| element.level == 0 || element.level <= metadata.max_level));
+        assert!(elements
+            .iter()
+            .all(|element| element.level == 0 || element.level <= metadata.max_level));
         assert!(elements.iter().any(|element| element.heaptids.len() == 1));
     }
 
     #[pg_test]
     fn test_tqhnsw_insert_reuses_tail_page_when_space_remains() {
-        Spi::run("CREATE TABLE tqhnsw_insert_tail_reuse (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_tail_reuse (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_tail_reuse VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
@@ -1153,13 +1161,16 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_tail_reuse_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let (before_block_count, _metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        assert_eq!(before_block_count, 2, "seed build should fit on one data page");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_tail_reuse_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (before_block_count, _metadata, _data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(
+            before_block_count, 2,
+            "seed build should fit on one data page"
+        );
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_tail_reuse VALUES
@@ -1168,11 +1179,20 @@ mod tests {
         .expect("insert should succeed");
 
         let (after_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        assert_eq!(after_block_count, before_block_count, "insert should reuse existing tail page");
+        assert_eq!(
+            after_block_count, before_block_count,
+            "insert should reuse existing tail page"
+        );
         assert_eq!(metadata.seed, 42);
 
-        let tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
-        assert_eq!(tuple_count, 8, "three build tuples plus one inserted tuple should store four pairs");
+        let tuple_count = data_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+        assert_eq!(
+            tuple_count, 8,
+            "three build tuples plus one inserted tuple should store four pairs"
+        );
     }
 
     #[pg_test]
@@ -1188,8 +1208,10 @@ mod tests {
                     return false;
                 }
 
-                let mut staged_page =
-                    am::page::DataPage::new(am::page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+                let mut staged_page = am::page::DataPage::new(
+                    am::page::FIRST_DATA_BLOCK_NUMBER,
+                    pg_sys::BLCKSZ as usize,
+                );
                 let neighbor = am::page::TqNeighborTuple {
                     count: 0,
                     tids: Vec::new(),
@@ -1204,11 +1226,14 @@ mod tests {
                     neighbortid: am::page::ItemPointer::INVALID,
                     code: vec![0x11_u8; code_len],
                 };
-                let required_bytes =
-                    am::page::raw_tuple_storage_bytes(neighbor.encode().expect("neighbor tuple should encode").len())
-                        + am::page::raw_tuple_storage_bytes(
-                            am::page::TqElementTuple::encoded_len(code_len),
-                        );
+                let required_bytes = am::page::raw_tuple_storage_bytes(
+                    neighbor
+                        .encode()
+                        .expect("neighbor tuple should encode")
+                        .len(),
+                ) + am::page::raw_tuple_storage_bytes(
+                    am::page::TqElementTuple::encoded_len(code_len),
+                );
                 staged_page.insert_neighbor(&neighbor).is_ok()
                     && staged_page.insert_element(&element).is_ok()
                     && staged_page.free_bytes() < required_bytes
@@ -1229,13 +1254,16 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_new_page_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let (before_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        assert_eq!(before_block_count, 2, "seed build should occupy one data page");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_new_page_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (before_block_count, metadata, _data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(
+            before_block_count, 2,
+            "seed build should occupy one data page"
+        );
         assert_eq!(metadata.dimensions, large_dim);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
@@ -1247,7 +1275,8 @@ mod tests {
         ))
         .expect("insert should succeed");
 
-        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (after_block_count, _metadata, data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
         assert!(
             after_block_count > before_block_count,
             "insert should allocate a new data page when the tail page is full"
@@ -1257,8 +1286,10 @@ mod tests {
 
     #[pg_test]
     fn test_tqhnsw_insert_coalesces_duplicate_vectors() {
-        Spi::run("CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
@@ -1271,14 +1302,17 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_duplicate_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let (before_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_duplicate_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (before_block_count, metadata, data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.seed, 42);
-        let before_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        let before_tuple_count = data_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate VALUES
@@ -1286,10 +1320,20 @@ mod tests {
         )
         .expect("duplicate insert should succeed");
 
-        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        assert_eq!(after_block_count, before_block_count, "duplicate insert should not allocate a new block");
-        let after_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
-        assert_eq!(after_tuple_count, before_tuple_count, "duplicate insert should not add a new tuple pair");
+        let (after_block_count, _metadata, data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(
+            after_block_count, before_block_count,
+            "duplicate insert should not allocate a new block"
+        );
+        let after_tuple_count = data_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+        assert_eq!(
+            after_tuple_count, before_tuple_count,
+            "duplicate insert should not add a new tuple pair"
+        );
 
         let elements = data_pages
             .iter()
@@ -1309,7 +1353,9 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw aminsert supports at most 10 duplicate heap tids per encoded vector")]
+    #[should_panic(
+        expected = "tqhnsw aminsert supports at most 10 duplicate heap tids per encoded vector"
+    )]
     fn test_tqhnsw_insert_rejects_duplicate_heaptid_overflow() {
         Spi::run("CREATE TABLE tqhnsw_insert_duplicate_overflow (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -1382,11 +1428,10 @@ mod tests {
         )
         .expect("insert should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_empty_insert_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
@@ -1394,15 +1439,65 @@ mod tests {
         assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
-        let tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
-        assert_eq!(tuple_count, 2, "aminsert should append one neighbor and one element tuple");
+        let tuple_count = data_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+        assert_eq!(
+            tuple_count, 2,
+            "aminsert should append one neighbor and one element tuple"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_callbacks_are_benign_noops() {
+        Spi::run("CREATE TABLE tqhnsw_vacuum_noop (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_noop VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_noop_idx ON tqhnsw_vacuum_noop USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("DELETE FROM tqhnsw_vacuum_noop WHERE id = 2").expect("delete should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_noop_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let element_tuple_count = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .count();
+
+        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
+        assert_eq!(stats.num_pages, block_count);
+        assert!(
+            !stats.estimated_count,
+            "vacuum stats should report exact tuple counts"
+        );
+        assert_eq!(stats.num_index_tuples, element_tuple_count as f64);
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.pages_newly_deleted, 0);
+        assert_eq!(stats.pages_deleted, 0);
+        assert_eq!(stats.pages_free, 0);
     }
 
     #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
-        Spi::run("CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
