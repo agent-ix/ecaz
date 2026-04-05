@@ -1,8 +1,7 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
 use super::{
-    build, cost, options, tqhnsw_ambeginscan, tqhnsw_amendscan, tqhnsw_amgettuple, tqhnsw_aminsert,
-    tqhnsw_amrescan, vacuum,
+    build, cost, options, scan, tqhnsw_aminsert, vacuum,
 };
 
 fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
@@ -47,11 +46,11 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.ambuildphasename = None;
     amroutine.amvalidate = Some(tqhnsw_amvalidate);
     amroutine.amadjustmembers = None;
-    amroutine.ambeginscan = Some(tqhnsw_ambeginscan);
-    amroutine.amrescan = Some(tqhnsw_amrescan);
-    amroutine.amgettuple = Some(tqhnsw_amgettuple);
+    amroutine.ambeginscan = Some(scan::tqhnsw_ambeginscan);
+    amroutine.amrescan = Some(scan::tqhnsw_amrescan);
+    amroutine.amgettuple = Some(scan::tqhnsw_amgettuple);
     amroutine.amgetbitmap = None;
-    amroutine.amendscan = Some(tqhnsw_amendscan);
+    amroutine.amendscan = Some(scan::tqhnsw_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
     amroutine.amestimateparallelscan = None;
