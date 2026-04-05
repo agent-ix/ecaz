@@ -2611,7 +2611,7 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let frontier =
+        let (head, frontier) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert!(
@@ -2649,6 +2649,23 @@ mod tests {
                 "empty second frontier slot should clear its score"
             );
         }
+
+        let expected_head = match (frontier[0].0, frontier[1].0) {
+            (false, false) => u8::MAX,
+            (true, false) => 0,
+            (false, true) => 1,
+            (true, true) => {
+                if frontier[0].2 <= frontier[1].2 {
+                    0
+                } else {
+                    1
+                }
+            }
+        };
+        assert_eq!(
+            head, expected_head,
+            "frontier head should pick the best valid slot under the current two-slot ordering rule"
+        );
     }
 
     #[pg_test]

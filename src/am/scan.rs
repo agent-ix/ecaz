@@ -265,6 +265,7 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     opaque.candidate_frontier = CandidateFrontier::default();
+    opaque.candidate_frontier_head = u8::MAX;
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -315,6 +316,27 @@ unsafe fn initialize_scan_entry_candidate(
         };
         break;
     }
+
+    recompute_candidate_frontier_head(opaque);
+}
+
+fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
+    let candidates = &opaque.candidate_frontier.candidates;
+    opaque.candidate_frontier_head = match (
+        candidates[0].score_valid,
+        candidates[1].score_valid,
+    ) {
+        (false, false) => u8::MAX,
+        (true, false) => 0,
+        (false, true) => 1,
+        (true, true) => {
+            if candidates[0].score <= candidates[1].score {
+                0
+            } else {
+                1
+            }
+        }
+    };
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -549,6 +571,7 @@ struct TqScanOpaque {
     scan_code_len: usize,
     scan_block_count: u32,
     candidate_frontier: CandidateFrontier,
+    candidate_frontier_head: u8,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -571,6 +594,7 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             candidate_frontier: CandidateFrontier::default(),
+            candidate_frontier_head: u8::MAX,
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -1007,7 +1031,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 pub(crate) unsafe fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> [(bool, HeapTidCoords, f32); 2] {
+) -> (u8, [(bool, HeapTidCoords, f32); 2]) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1026,11 +1050,12 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
             candidate.score,
         )
     });
+    let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    frontier
+    (head, frontier)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
