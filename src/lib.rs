@@ -271,21 +271,28 @@ fn tqvector_negative_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
     -tqvector_inner_product(a, b)
 }
 
-#[pg_extern(immutable, strict, parallel_safe, sql = false)]
-fn tqvector_query_inner_product(candidate: Vec<u8>, query: Vec<f32>) -> f32 {
-    let (dim, bits, seed, _, codes) = unpack(&candidate)
-        .unwrap_or_else(|e| pgrx::error!("tqvector_query_inner_product(candidate): {e}"));
+fn score_query_inner_product(candidate: &[u8], query: &[f32]) -> Result<f32, String> {
+    let (dim, bits, seed, gamma, codes) = unpack(candidate)
+        .map_err(|e| format!("tqvector_query_inner_product(candidate): {e}"))?;
     if query.len() != dim as usize {
-        pgrx::error!(
+        return Err(format!(
             "tqvector/query dimension mismatch: candidate dim {}, query dim {}",
             dim,
             query.len()
-        );
+        ));
     }
 
     let quantizer = ProdQuantizer::cached(dim as usize, bits, seed);
-    let prepared = quantizer.prepare_ip_query(&query);
-    quantizer.score_ip_encoded(&prepared, codes)
+    let prepared = quantizer.prepare_ip_query(query);
+    let mut payload = Vec::with_capacity(4 + codes.len());
+    payload.extend_from_slice(&gamma.to_le_bytes());
+    payload.extend_from_slice(codes);
+    Ok(quantizer.score_ip_encoded(&prepared, &payload))
+}
+
+#[pg_extern(immutable, strict, parallel_safe, sql = false)]
+fn tqvector_query_inner_product(candidate: Vec<u8>, query: Vec<f32>) -> f32 {
+    score_query_inner_product(&candidate, &query).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
@@ -386,6 +393,28 @@ mod unit_tests {
         let prepared = quantizer.prepare_ip_query(&b);
         let base_query = quantizer.score_ip_encoded(&prepared, &code_a);
         assert_eq!(-base_query, -base_query);
+    }
+
+    #[test]
+    fn test_tqvector_query_inner_product_uses_persisted_gamma() {
+        let vector = vec![0.5_f32, -1.0, 0.25, 0.75, -0.5, 1.25, -0.75, 0.125];
+        let query = vec![-0.25_f32, 0.75, 1.0, -0.5, 0.25, -1.0, 0.5, 0.875];
+        let quantizer = ProdQuantizer::cached(vector.len(), 4, 42);
+        let encoded = quantizer.encode(&vector);
+
+        let mut code_bytes = encoded.mse_packed.clone();
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        let candidate = pack(vector.len() as u16, 4, 42, encoded.gamma, &code_bytes);
+
+        let prepared = quantizer.prepare_ip_query(&query);
+        let expected = quantizer.score_ip_encoded(&prepared, &quantizer.pack_payload(&encoded));
+        let observed = score_query_inner_product(&candidate, &query)
+            .expect("query inner product should accept a valid packed candidate");
+
+        assert!(
+            (observed - expected).abs() < 1e-6,
+            "query inner product should score against the full persisted payload"
+        );
     }
 
     #[test]
