@@ -2222,8 +2222,24 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before_found, before_tid, before_score, found, after_tid, after_score) =
-            unsafe { am::debug_gettuple_current_result_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        let (
+            before_found,
+            before_tid,
+            before_score,
+            before_score_value,
+            found,
+            after_tid,
+            after_score,
+            after_score_value,
+        ) = unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
+        let expected_score = Spi::get_one::<f32>(&format!(
+            "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
+             FROM tqhnsw_gettuple_result_state WHERE id = 1",
+            query[0], query[1], query[2], query[3],
+        ))
+        .expect("score query should succeed")
+        .expect("score should exist");
 
         assert!(
             !before_found,
@@ -2234,6 +2250,10 @@ mod tests {
             !before_score,
             "bootstrap scan should not expose a score before tuple production"
         );
+        assert_eq!(
+            before_score_value, 0.0,
+            "current result score should clear to zero before tuple production"
+        );
         assert!(found, "first gettuple call should produce a tuple for a non-empty index");
         assert_ne!(
             after_tid,
@@ -2241,8 +2261,12 @@ mod tests {
             "first tuple production should record the current result element tid"
         );
         assert!(
-            !after_score,
-            "current result state should reserve score tracking without claiming score validity yet"
+            after_score,
+            "first tuple production should mark the current result score as valid"
+        );
+        assert_eq!(
+            after_score_value, expected_score,
+            "current result score should match the operator-facing <#> value for the representative heap tuple"
         );
     }
 
@@ -2274,8 +2298,10 @@ mod tests {
             first_tid,
             second_tid,
             second_score,
+            second_score_value,
             exhausted_tid,
             exhausted_score,
+            exhausted_score_value,
             rescanned_tid,
             rescanned_score,
         ) = unsafe {
@@ -2287,8 +2313,12 @@ mod tests {
             "duplicate heap tid draining should stay attached to the same current result tuple"
         );
         assert!(
-            !second_score,
-            "bootstrap scan should still leave score validity unset while draining duplicates"
+            second_score,
+            "duplicate heap tid draining should keep the current result score valid"
+        );
+        assert_ne!(
+            second_score_value, 0.0,
+            "duplicate heap tid draining should keep the current result score populated"
         );
         assert_eq!(
             exhausted_tid,
@@ -2298,6 +2328,10 @@ mod tests {
         assert!(
             !exhausted_score,
             "exhaustion should clear any current result score-valid bit"
+        );
+        assert_eq!(
+            exhausted_score_value, 0.0,
+            "exhaustion should clear the current result score value"
         );
         assert_eq!(
             rescanned_tid,

@@ -170,6 +170,7 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
             opaque.scan_bits = metadata.bits;
+            opaque.scan_seed = metadata.seed;
             opaque.scan_code_len = if metadata.dimensions == 0 {
                 0
             } else {
@@ -215,7 +216,12 @@ unsafe extern "C-unwind" fn tqhnsw_amgettuple(
 
             let opaque = &mut *opaque_ptr;
             if let Some(heap_tid) =
-                next_linear_scan_heap_tid((*scan).indexRelation, opaque, opaque.scan_code_len)
+                next_linear_scan_heap_tid(
+                    (*scan).indexRelation,
+                    (*scan).heapRelation,
+                    opaque,
+                    opaque.scan_code_len,
+                )
             {
                 set_scan_heap_tid(scan, heap_tid);
                 return true;
@@ -338,6 +344,7 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 
 unsafe fn next_linear_scan_heap_tid(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<page::ItemPointer> {
@@ -409,8 +416,14 @@ unsafe fn next_linear_scan_heap_tid(
                 block_number,
                 offset_number: offset,
             };
-            opaque.current_result_score = 0.0;
-            opaque.current_result_score_valid = false;
+            opaque.current_result_score = score_scan_element_result(
+                index_relation,
+                heap_relation,
+                opaque,
+                element.heaptids[0],
+                &element.code,
+            );
+            opaque.current_result_score_valid = true;
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -843,6 +856,33 @@ unsafe fn candidate_element_gamma(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,
 ) -> f32 {
+    heap_tqvector_gamma(
+        index_relation,
+        heap_relation,
+        heap_tid,
+        "duplicate gamma check",
+    )
+}
+
+unsafe fn heap_tqvector_gamma(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    heap_tid: page::ItemPointer,
+    context: &str,
+) -> f32 {
+    let (heap_relation, opened_heap_relation) = if heap_relation.is_null() {
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        if heap_oid == pg_sys::InvalidOid {
+            pgrx::error!("tqhnsw {context} could not resolve heap relation for index");
+        }
+        (
+            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+            true,
+        )
+    } else {
+        (heap_relation, false)
+    };
+
     let index_form = unsafe { &*(*index_relation).rd_index };
     if index_form.indnkeyatts != 1 {
         pgrx::error!(
@@ -882,9 +922,8 @@ unsafe fn candidate_element_gamma(
     };
     if !found {
         pgrx::error!(
-            "tqhnsw failed to fetch representative heap tuple ({},{}) for duplicate gamma check",
-            heap_tid.block_number,
-            heap_tid.offset_number
+            "tqhnsw failed to fetch representative heap tuple ({},{}) for {context}",
+            heap_tid.block_number, heap_tid.offset_number
         );
     }
 
@@ -899,7 +938,7 @@ unsafe fn candidate_element_gamma(
     }
     .unwrap_or_else(|| {
         pgrx::error!(
-            "tqhnsw found NULL representative heap value for duplicate gamma check on attribute {}",
+            "tqhnsw found NULL representative heap value for {context} on attribute {}",
             attnum
         )
     });
@@ -909,11 +948,48 @@ unsafe fn candidate_element_gamma(
     let is_copy = !std::ptr::eq(varlena, original);
     let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) };
     let (_, _, _, gamma, _) =
-        crate::unpack(bytes).unwrap_or_else(|e| pgrx::error!("tqhnsw found invalid heap tqvector during duplicate gamma check: {e}"));
+        crate::unpack(bytes).unwrap_or_else(|e| pgrx::error!("tqhnsw found invalid heap tqvector during {context}: {e}"));
     if is_copy {
         unsafe { pg_sys::pfree(varlena.cast()) };
     }
+    if buffer != pg_sys::InvalidBuffer as pg_sys::Buffer {
+        unsafe { pg_sys::ReleaseBuffer(buffer) };
+    }
+    if opened_heap_relation {
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
     gamma
+}
+
+unsafe fn score_scan_element_result(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    opaque: &TqScanOpaque,
+    representative_heap_tid: page::ItemPointer,
+    code_bytes: &[u8],
+) -> f32 {
+    if opaque.prepared_query.is_null() {
+        pgrx::error!("tqhnsw scan scoring requires a prepared query");
+    }
+
+    let gamma = unsafe {
+        heap_tqvector_gamma(
+            index_relation,
+            heap_relation,
+            representative_heap_tid,
+            "scan result scoring",
+        )
+    };
+    let quantizer = crate::quant::prod::ProdQuantizer::cached(
+        opaque.scan_dimensions as usize,
+        opaque.scan_bits,
+        opaque.scan_seed,
+    );
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let mut payload = Vec::with_capacity(4 + code_bytes.len());
+    payload.extend_from_slice(&gamma.to_le_bytes());
+    payload.extend_from_slice(code_bytes);
+    -quantizer.score_ip_encoded(prepared_query, &payload)
 }
 
 unsafe fn coalesce_duplicate_heap_tid(
@@ -1085,6 +1161,7 @@ struct TqScanOpaque {
     prepared_query: *mut PreparedQuery,
     scan_dimensions: u16,
     scan_bits: u8,
+    scan_seed: u64,
     scan_code_len: usize,
     scan_block_count: u32,
     current_result_tid: page::ItemPointer,
@@ -1107,6 +1184,7 @@ impl Default for TqScanOpaque {
             prepared_query: ptr::null_mut(),
             scan_dimensions: 0,
             scan_bits: 0,
+            scan_seed: 0,
             scan_code_len: 0,
             scan_block_count: 0,
             current_result_tid: page::ItemPointer::INVALID,
@@ -1568,7 +1646,7 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 pub(crate) unsafe fn debug_gettuple_current_result_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, HeapTidCoords, bool, bool, HeapTidCoords, bool) {
+) -> (bool, HeapTidCoords, bool, f32, bool, HeapTidCoords, bool, f32) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1586,6 +1664,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
         opaque.current_result_tid.offset_number,
     );
     let before_score = opaque.current_result_score_valid;
+    let before_score_value = opaque.current_result_score;
 
     let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -1594,11 +1673,21 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
         opaque.current_result_tid.offset_number,
     );
     let after_score = opaque.current_result_score_valid;
+    let after_score_value = opaque.current_result_score;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (before_found, before_tid, before_score, found, after_tid, after_score)
+    (
+        before_found,
+        before_tid,
+        before_score,
+        before_score_value,
+        found,
+        after_tid,
+        after_score,
+        after_score_value,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1609,8 +1698,10 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     HeapTidCoords,
     HeapTidCoords,
     bool,
+    f32,
     HeapTidCoords,
     bool,
+    f32,
     HeapTidCoords,
     bool,
 ) {
@@ -1645,6 +1736,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         opaque.current_result_tid.offset_number,
     );
     let second_score = opaque.current_result_score_valid;
+    let second_score_value = opaque.current_result_score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
@@ -1654,6 +1746,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         opaque.current_result_tid.offset_number,
     );
     let exhausted_score = opaque.current_result_score_valid;
+    let exhausted_score_value = opaque.current_result_score;
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -1675,8 +1768,10 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         first_tid,
         second_tid,
         second_score,
+        second_score_value,
         exhausted_tid,
         exhausted_score,
+        exhausted_score_value,
         rescanned_tid,
         rescanned_score,
     )
