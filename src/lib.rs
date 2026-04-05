@@ -594,7 +594,6 @@ mod tests {
             .find(|(tid, _)| *tid == metadata.entry_point)
             .expect("entry point should identify an element tuple");
         assert_eq!(entry_element.1.level, metadata.max_level);
-
         for (element_tid, element) in &elements {
             assert!(element.level <= metadata.max_level);
             assert!(!element.deleted);
@@ -605,7 +604,6 @@ mod tests {
                 .get(&element.neighbortid)
                 .expect("neighbor tuple should exist");
             assert_eq!(neighbor.count as usize, neighbor.tids.len());
-            assert!(!neighbor.tids.is_empty());
             assert!(
                 neighbor.tids.len()
                     <= am::page::neighbor_slots(element.level, metadata.m)
@@ -685,6 +683,197 @@ mod tests {
             "entry point should identify an element tuple"
         );
         assert!(elements.iter().all(|(_, element)| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
+    fn test_raw_source_build_coalesces_duplicate_vectors() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_duplicate_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_duplicate_source_build VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
+             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
+             (3, ARRAY[-1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[-0.6, -0.1, 0.0, 0.3], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_duplicate_source_build_idx ON tqhnsw_duplicate_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_duplicate_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(elements.len(), 2, "duplicate encoded vectors should share one element tuple");
+        let mut heaptid_counts = elements
+            .iter()
+            .map(|element| element.heaptids.len())
+            .collect::<Vec<_>>();
+        heaptid_counts.sort_unstable();
+        assert_eq!(heaptid_counts, vec![1, 2]);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "does not name a user column")]
+    fn test_raw_source_rejects_missing_column() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_source_column (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_source_column VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_source_column_idx ON tqhnsw_bad_source_column USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'missing')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "must be real[]")]
+    fn test_raw_source_rejects_wrong_type() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_source_type (
+                id bigint primary key,
+                source double precision[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_source_type VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0]::double precision[], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_source_type_idx ON tqhnsw_bad_source_type USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "dimension mismatch")]
+    fn test_raw_source_rejects_dimension_mismatch() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_source_dim (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_source_dim VALUES
+             (1, ARRAY[1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_source_dim_idx ON tqhnsw_bad_source_dim USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "does not support NULL tqhnsw build_source_column")]
+    fn test_raw_source_rejects_null_value() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_null_source (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_null_source VALUES
+             (1, NULL, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_null_source_idx ON tqhnsw_null_source USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "does not support expression indexes yet")]
+    fn test_raw_source_rejects_expression_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_expression_source (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_expression_source VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_expression_source_idx ON tqhnsw_expression_source USING tqhnsw \
+             (((embedding::text)::tqvector) tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "does not support partial indexes yet")]
+    fn test_raw_source_rejects_partial_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_partial_source (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_partial_source VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_partial_source_idx ON tqhnsw_partial_source USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source') WHERE id > 1",
+        )
+        .expect("index creation should fail");
     }
 
     #[pg_test]

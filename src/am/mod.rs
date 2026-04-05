@@ -118,7 +118,7 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
 pub unsafe extern "C-unwind" fn tqhnsw_handler(
     _fcinfo: pg_sys::FunctionCallInfo,
 ) -> pg_sys::Datum {
-    pg_sys::Datum::from(build_tqhnsw_routine().into_pg())
+    unsafe { pgrx::pgrx_extern_c_guard(|| pg_sys::Datum::from(build_tqhnsw_routine().into_pg())) }
 }
 
 #[no_mangle]
@@ -132,49 +132,55 @@ unsafe extern "C-unwind" fn tqhnsw_ambuild(
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    let mut state = BuildState::new(index_relation);
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let mut state = BuildState::new(index_relation);
 
-    unsafe { initialize_metadata_page(index_relation, state.initial_metadata()) };
+            initialize_metadata_page(index_relation, state.initial_metadata());
 
-    let heap_tuples = if state.options.build_source_column.is_some() {
-        unsafe { tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state) }
-    } else {
-        unsafe {
-            pg_sys::table_index_build_scan(
-                heap_relation,
-                index_relation,
-                index_info,
-                false,
-                false,
-                Some(tqhnsw_build_callback),
-                (&mut state as *mut BuildState).cast(),
-                ptr::null_mut(),
-            )
-        }
-    };
-    let index_tuples = if state.heap_tuples.is_empty() {
-        0.0
-    } else {
-        unsafe { flush_build_state(index_relation, &state) };
-        state.heap_tuples.len() as f64
-    };
+            let heap_tuples = if state.options.build_source_column.is_some() {
+                tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state)
+            } else {
+                pg_sys::table_index_build_scan(
+                    heap_relation,
+                    index_relation,
+                    index_info,
+                    false,
+                    false,
+                    Some(tqhnsw_build_callback),
+                    (&mut state as *mut BuildState).cast(),
+                    ptr::null_mut(),
+                )
+            };
+            let index_tuples = if state.heap_tuples.is_empty() {
+                0.0
+            } else {
+                flush_build_state(index_relation, &state);
+                state.heap_tuples.len() as f64
+            };
 
-    if heap_tuples != state.scanned_tuples as f64 {
-        pgrx::error!(
-            "tqhnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
-            state.scanned_tuples
-        );
+            if heap_tuples != state.scanned_tuples as f64 {
+                pgrx::error!(
+                    "tqhnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
+                    state.scanned_tuples
+                );
+            }
+
+            let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
+            result.heap_tuples = heap_tuples;
+            result.index_tuples = index_tuples;
+            result.into_pg()
+        })
     }
-
-    let mut result = unsafe { PgBox::<pg_sys::IndexBuildResult>::alloc0() };
-    result.heap_tuples = heap_tuples;
-    result.index_tuples = index_tuples;
-    result.into_pg()
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sys::Relation) {
-    let state = BuildState::new(index_relation);
-    unsafe { initialize_metadata_page(index_relation, state.initial_metadata()) };
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = BuildState::new(index_relation);
+            initialize_metadata_page(index_relation, state.initial_metadata());
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_aminsert(
@@ -187,7 +193,7 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
-    pgrx::error!("tqhnsw aminsert is not implemented yet")
+    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw aminsert is not implemented yet")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
@@ -196,14 +202,18 @@ unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     _callback: pg_sys::IndexBulkDeleteCallback,
     _callback_state: *mut std::ffi::c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    pgrx::error!("tqhnsw ambulkdelete is not implemented yet")
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw ambulkdelete is not implemented yet"))
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     _info: *mut pg_sys::IndexVacuumInfo,
     _stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    pgrx::error!("tqhnsw amvacuumcleanup is not implemented yet")
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amvacuumcleanup is not implemented yet"))
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
@@ -216,14 +226,16 @@ unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
     index_correlation: *mut f64,
     index_pages: *mut f64,
 ) {
-    // Prefer explicit non-selection over accidental planner use until the scan
-    // path is implemented.
     unsafe {
-        *index_startup_cost = f64::MAX;
-        *index_total_cost = f64::MAX;
-        *index_selectivity = 0.0;
-        *index_correlation = 0.0;
-        *index_pages = 0.0;
+        pgrx::pgrx_extern_c_guard(|| {
+            // Prefer explicit non-selection over accidental planner use until the scan
+            // path is implemented.
+            *index_startup_cost = f64::MAX;
+            *index_total_cost = f64::MAX;
+            *index_selectivity = 0.0;
+            *index_correlation = 0.0;
+            *index_pages = 0.0;
+        })
     }
 }
 
@@ -231,47 +243,50 @@ unsafe extern "C-unwind" fn tqhnsw_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
-    let mut relopts = pg_sys::local_relopts::default();
-
     unsafe {
-        pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
-        pg_sys::add_local_int_reloption(
-            &mut relopts,
-            b"m\0".as_ptr().cast(),
-            b"Maximum graph degree per layer.\0".as_ptr().cast(),
-            TQHNSW_DEFAULT_M,
-            TQHNSW_MIN_M,
-            TQHNSW_MAX_M,
-            offset_of!(TqHnswReloptions, m) as i32,
-        );
-        pg_sys::add_local_int_reloption(
-            &mut relopts,
-            b"ef_construction\0".as_ptr().cast(),
-            b"Candidate list width used during graph construction.\0"
-                .as_ptr()
-                .cast(),
-            TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            TQHNSW_MIN_EF_CONSTRUCTION,
-            TQHNSW_MAX_EF_CONSTRUCTION,
-            offset_of!(TqHnswReloptions, ef_construction) as i32,
-        );
-        pg_sys::add_local_string_reloption(
-            &mut relopts,
-            b"build_source_column\0".as_ptr().cast(),
-            b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
-                .as_ptr()
-                .cast(),
-            ptr::null(),
-            None,
-            None,
-            offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
-        );
-        pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
+        pgrx::pgrx_extern_c_guard(|| {
+            let mut relopts = pg_sys::local_relopts::default();
+
+            pg_sys::init_local_reloptions(&mut relopts, size_of::<TqHnswReloptions>());
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"m\0".as_ptr().cast(),
+                b"Maximum graph degree per layer.\0".as_ptr().cast(),
+                TQHNSW_DEFAULT_M,
+                TQHNSW_MIN_M,
+                TQHNSW_MAX_M,
+                offset_of!(TqHnswReloptions, m) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"ef_construction\0".as_ptr().cast(),
+                b"Candidate list width used during graph construction.\0"
+                    .as_ptr()
+                    .cast(),
+                TQHNSW_DEFAULT_EF_CONSTRUCTION,
+                TQHNSW_MIN_EF_CONSTRUCTION,
+                TQHNSW_MAX_EF_CONSTRUCTION,
+                offset_of!(TqHnswReloptions, ef_construction) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                b"build_source_column\0".as_ptr().cast(),
+                b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
+                    .as_ptr()
+                    .cast(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
+            );
+            pg_sys::build_local_reloptions(&mut relopts, reloptions, validate)
+                as *mut pg_sys::bytea
+        })
     }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
-    true
+    unsafe { pgrx::pgrx_extern_c_guard(|| true) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
@@ -279,7 +294,9 @@ unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     _nkeys: std::ffi::c_int,
     _norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
-    pgrx::error!("tqhnsw ambeginscan is not implemented yet")
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw ambeginscan is not implemented yet"))
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amrescan(
@@ -289,18 +306,20 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
     _orderbys: pg_sys::ScanKey,
     _norderbys: std::ffi::c_int,
 ) {
-    pgrx::error!("tqhnsw amrescan is not implemented yet")
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amrescan is not implemented yet"))
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     _scan: pg_sys::IndexScanDesc,
     _direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    pgrx::error!("tqhnsw amgettuple is not implemented yet")
+    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amgettuple is not implemented yet")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amendscan(_scan: pg_sys::IndexScanDesc) {
-    pgrx::error!("tqhnsw amendscan is not implemented yet")
+    unsafe { pgrx::pgrx_extern_c_guard(|| pgrx::error!("tqhnsw amendscan is not implemented yet")) }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_build_callback(
@@ -311,10 +330,14 @@ unsafe extern "C-unwind" fn tqhnsw_build_callback(
     _tuple_is_alive: bool,
     state: *mut c_void,
 ) {
-    let state = unsafe { &mut *state.cast::<BuildState>() };
-    let heap_tid = unsafe { decode_heap_tid(tid) };
-    let tuple = unsafe { build_heap_tuple(values, isnull, heap_tid) };
-    state.push(tuple);
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &mut *state.cast::<BuildState>();
+            let heap_tid = decode_heap_tid(tid);
+            let tuple = build_heap_tuple(values, isnull, heap_tid);
+            state.push(tuple);
+        })
+    }
 }
 
 unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
@@ -404,6 +427,7 @@ struct BuildTuple {
     seed: u64,
     code: Vec<u8>,
     source_vector: Option<Vec<f32>>,
+    source_count: usize,
 }
 
 #[derive(Debug)]
@@ -534,8 +558,33 @@ impl BuildState {
                 );
             }
             existing.heap_tids.extend(tuple.heap_tids);
-            if existing.source_vector.is_none() {
-                existing.source_vector = tuple.source_vector;
+            match (&mut existing.source_vector, tuple.source_vector) {
+                (Some(existing_source), Some(tuple_source)) => {
+                    if existing.source_count == 0 || tuple.source_count == 0 {
+                        pgrx::error!(
+                            "tqhnsw build_source_column representatives must have non-zero counts"
+                        );
+                    }
+                    if existing_source.len() != tuple_source.len() {
+                        pgrx::error!(
+                            "tqhnsw build_source_column representative length mismatch: {} vs {}",
+                            existing_source.len(),
+                            tuple_source.len()
+                        );
+                    }
+                    average_source_representatives(
+                        existing_source,
+                        existing.source_count,
+                        &tuple_source,
+                        tuple.source_count,
+                    );
+                    existing.source_count += tuple.source_count;
+                }
+                (None, Some(tuple_source)) => {
+                    existing.source_vector = Some(tuple_source);
+                    existing.source_count = tuple.source_count;
+                }
+                _ => {}
             }
             return;
         }
@@ -589,6 +638,7 @@ unsafe fn build_heap_tuple(
         seed,
         code: code.to_vec(),
         source_vector: None,
+        source_count: 0,
     }
 }
 
@@ -632,6 +682,25 @@ unsafe fn build_heap_tuple_with_source(
         seed,
         code: code.to_vec(),
         source_vector: Some(source_vector),
+        source_count: 1,
+    }
+}
+
+fn average_source_representatives(
+    existing: &mut [f32],
+    existing_count: usize,
+    incoming: &[f32],
+    incoming_count: usize,
+) {
+    assert_eq!(existing.len(), incoming.len());
+    assert!(existing_count > 0);
+    assert!(incoming_count > 0);
+
+    let total_count = existing_count + incoming_count;
+    for (existing_value, incoming_value) in existing.iter_mut().zip(incoming.iter()) {
+        *existing_value = ((*existing_value * existing_count as f32)
+            + (*incoming_value * incoming_count as f32))
+            / total_count as f32;
     }
 }
 
@@ -1304,6 +1373,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1315,6 +1385,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1326,6 +1397,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[0.98, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
         ];
         let state = BuildState {
@@ -1364,6 +1436,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1375,6 +1448,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
             BuildTuple {
                 heap_tids: vec![page::ItemPointer {
@@ -1386,6 +1460,7 @@ mod tests {
                 seed,
                 code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
                 source_vector: None,
+                source_count: 0,
             },
         ];
         let state = BuildState {
@@ -1431,6 +1506,7 @@ mod tests {
                     seed,
                     code: vec![0x00, 0x00],
                     source_vector: Some(vec![1.0, 0.0]),
+                    source_count: 1,
                 },
                 BuildTuple {
                     heap_tids: vec![page::ItemPointer {
@@ -1442,6 +1518,7 @@ mod tests {
                     seed,
                     code: vec![0xff, 0xff],
                     source_vector: Some(vec![0.9, 0.1]),
+                    source_count: 1,
                 },
                 BuildTuple {
                     heap_tids: vec![page::ItemPointer {
@@ -1453,6 +1530,7 @@ mod tests {
                     seed,
                     code: vec![0x00, 0x01],
                     source_vector: Some(vec![-1.0, 0.0]),
+                    source_count: 1,
                 },
             ],
             dimensions: Some(2),
@@ -1492,5 +1570,15 @@ mod tests {
         let entry_point = choose_entry_point(&element_tids, &graph_nodes, &state)
             .expect("entry point should exist");
         assert_eq!(entry_point, element_tids[0]);
+    }
+
+    #[test]
+    fn average_source_representative_weights_by_duplicate_count() {
+        let mut representative = vec![1.0, 0.0];
+        average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
+        assert_eq!(representative, vec![0.5, 0.5]);
+
+        average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
+        assert_eq!(representative, vec![0.75, 0.75]);
     }
 }
