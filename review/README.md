@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `43044ec`
+Current head: `0cc1041`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -114,6 +114,9 @@ Current tqhnsw state summary:
 - The bootstrap frontier now seeds the entry candidate plus up to two live neighbors from the entry point's persisted adjacency, instead of stopping after the first live successor.
 - Frontier debug coverage now exposes the full seeded frontier slot list in addition to the existing two-slot snapshot, so tests can verify widened seeding without changing the current narrow debug view everywhere else.
 - Visited-state expectations now derive from the full seeded frontier contents, and the frontier-consumption pg regression now uses a two-row fixture so its two-candidate lifecycle contract stays intentional.
+- Frontier-head consumption now refills from the remaining entry-point neighbor list, using the visited-element set to avoid reseeding already seen candidates.
+- Scan state now keeps the bootstrap entry TID explicitly so consume-and-refill can reuse the persisted entry adjacency without pretending full traversal state already exists.
+- Added regression coverage that on a wider fixture, consuming one frontier head removes that candidate and backfills exactly one previously unseen entry-neighbor candidate while capacity remains.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -204,6 +207,7 @@ Open requests:
 - `54-vector-backed-candidate-frontier.md`
 - `55-frontier-head-option-index.md`
 - `56-wider-bootstrap-frontier-seeding.md`
+- `57-bootstrap-frontier-refill-after-consume.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
