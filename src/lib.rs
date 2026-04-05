@@ -2139,6 +2139,70 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_current_result_lifecycle() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_result_lifecycle (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_result_lifecycle VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_result_lifecycle_idx ON tqhnsw_gettuple_result_lifecycle USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_result_lifecycle_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (
+            first_tid,
+            second_tid,
+            second_score,
+            exhausted_tid,
+            exhausted_score,
+            rescanned_tid,
+            rescanned_score,
+        ) = unsafe {
+            am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_eq!(
+            first_tid, second_tid,
+            "duplicate heap tid draining should stay attached to the same current result tuple"
+        );
+        assert!(
+            !second_score,
+            "bootstrap scan should still leave score validity unset while draining duplicates"
+        );
+        assert_eq!(
+            exhausted_tid,
+            (u32::MAX, u16::MAX),
+            "current result state should clear after full scan exhaustion"
+        );
+        assert!(
+            !exhausted_score,
+            "exhaustion should clear any current result score-valid bit"
+        );
+        assert_eq!(
+            rescanned_tid,
+            (u32::MAX, u16::MAX),
+            "amrescan should clear current result state before the next tuple is produced"
+        );
+        assert!(
+            !rescanned_score,
+            "amrescan should clear any current result score-valid bit"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_returns_all_duplicate_heap_tids() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_duplicate_exec (id bigint primary key, embedding tqvector)",
