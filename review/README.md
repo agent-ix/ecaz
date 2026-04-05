@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `ed5b247`
+Current head: `aa462a6`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -81,6 +81,9 @@ Current tqhnsw state summary:
 - Scan-side page-read helpers can now load persisted neighbor refs for an element tuple directly from index storage as groundwork for upcoming traversal state.
 - Current-result graph-read coverage now verifies that a produced scan result has concrete neighbor refs and that the metadata entry point's persisted neighbor refs target real element tuples.
 - The current on-disk neighbor tuple layout is still a flat adjacency list, not a layer-segmented HNSW representation, so this slice intentionally stops at page-level graph access instead of promising true layer-aware traversal.
+- Shared graph-page reads now live in `src/am/graph.rs` so scan execution can consume validated element and neighbor records through one seam.
+- Scan-local current-result state now lives in one explicit struct carrying element TID, current heap TID, and score, giving later ordered traversal a stable result-shaped slot.
+- Duplicate-drain coverage now verifies that the current-result heap TID advances across duplicates while the element TID and score stay stable.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -156,6 +159,7 @@ Open requests:
 - `39-am-scan-module-boundary.md`
 - `40-ci-workflow-hardening.md`
 - `41-scan-page-level-neighbor-access.md`
+- `42-graph-read-surface-and-explicit-scan-result.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
