@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `79f695e`
+Current head: `fce37bd`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -43,6 +43,7 @@ Current tqhnsw state summary:
 - Query-inner-product coverage now verifies that the SQL-facing scorer uses the persisted `gamma` term instead of passing only code bytes into the quantizer API.
 - Linear scan coverage now verifies that repeated `amgettuple` calls stay `false` after exhaustion.
 - Linear scan coverage now verifies that `amgettuple` still rejects backward scan direction after a valid `amrescan`.
+- Linear scan coverage now verifies that `amrescan` after full exhaustion restarts tuple production from the beginning.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 Review triage at `46d00bb`:
@@ -72,6 +73,7 @@ Open requests:
 - `15-amgettuple-linear-forward-scan.md`
 - `16-query-inner-product-gamma-payload.md`
 - `17-linear-scan-exhaustion-and-direction-guards.md`
+- `18-linear-scan-rescan-after-exhaustion.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
