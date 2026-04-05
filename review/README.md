@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `4c47b83`
+Current head: `6abaf5b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -94,6 +94,8 @@ Current tqhnsw state summary:
 - The two-slot frontier now also carries one explicit head-selection rule: valid candidates first, then lower score wins.
 - Frontier ordering coverage now verifies that the reported head slot matches the current two-slot ordering rule.
 - Frontier-head lifecycle coverage now verifies that the reported head and both frontier slots remain stable during partial bootstrap scan progress and both clear on full exhaustion.
+- The fixed two-slot frontier now also has one explicit head-consumption helper that clears the current best slot and recomputes the next head under the existing ordering rule.
+- Frontier-consumption coverage now verifies that consuming the current head either reselects the remaining valid slot or clears the frontier completely when no valid slot remains.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -176,6 +178,7 @@ Open requests:
 - `46-two-slot-candidate-frontier.md`
 - `47-two-slot-frontier-head-ordering.md`
 - `48-frontier-head-lifecycle.md`
+- `49-frontier-head-consumption.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
