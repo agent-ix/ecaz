@@ -1860,7 +1860,7 @@ mod tests {
     fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
         let expected_query = vec![1.0, 0.0, 0.5, -1.0];
-        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len) =
+        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len, scan_block_count) =
             unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         assert!(
             rescan_called,
@@ -1871,6 +1871,7 @@ mod tests {
         assert_eq!(scan_dimensions, 4);
         assert_eq!(scan_bits, 4);
         assert_eq!(scan_code_len, code_len(4, 4));
+        assert!(scan_block_count >= 2, "rescan should cache the current index block count");
     }
 
     #[pg_test]
@@ -1888,7 +1889,7 @@ mod tests {
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let second_query = vec![1.0, 0.0, 0.5];
-        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len) = unsafe {
+        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len, scan_block_count) = unsafe {
             am::debug_rescan_overwrites_query_dimensions(
                 index_oid,
                 vec![1.0, 0.0, 0.5, -1.0],
@@ -1910,6 +1911,7 @@ mod tests {
         assert_eq!(scan_dimensions, 0);
         assert_eq!(scan_bits, 0);
         assert_eq!(scan_code_len, 0);
+        assert_eq!(scan_block_count, 1);
     }
 
     #[pg_test]
