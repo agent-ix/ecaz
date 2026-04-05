@@ -1900,15 +1900,15 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan execution is not implemented yet: amgettuple")]
-    fn test_tqhnsw_gettuple_scaffold_rejects_execution_after_rescan() {
+    fn test_tqhnsw_gettuple_returns_heap_tids() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_exec_scaffold (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_exec_scaffold VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -1922,7 +1922,42 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        unsafe { am::debug_gettuple_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        let observed_tids =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        let expected_tids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                        split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
+                     FROM tqhnsw_gettuple_exec_scaffold
+                     ORDER BY id",
+                    None,
+                    &[],
+                )
+                .expect("ctid query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    (
+                        u32::try_from(block_number).expect("block number should be non-negative"),
+                        u16::try_from(offset_number).expect("offset number should be positive"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            observed_tids, expected_tids,
+            "amgettuple should return each indexed heap tid in the current linear scan order"
+        );
     }
 
     #[pg_test]

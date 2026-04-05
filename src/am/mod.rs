@@ -409,13 +409,14 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
             store_scan_query(opaque, &query);
+            reset_scan_position(opaque);
         })
     }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     scan: pg_sys::IndexScanDesc,
-    _direction: pg_sys::ScanDirection::Type,
+    direction: pg_sys::ScanDirection::Type,
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
@@ -432,13 +433,25 @@ unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             if !opaque.rescan_called {
                 pgrx::error!("tqhnsw amgettuple requires amrescan before scan execution");
             }
+            if direction != pg_sys::ScanDirection::ForwardScanDirection {
+                pgrx::error!("tqhnsw amgettuple only supports forward scan direction");
+            }
 
             let metadata = read_metadata_page((*scan).indexRelation);
             if metadata.dimensions == 0 {
                 return false;
             }
 
-            pgrx::error!("tqhnsw scan execution is not implemented yet: amgettuple")
+            let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+            let opaque = &mut *opaque_ptr;
+            if let Some(heap_tid) =
+                next_linear_scan_heap_tid((*scan).indexRelation, opaque, code_len)
+            {
+                set_scan_heap_tid(scan, heap_tid);
+                return true;
+            }
+
+            false
         })
     }
 }
@@ -482,6 +495,106 @@ unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
         opaque.query_values = ptr::null_mut();
     }
     opaque.query_dimensions = 0;
+}
+
+fn reset_scan_position(opaque: &mut TqScanOpaque) {
+    opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
+    opaque.next_offset_number = 1;
+    opaque.scan_exhausted = false;
+}
+
+unsafe fn next_linear_scan_heap_tid(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    code_len: usize,
+) -> Option<page::ItemPointer> {
+    if opaque.scan_exhausted {
+        return None;
+    }
+
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        opaque.scan_exhausted = true;
+        return None;
+    }
+
+    for block_number in opaque.next_block_number..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let offset_start = if block_number == opaque.next_block_number {
+            opaque.next_offset_number.max(1)
+        } else {
+            1
+        };
+
+        for offset in offset_start..=line_pointer_count {
+            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                pgrx::error!(
+                    "tqhnsw found invalid tuple bounds while scanning block {block_number}"
+                );
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                continue;
+            }
+
+            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to decode scan element tuple: {e}")
+            });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            opaque.next_block_number = block_number;
+            opaque.next_offset_number = offset.saturating_add(1);
+            if opaque.next_offset_number == 0 {
+                opaque.next_block_number = block_number + 1;
+                opaque.next_offset_number = 1;
+            }
+
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            return Some(element.heaptids[0]);
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        opaque.next_block_number = block_number + 1;
+        opaque.next_offset_number = 1;
+    }
+
+    opaque.scan_exhausted = true;
+    None
+}
+
+fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut (*scan).xs_heaptid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1144,6 +1257,9 @@ struct TqScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
     query_values: *mut f32,
+    next_block_number: u32,
+    next_offset_number: u16,
+    scan_exhausted: bool,
 }
 
 impl Distance<f32> for BuildVectorDistance {
@@ -2237,6 +2353,34 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> Vec<(u32, u16)> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        let (block_number, offset_number) =
+            pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        tids.push((block_number, offset_number));
+    }
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    tids
 }
 
 #[cfg(test)]
