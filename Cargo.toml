@@ -20,7 +20,7 @@ pg_test = []
 
 [dependencies]
 pgrx = "0.17"
-hnsw_rs = "*"
+hnsw_rs = "0.3.4"
 hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"
