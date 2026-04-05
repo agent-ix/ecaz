@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `6a5c331`
+Current head: `aa4828e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -109,6 +109,8 @@ Current tqhnsw state summary:
 - The scan candidate frontier now lives in scan-owned heap memory as a `Vec<ScanCandidate>` referenced from scan opaque instead of one fixed two-slot struct field.
 - Frontier-head consumption now removes the current best candidate from that vector and compacts the remaining candidates before recomputing the head.
 - Frontier-consumption coverage now verifies the compaction behavior explicitly: when one valid candidate remains it reseats to slot 0, and when none remain the debug frontier snapshot clears completely.
+- The scan frontier head is now tracked as an optional `usize` index instead of a `u8` sentinel, removing the artificial panic boundary once the frontier grows beyond 255 entries.
+- Existing debug and regression coverage now model “no head” as `None` instead of `u8::MAX`, while keeping the current two-slot frontier snapshot unchanged for this still-bounded stage.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -197,6 +199,7 @@ Open requests:
 - `52-persisted-gamma-hot-path-cutover.md`
 - `53-scan-visited-seed-state.md`
 - `54-vector-backed-candidate-frontier.md`
+- `55-frontier-head-option-index.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
