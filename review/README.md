@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `9444d4b`
+Current head: `079594e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -33,8 +33,9 @@ Current tqhnsw state summary:
 - Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
+- Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
 
-Review triage at `9444d4b`:
+Review triage at `079594e`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
 - Marked `01-aminsert-groundwork.md` comments 2, 3, and 5 as not needed for this stage because they are optimization or future-invariant notes rather than current defects.
