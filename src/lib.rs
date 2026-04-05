@@ -1184,6 +1184,53 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_non_empty_index_build_keeps_gamma_distinct() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_duplicate_build_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_duplicate_build_gamma VALUES
+             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector),
+             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_duplicate_build_gamma_idx ON tqhnsw_duplicate_build_gamma USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_duplicate_build_gamma_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            elements.len(),
+            2,
+            "same-code build inputs with distinct persisted gamma values must not coalesce"
+        );
+        assert!(elements.iter().all(|element| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
     fn test_tqhnsw_insert_appends_new_element_tuple() {
         Spi::run("CREATE TABLE tqhnsw_insert_append (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -1549,6 +1596,67 @@ mod tests {
             .collect::<Vec<_>>();
         heaptid_counts.sort_unstable();
         assert_eq!(heaptid_counts, vec![1, 2]);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_keeps_gamma_distinct() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_duplicate_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
+             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector)",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_duplicate_gamma_idx ON tqhnsw_insert_duplicate_gamma USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_duplicate_gamma_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_block_count, _metadata, before_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let before_tuple_count = before_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
+             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
+        )
+        .expect("gamma-distinct insert should succeed");
+
+        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(
+            after_block_count, before_block_count,
+            "gamma-distinct same-code inserts should stay on the current tail page in this narrow test"
+        );
+        let after_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        assert_eq!(
+            after_tuple_count,
+            before_tuple_count + 2,
+            "gamma-distinct same-code inserts should append a fresh element/neighbor tuple pair"
+        );
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            elements.len(),
+            2,
+            "same-code inserts with distinct persisted gamma values must not coalesce"
+        );
+        assert!(elements.iter().all(|element| element.heaptids.len() == 1));
     }
 
     #[pg_test]

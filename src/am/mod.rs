@@ -192,7 +192,7 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: pg_sys::ItemPointer,
-    _heap_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
@@ -232,8 +232,10 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
 
                 if let Some(element_tid) = find_duplicate_element_tid(
                     index_relation,
+                    heap_relation,
                     metadata.dimensions,
                     metadata.bits,
+                    tuple.gamma,
                     code_len,
                     &tuple.code,
                 ) {
@@ -1045,8 +1047,10 @@ unsafe fn append_heap_tuple_to_new_page(
 
 unsafe fn find_duplicate_element_tid(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     dimensions: u16,
     bits: u8,
+    gamma: f32,
     code_len: usize,
     code: &[u8],
 ) -> Option<page::ItemPointer> {
@@ -1095,7 +1099,12 @@ unsafe fn find_duplicate_element_tid(
             let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                 pgrx::error!("tqhnsw failed to decode candidate duplicate tuple: {e}")
             });
-            if element.code == code {
+            if element.code == code
+                && !element.heaptids.is_empty()
+                && candidate_element_gamma(index_relation, heap_relation, element.heaptids[0])
+                    .to_bits()
+                    == gamma.to_bits()
+            {
                 unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
@@ -1110,6 +1119,84 @@ unsafe fn find_duplicate_element_tid(
     let _ = dimensions;
     let _ = bits;
     None
+}
+
+unsafe fn candidate_element_gamma(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    heap_tid: page::ItemPointer,
+) -> f32 {
+    let index_form = unsafe { &*(*index_relation).rd_index };
+    if index_form.indnkeyatts != 1 {
+        pgrx::error!(
+            "tqhnsw duplicate lookup currently requires exactly one key attribute, found {}",
+            index_form.indnkeyatts
+        );
+    }
+
+    let indkey = unsafe { index_form.indkey.values.as_slice(index_form.indnkeyatts as usize) };
+    let attnum = *indkey
+        .first()
+        .expect("single-column tqhnsw index should expose one heap attribute");
+    if attnum <= 0 {
+        pgrx::error!("tqhnsw duplicate lookup does not support expression index attributes");
+    }
+
+    let mut fetched_tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut fetched_tid,
+        heap_tid.block_number,
+        heap_tid.offset_number,
+    );
+
+    let mut heap_tuple = pg_sys::HeapTupleData {
+        t_self: fetched_tid,
+        ..Default::default()
+    };
+    let mut buffer = pg_sys::InvalidBuffer as pg_sys::Buffer;
+    let found = unsafe {
+        pg_sys::heap_fetch(
+            heap_relation,
+            std::ptr::addr_of_mut!(pg_sys::SnapshotAnyData),
+            &mut heap_tuple,
+            &mut buffer,
+            false,
+        )
+    };
+    if !found {
+        pgrx::error!(
+            "tqhnsw failed to fetch representative heap tuple ({},{}) for duplicate gamma check",
+            heap_tid.block_number,
+            heap_tid.offset_number
+        );
+    }
+
+    let tupdesc = unsafe { pgrx::PgTupleDesc::from_pg_unchecked((*heap_relation).rd_att) };
+    let datum = unsafe {
+        pgrx::heap_getattr_raw(
+            &mut heap_tuple,
+            std::num::NonZeroUsize::new(attnum as usize)
+                .expect("positive indexed heap attribute number"),
+            tupdesc.as_ptr(),
+        )
+    }
+    .unwrap_or_else(|| {
+        pgrx::error!(
+            "tqhnsw found NULL representative heap value for duplicate gamma check on attribute {}",
+            attnum
+        )
+    });
+
+    let original = datum.cast_mut_ptr::<std::ffi::c_void>().cast::<pg_sys::varlena>();
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+    let is_copy = !std::ptr::eq(varlena, original);
+    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) };
+    let (_, _, _, gamma, _) =
+        crate::unpack(bytes).unwrap_or_else(|e| pgrx::error!("tqhnsw found invalid heap tqvector during duplicate gamma check: {e}"));
+    if is_copy {
+        unsafe { pg_sys::pfree(varlena.cast()) };
+    }
+    gamma
 }
 
 unsafe fn coalesce_duplicate_heap_tid(
@@ -1278,6 +1365,7 @@ struct BuildTuple {
     dimensions: u16,
     bits: u8,
     seed: u64,
+    gamma: f32,
     code: Vec<u8>,
     source_vector: Option<Vec<f32>>,
     source_count: usize,
@@ -1455,7 +1543,9 @@ impl BuildState {
         if let Some(existing) = self
             .heap_tuples
             .iter_mut()
-            .find(|existing| existing.code == tuple.code)
+            .find(|existing| {
+                existing.gamma.to_bits() == tuple.gamma.to_bits() && existing.code == tuple.code
+            })
         {
             if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
                 pgrx::error!(
@@ -1535,7 +1625,7 @@ unsafe fn build_heap_tuple(
         unsafe { pg_sys::pfree(varlena.cast()) };
     }
 
-    let (dimensions, bits, seed, _, code) = crate::unpack(&bytes)
+    let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
         .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
 
     BuildTuple {
@@ -1543,6 +1633,7 @@ unsafe fn build_heap_tuple(
         dimensions,
         bits,
         seed,
+        gamma,
         code: code.to_vec(),
         source_vector: None,
         source_count: 0,
@@ -1568,7 +1659,7 @@ unsafe fn build_heap_tuple_with_source(
         unsafe { pg_sys::pfree(varlena.cast()) };
     }
 
-    let (dimensions, bits, seed, _, code) = crate::unpack(&bytes)
+    let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
         .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
 
     if source_vector.is_empty() {
@@ -1587,6 +1678,7 @@ unsafe fn build_heap_tuple_with_source(
         dimensions,
         bits,
         seed,
+        gamma,
         code: code.to_vec(),
         source_vector: Some(source_vector),
         source_count: 1,
@@ -2801,6 +2893,7 @@ mod tests {
                 dimensions: 8,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2813,6 +2906,7 @@ mod tests {
                 dimensions: 8,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2825,6 +2919,7 @@ mod tests {
                 dimensions: 8,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[0.98, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2864,6 +2959,7 @@ mod tests {
                 dimensions: 4,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2876,6 +2972,7 @@ mod tests {
                 dimensions: 4,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2888,6 +2985,7 @@ mod tests {
                 dimensions: 4,
                 bits,
                 seed,
+                gamma: 0.0,
                 code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
                 source_vector: None,
                 source_count: 0,
@@ -2934,6 +3032,7 @@ mod tests {
                     dimensions: 2,
                     bits,
                     seed,
+                    gamma: 0.0,
                     code: vec![0x00, 0x00],
                     source_vector: Some(vec![1.0, 0.0]),
                     source_count: 1,
@@ -2946,6 +3045,7 @@ mod tests {
                     dimensions: 2,
                     bits,
                     seed,
+                    gamma: 0.0,
                     code: vec![0xff, 0xff],
                     source_vector: Some(vec![0.9, 0.1]),
                     source_count: 1,
@@ -2958,6 +3058,7 @@ mod tests {
                     dimensions: 2,
                     bits,
                     seed,
+                    gamma: 0.0,
                     code: vec![0x00, 0x01],
                     source_vector: Some(vec![-1.0, 0.0]),
                     source_count: 1,
