@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `d66aa85`
+Current head: `ffcaf06`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -45,6 +45,9 @@ Current tqhnsw state summary:
 - Linear scan coverage now verifies that `amgettuple` still rejects backward scan direction after a valid `amrescan`.
 - Linear scan coverage now verifies that `amrescan` after full exhaustion restarts tuple production from the beginning.
 - Build-time detoast handling now uses pointer comparison against the original datum to decide whether `pg_detoast_datum_packed` returned an allocated copy.
+- `encode_to_tqvector` now rejects embeddings whose dimension exceeds the persisted `u16` limit instead of truncating on pack.
+- The in-memory `DataPage` tuple insertion path now uses a checked `u16` conversion for returned offset numbers.
+- The `hnsw_rs` Cargo dependency is now pinned to the currently locked `0.3.4` release instead of `*`.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -66,6 +69,9 @@ Review triage at `46d00bb`:
 - Marked `06-scan-descriptor-scaffolding.md` comments 1-5 and 7 as not needed for this stage because they validate accepted lifecycle behavior.
 - Marked `08-amgettuple-state-gating.md` comments 1-7 as not needed for this stage; the repeated-rescan note remains blocked on the current fatal scan-execution boundary and does not justify more helper surface yet.
 - Addressed external review `18-varlena-detoast-check-inverted.md` by switching both build detoast paths to pointer-comparison copy detection.
+- Addressed external review `14-encoding-dimension-u16-truncation.md` by adding explicit dimension validation before packing tqvector datums.
+- Addressed external review `10-page-layout-offset-number-u16-overflow.md` by using a checked offset-number conversion in `DataPage::insert_raw_tuple`.
+- Addressed external review `08-hnsw-rs-wildcard-dependency.md` by pinning `hnsw_rs` to the currently locked `0.3.4` release.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -80,6 +86,9 @@ Open requests:
 - `17-linear-scan-exhaustion-and-direction-guards.md`
 - `18-linear-scan-rescan-after-exhaustion.md`
 - `19-build-detoast-copy-detection.md`
+- `20-encode-dimension-boundary.md`
+- `21-page-offset-checked-conversion.md`
+- `22-pin-hnsw-rs-version.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
