@@ -434,6 +434,11 @@ unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                 pgrx::error!("tqhnsw amgettuple requires amrescan before scan execution");
             }
 
+            let metadata = read_metadata_page((*scan).indexRelation);
+            if metadata.dimensions == 0 {
+                return false;
+            }
+
             pgrx::error!("tqhnsw scan execution is not implemented yet: amgettuple")
         })
     }
@@ -2165,6 +2170,28 @@ pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: 
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_after_rescan_result(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> bool {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let result = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
 }
 
 #[cfg(test)]

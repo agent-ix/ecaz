@@ -1919,6 +1919,31 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_scaffold_returns_false_for_empty_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_empty_scaffold (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_empty_scaffold_idx ON tqhnsw_gettuple_empty_scaffold USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_empty_scaffold_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let found_tuple =
+            unsafe { am::debug_gettuple_after_rescan_result(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        assert!(
+            !found_tuple,
+            "amgettuple should report no tuples for a valid rescan on an empty index"
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(
