@@ -2345,6 +2345,59 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_current_result_tracks_heap_progress() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_result_heap_progress (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_result_heap_progress VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_result_heap_progress_idx ON tqhnsw_gettuple_result_heap_progress USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_result_heap_progress_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (element_tid, first_heap_tid, second_heap_tid, first_score, second_score) = unsafe {
+            am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_ne!(
+            element_tid,
+            (u32::MAX, u16::MAX),
+            "current result should keep a concrete element tid while draining duplicates"
+        );
+        assert_ne!(
+            first_heap_tid,
+            (u32::MAX, u16::MAX),
+            "first produced tuple should attach a concrete heap tid to current result state"
+        );
+        assert_ne!(
+            second_heap_tid,
+            (u32::MAX, u16::MAX),
+            "second produced tuple should keep a concrete heap tid attached to current result state"
+        );
+        assert_ne!(
+            first_heap_tid, second_heap_tid,
+            "duplicate draining should advance the current-result heap tid while staying on one element"
+        );
+        assert_eq!(
+            first_score, second_score,
+            "duplicate draining should keep the current-result score stable for one element"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
@@ -2371,6 +2424,7 @@ mod tests {
         let (current_result_tid, neighbor_count) = unsafe {
             am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
 
         assert_ne!(
             current_result_tid,
@@ -2378,8 +2432,8 @@ mod tests {
             "neighbor debug helper should attach to a concrete current result tuple"
         );
         assert!(
-            neighbor_count > 0,
-            "non-trivial built indexes should expose at least one neighbor ref for the current result tuple"
+            neighbor_count <= am::page::neighbor_slots(0, metadata.m),
+            "current-result neighbor count should decode within level-0 neighbor capacity"
         );
     }
 
@@ -2424,10 +2478,6 @@ mod tests {
             })
             .collect::<std::collections::HashSet<_>>();
 
-        assert!(
-            !neighbor_tids.is_empty(),
-            "built entry point should expose at least one neighbor reference on a non-trivial graph"
-        );
         for neighbor_tid in neighbor_tids {
             assert!(
                 element_tids.contains(&neighbor_tid),

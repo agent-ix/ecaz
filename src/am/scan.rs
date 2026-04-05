@@ -5,6 +5,8 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 use crate::quant::prod::PreparedQuery;
 
 use super::page;
+#[cfg(any(test, feature = "pg_test"))]
+use super::graph;
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
@@ -247,104 +249,12 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
         opaque.pending_heaptid_count = 0;
         opaque.pending_heaptid_index = 0;
     }
+    update_current_scan_result_heap_tid(opaque, tid);
     Some(tid)
 }
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
-    opaque.current_result_tid = page::ItemPointer::INVALID;
-    opaque.current_result_score = 0.0;
-    opaque.current_result_score_valid = false;
-}
-
-unsafe fn read_neighbor_tids(
-    index_relation: pg_sys::Relation,
-    neighbor_tid: page::ItemPointer,
-) -> Vec<page::ItemPointer> {
-    if neighbor_tid == page::ItemPointer::INVALID {
-        return Vec::new();
-    }
-
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            neighbor_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-    let item_id = unsafe { &*super::page_item_id(page_ptr, neighbor_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-        pgrx::error!("tqhnsw scan found unused neighbor tuple slot");
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-        pgrx::error!(
-            "tqhnsw found invalid neighbor tuple bounds on block {}",
-            neighbor_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let neighbor = page::TqNeighborTuple::decode(tuple_bytes)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode neighbor tuple: {e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    let count = neighbor.count as usize;
-    if count > neighbor.tids.len() {
-        pgrx::error!(
-            "tqhnsw neighbor tuple count {} exceeds payload tid count {}",
-            neighbor.count,
-            neighbor.tids.len()
-        );
-    }
-    neighbor.tids[..count].to_vec()
-}
-
-unsafe fn read_element_neighbor_tids(
-    index_relation: pg_sys::Relation,
-    element_tid: page::ItemPointer,
-    code_len: usize,
-) -> Vec<page::ItemPointer> {
-    let buffer = unsafe {
-        pg_sys::ReadBufferExtended(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-            element_tid.block_number,
-            pg_sys::ReadBufferMode::RBM_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-    let item_id = unsafe { &*super::page_item_id(page_ptr, element_tid.offset_number) };
-    if item_id.lp_flags() == 0 {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-        pgrx::error!("tqhnsw scan found unused element tuple slot");
-    }
-
-    let tuple_offset = item_id.lp_off() as usize;
-    let tuple_len = item_id.lp_len() as usize;
-    if tuple_offset + tuple_len > page_size {
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-        pgrx::error!(
-            "tqhnsw found invalid element tuple bounds on block {}",
-            element_tid.block_number
-        );
-    }
-
-    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode scan element tuple: {e}"));
-    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    unsafe { read_neighbor_tids(index_relation, element.neighbortid) }
+    opaque.current_result = CurrentScanResult::default();
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -420,18 +330,20 @@ unsafe fn next_linear_scan_heap_tid(
                 "scan offset should fit in page-local u16 range"
             );
             opaque.next_offset_number = offset + 1;
-            opaque.current_result_tid = page::ItemPointer {
-                block_number,
-                offset_number: offset,
-            };
-            opaque.current_result_score = score_scan_element_result(
-                index_relation,
-                heap_relation,
+            set_current_scan_result(
                 opaque,
-                element.heaptids[0],
-                &element.code,
+                page::ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                },
+                score_scan_element_result(
+                    index_relation,
+                    heap_relation,
+                    opaque,
+                    element.heaptids[0],
+                    &element.code,
+                ),
             );
-            opaque.current_result_score_valid = true;
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -489,6 +401,25 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
+fn set_current_scan_result(
+    opaque: &mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    score: f32,
+) {
+    opaque.current_result = CurrentScanResult {
+        element_tid,
+        heap_tid: page::ItemPointer::INVALID,
+        score,
+        score_valid: true,
+    };
+}
+
+fn update_current_scan_result_heap_tid(opaque: &mut TqScanOpaque, heap_tid: page::ItemPointer) {
+    if opaque.current_result.element_tid != page::ItemPointer::INVALID {
+        opaque.current_result.heap_tid = heap_tid;
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
     if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
@@ -498,6 +429,26 @@ unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
     let query =
         unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
     query.to_vec()
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct CurrentScanResult {
+    element_tid: page::ItemPointer,
+    heap_tid: page::ItemPointer,
+    score: f32,
+    score_valid: bool,
+}
+
+impl Default for CurrentScanResult {
+    fn default() -> Self {
+        Self {
+            element_tid: page::ItemPointer::INVALID,
+            heap_tid: page::ItemPointer::INVALID,
+            score: 0.0,
+            score_valid: false,
+        }
+    }
 }
 
 #[repr(C)]
@@ -512,9 +463,7 @@ struct TqScanOpaque {
     scan_seed: u64,
     scan_code_len: usize,
     scan_block_count: u32,
-    current_result_tid: page::ItemPointer,
-    current_result_score: f32,
-    current_result_score_valid: bool,
+    current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
     scan_exhausted: bool,
@@ -535,9 +484,7 @@ impl Default for TqScanOpaque {
             scan_seed: 0,
             scan_code_len: 0,
             scan_block_count: 0,
-            current_result_tid: page::ItemPointer::INVALID,
-            current_result_score: 0.0,
-            current_result_score_valid: false,
+            current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             scan_exhausted: false,
@@ -846,22 +793,22 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_found = opaque.current_result_tid != page::ItemPointer::INVALID;
+    let before_found = opaque.current_result.element_tid != page::ItemPointer::INVALID;
     let before_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let before_score = opaque.current_result_score_valid;
-    let before_score_value = opaque.current_result_score;
+    let before_score = opaque.current_result.score_valid;
+    let before_score_value = opaque.current_result.score;
 
     let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let after_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let after_score = opaque.current_result_score_valid;
-    let after_score_value = opaque.current_result_score;
+    let after_score = opaque.current_result.score_valid;
+    let after_score_value = opaque.current_result.score;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -910,8 +857,8 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let first_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
 
     assert!(
@@ -920,21 +867,21 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let second_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let second_score = opaque.current_result_score_valid;
-    let second_score_value = opaque.current_result_score;
+    let second_score = opaque.current_result.score_valid;
+    let second_score_value = opaque.current_result.score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let exhausted_score = opaque.current_result_score_valid;
-    let exhausted_score_value = opaque.current_result_score;
+    let exhausted_score = opaque.current_result.score_valid;
+    let exhausted_score_value = opaque.current_result.score;
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -944,10 +891,10 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let rescanned_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let rescanned_score = opaque.current_result_score_valid;
+    let rescanned_score = opaque.current_result.score_valid;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -986,17 +933,74 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let current_result_tid = (
-        opaque.current_result_tid.block_number,
-        opaque.current_result_tid.offset_number,
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
     );
-    let neighbors = unsafe {
-        read_element_neighbor_tids(index_relation, opaque.current_result_tid, opaque.scan_code_len)
+    let (_element, neighbors) = unsafe {
+        graph::load_graph_adjacency(
+            index_relation,
+            opaque.current_result.element_tid,
+            opaque.scan_code_len,
+        )
     };
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (current_result_tid, neighbors.len())
+    (current_result_tid, neighbors.tids.len())
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (HeapTidCoords, HeapTidCoords, HeapTidCoords, f32, f32) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "heap-progress debug helper requires a first tuple"
+    );
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let first_heap_tid = (
+        opaque.current_result.heap_tid.block_number,
+        opaque.current_result.heap_tid.offset_number,
+    );
+    let element_tid = (
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
+    );
+    let first_score = opaque.current_result.score;
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "heap-progress debug helper requires a duplicate tuple"
+    );
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let second_heap_tid = (
+        opaque.current_result.heap_tid.block_number,
+        opaque.current_result.heap_tid.offset_number,
+    );
+    let second_score = opaque.current_result.score;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        element_tid,
+        first_heap_tid,
+        second_heap_tid,
+        first_score,
+        second_score,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1100,9 +1104,11 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
     }
 
     let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
-    let neighbors = unsafe { read_element_neighbor_tids(index_relation, metadata.entry_point, code_len) };
+    let (_element, neighbors) =
+        unsafe { graph::load_graph_adjacency(index_relation, metadata.entry_point, code_len) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     neighbors
+        .tids
         .into_iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect()

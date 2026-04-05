@@ -9,6 +9,7 @@ use self::build::{BuildState, BuildTuple};
 
 mod cost;
 mod build;
+mod graph;
 mod options;
 pub mod page;
 mod routine;
@@ -21,6 +22,7 @@ pub(crate) use self::scan::{
     debug_begin_end_scan, debug_end_scan_twice, debug_gettuple_after_rescan_result,
     debug_entry_point_neighbor_tids,
     debug_gettuple_backward_after_rescan,
+    debug_gettuple_current_result_heap_progress,
     debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_neighbors,
     debug_gettuple_current_result_state,
     debug_gettuple_exhaustion_state, debug_gettuple_rescan_after_exhaustion,
@@ -746,7 +748,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     count
 }
 
-unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
     unsafe {
         page_ptr
             .add(
@@ -756,7 +758,7 @@ unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdD
     }
 }
 
-fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
+pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
     let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
     ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
         / size_of::<pg_sys::ItemIdData>()) as u16
