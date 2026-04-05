@@ -4,9 +4,8 @@ use pgrx::{pg_sys, FromDatum, PgBox};
 
 use crate::quant::prod::PreparedQuery;
 
-use super::page;
-#[cfg(any(test, feature = "pg_test"))]
 use super::graph;
+use super::page;
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
@@ -101,6 +100,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             store_scan_query(opaque, &query);
             store_scan_prepared_query(opaque, &query, &metadata);
             reset_scan_position(opaque);
+            initialize_scan_entry_candidate(
+                (*scan).indexRelation,
+                (*scan).heapRelation,
+                opaque,
+                &metadata,
+            );
         })
     }
 }
@@ -222,6 +227,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.scan_exhausted = false;
     opaque.pending_heaptid_count = 0;
     opaque.pending_heaptid_index = 0;
+    clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
 }
 
@@ -255,6 +261,39 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
     opaque.current_result = CurrentScanResult::default();
+}
+
+fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
+    opaque.entry_candidate = ScanCandidate::default();
+}
+
+unsafe fn initialize_scan_entry_candidate(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    metadata: &page::MetadataPage,
+) {
+    clear_scan_candidate_state(opaque);
+    if metadata.dimensions == 0 || metadata.entry_point == page::ItemPointer::INVALID {
+        return;
+    }
+
+    let entry = unsafe { graph::load_graph_element(index_relation, metadata.entry_point, opaque.scan_code_len) };
+    if entry.deleted || entry.heaptids.is_empty() {
+        return;
+    }
+
+    opaque.entry_candidate = ScanCandidate {
+        element_tid: entry.tid,
+        score: score_scan_element_result(
+            index_relation,
+            heap_relation,
+            opaque,
+            entry.heaptids[0],
+            &entry.code,
+        ),
+        score_valid: true,
+    };
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -356,6 +395,7 @@ unsafe fn next_linear_scan_heap_tid(
     }
 
     opaque.scan_exhausted = true;
+    clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
     None
 }
@@ -452,6 +492,24 @@ impl Default for CurrentScanResult {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct ScanCandidate {
+    element_tid: page::ItemPointer,
+    score: f32,
+    score_valid: bool,
+}
+
+impl Default for ScanCandidate {
+    fn default() -> Self {
+        Self {
+            element_tid: page::ItemPointer::INVALID,
+            score: 0.0,
+            score_valid: false,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Debug)]
 struct TqScanOpaque {
     rescan_called: bool,
@@ -463,6 +521,7 @@ struct TqScanOpaque {
     scan_seed: u64,
     scan_code_len: usize,
     scan_block_count: u32,
+    entry_candidate: ScanCandidate,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -484,6 +543,7 @@ impl Default for TqScanOpaque {
             scan_seed: 0,
             scan_code_len: 0,
             scan_block_count: 0,
+            entry_candidate: ScanCandidate::default(),
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -822,6 +882,52 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
         after_tid,
         after_score,
         after_score_value,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_rescan_entry_candidate_state(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (bool, HeapTidCoords, f32, bool, HeapTidCoords, f32) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_valid = opaque.entry_candidate.score_valid;
+    let before_tid = (
+        opaque.entry_candidate.element_tid.block_number,
+        opaque.entry_candidate.element_tid.offset_number,
+    );
+    let before_score = opaque.entry_candidate.score;
+
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let after_valid = opaque.entry_candidate.score_valid;
+    let after_tid = (
+        opaque.entry_candidate.element_tid.block_number,
+        opaque.entry_candidate.element_tid.offset_number,
+    );
+    let after_score = opaque.entry_candidate.score;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_valid,
+        before_tid,
+        before_score,
+        after_valid,
+        after_tid,
+        after_score,
     )
 }
 

@@ -2398,6 +2398,66 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_rescan_seeds_entry_candidate_state() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_entry_candidate_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_entry_candidate_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_entry_candidate_state_idx ON tqhnsw_entry_candidate_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_entry_candidate_state_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
+            unsafe {
+                am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+            };
+
+        assert!(
+            before_valid,
+            "amrescan should seed an entry candidate for a non-empty index"
+        );
+        assert_eq!(
+            before_tid,
+            (
+                metadata.entry_point.block_number,
+                metadata.entry_point.offset_number
+            ),
+            "entry candidate should point at the persisted metadata entry point"
+        );
+        assert_ne!(
+            before_score, 0.0,
+            "entry candidate should carry a computed score for future ordered traversal"
+        );
+        assert!(
+            !after_valid,
+            "entry candidate should clear once the bootstrap scan fully exhausts"
+        );
+        assert_eq!(
+            after_tid,
+            (u32::MAX, u16::MAX),
+            "exhaustion should clear the entry candidate tuple pointer"
+        );
+        assert_eq!(
+            after_score, 0.0,
+            "exhaustion should clear the entry candidate score"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
