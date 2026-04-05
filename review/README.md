@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `6abaf5b`
+Current head: `4e1223d`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -96,6 +96,8 @@ Current tqhnsw state summary:
 - Frontier-head lifecycle coverage now verifies that the reported head and both frontier slots remain stable during partial bootstrap scan progress and both clear on full exhaustion.
 - The fixed two-slot frontier now also has one explicit head-consumption helper that clears the current best slot and recomputes the next head under the existing ordering rule.
 - Frontier-consumption coverage now verifies that consuming the current head either reselects the remaining valid slot or clears the frontier completely when no valid slot remains.
+- Successor-candidate seeding now skips `INVALID` neighbor TIDs before attempting graph element loads, instead of letting an invalid ref fall through to page reads.
+- Successor-candidate coverage now verifies that seeding skips `INVALID` refs and continues until a concrete neighbor candidate is available.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -179,6 +181,7 @@ Open requests:
 - `47-two-slot-frontier-head-ordering.md`
 - `48-frontier-head-lifecycle.md`
 - `49-frontier-head-consumption.md`
+- `50-skip-invalid-successor-neighbor-refs.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
