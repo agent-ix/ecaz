@@ -8,6 +8,8 @@ use crate::quant::prod::PreparedQuery;
 use super::graph;
 use super::page;
 
+const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
@@ -363,22 +365,27 @@ unsafe fn initialize_scan_entry_candidate(
         score_valid: true,
     });
 
-    let (_, neighbors) = unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
-    if let Some(candidate) = select_successor_candidate(&neighbors.tids, |neighbor_tid| {
-        let neighbor = unsafe {
-            graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
-        };
-        if neighbor.deleted || neighbor.heaptids.is_empty() {
-            return None;
-        }
+    let (_, neighbors) =
+        unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
+    let max_successor_candidates =
+        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(candidate_frontier_ref(opaque).len());
+    let successor_candidates =
+        collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
+            let neighbor = unsafe {
+                graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
+            };
+            if neighbor.deleted || neighbor.heaptids.is_empty() {
+                return None;
+            }
 
-        Some(ScanCandidate {
-            element_tid: neighbor.tid,
-            score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
-            score_valid: true,
-        })
-    }) {
-        candidate_frontier_mut(opaque).push(candidate);
+            Some(ScanCandidate {
+                element_tid: neighbor.tid,
+                score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
+                score_valid: true,
+            })
+        });
+    if !successor_candidates.is_empty() {
+        candidate_frontier_mut(opaque).extend(successor_candidates);
     }
 
     recompute_candidate_frontier_head(opaque);
@@ -427,24 +434,33 @@ fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCand
     Some(consumed)
 }
 
-fn select_successor_candidate<F>(
+fn collect_successor_candidates<F>(
     neighbor_tids: &[page::ItemPointer],
+    max_candidates: usize,
     mut candidate_for_tid: F,
-) -> Option<ScanCandidate>
+) -> Vec<ScanCandidate>
 where
     F: FnMut(page::ItemPointer) -> Option<ScanCandidate>,
 {
+    let mut candidates = Vec::new();
+    if max_candidates == 0 {
+        return candidates;
+    }
+
     for neighbor_tid in neighbor_tids.iter().copied() {
         if neighbor_tid == page::ItemPointer::INVALID {
             continue;
         }
 
         if let Some(candidate) = candidate_for_tid(neighbor_tid) {
-            return Some(candidate);
+            candidates.push(candidate);
+            if candidates.len() >= max_candidates {
+                break;
+            }
         }
     }
 
-    None
+    candidates
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -699,6 +715,9 @@ type DebugCandidateFrontier = [DebugCandidateSlot; 2];
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateHead = Option<usize>;
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontierSlots = Vec<DebugCandidateSlot>;
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierLifecycle = (
@@ -1157,7 +1176,11 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 pub(crate) unsafe fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (DebugCandidateHead, DebugCandidateFrontier) {
+) -> (
+    DebugCandidateHead,
+    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
+) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1170,12 +1193,22 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let frontier = debug_candidate_frontier_snapshot(opaque);
+    let frontier_slots = candidate_frontier_ref(opaque)
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.score_valid,
+                (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+                candidate.score,
+            )
+        })
+        .collect::<Vec<_>>();
     let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (head, frontier)
+    (head, frontier, frontier_slots)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1733,7 +1766,7 @@ mod tests {
     }
 
     #[test]
-    fn select_successor_candidate_skips_invalid_then_falls_through() {
+    fn collect_successor_candidates_skips_invalid_and_collects_multiple() {
         let skipped = page::ItemPointer::INVALID;
         let first_valid = page::ItemPointer {
             block_number: 8,
@@ -1745,20 +1778,19 @@ mod tests {
         };
         let mut visited = Vec::new();
 
-        let candidate =
-            select_successor_candidate(&[skipped, first_valid, second_valid], |neighbor_tid| {
+        let candidates = collect_successor_candidates(
+            &[skipped, first_valid, second_valid],
+            2,
+            |neighbor_tid| {
                 visited.push((neighbor_tid.block_number, neighbor_tid.offset_number));
-                if neighbor_tid == first_valid {
-                    return None;
-                }
 
                 Some(ScanCandidate {
                     element_tid: neighbor_tid,
                     score: 2.5,
                     score_valid: true,
                 })
-            })
-            .expect("second valid neighbor should be selected after skipping invalid and empty");
+            },
+        );
 
         assert_eq!(
             visited,
@@ -1766,12 +1798,15 @@ mod tests {
                 second_valid.block_number,
                 second_valid.offset_number
             )],
-            "selection should skip INVALID neighbors and continue until a concrete candidate exists"
+            "collection should skip INVALID neighbors and continue through live candidates in order"
         );
         assert_eq!(
-            candidate.element_tid, second_valid,
-            "selection should return the first neighbor that produces a concrete candidate"
+            candidates
+                .into_iter()
+                .map(|candidate| candidate.element_tid)
+                .collect::<Vec<_>>(),
+            vec![first_valid, second_valid],
+            "collection should return live candidates in neighbor order up to the requested limit"
         );
-        assert!(candidate.score_valid, "returned candidate should stay marked valid");
     }
 }

@@ -2670,8 +2670,12 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (head, frontier) =
+        let (head, frontier, frontier_slots) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
+            .into_iter()
+            .filter(|tid| *tid != (u32::MAX, u16::MAX))
+            .collect::<Vec<_>>();
 
         assert!(
             frontier[0].0,
@@ -2709,21 +2713,32 @@ mod tests {
             );
         }
 
-        let expected_head = match (frontier[0].0, frontier[1].0) {
-            (false, false) => None,
-            (true, false) => Some(0),
-            (false, true) => Some(1),
-            (true, true) => {
-                if frontier[0].2 <= frontier[1].2 {
-                    Some(0)
-                } else {
-                    Some(1)
-                }
-            }
-        };
+        assert_eq!(
+            frontier_slots.len(),
+            1 + valid_entry_neighbors.len().min(2),
+            "bootstrap frontier should seed the entry candidate plus up to two live entry neighbors"
+        );
+        if valid_entry_neighbors.len() >= 2 {
+            assert_eq!(
+                frontier_slots.len(),
+                3,
+                "when the entry point has at least two live neighbors, the widened bootstrap frontier should hold three candidates"
+            );
+        }
+
+        let expected_head = frontier_slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.0)
+            .min_by(|(left_index, left), (right_index, right)| {
+                left.2
+                    .total_cmp(&right.2)
+                    .then(left_index.cmp(right_index))
+            })
+            .map(|(index, _)| index);
         assert_eq!(
             head, expected_head,
-            "frontier head should pick the best valid slot under the current two-slot ordering rule"
+            "frontier head should pick the best valid slot across the current widened bootstrap frontier"
         );
     }
 
@@ -2799,8 +2814,7 @@ mod tests {
         Spi::run(
             "INSERT INTO tqhnsw_frontier_head_consume VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -2904,12 +2918,12 @@ mod tests {
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (head, frontier) =
+        let (head, _frontier, frontier_slots) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         let (before, partial, exhausted) =
             unsafe { am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
-        let mut expected = frontier
+        let mut expected = frontier_slots
             .into_iter()
             .filter_map(|(valid, tid, _)| valid.then_some(tid))
             .collect::<Vec<_>>();
