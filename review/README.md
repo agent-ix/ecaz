@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `3183e3b`
+Current head: `f9ae67e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -26,7 +26,8 @@ Current tqhnsw state summary:
 - Vacuum callbacks are benign no-ops that return current page/tuple stats.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
-- `amgettuple` still hard-errors, so planner-visible scan execution remains disabled in practice.
+- `amgettuple` now requires `amrescan`-initialized scan state before execution.
+- `amgettuple` still rejects actual tuple production, so planner-visible scan execution remains disabled in practice.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -41,3 +42,4 @@ Requests:
 - `05-vacuum-noop-callbacks.md`
 - `06-scan-descriptor-scaffolding.md`
 - `07-rescan-query-validation.md`
+- `08-amgettuple-state-gating.md`
