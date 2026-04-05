@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `9ea08b4`
+Current head: `ed5b247`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -78,6 +78,9 @@ Current tqhnsw state summary:
 - The build module now owns `BuildState` and `BuildTuple`, leaving `src/am/mod.rs` focused much more narrowly on live insert and scan behavior.
 - Scan descriptor lifecycle, scan-local state, bootstrap linear scan execution, and scan debug helpers now live in `src/am/scan.rs`.
 - ADR for long-horizon AM growth boundaries: `spec/adr/ADR-012-am-module-boundaries-for-growth.md`
+- Scan-side page-read helpers can now load persisted neighbor refs for an element tuple directly from index storage as groundwork for upcoming traversal state.
+- Current-result graph-read coverage now verifies that a produced scan result has concrete neighbor refs and that the metadata entry point's persisted neighbor refs target real element tuples.
+- The current on-disk neighbor tuple layout is still a flat adjacency list, not a layer-segmented HNSW representation, so this slice intentionally stops at page-level graph access instead of promising true layer-aware traversal.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -152,6 +155,7 @@ Open requests:
 - `38-scan-current-result-scoring.md`
 - `39-am-scan-module-boundary.md`
 - `40-ci-workflow-hardening.md`
+- `41-scan-page-level-neighbor-access.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
