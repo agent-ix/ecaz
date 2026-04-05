@@ -17,6 +17,8 @@ pg15 = ["pgrx/pg15", "pgrx-tests/pg15"]
 pg16 = ["pgrx/pg16", "pgrx-tests/pg16"]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg_test = []
+bench = []
+dhat-heap = ["dhat"]
 
 [dependencies]
 pgrx = "0.17"
@@ -25,8 +27,15 @@ hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"
 
+[dependencies.dhat]
+version = "0.3"
+optional = true
+
 [dev-dependencies]
 pgrx-tests = "0.17"
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.5"
+iai-callgrind = "0.14"
 
 [profile.dev]
 panic = "unwind"
@@ -37,3 +46,89 @@ panic = "unwind"
 opt-level = 3
 lto = "fat"
 codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+# --- Criterion benchmarks ---
+
+[[bench]]
+name = "quant_encode"
+harness = false
+path = "benches/criterion/quant_encode.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "quant_score"
+harness = false
+path = "benches/criterion/quant_score.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "quant_prepare"
+harness = false
+path = "benches/criterion/quant_prepare.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "hadamard"
+harness = false
+path = "benches/criterion/hadamard.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "codebook"
+harness = false
+path = "benches/criterion/codebook.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "bitpack"
+harness = false
+path = "benches/criterion/bitpack.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "page_codec"
+harness = false
+path = "benches/criterion/page_codec.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "text_io"
+harness = false
+path = "benches/criterion/text_io.rs"
+required-features = ["bench"]
+
+# --- iai-callgrind benchmarks ---
+
+[[bench]]
+name = "iai_quant_score"
+harness = false
+path = "benches/iai/quant_score.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "iai_hadamard"
+harness = false
+path = "benches/iai/hadamard.rs"
+required-features = ["bench"]
+
+[[bench]]
+name = "iai_bitpack"
+harness = false
+path = "benches/iai/bitpack.rs"
+required-features = ["bench"]
+
+# --- dhat profiling binaries ---
+
+[[bin]]
+name = "dhat_encode"
+path = "benches/dhat/encode.rs"
+required-features = ["dhat-heap"]
+
+[[bin]]
+name = "dhat_score"
+path = "benches/dhat/score.rs"
+required-features = ["dhat-heap"]

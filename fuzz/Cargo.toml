@@ -1,0 +1,32 @@
+[package]
+name = "tqvector-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tqvector = { path = "..", features = ["bench"] }
+
+[[bin]]
+name = "fuzz_parse_text"
+path = "fuzz_targets/parse_text.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_unpack_mse"
+path = "fuzz_targets/unpack_mse.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_element_tuple_decode"
+path = "fuzz_targets/element_tuple_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_neighbor_tuple_decode"
+path = "fuzz_targets/neighbor_tuple_decode.rs"
+doc = false

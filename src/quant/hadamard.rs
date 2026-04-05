@@ -50,4 +50,16 @@ mod tests {
         let rel_err = ((input_norm - output_norm) / input_norm.max(1.0)).abs();
         assert!(rel_err < 1e-5, "relative error = {rel_err}");
     }
+
+    #[test]
+    fn miri_fwht_small() {
+        let mut data = vec![1.0f32, -2.0, 0.5, 3.0];
+        fwht_in_place(&mut data);
+    }
+
+    #[test]
+    fn miri_orthonormal_fwht_small() {
+        let mut data = vec![1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25];
+        orthonormal_fwht_in_place(&mut data);
+    }
 }

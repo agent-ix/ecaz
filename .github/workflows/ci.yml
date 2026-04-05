@@ -27,10 +27,18 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Lint
-        run: cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --features pg17,bench -- -D warnings
 
       - name: Unit tests
         run: cargo test
+
+      - name: Layout assertions
+        run: cargo test --features bench --test size_of_assertions
+
+      - name: Property tests
+        run: cargo test --features bench --test proptest_quant --test proptest_page -- --test-threads=1
+        env:
+          PROPTEST_CASES: 256
 
       - name: Unsafe audit
         run: bash scripts/check_unsafe_comments.sh
@@ -80,3 +88,50 @@ jobs:
 
       - name: Check licenses
         run: cargo deny check licenses
+
+  benchmarks:
+    name: Benchmark Regression
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Criterion benchmarks
+        run: cargo bench --features bench -- --output-format bencher | tee /tmp/bench_output.txt
+
+      - name: Upload benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: cargo
+          output-file-path: /tmp/bench_output.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "110%"
+          comment-on-alert: true
+          fail-on-alert: true
+
+  miri:
+    name: Miri
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain with Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Miri tests
+        run: cargo +nightly miri test --lib -- miri_
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"

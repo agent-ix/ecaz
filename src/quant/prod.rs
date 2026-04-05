@@ -243,7 +243,10 @@ impl ProdQuantizer {
             mse_len + qjl_len
         );
         let qjl_start = mse_len;
-        (&code_bytes[..qjl_start], &code_bytes[qjl_start..qjl_start + qjl_len])
+        (
+            &code_bytes[..qjl_start],
+            &code_bytes[qjl_start..qjl_start + qjl_len],
+        )
     }
 
     fn split_payload<'a>(&self, payload: &'a [u8]) -> (f32, &'a [u8], &'a [u8]) {
@@ -531,10 +534,8 @@ mod tests {
         let mut code_b = b.mse_packed.clone();
         code_b.extend_from_slice(&b.qjl_packed);
 
-        let encoded_score = quantizer.score_ip_encoded_lite(
-            &quantizer.pack_payload(&a),
-            &quantizer.pack_payload(&b),
-        );
+        let encoded_score = quantizer
+            .score_ip_encoded_lite(&quantizer.pack_payload(&a), &quantizer.pack_payload(&b));
         let code_score = quantizer.score_ip_codes_lite(&code_a, &code_b);
 
         assert_eq!(encoded_score, code_score);
@@ -545,5 +546,54 @@ mod tests {
         let first = ProdQuantizer::cached(64, 4, 42);
         let second = ProdQuantizer::cached(64, 4, 42);
         assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    // --- Miri tests (small dimensions for speed) ---
+    // Run with: cargo +nightly miri test --lib -- miri_
+
+    #[test]
+    fn miri_encode_decode_roundtrip() {
+        let q = ProdQuantizer::new(8, 4, 42);
+        let v = random_unit_vector(8, 99);
+        let encoded = q.encode(&v);
+        let payload = q.pack_payload(&encoded);
+        let _ = q.decode_approximate(&payload);
+    }
+
+    #[test]
+    fn miri_pack_unpack_mse() {
+        let indices = vec![0u16, 3, 7, 1, 5, 2, 6, 4];
+        let packed = pack_mse_indices(&indices, 3);
+        let unpacked = unpack_mse_indices(&packed, 8, 3);
+        assert_eq!(unpacked, indices);
+    }
+
+    #[test]
+    fn miri_pack_unpack_qjl() {
+        let signs = vec![true, false, true, true, false, false, true, false];
+        let packed = pack_qjl_signs(&signs);
+        let unpacked = unpack_qjl_signs(&packed, 8);
+        assert_eq!(unpacked, signs);
+    }
+
+    #[test]
+    fn miri_score_ip_encoded() {
+        let q = ProdQuantizer::new(8, 4, 42);
+        let query = random_unit_vector(8, 1);
+        let prepared = q.prepare_ip_query(&query);
+        let payload = q.pack_payload(&q.encode(&random_unit_vector(8, 2)));
+        let _ = q.score_ip_encoded(&prepared, &payload);
+    }
+
+    #[test]
+    fn miri_score_ip_codes_lite() {
+        let q = ProdQuantizer::new(8, 4, 42);
+        let enc_a = q.encode(&random_unit_vector(8, 3));
+        let enc_b = q.encode(&random_unit_vector(8, 4));
+        let mut code_a = enc_a.mse_packed;
+        code_a.extend_from_slice(&enc_a.qjl_packed);
+        let mut code_b = enc_b.mse_packed;
+        code_b.extend_from_slice(&enc_b.qjl_packed);
+        let _ = q.score_ip_codes_lite(&code_a, &code_b);
     }
 }

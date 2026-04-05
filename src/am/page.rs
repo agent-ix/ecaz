@@ -724,4 +724,60 @@ mod tests {
         let decoded = chain.read_element(last_tid, 772).unwrap();
         assert_eq!(decoded, tuple);
     }
+
+    // --- Miri tests ---
+
+    #[test]
+    fn miri_item_pointer_roundtrip() {
+        let ptr = ItemPointer {
+            block_number: 42,
+            offset_number: 7,
+        };
+        let mut buf = Vec::new();
+        ptr.encode_into(&mut buf);
+        let decoded = ItemPointer::decode(&buf).unwrap();
+        assert_eq!(decoded, ptr);
+    }
+
+    #[test]
+    fn miri_element_tuple_roundtrip() {
+        let tuple = TqElementTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            gamma: 0.5,
+            neighbortid: tid(2, 1),
+            code: vec![0xAB; 16],
+        };
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqElementTuple::decode(&encoded, 16).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn miri_neighbor_tuple_roundtrip() {
+        let tuple = TqNeighborTuple {
+            count: 2,
+            tids: vec![tid(1, 1), tid(2, 2)],
+        };
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqNeighborTuple::decode(&encoded).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn miri_metadata_roundtrip() {
+        let meta = MetadataPage {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 32,
+            bits: 4,
+            max_level: 3,
+            seed: 42,
+        };
+        let encoded = meta.encode();
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert_eq!(decoded, meta);
+    }
 }
