@@ -667,37 +667,35 @@ unsafe extern "C-unwind" fn tqhnsw_build_callback(
 }
 
 unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
-    let mut options = TqHnswOptions::DEFAULT;
-
-    let relid = unsafe { (*index_relation).rd_id };
-    let reloptions = pgrx::Spi::get_one_with_args::<Vec<String>>(
-        "SELECT reloptions FROM pg_class WHERE oid = $1",
-        &[unsafe { pgrx::datum::DatumWithOid::new(relid, pg_sys::OIDOID) }],
-    )
-    .unwrap_or_else(|e| pgrx::error!("failed to read tqhnsw reloptions: {e}"));
-
-    if let Some(reloptions) = reloptions {
-        for reloption in reloptions {
-            if let Some(value) = reloption.strip_prefix("m=") {
-                options.m = value
-                    .parse::<i32>()
-                    .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw m reloption: {e}"));
-            } else if let Some(value) = reloption.strip_prefix("ef_construction=") {
-                options.ef_construction = value.parse::<i32>().unwrap_or_else(|e| {
-                    pgrx::error!("invalid tqhnsw ef_construction reloption: {e}")
-                });
-            } else if let Some(value) = reloption.strip_prefix("build_source_column=") {
-                if value.is_empty() {
-                    pgrx::error!(
-                        "invalid tqhnsw build_source_column reloption: value must not be empty"
-                    );
-                }
-                options.build_source_column = Some(value.to_owned());
-            }
-        }
+    let rd_options = unsafe { (*index_relation).rd_options };
+    if rd_options.is_null() {
+        return TqHnswOptions::DEFAULT;
     }
 
-    options
+    let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
+    let build_source_column = if reloptions.build_source_column_offset == 0 {
+        None
+    } else {
+        let value_ptr = unsafe {
+            rd_options
+                .cast::<u8>()
+                .add(reloptions.build_source_column_offset as usize)
+                .cast::<std::ffi::c_char>()
+        };
+        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+            .to_str()
+            .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw build_source_column reloption: {e}"));
+        if value.is_empty() {
+            pgrx::error!("invalid tqhnsw build_source_column reloption: value must not be empty");
+        }
+        Some(value.to_owned())
+    };
+
+    TqHnswOptions {
+        m: reloptions.m,
+        ef_construction: reloptions.ef_construction,
+        build_source_column,
+    }
 }
 
 unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: page::MetadataPage) {
