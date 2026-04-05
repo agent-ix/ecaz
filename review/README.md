@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `bf46ad0`
+Current head: `bd70e2c`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -91,6 +91,8 @@ Current tqhnsw state summary:
 - Successor-candidate coverage now verifies that any seeded successor points at one of the persisted entry-point neighbor refs and carries a computed score.
 - Entry and successor candidates now live in one explicit fixed two-slot frontier container instead of two unrelated scan-state fields.
 - Frontier-shape coverage now verifies that the first slot is the seeded entry candidate and the second slot is either a concrete scored successor or a cleared empty slot.
+- The two-slot frontier now also carries one explicit head-selection rule: valid candidates first, then lower score wins.
+- Frontier ordering coverage now verifies that the reported head slot matches the current two-slot ordering rule.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -171,6 +173,7 @@ Open requests:
 - `44-entry-candidate-lifecycle.md`
 - `45-successor-candidate-seeding.md`
 - `46-two-slot-candidate-frontier.md`
+- `47-two-slot-frontier-head-ordering.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
