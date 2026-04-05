@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `096dc8d`
+Current head: `5f8a35f`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -68,6 +68,7 @@ Current tqhnsw state summary:
 - FR-007, FR-009, and FR-016 now backport the current staged implementation boundaries into the functional spec.
 - ADR for the planner cost gate: `spec/adr/ADR-011-planner-cost-override-until-ordered-scan.md`
 - `src/am/mod.rs` splitting has started by extracting planner-cost and vacuum callbacks into dedicated submodules with no behavior change.
+- `src/am/mod.rs` now also extracts relation-option parsing and `amoptions` registration into a dedicated module with no behavior change.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -133,6 +134,7 @@ Open requests:
 - `29-gamma-aware-duplicate-coalescing.md`
 - `30-plan-and-spec-backfill.md`
 - `31-am-mod-cost-vacuum-split.md`
+- `32-am-options-module-split.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
