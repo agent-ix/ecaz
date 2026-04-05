@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `55148a9`
+Current head: `d57a2b5`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -76,6 +76,8 @@ Current tqhnsw state summary:
 - `src/am/mod.rs` now also extracts build tuple decoding and `build_source_column` heap scan plumbing into the build module.
 - `src/am/mod.rs` now also extracts graph construction, entry-point selection, and staged data-page writes into the build module.
 - The build module now owns `BuildState` and `BuildTuple`, leaving `src/am/mod.rs` focused much more narrowly on live insert and scan behavior.
+- Scan descriptor lifecycle, scan-local state, bootstrap linear scan execution, and scan debug helpers now live in `src/am/scan.rs`.
+- ADR for long-horizon AM growth boundaries: `spec/adr/ADR-012-am-module-boundaries-for-growth.md`
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -113,7 +115,7 @@ Review triage at `46d00bb`:
 - Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
 - Addressed the next ordered-scan groundwork slice by teaching the bootstrap scan to compute a current-result `<#>` value from the cached prepared query plus persisted candidate `gamma`.
 - Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
-- The next structural code slice before scan traversal is continuing the `src/am/mod.rs` split into the planned submodules so graph-scan work lands on a cleaner review surface.
+- Addressed the next structural boundary by extracting scan execution into `src/am/scan.rs` so traversal work grows in the scan module instead of re-expanding `src/am/mod.rs`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -148,6 +150,7 @@ Open requests:
 - `36-am-build-graph-and-page-staging-split.md`
 - `37-am-build-state-type-ownership.md`
 - `38-scan-current-result-scoring.md`
+- `39-am-scan-module-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
