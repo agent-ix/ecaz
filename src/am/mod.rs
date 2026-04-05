@@ -501,6 +501,35 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.scan_exhausted = false;
+    opaque.pending_heaptid_count = 0;
+    opaque.pending_heaptid_index = 0;
+}
+
+fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
+    debug_assert!(heaptids.len() <= page::HEAPTID_INLINE_CAPACITY);
+
+    opaque.pending_heaptids.fill(page::ItemPointer::INVALID);
+    opaque.pending_heaptid_count =
+        u8::try_from(heaptids.len()).expect("heap tid count should fit in u8");
+    opaque.pending_heaptid_index = 0;
+
+    for (index, tid) in heaptids.iter().copied().enumerate() {
+        opaque.pending_heaptids[index] = tid;
+    }
+}
+
+fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
+    if opaque.pending_heaptid_index >= opaque.pending_heaptid_count {
+        return None;
+    }
+
+    let tid = opaque.pending_heaptids[opaque.pending_heaptid_index as usize];
+    opaque.pending_heaptid_index += 1;
+    if opaque.pending_heaptid_index >= opaque.pending_heaptid_count {
+        opaque.pending_heaptid_count = 0;
+        opaque.pending_heaptid_index = 0;
+    }
+    Some(tid)
 }
 
 unsafe fn next_linear_scan_heap_tid(
@@ -508,6 +537,10 @@ unsafe fn next_linear_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<page::ItemPointer> {
+    if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
+        return Some(heap_tid);
+    }
+
     if opaque.scan_exhausted {
         return None;
     }
@@ -574,8 +607,9 @@ unsafe fn next_linear_scan_heap_tid(
                 opaque.next_offset_number = 1;
             }
 
+            store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-            return Some(element.heaptids[0]);
+            return take_pending_scan_heap_tid(opaque);
         }
 
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -1252,7 +1286,7 @@ struct BuildVectorDistance {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct TqScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
@@ -1260,6 +1294,25 @@ struct TqScanOpaque {
     next_block_number: u32,
     next_offset_number: u16,
     scan_exhausted: bool,
+    pending_heaptids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
+    pending_heaptid_count: u8,
+    pending_heaptid_index: u8,
+}
+
+impl Default for TqScanOpaque {
+    fn default() -> Self {
+        Self {
+            rescan_called: false,
+            query_dimensions: 0,
+            query_values: ptr::null_mut(),
+            next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
+            next_offset_number: 1,
+            scan_exhausted: false,
+            pending_heaptids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
+            pending_heaptid_count: 0,
+            pending_heaptid_index: 0,
+        }
+    }
 }
 
 impl Distance<f32> for BuildVectorDistance {
@@ -2381,6 +2434,47 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> ((u32, u16), Vec<(u32, u16)>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let found_first =
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    assert!(
+        found_first,
+        "partial scan should yield at least one heap tid"
+    );
+    let first_tid = item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+
+    let mut rescan_orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        tids.push(item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+    }
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (first_tid, tids)
 }
 
 #[cfg(test)]
