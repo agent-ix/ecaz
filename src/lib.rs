@@ -2092,6 +2092,53 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_tracks_current_result_state() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_result_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_result_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_result_state_idx ON tqhnsw_gettuple_result_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_result_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_found, before_tid, before_score, found, after_tid, after_score) =
+            unsafe { am::debug_gettuple_current_result_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert!(
+            !before_found,
+            "current result state should be clear immediately after amrescan"
+        );
+        assert_eq!(before_tid, (u32::MAX, u16::MAX));
+        assert!(
+            !before_score,
+            "bootstrap scan should not expose a score before tuple production"
+        );
+        assert!(found, "first gettuple call should produce a tuple for a non-empty index");
+        assert_ne!(
+            after_tid,
+            (u32::MAX, u16::MAX),
+            "first tuple production should record the current result element tid"
+        );
+        assert!(
+            !after_score,
+            "current result state should reserve score tracking without claiming score validity yet"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_returns_all_duplicate_heap_tids() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_duplicate_exec (id bigint primary key, embedding tqvector)",

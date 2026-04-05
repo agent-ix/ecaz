@@ -549,6 +549,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.scan_exhausted = false;
     opaque.pending_heaptid_count = 0;
     opaque.pending_heaptid_index = 0;
+    clear_scan_result_state(opaque);
 }
 
 fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
@@ -578,6 +579,12 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
     Some(tid)
 }
 
+fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
+    opaque.current_result_tid = page::ItemPointer::INVALID;
+    opaque.current_result_score = 0.0;
+    opaque.current_result_score_valid = false;
+}
+
 unsafe fn next_linear_scan_heap_tid(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -593,6 +600,7 @@ unsafe fn next_linear_scan_heap_tid(
 
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
+        clear_scan_result_state(opaque);
         return None;
     }
 
@@ -646,6 +654,12 @@ unsafe fn next_linear_scan_heap_tid(
             opaque.next_block_number = block_number;
             debug_assert!(offset < u16::MAX, "scan offset should fit in page-local u16 range");
             opaque.next_offset_number = offset + 1;
+            opaque.current_result_tid = page::ItemPointer {
+                block_number,
+                offset_number: offset,
+            };
+            opaque.current_result_score = 0.0;
+            opaque.current_result_score_valid = false;
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -658,6 +672,7 @@ unsafe fn next_linear_scan_heap_tid(
     }
 
     opaque.scan_exhausted = true;
+    clear_scan_result_state(opaque);
     None
 }
 
@@ -1334,6 +1349,9 @@ struct TqScanOpaque {
     scan_bits: u8,
     scan_code_len: usize,
     scan_block_count: u32,
+    current_result_tid: page::ItemPointer,
+    current_result_score: f32,
+    current_result_score_valid: bool,
     next_block_number: u32,
     next_offset_number: u16,
     scan_exhausted: bool,
@@ -1353,6 +1371,9 @@ impl Default for TqScanOpaque {
             scan_bits: 0,
             scan_code_len: 0,
             scan_block_count: 0,
+            current_result_tid: page::ItemPointer::INVALID,
+            current_result_score: 0.0,
+            current_result_score_valid: false,
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             scan_exhausted: false,
@@ -2542,6 +2563,43 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (tids, exhausted_once, exhausted_twice)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_current_result_state(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (bool, HeapTidCoords, bool, bool, HeapTidCoords, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_found = opaque.current_result_tid != page::ItemPointer::INVALID;
+    let before_tid = (
+        opaque.current_result_tid.block_number,
+        opaque.current_result_tid.offset_number,
+    );
+    let before_score = opaque.current_result_score_valid;
+
+    let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let after_tid = (
+        opaque.current_result_tid.block_number,
+        opaque.current_result_tid.offset_number,
+    );
+    let after_score = opaque.current_result_score_valid;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (before_found, before_tid, before_score, found, after_tid, after_score)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
