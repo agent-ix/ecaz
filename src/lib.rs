@@ -2312,6 +2312,71 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_empty_scan_stays_false() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_empty_repeated (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_empty_repeated_idx ON tqhnsw_gettuple_empty_repeated USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_empty_repeated_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (observed_tids, exhausted_once, exhausted_twice) =
+            unsafe { am::debug_gettuple_exhaustion_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert!(
+            observed_tids.is_empty(),
+            "empty indexes should not produce any heap tids before exhaustion"
+        );
+        assert!(
+            !exhausted_once,
+            "first amgettuple call on an empty index should return false"
+        );
+        assert!(
+            !exhausted_twice,
+            "repeated amgettuple calls on an empty index should remain false"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_empty_scan_rescan_stays_false() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_empty_rescan (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_empty_rescan_idx ON tqhnsw_gettuple_empty_rescan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_empty_rescan_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (first_pass, rescanned_tids) = unsafe {
+            am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert!(
+            first_pass.is_empty(),
+            "empty indexes should still produce no tuples before a repeated rescan"
+        );
+        assert!(
+            rescanned_tids.is_empty(),
+            "amrescan on an empty index should continue to return no tuples"
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(
