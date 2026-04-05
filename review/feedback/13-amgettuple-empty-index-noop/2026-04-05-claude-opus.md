@@ -1,0 +1,33 @@
+# Feedback: Empty-Index `amgettuple` No-Op
+
+Request:
+- `review/13-amgettuple-empty-index-noop.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Answers to Review Questions
+
+### Is returning `false` for empty indexes the right current contract?
+
+**Yes.** Returning `false` is the correct PostgreSQL contract for "no more tuples." Erroring on an empty index would be a protocol violation — the executor expects `amgettuple` to return `false` when there are no results, not to throw. This is consistent with how every other AM (btree, hash, GIN, GiST) handles empty indexes. Keeping the error boundary at the non-empty scan path (now removed, replaced by the linear scan) was the right incremental step.
+
+### Does checking metadata in `amgettuple` introduce any lifecycle or locking issue?
+
+**No lifecycle issue, but a performance note.** The implementation now caches `scan_dimensions` in the opaque state during `amrescan` (line 411) and checks `opaque.scan_dimensions == 0` in `amgettuple` (line 447) instead of re-reading the metadata page. This is the correct pattern — good change from the earlier approach where `read_metadata_page` was called per-gettuple.
+
+One subtlety worth noting: if the index transitions from empty to non-empty between `amrescan` and `amgettuple` (e.g., a concurrent `INSERT` commits), the cached `scan_dimensions == 0` means the scan will still return `false` for the remainder of this scan cycle. This is **correct behavior** — PostgreSQL's MVCC guarantees that a scan sees a consistent snapshot, and the scan should only reflect state visible at rescan time.
+
+### Is there a missing regression test around repeated empty scans or repeated rescans on an empty index?
+
+**Yes — one gap.** The existing test covers a single `amgettuple` returning `false` on an empty index. Consider adding:
+
+1. **Repeated empty gettuple:** Call `amgettuple` multiple times on an empty index after a single `amrescan` to verify it consistently returns `false` (not just the first time). This verifies `scan_exhausted` stays stable.
+
+2. **Rescan on empty index:** Call `amrescan` → `amgettuple` (false) → `amrescan` again → `amgettuple` (false) to verify rescan resets work cleanly on empty indexes.
+
+These are minor gaps — the current code handles them correctly because `scan_dimensions == 0` short-circuits before any cursor state is touched. But having the tests documents the contract explicitly.
+
+## Additional Findings
+
+No correctness issues found. The empty-index check is placed at the right point — after the rescan and direction guards, before any page I/O. The state machine ordering is clean.

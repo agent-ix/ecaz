@@ -1,0 +1,47 @@
+# Feedback: `amrescan` Query Payload State
+
+Request:
+- `review/14-rescan-query-payload-state.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Answers to Review Questions
+
+### Is storing the query payload in scan-owned PostgreSQL memory the right boundary?
+
+**Yes.** Using `palloc` for the query payload is the correct approach for this stage. The query payload must survive across multiple `amgettuple` calls within the same scan, and PostgreSQL's `palloc` memory is tied to the current memory context (which for index scans is the scan-level context that persists for the scan's lifetime). When graph traversal is implemented, the prepared query (LUT) will also need to live here, so this establishes the right ownership pattern.
+
+### Is there any leak, double-free, or stale-pointer risk?
+
+**The implementation is correct but has one fragile edge.** Here's the analysis:
+
+1. **Repeated rescans:** `store_scan_query` (line 481) calls `free_scan_query` first, which correctly frees any previous allocation before allocating new memory. Safe.
+
+2. **amendscan after rescan:** `amendscan` (line 468) calls `free_scan_query`, which frees the allocation and nulls the pointer. Safe.
+
+3. **amendscan without rescan:** `free_scan_query` checks for null pointer before freeing. Safe.
+
+4. **amendscan called twice:** After the first `amendscan`, `query_values` is null and the opaque pointer is freed and nulled. The second `amendscan` (line 467) checks `!opaque.is_null()` and skips. Safe.
+
+**The fragile edge:** `store_scan_query` does not null `query_values` before calling `palloc`. If `palloc` internally calls `ereport(ERROR)` (e.g., out of memory), `free_scan_query` was already called at the top of `store_scan_query` (line 482), so the old pointer is already freed. But `opaque.query_values` is null at that point (set by `free_scan_query`), so there's no stale pointer. **This is actually safe** — the sequence is: free old → null pointer → palloc new. If palloc fails, the pointer is null. Good.
+
+One thing to note: the `pgrx::error!` at line 487 (`"failed to allocate scan query state"`) fires if `palloc` returns null. In PostgreSQL, `palloc` never returns null — it throws `ereport(ERROR)` on allocation failure. So this null check is dead code. Not harmful, just unnecessary.
+
+### Is there a missing regression test?
+
+**Minor gap:** There's no test that verifies `amendscan` properly frees the query payload (i.e., no test that calls `amrescan`, reads the stored query, then calls `amendscan` and verifies the query state is cleared). The `debug_end_scan_twice` helper verifies that opaque is nulled, but doesn't verify the inner `query_values` pointer is cleaned up before the opaque is freed.
+
+This is hard to test directly without a way to observe the `query_values` pointer state after `amendscan` (since the opaque is freed too). The current tests are sufficient for this stage. The risk is low because PostgreSQL's memory context cleanup would catch any remaining allocations at transaction end.
+
+## Additional Findings
+
+**Dimension validation consistency:** `store_scan_query` stores `query.len()` as `u16` via `try_from` (line 493). This panics if the query has > 65535 elements. Since `amrescan` validates against `metadata.dimensions` (which is `u16`), and the dimension mismatch check at line 396 fires first for non-empty indexes, this panic can only occur on an empty index with a query of > 65535 dimensions. Consider adding an explicit check:
+
+```rust
+if query.len() > u16::MAX as usize {
+    pgrx::error!("tqhnsw scan query dimension {} exceeds maximum", query.len());
+}
+```
+
+This is extremely unlikely but would produce a cleaner error than a Rust panic through the pgrx guard.

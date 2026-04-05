@@ -1,5 +1,8 @@
 # Review Request: `amrescan` Query Payload State
 
+Feedback dir:
+- `review/feedback/14-rescan-query-payload-state/`
+
 Scope:
 - `src/am/mod.rs`
 - `src/lib.rs`

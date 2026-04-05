@@ -7,6 +7,7 @@ This repository uses a review-packet workflow in addition to normal code changes
 - Treat `review/README.md` as the source of truth for which review requests are open.
 - At the start of a turn, read `review/README.md` first, then read only the currently open review request files named there.
 - If new outside-review feedback is present for an open request, process that feedback before starting new implementation work.
+- Store back-and-forth feedback files under `review/feedback/<request-slug>/`, with each response as its own dated reviewer document.
 - Do not close review requests yourself. You may add self-review notes or follow-up comments, but leave requests open until an outside reviewer has responded.
 - Do not re-triage closed review files unless an outside reviewer reopens them.
 - Keep external review bundles under `review/external/`.

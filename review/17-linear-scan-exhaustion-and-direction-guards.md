@@ -1,5 +1,8 @@
 # Review Request: Linear Scan Exhaustion and Direction Guards
 
+Feedback dir:
+- `review/feedback/17-linear-scan-exhaustion-and-direction-guards/`
+
 Scope:
 - `src/am/mod.rs`
 - `src/lib.rs`

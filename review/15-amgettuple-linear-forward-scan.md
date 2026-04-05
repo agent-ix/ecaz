@@ -1,5 +1,8 @@
 # Review Request: `amgettuple` Linear Forward Scan Bootstrap
 
+Feedback dir:
+- `review/feedback/15-amgettuple-linear-forward-scan/`
+
 Scope:
 - `src/am/mod.rs`
 - `src/lib.rs`

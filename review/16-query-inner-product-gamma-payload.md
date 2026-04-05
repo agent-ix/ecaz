@@ -1,5 +1,8 @@
 # Review Request: `tqvector_query_inner_product` Rebuilds Full Payload
 
+Feedback dir:
+- `review/feedback/16-query-inner-product-gamma-payload/`
+
 Scope:
 - `src/lib.rs`
 
