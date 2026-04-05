@@ -49,7 +49,27 @@ proptest! {
         let recovered = inverse_srht(&rotated, &signs);
 
         for (a, b) in padded.iter().zip(recovered.iter()) {
-            prop_assert!((a - b).abs() < 1e-4, "mismatch: {a} vs {b}");
+            prop_assert!((*a - *b).abs() < 1e-4f32, "mismatch: {a} vs {b}");
+        }
+    }
+}
+
+// P2b: SRHT roundtrip also holds at real-world padded dimensions.
+proptest! {
+    #[test]
+    fn srht_roundtrip_real_world_dims(
+        dim in prop::sample::select(&[384usize, 768, 1024, 1536][..]),
+        seed in 0..200u64
+    ) {
+        let td = transform_dim(dim);
+        let input = random_unit_vector(dim, seed + 3000);
+        let padded = pad_input(&input, td);
+        let signs = sign_vector(td, seed);
+        let rotated = srht(&padded, &signs);
+        let recovered = inverse_srht(&rotated, &signs);
+
+        for (a, b) in padded.iter().zip(recovered.iter()) {
+            prop_assert!((*a - *b).abs() < 1e-4f32, "mismatch: {a} vs {b}");
         }
     }
 }

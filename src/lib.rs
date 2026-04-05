@@ -6,16 +6,14 @@ use pgrx::{pg_sys, Internal};
 pgrx::pg_module_magic!();
 
 #[allow(dead_code)]
-#[cfg_attr(feature = "bench", allow(unused))]
 mod am;
-#[cfg_attr(feature = "bench", allow(unused))]
 mod quant;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
 /// Public API surface for benchmarks and integration tests.
-/// Gated behind the `bench` feature to avoid polluting the extension's public interface.
-#[cfg(feature = "bench")]
+/// This stays narrow and explicit so benchmark and integration code can reuse
+/// storage/quantizer helpers without reaching through internal modules directly.
 pub mod bench_api {
     // Quantizer core
     pub use crate::quant::prod::{
@@ -434,6 +432,28 @@ mod unit_tests {
         let prepared = quantizer.prepare_ip_query(&b);
         let base_query = quantizer.score_ip_encoded(&prepared, &code_a);
         assert_eq!(-base_query, -base_query);
+    }
+
+    #[test]
+    fn test_score_code_inner_product_matches_quantizer_lite() {
+        let mut rng = ChaCha8Rng::seed_from_u64(17);
+        let a = (0..32)
+            .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
+            .collect::<Vec<_>>();
+        let b = (0..32)
+            .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
+            .collect::<Vec<_>>();
+        let quantizer = ProdQuantizer::cached(32, 4, 42);
+        let enc_a = quantizer.encode(&a);
+        let enc_b = quantizer.encode(&b);
+        let mut code_a = enc_a.mse_packed;
+        code_a.extend_from_slice(&enc_a.qjl_packed);
+        let mut code_b = enc_b.mse_packed;
+        code_b.extend_from_slice(&enc_b.qjl_packed);
+
+        let expected = quantizer.score_ip_codes_lite(&code_a, &code_b);
+        let observed = score_code_inner_product(32, 4, 42, &code_a, &code_b);
+        assert_eq!(observed, expected);
     }
 
     #[test]
@@ -2904,7 +2924,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_frontier_head_refills_from_entry_neighbors() {
+    fn test_tqhnsw_frontier_head_refills_from_consumed_neighbors() {
         Spi::run(
             "CREATE TABLE tqhnsw_frontier_head_refill (id bigint primary key, embedding tqvector)",
         )
@@ -2928,16 +2948,7 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_refill_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
-            .into_iter()
-            .filter(|tid| *tid != (u32::MAX, u16::MAX))
-            .collect::<Vec<_>>();
-        assert!(
-            entry_neighbors.len() >= 3,
-            "fixture should expose at least three entry-point neighbors for refill coverage"
-        );
-
-        let (before_head, before_slots, after_head, after_slots) = unsafe {
+        let (before_head, before_slots, consumed_neighbors, after_head, after_slots) = unsafe {
             am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
@@ -2946,12 +2957,6 @@ mod tests {
             3,
             "bootstrap frontier should start full before head consumption"
         );
-        assert_eq!(
-            after_slots.len(),
-            3,
-            "consuming one candidate should refill from remaining entry neighbors while capacity remains"
-        );
-
         let before_tids = before_slots
             .iter()
             .map(|slot| slot.1)
@@ -2968,24 +2973,53 @@ mod tests {
             .and_then(|index| before_slots.get(index))
             .map(|slot| slot.1)
             .expect("non-empty frontier should expose a consumed head slot");
+        let has_unseen_consumed_neighbor = consumed_neighbors
+            .iter()
+            .any(|neighbor_tid| !before_tids.contains(neighbor_tid));
 
         assert_ne!(
             after_head, None,
-            "refilled frontier should still expose a head"
-        );
-        assert_eq!(
-            new_tids.len(),
-            1,
-            "refill should introduce exactly one newly seeded frontier candidate after one consume"
+            "frontier should still expose a head while candidates remain"
         );
         assert!(
             !after_tids.contains(&consumed_tid),
             "consuming the head should remove that candidate from the frontier"
         );
         assert!(
-            entry_neighbors.contains(&new_tids[0]),
-            "refill should draw the newly added candidate from the remaining entry-point neighbors"
+            after_slots.len() >= before_slots.len().saturating_sub(1),
+            "consuming one candidate should not drop more than the consumed slot"
         );
+        assert!(
+            after_slots.len() <= before_slots.len(),
+            "bootstrap refill should add at most one replacement candidate"
+        );
+
+        if has_unseen_consumed_neighbor {
+            assert_eq!(
+                after_slots.len(),
+                before_slots.len(),
+                "when the consumed candidate exposes an unseen neighbor, refill should restore frontier width"
+            );
+            assert_eq!(
+                new_tids.len(),
+                1,
+                "refill should introduce exactly one newly seeded frontier candidate after one consume"
+            );
+            assert!(
+                consumed_neighbors.contains(&new_tids[0]),
+                "refill should draw the newly added candidate from the consumed candidate's adjacency"
+            );
+        } else {
+            assert_eq!(
+                after_slots.len(),
+                before_slots.len() - 1,
+                "without an unseen consumed-neighbor candidate, the frontier should shrink by the consumed slot"
+            );
+            assert!(
+                new_tids.is_empty(),
+                "refill should not fabricate a new candidate when the consumed adjacency adds nothing unseen"
+            );
+        }
     }
 
     #[pg_test]

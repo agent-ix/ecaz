@@ -276,7 +276,6 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
         unsafe { &mut *opaque.candidate_frontier }.clear();
     }
     opaque.candidate_frontier_head = None;
-    opaque.bootstrap_entry_tid = page::ItemPointer::INVALID;
 }
 
 fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
@@ -285,7 +284,6 @@ fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
         opaque.candidate_frontier = ptr::null_mut();
     }
     opaque.candidate_frontier_head = None;
-    opaque.bootstrap_entry_tid = page::ItemPointer::INVALID;
 }
 
 fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
@@ -374,7 +372,6 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
-    opaque.bootstrap_entry_tid = entry.tid;
     candidate_frontier_mut(opaque).push(ScanCandidate {
         element_tid: entry.tid,
         score: entry_score,
@@ -382,7 +379,7 @@ unsafe fn initialize_scan_entry_candidate(
     });
     mark_visited_element(opaque, entry.tid);
 
-    unsafe { refill_bootstrap_frontier(index_relation, opaque) };
+    unsafe { refill_candidate_frontier_from_source(index_relation, opaque, entry.tid) };
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
@@ -420,8 +417,12 @@ fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCand
     Some(consumed)
 }
 
-unsafe fn refill_bootstrap_frontier(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
-    if opaque.bootstrap_entry_tid == page::ItemPointer::INVALID {
+unsafe fn refill_candidate_frontier_from_source(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    source_tid: page::ItemPointer,
+) {
+    if source_tid == page::ItemPointer::INVALID {
         recompute_candidate_frontier_head(opaque);
         return;
     }
@@ -434,11 +435,7 @@ unsafe fn refill_bootstrap_frontier(index_relation: pg_sys::Relation, opaque: &m
     }
 
     let (_, neighbors) = unsafe {
-        graph::load_graph_adjacency(
-            index_relation,
-            opaque.bootstrap_entry_tid,
-            opaque.scan_code_len,
-        )
+        graph::load_graph_adjacency(index_relation, source_tid, opaque.scan_code_len)
     };
     let successor_candidates =
         collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
@@ -477,7 +474,7 @@ unsafe fn consume_and_refill_bootstrap_frontier(
     opaque: &mut TqScanOpaque,
 ) -> Option<ScanCandidate> {
     let consumed = consume_candidate_frontier_head(opaque)?;
-    unsafe { refill_bootstrap_frontier(index_relation, opaque) };
+    unsafe { refill_candidate_frontier_from_source(index_relation, opaque, consumed.element_tid) };
     Some(consumed)
 }
 
@@ -713,7 +710,6 @@ struct TqScanOpaque {
     visited_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: Option<usize>,
-    bootstrap_entry_tid: page::ItemPointer,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -738,7 +734,6 @@ impl Default for TqScanOpaque {
             visited_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: None,
-            bootstrap_entry_tid: page::ItemPointer::INVALID,
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -789,6 +784,7 @@ type DebugCandidateFrontierConsume = (
 type DebugCandidateFrontierSlotConsume = (
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
+    Vec<HeapTidCoords>,
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
 );
@@ -1394,6 +1390,23 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = opaque.candidate_frontier_head;
     let before_slots = debug_candidate_frontier_slots(opaque);
+    let consumed_neighbors = before_head
+        .and_then(|index| before_slots.get(index))
+        .map(|slot| {
+            let consumed_tid = page::ItemPointer {
+                block_number: slot.1.0,
+                offset_number: slot.1.1,
+            };
+            let (_, neighbors) =
+                unsafe { graph::load_graph_adjacency(index_relation, consumed_tid, opaque.scan_code_len) };
+            neighbors
+                .tids
+                .into_iter()
+                .map(|tid| (tid.block_number, tid.offset_number))
+                .filter(|tid| *tid != (u32::MAX, u16::MAX))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
 
@@ -1403,7 +1416,13 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (before_head, before_slots, after_head, after_slots)
+    (
+        before_head,
+        before_slots,
+        consumed_neighbors,
+        after_head,
+        after_slots,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]

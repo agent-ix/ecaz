@@ -27,8 +27,21 @@ fn score_ip_codes_lite_1536_4() -> f32 {
     black_box(q.score_ip_codes_lite(&code_a, &code_b))
 }
 
+#[library_benchmark]
+fn score_ip_from_parts_1536_4() -> f32 {
+    let q = ProdQuantizer::new(1536, 4, 42);
+    let prepared = q.prepare_ip_query(&helpers::random_unit_vector(1536, 1));
+    let enc = q.encode(&helpers::random_unit_vector(1536, 100));
+    let mut code = enc.mse_packed;
+    code.extend_from_slice(&enc.qjl_packed);
+    black_box(q.score_ip_from_parts(&prepared, enc.gamma, &code))
+}
+
 library_benchmark_group!(
     name = quant_score;
-    benchmarks = score_ip_encoded_1536_4, score_ip_codes_lite_1536_4
+    benchmarks =
+        score_ip_encoded_1536_4,
+        score_ip_codes_lite_1536_4,
+        score_ip_from_parts_1536_4
 );
 main!(library_benchmark_groups = quant_score);
