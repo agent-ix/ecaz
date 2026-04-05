@@ -15,7 +15,9 @@ use pgrx::{
 
 use crate::quant::prod::PreparedQuery;
 
+mod cost;
 pub mod page;
+mod vacuum;
 pub mod wal;
 
 const TQHNSW_DEFAULT_M: i32 = 8;
@@ -92,10 +94,10 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.ambuildempty = Some(tqhnsw_ambuildempty);
     amroutine.aminsert = Some(tqhnsw_aminsert);
     amroutine.aminsertcleanup = None;
-    amroutine.ambulkdelete = Some(tqhnsw_ambulkdelete);
-    amroutine.amvacuumcleanup = Some(tqhnsw_amvacuumcleanup);
+    amroutine.ambulkdelete = Some(vacuum::tqhnsw_ambulkdelete);
+    amroutine.amvacuumcleanup = Some(vacuum::tqhnsw_amvacuumcleanup);
     amroutine.amcanreturn = None;
-    amroutine.amcostestimate = Some(tqhnsw_amcostestimate);
+    amroutine.amcostestimate = Some(cost::tqhnsw_amcostestimate);
     amroutine.amoptions = Some(tqhnsw_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
@@ -249,45 +251,6 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 }
             });
             false
-        })
-    }
-}
-
-unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
-    info: *mut pg_sys::IndexVacuumInfo,
-    stats: *mut pg_sys::IndexBulkDeleteResult,
-    _callback: pg_sys::IndexBulkDeleteCallback,
-    _callback_state: *mut std::ffi::c_void,
-) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe { pgrx::pgrx_extern_c_guard(|| tqhnsw_noop_vacuum_stats((*info).index, stats)) }
-}
-
-unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
-    info: *mut pg_sys::IndexVacuumInfo,
-    stats: *mut pg_sys::IndexBulkDeleteResult,
-) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe { pgrx::pgrx_extern_c_guard(|| tqhnsw_noop_vacuum_stats((*info).index, stats)) }
-}
-
-unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
-    _root: *mut pg_sys::PlannerInfo,
-    _path: *mut pg_sys::IndexPath,
-    _loop_count: f64,
-    index_startup_cost: *mut pg_sys::Cost,
-    index_total_cost: *mut pg_sys::Cost,
-    index_selectivity: *mut pg_sys::Selectivity,
-    index_correlation: *mut f64,
-    index_pages: *mut f64,
-) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            // Prefer explicit non-selection over accidental planner use until the scan
-            // path is implemented.
-            *index_startup_cost = f64::MAX;
-            *index_total_cost = f64::MAX;
-            *index_selectivity = 0.0;
-            *index_correlation = 0.0;
-            *index_pages = 0.0;
         })
     }
 }
@@ -1273,7 +1236,7 @@ unsafe fn coalesce_duplicate_heap_tid(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
-unsafe fn tqhnsw_noop_vacuum_stats(
+pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
@@ -1295,7 +1258,7 @@ unsafe fn tqhnsw_noop_vacuum_stats(
     stats
 }
 
-unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -2372,8 +2335,8 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     info.index = index_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
-    let stats = unsafe { tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut()) };
-    let stats = unsafe { tqhnsw_amvacuumcleanup(info_ptr, stats) };
+    let stats = unsafe { vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut()) };
+    let stats = unsafe { vacuum::tqhnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
