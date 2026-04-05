@@ -2023,6 +2023,24 @@ pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let has_opaque = unsafe { !(*scan).opaque.is_null() };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    let cleared_after_first = unsafe { (*scan).opaque.is_null() };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    let cleared_after_second = unsafe { (*scan).opaque.is_null() };
+
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (has_opaque, cleared_after_first, cleared_after_second)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,

@@ -1643,6 +1643,41 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_scan_scaffold_amendscan_is_idempotent() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scan_scaffold_idempotent (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_scan_scaffold_idempotent VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_scan_scaffold_idempotent_idx ON tqhnsw_scan_scaffold_idempotent USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_scan_scaffold_idempotent_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (has_opaque, cleared_after_first, cleared_after_second) =
+            unsafe { am::debug_end_scan_twice(index_oid) };
+        assert!(has_opaque, "ambeginscan should allocate scan opaque state");
+        assert!(
+            cleared_after_first,
+            "first amendscan call should clear scan opaque state"
+        );
+        assert!(
+            cleared_after_second,
+            "second amendscan call should remain a benign no-op"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
         let (rescan_called, query_dimensions) =
