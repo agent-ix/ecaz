@@ -124,15 +124,7 @@ pub(crate) fn score_code_inner_product(
     code_b: &[u8],
 ) -> f32 {
     let quantizer = ProdQuantizer::cached(dim, bits, seed);
-    let mut payload_a = Vec::with_capacity(MIN_BINARY_BYTES + code_a.len());
-    payload_a.extend_from_slice(&0.0_f32.to_le_bytes());
-    payload_a.extend_from_slice(code_a);
-
-    let mut payload_b = Vec::with_capacity(MIN_BINARY_BYTES + code_b.len());
-    payload_b.extend_from_slice(&0.0_f32.to_le_bytes());
-    payload_b.extend_from_slice(code_b);
-
-    quantizer.score_ip_encoded_lite(&payload_a, &payload_b)
+    quantizer.score_ip_codes_lite(code_a, code_b)
 }
 
 fn expected_binary_len(data: &[u8]) -> Result<usize, String> {

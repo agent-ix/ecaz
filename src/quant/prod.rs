@@ -179,10 +179,20 @@ impl ProdQuantizer {
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
     }
 
+    #[allow(dead_code)]
     pub fn score_ip_encoded_lite(&self, payload_a: &[u8], payload_b: &[u8]) -> f32 {
         let (_, mse_a, _) = self.split_payload(payload_a);
         let (_, mse_b, _) = self.split_payload(payload_b);
+        self.score_ip_mse_codes(mse_a, mse_b)
+    }
 
+    pub fn score_ip_codes_lite(&self, code_a: &[u8], code_b: &[u8]) -> f32 {
+        let (mse_a, _) = self.split_code_bytes(code_a);
+        let (mse_b, _) = self.split_code_bytes(code_b);
+        self.score_ip_mse_codes(mse_a, mse_b)
+    }
+
+    fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
         let mut mse_sum = 0.0_f32;
         for dim_index in 0..self.original_dim {
             let idx_a = mse_index_at(mse_a, dim_index, self.bits - 1) as usize;
@@ -200,6 +210,20 @@ impl ProdQuantizer {
         payload.extend_from_slice(&encoded.mse_packed);
         payload.extend_from_slice(&encoded.qjl_packed);
         payload
+    }
+
+    fn split_code_bytes<'a>(&self, code_bytes: &'a [u8]) -> (&'a [u8], &'a [u8]) {
+        let mse_len = mse_code_len(self.original_dim, self.bits);
+        let qjl_len = qjl_code_len(self.original_dim);
+        assert_eq!(
+            code_bytes.len(),
+            mse_len + qjl_len,
+            "code length mismatch: got {}, expected {}",
+            code_bytes.len(),
+            mse_len + qjl_len
+        );
+        let qjl_start = mse_len;
+        (&code_bytes[..qjl_start], &code_bytes[qjl_start..qjl_start + qjl_len])
     }
 
     fn split_payload<'a>(&self, payload: &'a [u8]) -> (f32, &'a [u8], &'a [u8]) {
@@ -444,6 +468,25 @@ mod tests {
         let score_mutated =
             quantizer.score_ip_encoded_lite(&a, &quantizer.pack_payload(&b_encoded));
         assert_eq!(score_ab, score_mutated);
+    }
+
+    #[test]
+    fn raw_code_score_matches_encoded_lite_path() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let a = quantizer.encode(&random_unit_vector(32, 5));
+        let b = quantizer.encode(&random_unit_vector(32, 6));
+        let mut code_a = a.mse_packed.clone();
+        code_a.extend_from_slice(&a.qjl_packed);
+        let mut code_b = b.mse_packed.clone();
+        code_b.extend_from_slice(&b.qjl_packed);
+
+        let encoded_score = quantizer.score_ip_encoded_lite(
+            &quantizer.pack_payload(&a),
+            &quantizer.pack_payload(&b),
+        );
+        let code_score = quantizer.score_ip_codes_lite(&code_a, &code_b);
+
+        assert_eq!(encoded_score, code_score);
     }
 
     #[test]
