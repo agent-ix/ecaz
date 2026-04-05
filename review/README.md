@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `1c18cbc`
+Current head: `f5e3d84`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -53,6 +53,7 @@ Current tqhnsw state summary:
 - Code-to-code inner-product scoring now has a zero-allocation raw-code fast path, and `score_code_inner_product` no longer builds temporary fake payload buffers on each call.
 - Empty-index scan coverage now explicitly verifies repeated `amgettuple` calls stay `false` and that `amrescan` on an empty index still produces no tuples.
 - `amrescan` now rejects oversized `real[]` queries with an explicit dimension error instead of relying on an internal `u16` conversion panic.
+- The linear scan cursor now uses a direct `offset + 1` advance with a `debug_assert!` on the page-local `u16` invariant instead of carrying an unreachable saturation branch.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -82,6 +83,7 @@ Review triage at `46d00bb`:
 - Addressed external review `16-score-code-inner-product-allocates-per-call.md` by adding a raw-code scorer that avoids temporary payload allocation.
 - Addressed outside feedback on `13-amgettuple-empty-index-noop.md` by adding explicit repeated-empty-scan and empty-rescan coverage.
 - Addressed outside feedback on `14-rescan-query-payload-state.md` by rejecting oversized scan queries before storing scan-owned payload state.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by removing the unreachable saturated-offset overflow branch in the linear scan cursor.
 
 Review instructions:
 - Prefer correctness findings over style comments.
