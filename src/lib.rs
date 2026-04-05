@@ -2730,6 +2730,98 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_consume_candidate_frontier_head_reselects_or_clears() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_frontier_head_consume (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_frontier_head_consume VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_frontier_head_consume_idx ON tqhnsw_frontier_head_consume USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_frontier_head_consume_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (
+            before_head,
+            before_frontier,
+            after_first_head,
+            after_first_frontier,
+            after_second_head,
+            after_second_frontier,
+        ) = unsafe {
+            am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_ne!(
+            before_head, u8::MAX,
+            "non-empty frontier should expose a concrete head before consumption"
+        );
+        let consumed_slot = before_head as usize;
+        let remaining_slot = if consumed_slot == 0 { 1 } else { 0 };
+
+        assert!(
+            !after_first_frontier[consumed_slot].0,
+            "consuming the frontier head should invalidate the previously best slot"
+        );
+        assert_eq!(
+            after_first_frontier[consumed_slot].1,
+            (u32::MAX, u16::MAX),
+            "consuming the frontier head should clear the consumed slot tid"
+        );
+        assert_eq!(
+            after_first_frontier[consumed_slot].2, 0.0,
+            "consuming the frontier head should clear the consumed slot score"
+        );
+
+        if before_frontier[remaining_slot].0 {
+            assert_eq!(
+                after_first_head, remaining_slot as u8,
+                "when another candidate remains valid, consuming the head should reselect that slot"
+            );
+            assert_eq!(
+                after_first_frontier[remaining_slot],
+                before_frontier[remaining_slot],
+                "consuming the current head should leave the remaining candidate slot unchanged"
+            );
+        } else {
+            assert_eq!(
+                after_first_head, u8::MAX,
+                "consuming the only valid candidate should invalidate the frontier head"
+            );
+            assert_eq!(
+                after_first_frontier[remaining_slot],
+                (false, (u32::MAX, u16::MAX), 0.0),
+                "an already-empty alternate slot should stay empty after head consumption"
+            );
+        }
+
+        assert_eq!(
+            after_second_head, u8::MAX,
+            "consuming the frontier head again should leave the frontier empty"
+        );
+        assert_eq!(
+            after_second_frontier,
+            [
+                (false, (u32::MAX, u16::MAX), 0.0),
+                (false, (u32::MAX, u16::MAX), 0.0),
+            ],
+            "after consuming both available slots, the two-slot frontier should be fully cleared"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",

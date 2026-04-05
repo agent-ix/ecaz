@@ -28,7 +28,7 @@ pub(crate) use self::scan::{
     debug_gettuple_exhaustion_state, debug_gettuple_rescan_after_exhaustion,
     debug_gettuple_rescan_after_partial, debug_gettuple_scan_heap_tids,
     debug_gettuple_without_rescan, debug_rescan_entry_candidate_state,
-    debug_entry_candidate_lifecycle,
+    debug_entry_candidate_lifecycle, debug_consume_candidate_frontier_head,
     debug_rescan_candidate_frontier,
     debug_candidate_frontier_head_lifecycle,
     debug_rescan_successor_candidate_state,

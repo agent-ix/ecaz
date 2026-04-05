@@ -339,6 +339,25 @@ fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
     };
 }
 
+fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
+    let head = match opaque.candidate_frontier_head {
+        0 | 1 => opaque.candidate_frontier_head as usize,
+        u8::MAX => return None,
+        other => {
+            debug_assert!(
+                false,
+                "candidate frontier head should only be 0, 1, or u8::MAX; got {other}"
+            );
+            return None;
+        }
+    };
+
+    let consumed = opaque.candidate_frontier.candidates[head];
+    opaque.candidate_frontier.candidates[head] = ScanCandidate::default();
+    recompute_candidate_frontier_head(opaque);
+    Some(consumed)
+}
+
 unsafe fn next_linear_scan_heap_tid(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
@@ -625,6 +644,10 @@ type DebugCandidateFrontierLifecycle = (
     u8,
     DebugCandidateFrontier,
 );
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontierConsume =
+    (u8, DebugCandidateFrontier, u8, DebugCandidateFrontier, u8, DebugCandidateFrontier);
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -1141,6 +1164,66 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_consume_candidate_frontier_head(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugCandidateFrontierConsume {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = opaque.candidate_frontier_head;
+    let before_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    let first_consumed = consume_candidate_frontier_head(opaque);
+    debug_assert_eq!(first_consumed.is_some(), before_head != u8::MAX);
+    let after_first_head = opaque.candidate_frontier_head;
+    let after_first_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    consume_candidate_frontier_head(opaque);
+    let after_second_head = opaque.candidate_frontier_head;
+    let after_second_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_head,
+        before_frontier,
+        after_first_head,
+        after_first_frontier,
+        after_second_head,
+        after_second_frontier,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -1499,4 +1582,89 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
         .into_iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn consume_candidate_frontier_head_reselects_then_clears() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.candidate_frontier.candidates[0] = ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 7,
+                offset_number: 1,
+            },
+            score: -2.0,
+            score_valid: true,
+        };
+        opaque.candidate_frontier.candidates[1] = ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 7,
+                offset_number: 2,
+            },
+            score: 3.5,
+            score_valid: true,
+        };
+        recompute_candidate_frontier_head(&mut opaque);
+
+        assert_eq!(
+            opaque.candidate_frontier_head, 0,
+            "frontier head should start at the lower-scoring valid slot"
+        );
+
+        let consumed = consume_candidate_frontier_head(&mut opaque)
+            .expect("frontier head consumption should return the current best slot");
+        assert_eq!(
+            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (7, 1),
+            "consumption should return the previously best frontier slot"
+        );
+        assert_eq!(
+            opaque.candidate_frontier_head, 1,
+            "consuming the best slot should reselect the remaining valid slot as the new head"
+        );
+        assert!(
+            !opaque.candidate_frontier.candidates[0].score_valid,
+            "consuming the head should clear the consumed slot"
+        );
+        assert_eq!(
+            opaque.candidate_frontier.candidates[1].score, 3.5,
+            "consuming the head should leave the remaining valid slot unchanged"
+        );
+
+        let consumed = consume_candidate_frontier_head(&mut opaque)
+            .expect("a remaining valid slot should still be consumable");
+        assert_eq!(
+            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (7, 2),
+            "the second consumption should return the reseated head slot"
+        );
+        assert_eq!(
+            opaque.candidate_frontier_head, u8::MAX,
+            "consuming the last valid slot should invalidate the frontier head"
+        );
+        assert!(
+            !opaque.candidate_frontier.candidates[0].score_valid
+                && !opaque.candidate_frontier.candidates[1].score_valid,
+            "consuming both valid slots should leave both frontier slots invalid"
+        );
+        assert_eq!(
+            (
+                opaque.candidate_frontier.candidates[0].element_tid.block_number,
+                opaque.candidate_frontier.candidates[0].element_tid.offset_number,
+                opaque.candidate_frontier.candidates[0].score,
+                opaque.candidate_frontier.candidates[1].element_tid.block_number,
+                opaque.candidate_frontier.candidates[1].element_tid.offset_number,
+                opaque.candidate_frontier.candidates[1].score,
+            ),
+            (u32::MAX, u16::MAX, 0.0, u32::MAX, u16::MAX, 0.0),
+            "consuming both valid slots should leave the fixed frontier fully cleared"
+        );
+        assert!(
+            consume_candidate_frontier_head(&mut opaque).is_none(),
+            "consuming an empty frontier should stay a no-op"
+        );
+    }
 }
