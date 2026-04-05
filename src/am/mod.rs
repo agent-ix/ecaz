@@ -613,11 +613,8 @@ unsafe fn next_linear_scan_heap_tid(
             }
 
             opaque.next_block_number = block_number;
-            opaque.next_offset_number = offset.saturating_add(1);
-            if opaque.next_offset_number == 0 {
-                opaque.next_block_number = block_number + 1;
-                opaque.next_offset_number = 1;
-            }
+            debug_assert!(offset < u16::MAX, "scan offset should fit in page-local u16 range");
+            opaque.next_offset_number = offset + 1;
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
