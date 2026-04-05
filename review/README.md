@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `4e1223d`
+Current head: `5c61b64`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -98,6 +98,9 @@ Current tqhnsw state summary:
 - Frontier-consumption coverage now verifies that consuming the current head either reselects the remaining valid slot or clears the frontier completely when no valid slot remains.
 - Successor-candidate seeding now skips `INVALID` neighbor TIDs before attempting graph element loads, instead of letting an invalid ref fall through to page reads.
 - Successor-candidate coverage now verifies that seeding skips `INVALID` refs and continues until a concrete neighbor candidate is available.
+- `TqElementTuple` now persists `gamma` in the on-disk element payload, and `GraphElement` now exposes that stored `gamma` on the shared graph read surface.
+- Build-time and live-insert element writers now persist `gamma`, and regression coverage now verifies that distinct-gamma same-code tuples retain their stored gamma values in the index.
+- ADR-013 is now accepted to record the page-layout decision and the follow-on plan to remove heap-fetch scoring and duplicate checks from the hot path.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -182,6 +185,7 @@ Open requests:
 - `48-frontier-head-lifecycle.md`
 - `49-frontier-head-consumption.md`
 - `50-skip-invalid-successor-neighbor-refs.md`
+- `51-persist-gamma-in-element-tuples.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
