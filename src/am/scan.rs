@@ -270,7 +270,7 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
 
 unsafe fn initialize_scan_entry_candidate(
     index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
+    _heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     metadata: &page::MetadataPage,
 ) {
@@ -286,13 +286,7 @@ unsafe fn initialize_scan_entry_candidate(
 
     opaque.candidate_frontier.candidates[0] = ScanCandidate {
         element_tid: entry.tid,
-        score: score_scan_element_result(
-            index_relation,
-            heap_relation,
-            opaque,
-            entry.heaptids[0],
-            &entry.code,
-        ),
+        score: score_scan_element_result(opaque, entry.gamma, &entry.code),
         score_valid: true,
     };
 
@@ -307,13 +301,7 @@ unsafe fn initialize_scan_entry_candidate(
 
         Some(ScanCandidate {
             element_tid: neighbor.tid,
-            score: score_scan_element_result(
-                index_relation,
-                heap_relation,
-                opaque,
-                neighbor.heaptids[0],
-                &neighbor.code,
-            ),
+            score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
             score_valid: true,
         })
     }) {
@@ -383,7 +371,7 @@ where
 
 unsafe fn next_linear_scan_heap_tid(
     index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
+    _heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<page::ItemPointer> {
@@ -461,13 +449,7 @@ unsafe fn next_linear_scan_heap_tid(
                     block_number,
                     offset_number: offset,
                 },
-                score_scan_element_result(
-                    index_relation,
-                    heap_relation,
-                    opaque,
-                    element.heaptids[0],
-                    &element.code,
-                ),
+                score_scan_element_result(opaque, element.gamma, &element.code),
             );
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
@@ -486,35 +468,18 @@ unsafe fn next_linear_scan_heap_tid(
     None
 }
 
-unsafe fn score_scan_element_result(
-    index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
-    opaque: &TqScanOpaque,
-    representative_heap_tid: page::ItemPointer,
-    code_bytes: &[u8],
-) -> f32 {
+unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
     if opaque.prepared_query.is_null() {
         pgrx::error!("tqhnsw scan scoring requires a prepared query");
     }
 
-    let gamma = unsafe {
-        super::heap_tqvector_gamma(
-            index_relation,
-            heap_relation,
-            representative_heap_tid,
-            "scan result scoring",
-        )
-    };
     let quantizer = crate::quant::prod::ProdQuantizer::cached(
         opaque.scan_dimensions as usize,
         opaque.scan_bits,
         opaque.scan_seed,
     );
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let mut payload = Vec::with_capacity(4 + code_bytes.len());
-    payload.extend_from_slice(&gamma.to_le_bytes());
-    payload.extend_from_slice(code_bytes);
-    -quantizer.score_ip_encoded(prepared_query, &payload)
+    -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
 }
 
 fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {

@@ -158,6 +158,26 @@ impl ProdQuantizer {
 
     pub fn score_ip_encoded(&self, prepared: &PreparedQuery, payload: &[u8]) -> f32 {
         let (gamma, mse_packed, qjl_packed) = self.split_payload(payload);
+        self.score_ip_from_split_parts(prepared, gamma, mse_packed, qjl_packed)
+    }
+
+    pub fn score_ip_from_parts(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        code_bytes: &[u8],
+    ) -> f32 {
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        self.score_ip_from_split_parts(prepared, gamma, mse_packed, qjl_packed)
+    }
+
+    fn score_ip_from_split_parts(
+        &self,
+        prepared: &PreparedQuery,
+        gamma: f32,
+        mse_packed: &[u8],
+        qjl_packed: &[u8],
+    ) -> f32 {
         let num_centroids = 1usize << (self.bits - 1);
 
         let mut mse_sum = 0.0_f32;
@@ -450,6 +470,37 @@ mod tests {
             (score - expected).abs() < 1e-6,
             "score={score}, expected={expected}"
         );
+    }
+
+    #[test]
+    fn score_from_parts_matches_encoded_payload_path() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 7);
+        let candidate = quantizer.encode(&random_unit_vector(32, 8));
+        let prepared = quantizer.prepare_ip_query(&query);
+        let payload = quantizer.pack_payload(&candidate);
+        let mut code_bytes = candidate.mse_packed.clone();
+        code_bytes.extend_from_slice(&candidate.qjl_packed);
+
+        let payload_score = quantizer.score_ip_encoded(&prepared, &payload);
+        let parts_score = quantizer.score_ip_from_parts(&prepared, candidate.gamma, &code_bytes);
+
+        assert_eq!(parts_score, payload_score);
+    }
+
+    #[test]
+    fn score_from_parts_honors_supplied_gamma() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 9);
+        let candidate = quantizer.encode(&random_unit_vector(32, 10));
+        let prepared = quantizer.prepare_ip_query(&query);
+        let mut code_bytes = candidate.mse_packed.clone();
+        code_bytes.extend_from_slice(&candidate.qjl_packed);
+
+        let observed = quantizer.score_ip_from_parts(&prepared, candidate.gamma, &code_bytes);
+        let mutated = quantizer.score_ip_from_parts(&prepared, candidate.gamma + 1.25, &code_bytes);
+
+        assert_ne!(observed, mutated);
     }
 
     #[test]

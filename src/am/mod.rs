@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 use std::ptr;
 
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, PgBox};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use self::build::{BuildState, BuildTuple};
 
@@ -427,7 +427,7 @@ unsafe fn append_heap_tuple_to_new_page(
 
 unsafe fn find_duplicate_element_tid(
     index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
+    _heap_relation: pg_sys::Relation,
     dimensions: u16,
     bits: u8,
     gamma: f32,
@@ -479,12 +479,7 @@ unsafe fn find_duplicate_element_tid(
             let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                 pgrx::error!("tqhnsw failed to decode candidate duplicate tuple: {e}")
             });
-            if element.code == code
-                && !element.heaptids.is_empty()
-                && candidate_element_gamma(index_relation, heap_relation, element.heaptids[0])
-                    .to_bits()
-                    == gamma.to_bits()
-            {
+            if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
                 unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
                     block_number,
@@ -499,116 +494,6 @@ unsafe fn find_duplicate_element_tid(
     let _ = dimensions;
     let _ = bits;
     None
-}
-
-unsafe fn candidate_element_gamma(
-    index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
-    heap_tid: page::ItemPointer,
-) -> f32 {
-    heap_tqvector_gamma(
-        index_relation,
-        heap_relation,
-        heap_tid,
-        "duplicate gamma check",
-    )
-}
-
-unsafe fn heap_tqvector_gamma(
-    index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
-    heap_tid: page::ItemPointer,
-    context: &str,
-) -> f32 {
-    let (heap_relation, opened_heap_relation) = if heap_relation.is_null() {
-        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
-        if heap_oid == pg_sys::InvalidOid {
-            pgrx::error!("tqhnsw {context} could not resolve heap relation for index");
-        }
-        (
-            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
-            true,
-        )
-    } else {
-        (heap_relation, false)
-    };
-
-    let index_form = unsafe { &*(*index_relation).rd_index };
-    if index_form.indnkeyatts != 1 {
-        pgrx::error!(
-            "tqhnsw duplicate lookup currently requires exactly one key attribute, found {}",
-            index_form.indnkeyatts
-        );
-    }
-
-    let indkey = unsafe { index_form.indkey.values.as_slice(index_form.indnkeyatts as usize) };
-    let attnum = *indkey
-        .first()
-        .expect("single-column tqhnsw index should expose one heap attribute");
-    if attnum <= 0 {
-        pgrx::error!("tqhnsw duplicate lookup does not support expression index attributes");
-    }
-
-    let mut fetched_tid = pg_sys::ItemPointerData::default();
-    pgrx::itemptr::item_pointer_set_all(
-        &mut fetched_tid,
-        heap_tid.block_number,
-        heap_tid.offset_number,
-    );
-
-    let mut heap_tuple = pg_sys::HeapTupleData {
-        t_self: fetched_tid,
-        ..Default::default()
-    };
-    let mut buffer = pg_sys::InvalidBuffer as pg_sys::Buffer;
-    let found = unsafe {
-        pg_sys::heap_fetch(
-            heap_relation,
-            std::ptr::addr_of_mut!(pg_sys::SnapshotAnyData),
-            &mut heap_tuple,
-            &mut buffer,
-            false,
-        )
-    };
-    if !found {
-        pgrx::error!(
-            "tqhnsw failed to fetch representative heap tuple ({},{}) for {context}",
-            heap_tid.block_number, heap_tid.offset_number
-        );
-    }
-
-    let tupdesc = unsafe { pgrx::PgTupleDesc::from_pg_unchecked((*heap_relation).rd_att) };
-    let datum = unsafe {
-        pgrx::heap_getattr_raw(
-            &mut heap_tuple,
-            std::num::NonZeroUsize::new(attnum as usize)
-                .expect("positive indexed heap attribute number"),
-            tupdesc.as_ptr(),
-        )
-    }
-    .unwrap_or_else(|| {
-        pgrx::error!(
-            "tqhnsw found NULL representative heap value for {context} on attribute {}",
-            attnum
-        )
-    });
-
-    let original = datum.cast_mut_ptr::<std::ffi::c_void>().cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    let is_copy = !std::ptr::eq(varlena, original);
-    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) };
-    let (_, _, _, gamma, _) =
-        crate::unpack(bytes).unwrap_or_else(|e| pgrx::error!("tqhnsw found invalid heap tqvector during {context}: {e}"));
-    if is_copy {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
-    if buffer != pg_sys::InvalidBuffer as pg_sys::Buffer {
-        unsafe { pg_sys::ReleaseBuffer(buffer) };
-    }
-    if opened_heap_relation {
-        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    }
-    gamma
 }
 
 unsafe fn coalesce_duplicate_heap_tid(
