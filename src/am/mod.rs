@@ -19,8 +19,10 @@ pub mod wal;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::scan::{
     debug_begin_end_scan, debug_end_scan_twice, debug_gettuple_after_rescan_result,
+    debug_entry_point_neighbor_tids,
     debug_gettuple_backward_after_rescan,
-    debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_state,
+    debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_neighbors,
+    debug_gettuple_current_result_state,
     debug_gettuple_exhaustion_state, debug_gettuple_rescan_after_exhaustion,
     debug_gettuple_rescan_after_partial, debug_gettuple_scan_heap_tids,
     debug_gettuple_without_rescan, debug_rescan_null_query, debug_rescan_overwrites_query_dimensions,

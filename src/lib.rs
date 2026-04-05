@@ -2345,6 +2345,98 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_current_neighbors VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_current_neighbors_idx ON tqhnsw_gettuple_current_neighbors USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_current_neighbors_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (current_result_tid, neighbor_count) = unsafe {
+            am::debug_gettuple_current_result_neighbors(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_ne!(
+            current_result_tid,
+            (u32::MAX, u16::MAX),
+            "neighbor debug helper should attach to a concrete current result tuple"
+        );
+        assert!(
+            neighbor_count > 0,
+            "non-trivial built indexes should expose at least one neighbor ref for the current result tuple"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_entry_point_neighbor_refs_point_to_elements() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_entry_point_neighbors (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_entry_point_neighbors VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_entry_point_neighbors_idx ON tqhnsw_entry_point_neighbors USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_entry_point_neighbors_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let neighbor_tids = unsafe { am::debug_entry_point_neighbor_tids(index_oid) };
+        let (_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let element_tids = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, tuple)| {
+                        (tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)).then_some((
+                            page.block_number,
+                            u16::try_from(idx + 1).expect("page tuple offset should fit in u16"),
+                        ))
+                    })
+            })
+            .collect::<std::collections::HashSet<_>>();
+
+        assert!(
+            !neighbor_tids.is_empty(),
+            "built entry point should expose at least one neighbor reference on a non-trivial graph"
+        );
+        for neighbor_tid in neighbor_tids {
+            assert!(
+                element_tids.contains(&neighbor_tid),
+                "entry-point neighbor ref should target an element tuple"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_returns_all_duplicate_heap_tids() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_duplicate_exec (id bigint primary key, embedding tqvector)",
