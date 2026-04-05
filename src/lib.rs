@@ -226,14 +226,15 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
         .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
 }
 
-#[pg_extern(immutable, strict, parallel_safe, sql = false)]
-fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
+fn encode_embedding_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Result<Vec<u8>, String> {
     if embedding.is_empty() {
-        pgrx::error!("embedding must not be empty");
+        return Err("embedding must not be empty".into());
     }
-    let bits = u8::try_from(bits).unwrap_or_else(|_| pgrx::error!("bits must fit into u8"));
-    validate_bits(bits).unwrap_or_else(|e| pgrx::error!("{e}"));
+    let bits = u8::try_from(bits).map_err(|_| "bits must fit into u8".to_string())?;
+    validate_bits(bits)?;
     let seed = seed as u64;
+    let dim = u16::try_from(embedding.len())
+        .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", embedding.len()))?;
 
     let quantizer = ProdQuantizer::cached(embedding.len(), bits, seed);
     let encoded = quantizer.encode(&embedding);
@@ -241,13 +242,12 @@ fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
     let mut code_bytes = encoded.mse_packed;
     code_bytes.extend_from_slice(&encoded.qjl_packed);
 
-    pack(
-        embedding.len() as u16,
-        bits,
-        seed,
-        encoded.gamma,
-        &code_bytes,
-    )
+    Ok(pack(dim, bits, seed, encoded.gamma, &code_bytes))
+}
+
+#[pg_extern(immutable, strict, parallel_safe, sql = false)]
+fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
+    encode_embedding_to_tqvector(embedding, bits, seed).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
@@ -393,6 +393,16 @@ mod unit_tests {
         let prepared = quantizer.prepare_ip_query(&b);
         let base_query = quantizer.score_ip_encoded(&prepared, &code_a);
         assert_eq!(-base_query, -base_query);
+    }
+
+    #[test]
+    fn test_encode_embedding_to_tqvector_rejects_dimensions_over_u16_max() {
+        let oversized = vec![0.0_f32; usize::from(u16::MAX) + 1];
+        let err = encode_embedding_to_tqvector(oversized, 4, 42).unwrap_err();
+        assert!(
+            err.contains("exceeds maximum 65535"),
+            "oversized embeddings should fail with an explicit dimension limit error"
+        );
     }
 
     #[test]
