@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `7235f1d`
+Current head: `81bda36`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -50,6 +50,7 @@ Current tqhnsw state summary:
 - The `hnsw_rs` Cargo dependency is now pinned to the currently locked `0.3.4` release instead of `*`.
 - `amrescan` now caches scan dimensions, bits, and derived code length in scan-owned opaque state so `amgettuple` no longer rereads the metadata page on every call.
 - `relation_options` now reads parsed reloptions directly from the relation descriptor cache instead of issuing an SPI catalog query on every `aminsert`.
+- Code-to-code inner-product scoring now has a zero-allocation raw-code fast path, and `score_code_inner_product` no longer builds temporary fake payload buffers on each call.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -76,6 +77,7 @@ Review triage at `46d00bb`:
 - Addressed external review `08-hnsw-rs-wildcard-dependency.md` by pinning `hnsw_rs` to the currently locked `0.3.4` release.
 - Addressed external review `04-linear-scan-reads-metadata-every-gettuple.md` by caching scan metadata during `amrescan` and reusing it in `amgettuple`.
 - Addressed external review `06-relation-options-spi-in-hot-path.md` by reading reloptions directly from `rd_options`.
+- Addressed external review `16-score-code-inner-product-allocates-per-call.md` by adding a raw-code scorer that avoids temporary payload allocation.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -95,6 +97,7 @@ Open requests:
 - `22-pin-hnsw-rs-version.md`
 - `23-scan-metadata-cache.md`
 - `24-relation-options-cache.md`
+- `25-zero-allocation-code-scoring.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
