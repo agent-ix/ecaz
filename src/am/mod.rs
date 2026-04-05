@@ -323,6 +323,7 @@ unsafe fn append_heap_tuple(
         level: 0,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
+        gamma: tuple.gamma,
         neighbortid: page::ItemPointer {
             block_number,
             offset_number: neighbor_offset,
@@ -394,6 +395,7 @@ unsafe fn append_heap_tuple_to_new_page(
         level: 0,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
+        gamma: tuple.gamma,
         neighbortid: page::ItemPointer {
             block_number,
             offset_number: neighbor_offset,

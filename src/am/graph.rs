@@ -4,12 +4,13 @@ use pgrx::pg_sys;
 
 use super::page;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GraphElement {
     pub tid: page::ItemPointer,
     pub level: u8,
     pub deleted: bool,
     pub heaptids: Vec<page::ItemPointer>,
+    pub gamma: f32,
     pub neighbortid: page::ItemPointer,
     pub code: Vec<u8>,
 }
@@ -34,6 +35,7 @@ pub(crate) unsafe fn load_graph_element(
         level: element.level,
         deleted: element.deleted,
         heaptids: element.heaptids,
+        gamma: element.gamma,
         neighbortid: element.neighbortid,
         code: element.code,
     }

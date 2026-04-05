@@ -1228,6 +1228,16 @@ mod tests {
             "same-code build inputs with distinct persisted gamma values must not coalesce"
         );
         assert!(elements.iter().all(|element| element.heaptids.len() == 1));
+        let mut gammas = elements
+            .iter()
+            .map(|element| element.gamma.to_bits())
+            .collect::<Vec<_>>();
+        gammas.sort_unstable();
+        assert_eq!(
+            gammas,
+            vec![0.5_f32.to_bits(), 1.5_f32.to_bits()],
+            "build should persist element gamma values alongside same-code distinct tuples"
+        );
     }
 
     #[pg_test]
@@ -1357,6 +1367,7 @@ mod tests {
                         block_number: 1,
                         offset_number: 1,
                     }],
+                    gamma: 0.5,
                     neighbortid: am::page::ItemPointer::INVALID,
                     code: vec![0x11_u8; code_len],
                 };
@@ -1450,6 +1461,7 @@ mod tests {
                             block_number: 1,
                             offset_number: 1,
                         }],
+                        gamma: 0.5,
                         neighbortid: am::page::ItemPointer::INVALID,
                         code: vec![0x11_u8; code_len],
                     };
@@ -1657,6 +1669,16 @@ mod tests {
             "same-code inserts with distinct persisted gamma values must not coalesce"
         );
         assert!(elements.iter().all(|element| element.heaptids.len() == 1));
+        let mut gammas = elements
+            .iter()
+            .map(|element| element.gamma.to_bits())
+            .collect::<Vec<_>>();
+        gammas.sort_unstable();
+        assert_eq!(
+            gammas,
+            vec![0.5_f32.to_bits(), 1.5_f32.to_bits()],
+            "live insert should persist element gamma values alongside same-code distinct tuples"
+        );
     }
 
     #[pg_test]

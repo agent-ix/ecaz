@@ -502,6 +502,7 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
                 level: graph_nodes[idx].level,
                 deleted: false,
                 heaptids: tuple.heap_tids.clone(),
+                gamma: tuple.gamma,
                 neighbortid: page::ItemPointer::INVALID,
                 code: tuple.code.clone(),
             })

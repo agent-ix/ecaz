@@ -142,11 +142,12 @@ impl MetadataPage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TqElementTuple {
     pub level: u8,
     pub deleted: bool,
     pub heaptids: Vec<ItemPointer>,
+    pub gamma: f32,
     pub neighbortid: ItemPointer,
     pub code: Vec<u8>,
 }
@@ -166,6 +167,7 @@ impl TqElementTuple {
                 + 1
                 + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
                 + 1
+                + 4
                 + ITEM_POINTER_BYTES
                 + self.code.len(),
         );
@@ -181,6 +183,7 @@ impl TqElementTuple {
         }
 
         out.push(self.heaptids.len() as u8);
+        out.extend_from_slice(&self.gamma.to_le_bytes());
         self.neighbortid.encode_into(&mut out);
         out.extend_from_slice(&self.code);
         Ok(out)
@@ -192,6 +195,7 @@ impl TqElementTuple {
             + 1
             + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
             + 1
+            + 4
             + ITEM_POINTER_BYTES
             + code_len;
         if input.len() != expected_len {
@@ -221,6 +225,8 @@ impl TqElementTuple {
             ));
         }
 
+        let gamma = f32::from_le_bytes(input[cursor..cursor + 4].try_into().expect("gamma bytes"));
+        cursor += 4;
         let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
         cursor += ITEM_POINTER_BYTES;
 
@@ -228,13 +234,20 @@ impl TqElementTuple {
             level: input[1],
             deleted: input[2] != 0,
             heaptids: heaptids.into_iter().take(heaptid_count).collect(),
+            gamma,
             neighbortid,
             code: input[cursor..].to_vec(),
         })
     }
 
     pub fn encoded_len(code_len: usize) -> usize {
-        1 + 1 + 1 + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES + 1 + ITEM_POINTER_BYTES + code_len
+        1 + 1
+            + 1
+            + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
+            + 1
+            + 4
+            + ITEM_POINTER_BYTES
+            + code_len
     }
 }
 
@@ -372,8 +385,7 @@ impl DataPage {
         self.tuples.push(payload);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: u16::try_from(self.tuples.len())
-                .expect("tuple count should fit in u16"),
+            offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
         })
     }
 
@@ -619,6 +631,7 @@ mod tests {
             level: 3,
             deleted: false,
             heaptids: vec![tid(10, 1), tid(11, 2)],
+            gamma: 1.25,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 32],
         };
@@ -634,6 +647,7 @@ mod tests {
             level: 3,
             deleted: false,
             heaptids: vec![tid(10, 1), tid(11, 2)],
+            gamma: -0.5,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 32],
         };
@@ -694,6 +708,7 @@ mod tests {
             level: 0,
             deleted: false,
             heaptids: vec![tid(10, 1)],
+            gamma: 0.75,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 772],
         };
