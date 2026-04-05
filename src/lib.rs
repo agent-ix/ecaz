@@ -2120,6 +2120,72 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_rescan_after_exhaustion_restarts_scan() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_exhaustion_rescan (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_exhaustion_rescan VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_exhaustion_rescan_idx ON tqhnsw_gettuple_exhaustion_rescan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_exhaustion_rescan_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (first_pass, rescanned_tids) = unsafe {
+            am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        let expected_tids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                        split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
+                     FROM tqhnsw_gettuple_exhaustion_rescan
+                     ORDER BY id",
+                    None,
+                    &[],
+                )
+                .expect("ctid query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    (
+                        u32::try_from(block_number).expect("block number should be non-negative"),
+                        u16::try_from(offset_number).expect("offset number should be positive"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            first_pass, expected_tids,
+            "the first linear scan should exhaust only after returning every heap tid"
+        );
+        assert_eq!(
+            rescanned_tids, expected_tids,
+            "amrescan after exhaustion should restart tuple production from the beginning"
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw amgettuple only supports forward scan direction")]
     fn test_tqhnsw_gettuple_rejects_backward_scan_direction() {
         Spi::run(

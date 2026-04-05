@@ -1315,6 +1315,9 @@ impl Default for TqScanOpaque {
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+type HeapTidCoords = (u32, u16);
+
 impl Distance<f32> for BuildVectorDistance {
     fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
         self.score_offset - score_source_inner_product(va, vb)
@@ -2412,7 +2415,7 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
 pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> Vec<(u32, u16)> {
+) -> Vec<HeapTidCoords> {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2440,7 +2443,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
 pub(crate) unsafe fn debug_gettuple_exhaustion_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (Vec<(u32, u16)>, bool, bool) {
+) -> (Vec<HeapTidCoords>, bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2480,10 +2483,48 @@ pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (Vec<HeapTidCoords>, Vec<HeapTidCoords>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut first_pass = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        first_pass.push(item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+    }
+
+    let mut rescan_orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+
+    let mut rescanned = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        rescanned.push(item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+    }
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (first_pass, rescanned)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> ((u32, u16), Vec<(u32, u16)>) {
+) -> (HeapTidCoords, Vec<HeapTidCoords>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
