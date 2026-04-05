@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, PgBox};
@@ -162,6 +163,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
 
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
+                free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
                 pg_sys::pfree(opaque);
@@ -229,6 +231,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
+    reset_scan_visited_state(opaque);
 }
 
 fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
@@ -266,6 +269,29 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     opaque.candidate_frontier = CandidateFrontier::default();
     opaque.candidate_frontier_head = u8::MAX;
+}
+
+fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
+    if opaque.visited_tids.is_null() {
+        opaque.visited_tids = Box::into_raw(Box::new(HashSet::new()));
+    } else {
+        unsafe { &mut *opaque.visited_tids }.clear();
+    }
+}
+
+fn free_scan_visited_set(opaque: &mut TqScanOpaque) {
+    if !opaque.visited_tids.is_null() {
+        drop(unsafe { Box::from_raw(opaque.visited_tids) });
+        opaque.visited_tids = ptr::null_mut();
+    }
+}
+
+fn mark_visited_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
+    if opaque.visited_tids.is_null() || element_tid == page::ItemPointer::INVALID {
+        return;
+    }
+
+    unsafe { &mut *opaque.visited_tids }.insert(element_tid);
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -309,6 +335,11 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     recompute_candidate_frontier_head(opaque);
+    for candidate in opaque.candidate_frontier.candidates {
+        if candidate.score_valid {
+            mark_visited_element(opaque, candidate.element_tid);
+        }
+    }
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
@@ -578,6 +609,7 @@ struct TqScanOpaque {
     scan_seed: u64,
     scan_code_len: usize,
     scan_block_count: u32,
+    visited_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: CandidateFrontier,
     candidate_frontier_head: u8,
     current_result: CurrentScanResult,
@@ -601,6 +633,7 @@ impl Default for TqScanOpaque {
             scan_seed: 0,
             scan_code_len: 0,
             scan_block_count: 0,
+            visited_tids: ptr::null_mut(),
             candidate_frontier: CandidateFrontier::default(),
             candidate_frontier_head: u8::MAX,
             current_result: CurrentScanResult::default(),
@@ -636,6 +669,23 @@ type DebugCandidateFrontierLifecycle = (
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierConsume =
     (u8, DebugCandidateFrontier, u8, DebugCandidateFrontier, u8, DebugCandidateFrontier);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugVisitedSeedsLifecycle = (Vec<HeapTidCoords>, Vec<HeapTidCoords>, Vec<HeapTidCoords>);
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
+    if opaque.visited_tids.is_null() {
+        return Vec::new();
+    }
+
+    let mut tids = unsafe { &*opaque.visited_tids }
+        .iter()
+        .map(|tid| (tid.block_number, tid.offset_number))
+        .collect::<Vec<_>>();
+    tids.sort_unstable();
+    tids
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -1209,6 +1259,42 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
         after_second_head,
         after_second_frontier,
     )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_visited_seed_lifecycle(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugVisitedSeedsLifecycle {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before = debug_sorted_visited_tids(opaque);
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "visited-seed lifecycle helper requires a first tuple"
+    );
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let partial = debug_sorted_visited_tids(opaque);
+
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let exhausted = debug_sorted_visited_tids(opaque);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (before, partial, exhausted)
 }
 
 #[cfg(any(test, feature = "pg_test"))]

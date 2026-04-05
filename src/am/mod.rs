@@ -31,6 +31,7 @@ pub(crate) use self::scan::{
     debug_entry_candidate_lifecycle, debug_consume_candidate_frontier_head,
     debug_rescan_candidate_frontier,
     debug_candidate_frontier_head_lifecycle,
+    debug_visited_seed_lifecycle,
     debug_rescan_successor_candidate_state,
     debug_rescan_null_query, debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
     debug_rescan_with_index_qual, debug_rescan_with_multiple_orderbys,

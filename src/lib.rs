@@ -2844,6 +2844,59 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_visited_seed_state_tracks_frontier_candidates() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_visited_seed_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_visited_seed_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_visited_seed_state_idx ON tqhnsw_visited_seed_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_visited_seed_state_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        let (head, frontier) =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        let (before, partial, exhausted) =
+            unsafe { am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        let mut expected = frontier
+            .into_iter()
+            .filter_map(|(valid, tid, _)| valid.then_some(tid))
+            .collect::<Vec<_>>();
+        expected.sort_unstable();
+
+        assert_ne!(
+            head, u8::MAX,
+            "non-empty scan frontier should still expose at least one seeded candidate"
+        );
+        assert_eq!(
+            before, expected,
+            "visited state should seed from the currently valid frontier candidate tids"
+        );
+        assert_eq!(
+            partial, before,
+            "bootstrap linear scan progress should not mutate seeded visited state yet"
+        );
+        assert_eq!(
+            exhausted, before,
+            "visited state should remain stable through bootstrap scan exhaustion until rescan"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
