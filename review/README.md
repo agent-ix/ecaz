@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `e375e04`
+Current head: `8bffd23`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -64,6 +64,9 @@ Current tqhnsw state summary:
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 - ADR for gamma-aware duplicate semantics: `spec/adr/ADR-010-gamma-aware-duplicate-coalescing.md`
+- Plan/task tracking now reflects the implemented phases instead of leaving completed work marked as not started.
+- FR-007, FR-009, and FR-016 now backport the current staged implementation boundaries into the functional spec.
+- ADR for the planner cost gate: `spec/adr/ADR-011-planner-cost-override-until-ordered-scan.md`
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -101,6 +104,7 @@ Review triage at `46d00bb`:
 - Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
 - Current-result state now has explicit lifecycle coverage, but score calculation remains deferred until the scan path can reconstruct or store the candidate payload needed for query scoring.
 - Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
+- The next structural code slice before scan traversal is splitting `src/am/mod.rs` into the planned submodules so graph-scan work lands on a cleaner review surface.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -126,6 +130,7 @@ Open requests:
 - `27-scan-current-result-state.md`
 - `28-scan-current-result-lifecycle.md`
 - `29-gamma-aware-duplicate-coalescing.md`
+- `30-plan-and-spec-backfill.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
