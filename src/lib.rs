@@ -1356,25 +1356,20 @@ mod tests {
             .expect("should find a dimension where one page fits multiple pairs");
         let code_len = code_len(dim as usize, 4);
 
-        let seed_rows = (1..=pairs_per_page)
-            .map(|id| {
-                format!(
-                    "({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
-                    hex::encode(vec![id as u8; code_len]),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",\n             ");
-        Spi::run(&format!(
-            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
-             {seed_rows}"
-        ))
-        .expect("seed inserts should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
+
+        for id in 1..=pairs_per_page {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+                 ({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+                hex::encode(vec![id as u8; code_len]),
+            ))
+            .expect("live insert should succeed");
+        }
 
         let index_oid =
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_rollover_reuse_idx'::regclass::oid")
@@ -1385,7 +1380,7 @@ mod tests {
         assert_eq!(metadata.dimensions, dim);
         assert!(
             !before_pages.is_empty(),
-            "seed build should create at least one data page"
+            "live inserts should create at least one data page"
         );
 
         Spi::run(&format!(
@@ -1804,6 +1799,37 @@ mod tests {
             "amrescan should mark scan state as initialized"
         );
         assert_eq!(query_dimensions, 4);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_rescan_repeat_overwrites_query_dimensions() {
+        Spi::run("CREATE TABLE tqhnsw_rescan_repeat (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_rescan_repeat_idx ON tqhnsw_rescan_repeat USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_rescan_repeat_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (rescan_called, query_dimensions) = unsafe {
+            am::debug_rescan_overwrites_query_dimensions(
+                index_oid,
+                vec![1.0, 0.0, 0.5, -1.0],
+                vec![1.0, 0.0, 0.5],
+            )
+        };
+        assert!(
+            rescan_called,
+            "repeated amrescan should keep scan state initialized"
+        );
+        assert_eq!(
+            query_dimensions, 3,
+            "second amrescan should overwrite recorded query dimensions"
+        );
     }
 
     #[pg_test]

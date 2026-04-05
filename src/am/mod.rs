@@ -2065,6 +2065,39 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
+    index_oid: pg_sys::Oid,
+    first_query: Vec<f32>,
+    second_query: Vec<f32>,
+) -> (bool, u16) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut first_orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(first_query)
+            .expect("first query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };
+
+    let mut second_orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(second_query)
+            .expect("second query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let result = (opaque.rescan_called, opaque.query_dimensions);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
