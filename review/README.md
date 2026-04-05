@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f301b14`
+Current head: `03ddc18`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -73,6 +73,7 @@ Current tqhnsw state summary:
 - `src/am/mod.rs` now also extracts the build entry callbacks into a dedicated module while leaving deeper build helpers in place.
 - `src/am/mod.rs` now also extracts build tuple decoding and `build_source_column` heap scan plumbing into the build module.
 - `src/am/mod.rs` now also extracts graph construction, entry-point selection, and staged data-page writes into the build module.
+- The build module now owns `BuildState` and `BuildTuple`, leaving `src/am/mod.rs` focused much more narrowly on live insert and scan behavior.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -143,6 +144,7 @@ Open requests:
 - `34-am-build-entrypoints-module-split.md`
 - `35-am-build-tuple-and-source-scan-split.md`
 - `36-am-build-graph-and-page-staging-split.md`
+- `37-am-build-state-type-ownership.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
