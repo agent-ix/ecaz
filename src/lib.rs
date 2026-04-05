@@ -282,6 +282,10 @@ fn score_query_inner_product(candidate: &[u8], query: &[f32]) -> Result<f32, Str
     Ok(quantizer.score_ip_encoded(&prepared, &payload))
 }
 
+fn score_negative_query_inner_product(candidate: &[u8], query: &[f32]) -> Result<f32, String> {
+    Ok(-score_query_inner_product(candidate, query)?)
+}
+
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn tqvector_query_inner_product(candidate: Vec<u8>, query: Vec<f32>) -> f32 {
     score_query_inner_product(&candidate, &query).unwrap_or_else(|e| pgrx::error!("{e}"))
@@ -289,7 +293,7 @@ fn tqvector_query_inner_product(candidate: Vec<u8>, query: Vec<f32>) -> f32 {
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn tqvector_negative_query_inner_product(candidate: Vec<u8>, query: Vec<f32>) -> f32 {
-    -tqvector_query_inner_product(candidate, query)
+    score_negative_query_inner_product(&candidate, &query).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[cfg(test)]
@@ -417,6 +421,38 @@ mod unit_tests {
             (observed - expected).abs() < 1e-6,
             "query inner product should score against the full persisted payload"
         );
+    }
+
+    #[test]
+    fn test_tqvector_query_inner_product_rejects_dimension_mismatch() {
+        let vector = vec![0.5_f32, -1.0, 0.25, 0.75];
+        let quantizer = ProdQuantizer::cached(vector.len(), 4, 42);
+        let encoded = quantizer.encode(&vector);
+
+        let mut code_bytes = encoded.mse_packed.clone();
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        let candidate = pack(vector.len() as u16, 4, 42, encoded.gamma, &code_bytes);
+
+        let err = score_query_inner_product(&candidate, &[1.0, 0.0, -0.5]).unwrap_err();
+        assert!(
+            err.contains("candidate dim 4, query dim 3"),
+            "dimension mismatch should report both candidate and query dimensions"
+        );
+    }
+
+    #[test]
+    fn test_tqvector_negative_query_inner_product_negates_query_score() {
+        let vector = vec![0.5_f32, -1.0, 0.25, 0.75, -0.5, 1.25, -0.75, 0.125];
+        let query = vec![-0.25_f32, 0.75, 1.0, -0.5, 0.25, -1.0, 0.5, 0.875];
+        let candidate = encode_embedding_to_tqvector(vector, 4, 42)
+            .expect("candidate should encode successfully");
+
+        let base = score_query_inner_product(&candidate, &query)
+            .expect("base query score should succeed for matching dimensions");
+        let negated = score_negative_query_inner_product(&candidate, &query)
+            .expect("negative query score should succeed for matching dimensions");
+
+        assert_eq!(negated, -base);
     }
 
     #[test]
