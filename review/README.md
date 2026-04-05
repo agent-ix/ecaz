@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `e6de184`
+Current head: `7225b8d`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -55,6 +55,7 @@ Current tqhnsw state summary:
 - `amrescan` now rejects oversized `real[]` queries with an explicit dimension error instead of relying on an internal `u16` conversion panic.
 - The linear scan cursor now uses a direct `offset + 1` advance with a `debug_assert!` on the page-local `u16` invariant instead of carrying an unreachable saturation branch.
 - Query-scoring coverage now explicitly exercises candidate/query dimension mismatch and the negative-query wrapper contract.
+- Linear scan coverage now explicitly verifies that a duplicate-heavy scan continues correctly across multiple data pages and mixed element/neighbor tuple pages.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -86,6 +87,7 @@ Review triage at `46d00bb`:
 - Addressed outside feedback on `14-rescan-query-payload-state.md` by rejecting oversized scan queries before storing scan-owned payload state.
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by removing the unreachable saturated-offset overflow branch in the linear scan cursor.
 - Addressed outside feedback on `16-query-inner-product-gamma-payload.md` by adding explicit coverage for dimension mismatch errors and the negative-query wrapper.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` with a regression that combines duplicate draining, neighbor-tuple skipping, and multi-page scan advancement.
 
 Review instructions:
 - Prefer correctness findings over style comments.
