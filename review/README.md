@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f595337`
+Current head: `46d00bb`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -35,8 +35,9 @@ Current tqhnsw state summary:
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
 - `amgettuple` now returns `false` for valid rescans on empty indexes while keeping non-empty scan execution disabled.
+- `amrescan` now persists the full query payload in scan-owned PostgreSQL memory and frees it during `amendscan`.
 
-Review triage at `f595337`:
+Review triage at `46d00bb`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
 - Marked `01-aminsert-groundwork.md` comments 2, 3, and 5 as not needed for this stage because they are optimization or future-invariant notes rather than current defects.
@@ -59,6 +60,7 @@ Review instructions:
 
 Open requests:
 - `13-amgettuple-empty-index-noop.md`
+- `14-rescan-query-payload-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
