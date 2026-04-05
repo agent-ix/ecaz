@@ -1305,6 +1305,123 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_reuses_new_tail_page_after_rollover() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_rollover_reuse (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+
+        let (dim, pairs_per_page) = (1_u16..=u16::MAX)
+            .rev()
+            .find_map(|dim| {
+                let code_len = code_len(dim as usize, 4);
+                if !am::page::element_tuple_fits_on_page(code_len, pg_sys::BLCKSZ as usize) {
+                    return None;
+                }
+
+                let mut staged_page = am::page::DataPage::new(
+                    am::page::FIRST_DATA_BLOCK_NUMBER,
+                    pg_sys::BLCKSZ as usize,
+                );
+                let mut pairs = 0_usize;
+                loop {
+                    let neighbor = am::page::TqNeighborTuple {
+                        count: 0,
+                        tids: Vec::new(),
+                    };
+                    let element = am::page::TqElementTuple {
+                        level: 0,
+                        deleted: false,
+                        heaptids: vec![am::page::ItemPointer {
+                            block_number: 1,
+                            offset_number: 1,
+                        }],
+                        neighbortid: am::page::ItemPointer::INVALID,
+                        code: vec![0x11_u8; code_len],
+                    };
+                    if staged_page.insert_neighbor(&neighbor).is_err()
+                        || staged_page.insert_element(&element).is_err()
+                    {
+                        break;
+                    }
+                    pairs += 1;
+                }
+
+                if pairs >= 2 {
+                    Some((dim, pairs))
+                } else {
+                    None
+                }
+            })
+            .expect("should find a dimension where one page fits multiple pairs");
+        let code_len = code_len(dim as usize, 4);
+
+        let seed_rows = (1..=pairs_per_page)
+            .map(|id| {
+                format!(
+                    "({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+                    hex::encode(vec![id as u8; code_len]),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n             ");
+        Spi::run(&format!(
+            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+             {seed_rows}"
+        ))
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_rollover_reuse_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (before_block_count, metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, dim);
+        assert!(
+            !before_pages.is_empty(),
+            "seed build should create at least one data page"
+        );
+
+        Spi::run(&format!(
+            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+            pairs_per_page + 1,
+            hex::encode(vec![0xaa_u8; code_len]),
+        ))
+        .expect("rollover insert should succeed");
+
+        let (after_rollover_block_count, _metadata, after_rollover_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert!(
+            after_rollover_block_count > before_block_count,
+            "insert should allocate a new page once the original tail page is full"
+        );
+        assert_eq!(after_rollover_pages.len(), 2);
+
+        Spi::run(&format!(
+            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+            pairs_per_page + 2,
+            hex::encode(vec![0xbb_u8; code_len]),
+        ))
+        .expect("post-rollover insert should succeed");
+
+        let (after_reuse_block_count, _metadata, after_reuse_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(
+            after_reuse_block_count, after_rollover_block_count,
+            "insert after rollover should reuse the new tail page when space remains"
+        );
+        assert_eq!(after_reuse_pages.len(), 2);
+    }
+
+    #[pg_test]
     fn test_tqhnsw_insert_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding tqvector)",
