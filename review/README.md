@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `db15db8`
+Current head: `bf46ad0`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -89,6 +89,8 @@ Current tqhnsw state summary:
 - Entry-candidate lifecycle coverage now also verifies that the seeded candidate remains stable through partial bootstrap scan progress and only clears on full exhaustion.
 - Scan state now also seeds one successor candidate from the entry point's persisted flat adjacency list when a live neighbor exists.
 - Successor-candidate coverage now verifies that any seeded successor points at one of the persisted entry-point neighbor refs and carries a computed score.
+- Entry and successor candidates now live in one explicit fixed two-slot frontier container instead of two unrelated scan-state fields.
+- Frontier-shape coverage now verifies that the first slot is the seeded entry candidate and the second slot is either a concrete scored successor or a cleared empty slot.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -168,6 +170,7 @@ Open requests:
 - `43-scan-entry-candidate-state.md`
 - `44-entry-candidate-lifecycle.md`
 - `45-successor-candidate-seeding.md`
+- `46-two-slot-candidate-frontier.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
