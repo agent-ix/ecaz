@@ -1176,6 +1176,86 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_allocates_new_page_when_tail_is_full() {
+        Spi::run("CREATE TABLE tqhnsw_insert_new_page (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+
+        let large_dim = (1_u16..=u16::MAX)
+            .rev()
+            .find(|dim| {
+                let code_len = code_len(*dim as usize, 4);
+                if !am::page::element_tuple_fits_on_page(code_len, pg_sys::BLCKSZ as usize) {
+                    return false;
+                }
+
+                let mut staged_page =
+                    am::page::DataPage::new(am::page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+                let neighbor = am::page::TqNeighborTuple {
+                    count: 0,
+                    tids: Vec::new(),
+                };
+                let element = am::page::TqElementTuple {
+                    level: 0,
+                    deleted: false,
+                    heaptids: vec![am::page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    }],
+                    neighbortid: am::page::ItemPointer::INVALID,
+                    code: vec![0x11_u8; code_len],
+                };
+                let required_bytes =
+                    am::page::raw_tuple_storage_bytes(neighbor.encode().expect("neighbor tuple should encode").len())
+                        + am::page::raw_tuple_storage_bytes(
+                            am::page::TqElementTuple::encoded_len(code_len),
+                        );
+                staged_page.insert_neighbor(&neighbor).is_ok()
+                    && staged_page.insert_element(&element).is_ok()
+                    && staged_page.free_bytes() < required_bytes
+            })
+            .expect("should find a dimension that saturates one data page");
+        let large_code_len = code_len(large_dim as usize, 4);
+        let first_code = vec![0x11_u8; large_code_len];
+        let second_code = vec![0x22_u8; large_code_len];
+        Spi::run(&format!(
+            "INSERT INTO tqhnsw_insert_new_page VALUES
+             (1, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+            hex::encode(first_code),
+        ))
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_new_page_idx ON tqhnsw_insert_new_page USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_new_page_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(before_block_count, 2, "seed build should occupy one data page");
+        assert_eq!(metadata.dimensions, large_dim);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+
+        Spi::run(&format!(
+            "INSERT INTO tqhnsw_insert_new_page VALUES
+             (2, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
+            hex::encode(second_code),
+        ))
+        .expect("insert should succeed");
+
+        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert!(
+            after_block_count > before_block_count,
+            "insert should allocate a new data page when the tail page is full"
+        );
+        assert_eq!(data_pages.len(), 2, "index should now have two data pages");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_insert_coalesces_duplicate_vectors() {
         Spi::run("CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
