@@ -34,12 +34,11 @@ impl GenericXLogTxn {
     ///
     /// `buffer` must be a valid buffer belonging to the relation used to start
     /// this transaction. `flags` must follow PostgreSQL's GenericXLog contract.
-    pub unsafe fn register_buffer(
-        &mut self,
-        buffer: pg_sys::Buffer,
-        flags: i32,
-    ) -> pg_sys::Page {
-        assert!(!self.finished, "cannot register buffer after GenericXLogFinish");
+    pub unsafe fn register_buffer(&mut self, buffer: pg_sys::Buffer, flags: i32) -> pg_sys::Page {
+        assert!(
+            !self.finished,
+            "cannot register buffer after GenericXLogFinish"
+        );
         // SAFETY: The caller guarantees `buffer` and `flags` are valid.
         unsafe { pg_sys::GenericXLogRegisterBuffer(self.state, buffer, flags) }
     }

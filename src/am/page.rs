@@ -380,8 +380,7 @@ impl DataPage {
         if tid.block_number != self.block_number {
             return Err(format!(
                 "tuple block mismatch: got {}, page is {}",
-                tid.block_number,
-                self.block_number
+                tid.block_number, self.block_number
             ));
         }
         if tid.offset_number == 0 {
@@ -399,8 +398,7 @@ impl DataPage {
         if tid.block_number != self.block_number {
             return Err(format!(
                 "tuple block mismatch: got {}, page is {}",
-                tid.block_number,
-                self.block_number
+                tid.block_number, self.block_number
             ));
         }
         if tid.offset_number == 0 {
@@ -427,7 +425,11 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
-    pub fn read_element(&self, tid: ItemPointer, code_len: usize) -> Result<TqElementTuple, String> {
+    pub fn read_element(
+        &self,
+        tid: ItemPointer,
+        code_len: usize,
+    ) -> Result<TqElementTuple, String> {
         TqElementTuple::decode(self.raw_tuple(tid)?, code_len)
     }
 
@@ -439,7 +441,11 @@ impl DataPage {
         TqNeighborTuple::decode(self.raw_tuple(tid)?)
     }
 
-    pub fn update_element(&mut self, tid: ItemPointer, tuple: &TqElementTuple) -> Result<(), String> {
+    pub fn update_element(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqElementTuple,
+    ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
 }
@@ -463,7 +469,9 @@ impl DataPageChain {
     }
 
     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
-        self.pages.iter().find(|page| page.block_number == block_number)
+        self.pages
+            .iter()
+            .find(|page| page.block_number == block_number)
     }
 
     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
@@ -490,7 +498,12 @@ impl DataPageChain {
             return last.insert_raw_tuple(payload);
         }
 
-        let next_block = self.pages.last().expect("page chain is non-empty").block_number + 1;
+        let next_block = self
+            .pages
+            .last()
+            .expect("page chain is non-empty")
+            .block_number
+            + 1;
         self.pages.push(DataPage::new(next_block, self.page_size));
         self.pages
             .last_mut()
@@ -506,7 +519,11 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
-    pub fn read_element(&self, tid: ItemPointer, code_len: usize) -> Result<TqElementTuple, String> {
+    pub fn read_element(
+        &self,
+        tid: ItemPointer,
+        code_len: usize,
+    ) -> Result<TqElementTuple, String> {
         self.get_page(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .read_element(tid, code_len)
@@ -518,7 +535,11 @@ impl DataPageChain {
             .read_neighbor(tid)
     }
 
-    pub fn update_element(&mut self, tid: ItemPointer, tuple: &TqElementTuple) -> Result<(), String> {
+    pub fn update_element(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqElementTuple,
+    ) -> Result<(), String> {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .update_element(tid, tuple)
