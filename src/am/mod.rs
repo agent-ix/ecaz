@@ -4,7 +4,9 @@ use std::ffi::c_void;
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
-use pgrx::{pg_guard, pg_sys, varlena::set_varsize_4b, AllocatedByRust, PgBox};
+use pgrx::{
+    itemptr::item_pointer_get_both, pg_guard, pg_sys, varlena, AllocatedByRust, PgBox,
+};
 
 pub mod page;
 pub mod wal;
@@ -106,34 +108,47 @@ pub extern "C-unwind" fn pg_finfo_tqhnsw_handler() -> *const pg_sys::Pg_finfo_re
 unsafe extern "C-unwind" fn tqhnsw_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
-    _index_info: *mut pg_sys::IndexInfo,
+    index_info: *mut pg_sys::IndexInfo,
 ) -> *mut pg_sys::IndexBuildResult {
-    unsafe { initialize_metadata_page(index_relation) };
+    let mut state = BuildState::new(index_relation);
+
+    unsafe { initialize_metadata_page(index_relation, state.initial_metadata()) };
 
     let heap_tuples = unsafe {
         pg_sys::table_index_build_scan(
             heap_relation,
             index_relation,
-            _index_info,
+            index_info,
             false,
             false,
             Some(tqhnsw_build_callback),
-            ptr::null_mut(),
+            (&mut state as *mut BuildState).cast(),
             ptr::null_mut(),
         )
     };
-    if heap_tuples > 0.0 {
-        pgrx::error!("tqhnsw ambuild for non-empty tables is not implemented yet");
+    let index_tuples = if state.heap_tuples.is_empty() {
+        0.0
+    } else {
+        unsafe { flush_build_state(index_relation, &state) };
+        state.heap_tuples.len() as f64
+    };
+
+    if heap_tuples != state.scanned_tuples as f64 {
+        pgrx::error!(
+            "tqhnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
+            state.scanned_tuples
+        );
     }
 
     let mut result = unsafe { PgBox::<pg_sys::IndexBuildResult>::alloc0() };
     result.heap_tuples = heap_tuples;
-    result.index_tuples = 0.0;
+    result.index_tuples = index_tuples;
     result.into_pg()
 }
 
 unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sys::Relation) {
-    unsafe { initialize_metadata_page(index_relation) };
+    let state = BuildState::new(index_relation);
+    unsafe { initialize_metadata_page(index_relation, state.initial_metadata()) };
 }
 
 unsafe extern "C-unwind" fn tqhnsw_aminsert(
@@ -253,18 +268,22 @@ unsafe extern "C-unwind" fn tqhnsw_amendscan(_scan: pg_sys::IndexScanDesc) {
 
 unsafe extern "C-unwind" fn tqhnsw_build_callback(
     _index: pg_sys::Relation,
-    _tid: pg_sys::ItemPointer,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
+    tid: pg_sys::ItemPointer,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
     _tuple_is_alive: bool,
-    _state: *mut c_void,
+    state: *mut c_void,
 ) {
+    let state = unsafe { &mut *state.cast::<BuildState>() };
+    let heap_tid = unsafe { decode_heap_tid(tid) };
+    let tuple = unsafe { build_heap_tuple(values, isnull, heap_tid) };
+    state.push(tuple);
 }
 
 unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
     let mut options = TqHnswOptions::DEFAULT;
     unsafe {
-        set_varsize_4b(
+        varlena::set_varsize_4b(
             (&mut options as *mut TqHnswOptions).cast::<pg_sys::varlena>(),
             size_of::<TqHnswOptions>() as i32,
         );
@@ -294,18 +313,7 @@ unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
     options
 }
 
-unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation) {
-    let options = unsafe { relation_options(index_relation) };
-    let metadata = page::MetadataPage {
-        m: u16::try_from(options.m).expect("validated m should fit into u16"),
-        ef_construction: u16::try_from(options.ef_construction)
-            .expect("validated ef_construction should fit into u16"),
-        entry_point: page::ItemPointer::INVALID,
-        dimensions: 0,
-        bits: 0,
-        max_level: 0,
-    };
-
+unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: page::MetadataPage) {
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -352,14 +360,304 @@ unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation) {
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
+#[derive(Debug, Clone)]
+struct BuildTuple {
+    heap_tids: Vec<page::ItemPointer>,
+    dimensions: u16,
+    bits: u8,
+    seed: u64,
+    code: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct BuildState {
+    options: TqHnswOptions,
+    page_size: usize,
+    scanned_tuples: usize,
+    heap_tuples: Vec<BuildTuple>,
+    dimensions: Option<u16>,
+    bits: Option<u8>,
+    seed: Option<u64>,
+}
+
+impl BuildState {
+    fn new(index_relation: pg_sys::Relation) -> Self {
+        let options = unsafe { relation_options(index_relation) };
+        Self {
+            options,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        }
+    }
+
+    fn initial_metadata(&self) -> page::MetadataPage {
+        page::MetadataPage {
+            m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(self.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 0,
+            bits: 0,
+            max_level: 0,
+        }
+    }
+
+    fn push(&mut self, tuple: BuildTuple) {
+        self.scanned_tuples += tuple.heap_tids.len();
+
+        match (self.dimensions, self.bits, self.seed) {
+            (None, None, None) => {
+                self.dimensions = Some(tuple.dimensions);
+                self.bits = Some(tuple.bits);
+                self.seed = Some(tuple.seed);
+                if !page::element_tuple_fits_on_page(tuple.code.len(), self.page_size) {
+                    pgrx::error!(
+                        "tqhnsw element tuple for dim {} bits {} does not fit on a page",
+                        tuple.dimensions,
+                        tuple.bits
+                    );
+                }
+            }
+            (Some(dimensions), Some(bits), Some(seed)) => {
+                if tuple.dimensions != dimensions || tuple.bits != bits || tuple.seed != seed {
+                    pgrx::error!(
+                        "tqhnsw ambuild requires a single tqvector shape; saw ({},{},{}) after ({},{},{})",
+                        tuple.dimensions,
+                        tuple.bits,
+                        tuple.seed,
+                        dimensions,
+                        bits,
+                        seed
+                    );
+                }
+            }
+            _ => unreachable!("shape tracking must be initialized together"),
+        }
+
+        if let Some(existing) = self.heap_tuples.iter_mut().find(|existing| existing.code == tuple.code)
+        {
+            if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
+                pgrx::error!(
+                    "tqhnsw ambuild supports at most {} duplicate heap tids per encoded vector",
+                    page::HEAPTID_INLINE_CAPACITY
+                );
+            }
+            existing.heap_tids.extend(tuple.heap_tids);
+            return;
+        }
+
+        self.heap_tuples.push(tuple);
+    }
+}
+
+unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPointer {
+    if tid.is_null() {
+        pgrx::error!("tqhnsw ambuild received a null heap tid");
+    }
+    let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
+    page::ItemPointer {
+        block_number,
+        offset_number,
+    }
+}
+
+unsafe fn build_heap_tuple(
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: page::ItemPointer,
+) -> BuildTuple {
+    if values.is_null() || isnull.is_null() {
+        pgrx::error!("tqhnsw ambuild received null tuple value arrays");
+    }
+    if unsafe { *isnull } {
+        pgrx::error!("tqhnsw does not support NULL indexed values");
+    }
+
+    let datum = unsafe { *values };
+    if datum.is_null() {
+        pgrx::error!("tqhnsw ambuild received a null tqvector datum");
+    }
+
+    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(datum.cast_mut_ptr()) };
+    let is_copy = unsafe { varlena::varatt_is_1b_e(datum.cast_mut_ptr()) || varlena::varatt_is_4b_c(datum.cast_mut_ptr()) };
+    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
+    if is_copy {
+        unsafe { pg_sys::pfree(varlena.cast()) };
+    }
+
+    let (dimensions, bits, seed, _, code) =
+        crate::unpack(&bytes).unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
+
+    BuildTuple {
+        heap_tids: vec![heap_tid],
+        dimensions,
+        bits,
+        seed,
+        code: code.to_vec(),
+    }
+}
+
+unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+    let dimensions = state.dimensions.expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let mut data_pages = page::DataPageChain::new(state.page_size);
+    let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
+
+    for tuple in &state.heap_tuples {
+        let element_tid = data_pages
+            .insert_element(&page::TqElementTuple {
+                level: 0,
+                deleted: false,
+                heaptids: tuple.heap_tids.clone(),
+                neighbortid: page::ItemPointer::INVALID,
+                code: tuple.code.clone(),
+            })
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage element tuple: {e}"));
+        element_tids.push(element_tid);
+    }
+
+    for (idx, element_tid) in element_tids.iter().copied().enumerate() {
+        let neighbor_refs = build_neighbor_refs(&element_tids, idx, state.options.m as usize);
+
+        let neighbor_tid = data_pages
+            .insert_neighbor(&page::TqNeighborTuple {
+                count: neighbor_refs.len() as u16,
+                tids: neighbor_refs,
+            })
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
+        let mut element = data_pages
+            .read_element(element_tid, state.heap_tuples[idx].code.len())
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to read staged element tuple: {e}"));
+        element.neighbortid = neighbor_tid;
+        data_pages
+            .update_element(element_tid, &element)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to backfill element tuple: {e}"));
+    }
+
+    let entry_point = element_tids.first().copied().unwrap_or(page::ItemPointer::INVALID);
+
+    unsafe { write_data_pages(index_relation, &data_pages) };
+    unsafe {
+        initialize_metadata_page(
+            index_relation,
+            page::MetadataPage {
+                m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+                ef_construction: u16::try_from(state.options.ef_construction)
+                    .expect("validated ef_construction should fit into u16"),
+                entry_point,
+                dimensions,
+                bits,
+                max_level: 0,
+            },
+        )
+    };
+}
+
+fn build_neighbor_refs(
+    element_tids: &[page::ItemPointer],
+    idx: usize,
+    max_degree: usize,
+) -> Vec<page::ItemPointer> {
+    if element_tids.len() <= 1 || max_degree == 0 {
+        return Vec::new();
+    }
+
+    let mut candidates = element_tids
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(candidate_idx, _)| *candidate_idx != idx)
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(candidate_idx, _)| {
+        let distance = candidate_idx.abs_diff(idx);
+        (distance, *candidate_idx)
+    });
+    candidates
+        .into_iter()
+        .take(max_degree.min(element_tids.len() - 1))
+        .map(|(_, tid)| tid)
+        .collect()
+}
+
+unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
+    for staged_page in data_pages.pages() {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                P_NEW,
+                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            pgrx::error!(
+                "tqhnsw failed to allocate data buffer for block {}",
+                staged_page.block_number()
+            );
+        }
+
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let page_ptr = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+        for tuple in staged_page.tuples() {
+            let offset = unsafe {
+                pg_sys::PageAddItemExtended(
+                    page_ptr,
+                    tuple.as_ptr().cast_mut().cast(),
+                    tuple.len(),
+                    pg_sys::InvalidOffsetNumber,
+                    0,
+                )
+            };
+            if offset == pg_sys::InvalidOffsetNumber {
+                pgrx::error!(
+                    "tqhnsw failed to write tuple to block {}",
+                    staged_page.block_number()
+                );
+            }
+        }
+
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, i32, page::MetadataPage) {
-    let index_relation = unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let options = unsafe { relation_options(index_relation) };
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DebugIndexDataPage {
+    pub block_number: u32,
+    pub tuples: Vec<Vec<u8>>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_index_pages(
+    index_oid: pg_sys::Oid,
+) -> (u32, page::MetadataPage, Vec<DebugIndexDataPage>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
 
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let mut data_pages = Vec::new();
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        data_pages.push(unsafe { read_data_page(index_relation, block_number) });
+    }
+
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (block_count, metadata, data_pages)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> page::MetadataPage {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -369,21 +667,74 @@ pub(crate) unsafe fn debug_index_metadata(index_oid: pg_sys::Oid) -> (u32, i32, 
             ptr::null_mut(),
         )
     };
-    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let raw_page = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+    let metadata = page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    metadata
+}
 
-    let metadata = {
-        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
-        let page = unsafe { wal_txn.register_buffer(buffer, 0) };
-        let contents = unsafe { pg_sys::PageGetContents(page) }.cast::<u8>();
-        let contents_slice =
-            unsafe { std::slice::from_raw_parts(contents, page::PAGE_HEADER_BYTES) };
-        let decoded = page::MetadataPage::decode_contents(contents_slice)
-            .expect("metadata page should decode");
-        drop(wal_txn);
-        decoded
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn read_data_page(
+    index_relation: pg_sys::Relation,
+    block_number: u32,
+) -> DebugIndexDataPage {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
     };
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let raw_page = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_header = raw_page.cast::<pg_sys::PageHeaderData>();
+    let line_pointer_count = ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
+        / size_of::<pg_sys::ItemIdData>()) as u16;
+
+    let mut tuples = Vec::with_capacity(line_pointer_count as usize);
+    for offset in 1..=line_pointer_count {
+        let item_id_ptr = unsafe {
+            raw_page
+                .add(page::PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+                .cast::<pg_sys::ItemIdData>()
+        };
+        let item_id = unsafe { &*item_id_ptr };
+        if item_id.lp_flags() == 0 {
+            continue;
+        }
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!(
+                "tqhnsw debug read found invalid tuple bounds on block {block_number}"
+            );
+        }
+        tuples.push(unsafe { std::slice::from_raw_parts(raw_page.add(tuple_offset), tuple_len) }.to_vec());
+    }
 
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    DebugIndexDataPage {
+        block_number,
+        tuples,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_index_metadata(
+    index_oid: pg_sys::Oid,
+) -> (u32, i32, i32, page::MetadataPage) {
+    let index_relation = unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let options = unsafe { relation_options(index_relation) };
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let metadata = unsafe { read_metadata_page(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     (block_count, options.m, options.ef_construction, metadata)

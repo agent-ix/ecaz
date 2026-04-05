@@ -468,6 +468,296 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_non_empty_index_build_writes_minimal_data_pages() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_nonempty_build (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_nonempty_build VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_nonempty_build_idx ON tqhnsw_nonempty_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 10, ef_construction = 90)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_nonempty_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+
+        assert!(block_count >= 2, "non-empty build should allocate a data page");
+        assert_eq!(metadata.m, 10);
+        assert_eq!(metadata.ef_construction, 90);
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.max_level, 0);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(page_tuples.len(), 6, "each heap row should emit one neighbor and one element tuple");
+
+        let neighbor_tids = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
+                    Some(*tid)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let elements = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                    Some(
+                        (
+                            *tid,
+                            am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                                .expect("element tuple should decode"),
+                        ),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(neighbor_tids.len(), 3);
+        assert_eq!(elements.len(), 3);
+        assert!(
+            page_tuples.iter().any(|(tid, tuple)| {
+                *tid == metadata.entry_point
+                    && tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)
+            }),
+            "entry point should identify an element tuple"
+        );
+
+        let neighbor_map = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
+                    Some((
+                        *tid,
+                        am::page::TqNeighborTuple::decode(tuple)
+                            .expect("neighbor tuple should decode"),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        let element_ids = elements.iter().map(|(tid, _)| *tid).collect::<Vec<_>>();
+        let mut neighbor_counts = Vec::new();
+
+        for (element_tid, element) in &elements {
+            assert_eq!(element.level, 0);
+            assert!(!element.deleted);
+            assert_eq!(element.heaptids.len(), 1);
+            assert_ne!(element.heaptids[0], am::page::ItemPointer::INVALID);
+            assert!(neighbor_tids.contains(&element.neighbortid));
+            let neighbor = neighbor_map
+                .get(&element.neighbortid)
+                .expect("neighbor tuple should exist");
+            assert_eq!(neighbor.count as usize, neighbor.tids.len());
+            assert!(!neighbor.tids.is_empty());
+            assert!(neighbor.tids.len() <= 2);
+            assert!(!neighbor.tids.contains(element_tid));
+            assert!(neighbor.tids.iter().all(|tid| element_ids.contains(tid)));
+            neighbor_counts.push(neighbor.tids.len());
+
+            for referenced_tid in &neighbor.tids {
+                let referenced_element = elements
+                    .iter()
+                    .find(|(candidate_tid, _)| candidate_tid == referenced_tid)
+                    .expect("neighbor should point to an element tuple");
+                let referenced_neighbors = neighbor_map
+                    .get(&referenced_element.1.neighbortid)
+                    .expect("referenced element should have a neighbor tuple");
+                assert!(
+                    referenced_neighbors.tids.contains(element_tid),
+                    "minimal connectivity should be symmetric"
+                );
+            }
+        }
+
+        neighbor_counts.sort_unstable();
+        assert_eq!(neighbor_counts, vec![2, 2, 2]);
+    }
+
+    #[pg_test]
+    fn test_non_empty_index_build_spans_multiple_data_pages() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+
+        let payload_len = code_len(4, 8);
+        for id in 1..=64 {
+            let code = (0..payload_len)
+                .map(|offset| ((id * 17 + offset as i32) & 0xff) as u8)
+                .collect::<Vec<_>>();
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_multipage_build VALUES \
+                 ({id}, '[dim=4,bits=8,seed=42,gamma=0.5]:{payload}'::tqvector)",
+                payload = hex::encode(code),
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_multipage_build_idx ON tqhnsw_multipage_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_multipage_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert!(block_count > 2, "build should span more than one data page");
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 8);
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let elements = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                    Some((
+                        *tid,
+                        am::page::TqElementTuple::decode(tuple, code_len(4, 8))
+                            .expect("element tuple should decode"),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let neighbors = page_tuples
+            .iter()
+            .filter_map(|(_, tuple)| {
+                if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
+                    Some(
+                        am::page::TqNeighborTuple::decode(tuple)
+                            .expect("neighbor tuple should decode"),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let element_tids = elements.iter().map(|(tid, _)| *tid).collect::<Vec<_>>();
+        let covered_heap_tids = elements
+            .iter()
+            .map(|(_, element)| element.heaptids.len())
+            .sum::<usize>();
+
+        assert!(elements.len() > 1);
+        assert_eq!(neighbors.len(), elements.len());
+        assert_eq!(covered_heap_tids, 64);
+        assert!(
+            data_pages.iter().filter(|page| !page.tuples.is_empty()).count() > 1,
+            "more than one populated data page should exist"
+        );
+
+        for neighbor in &neighbors {
+            assert_eq!(neighbor.count as usize, neighbor.tids.len());
+            assert!((1..=4).contains(&neighbor.tids.len()));
+            assert!(neighbor.tids.iter().all(|tid| element_tids.contains(tid)));
+        }
+    }
+
+    #[pg_test]
+    fn test_non_empty_index_build_coalesces_duplicate_vectors() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_duplicate_build (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_duplicate_build VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_duplicate_build_idx ON tqhnsw_duplicate_build USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_duplicate_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(elements.len(), 2, "duplicate encoded vectors should share one element tuple");
+        let mut heaptid_counts = elements
+            .iter()
+            .map(|element| element.heaptids.len())
+            .collect::<Vec<_>>();
+        heaptid_counts.sort_unstable();
+        assert_eq!(heaptid_counts, vec![1, 2]);
+    }
+
+    #[pg_test]
     #[should_panic(expected = "code length mismatch")]
     fn test_binary_recv_rejects_trailing_bytes() {
         let mut bytes = pack(4, 4, 42, 0.5, &[0x11, 0x22, 0x33]);

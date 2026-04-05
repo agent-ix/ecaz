@@ -25,7 +25,7 @@ const fn align_up(value: usize, alignment: usize) -> usize {
 
 const METADATA_SPECIAL_BYTES: usize = align_up(METADATA_BYTES, ALIGNMENT_BYTES);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ItemPointer {
     pub block_number: u32,
     pub offset_number: u16,
@@ -343,6 +343,10 @@ impl DataPage {
         self.tuples.len()
     }
 
+    pub fn tuples(&self) -> &[Vec<u8>] {
+        &self.tuples
+    }
+
     pub fn free_bytes(&self) -> usize {
         self.page_size.saturating_sub(self.used_bytes)
     }
@@ -388,6 +392,34 @@ impl DataPage {
             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))
     }
 
+    pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {
+        if tid.block_number != self.block_number {
+            return Err(format!(
+                "tuple block mismatch: got {}, page is {}",
+                tid.block_number,
+                self.block_number
+            ));
+        }
+        if tid.offset_number == 0 {
+            return Err("offset number must be 1-based".into());
+        }
+
+        let index = (tid.offset_number - 1) as usize;
+        let existing = self
+            .tuples
+            .get_mut(index)
+            .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+        if payload.len() != existing.len() {
+            return Err(format!(
+                "tuple length mismatch: got {}, expected {}",
+                payload.len(),
+                existing.len()
+            ));
+        }
+        *existing = payload;
+        Ok(())
+    }
+
     pub fn insert_element(&mut self, tuple: &TqElementTuple) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
     }
@@ -402,6 +434,10 @@ impl DataPage {
 
     pub fn read_neighbor(&self, tid: ItemPointer) -> Result<TqNeighborTuple, String> {
         TqNeighborTuple::decode(self.raw_tuple(tid)?)
+    }
+
+    pub fn update_element(&mut self, tid: ItemPointer, tuple: &TqElementTuple) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
     }
 }
 
@@ -425,6 +461,12 @@ impl DataPageChain {
 
     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
         self.pages.iter().find(|page| page.block_number == block_number)
+    }
+
+    pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
+        self.pages
+            .iter_mut()
+            .find(|page| page.block_number == block_number)
     }
 
     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
@@ -471,6 +513,12 @@ impl DataPageChain {
         self.get_page(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .read_neighbor(tid)
+    }
+
+    pub fn update_element(&mut self, tid: ItemPointer, tuple: &TqElementTuple) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_element(tid, tuple)
     }
 }
 
