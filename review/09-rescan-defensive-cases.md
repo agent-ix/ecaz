@@ -21,3 +21,7 @@ Questions to answer:
 - Do the new tests cover the highest-value `amrescan` misuses first?
 - Is any error path still effectively untestable with the current helper surface?
 - Is there a smaller scan-safety slice that should have gone first?
+
+Status at `0abf7d9`:
+- Addressed by adding helper coverage and regression tests for all four requested defensive `amrescan` cases.
+- No code-path widening was needed beyond test-only helper entry points.

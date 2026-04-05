@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `52de780`
+Current head: `0abf7d9`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -29,12 +29,14 @@ Current tqhnsw state summary:
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.
 - `amgettuple` still rejects actual tuple production, so planner-visible scan execution remains disabled in practice.
+- `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 
-Review triage at `52de780`:
+Review triage at `0abf7d9`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
-- Deferred `05-vacuum-noop-callbacks.md` missing-test suggestions because they are low-risk coverage work, not correctness bugs.
-- Deferred `07-rescan-query-validation.md` missing-test suggestions as the next likely narrow scan-safety slice.
+- Addressed `07-rescan-query-validation.md` comment 7 with explicit regression tests for the reviewed `amrescan` defensive cases.
+- Marked `07-rescan-query-validation.md` comments 1-6 and 8 as not needed for this stage because they are validation of current behavior or future-slice notes rather than actionable defects.
+- Deferred `05-vacuum-noop-callbacks.md` missing-test suggestions as the next likely narrow maintenance-coverage slice.
 - Deferred `08-amgettuple-state-gating.md` repeated-rescan coverage until scan execution stops being a fatal capability boundary.
 
 Review instructions:
@@ -52,3 +54,4 @@ Requests:
 - `07-rescan-query-validation.md`
 - `08-amgettuple-state-gating.md`
 - `09-rescan-defensive-cases.md`
+- `10-vacuum-noop-coverage.md`
