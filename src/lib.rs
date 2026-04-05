@@ -1176,6 +1176,59 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_coalesces_duplicate_vectors() {
+        Spi::run("CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_duplicate_idx ON tqhnsw_insert_duplicate USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_duplicate_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.seed, 42);
+        let before_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate VALUES
+             (3, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+        )
+        .expect("duplicate insert should succeed");
+
+        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(after_block_count, before_block_count, "duplicate insert should not allocate a new block");
+        let after_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        assert_eq!(after_tuple_count, before_tuple_count, "duplicate insert should not add a new tuple pair");
+
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .map(|tuple| {
+                am::page::TqElementTuple::decode(tuple, code_len(4, 4))
+                    .expect("element tuple should decode")
+            })
+            .collect::<Vec<_>>();
+        let mut heaptid_counts = elements
+            .iter()
+            .map(|element| element.heaptids.len())
+            .collect::<Vec<_>>();
+        heaptid_counts.sort_unstable();
+        assert_eq!(heaptid_counts, vec![1, 2]);
+    }
+
+    #[pg_test]
     fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
         Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");

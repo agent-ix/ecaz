@@ -204,6 +204,7 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = decode_heap_tid(heap_tid);
             let tuple = build_heap_tuple(values, isnull, heap_tid);
             let mut metadata = read_metadata_page(index_relation);
+            let code_len = tuple.code.len();
 
             if metadata.dimensions == 0 && metadata.bits == 0 {
                 metadata.dimensions = tuple.dimensions;
@@ -222,6 +223,13 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
                     tuple.bits,
                     tuple.seed
                 );
+            }
+
+            if let Some(element_tid) =
+                find_duplicate_element_tid(index_relation, metadata.dimensions, metadata.bits, code_len, &tuple.code)
+            {
+                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+                return false;
             }
 
             let element_tid = append_heap_tuple(index_relation, &tuple);
@@ -660,6 +668,162 @@ unsafe fn append_heap_tuple_to_new_page(
         block_number,
         offset_number: element_offset,
     }
+}
+
+unsafe fn find_duplicate_element_tid(
+    index_relation: pg_sys::Relation,
+    dimensions: u16,
+    bits: u8,
+    code_len: usize,
+    code: &[u8],
+) -> Option<page::ItemPointer> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        return None;
+    }
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                pgrx::error!(
+                    "tqhnsw found invalid tuple bounds while scanning block {block_number}"
+                );
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                continue;
+            }
+
+            let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode candidate duplicate tuple: {e}"));
+            if element.code == code {
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Some(page::ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                });
+            }
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    let _ = dimensions;
+    let _ = bits;
+    None
+}
+
+unsafe fn coalesce_duplicate_heap_tid(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    code_len: usize,
+    heap_tid: page::ItemPointer,
+) {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            element_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!(
+            "tqhnsw failed to open duplicate element block {}",
+            element_tid.block_number
+        );
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let item_id = unsafe { &*page_item_id(page_ptr, element_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!("tqhnsw duplicate element tuple slot is unused");
+    }
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "tqhnsw found invalid duplicate tuple bounds on block {}",
+            element_tid.block_number
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode duplicate element tuple: {e}"));
+    if element.heaptids.contains(&heap_tid) {
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return;
+    }
+    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+        pgrx::error!(
+            "tqhnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+            page::HEAPTID_INLINE_CAPACITY
+        );
+    }
+    element.heaptids.push(heap_tid);
+    let encoded = element
+        .encode()
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode coalesced element tuple: {e}"));
+    if encoded.len() != tuple_len {
+        pgrx::error!(
+            "tqhnsw duplicate element tuple size changed from {} to {}",
+            tuple_len,
+            encoded.len()
+        );
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {
+    unsafe {
+        page_ptr
+            .add(page::PAGE_HEADER_BYTES + ((offset - 1) as usize * size_of::<pg_sys::ItemIdData>()))
+            .cast::<pg_sys::ItemIdData>()
+    }
+}
+
+fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
+    let page_header = page_ptr.cast::<pg_sys::PageHeaderData>();
+    ((unsafe { (*page_header).pd_lower } as usize - size_of::<pg_sys::PageHeaderData>())
+        / size_of::<pg_sys::ItemIdData>()) as u16
 }
 
 #[derive(Debug, Clone)]
