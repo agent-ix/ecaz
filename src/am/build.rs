@@ -1,10 +1,13 @@
+use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::ptr;
 
+use hnsw_rs::anndists::dist::distances::Distance;
+use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
 
 use super::{
-    flush_build_state, initialize_metadata_page, page, tqhnsw_build_callback, BuildState,
-    BuildTuple,
+    initialize_metadata_page, page, wal, BuildState, BuildTuple, P_NEW, tqhnsw_build_callback,
 };
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
@@ -300,4 +303,446 @@ unsafe fn required_slot_datum(
         pgrx::error!("tqhnsw does not support NULL {label}");
     }
     unsafe { *(*slot).tts_values.add(attr_index) }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct HnswBuildNode {
+    pub(super) level: u8,
+    pub(super) neighbors: Vec<usize>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BuildCodeDistance {
+    dimensions: usize,
+    bits: u8,
+    seed: u64,
+    score_offset: f32,
+}
+
+impl BuildCodeDistance {
+    fn new(dimensions: usize, bits: u8, seed: u64) -> Self {
+        let quantizer = crate::quant::prod::ProdQuantizer::cached(dimensions, bits, seed);
+        let max_abs_centroid = quantizer
+            .codebook
+            .iter()
+            .map(|value| value.abs())
+            .fold(0.0_f32, f32::max);
+
+        Self {
+            dimensions,
+            bits,
+            seed,
+            score_offset: dimensions as f32 * max_abs_centroid * max_abs_centroid,
+        }
+    }
+}
+
+impl Distance<u8> for BuildCodeDistance {
+    fn eval(&self, va: &[u8], vb: &[u8]) -> f32 {
+        self.score_offset
+            - crate::score_code_inner_product(self.dimensions, self.bits, self.seed, va, vb)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BuildVectorDistance {
+    score_offset: f32,
+}
+
+impl Distance<f32> for BuildVectorDistance {
+    fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
+        self.score_offset - score_source_inner_product(va, vb)
+    }
+}
+
+pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let mut data_pages = page::DataPageChain::new(state.page_size);
+    let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
+    let graph_nodes = build_hnsw_graph(state);
+
+    for (idx, tuple) in state.heap_tuples.iter().enumerate() {
+        let element_tid = data_pages
+            .insert_element(&page::TqElementTuple {
+                level: graph_nodes[idx].level,
+                deleted: false,
+                heaptids: tuple.heap_tids.clone(),
+                neighbortid: page::ItemPointer::INVALID,
+                code: tuple.code.clone(),
+            })
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage element tuple: {e}"));
+        element_tids.push(element_tid);
+    }
+
+    for (idx, element_tid) in element_tids.iter().copied().enumerate() {
+        let neighbor_refs = graph_nodes[idx]
+            .neighbors
+            .iter()
+            .map(|neighbor_idx| element_tids[*neighbor_idx])
+            .collect::<Vec<_>>();
+
+        let neighbor_tid = data_pages
+            .insert_neighbor(&page::TqNeighborTuple {
+                count: neighbor_refs.len() as u16,
+                tids: neighbor_refs,
+            })
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
+        let mut element = data_pages
+            .read_element(element_tid, state.heap_tuples[idx].code.len())
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to read staged element tuple: {e}"));
+        element.neighbortid = neighbor_tid;
+        data_pages
+            .update_element(element_tid, &element)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to backfill element tuple: {e}"));
+    }
+
+    let entry_point = choose_entry_point(&element_tids, &graph_nodes, state)
+        .unwrap_or(page::ItemPointer::INVALID);
+    let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+
+    unsafe { write_data_pages(index_relation, &data_pages) };
+    unsafe {
+        initialize_metadata_page(
+            index_relation,
+            page::MetadataPage {
+                m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+                ef_construction: u16::try_from(state.options.ef_construction)
+                    .expect("validated ef_construction should fit into u16"),
+                entry_point,
+                dimensions,
+                bits,
+                max_level,
+                seed: state.seed.expect("non-empty build should record seed"),
+            },
+        )
+    };
+}
+
+pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
+    if state.heap_tuples.len() <= 1 {
+        return vec![
+            HnswBuildNode {
+                level: 0,
+                neighbors: Vec::new(),
+            };
+            state.heap_tuples.len()
+        ];
+    }
+
+    if state
+        .heap_tuples
+        .iter()
+        .all(|tuple| tuple.source_vector.is_some())
+    {
+        return build_hnsw_graph_from_source(state);
+    }
+
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions") as usize;
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
+    let max_level_cap = page::max_level_that_fits(
+        u16::try_from(state.options.m).expect("validated m should fit into u16"),
+        state.page_size,
+    );
+    let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
+    let hnsw = Hnsw::new(
+        m,
+        state.heap_tuples.len(),
+        max_layer,
+        usize::try_from(state.options.ef_construction)
+            .expect("validated ef_construction should be non-negative"),
+        BuildCodeDistance::new(dimensions, bits, seed),
+    );
+
+    for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
+        hnsw.insert((&tuple.code, origin_id));
+    }
+
+    let mut nodes = vec![
+        HnswBuildNode {
+            level: 0,
+            neighbors: Vec::new(),
+        };
+        state.heap_tuples.len()
+    ];
+    for point in hnsw.get_point_indexation().get_layer_iterator(0) {
+        let origin_id = point.get_origin_id();
+        let level = point.get_point_id().0.min(max_level_cap);
+        let neighbors = flatten_point_neighbors(origin_id, level, &point.get_neighborhood_id());
+        nodes[origin_id] = HnswBuildNode { level, neighbors };
+    }
+
+    nodes
+}
+
+fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
+    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
+    let max_level_cap = page::max_level_that_fits(
+        u16::try_from(state.options.m).expect("validated m should fit into u16"),
+        state.page_size,
+    );
+    let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
+    let score_offset = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            tuple
+                .source_vector
+                .as_ref()
+                .expect("source graph build requires source vectors")
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+        })
+        .fold(0.0_f32, f32::max);
+    let hnsw = Hnsw::new(
+        m,
+        state.heap_tuples.len(),
+        max_layer,
+        usize::try_from(state.options.ef_construction)
+            .expect("validated ef_construction should be non-negative"),
+        BuildVectorDistance { score_offset },
+    );
+
+    for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
+        let source = tuple
+            .source_vector
+            .as_ref()
+            .expect("source graph build requires source vectors");
+        hnsw.insert((source.as_slice(), origin_id));
+    }
+
+    let mut nodes = vec![
+        HnswBuildNode {
+            level: 0,
+            neighbors: Vec::new(),
+        };
+        state.heap_tuples.len()
+    ];
+    for point in hnsw.get_point_indexation().get_layer_iterator(0) {
+        let origin_id = point.get_origin_id();
+        let level = point.get_point_id().0.min(max_level_cap);
+        let neighbors = flatten_point_neighbors(origin_id, level, &point.get_neighborhood_id());
+        nodes[origin_id] = HnswBuildNode { level, neighbors };
+    }
+
+    nodes
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(super) fn build_scored_neighbor_graph(state: &BuildState) -> Vec<Vec<usize>> {
+    if state.heap_tuples.len() <= 1 || state.options.m <= 0 {
+        return vec![Vec::new(); state.heap_tuples.len()];
+    }
+
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions") as usize;
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let max_degree = usize::try_from(state.options.m)
+        .expect("validated m should be non-negative")
+        .min(state.heap_tuples.len() - 1);
+    let mut graph = Vec::with_capacity(state.heap_tuples.len());
+
+    for (idx, tuple) in state.heap_tuples.iter().enumerate() {
+        let mut candidates = state
+            .heap_tuples
+            .iter()
+            .enumerate()
+            .filter(|(candidate_idx, _)| *candidate_idx != idx)
+            .map(|(candidate_idx, candidate)| {
+                (
+                    candidate_idx,
+                    crate::score_code_inner_product(
+                        dimensions,
+                        bits,
+                        seed,
+                        &tuple.code,
+                        &candidate.code,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            right_score
+                .total_cmp(left_score)
+                .then_with(|| left_idx.cmp(right_idx))
+        });
+        graph.push(
+            candidates
+                .into_iter()
+                .take(max_degree)
+                .map(|(candidate_idx, _)| candidate_idx)
+                .collect(),
+        );
+    }
+
+    graph
+}
+
+fn flatten_point_neighbors(
+    origin_id: usize,
+    level: u8,
+    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
+) -> Vec<usize> {
+    let mut seen = HashSet::new();
+    let mut flattened = Vec::new();
+
+    for layer in 0..=usize::from(level) {
+        if let Some(layer_neighbors) = neighbors_per_layer.get(layer) {
+            for neighbor in layer_neighbors {
+                if neighbor.d_id != origin_id && seen.insert(neighbor.d_id) {
+                    flattened.push(neighbor.d_id);
+                }
+            }
+        }
+    }
+
+    flattened
+}
+
+fn score_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
+}
+
+pub(super) fn choose_entry_point(
+    element_tids: &[page::ItemPointer],
+    graph_nodes: &[HnswBuildNode],
+    state: &BuildState,
+) -> Option<page::ItemPointer> {
+    if element_tids.is_empty() {
+        return None;
+    }
+
+    let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions") as usize;
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+
+    (0..state.heap_tuples.len())
+        .filter(|idx| graph_nodes[*idx].level == max_level)
+        .max_by(|left_idx, right_idx| {
+            compare_entry_point_candidates(
+                *left_idx,
+                *right_idx,
+                graph_nodes,
+                state,
+                dimensions,
+                bits,
+                seed,
+            )
+        })
+        .map(|idx| element_tids[idx])
+}
+
+fn compare_entry_point_candidates(
+    left_idx: usize,
+    right_idx: usize,
+    graph_nodes: &[HnswBuildNode],
+    state: &BuildState,
+    dimensions: usize,
+    bits: u8,
+    seed: u64,
+) -> Ordering {
+    let left_score = entry_point_score(left_idx, graph_nodes, state, dimensions, bits, seed);
+    let right_score = entry_point_score(right_idx, graph_nodes, state, dimensions, bits, seed);
+    left_score
+        .total_cmp(&right_score)
+        .then_with(|| right_idx.cmp(&left_idx))
+}
+
+fn entry_point_score(
+    idx: usize,
+    graph_nodes: &[HnswBuildNode],
+    state: &BuildState,
+    dimensions: usize,
+    bits: u8,
+    seed: u64,
+) -> f32 {
+    let source_vectors = state
+        .heap_tuples
+        .iter()
+        .all(|tuple| tuple.source_vector.is_some());
+    graph_nodes[idx]
+        .neighbors
+        .iter()
+        .map(|neighbor_idx| {
+            if source_vectors {
+                score_source_inner_product(
+                    state.heap_tuples[idx]
+                        .source_vector
+                        .as_ref()
+                        .expect("source-scored entry point requires source vectors"),
+                    state.heap_tuples[*neighbor_idx]
+                        .source_vector
+                        .as_ref()
+                        .expect("source-scored entry point requires source vectors"),
+                )
+            } else {
+                crate::score_code_inner_product(
+                    dimensions,
+                    bits,
+                    seed,
+                    &state.heap_tuples[idx].code,
+                    &state.heap_tuples[*neighbor_idx].code,
+                )
+            }
+        })
+        .sum()
+}
+
+unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
+    for staged_page in data_pages.pages() {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                P_NEW,
+                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            pgrx::error!(
+                "tqhnsw failed to allocate data buffer for block {}",
+                staged_page.block_number()
+            );
+        }
+
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let page_ptr =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+        for tuple in staged_page.tuples() {
+            let offset = unsafe {
+                pg_sys::PageAddItemExtended(
+                    page_ptr,
+                    tuple.as_ptr().cast_mut().cast(),
+                    tuple.len(),
+                    pg_sys::InvalidOffsetNumber,
+                    0,
+                )
+            };
+            if offset == pg_sys::InvalidOffsetNumber {
+                pgrx::error!(
+                    "tqhnsw failed to write tuple to block {}",
+                    staged_page.block_number()
+                );
+            }
+        }
+
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
 }
