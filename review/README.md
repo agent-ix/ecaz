@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `159bf20`
+Current head: `79f695e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -41,6 +41,8 @@ Current tqhnsw state summary:
 - Query-payload ownership, linear scan cursor state, and duplicate heap-TID progress all now live in scan-owned opaque memory.
 - `tqvector_query_inner_product` now reconstructs the full persisted quantized payload from `(gamma, code_bytes)` before calling the prepared-query scorer.
 - Query-inner-product coverage now verifies that the SQL-facing scorer uses the persisted `gamma` term instead of passing only code bytes into the quantizer API.
+- Linear scan coverage now verifies that repeated `amgettuple` calls stay `false` after exhaustion.
+- Linear scan coverage now verifies that `amgettuple` still rejects backward scan direction after a valid `amrescan`.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 Review triage at `46d00bb`:
@@ -69,6 +71,7 @@ Open requests:
 - `14-rescan-query-payload-state.md`
 - `15-amgettuple-linear-forward-scan.md`
 - `16-query-inner-product-gamma-payload.md`
+- `17-linear-scan-exhaustion-and-direction-guards.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
