@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `5c61b64`
+Current head: `52a873c`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -101,6 +101,9 @@ Current tqhnsw state summary:
 - `TqElementTuple` now persists `gamma` in the on-disk element payload, and `GraphElement` now exposes that stored `gamma` on the shared graph read surface.
 - Build-time and live-insert element writers now persist `gamma`, and regression coverage now verifies that distinct-gamma same-code tuples retain their stored gamma values in the index.
 - ADR-013 is now accepted to record the page-layout decision and the follow-on plan to remove heap-fetch scoring and duplicate checks from the hot path.
+- Scan scoring now uses persisted element gamma plus code bytes directly, instead of fetching a representative heap row and rebuilding a temporary payload per candidate.
+- Duplicate lookup now compares persisted element gamma directly, removing representative-heap gamma fetches from the live insert hot path.
+- `ProdQuantizer` now exposes `score_ip_from_parts(prepared, gamma, code_bytes)` and coverage verifies it matches the payload scorer while honoring the supplied gamma term.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -186,6 +189,7 @@ Open requests:
 - `49-frontier-head-consumption.md`
 - `50-skip-invalid-successor-neighbor-refs.md`
 - `51-persist-gamma-in-element-tuples.md`
+- `52-persisted-gamma-hot-path-cutover.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
