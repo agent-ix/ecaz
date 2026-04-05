@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `52a873c`
+Current head: `7fc13ae`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -104,6 +104,8 @@ Current tqhnsw state summary:
 - Scan scoring now uses persisted element gamma plus code bytes directly, instead of fetching a representative heap row and rebuilding a temporary payload per candidate.
 - Duplicate lookup now compares persisted element gamma directly, removing representative-heap gamma fetches from the live insert hot path.
 - `ProdQuantizer` now exposes `score_ip_from_parts(prepared, gamma, code_bytes)` and coverage verifies it matches the payload scorer while honoring the supplied gamma term.
+- Scan-owned state now also allocates a visited-element set, seeds it from the currently valid frontier candidates during `amrescan`, and frees it during `amendscan`.
+- Visited-state coverage now verifies that the seeded set matches the valid frontier candidate tids and stays stable through the current bootstrap linear scan.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -190,6 +192,7 @@ Open requests:
 - `50-skip-invalid-successor-neighbor-refs.md`
 - `51-persist-gamma-in-element-tuples.md`
 - `52-persisted-gamma-hot-path-cutover.md`
+- `53-scan-visited-seed-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
