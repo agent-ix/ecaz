@@ -13,6 +13,8 @@ use pgrx::{
     PgTupleDesc,
 };
 
+use crate::quant::prod::PreparedQuery;
+
 pub mod page;
 pub mod wal;
 
@@ -427,6 +429,7 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
             store_scan_query(opaque, &query);
+            store_scan_prepared_query(opaque, &query, &metadata);
             reset_scan_position(opaque);
         })
     }
@@ -481,6 +484,7 @@ unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanDesc) {
 
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
+                free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
                 pg_sys::pfree(opaque);
                 (*scan).opaque = ptr::null_mut();
@@ -511,6 +515,32 @@ unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
         opaque.query_values = ptr::null_mut();
     }
     opaque.query_dimensions = 0;
+}
+
+fn store_scan_prepared_query(
+    opaque: &mut TqScanOpaque,
+    query: &[f32],
+    metadata: &page::MetadataPage,
+) {
+    free_scan_prepared_query(opaque);
+    if metadata.dimensions == 0 {
+        return;
+    }
+
+    let prepared = crate::quant::prod::ProdQuantizer::cached(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+    )
+    .prepare_ip_query(query);
+    opaque.prepared_query = Box::into_raw(Box::new(prepared));
+}
+
+fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
+    if !opaque.prepared_query.is_null() {
+        drop(unsafe { Box::from_raw(opaque.prepared_query) });
+        opaque.prepared_query = ptr::null_mut();
+    }
 }
 
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
@@ -1299,6 +1329,7 @@ struct TqScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
     query_values: *mut f32,
+    prepared_query: *mut PreparedQuery,
     scan_dimensions: u16,
     scan_bits: u8,
     scan_code_len: usize,
@@ -1317,6 +1348,7 @@ impl Default for TqScanOpaque {
             rescan_called: false,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
+            prepared_query: ptr::null_mut(),
             scan_dimensions: 0,
             scan_bits: 0,
             scan_code_len: 0,
@@ -2272,7 +2304,7 @@ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool
 pub(crate) unsafe fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, u16, Vec<f32>, u16, u8, usize, u32) {
+) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2292,6 +2324,17 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
         opaque.scan_bits,
         opaque.scan_code_len,
         opaque.scan_block_count,
+        !opaque.prepared_query.is_null(),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.lut.len())
+            .unwrap_or(0),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.sq.len())
+            .unwrap_or(0),
     );
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -2305,7 +2348,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     index_oid: pg_sys::Oid,
     first_query: Vec<f32>,
     second_query: Vec<f32>,
-) -> (bool, u16, Vec<f32>, u16, u8, usize, u32) {
+) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2333,6 +2376,17 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
         opaque.scan_bits,
         opaque.scan_code_len,
         opaque.scan_block_count,
+        !opaque.prepared_query.is_null(),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.lut.len())
+            .unwrap_or(0),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.sq.len())
+            .unwrap_or(0),
     );
 
     unsafe { tqhnsw_amendscan(scan) };

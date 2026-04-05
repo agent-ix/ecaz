@@ -1860,7 +1860,18 @@ mod tests {
     fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
         let expected_query = vec![1.0, 0.0, 0.5, -1.0];
-        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len, scan_block_count) =
+        let (
+            rescan_called,
+            query_dimensions,
+            stored_query,
+            scan_dimensions,
+            scan_bits,
+            scan_code_len,
+            scan_block_count,
+            has_prepared_query,
+            prepared_lut_len,
+            prepared_sq_len,
+        ) =
             unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         assert!(
             rescan_called,
@@ -1872,6 +1883,12 @@ mod tests {
         assert_eq!(scan_bits, 4);
         assert_eq!(scan_code_len, code_len(4, 4));
         assert!(scan_block_count >= 2, "rescan should cache the current index block count");
+        assert!(
+            has_prepared_query,
+            "non-empty rescans should cache prepared query state for future ordered search"
+        );
+        assert_eq!(prepared_lut_len, 32);
+        assert_eq!(prepared_sq_len, 4);
     }
 
     #[pg_test]
@@ -1889,7 +1906,18 @@ mod tests {
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let second_query = vec![1.0, 0.0, 0.5];
-        let (rescan_called, query_dimensions, stored_query, scan_dimensions, scan_bits, scan_code_len, scan_block_count) = unsafe {
+        let (
+            rescan_called,
+            query_dimensions,
+            stored_query,
+            scan_dimensions,
+            scan_bits,
+            scan_code_len,
+            scan_block_count,
+            has_prepared_query,
+            prepared_lut_len,
+            prepared_sq_len,
+        ) = unsafe {
             am::debug_rescan_overwrites_query_dimensions(
                 index_oid,
                 vec![1.0, 0.0, 0.5, -1.0],
@@ -1912,6 +1940,12 @@ mod tests {
         assert_eq!(scan_bits, 0);
         assert_eq!(scan_code_len, 0);
         assert_eq!(scan_block_count, 1);
+        assert!(
+            !has_prepared_query,
+            "empty-index rescans should not allocate prepared query state yet"
+        );
+        assert_eq!(prepared_lut_len, 0);
+        assert_eq!(prepared_sq_len, 0);
     }
 
     #[pg_test]
