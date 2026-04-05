@@ -6,17 +6,54 @@ use pgrx::{pg_sys, Internal};
 pgrx::pg_module_magic!();
 
 #[allow(dead_code)]
+#[cfg_attr(feature = "bench", allow(unused))]
 mod am;
+#[cfg_attr(feature = "bench", allow(unused))]
 mod quant;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
+/// Public API surface for benchmarks and integration tests.
+/// Gated behind the `bench` feature to avoid polluting the extension's public interface.
+#[cfg(feature = "bench")]
+pub mod bench_api {
+    // Quantizer core
+    pub use crate::quant::prod::{
+        mse_code_len, pack_mse_indices, pack_qjl_signs, payload_len, qjl_code_len,
+        unpack_mse_indices, unpack_qjl_signs, EncodedTq, PreparedQuery, ProdQuantizer,
+    };
+
+    // Hadamard
+    pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};
+
+    // Rotation
+    pub use crate::quant::rotation::{inverse_srht, pad_input, sign_vector, srht, transform_dim};
+
+    // Codebook
+    pub use crate::quant::codebook::{beta_pdf, lloyd_max};
+
+    // MSE
+    pub use crate::quant::mse::{decode_indices, nearest_centroid_index, quantize_to_indices};
+
+    // QJL
+    pub use crate::quant::qjl::{decode_mse_only, qjl_project};
+
+    // Page codec
+    pub use crate::am::page::{
+        DataPage, DataPageChain, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple,
+        HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
+    };
+
+    // Text I/O
+    pub use crate::{format_text, parse_text, HEADER_BYTES, MIN_BINARY_BYTES};
+}
+
 extension_sql_file!("../sql/bootstrap.sql", name = "bootstrap", bootstrap);
 
 /// Number of datum header bytes: dim(2) + bits(1) + seed(8).
-const HEADER_BYTES: usize = 11;
+pub const HEADER_BYTES: usize = 11;
 /// Minimum valid wire payload: header plus gamma.
-const MIN_BINARY_BYTES: usize = HEADER_BYTES + 4;
+pub const MIN_BINARY_BYTES: usize = HEADER_BYTES + 4;
 
 fn validate_bits(bits: u8) -> Result<(), String> {
     if !(2..=8).contains(&bits) {
@@ -29,7 +66,7 @@ fn code_len(dim: usize, bits: u8) -> usize {
     payload_len(dim, bits) - 4
 }
 
-fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
+pub fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
     let s = s.trim();
     if !s.starts_with('[') {
         return Err("missing '['".into());
@@ -74,7 +111,7 @@ fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
     Ok((dim, bits, seed, gamma, codes))
 }
 
-fn format_text(dim: u16, bits: u8, seed: u64, gamma: f32, codes: &[u8]) -> String {
+pub fn format_text(dim: u16, bits: u8, seed: u64, gamma: f32, codes: &[u8]) -> String {
     format!(
         "[dim={dim},bits={bits},seed={seed},gamma={gamma}]:{}",
         hex::encode(codes)
@@ -2793,29 +2830,20 @@ mod tests {
         let consumed_slot = before_head as usize;
         let remaining_slot = if consumed_slot == 0 { 1 } else { 0 };
 
-        assert!(
-            !after_first_frontier[consumed_slot].0,
-            "consuming the frontier head should invalidate the previously best slot"
-        );
-        assert_eq!(
-            after_first_frontier[consumed_slot].1,
-            (u32::MAX, u16::MAX),
-            "consuming the frontier head should clear the consumed slot tid"
-        );
-        assert_eq!(
-            after_first_frontier[consumed_slot].2, 0.0,
-            "consuming the frontier head should clear the consumed slot score"
-        );
-
         if before_frontier[remaining_slot].0 {
             assert_eq!(
-                after_first_head, remaining_slot as u8,
-                "when another candidate remains valid, consuming the head should reselect that slot"
+                after_first_head, 0,
+                "when another candidate remains valid, consuming the head should compact it to the new head slot"
             );
             assert_eq!(
-                after_first_frontier[remaining_slot],
+                after_first_frontier[0],
                 before_frontier[remaining_slot],
-                "consuming the current head should leave the remaining candidate slot unchanged"
+                "consuming the current head should preserve the remaining candidate after compaction"
+            );
+            assert_eq!(
+                after_first_frontier[1],
+                (false, (u32::MAX, u16::MAX), 0.0),
+                "the compacted candidate vector should leave no second frontier slot populated yet"
             );
         } else {
             assert_eq!(
@@ -2823,9 +2851,12 @@ mod tests {
                 "consuming the only valid candidate should invalidate the frontier head"
             );
             assert_eq!(
-                after_first_frontier[remaining_slot],
-                (false, (u32::MAX, u16::MAX), 0.0),
-                "an already-empty alternate slot should stay empty after head consumption"
+                after_first_frontier,
+                [
+                    (false, (u32::MAX, u16::MAX), 0.0),
+                    (false, (u32::MAX, u16::MAX), 0.0),
+                ],
+                "consuming the only valid candidate should leave the compacted frontier empty"
             );
         }
 

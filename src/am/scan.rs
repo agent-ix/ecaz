@@ -163,6 +163,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
 
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
+                free_scan_candidate_frontier(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
@@ -267,8 +268,53 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
-    opaque.candidate_frontier = CandidateFrontier::default();
+    if opaque.candidate_frontier.is_null() {
+        opaque.candidate_frontier = Box::into_raw(Box::new(Vec::new()));
+    } else {
+        unsafe { &mut *opaque.candidate_frontier }.clear();
+    }
     opaque.candidate_frontier_head = u8::MAX;
+}
+
+fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
+    if !opaque.candidate_frontier.is_null() {
+        drop(unsafe { Box::from_raw(opaque.candidate_frontier) });
+        opaque.candidate_frontier = ptr::null_mut();
+    }
+    opaque.candidate_frontier_head = u8::MAX;
+}
+
+fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
+    if opaque.candidate_frontier.is_null() {
+        &[]
+    } else {
+        unsafe { &*opaque.candidate_frontier }
+    }
+}
+
+fn candidate_frontier_mut(opaque: &mut TqScanOpaque) -> &mut Vec<ScanCandidate> {
+    if opaque.candidate_frontier.is_null() {
+        opaque.candidate_frontier = Box::into_raw(Box::new(Vec::new()));
+    }
+    unsafe { &mut *opaque.candidate_frontier }
+}
+
+fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
+    candidate_frontier_ref(opaque)
+        .get(index)
+        .copied()
+        .unwrap_or_default()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_candidate_frontier_snapshot(opaque: &TqScanOpaque) -> DebugCandidateFrontier {
+    [candidate_slot(opaque, 0), candidate_slot(opaque, 1)].map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    })
 }
 
 fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
@@ -310,11 +356,12 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    opaque.candidate_frontier.candidates[0] = ScanCandidate {
+    let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
+    candidate_frontier_mut(opaque).push(ScanCandidate {
         element_tid: entry.tid,
-        score: score_scan_element_result(opaque, entry.gamma, &entry.code),
+        score: entry_score,
         score_valid: true,
-    };
+    });
 
     let (_, neighbors) = unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
     if let Some(candidate) = select_successor_candidate(&neighbors.tids, |neighbor_tid| {
@@ -331,51 +378,56 @@ unsafe fn initialize_scan_entry_candidate(
             score_valid: true,
         })
     }) {
-        opaque.candidate_frontier.candidates[1] = candidate;
+        candidate_frontier_mut(opaque).push(candidate);
     }
 
     recompute_candidate_frontier_head(opaque);
-    for candidate in opaque.candidate_frontier.candidates {
-        if candidate.score_valid {
-            mark_visited_element(opaque, candidate.element_tid);
-        }
+    let visited_candidates = candidate_frontier_ref(opaque)
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.score_valid)
+        .collect::<Vec<_>>();
+    for candidate in visited_candidates {
+        mark_visited_element(opaque, candidate.element_tid);
     }
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
-    let candidates = &opaque.candidate_frontier.candidates;
-    opaque.candidate_frontier_head = match (
-        candidates[0].score_valid,
-        candidates[1].score_valid,
-    ) {
-        (false, false) => u8::MAX,
-        (true, false) => 0,
-        (false, true) => 1,
-        (true, true) => {
-            if candidates[0].score <= candidates[1].score {
-                0
-            } else {
-                1
-            }
+    let mut best: Option<(usize, ScanCandidate)> = None;
+    for (index, candidate) in candidate_frontier_ref(opaque).iter().copied().enumerate() {
+        if !candidate.score_valid {
+            continue;
         }
-    };
+
+        best = match best {
+            None => Some((index, candidate)),
+            Some((best_index, best_candidate)) => {
+                if candidate.score < best_candidate.score
+                    || (candidate.score == best_candidate.score && index < best_index)
+                {
+                    Some((index, candidate))
+                } else {
+                    Some((best_index, best_candidate))
+                }
+            }
+        };
+    }
+    opaque.candidate_frontier_head = best
+        .map(|(index, _)| u8::try_from(index).expect("candidate frontier index should fit in u8"))
+        .unwrap_or(u8::MAX);
 }
 
 fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
     let head = match opaque.candidate_frontier_head {
-        0 | 1 => opaque.candidate_frontier_head as usize,
         u8::MAX => return None,
-        other => {
-            debug_assert!(
-                false,
-                "candidate frontier head should only be 0, 1, or u8::MAX; got {other}"
-            );
-            return None;
-        }
+        other => other as usize,
     };
 
-    let consumed = opaque.candidate_frontier.candidates[head];
-    opaque.candidate_frontier.candidates[head] = ScanCandidate::default();
+    if head >= candidate_frontier_ref(opaque).len() {
+        return None;
+    }
+
+    let consumed = candidate_frontier_mut(opaque).remove(head);
     recompute_candidate_frontier_head(opaque);
     Some(consumed)
 }
@@ -592,12 +644,6 @@ impl Default for ScanCandidate {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
-struct CandidateFrontier {
-    candidates: [ScanCandidate; 2],
-}
-
-#[repr(C)]
 #[derive(Debug)]
 struct TqScanOpaque {
     rescan_called: bool,
@@ -610,7 +656,7 @@ struct TqScanOpaque {
     scan_code_len: usize,
     scan_block_count: u32,
     visited_tids: *mut HashSet<page::ItemPointer>,
-    candidate_frontier: CandidateFrontier,
+    candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: u8,
     current_result: CurrentScanResult,
     next_block_number: u32,
@@ -634,7 +680,7 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             visited_tids: ptr::null_mut(),
-            candidate_frontier: CandidateFrontier::default(),
+            candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: u8::MAX,
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
@@ -1030,22 +1076,18 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_valid = opaque.candidate_frontier.candidates[0].score_valid;
-    let before_tid = (
-        opaque.candidate_frontier.candidates[0].element_tid.block_number,
-        opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-    );
-    let before_score = opaque.candidate_frontier.candidates[0].score;
+    let before = candidate_slot(opaque, 0);
+    let before_valid = before.score_valid;
+    let before_tid = (before.element_tid.block_number, before.element_tid.offset_number);
+    let before_score = before.score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let after_valid = opaque.candidate_frontier.candidates[0].score_valid;
-    let after_tid = (
-        opaque.candidate_frontier.candidates[0].element_tid.block_number,
-        opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-    );
-    let after_score = opaque.candidate_frontier.candidates[0].score;
+    let after = candidate_slot(opaque, 0);
+    let after_valid = after.score_valid;
+    let after_tid = (after.element_tid.block_number, after.element_tid.offset_number);
+    let after_score = after.score;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1086,12 +1128,13 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let successor_valid = opaque.candidate_frontier.candidates[1].score_valid;
+    let successor = candidate_slot(opaque, 1);
+    let successor_valid = successor.score_valid;
     let successor_tid = (
-        opaque.candidate_frontier.candidates[1].element_tid.block_number,
-        opaque.candidate_frontier.candidates[1].element_tid.offset_number,
+        successor.element_tid.block_number,
+        successor.element_tid.offset_number,
     );
-    let successor_score = opaque.candidate_frontier.candidates[1].score;
+    let successor_score = successor.score;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1121,13 +1164,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let frontier = debug_candidate_frontier_snapshot(opaque);
     let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1154,13 +1191,7 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = opaque.candidate_frontier_head;
-    let before_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let before_frontier = debug_candidate_frontier_snapshot(opaque);
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
@@ -1168,25 +1199,13 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let partial_head = opaque.candidate_frontier_head;
-    let partial_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let partial_frontier = debug_candidate_frontier_snapshot(opaque);
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted_head = opaque.candidate_frontier_head;
-    let exhausted_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let exhausted_frontier = debug_candidate_frontier_snapshot(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1219,34 +1238,16 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = opaque.candidate_frontier_head;
-    let before_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let before_frontier = debug_candidate_frontier_snapshot(opaque);
 
     let first_consumed = consume_candidate_frontier_head(opaque);
     debug_assert_eq!(first_consumed.is_some(), before_head != u8::MAX);
     let after_first_head = opaque.candidate_frontier_head;
-    let after_first_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let after_first_frontier = debug_candidate_frontier_snapshot(opaque);
 
     consume_candidate_frontier_head(opaque);
     let after_second_head = opaque.candidate_frontier_head;
-    let after_second_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
-        (
-            candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-            candidate.score,
-        )
-    });
+    let after_second_frontier = debug_candidate_frontier_snapshot(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1324,34 +1325,28 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_valid = opaque.candidate_frontier.candidates[0].score_valid;
-    let before_tid = (
-        opaque.candidate_frontier.candidates[0].element_tid.block_number,
-        opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-    );
-    let before_score = opaque.candidate_frontier.candidates[0].score;
+    let before = candidate_slot(opaque, 0);
+    let before_valid = before.score_valid;
+    let before_tid = (before.element_tid.block_number, before.element_tid.offset_number);
+    let before_score = before.score;
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "entry-candidate lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let partial_valid = opaque.candidate_frontier.candidates[0].score_valid;
-    let partial_tid = (
-        opaque.candidate_frontier.candidates[0].element_tid.block_number,
-        opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-    );
-    let partial_score = opaque.candidate_frontier.candidates[0].score;
+    let partial = candidate_slot(opaque, 0);
+    let partial_valid = partial.score_valid;
+    let partial_tid = (partial.element_tid.block_number, partial.element_tid.offset_number);
+    let partial_score = partial.score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let exhausted_valid = opaque.candidate_frontier.candidates[0].score_valid;
-    let exhausted_tid = (
-        opaque.candidate_frontier.candidates[0].element_tid.block_number,
-        opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-    );
-    let exhausted_score = opaque.candidate_frontier.candidates[0].score;
+    let exhausted = candidate_slot(opaque, 0);
+    let exhausted_valid = exhausted.score_valid;
+    let exhausted_tid = (exhausted.element_tid.block_number, exhausted.element_tid.offset_number);
+    let exhausted_score = exhausted.score;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1665,22 +1660,22 @@ mod tests {
     #[test]
     fn consume_candidate_frontier_head_reselects_then_clears() {
         let mut opaque = TqScanOpaque::default();
-        opaque.candidate_frontier.candidates[0] = ScanCandidate {
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 7,
                 offset_number: 1,
             },
             score: -2.0,
             score_valid: true,
-        };
-        opaque.candidate_frontier.candidates[1] = ScanCandidate {
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 7,
                 offset_number: 2,
             },
             score: 3.5,
             score_valid: true,
-        };
+        });
         recompute_candidate_frontier_head(&mut opaque);
 
         assert_eq!(
@@ -1696,16 +1691,16 @@ mod tests {
             "consumption should return the previously best frontier slot"
         );
         assert_eq!(
-            opaque.candidate_frontier_head, 1,
-            "consuming the best slot should reselect the remaining valid slot as the new head"
+            opaque.candidate_frontier_head, 0,
+            "consuming the best slot should compact the candidate vector and reselect the remaining valid slot"
         );
         assert!(
-            !opaque.candidate_frontier.candidates[0].score_valid,
-            "consuming the head should clear the consumed slot"
+            candidate_slot(&opaque, 0).score_valid,
+            "consuming the head should keep the remaining candidate valid"
         );
         assert_eq!(
-            opaque.candidate_frontier.candidates[1].score, 3.5,
-            "consuming the head should leave the remaining valid slot unchanged"
+            candidate_slot(&opaque, 0).score, 3.5,
+            "consuming the head should preserve the remaining candidate after compaction"
         );
 
         let consumed = consume_candidate_frontier_head(&mut opaque)
@@ -1720,21 +1715,8 @@ mod tests {
             "consuming the last valid slot should invalidate the frontier head"
         );
         assert!(
-            !opaque.candidate_frontier.candidates[0].score_valid
-                && !opaque.candidate_frontier.candidates[1].score_valid,
-            "consuming both valid slots should leave both frontier slots invalid"
-        );
-        assert_eq!(
-            (
-                opaque.candidate_frontier.candidates[0].element_tid.block_number,
-                opaque.candidate_frontier.candidates[0].element_tid.offset_number,
-                opaque.candidate_frontier.candidates[0].score,
-                opaque.candidate_frontier.candidates[1].element_tid.block_number,
-                opaque.candidate_frontier.candidates[1].element_tid.offset_number,
-                opaque.candidate_frontier.candidates[1].score,
-            ),
-            (u32::MAX, u16::MAX, 0.0, u32::MAX, u16::MAX, 0.0),
-            "consuming both valid slots should leave the fixed frontier fully cleared"
+            candidate_frontier_ref(&opaque).is_empty(),
+            "consuming both valid slots should leave the candidate vector empty"
         );
         assert!(
             consume_candidate_frontier_head(&mut opaque).is_none(),
