@@ -415,6 +415,26 @@ pub mod pg_test {
 mod tests {
     use super::*;
 
+    fn setup_rescan_scaffold_index(name: &str) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {name} (id bigint primary key, embedding tqvector)"
+        ))
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {name} VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
+        ))
+        .expect("seed insert should succeed");
+        Spi::run(&format!(
+            "CREATE INDEX {name}_idx ON {name} USING tqhnsw (embedding tqvector_ip_ops)"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{name}_idx'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
     #[pg_test]
     fn test_binary_send_matches_internal_layout() {
         let bytes = Spi::get_one::<Vec<u8>>(
@@ -1557,23 +1577,7 @@ mod tests {
 
     #[pg_test]
     fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
-        Spi::run("CREATE TABLE tqhnsw_rescan_scaffold (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
-        Spi::run(
-            "INSERT INTO tqhnsw_rescan_scaffold VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
-        )
-        .expect("seed insert should succeed");
-        Spi::run(
-            "CREATE INDEX tqhnsw_rescan_scaffold_idx ON tqhnsw_rescan_scaffold USING tqhnsw \
-             (embedding tqvector_ip_ops)",
-        )
-        .expect("index creation should succeed");
-
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_rescan_scaffold_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
         let (rescan_called, query_dimensions) =
             unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         assert!(
@@ -1586,27 +1590,36 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw scan query dimension mismatch")]
     fn test_tqhnsw_rescan_scaffold_rejects_wrong_query_dimensions() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_rescan_scaffold_mismatch (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
-        Spi::run(
-            "INSERT INTO tqhnsw_rescan_scaffold_mismatch VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
-        )
-        .expect("seed insert should succeed");
-        Spi::run(
-            "CREATE INDEX tqhnsw_rescan_scaffold_mismatch_idx ON tqhnsw_rescan_scaffold_mismatch USING tqhnsw \
-             (embedding tqvector_ip_ops)",
-        )
-        .expect("index creation should succeed");
-
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_rescan_scaffold_mismatch_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_mismatch");
         let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]) };
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan query must not be NULL")]
+    fn test_tqhnsw_rescan_scaffold_rejects_null_query() {
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_null");
+        unsafe { am::debug_rescan_null_query(index_oid) };
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan query must not be empty")]
+    fn test_tqhnsw_rescan_scaffold_rejects_empty_query() {
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_empty");
+        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![]) };
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan does not support index quals yet")]
+    fn test_tqhnsw_rescan_scaffold_rejects_index_quals() {
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_quals");
+        unsafe { am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan currently requires exactly one ORDER BY query")]
+    fn test_tqhnsw_rescan_scaffold_rejects_multiple_orderbys() {
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_multi_orderby");
+        unsafe { am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
     }
 
     #[pg_test]
