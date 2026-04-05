@@ -1898,6 +1898,28 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw scan query dimension 65536 exceeds maximum 65535")]
+    fn test_tqhnsw_rescan_scaffold_rejects_oversized_query() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_rescan_scaffold_oversized (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_rescan_scaffold_oversized_idx ON tqhnsw_rescan_scaffold_oversized USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_rescan_scaffold_oversized_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let oversized_query = vec![0.0_f32; (u16::MAX as usize) + 1];
+        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, oversized_query) };
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw scan does not support index quals yet")]
     fn test_tqhnsw_rescan_scaffold_rejects_index_quals() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_quals");

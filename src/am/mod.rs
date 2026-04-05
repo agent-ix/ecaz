@@ -391,6 +391,13 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
             if query.is_empty() {
                 pgrx::error!("tqhnsw scan query must not be empty");
             }
+            if query.len() > u16::MAX as usize {
+                pgrx::error!(
+                    "tqhnsw scan query dimension {} exceeds maximum {}",
+                    query.len(),
+                    u16::MAX
+                );
+            }
 
             let metadata = read_metadata_page((*scan).indexRelation);
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
