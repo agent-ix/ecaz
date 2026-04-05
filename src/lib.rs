@@ -1309,6 +1309,37 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw aminsert supports at most 10 duplicate heap tids per encoded vector")]
+    fn test_tqhnsw_insert_rejects_duplicate_heaptid_overflow() {
+        Spi::run("CREATE TABLE tqhnsw_insert_duplicate_overflow (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_duplicate_overflow_idx ON tqhnsw_insert_duplicate_overflow USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        for id in 2..=10 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))"
+            ))
+            .expect("duplicate insert should succeed until inline heap tid capacity is exhausted");
+        }
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+             (11, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+        )
+        .expect("insert should fail once duplicate heap tid capacity is exhausted");
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert does not support build_source_column indexes yet")]
     fn test_tqhnsw_insert_rejects_build_source_column_index() {
         Spi::run(
