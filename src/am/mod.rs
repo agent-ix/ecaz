@@ -7,8 +7,8 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use self::build::{BuildState, BuildTuple};
 
-mod cost;
 mod build;
+mod cost;
 mod graph;
 mod options;
 pub mod page;
@@ -19,22 +19,19 @@ pub mod wal;
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::scan::{
-    debug_begin_end_scan, debug_end_scan_twice, debug_gettuple_after_rescan_result,
-    debug_entry_point_neighbor_tids,
-    debug_gettuple_backward_after_rescan,
-    debug_gettuple_current_result_heap_progress,
-    debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_neighbors,
-    debug_gettuple_current_result_state,
+    debug_begin_end_scan, debug_candidate_frontier_head_lifecycle,
+    debug_consume_candidate_frontier_head, debug_consume_candidate_frontier_head_slots,
+    debug_end_scan_twice, debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
+    debug_gettuple_after_rescan_result, debug_gettuple_backward_after_rescan,
+    debug_gettuple_current_result_heap_progress, debug_gettuple_current_result_lifecycle,
+    debug_gettuple_current_result_neighbors, debug_gettuple_current_result_state,
     debug_gettuple_exhaustion_state, debug_gettuple_rescan_after_exhaustion,
     debug_gettuple_rescan_after_partial, debug_gettuple_scan_heap_tids,
-    debug_gettuple_without_rescan, debug_rescan_entry_candidate_state,
-    debug_entry_candidate_lifecycle, debug_consume_candidate_frontier_head,
-    debug_rescan_candidate_frontier,
-    debug_candidate_frontier_head_lifecycle,
-    debug_visited_seed_lifecycle,
-    debug_rescan_successor_candidate_state,
-    debug_rescan_null_query, debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
-    debug_rescan_with_index_qual, debug_rescan_with_multiple_orderbys,
+    debug_gettuple_without_rescan, debug_rescan_candidate_frontier,
+    debug_rescan_entry_candidate_state, debug_rescan_null_query,
+    debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
+    debug_rescan_successor_candidate_state, debug_rescan_with_index_qual,
+    debug_rescan_with_multiple_orderbys, debug_visited_seed_lifecycle,
 };
 
 const TQHNSW_DEFAULT_M: i32 = 8;
@@ -686,7 +683,6 @@ pub(super) fn average_source_representatives(
     }
 }
 
-
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DebugIndexDataPage {
@@ -811,7 +807,8 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     info.index = index_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
-    let stats = unsafe { vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut()) };
+    let stats =
+        unsafe { vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut()) };
     let stats = unsafe { vacuum::tqhnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 
@@ -821,12 +818,12 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::build::{
         build_hnsw_graph, build_scored_neighbor_graph, choose_entry_point, BuildState, BuildTuple,
         HnswBuildNode,
     };
     use super::options::TqHnswOptions;
+    use super::*;
 
     fn encoded_code(vector: &[f32], bits: u8, seed: u64) -> Vec<u8> {
         let quantizer = crate::quant::prod::ProdQuantizer::cached(vector.len(), bits, seed);

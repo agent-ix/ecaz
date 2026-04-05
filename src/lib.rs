@@ -255,15 +255,23 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
         .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
 }
 
-fn encode_embedding_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Result<Vec<u8>, String> {
+fn encode_embedding_to_tqvector(
+    embedding: Vec<f32>,
+    bits: i32,
+    seed: i64,
+) -> Result<Vec<u8>, String> {
     if embedding.is_empty() {
         return Err("embedding must not be empty".into());
     }
     let bits = u8::try_from(bits).map_err(|_| "bits must fit into u8".to_string())?;
     validate_bits(bits)?;
     let seed = seed as u64;
-    let dim = u16::try_from(embedding.len())
-        .map_err(|_| format!("embedding dimension {} exceeds maximum 65535", embedding.len()))?;
+    let dim = u16::try_from(embedding.len()).map_err(|_| {
+        format!(
+            "embedding dimension {} exceeds maximum 65535",
+            embedding.len()
+        )
+    })?;
 
     let quantizer = ProdQuantizer::cached(embedding.len(), bits, seed);
     let encoded = quantizer.encode(&embedding);
@@ -301,8 +309,8 @@ fn tqvector_negative_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
 }
 
 fn score_query_inner_product(candidate: &[u8], query: &[f32]) -> Result<f32, String> {
-    let (dim, bits, seed, gamma, codes) = unpack(candidate)
-        .map_err(|e| format!("tqvector_query_inner_product(candidate): {e}"))?;
+    let (dim, bits, seed, gamma, codes) =
+        unpack(candidate).map_err(|e| format!("tqvector_query_inner_product(candidate): {e}"))?;
     if query.len() != dim as usize {
         return Err(format!(
             "tqvector/query dimension mismatch: candidate dim {}, query dim {}",
@@ -1238,11 +1246,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_duplicate_build_gamma_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_duplicate_build_gamma_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
@@ -1669,8 +1676,12 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before_block_count, _metadata, before_pages) = unsafe { am::debug_index_pages(index_oid) };
-        let before_tuple_count = before_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        let (before_block_count, _metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let before_tuple_count = before_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
@@ -1678,12 +1689,16 @@ mod tests {
         )
         .expect("gamma-distinct insert should succeed");
 
-        let (after_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (after_block_count, _metadata, data_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(
             after_block_count, before_block_count,
             "gamma-distinct same-code inserts should stay on the current tail page in this narrow test"
         );
-        let after_tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        let after_tuple_count = data_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
         assert_eq!(
             after_tuple_count,
             before_tuple_count + 2,
@@ -2038,8 +2053,7 @@ mod tests {
             has_prepared_query,
             prepared_lut_len,
             prepared_sq_len,
-        ) =
-            unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        ) = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         assert!(
             rescan_called,
             "amrescan should mark scan state as initialized"
@@ -2049,7 +2063,10 @@ mod tests {
         assert_eq!(scan_dimensions, 4);
         assert_eq!(scan_bits, 4);
         assert_eq!(scan_code_len, code_len(4, 4));
-        assert!(scan_block_count >= 2, "rescan should cache the current index block count");
+        assert!(
+            scan_block_count >= 2,
+            "rescan should cache the current index block count"
+        );
         assert!(
             has_prepared_query,
             "non-empty rescans should cache prepared query state for future ordered search"
@@ -2276,11 +2293,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_result_state_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_result_state_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
         let (
             before_found,
@@ -2313,7 +2329,10 @@ mod tests {
             before_score_value, 0.0,
             "current result score should clear to zero before tuple production"
         );
-        assert!(found, "first gettuple call should produce a tuple for a non-empty index");
+        assert!(
+            found,
+            "first gettuple call should produce a tuple for a non-empty index"
+        );
         assert_ne!(
             after_tid,
             (u32::MAX, u16::MAX),
@@ -2481,9 +2500,7 @@ mod tests {
                 .expect("index oid should exist");
         let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
-            unsafe {
-                am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
-            };
+            unsafe { am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert!(
             before_valid,
@@ -2550,11 +2567,12 @@ mod tests {
             exhausted_valid,
             exhausted_tid,
             exhausted_score,
-        ) = unsafe {
-            am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
-        };
+        ) = unsafe { am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
-        assert!(before_valid, "entry candidate should be seeded before tuple production");
+        assert!(
+            before_valid,
+            "entry candidate should be seeded before tuple production"
+        );
         assert_eq!(
             partial_valid, before_valid,
             "entry candidate should stay valid after partial bootstrap scan progress"
@@ -2606,10 +2624,9 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (entry_tid, entry_neighbors, successor_valid, successor_tid, successor_score) =
-            unsafe {
-                am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
-            };
+        let (entry_tid, entry_neighbors, successor_valid, successor_tid, successor_score) = unsafe {
+            am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
 
         assert_ne!(
             entry_tid,
@@ -2731,9 +2748,7 @@ mod tests {
             .enumerate()
             .filter(|(_, slot)| slot.0)
             .min_by(|(left_index, left), (right_index, right)| {
-                left.2
-                    .total_cmp(&right.2)
-                    .then(left_index.cmp(right_index))
+                left.2.total_cmp(&right.2).then(left_index.cmp(right_index))
             })
             .map(|(index, _)| index);
         assert_eq!(
@@ -2778,8 +2793,7 @@ mod tests {
         };
 
         assert_ne!(
-            before_head,
-            None,
+            before_head, None,
             "non-empty frontier should expose a concrete head immediately after rescan"
         );
         assert_eq!(
@@ -2791,8 +2805,7 @@ mod tests {
             "partial bootstrap scan progress should not mutate the current two-slot frontier yet"
         );
         assert_eq!(
-            exhausted_head,
-            None,
+            exhausted_head, None,
             "frontier head should clear on full scan exhaustion"
         );
         assert_eq!(
@@ -2823,11 +2836,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_frontier_head_consume_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_consume_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let (
             before_head,
             before_frontier,
@@ -2840,8 +2852,7 @@ mod tests {
         };
 
         assert_ne!(
-            before_head,
-            None,
+            before_head, None,
             "non-empty frontier should expose a concrete head before consumption"
         );
         let consumed_slot = before_head.expect("non-empty frontier should expose a head");
@@ -2865,8 +2876,7 @@ mod tests {
             );
         } else {
             assert_eq!(
-                after_first_head,
-                None,
+                after_first_head, None,
                 "consuming the only valid candidate should invalidate the frontier head"
             );
             assert_eq!(
@@ -2880,8 +2890,7 @@ mod tests {
         }
 
         assert_eq!(
-            after_second_head,
-            None,
+            after_second_head, None,
             "consuming the frontier head again should leave the frontier empty"
         );
         assert_eq!(
@@ -2891,6 +2900,91 @@ mod tests {
                 (false, (u32::MAX, u16::MAX), 0.0),
             ],
             "after consuming both available slots, the two-slot frontier should be fully cleared"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_frontier_head_refills_from_entry_neighbors() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_frontier_head_refill (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_frontier_head_refill VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[-0.5, 0.5, 1.0, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_frontier_head_refill_idx ON tqhnsw_frontier_head_refill USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_refill_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
+            .into_iter()
+            .filter(|tid| *tid != (u32::MAX, u16::MAX))
+            .collect::<Vec<_>>();
+        assert!(
+            entry_neighbors.len() >= 3,
+            "fixture should expose at least three entry-point neighbors for refill coverage"
+        );
+
+        let (before_head, before_slots, after_head, after_slots) = unsafe {
+            am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_eq!(
+            before_slots.len(),
+            3,
+            "bootstrap frontier should start full before head consumption"
+        );
+        assert_eq!(
+            after_slots.len(),
+            3,
+            "consuming one candidate should refill from remaining entry neighbors while capacity remains"
+        );
+
+        let before_tids = before_slots
+            .iter()
+            .map(|slot| slot.1)
+            .collect::<std::collections::BTreeSet<_>>();
+        let after_tids = after_slots
+            .iter()
+            .map(|slot| slot.1)
+            .collect::<std::collections::BTreeSet<_>>();
+        let new_tids = after_tids
+            .difference(&before_tids)
+            .copied()
+            .collect::<Vec<_>>();
+        let consumed_tid = before_head
+            .and_then(|index| before_slots.get(index))
+            .map(|slot| slot.1)
+            .expect("non-empty frontier should expose a consumed head slot");
+
+        assert_ne!(
+            after_head, None,
+            "refilled frontier should still expose a head"
+        );
+        assert_eq!(
+            new_tids.len(),
+            1,
+            "refill should introduce exactly one newly seeded frontier candidate after one consume"
+        );
+        assert!(
+            !after_tids.contains(&consumed_tid),
+            "consuming the head should remove that candidate from the frontier"
+        );
+        assert!(
+            entry_neighbors.contains(&new_tids[0]),
+            "refill should draw the newly added candidate from the remaining entry-point neighbors"
         );
     }
 
@@ -2930,8 +3024,7 @@ mod tests {
         expected.sort_unstable();
 
         assert_ne!(
-            head,
-            None,
+            head, None,
             "non-empty scan frontier should still expose at least one seeded candidate"
         );
         assert_eq!(
@@ -3007,25 +3100,21 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_entry_point_neighbors_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_entry_point_neighbors_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let neighbor_tids = unsafe { am::debug_entry_point_neighbor_tids(index_oid) };
         let (_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let element_tids = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, tuple)| {
-                        (tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)).then_some((
-                            page.block_number,
-                            u16::try_from(idx + 1).expect("page tuple offset should fit in u16"),
-                        ))
-                    })
+                page.tuples.iter().enumerate().filter_map(|(idx, tuple)| {
+                    (tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)).then_some((
+                        page.block_number,
+                        u16::try_from(idx + 1).expect("page tuple offset should fit in u16"),
+                    ))
+                })
             })
             .collect::<std::collections::HashSet<_>>();
 
@@ -3482,11 +3571,10 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_empty_rescan_idx'::regclass::oid",
-        )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_empty_rescan_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
         let (first_pass, rescanned_tids) = unsafe {
             am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };

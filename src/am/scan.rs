@@ -276,6 +276,7 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
         unsafe { &mut *opaque.candidate_frontier }.clear();
     }
     opaque.candidate_frontier_head = None;
+    opaque.bootstrap_entry_tid = page::ItemPointer::INVALID;
 }
 
 fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
@@ -284,6 +285,7 @@ fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
         opaque.candidate_frontier = ptr::null_mut();
     }
     opaque.candidate_frontier_head = None;
+    opaque.bootstrap_entry_tid = page::ItemPointer::INVALID;
 }
 
 fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
@@ -313,7 +315,10 @@ fn debug_candidate_frontier_snapshot(opaque: &TqScanOpaque) -> DebugCandidateFro
     [candidate_slot(opaque, 0), candidate_slot(opaque, 1)].map(|candidate| {
         (
             candidate.score_valid,
-            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            (
+                candidate.element_tid.block_number,
+                candidate.element_tid.offset_number,
+            ),
             candidate.score,
         )
     })
@@ -342,6 +347,14 @@ fn mark_visited_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointe
     unsafe { &mut *opaque.visited_tids }.insert(element_tid);
 }
 
+fn visited_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
+    if opaque.visited_tids.is_null() || element_tid == page::ItemPointer::INVALID {
+        return false;
+    }
+
+    unsafe { &*opaque.visited_tids }.contains(&element_tid)
+}
+
 unsafe fn initialize_scan_entry_candidate(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
@@ -353,50 +366,23 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    let entry = unsafe { graph::load_graph_element(index_relation, metadata.entry_point, opaque.scan_code_len) };
+    let entry = unsafe {
+        graph::load_graph_element(index_relation, metadata.entry_point, opaque.scan_code_len)
+    };
     if entry.deleted || entry.heaptids.is_empty() {
         return;
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
+    opaque.bootstrap_entry_tid = entry.tid;
     candidate_frontier_mut(opaque).push(ScanCandidate {
         element_tid: entry.tid,
         score: entry_score,
         score_valid: true,
     });
+    mark_visited_element(opaque, entry.tid);
 
-    let (_, neighbors) =
-        unsafe { graph::load_graph_adjacency(index_relation, entry.tid, opaque.scan_code_len) };
-    let max_successor_candidates =
-        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(candidate_frontier_ref(opaque).len());
-    let successor_candidates =
-        collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
-            let neighbor = unsafe {
-                graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
-            };
-            if neighbor.deleted || neighbor.heaptids.is_empty() {
-                return None;
-            }
-
-            Some(ScanCandidate {
-                element_tid: neighbor.tid,
-                score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
-                score_valid: true,
-            })
-        });
-    if !successor_candidates.is_empty() {
-        candidate_frontier_mut(opaque).extend(successor_candidates);
-    }
-
-    recompute_candidate_frontier_head(opaque);
-    let visited_candidates = candidate_frontier_ref(opaque)
-        .iter()
-        .copied()
-        .filter(|candidate| candidate.score_valid)
-        .collect::<Vec<_>>();
-    for candidate in visited_candidates {
-        mark_visited_element(opaque, candidate.element_tid);
-    }
+    unsafe { refill_bootstrap_frontier(index_relation, opaque) };
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
@@ -431,6 +417,67 @@ fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCand
 
     let consumed = candidate_frontier_mut(opaque).remove(head);
     recompute_candidate_frontier_head(opaque);
+    Some(consumed)
+}
+
+unsafe fn refill_bootstrap_frontier(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
+    if opaque.bootstrap_entry_tid == page::ItemPointer::INVALID {
+        recompute_candidate_frontier_head(opaque);
+        return;
+    }
+
+    let max_successor_candidates =
+        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(candidate_frontier_ref(opaque).len());
+    if max_successor_candidates == 0 {
+        recompute_candidate_frontier_head(opaque);
+        return;
+    }
+
+    let (_, neighbors) = unsafe {
+        graph::load_graph_adjacency(
+            index_relation,
+            opaque.bootstrap_entry_tid,
+            opaque.scan_code_len,
+        )
+    };
+    let successor_candidates =
+        collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
+            if visited_contains_element(opaque, neighbor_tid) {
+                return None;
+            }
+
+            let neighbor = unsafe {
+                graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
+            };
+            if neighbor.deleted
+                || neighbor.heaptids.is_empty()
+                || visited_contains_element(opaque, neighbor.tid)
+            {
+                return None;
+            }
+
+            Some(ScanCandidate {
+                element_tid: neighbor.tid,
+                score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
+                score_valid: true,
+            })
+        });
+    if !successor_candidates.is_empty() {
+        candidate_frontier_mut(opaque).extend(successor_candidates.iter().copied());
+        for candidate in successor_candidates {
+            mark_visited_element(opaque, candidate.element_tid);
+        }
+    }
+
+    recompute_candidate_frontier_head(opaque);
+}
+
+unsafe fn consume_and_refill_bootstrap_frontier(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> Option<ScanCandidate> {
+    let consumed = consume_candidate_frontier_head(opaque)?;
+    unsafe { refill_bootstrap_frontier(index_relation, opaque) };
     Some(consumed)
 }
 
@@ -586,11 +633,7 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
-fn set_current_scan_result(
-    opaque: &mut TqScanOpaque,
-    element_tid: page::ItemPointer,
-    score: f32,
-) {
+fn set_current_scan_result(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer, score: f32) {
     opaque.current_result = CurrentScanResult {
         element_tid,
         heap_tid: page::ItemPointer::INVALID,
@@ -611,8 +654,9 @@ unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
         return Vec::new();
     }
 
-    let query =
-        unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
+    let query = unsafe {
+        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+    };
     query.to_vec()
 }
 
@@ -669,6 +713,7 @@ struct TqScanOpaque {
     visited_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: Option<usize>,
+    bootstrap_entry_tid: page::ItemPointer,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -693,6 +738,7 @@ impl Default for TqScanOpaque {
             visited_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: None,
+            bootstrap_entry_tid: page::ItemPointer::INVALID,
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -730,15 +776,39 @@ type DebugCandidateFrontierLifecycle = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-type DebugCandidateFrontierConsume =
-    (
-        DebugCandidateHead,
-        DebugCandidateFrontier,
-        DebugCandidateHead,
-        DebugCandidateFrontier,
-        DebugCandidateHead,
-        DebugCandidateFrontier,
-    );
+type DebugCandidateFrontierConsume = (
+    DebugCandidateHead,
+    DebugCandidateFrontier,
+    DebugCandidateHead,
+    DebugCandidateFrontier,
+    DebugCandidateHead,
+    DebugCandidateFrontier,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontierSlotConsume = (
+    DebugCandidateHead,
+    DebugCandidateFrontierSlots,
+    DebugCandidateHead,
+    DebugCandidateFrontierSlots,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
+    candidate_frontier_ref(opaque)
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.score_valid,
+                (
+                    candidate.element_tid.block_number,
+                    candidate.element_tid.offset_number,
+                ),
+                candidate.score,
+            )
+        })
+        .collect::<Vec<_>>()
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugVisitedSeedsLifecycle = (Vec<HeapTidCoords>, Vec<HeapTidCoords>, Vec<HeapTidCoords>);
@@ -1022,7 +1092,9 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 
     let mut tids = Vec::new();
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
+            (*scan).xs_heaptid
+        }));
     }
 
     let exhausted_once =
@@ -1040,7 +1112,16 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 pub(crate) unsafe fn debug_gettuple_current_result_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, HeapTidCoords, bool, f32, bool, HeapTidCoords, bool, f32) {
+) -> (
+    bool,
+    HeapTidCoords,
+    bool,
+    f32,
+    bool,
+    HeapTidCoords,
+    bool,
+    f32,
+) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1102,7 +1183,10 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before = candidate_slot(opaque, 0);
     let before_valid = before.score_valid;
-    let before_tid = (before.element_tid.block_number, before.element_tid.offset_number);
+    let before_tid = (
+        before.element_tid.block_number,
+        before.element_tid.offset_number,
+    );
     let before_score = before.score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
@@ -1110,7 +1194,10 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let after = candidate_slot(opaque, 0);
     let after_valid = after.score_valid;
-    let after_tid = (after.element_tid.block_number, after.element_tid.offset_number);
+    let after_tid = (
+        after.element_tid.block_number,
+        after.element_tid.offset_number,
+    );
     let after_score = after.score;
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1130,13 +1217,7 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (
-    HeapTidCoords,
-    Vec<HeapTidCoords>,
-    bool,
-    HeapTidCoords,
-    f32,
-) {
+) -> (HeapTidCoords, Vec<HeapTidCoords>, bool, HeapTidCoords, f32) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1148,7 +1229,10 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let metadata = unsafe { super::read_metadata_page(index_relation) };
-    let entry_tid = (metadata.entry_point.block_number, metadata.entry_point.offset_number);
+    let entry_tid = (
+        metadata.entry_point.block_number,
+        metadata.entry_point.offset_number,
+    );
     let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -1193,16 +1277,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let frontier = debug_candidate_frontier_snapshot(opaque);
-    let frontier_slots = candidate_frontier_ref(opaque)
-        .iter()
-        .map(|candidate| {
-            (
-                candidate.score_valid,
-                (candidate.element_tid.block_number, candidate.element_tid.offset_number),
-                candidate.score,
-            )
-        })
-        .collect::<Vec<_>>();
+    let frontier_slots = debug_candidate_frontier_slots(opaque);
     let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1278,12 +1353,12 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     let before_head = opaque.candidate_frontier_head;
     let before_frontier = debug_candidate_frontier_snapshot(opaque);
 
-    let first_consumed = consume_candidate_frontier_head(opaque);
+    let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
     let after_first_head = opaque.candidate_frontier_head;
     let after_first_frontier = debug_candidate_frontier_snapshot(opaque);
 
-    consume_candidate_frontier_head(opaque);
+    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     let after_second_head = opaque.candidate_frontier_head;
     let after_second_frontier = debug_candidate_frontier_snapshot(opaque);
 
@@ -1298,6 +1373,37 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
         after_second_head,
         after_second_frontier,
     )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugCandidateFrontierSlotConsume {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = opaque.candidate_frontier_head;
+    let before_slots = debug_candidate_frontier_slots(opaque);
+
+    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+
+    let after_head = opaque.candidate_frontier_head;
+    let after_slots = debug_candidate_frontier_slots(opaque);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (before_head, before_slots, after_head, after_slots)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1365,7 +1471,10 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before = candidate_slot(opaque, 0);
     let before_valid = before.score_valid;
-    let before_tid = (before.element_tid.block_number, before.element_tid.offset_number);
+    let before_tid = (
+        before.element_tid.block_number,
+        before.element_tid.offset_number,
+    );
     let before_score = before.score;
 
     assert!(
@@ -1375,7 +1484,10 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let partial = candidate_slot(opaque, 0);
     let partial_valid = partial.score_valid;
-    let partial_tid = (partial.element_tid.block_number, partial.element_tid.offset_number);
+    let partial_tid = (
+        partial.element_tid.block_number,
+        partial.element_tid.offset_number,
+    );
     let partial_score = partial.score;
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
@@ -1383,7 +1495,10 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted = candidate_slot(opaque, 0);
     let exhausted_valid = exhausted.score_valid;
-    let exhausted_tid = (exhausted.element_tid.block_number, exhausted.element_tid.offset_number);
+    let exhausted_tid = (
+        exhausted.element_tid.block_number,
+        exhausted.element_tid.offset_number,
+    );
     let exhausted_score = exhausted.score;
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1612,7 +1727,9 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 
     let mut first_pass = Vec::new();
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
-        first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+        first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe {
+            (*scan).xs_heaptid
+        }));
     }
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -1623,7 +1740,9 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 
     let mut rescanned = Vec::new();
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
-        rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+        rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe {
+            (*scan).xs_heaptid
+        }));
     }
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1650,7 +1769,10 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 
     let found_first =
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
-    assert!(found_first, "partial scan should yield at least one heap tid");
+    assert!(
+        found_first,
+        "partial scan should yield at least one heap tid"
+    );
     let first_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -1661,7 +1783,9 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 
     let mut tids = Vec::new();
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
-        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid }));
+        tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
+            (*scan).xs_heaptid
+        }));
     }
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1725,7 +1849,10 @@ mod tests {
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("frontier head consumption should return the current best slot");
         assert_eq!(
-            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (
+                consumed.element_tid.block_number,
+                consumed.element_tid.offset_number
+            ),
             (7, 1),
             "consumption should return the previously best frontier slot"
         );
@@ -1739,20 +1866,23 @@ mod tests {
             "consuming the head should keep the remaining candidate valid"
         );
         assert_eq!(
-            candidate_slot(&opaque, 0).score, 3.5,
+            candidate_slot(&opaque, 0).score,
+            3.5,
             "consuming the head should preserve the remaining candidate after compaction"
         );
 
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("a remaining valid slot should still be consumable");
         assert_eq!(
-            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (
+                consumed.element_tid.block_number,
+                consumed.element_tid.offset_number
+            ),
             (7, 2),
             "the second consumption should return the reseated head slot"
         );
         assert_eq!(
-            opaque.candidate_frontier_head,
-            None,
+            opaque.candidate_frontier_head, None,
             "consuming the last valid slot should invalidate the frontier head"
         );
         assert!(
