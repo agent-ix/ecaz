@@ -372,7 +372,8 @@ impl DataPage {
         self.tuples.push(payload);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: self.tuples.len() as u16,
+            offset_number: u16::try_from(self.tuples.len())
+                .expect("tuple count should fit in u16"),
         })
     }
 
