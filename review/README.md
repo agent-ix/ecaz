@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `7225b8d`
+Current head: `89f290b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -56,6 +56,7 @@ Current tqhnsw state summary:
 - The linear scan cursor now uses a direct `offset + 1` advance with a `debug_assert!` on the page-local `u16` invariant instead of carrying an unreachable saturation branch.
 - Query-scoring coverage now explicitly exercises candidate/query dimension mismatch and the negative-query wrapper contract.
 - Linear scan coverage now explicitly verifies that a duplicate-heavy scan continues correctly across multiple data pages and mixed element/neighbor tuple pages.
+- `amrescan` now caches the current relation block count in scan-owned state so the bootstrap linear scan does not re-fetch it on every tuple-producing call.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -88,6 +89,7 @@ Review triage at `46d00bb`:
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by removing the unreachable saturated-offset overflow branch in the linear scan cursor.
 - Addressed outside feedback on `16-query-inner-product-gamma-payload.md` by adding explicit coverage for dimension mismatch errors and the negative-query wrapper.
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` with a regression that combines duplicate draining, neighbor-tuple skipping, and multi-page scan advancement.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by caching the relation block count in scan state instead of re-reading it for each bootstrap scan step.
 
 Review instructions:
 - Prefer correctness findings over style comments.
