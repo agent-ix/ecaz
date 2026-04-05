@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `6292e28`
+Current head: `7235f1d`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -49,6 +49,7 @@ Current tqhnsw state summary:
 - The in-memory `DataPage` tuple insertion path now uses a checked `u16` conversion for returned offset numbers.
 - The `hnsw_rs` Cargo dependency is now pinned to the currently locked `0.3.4` release instead of `*`.
 - `amrescan` now caches scan dimensions, bits, and derived code length in scan-owned opaque state so `amgettuple` no longer rereads the metadata page on every call.
+- `relation_options` now reads parsed reloptions directly from the relation descriptor cache instead of issuing an SPI catalog query on every `aminsert`.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -74,6 +75,7 @@ Review triage at `46d00bb`:
 - Addressed external review `10-page-layout-offset-number-u16-overflow.md` by using a checked offset-number conversion in `DataPage::insert_raw_tuple`.
 - Addressed external review `08-hnsw-rs-wildcard-dependency.md` by pinning `hnsw_rs` to the currently locked `0.3.4` release.
 - Addressed external review `04-linear-scan-reads-metadata-every-gettuple.md` by caching scan metadata during `amrescan` and reusing it in `amgettuple`.
+- Addressed external review `06-relation-options-spi-in-hot-path.md` by reading reloptions directly from `rd_options`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -92,6 +94,7 @@ Open requests:
 - `21-page-offset-checked-conversion.md`
 - `22-pin-hnsw-rs-version.md`
 - `23-scan-metadata-cache.md`
+- `24-relation-options-cache.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
