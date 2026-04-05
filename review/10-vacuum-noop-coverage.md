@@ -19,3 +19,7 @@ Questions to answer:
 - Do these tests cover the remaining meaningful vacuum-noop edges?
 - Is any additional helper surface required, or can this stay at the SQL/test level?
 - Is there a smaller coverage slice that should go first?
+
+Status at `803bf5e`:
+- Addressed by adding SQL-level regression tests for empty-index vacuum and repeated no-op vacuum calls.
+- No additional production helper surface was required.

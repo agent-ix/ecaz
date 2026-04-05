@@ -23,6 +23,11 @@ Questions to answer:
 
 ## Review Comments
 
+Status at `803bf5e`:
+- Comments 1-5 and 8: not needed. These review notes validate the current no-op vacuum contract rather than identifying changes required in this stage.
+- Comment 6 addressed by adding empty-index vacuum coverage.
+- Comment 7 addressed by adding repeated-vacuum coverage.
+
 ### 1. The no-op vacuum is safe for the current state
 
 Since the scan path hard-errors (`amrescan`/`amgettuple` call `unsupported_build_only_error`), no query executor will ever try to use this index for tuple visibility decisions. The index is effectively write-only. Leaving dead heap-TIDs in element tuples has no observable effect on query results because no query can read them. This is a sound contract for now.
