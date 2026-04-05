@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `46d00bb`
+Current head: `2ddbed3`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -36,6 +36,9 @@ Current tqhnsw state summary:
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
 - `amgettuple` now returns `false` for valid rescans on empty indexes while keeping non-empty scan execution disabled.
 - `amrescan` now persists the full query payload in scan-owned PostgreSQL memory and frees it during `amendscan`.
+- `amgettuple` now supports a forward-only linear data-page scan for non-empty indexes.
+- The current non-empty scan path returns the first heap TID from each live element tuple and advances a scan-local cursor across repeated `amgettuple` calls.
+- Query-payload ownership and linear scan cursor state now both live in scan-owned opaque memory.
 
 Review triage at `46d00bb`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
@@ -61,6 +64,7 @@ Review instructions:
 Open requests:
 - `13-amgettuple-empty-index-noop.md`
 - `14-rescan-query-payload-state.md`
+- `15-amgettuple-linear-forward-scan.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
