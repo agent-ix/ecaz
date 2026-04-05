@@ -203,8 +203,15 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
         pgrx::pgrx_extern_c_guard(|| {
             let heap_tid = decode_heap_tid(heap_tid);
             let tuple = build_heap_tuple(values, isnull, heap_tid);
+            let options = relation_options(index_relation);
             let mut metadata = read_metadata_page(index_relation);
             let code_len = tuple.code.len();
+
+            if let Some(source_column) = options.build_source_column {
+                pgrx::error!(
+                    "tqhnsw aminsert does not support build_source_column indexes yet: {source_column}"
+                );
+            }
 
             if metadata.dimensions == 0 && metadata.bits == 0 {
                 metadata.dimensions = tuple.dimensions;

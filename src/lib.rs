@@ -1229,6 +1229,34 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw aminsert does not support build_source_column indexes yet")]
+    fn test_tqhnsw_insert_rejects_build_source_column_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_source_reject (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_source_reject VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_source_reject_idx ON tqhnsw_insert_source_reject USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_source_reject VALUES
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42))",
+        )
+        .expect("insert should fail");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
         Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
