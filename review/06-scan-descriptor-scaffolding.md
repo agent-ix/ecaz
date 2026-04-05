@@ -24,6 +24,10 @@ Questions to answer:
 
 ## Review Comments
 
+Status at `41cfdfa`:
+- Comments 1-5 and 7: not needed. These notes validate the current descriptor lifecycle rather than requiring changes.
+- Comment 6 addressed by adding repeated-`amendscan` idempotency coverage.
+
 ### 1. `PgBox::alloc0` allocates in CurrentMemoryContext — this is correct for scan opaque
 
 At line 352, `PgBox::<TqScanOpaque>::alloc0()` allocates via `palloc0` in whatever `CurrentMemoryContext` is active when `ambeginscan` is called. PostgreSQL calls `ambeginscan` with the per-query or per-scan memory context active, which is the standard lifetime for scan opaque state. The `amendscan` call to `pfree` at line 451 (via the opaque pointer) properly releases it in the same context. This matches how other AMs (e.g., `btbeginscan`/`btendscan`) handle opaque state.

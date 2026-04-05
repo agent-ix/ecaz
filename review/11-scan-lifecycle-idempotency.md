@@ -19,3 +19,7 @@ Questions to answer:
 - Is there any actionable lifecycle bug left in the current scan scaffolding?
 - Is repeated-`amendscan` coverage the next smallest worthwhile slice?
 - Should the remaining `amgettuple` repeated-rescan note stay deferred until real tuple production exists?
+
+Status at `41cfdfa`:
+- Addressed by adding repeated-`amendscan` regression coverage.
+- Remaining `amgettuple` repeated-rescan coverage is not needed for now because scan execution still fails at the capability boundary.

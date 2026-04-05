@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `803bf5e`
+Current head: `41cfdfa`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -31,15 +31,18 @@ Current tqhnsw state summary:
 - `amgettuple` still rejects actual tuple production, so planner-visible scan execution remains disabled in practice.
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
+- Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 
-Review triage at `803bf5e`:
+Review triage at `41cfdfa`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
 - Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
 - Addressed `07-rescan-query-validation.md` comment 7 with explicit regression tests for the reviewed `amrescan` defensive cases.
 - Marked `07-rescan-query-validation.md` comments 1-6 and 8 as not needed for this stage because they are validation of current behavior or future-slice notes rather than actionable defects.
 - Addressed `05-vacuum-noop-callbacks.md` comments 6 and 7 with empty-index and repeated-vacuum regression coverage.
 - Marked `05-vacuum-noop-callbacks.md` comments 1-5 and 8 as not needed for this stage because they document accepted current behavior rather than requiring code changes.
-- Deferred `08-amgettuple-state-gating.md` repeated-rescan coverage until scan execution stops being a fatal capability boundary.
+- Addressed `06-scan-descriptor-scaffolding.md` comment 6 with repeated-`amendscan` idempotency coverage.
+- Marked `06-scan-descriptor-scaffolding.md` comments 1-5 and 7 as not needed for this stage because they validate accepted lifecycle behavior.
+- Marked `08-amgettuple-state-gating.md` comments 1-7 as not needed for this stage; the repeated-rescan note remains blocked on the current fatal scan-execution boundary and does not justify more helper surface yet.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -58,3 +61,4 @@ Requests:
 - `09-rescan-defensive-cases.md`
 - `10-vacuum-noop-coverage.md`
 - `11-scan-lifecycle-idempotency.md`
+- `12-tail-page-rollover-followup.md`
