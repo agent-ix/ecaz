@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `921bd5d`
+Current head: `e375e04`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -60,10 +60,14 @@ Current tqhnsw state summary:
 - `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
 - The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
 - Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
+- Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
+- Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
+- ADR for gamma-aware duplicate semantics: `spec/adr/ADR-010-gamma-aware-duplicate-coalescing.md`
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
+- `review/external/2026-04-05-spec-plan-eval/evaluation.md`
 
 Review triage at `46d00bb`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
@@ -96,6 +100,7 @@ Review triage at `46d00bb`:
 - Remaining open feedback notes around page-lock batching and larger architectural changes are deferred while ordered scan execution groundwork continues.
 - Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
 - Current-result state now has explicit lifecycle coverage, but score calculation remains deferred until the scan path can reconstruct or store the candidate payload needed for query scoring.
+- Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -120,6 +125,7 @@ Open requests:
 - `26-scan-prepared-query-cache.md`
 - `27-scan-current-result-state.md`
 - `28-scan-current-result-lifecycle.md`
+- `29-gamma-aware-duplicate-coalescing.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
