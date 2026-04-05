@@ -200,7 +200,6 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = decode_heap_tid(heap_tid);
             let tuple = build_heap_tuple(values, isnull, heap_tid);
             let options = relation_options(index_relation);
-            let mut metadata = read_metadata_page(index_relation);
             let code_len = tuple.code.len();
 
             if let Some(source_column) = options.build_source_column {
@@ -209,41 +208,42 @@ unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 );
             }
 
-            if metadata.dimensions == 0 && metadata.bits == 0 {
-                metadata.dimensions = tuple.dimensions;
-                metadata.bits = tuple.bits;
-                metadata.seed = tuple.seed;
-            } else if tuple.dimensions != metadata.dimensions
-                || tuple.bits != metadata.bits
-                || tuple.seed != metadata.seed
-            {
-                pgrx::error!(
-                    "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+            with_locked_metadata_page(index_relation, |metadata| {
+                if metadata.dimensions == 0 && metadata.bits == 0 {
+                    metadata.dimensions = tuple.dimensions;
+                    metadata.bits = tuple.bits;
+                    metadata.seed = tuple.seed;
+                } else if tuple.dimensions != metadata.dimensions
+                    || tuple.bits != metadata.bits
+                    || tuple.seed != metadata.seed
+                {
+                    pgrx::error!(
+                        "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                        metadata.dimensions,
+                        metadata.bits,
+                        metadata.seed,
+                        tuple.dimensions,
+                        tuple.bits,
+                        tuple.seed
+                    );
+                }
+
+                if let Some(element_tid) = find_duplicate_element_tid(
+                    index_relation,
                     metadata.dimensions,
                     metadata.bits,
-                    metadata.seed,
-                    tuple.dimensions,
-                    tuple.bits,
-                    tuple.seed
-                );
-            }
+                    code_len,
+                    &tuple.code,
+                ) {
+                    coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+                    return;
+                }
 
-            if let Some(element_tid) = find_duplicate_element_tid(
-                index_relation,
-                metadata.dimensions,
-                metadata.bits,
-                code_len,
-                &tuple.code,
-            ) {
-                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
-                return false;
-            }
-
-            let element_tid = append_heap_tuple(index_relation, &tuple);
-            if metadata.entry_point == page::ItemPointer::INVALID {
-                metadata.entry_point = element_tid;
-            }
-            update_metadata_page(index_relation, metadata);
+                let element_tid = append_heap_tuple(index_relation, &tuple);
+                if metadata.entry_point == page::ItemPointer::INVALID {
+                    metadata.entry_point = element_tid;
+                }
+            });
             false
         })
     }
@@ -578,6 +578,40 @@ unsafe fn update_metadata_page(index_relation: pg_sys::Relation, metadata: page:
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn with_locked_metadata_page<T>(
+    index_relation: pg_sys::Relation,
+    f: impl FnOnce(&mut page::MetadataPage) -> T,
+) -> T {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            page::METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to open metadata buffer");
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let raw_page = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let page_bytes = unsafe { std::slice::from_raw_parts(raw_page, page_size) };
+    let mut metadata =
+        page::MetadataPage::decode_page(page_bytes).expect("metadata page should decode");
+    let result = f(&mut metadata);
+
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    let metadata_bytes = metadata.encode();
+    unsafe { write_metadata_bytes(page, &metadata_bytes) };
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    result
 }
 
 unsafe fn append_heap_tuple(
@@ -1997,9 +2031,10 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
 
-    let mut orderby = pg_sys::ScanKeyData::default();
-    orderby.sk_argument =
-        pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -2026,9 +2061,10 @@ pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: 
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
 
-    let mut orderby = pg_sys::ScanKeyData::default();
-    orderby.sk_argument =
-        pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 }

@@ -1450,6 +1450,46 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_empty_index_reuses_initialized_metadata() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_empty_insert_reuse (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_empty_insert_reuse_idx ON tqhnsw_empty_insert_reuse USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_empty_insert_reuse VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("sequential inserts should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_reuse_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_eq!(metadata.max_level, 0);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        let element_count = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .count();
+        assert_eq!(
+            element_count, 2,
+            "second insert into an initially empty index should validate against persisted shape metadata"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_callbacks_are_benign_noops() {
         Spi::run("CREATE TABLE tqhnsw_vacuum_noop (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
