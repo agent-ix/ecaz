@@ -2669,6 +2669,67 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_frontier_head_persists_until_exhaustion() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_frontier_head_lifecycle (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_frontier_head_lifecycle VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_frontier_head_lifecycle_idx ON tqhnsw_frontier_head_lifecycle USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_frontier_head_lifecycle_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (
+            before_head,
+            before_frontier,
+            partial_head,
+            partial_frontier,
+            exhausted_head,
+            exhausted_frontier,
+        ) = unsafe {
+            am::debug_candidate_frontier_head_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_ne!(
+            before_head, u8::MAX,
+            "non-empty frontier should expose a concrete head immediately after rescan"
+        );
+        assert_eq!(
+            partial_head, before_head,
+            "frontier head should stay stable during partial bootstrap scan progress"
+        );
+        assert_eq!(
+            partial_frontier, before_frontier,
+            "partial bootstrap scan progress should not mutate the current two-slot frontier yet"
+        );
+        assert_eq!(
+            exhausted_head, u8::MAX,
+            "frontier head should clear on full scan exhaustion"
+        );
+        assert_eq!(
+            exhausted_frontier,
+            [
+                (false, (u32::MAX, u16::MAX), 0.0),
+                (false, (u32::MAX, u16::MAX), 0.0),
+            ],
+            "full scan exhaustion should clear both frontier slots"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",

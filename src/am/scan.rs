@@ -355,6 +355,7 @@ unsafe fn next_linear_scan_heap_tid(
 
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
+        clear_scan_candidate_state(opaque);
         clear_scan_result_state(opaque);
         return None;
     }
@@ -608,6 +609,22 @@ impl Default for TqScanOpaque {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) type HeapTidCoords = (u32, u16);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateSlot = (bool, HeapTidCoords, f32);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontier = [DebugCandidateSlot; 2];
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontierLifecycle = (
+    u8,
+    DebugCandidateFrontier,
+    u8,
+    DebugCandidateFrontier,
+    u8,
+    DebugCandidateFrontier,
+);
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -1031,7 +1048,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 pub(crate) unsafe fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (u8, [(bool, HeapTidCoords, f32); 2]) {
+) -> (u8, DebugCandidateFrontier) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1056,6 +1073,71 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (head, frontier)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugCandidateFrontierLifecycle {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = opaque.candidate_frontier_head;
+    let before_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "frontier-head lifecycle helper requires a first tuple"
+    );
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let partial_head = opaque.candidate_frontier_head;
+    let partial_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let exhausted_head = opaque.candidate_frontier_head;
+    let exhausted_frontier = opaque.candidate_frontier.candidates.map(|candidate| {
+        (
+            candidate.score_valid,
+            (candidate.element_tid.block_number, candidate.element_tid.offset_number),
+            candidate.score,
+        )
+    });
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_head,
+        before_frontier,
+        partial_head,
+        partial_frontier,
+        exhausted_head,
+        exhausted_frontier,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
