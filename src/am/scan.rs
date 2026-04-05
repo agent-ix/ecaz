@@ -932,6 +932,78 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_entry_candidate_lifecycle(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (
+    bool,
+    HeapTidCoords,
+    f32,
+    bool,
+    HeapTidCoords,
+    f32,
+    bool,
+    HeapTidCoords,
+    f32,
+) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_valid = opaque.entry_candidate.score_valid;
+    let before_tid = (
+        opaque.entry_candidate.element_tid.block_number,
+        opaque.entry_candidate.element_tid.offset_number,
+    );
+    let before_score = opaque.entry_candidate.score;
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "entry-candidate lifecycle helper requires a first tuple"
+    );
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let partial_valid = opaque.entry_candidate.score_valid;
+    let partial_tid = (
+        opaque.entry_candidate.element_tid.block_number,
+        opaque.entry_candidate.element_tid.offset_number,
+    );
+    let partial_score = opaque.entry_candidate.score;
+
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let exhausted_valid = opaque.entry_candidate.score_valid;
+    let exhausted_tid = (
+        opaque.entry_candidate.element_tid.block_number,
+        opaque.entry_candidate.element_tid.offset_number,
+    );
+    let exhausted_score = opaque.entry_candidate.score;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_valid,
+        before_tid,
+        before_score,
+        partial_valid,
+        partial_tid,
+        partial_score,
+        exhausted_valid,
+        exhausted_tid,
+        exhausted_score,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,

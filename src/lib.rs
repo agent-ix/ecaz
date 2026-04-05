@@ -2458,6 +2458,72 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_entry_candidate_persists_until_exhaustion() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_entry_candidate_lifecycle (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_entry_candidate_lifecycle VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_entry_candidate_lifecycle_idx ON tqhnsw_entry_candidate_lifecycle USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_entry_candidate_lifecycle_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (
+            before_valid,
+            before_tid,
+            before_score,
+            partial_valid,
+            partial_tid,
+            partial_score,
+            exhausted_valid,
+            exhausted_tid,
+            exhausted_score,
+        ) = unsafe {
+            am::debug_entry_candidate_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert!(before_valid, "entry candidate should be seeded before tuple production");
+        assert_eq!(
+            partial_valid, before_valid,
+            "entry candidate should stay valid after partial bootstrap scan progress"
+        );
+        assert_eq!(
+            partial_tid, before_tid,
+            "entry candidate should stay attached to the metadata entry point during partial scan progress"
+        );
+        assert_eq!(
+            partial_score, before_score,
+            "entry candidate score should stay stable during partial scan progress"
+        );
+        assert!(
+            !exhausted_valid,
+            "entry candidate should clear once the bootstrap scan fully exhausts"
+        );
+        assert_eq!(
+            exhausted_tid,
+            (u32::MAX, u16::MAX),
+            "entry candidate tid should clear on exhaustion"
+        );
+        assert_eq!(
+            exhausted_score, 0.0,
+            "entry candidate score should clear on exhaustion"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding tqvector)",
