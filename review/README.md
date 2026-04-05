@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `05a8bbd`
+Current head: `eb40691`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -86,6 +86,7 @@ Current tqhnsw state summary:
 - Duplicate-drain coverage now verifies that the current-result heap TID advances across duplicates while the element TID and score stay stable.
 - `amrescan` now seeds one explicit entry candidate from the persisted metadata entry point for non-empty indexes, carrying the minimum traversal-start payload of element TID plus score.
 - Entry-candidate coverage now verifies that the seeded candidate points at the metadata entry point immediately after rescan and clears again once the current bootstrap scan fully exhausts.
+- Entry-candidate lifecycle coverage now also verifies that the seeded candidate remains stable through partial bootstrap scan progress and only clears on full exhaustion.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -163,6 +164,7 @@ Open requests:
 - `41-scan-page-level-neighbor-access.md`
 - `42-graph-read-surface-and-explicit-scan-result.md`
 - `43-scan-entry-candidate-state.md`
+- `44-entry-candidate-lifecycle.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
