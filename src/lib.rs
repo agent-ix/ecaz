@@ -1516,6 +1516,60 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
+        Spi::run("CREATE TABLE tqhnsw_rescan_scaffold (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_rescan_scaffold VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_rescan_scaffold_idx ON tqhnsw_rescan_scaffold USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_rescan_scaffold_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (rescan_called, query_dimensions) =
+            unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        assert!(
+            rescan_called,
+            "amrescan should mark scan state as initialized"
+        );
+        assert_eq!(query_dimensions, 4);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan query dimension mismatch")]
+    fn test_tqhnsw_rescan_scaffold_rejects_wrong_query_dimensions() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_rescan_scaffold_mismatch (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_rescan_scaffold_mismatch VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_rescan_scaffold_mismatch_idx ON tqhnsw_rescan_scaffold_mismatch USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_rescan_scaffold_mismatch_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]) };
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(

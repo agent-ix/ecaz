@@ -356,13 +356,62 @@ unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amrescan(
-    _scan: pg_sys::IndexScanDesc,
-    _keys: pg_sys::ScanKey,
-    _nkeys: std::ffi::c_int,
-    _orderbys: pg_sys::ScanKey,
-    _norderbys: std::ffi::c_int,
+    scan: pg_sys::IndexScanDesc,
+    keys: pg_sys::ScanKey,
+    nkeys: std::ffi::c_int,
+    orderbys: pg_sys::ScanKey,
+    norderbys: std::ffi::c_int,
 ) {
-    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amrescan")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                pgrx::error!("tqhnsw amrescan received a null scan descriptor");
+            }
+            if nkeys != 0 || !keys.is_null() {
+                pgrx::error!("tqhnsw scan does not support index quals yet");
+            }
+            if norderbys != 1 {
+                pgrx::error!("tqhnsw scan currently requires exactly one ORDER BY query");
+            }
+            if orderbys.is_null() {
+                pgrx::error!("tqhnsw amrescan received null order-by scan keys");
+            }
+
+            let orderby = &*orderbys;
+            if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
+                pgrx::error!("tqhnsw scan query must not be NULL");
+            }
+
+            let query = Vec::<f32>::from_polymorphic_datum(
+                orderby.sk_argument,
+                false,
+                pg_sys::FLOAT4ARRAYOID,
+            )
+            .unwrap_or_else(|| pgrx::error!("tqhnsw scan requires a real[] ORDER BY query"));
+            if query.is_empty() {
+                pgrx::error!("tqhnsw scan query must not be empty");
+            }
+
+            let metadata = read_metadata_page((*scan).indexRelation);
+            if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
+                pgrx::error!(
+                    "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
+                    metadata.dimensions,
+                    query.len()
+                );
+            }
+
+            (*scan).xs_recheck = false;
+            (*scan).xs_recheckorderby = false;
+            (*scan).xs_orderbyvals = ptr::null_mut();
+            (*scan).xs_orderbynulls = ptr::null_mut();
+
+            let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
+            opaque.rescan_called = true;
+            opaque.query_dimensions =
+                u16::try_from(query.len()).expect("query length should fit in u16");
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -1000,6 +1049,7 @@ struct BuildVectorDistance {
 #[derive(Debug, Default)]
 struct TqScanOpaque {
     rescan_called: bool,
+    query_dimensions: u16,
 }
 
 impl Distance<f32> for BuildVectorDistance {
@@ -1918,6 +1968,29 @@ pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (has_opaque, cleared_opaque)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_rescan_query_dimensions(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (bool, u16) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData::default();
+    orderby.sk_argument =
+        pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let result = (opaque.rescan_called, opaque.query_dimensions);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
 }
 
 #[cfg(test)]
