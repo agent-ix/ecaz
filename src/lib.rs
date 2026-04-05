@@ -2710,14 +2710,14 @@ mod tests {
         }
 
         let expected_head = match (frontier[0].0, frontier[1].0) {
-            (false, false) => u8::MAX,
-            (true, false) => 0,
-            (false, true) => 1,
+            (false, false) => None,
+            (true, false) => Some(0),
+            (false, true) => Some(1),
             (true, true) => {
                 if frontier[0].2 <= frontier[1].2 {
-                    0
+                    Some(0)
                 } else {
-                    1
+                    Some(1)
                 }
             }
         };
@@ -2763,7 +2763,8 @@ mod tests {
         };
 
         assert_ne!(
-            before_head, u8::MAX,
+            before_head,
+            None,
             "non-empty frontier should expose a concrete head immediately after rescan"
         );
         assert_eq!(
@@ -2775,7 +2776,8 @@ mod tests {
             "partial bootstrap scan progress should not mutate the current two-slot frontier yet"
         );
         assert_eq!(
-            exhausted_head, u8::MAX,
+            exhausted_head,
+            None,
             "frontier head should clear on full scan exhaustion"
         );
         assert_eq!(
@@ -2824,15 +2826,17 @@ mod tests {
         };
 
         assert_ne!(
-            before_head, u8::MAX,
+            before_head,
+            None,
             "non-empty frontier should expose a concrete head before consumption"
         );
-        let consumed_slot = before_head as usize;
+        let consumed_slot = before_head.expect("non-empty frontier should expose a head");
         let remaining_slot = if consumed_slot == 0 { 1 } else { 0 };
 
         if before_frontier[remaining_slot].0 {
             assert_eq!(
-                after_first_head, 0,
+                after_first_head,
+                Some(0),
                 "when another candidate remains valid, consuming the head should compact it to the new head slot"
             );
             assert_eq!(
@@ -2847,7 +2851,8 @@ mod tests {
             );
         } else {
             assert_eq!(
-                after_first_head, u8::MAX,
+                after_first_head,
+                None,
                 "consuming the only valid candidate should invalidate the frontier head"
             );
             assert_eq!(
@@ -2861,7 +2866,8 @@ mod tests {
         }
 
         assert_eq!(
-            after_second_head, u8::MAX,
+            after_second_head,
+            None,
             "consuming the frontier head again should leave the frontier empty"
         );
         assert_eq!(
@@ -2910,7 +2916,8 @@ mod tests {
         expected.sort_unstable();
 
         assert_ne!(
-            head, u8::MAX,
+            head,
+            None,
             "non-empty scan frontier should still expose at least one seeded candidate"
         );
         assert_eq!(
