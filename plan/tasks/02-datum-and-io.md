@@ -1,5 +1,7 @@
 # Task 02: Datum and I/O
 
+Status: complete
+
 ## Scope
 
 Implement the `tqvector` datum layout, type registration, text I/O, and binary send/receive.

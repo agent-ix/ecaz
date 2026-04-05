@@ -1,5 +1,7 @@
 # Task 01: Quantizer Core
 
+Status: complete
+
 ## Scope
 
 Implement the scalar quantization math and the `ProdQuantizer` core used by all encode and scoring paths.

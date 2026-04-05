@@ -1,5 +1,7 @@
 # Task 04: Page Layout and WAL
 
+Status: complete
+
 ## Scope
 
 Implement page tuple layouts, fit invariants, and GenericXLog-backed write helpers for the custom access method.

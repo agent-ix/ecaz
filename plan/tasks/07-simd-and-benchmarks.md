@@ -1,5 +1,7 @@
 # Task 07: SIMD and Benchmarks
 
+Status: not started
+
 ## Scope
 
 Optimize the stable scalar implementation and run the required quality/performance benchmarks.

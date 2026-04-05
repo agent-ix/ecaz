@@ -35,10 +35,16 @@ The extension SHALL implement a custom PostgreSQL index access method named `tqh
 | type | u8 | `0x01` (ELEMENT) |
 | level | u8 | HNSW layer this node was assigned to |
 | deleted | bool | Soft-delete flag |
-| heaptids | [ItemPointerData; 10] | Pointers back to heap rows |
-| heaptid_count | u8 | Number of valid heaptids |
+| heaptids | [ItemPointerData; 10] | Inline pointers back to heap rows that share this element's duplicate key |
+| heaptid_count | u8 | Number of valid heaptids, capped at 10 inline entries |
 | neighbortid | ItemPointerData | Pointer to this node's TqNeighborTuple |
-| code | [u8; code_len] | The tqvector compressed payload bytes (`gamma + mse_packed + qjl_packed`) |
+| code | [u8; code_len] | The tqvector stored code bytes (`mse_packed + qjl_packed`) |
+
+Duplicate semantics:
+- Multiple heap rows MAY coalesce into one element tuple when they share the same persisted duplicate key.
+- In the current implementation, that duplicate key is `(gamma, code_bytes)`.
+- The element tuple stores only the shared `code_bytes`; `gamma` remains recoverable from representative heap rows until a future page-layout revision persists it in-page.
+- `HEAPTID_INLINE_CAPACITY = 10` is a page-layout invariant in v0.1.
 
 #### TqNeighborTuple (tag = 0x02)
 

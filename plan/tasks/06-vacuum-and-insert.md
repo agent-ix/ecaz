@@ -1,5 +1,13 @@
 # Task 06: Vacuum and Online Insert
 
+Status: in progress
+
+Progress notes:
+- Live insert now supports shape validation, first-insert metadata initialization, duplicate
+  coalescing, and tail-page append/reuse.
+- Vacuum callbacks are currently benign no-ops.
+- Graph-aware insertion, drift statistics, and vacuum graph repair remain pending.
+
 ## Scope
 
 Implement maintenance paths and insert-drift observability.

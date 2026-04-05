@@ -21,6 +21,11 @@ All insert behavior SHALL be relation-local. On partitioned tables, a partition 
 
 Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only.
 
+`build_source_column` note:
+- `build_source_column` is a bulk-build-only reloption in v0.1.
+- Indexes created with `build_source_column` MAY use raw `float4[]` vectors during `ambuild`.
+- `aminsert` does not accept a raw-vector insert path for those indexes in v0.1 and MAY reject live inserts until a compatible runtime contract exists.
+
 #### Sequence Diagram
 
 ```mermaid

@@ -19,6 +19,11 @@ The extension SHALL implement the scan callbacks for the `tqhnsw` access method:
 
 On partitioned tables, a scan of a partition-local index SHALL traverse only that partition's index relation.
 
+Implementation stages:
+- Bootstrap stage: scan lifecycle, query validation, and a forward linear non-empty scan MAY exist as an intermediate implementation state for validating page decoding and tuple production.
+- Target stage: planner-visible ordered search requires greedy descent, layer-0 traversal, `ef_search`, and distance-ordered result emission.
+- Until the target stage is credible, the planner MAY be deliberately steered away from `tqhnsw` scans via `amcostestimate`.
+
 ### `ambeginscan`
 
 Initialize scan state:
@@ -153,6 +158,10 @@ Inform the planner of expected costs:
 - `index_selectivity`: based on LIMIT clause if available
 - This enables the planner to choose between index scan and sequential scan
 
+Current staged behavior:
+- Before ordered traversal is complete, the implementation MAY return deliberately prohibitive costs so the planner does not select `tqhnsw`.
+- This temporary planner gate is documented in `ADR-011`.
+
 ### GUC: `tqhnsw.ef_search`
 
 The extension SHALL register a GUC (Grand Unified Configuration) parameter:
@@ -186,7 +195,7 @@ All page reads during scan use `ReadBuffer` + `LockBuffer(BUFFER_LOCK_SHARE)`. P
 Results SHALL be ordered by ascending negative inner product (highest similarity first).
 
 ### FR-009-AC-3: Index scan used
-EXPLAIN SHALL confirm an Index Scan using `tqhnsw`, not a sequential scan, when the index exists.
+EXPLAIN SHALL confirm an Index Scan using `tqhnsw`, not a sequential scan, when the index exists and the bootstrap-stage planner cost override has been removed.
 
 ### FR-009-AC-4: ef_search affects recall
 Higher ef_search values SHALL produce higher recall at the cost of increased latency.

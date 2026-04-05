@@ -1,5 +1,11 @@
 # Task 08: Safety and CI
 
+Status: partially started
+
+Progress notes:
+- Build/test/lint targets exist in the repo.
+- CI wiring, fuzzing, and formal unsafe-audit enforcement remain pending.
+
 ## Scope
 
 Enforce safety, stability, licensing, and CI verification across the repo.

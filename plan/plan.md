@@ -6,30 +6,30 @@ This plan is derived from the current `spec/` set for `tqvector`, with dependenc
 
 ### Stakeholder Requirements
 
-- [ ] **StR-001**: Native compressed vector storage and ANN search inside PostgreSQL.
-- [ ] **StR-002**: MIT-licensed extension owned by Agent-IX with permissive dependencies only.
-- [ ] **StR-003**: Partition-local HNSW operation with no cross-partition coupling.
+- [x] **StR-001**: Native compressed vector storage and ANN search inside PostgreSQL.
+- [x] **StR-002**: MIT-licensed extension owned by Agent-IX with permissive dependencies only.
+- [x] **StR-003**: Partition-local HNSW operation with no cross-partition coupling.
 
 ### Functional Requirements
 
-- [ ] **FR-001**: Register `tqvector` type and binary datum layout.
-- [ ] **FR-002**: Text I/O for `tqvector`.
-- [ ] **FR-003**: Binary send/receive protocol for `tqvector`.
-- [ ] **FR-004**: `encode_to_tqvector` API from fp32 arrays.
-- [ ] **FR-005**: Code-to-code inner product function.
-- [ ] **FR-006**: SQL operators and operator class.
-- [ ] **FR-007**: HNSW page layout and tuple/page invariants.
-- [ ] **FR-008**: HNSW bulk build callbacks.
+- [x] **FR-001**: Register `tqvector` type and binary datum layout.
+- [x] **FR-002**: Text I/O for `tqvector`.
+- [x] **FR-003**: Binary send/receive protocol for `tqvector`.
+- [x] **FR-004**: `encode_to_tqvector` API from fp32 arrays.
+- [x] **FR-005**: Code-to-code inner product function.
+- [x] **FR-006**: SQL operators and operator class.
+- [x] **FR-007**: HNSW page layout and tuple/page invariants.
+- [x] **FR-008**: HNSW bulk build callbacks.
 - [ ] **FR-009**: HNSW scan callbacks and `ef_search` behavior.
 - [ ] **FR-010**: HNSW vacuum callbacks.
-- [ ] **FR-011**: WAL safety via GenericXLog.
-- [ ] **FR-012**: SQL bootstrap and extension packaging.
-- [ ] **FR-013**: Two-stage quantization pipeline.
+- [x] **FR-011**: WAL safety via GenericXLog.
+- [x] **FR-012**: SQL bootstrap and extension packaging.
+- [x] **FR-013**: Two-stage quantization pipeline.
 - [ ] **FR-014**: SIMD acceleration with scalar fallback.
-- [ ] **FR-015**: `ProdQuantizer` orchestrator and core encode/decode/score APIs.
+- [x] **FR-015**: `ProdQuantizer` orchestrator and core encode/decode/score APIs.
 - [ ] **FR-016**: HNSW online insert callbacks and insert-drift statistics.
-- [ ] **FR-017**: Prepared-query inner product function.
-- [ ] **FR-018**: Negative score wrapper functions.
+- [x] **FR-017**: Prepared-query inner product function.
+- [x] **FR-018**: Negative score wrapper functions.
 
 ### Non-Functional Requirements
 
@@ -91,7 +91,7 @@ The shortest path to an end-to-end usable extension is:
 
 ### Phase 0: Scaffolding and repo setup
 
-- [ ] Create crate/module skeleton for:
+- [x] Create crate/module skeleton for:
   - type and I/O
   - quantizer core
   - SQL function bindings
@@ -105,13 +105,13 @@ Parallelism:
 
 ### Phase 1: Scalar quantizer core
 
-- [ ] Implement `FR-013` scalar math:
+- [x] Implement `FR-013` scalar math:
   - SRHT/FWHT
   - codebook generation
   - MSE packing
   - QJL packing
   - decode approximation helpers
-- [ ] Implement `FR-015` scalar `ProdQuantizer`:
+- [x] Implement `FR-015` scalar `ProdQuantizer`:
   - constructor
   - encode/decode
   - query preparation
@@ -129,13 +129,13 @@ Merge point:
 
 ### Phase 2: Datum and SQL function surface
 
-- [ ] Implement `FR-001` datum pack/unpack and type registration.
-- [ ] Implement `FR-002` text I/O.
-- [ ] Implement `FR-003` binary send/receive.
-- [ ] Implement `FR-004` `encode_to_tqvector`.
-- [ ] Implement `FR-005`, `FR-017`, `FR-018` SQL-visible scoring functions.
-- [ ] Implement `FR-006` operators and operator class.
-- [ ] Implement `FR-012` extension packaging and SQL install/uninstall.
+- [x] Implement `FR-001` datum pack/unpack and type registration.
+- [x] Implement `FR-002` text I/O.
+- [x] Implement `FR-003` binary send/receive.
+- [x] Implement `FR-004` `encode_to_tqvector`.
+- [x] Implement `FR-005`, `FR-017`, `FR-018` SQL-visible scoring functions.
+- [x] Implement `FR-006` operators and operator class.
+- [x] Implement `FR-012` extension packaging and SQL install/uninstall.
 
 Parallelism:
 - Workstream B1: datum/type/I/O (`FR-001` to `FR-003`)
@@ -148,8 +148,8 @@ Merge points:
 
 ### Phase 3: Page layout and storage engine base
 
-- [ ] Implement `FR-007` page structs, tuple codecs, fit checks, and level-cap logic.
-- [ ] Implement `FR-011` GenericXLog wrapper utilities and write discipline.
+- [x] Implement `FR-007` page structs, tuple codecs, fit checks, and level-cap logic.
+- [x] Implement `FR-011` GenericXLog wrapper utilities and write discipline.
 
 Parallelism:
 - Workstream C1: tuple/page layout and page inspection helpers
@@ -160,8 +160,9 @@ Merge point:
 
 ### Phase 4: HNSW build and query path
 
-- [ ] Implement `FR-008` bulk build using `hnsw_rs` plus two-pass serialization.
+- [x] Implement `FR-008` bulk build using `hnsw_rs` plus two-pass serialization.
 - [ ] Implement `FR-009` scan using prepared-query scoring and `ef_search`.
+  Current state: scan lifecycle, query ownership, metadata caching, prepared-query caching, and a forward linear bootstrap path are implemented; graph traversal, `ef_search`, and planner enablement remain pending.
 
 Parallelism:
 - Workstream D1: bulk-build heap scan, graph extraction, and TID fixup
@@ -176,6 +177,7 @@ Merge points:
 
 - [ ] Implement `FR-010` vacuum with three-pass repair.
 - [ ] Implement `FR-016` online insert and insert-drift statistics.
+  Current state: live insert shape validation, metadata initialization, duplicate coalescing, and tail-page append/reuse are implemented; graph-aware insertion, drift statistics, and `build_source_column` insert support remain pending.
 
 Parallelism:
 - Workstream E1: vacuum and graph repair

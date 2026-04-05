@@ -1,5 +1,7 @@
 # Task 03: SQL Surface
 
+Status: complete
+
 ## Scope
 
 Implement the public SQL-callable encode and scoring functions plus operator and packaging support.

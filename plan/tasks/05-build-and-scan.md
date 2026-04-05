@@ -1,5 +1,13 @@
 # Task 05: Build and Scan
 
+Status: in progress
+
+Progress notes:
+- Build path is implemented and validated.
+- Scan lifecycle, query payload ownership, metadata caching, prepared-query caching, and bootstrap
+  linear tuple production are implemented.
+- Graph traversal, `ef_search`, distance ordering, and planner enablement remain pending.
+
 ## Scope
 
 Implement bulk build and indexed query execution for `tqhnsw`.
