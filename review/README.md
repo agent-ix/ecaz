@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `fce37bd`
+Current head: `d66aa85`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -44,7 +44,11 @@ Current tqhnsw state summary:
 - Linear scan coverage now verifies that repeated `amgettuple` calls stay `false` after exhaustion.
 - Linear scan coverage now verifies that `amgettuple` still rejects backward scan direction after a valid `amrescan`.
 - Linear scan coverage now verifies that `amrescan` after full exhaustion restarts tuple production from the beginning.
+- Build-time detoast handling now uses pointer comparison against the original datum to decide whether `pg_detoast_datum_packed` returned an allocated copy.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
+
+External review bundles:
+- `review/external/2026-04-05-claude-opus/README.md`
 
 Review triage at `46d00bb`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
@@ -61,6 +65,7 @@ Review triage at `46d00bb`:
 - Addressed `06-scan-descriptor-scaffolding.md` comment 6 with repeated-`amendscan` idempotency coverage.
 - Marked `06-scan-descriptor-scaffolding.md` comments 1-5 and 7 as not needed for this stage because they validate accepted lifecycle behavior.
 - Marked `08-amgettuple-state-gating.md` comments 1-7 as not needed for this stage; the repeated-rescan note remains blocked on the current fatal scan-execution boundary and does not justify more helper surface yet.
+- Addressed external review `18-varlena-detoast-check-inverted.md` by switching both build detoast paths to pointer-comparison copy detection.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -74,6 +79,7 @@ Open requests:
 - `16-query-inner-product-gamma-payload.md`
 - `17-linear-scan-exhaustion-and-direction-guards.md`
 - `18-linear-scan-rescan-after-exhaustion.md`
+- `19-build-detoast-copy-detection.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
