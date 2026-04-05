@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `03ddc18`
+Current head: `55148a9`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -60,6 +60,8 @@ Current tqhnsw state summary:
 - `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
 - The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
 - Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
+- The bootstrap linear scan now also computes and stores an operator-facing `<#>` score for the current result element by combining the cached prepared query with the representative heap row's persisted `gamma`.
+- Current-result score coverage now verifies that score validity flips on with first tuple production, remains attached while draining duplicate heap TIDs from one element, and clears back to zero on exhaustion.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -109,7 +111,7 @@ Review triage at `46d00bb`:
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by caching the relation block count in scan state instead of re-reading it for each bootstrap scan step.
 - Remaining open feedback notes around page-lock batching and larger architectural changes are deferred while ordered scan execution groundwork continues.
 - Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
-- Current-result state now has explicit lifecycle coverage, but score calculation remains deferred until the scan path can reconstruct or store the candidate payload needed for query scoring.
+- Addressed the next ordered-scan groundwork slice by teaching the bootstrap scan to compute a current-result `<#>` value from the cached prepared query plus persisted candidate `gamma`.
 - Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
 - The next structural code slice before scan traversal is continuing the `src/am/mod.rs` split into the planned submodules so graph-scan work lands on a cleaner review surface.
 
@@ -145,6 +147,7 @@ Open requests:
 - `35-am-build-tuple-and-source-scan-split.md`
 - `36-am-build-graph-and-page-staging-split.md`
 - `37-am-build-state-type-ownership.md`
+- `38-scan-current-result-scoring.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
