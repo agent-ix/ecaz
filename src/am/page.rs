@@ -543,6 +543,10 @@ fn aligned_tuple_bytes(payload_len: usize) -> usize {
     }
 }
 
+pub fn raw_tuple_storage_bytes(payload_len: usize) -> usize {
+    aligned_tuple_bytes(payload_len)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

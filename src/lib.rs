@@ -1137,6 +1137,45 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_reuses_tail_page_when_space_remains() {
+        Spi::run("CREATE TABLE tqhnsw_insert_tail_reuse (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_tail_reuse VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_tail_reuse_idx ON tqhnsw_insert_tail_reuse USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_tail_reuse_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_block_count, _metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(before_block_count, 2, "seed build should fit on one data page");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_tail_reuse VALUES
+             (4, encode_to_tqvector(ARRAY[0.5, -0.5, 0.1, 0.2], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        let (after_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_eq!(after_block_count, before_block_count, "insert should reuse existing tail page");
+        assert_eq!(metadata.seed, 42);
+
+        let tuple_count = data_pages.iter().map(|page| page.tuples.len()).sum::<usize>();
+        assert_eq!(tuple_count, 8, "three build tuples plus one inserted tuple should store four pairs");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
         Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
