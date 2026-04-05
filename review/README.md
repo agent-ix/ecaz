@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `49e623e`
+Current head: `159bf20`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -8,7 +8,7 @@ Purpose:
 
 Validation status at this checkpoint:
 - `cargo test`
-- `cargo pgrx test pg17`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
 - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 
 Current tqhnsw state summary:
@@ -39,6 +39,8 @@ Current tqhnsw state summary:
 - `amgettuple` now supports a forward-only linear data-page scan for non-empty indexes.
 - The current non-empty scan path now returns every heap TID from each live element tuple before advancing and keeps duplicate-drain progress in scan-local opaque state.
 - Query-payload ownership, linear scan cursor state, and duplicate heap-TID progress all now live in scan-owned opaque memory.
+- `tqvector_query_inner_product` now reconstructs the full persisted quantized payload from `(gamma, code_bytes)` before calling the prepared-query scorer.
+- Query-inner-product coverage now verifies that the SQL-facing scorer uses the persisted `gamma` term instead of passing only code bytes into the quantizer API.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 Review triage at `46d00bb`:
@@ -66,6 +68,7 @@ Open requests:
 - `13-amgettuple-empty-index-noop.md`
 - `14-rescan-query-payload-state.md`
 - `15-amgettuple-linear-forward-scan.md`
+- `16-query-inner-product-gamma-payload.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
