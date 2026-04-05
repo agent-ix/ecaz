@@ -1570,6 +1570,57 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw amgettuple requires amrescan before scan execution")]
+    fn test_tqhnsw_gettuple_scaffold_requires_rescan() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_scaffold (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_scaffold VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_scaffold_idx ON tqhnsw_gettuple_scaffold USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_scaffold_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        unsafe { am::debug_gettuple_without_rescan(index_oid) };
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw scan execution is not implemented yet: amgettuple")]
+    fn test_tqhnsw_gettuple_scaffold_rejects_execution_after_rescan() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_exec_scaffold (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_exec_scaffold VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_exec_scaffold_idx ON tqhnsw_gettuple_exec_scaffold USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_exec_scaffold_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        unsafe { am::debug_gettuple_after_rescan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(

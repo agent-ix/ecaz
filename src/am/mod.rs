@@ -415,10 +415,28 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amgettuple(
-    _scan: pg_sys::IndexScanDesc,
+    scan: pg_sys::IndexScanDesc,
     _direction: pg_sys::ScanDirection::Type,
 ) -> bool {
-    unsafe { pgrx::pgrx_extern_c_guard(|| unsupported_build_only_error("amgettuple")) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if scan.is_null() {
+                pgrx::error!("tqhnsw amgettuple received a null scan descriptor");
+            }
+
+            let opaque_ptr = (*scan).opaque.cast::<TqScanOpaque>();
+            if opaque_ptr.is_null() {
+                pgrx::error!("tqhnsw amgettuple missing scan opaque state");
+            }
+
+            let opaque = &*opaque_ptr;
+            if !opaque.rescan_called {
+                pgrx::error!("tqhnsw amgettuple requires amrescan before scan execution");
+            }
+
+            pgrx::error!("tqhnsw scan execution is not implemented yet: amgettuple")
+        })
+    }
 }
 
 unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanDesc) {
@@ -1991,6 +2009,28 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData::default();
+    orderby.sk_argument =
+        pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 }
 
 #[cfg(test)]
