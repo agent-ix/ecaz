@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `d6679b7`
+Current head: `55d3079`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -70,6 +70,7 @@ Current tqhnsw state summary:
 - `src/am/mod.rs` splitting has started by extracting planner-cost and vacuum callbacks into dedicated submodules with no behavior change.
 - `src/am/mod.rs` now also extracts relation-option parsing and `amoptions` registration into a dedicated module with no behavior change.
 - `src/am/mod.rs` now also extracts AM routine assembly plus the SQL handler entrypoints into a dedicated module with no behavior change.
+- `src/am/mod.rs` now also extracts the build entry callbacks into a dedicated module while leaving deeper build helpers in place.
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
@@ -137,6 +138,7 @@ Open requests:
 - `31-am-mod-cost-vacuum-split.md`
 - `32-am-options-module-split.md`
 - `33-am-routine-module-split.md`
+- `34-am-build-entrypoints-module-split.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
