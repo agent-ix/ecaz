@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `ffcaf06`
+Current head: `6292e28`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -48,6 +48,7 @@ Current tqhnsw state summary:
 - `encode_to_tqvector` now rejects embeddings whose dimension exceeds the persisted `u16` limit instead of truncating on pack.
 - The in-memory `DataPage` tuple insertion path now uses a checked `u16` conversion for returned offset numbers.
 - The `hnsw_rs` Cargo dependency is now pinned to the currently locked `0.3.4` release instead of `*`.
+- `amrescan` now caches scan dimensions, bits, and derived code length in scan-owned opaque state so `amgettuple` no longer rereads the metadata page on every call.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
 
 External review bundles:
@@ -72,6 +73,7 @@ Review triage at `46d00bb`:
 - Addressed external review `14-encoding-dimension-u16-truncation.md` by adding explicit dimension validation before packing tqvector datums.
 - Addressed external review `10-page-layout-offset-number-u16-overflow.md` by using a checked offset-number conversion in `DataPage::insert_raw_tuple`.
 - Addressed external review `08-hnsw-rs-wildcard-dependency.md` by pinning `hnsw_rs` to the currently locked `0.3.4` release.
+- Addressed external review `04-linear-scan-reads-metadata-every-gettuple.md` by caching scan metadata during `amrescan` and reusing it in `amgettuple`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -89,6 +91,7 @@ Open requests:
 - `20-encode-dimension-boundary.md`
 - `21-page-offset-checked-conversion.md`
 - `22-pin-hnsw-rs-version.md`
+- `23-scan-metadata-cache.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
