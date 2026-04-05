@@ -116,6 +116,25 @@ fn unpack(data: &[u8]) -> Result<(u16, u8, u64, f32, &[u8]), String> {
     Ok((dim, bits, seed, gamma, codes))
 }
 
+pub(crate) fn score_code_inner_product(
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    code_a: &[u8],
+    code_b: &[u8],
+) -> f32 {
+    let quantizer = ProdQuantizer::cached(dim, bits, seed);
+    let mut payload_a = Vec::with_capacity(MIN_BINARY_BYTES + code_a.len());
+    payload_a.extend_from_slice(&0.0_f32.to_le_bytes());
+    payload_a.extend_from_slice(code_a);
+
+    let mut payload_b = Vec::with_capacity(MIN_BINARY_BYTES + code_b.len());
+    payload_b.extend_from_slice(&0.0_f32.to_le_bytes());
+    payload_b.extend_from_slice(code_b);
+
+    quantizer.score_ip_encoded_lite(&payload_a, &payload_b)
+}
+
 fn expected_binary_len(data: &[u8]) -> Result<usize, String> {
     let (dim, bits, ..) = unpack(data)?;
     Ok(MIN_BINARY_BYTES + code_len(dim as usize, bits))
@@ -248,8 +267,7 @@ fn tqvector_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
         );
     }
 
-    let quantizer = ProdQuantizer::cached(dim_a as usize, bits_a, seed_a);
-    quantizer.score_ip_encoded_lite(codes_a, codes_b)
+    score_code_inner_product(dim_a as usize, bits_a, seed_a, codes_a, codes_b)
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]

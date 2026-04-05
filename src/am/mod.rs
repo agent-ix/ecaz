@@ -1,5 +1,6 @@
 //! Access-method scaffolding for the future `tqhnsw` implementation.
 
+use std::cmp::Ordering;
 use std::ffi::c_void;
 use std::mem::{offset_of, size_of};
 use std::ptr;
@@ -506,6 +507,7 @@ unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState
     let bits = state.bits.expect("non-empty build should record bits");
     let mut data_pages = page::DataPageChain::new(state.page_size);
     let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
+    let neighbor_indexes = build_scored_neighbor_graph(state);
 
     for tuple in &state.heap_tuples {
         let element_tid = data_pages
@@ -521,7 +523,10 @@ unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState
     }
 
     for (idx, element_tid) in element_tids.iter().copied().enumerate() {
-        let neighbor_refs = build_neighbor_refs(&element_tids, idx, state.options.m as usize);
+        let neighbor_refs = neighbor_indexes[idx]
+            .iter()
+            .map(|neighbor_idx| element_tids[*neighbor_idx])
+            .collect::<Vec<_>>();
 
         let neighbor_tid = data_pages
             .insert_neighbor(&page::TqNeighborTuple {
@@ -538,7 +543,8 @@ unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to backfill element tuple: {e}"));
     }
 
-    let entry_point = element_tids.first().copied().unwrap_or(page::ItemPointer::INVALID);
+    let entry_point = choose_entry_point(&element_tids, &neighbor_indexes, state)
+        .unwrap_or(page::ItemPointer::INVALID);
 
     unsafe { write_data_pages(index_relation, &data_pages) };
     unsafe {
@@ -557,30 +563,125 @@ unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState
     };
 }
 
-fn build_neighbor_refs(
-    element_tids: &[page::ItemPointer],
-    idx: usize,
-    max_degree: usize,
-) -> Vec<page::ItemPointer> {
-    if element_tids.len() <= 1 || max_degree == 0 {
-        return Vec::new();
+fn build_scored_neighbor_graph(state: &BuildState) -> Vec<Vec<usize>> {
+    if state.heap_tuples.len() <= 1 || state.options.m <= 0 {
+        return vec![Vec::new(); state.heap_tuples.len()];
     }
 
-    let mut candidates = element_tids
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions") as usize;
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let max_degree = usize::try_from(state.options.m)
+        .expect("validated m should be non-negative")
+        .min(state.heap_tuples.len() - 1);
+    let mut graph = Vec::with_capacity(state.heap_tuples.len());
+
+    for (idx, tuple) in state.heap_tuples.iter().enumerate() {
+        let mut candidates = state
+            .heap_tuples
+            .iter()
+            .enumerate()
+            .filter(|(candidate_idx, _)| *candidate_idx != idx)
+            .map(|(candidate_idx, candidate)| {
+                (
+                    candidate_idx,
+                    crate::score_code_inner_product(
+                        dimensions,
+                        bits,
+                        seed,
+                        &tuple.code,
+                        &candidate.code,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            right_score
+                .total_cmp(left_score)
+                .then_with(|| left_idx.cmp(right_idx))
+        });
+        graph.push(
+            candidates
+                .into_iter()
+                .take(max_degree)
+                .map(|(candidate_idx, _)| candidate_idx)
+                .collect(),
+        );
+    }
+
+    graph
+}
+
+fn choose_entry_point(
+    element_tids: &[page::ItemPointer],
+    neighbor_indexes: &[Vec<usize>],
+    state: &BuildState,
+) -> Option<page::ItemPointer> {
+    if element_tids.is_empty() {
+        return None;
+    }
+
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions") as usize;
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+
+    (0..state.heap_tuples.len())
+        .max_by(|left_idx, right_idx| {
+            compare_entry_point_candidates(
+                *left_idx,
+                *right_idx,
+                neighbor_indexes,
+                state,
+                dimensions,
+                bits,
+                seed,
+            )
+        })
+        .map(|idx| element_tids[idx])
+}
+
+fn compare_entry_point_candidates(
+    left_idx: usize,
+    right_idx: usize,
+    neighbor_indexes: &[Vec<usize>],
+    state: &BuildState,
+    dimensions: usize,
+    bits: u8,
+    seed: u64,
+) -> Ordering {
+    let left_score =
+        entry_point_score(left_idx, neighbor_indexes, state, dimensions, bits, seed);
+    let right_score =
+        entry_point_score(right_idx, neighbor_indexes, state, dimensions, bits, seed);
+    left_score
+        .total_cmp(&right_score)
+        .then_with(|| right_idx.cmp(&left_idx))
+}
+
+fn entry_point_score(
+    idx: usize,
+    neighbor_indexes: &[Vec<usize>],
+    state: &BuildState,
+    dimensions: usize,
+    bits: u8,
+    seed: u64,
+) -> f32 {
+    neighbor_indexes[idx]
         .iter()
-        .copied()
-        .enumerate()
-        .filter(|(candidate_idx, _)| *candidate_idx != idx)
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(candidate_idx, _)| {
-        let distance = candidate_idx.abs_diff(idx);
-        (distance, *candidate_idx)
-    });
-    candidates
-        .into_iter()
-        .take(max_degree.min(element_tids.len() - 1))
-        .map(|(_, tid)| tid)
-        .collect()
+        .map(|neighbor_idx| {
+            crate::score_code_inner_product(
+                dimensions,
+                bits,
+                seed,
+                &state.heap_tuples[idx].code,
+                &state.heap_tuples[*neighbor_idx].code,
+            )
+        })
+        .sum()
 }
 
 unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
@@ -738,4 +839,74 @@ pub(crate) unsafe fn debug_index_metadata(
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     (block_count, options.m, options.ef_construction, metadata)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encoded_code(vector: &[f32], bits: u8, seed: u64) -> Vec<u8> {
+        let quantizer = crate::quant::prod::ProdQuantizer::cached(vector.len(), bits, seed);
+        let encoded = quantizer.encode(vector);
+        let mut code = encoded.mse_packed;
+        code.extend_from_slice(&encoded.qjl_packed);
+        code
+    }
+
+    #[test]
+    fn scored_neighbor_graph_prefers_similarity_over_insert_order() {
+        let seed = 42_u64;
+        let bits = 8_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                code: encoded_code(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                code: encoded_code(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                code: encoded_code(&[0.98, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+            },
+        ];
+        let state = BuildState {
+            options: TqHnswOptions {
+                vl_len_: 0,
+                m: 1,
+                ef_construction: 32,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(8),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let graph = build_scored_neighbor_graph(&state);
+
+        assert_eq!(graph.len(), 3);
+        assert_eq!(graph[0], vec![2]);
+        assert_eq!(graph[2], vec![0]);
+    }
 }
