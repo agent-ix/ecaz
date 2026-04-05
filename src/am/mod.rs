@@ -408,6 +408,13 @@ unsafe extern "C-unwind" fn tqhnsw_amrescan(
 
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
+            opaque.scan_dimensions = metadata.dimensions;
+            opaque.scan_bits = metadata.bits;
+            opaque.scan_code_len = if metadata.dimensions == 0 {
+                0
+            } else {
+                crate::code_len(metadata.dimensions as usize, metadata.bits)
+            };
             store_scan_query(opaque, &query);
             reset_scan_position(opaque);
         })
@@ -437,15 +444,13 @@ unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                 pgrx::error!("tqhnsw amgettuple only supports forward scan direction");
             }
 
-            let metadata = read_metadata_page((*scan).indexRelation);
-            if metadata.dimensions == 0 {
+            if opaque.scan_dimensions == 0 {
                 return false;
             }
 
-            let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
             let opaque = &mut *opaque_ptr;
             if let Some(heap_tid) =
-                next_linear_scan_heap_tid((*scan).indexRelation, opaque, code_len)
+                next_linear_scan_heap_tid((*scan).indexRelation, opaque, opaque.scan_code_len)
             {
                 set_scan_heap_tid(scan, heap_tid);
                 return true;
@@ -1291,6 +1296,9 @@ struct TqScanOpaque {
     rescan_called: bool,
     query_dimensions: u16,
     query_values: *mut f32,
+    scan_dimensions: u16,
+    scan_bits: u8,
+    scan_code_len: usize,
     next_block_number: u32,
     next_offset_number: u16,
     scan_exhausted: bool,
@@ -1305,6 +1313,9 @@ impl Default for TqScanOpaque {
             rescan_called: false,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
+            scan_dimensions: 0,
+            scan_bits: 0,
+            scan_code_len: 0,
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             scan_exhausted: false,
@@ -2256,7 +2267,7 @@ pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool
 pub(crate) unsafe fn debug_rescan_query_dimensions(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, u16, Vec<f32>) {
+) -> (bool, u16, Vec<f32>, u16, u8, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2272,6 +2283,9 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
         opaque.rescan_called,
         opaque.query_dimensions,
         read_scan_query(opaque),
+        opaque.scan_dimensions,
+        opaque.scan_bits,
+        opaque.scan_code_len,
     );
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -2285,7 +2299,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     index_oid: pg_sys::Oid,
     first_query: Vec<f32>,
     second_query: Vec<f32>,
-) -> (bool, u16, Vec<f32>) {
+) -> (bool, u16, Vec<f32>, u16, u8, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -2309,6 +2323,9 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
         opaque.rescan_called,
         opaque.query_dimensions,
         read_scan_query(opaque),
+        opaque.scan_dimensions,
+        opaque.scan_bits,
+        opaque.scan_code_len,
     );
 
     unsafe { tqhnsw_amendscan(scan) };
