@@ -2345,6 +2345,91 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_duplicate_scan_spans_multiple_pages() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_duplicate_multipage (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+
+        let payload_len = code_len(4, 8);
+        let duplicate_payload = vec![0x11_u8; payload_len];
+        for id in 1..=10 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
+                 ({id}, '[dim=4,bits=8,seed=42,gamma=0.5]:{payload}'::tqvector)",
+                payload = hex::encode(&duplicate_payload),
+            ))
+            .expect("duplicate insert should succeed");
+        }
+
+        for id in 11..=128 {
+            let code = (0..payload_len)
+                .map(|offset| ((id * 17 + offset as i32) & 0xff) as u8)
+                .collect::<Vec<_>>();
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
+                 ({id}, '[dim=4,bits=8,seed=42,gamma=0.5]:{payload}'::tqvector)",
+                payload = hex::encode(code),
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_duplicate_multipage_idx ON tqhnsw_gettuple_duplicate_multipage USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_duplicate_multipage_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (block_count, _metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert!(
+            block_count > 2,
+            "duplicate-heavy linear scan coverage should span multiple data pages"
+        );
+
+        let observed_tids =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        let expected_tids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                        split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
+                     FROM tqhnsw_gettuple_duplicate_multipage
+                     ORDER BY id",
+                    None,
+                    &[],
+                )
+                .expect("ctid query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    (
+                        u32::try_from(block_number).expect("block number should be non-negative"),
+                        u16::try_from(offset_number).expect("offset number should be positive"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            observed_tids, expected_tids,
+            "linear scan should drain duplicate heap tids and continue across later data pages"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_scaffold_returns_false_for_empty_index() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_empty_scaffold (id bigint primary key, embedding tqvector)",
