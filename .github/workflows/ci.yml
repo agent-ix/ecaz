@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: Rust Checks
@@ -34,6 +38,8 @@ jobs:
   pgrx:
     name: pgrx pg17
     runs-on: ubuntu-24.04
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
     steps:
       - uses: actions/checkout@v4
 
