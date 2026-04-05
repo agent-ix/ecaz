@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `07b741e`
+Current head: `f7cf7f8`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -23,7 +23,8 @@ Current tqhnsw state summary:
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
   - rejects `build_source_column` indexes
-- Scan and vacuum callbacks still hard-error.
+- Vacuum callbacks are benign no-ops that return current page/tuple stats.
+- Scan callbacks still hard-error.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -35,3 +36,4 @@ Requests:
 - `02-tail-page-reuse-and-rollover.md`
 - `03-duplicate-coalescing-and-capacity.md`
 - `04-build-source-live-insert-rejection.md`
+- `05-vacuum-noop-callbacks.md`
