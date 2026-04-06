@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `251e579`
+Current head: `1cf5968`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -171,6 +171,8 @@ Review triage at `46d00bb`:
 - Frontier debug coverage now exposes the expanded-source set so tests can verify which seeded candidates have actually been expanded during bounded bootstrap fill.
 - `amgettuple` now consumes one bootstrap frontier candidate into explicit scan-owned active-candidate state before falling back to the current linear tuple scan.
 - Partial bootstrap scan progress now advances frontier state and active-candidate state together, while tuple production still comes from the existing linear scan path.
+- Scan helpers can now materialize an active bootstrap candidate into the existing current-result plus pending-heap-tid drain machinery without changing the externally visible linear scan order yet.
+- Regression coverage now verifies that a duplicate-coalesced active candidate loads all of its heap tids into pending drain state and clears the active-candidate slot afterward.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -233,6 +235,7 @@ Open requests:
 - `64-bootstrap-expanded-state-groundwork.md`
 - `65-scan-owned-bootstrap-expanded-state.md`
 - `66-bootstrap-candidate-consumption-state.md`
+- `67-active-candidate-pending-drain-bridge.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
