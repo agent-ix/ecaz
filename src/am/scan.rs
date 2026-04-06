@@ -624,6 +624,7 @@ fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCand
     }
 
     let consumed = candidate_frontier_mut(opaque).remove(head);
+    bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
     recompute_candidate_frontier_head(opaque);
     Some(consumed)
 }
@@ -1074,6 +1075,7 @@ mod tests {
     #[test]
     fn consume_candidate_frontier_head_reselects_then_clears() {
         let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
         candidate_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 7,
@@ -1146,6 +1148,48 @@ mod tests {
         assert!(
             consume_candidate_frontier_head(&mut opaque).is_none(),
             "consuming an empty frontier should stay a no-op"
+        );
+    }
+
+    #[test]
+    fn consuming_frontier_head_forgets_it_from_bootstrap_scheduler() {
+        let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 13,
+                offset_number: 1,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 13,
+                offset_number: 2,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -1.0,
+            score_valid: true,
+        });
+        let seeds = bootstrap_expansion_seed_candidates(&opaque, 0);
+        bootstrap_expansion_mut(&mut opaque).seed_many(seeds);
+        recompute_candidate_frontier_head(&mut opaque);
+
+        let consumed = consume_candidate_frontier_head(&mut opaque)
+            .expect("frontier head consumption should succeed");
+        assert_eq!(
+            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (13, 1),
+            "the lower-score candidate should be consumed first"
+        );
+        assert_eq!(
+            bootstrap_expansion_mut(&mut opaque)
+                .peek_best()
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
+            Some((13, 2)),
+            "consuming a frontier head should immediately forget it from the scan-owned scheduler"
         );
     }
 

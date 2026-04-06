@@ -95,6 +95,32 @@ where
         self.snapshot_frontier()
     }
 
+    pub fn forget_queued(&mut self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
+        let mut removed = None;
+        let retained = self
+            .frontier
+            .drain()
+            .filter_map(|Reverse(queued)| {
+                if queued.candidate.node == node {
+                    removed = Some(queued.candidate);
+                    None
+                } else {
+                    Some(Reverse(queued))
+                }
+            })
+            .collect::<Vec<_>>();
+        self.frontier = retained.into();
+
+        if let Some(candidate) = removed {
+            self.visited.remove(&node);
+            self.discovery_order
+                .retain(|discovered| discovered.node != node);
+            return Some(candidate);
+        }
+
+        None
+    }
+
     pub fn pop_best(&mut self) -> Option<BeamCandidate<NodeId>> {
         self.frontier.pop().map(|Reverse(queued)| queued.candidate)
     }
@@ -488,6 +514,97 @@ mod tests {
             incremental.discovered(),
             trace.discovered.as_slice(),
             "incremental stepping should preserve the same discovery order as run()"
+        );
+    }
+
+    #[test]
+    fn beam_search_forget_queued_removes_frontier_node_and_allows_reseed() {
+        let mut search = BeamSearch::new(4);
+        search.seed_many([
+            BeamCandidate::new(1_u64, 0.9),
+            BeamCandidate::new(3_u64, 0.2),
+            BeamCandidate::new(2_u64, 0.7),
+        ]);
+
+        let removed = search
+            .forget_queued(3)
+            .expect("queued node should be removable from the frontier");
+        assert_eq!(removed, BeamCandidate::new(3_u64, 0.2));
+        assert_eq!(
+            search
+                .frontier_snapshot()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![2, 1],
+            "forgetting a queued node should remove it from the best-first frontier ordering"
+        );
+        assert_eq!(
+            search
+                .discovered()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![1, 2],
+            "forgetting a queued node should remove it from scheduler discovery state"
+        );
+        assert_eq!(
+            search.visited_count(),
+            2,
+            "forgetting a queued node should release its visited slot"
+        );
+
+        assert!(
+            search.seed(BeamCandidate::new(3_u64, 0.1)),
+            "forgotten queued nodes should be seedable again"
+        );
+        assert_eq!(
+            search.peek_best().map(|candidate| candidate.node),
+            Some(3),
+            "reseeding a forgotten node should restore it to the frontier with its new score"
+        );
+    }
+
+    #[test]
+    fn beam_search_forget_queued_ignores_expanded_or_unknown_nodes() {
+        let (edges, scores) = mock_graph();
+        let mut search = BeamSearch::new(4);
+        search.seed(BeamCandidate::new(1, scores[&1]));
+
+        let expanded = search
+            .expand_one(|candidate| {
+                edges[&candidate.node]
+                    .iter()
+                    .copied()
+                    .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                    .collect::<Vec<_>>()
+            })
+            .expect("seed should expand");
+        assert_eq!(expanded.node, 1);
+
+        assert_eq!(
+            search.forget_queued(1),
+            None,
+            "expanded nodes are no longer queued and should not be forgotten by the queued-node API"
+        );
+        assert_eq!(
+            search.forget_queued(99),
+            None,
+            "unknown nodes should leave scheduler state untouched"
+        );
+        assert_eq!(
+            search
+                .frontier_snapshot()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3, 4, 2],
+            "non-removals should preserve existing frontier order"
+        );
+        assert_eq!(
+            search.visited_count(),
+            4,
+            "non-removals should preserve visited accounting"
         );
     }
 }
