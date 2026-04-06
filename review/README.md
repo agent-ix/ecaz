@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `4b1ad1c`
+Current head: `5a5d620`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -198,6 +198,7 @@ Review triage at `46d00bb`:
 - The visible frontier seam now also owns iteration and slot reads in `src/am/scan.rs`, so bootstrap seeding and fallback score-order reads no longer reach around the local container API for raw slice iteration.
 - The raw visible-frontier slice is now private to `src/am/scan.rs`; external scan debug helpers consume explicit snapshot/slot helpers instead of reaching across the module boundary for the frontier slice directly.
 - Scan state now owns the visible frontier through an explicit container state type in `src/am/scan.rs` instead of a raw `*mut Vec<ScanCandidate>`, which removes the last raw-Vec pointer from `TqScanOpaque` without changing frontier behavior.
+- Visible-frontier behavior now lives directly on the owned frontier-state type in `src/am/scan.rs`, replacing the extra read/write wrapper structs and making the container boundary simpler and more explicit.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -289,6 +290,7 @@ Open requests:
 - `93-visible-frontier-iteration-seam.md`
 - `94-private-frontier-slice-boundary.md`
 - `95-owned-visible-frontier-state.md`
+- `96-frontier-behavior-on-owned-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
