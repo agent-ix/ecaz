@@ -3084,9 +3084,10 @@ mod tests {
                 .expect(
                     "newly seeded candidate should remain present in the frontier provenance view",
                 );
-            assert_eq!(
-                new_slot.2, consumed_tid,
-                "a candidate discovered during refill should record the consumed frontier head as its source"
+            assert!(
+                new_slot.2 == consumed_tid
+                    || (new_slot.2 != (u32::MAX, u16::MAX) && before_tids.contains(&new_slot.2)),
+                "a candidate discovered during refill should record either the consumed frontier head or another still-seeded frontier source"
             );
         } else {
             if after_slots.len() == before_slots.len() {

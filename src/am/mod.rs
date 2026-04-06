@@ -9,6 +9,7 @@ pub mod page;
 mod routine;
 mod search;
 mod scan;
+mod scan_debug;
 mod shared;
 mod vacuum;
 pub mod wal;
@@ -28,7 +29,7 @@ pub(crate) use self::shared::{
 };
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::scan::{
+pub(crate) use self::scan_debug::{
     debug_begin_end_scan, debug_candidate_frontier_head_lifecycle,
     debug_consume_candidate_frontier_head, debug_consume_candidate_frontier_head_slots,
     debug_end_scan_twice, debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
