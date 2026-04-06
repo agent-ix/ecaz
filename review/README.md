@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `7b62152`
+Current head: `254a70e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -177,6 +177,7 @@ Review triage at `46d00bb`:
 - Active bootstrap candidates can now materialize into visible tuple production before linear fallback, and scan-owned emitted-element state now prevents the later linear pass from returning those same element heap tids a second time.
 - After each candidate consume, bounded bootstrap refill now preserves expanded-source state and keeps topping up the frontier with the same score-ordered multi-hop policy instead of stopping after one direct neighbor refill.
 - Consume/refill now skips rereading a consumed source if that source was already expanded during earlier bootstrap work, while still topping up from other remaining unexpanded frontier candidates.
+- Visible candidate-first tuple production now consumes the next bootstrap frontier candidate directly into current-result plus pending heap-TID drain state instead of staging through `active_candidate` first, while keeping `active_candidate` available for narrower helper/debug paths.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -244,6 +245,7 @@ Open requests:
 - `69-active-candidate-first-visible-results.md`
 - `70-bootstrap-frontier-top-up-after-consume.md`
 - `71-skip-reexpanding-consumed-bootstrap-sources.md`
+- `72-direct-frontier-result-materialization.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
