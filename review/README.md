@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `5e082a5`
+Current head: `cb9e53a`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -201,6 +201,7 @@ Review triage at `46d00bb`:
 - Visible-frontier behavior now lives directly on the owned frontier-state type in `src/am/scan.rs`, replacing the extra read/write wrapper structs and making the container boundary simpler and more explicit.
 - Stale queued bootstrap nodes are now cleaned up through a search-owned `peek_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer open-codes the scheduler loop that peeks, validates visibility, forgets stale nodes, and retries.
 - Scheduler-first frontier consumption now also goes through a search-owned `take_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer pairs scheduler head selection with a separate `forget_queued` cleanup step.
+- The owned visible frontier in `src/am/scan.rs` now stores shared `search::BeamCandidate<ItemPointer>` entries internally instead of a second scan-local candidate payload type, while keeping debug/materialization surfaces exposed as `ScanCandidate`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -295,6 +296,7 @@ Open requests:
 - `96-frontier-behavior-on-owned-state.md`
 - `97-search-owned-stale-frontier-cleanup.md`
 - `98-search-owned-scheduler-consume.md`
+- `99-visible-frontier-beam-candidate-storage.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
