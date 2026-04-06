@@ -146,8 +146,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
-            maybe_consume_bootstrap_frontier_candidate((*scan).indexRelation, opaque);
-            if materialize_active_candidate_result((*scan).indexRelation, opaque) {
+            if materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque) {
                 if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
                     set_scan_heap_tid(scan, heap_tid);
                     return true;
@@ -498,8 +497,7 @@ fn fill_bootstrap_frontier<F>(
     max_candidates: usize,
     policy: BootstrapExpandPolicy,
     refill: F,
-)
-where
+) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
     reset_scan_expanded_state(opaque);
@@ -511,8 +509,7 @@ fn top_up_bootstrap_frontier<F>(
     max_candidates: usize,
     policy: BootstrapExpandPolicy,
     mut refill: F,
-)
-where
+) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
     while candidate_frontier_ref(opaque).len() < max_candidates {
@@ -621,14 +618,27 @@ unsafe fn consume_and_refill_bootstrap_frontier(
     opaque: &mut TqScanOpaque,
 ) -> Option<ScanCandidate> {
     let consumed = consume_candidate_frontier_head(opaque)?;
-    refill_bootstrap_frontier_after_consume(
-        opaque,
-        consumed,
-        |source_tid, opaque| unsafe {
-            refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
-        },
-    );
+    refill_bootstrap_frontier_after_consume(opaque, consumed, |source_tid, opaque| unsafe {
+        refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
+    });
     Some(consumed)
+}
+
+unsafe fn materialize_scan_candidate_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    candidate: ScanCandidate,
+) -> bool {
+    let element = unsafe {
+        graph::load_graph_element(index_relation, candidate.element_tid, opaque.scan_code_len)
+    };
+    if element.deleted || element.heaptids.is_empty() {
+        return false;
+    }
+
+    set_current_scan_result(opaque, candidate.element_tid, candidate.score);
+    store_pending_scan_heaptids(opaque, &element.heaptids);
+    true
 }
 
 fn refill_bootstrap_frontier_after_consume<F>(
@@ -663,9 +673,27 @@ fn maybe_consume_bootstrap_frontier_candidate(
         return;
     }
 
-    if let Some(candidate) = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) } {
+    if let Some(candidate) =
+        unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
+    {
         opaque.active_candidate = candidate;
     }
+}
+
+unsafe fn materialize_next_bootstrap_frontier_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if opaque.pending_heaptid_count != 0 || opaque.scan_exhausted || opaque.scan_dimensions == 0 {
+        return false;
+    }
+
+    let Some(candidate) =
+        (unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) })
+    else {
+        return false;
+    };
+    unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
 }
 
 unsafe fn materialize_active_candidate_result(
@@ -677,16 +705,8 @@ unsafe fn materialize_active_candidate_result(
     }
 
     let candidate = opaque.active_candidate;
-    let element =
-        unsafe { graph::load_graph_element(index_relation, candidate.element_tid, opaque.scan_code_len) };
     clear_active_scan_candidate(opaque);
-    if element.deleted || element.heaptids.is_empty() {
-        return false;
-    }
-
-    set_current_scan_result(opaque, candidate.element_tid, candidate.score);
-    store_pending_scan_heaptids(opaque, &element.heaptids);
-    true
+    unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
 }
 
 fn collect_successor_candidates<F>(
@@ -800,7 +820,8 @@ unsafe fn next_linear_scan_heap_tid(
             if emitted_contains_element(opaque, element_tid) {
                 continue;
             }
-            if opaque.active_candidate.score_valid && opaque.active_candidate.element_tid == element_tid
+            if opaque.active_candidate.score_valid
+                && opaque.active_candidate.element_tid == element_tid
             {
                 set_current_scan_result(opaque, element_tid, opaque.active_candidate.score);
                 clear_active_scan_candidate(opaque);
@@ -2636,10 +2657,13 @@ mod tests {
             "the explicit score-order policy should expand the lowest-score unexpanded seeded candidate first"
         );
 
-        mark_expanded_source(&mut opaque, page::ItemPointer {
-            block_number: 10,
-            offset_number: 2,
-        });
+        mark_expanded_source(
+            &mut opaque,
+            page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+        );
         assert_eq!(
             next_bootstrap_expand_index(&opaque, BootstrapExpandPolicy::ScoreOrder),
             Some(0),
