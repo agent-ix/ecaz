@@ -371,12 +371,15 @@ impl VisibleCandidateFrontierState {
             .extend(candidates.into_iter().map(Into::into));
     }
 
-    fn remove_node(&mut self, element_tid: page::ItemPointer) -> Option<ScanCandidate> {
+    fn remove_node(
+        &mut self,
+        element_tid: page::ItemPointer,
+    ) -> Option<search::BeamCandidate<page::ItemPointer>> {
         let index = self
             .candidates
             .iter()
             .position(|candidate| candidate.node == element_tid)?;
-        Some(beam_candidate_to_scan_candidate(self.candidates.remove(index)))
+        Some(self.candidates.remove(index))
     }
 }
 
@@ -677,9 +680,7 @@ fn take_candidate_frontier_node(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    visible_frontier_mut(opaque)
-        .remove_node(element_tid)
-        .map(Into::into)
+    visible_frontier_mut(opaque).remove_node(element_tid)
 }
 
 fn consume_candidate_frontier_head(
