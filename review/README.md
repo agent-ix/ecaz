@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `90a2761`
+Current head: `b2971cf`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -189,6 +189,7 @@ Review triage at `46d00bb`:
 - Recomputed visible frontier-head selection now prefers the scan-owned beam scheduler's best queued node, with the old vector scan retained as a fallback safety path.
 - Visible frontier-head selection and frontier-head consumption now defensively purge stale queued scheduler nodes that no longer map to any live visible frontier candidate instead of repeatedly peeking the same unmappable scheduler head.
 - Bootstrap frontier top-up no longer silently reseeds the beam scheduler from the visible frontier when the scheduler is empty; helper/test paths that expect top-up to run now seed the scheduler explicitly instead of relying on hidden Vec-to-beam recovery.
+- Visible frontier head is now derived on demand from the scan-owned scheduler plus Vec fallback instead of being cached as separate mutable scan state, shrinking one remaining piece of Vec-side authority during the dual-structure transition.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -271,6 +272,7 @@ Open requests:
 - `84-unified-initial-frontier-seeding.md`
 - `85-stale-scheduler-node-cleanup.md`
 - `86-remove-silent-top-up-reseed.md`
+- `87-derived-frontier-head-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
