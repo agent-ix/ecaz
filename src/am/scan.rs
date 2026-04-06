@@ -457,6 +457,9 @@ fn current_candidate_frontier_head(
         return Some(candidate);
     }
 
+    // The scheduler tracks unexpanded expansion sources, not all still-visible result
+    // candidates. After bootstrap fill reaches capacity, the visible frontier can still hold
+    // candidates whose scheduler entries were already consumed during expansion.
     visible_frontier_ref(opaque).best_candidate_by_score()
 }
 
@@ -1332,6 +1335,31 @@ mod tests {
                 .map(|tid| (tid.block_number, tid.offset_number)),
             Some((14, 2)),
             "frontier-head derivation should prefer the scan-owned scheduler's current best queued node"
+        );
+    }
+
+    #[test]
+    fn current_candidate_frontier_head_tid_falls_back_after_scheduler_drains() {
+        let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        visible_frontier_mut(&mut opaque).push(beam_candidate(17, 1, -3.0));
+        visible_frontier_mut(&mut opaque).push(beam_candidate(17, 2, -1.0));
+        seed_existing_frontier_into_expansion(&mut opaque);
+
+        bootstrap_expansion_mut(&mut opaque)
+            .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>());
+        bootstrap_expansion_mut(&mut opaque)
+            .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>());
+
+        assert!(
+            bootstrap_expansion_mut(&mut opaque).peek_best().is_none(),
+            "expanding both seeded sources should drain the scheduler while leaving the visible frontier intact"
+        );
+        assert_eq!(
+            current_candidate_frontier_head_tid(&mut opaque)
+                .map(|tid| (tid.block_number, tid.offset_number)),
+            Some((17, 1)),
+            "frontier-head derivation must still fall back to the visible frontier once the scheduler has no queued expansion sources"
         );
     }
 
