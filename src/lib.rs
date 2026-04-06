@@ -3140,6 +3140,61 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_active_candidate_materializes_into_pending_drain() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_active_candidate_materialize (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_active_candidate_materialize VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_active_candidate_materialize_idx ON tqhnsw_active_candidate_materialize USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_active_candidate_materialize_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (active_before, materialized, current_result_tid, pending_heap_tids, active_cleared) =
+            unsafe {
+                am::debug_materialize_active_candidate_result(
+                    index_oid,
+                    vec![1.0, 0.0, 0.5, -1.0],
+                )
+            };
+
+        assert!(
+            active_before.0,
+            "bootstrap candidate consumption should produce an active candidate before materialization"
+        );
+        assert!(
+            materialized,
+            "active candidate should materialize into the pending heap-tid drain path"
+        );
+        assert_eq!(
+            current_result_tid, active_before.1,
+            "materializing the active candidate should attach current-result state to that candidate"
+        );
+        assert_eq!(
+            pending_heap_tids.len(),
+            2,
+            "duplicate-coalesced active candidates should populate all duplicate heap tids into pending drain state"
+        );
+        assert!(
+            active_cleared,
+            "active candidate state should clear once it has been materialized into pending drain state"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_visited_seed_state_tracks_frontier_candidates() {
         Spi::run(
             "CREATE TABLE tqhnsw_visited_seed_state (id bigint primary key, embedding tqvector)",

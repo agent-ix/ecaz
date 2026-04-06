@@ -592,6 +592,27 @@ fn maybe_consume_bootstrap_frontier_candidate(
     }
 }
 
+unsafe fn materialize_active_candidate_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if !opaque.active_candidate.score_valid || opaque.pending_heaptid_count != 0 {
+        return false;
+    }
+
+    let candidate = opaque.active_candidate;
+    let element =
+        unsafe { graph::load_graph_element(index_relation, candidate.element_tid, opaque.scan_code_len) };
+    clear_active_scan_candidate(opaque);
+    if element.deleted || element.heaptids.is_empty() {
+        return false;
+    }
+
+    set_current_scan_result(opaque, candidate.element_tid, candidate.score);
+    store_pending_scan_heaptids(opaque, &element.heaptids);
+    true
+}
+
 fn collect_successor_candidates<F>(
     neighbor_tids: &[page::ItemPointer],
     max_candidates: usize,
@@ -977,6 +998,15 @@ type DebugBootstrapConsumeState = (
     (bool, HeapTidCoords, HeapTidCoords, f32),
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugActiveCandidateMaterializationState = (
+    (bool, HeapTidCoords, f32),
+    bool,
+    HeapTidCoords,
+    Vec<HeapTidCoords>,
+    bool,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1519,6 +1549,54 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         active_candidate,
         after_head,
         after_slots,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_materialize_active_candidate_result(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugActiveCandidateMaterializationState {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    maybe_consume_bootstrap_frontier_candidate(index_relation, opaque);
+    let active_before = (
+        opaque.active_candidate.score_valid,
+        (
+            opaque.active_candidate.element_tid.block_number,
+            opaque.active_candidate.element_tid.offset_number,
+        ),
+        opaque.active_candidate.score,
+    );
+    let materialized = unsafe { materialize_active_candidate_result(index_relation, opaque) };
+    let current_result_tid = (
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
+    );
+    let pending_heap_tids = opaque.pending_heaptids[..opaque.pending_heaptid_count as usize]
+        .iter()
+        .map(|tid| (tid.block_number, tid.offset_number))
+        .collect::<Vec<_>>();
+    let active_cleared = !opaque.active_candidate.score_valid;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        active_before,
+        materialized,
+        current_result_tid,
+        pending_heap_tids,
+        active_cleared,
     )
 }
 
