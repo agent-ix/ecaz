@@ -865,8 +865,8 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let consumed_tid = consumed
         .map(|candidate| {
             (
-                candidate.element_tid.block_number,
-                candidate.element_tid.offset_number,
+                candidate.node.block_number,
+                candidate.node.offset_number,
             )
         })
         .unwrap_or((u32::MAX, u16::MAX));
@@ -875,7 +875,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
             let (_, neighbors) = unsafe {
                 graph::load_graph_adjacency(
                     index_relation,
-                    candidate.element_tid,
+                    candidate.node,
                     opaque.scan_code_len,
                 )
             };

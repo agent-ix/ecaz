@@ -680,11 +680,15 @@ pub(super) fn current_candidate_frontier_head_tid(
 fn take_candidate_frontier_node(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
-) -> Option<ScanCandidate> {
-    visible_frontier_mut(opaque).remove_node(element_tid)
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    visible_frontier_mut(opaque)
+        .remove_node(element_tid)
+        .map(Into::into)
 }
 
-fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
+fn consume_candidate_frontier_head(
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
     let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
     if let Some(candidate) = bootstrap_expansion_mut(opaque)
         .take_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
@@ -741,7 +745,7 @@ unsafe fn refill_candidate_frontier_from_source(
 pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
-) -> Option<ScanCandidate> {
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
     let consumed = consume_candidate_frontier_head(opaque)?;
     refill_bootstrap_frontier_after_consume(opaque, consumed, |source_tid, opaque| unsafe {
         refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
@@ -752,30 +756,30 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
 unsafe fn materialize_scan_candidate_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
-    candidate: ScanCandidate,
+    candidate: search::BeamCandidate<page::ItemPointer>,
 ) -> bool {
     let element = unsafe {
-        graph::load_graph_element(index_relation, candidate.element_tid, opaque.scan_code_len)
+        graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len)
     };
     if element.deleted || element.heaptids.is_empty() {
         return false;
     }
 
-    set_current_scan_result(opaque, candidate.element_tid, candidate.score);
+    set_current_scan_result(opaque, candidate.node, candidate.score);
     store_pending_scan_heaptids(opaque, &element.heaptids);
     true
 }
 
 fn refill_bootstrap_frontier_after_consume<F>(
     opaque: &mut TqScanOpaque,
-    consumed: ScanCandidate,
+    consumed: search::BeamCandidate<page::ItemPointer>,
     mut refill: F,
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    if !expanded_contains_source(opaque, consumed.element_tid) {
-        mark_expanded_source(opaque, consumed.element_tid);
-        refill(consumed.element_tid, opaque);
+    if !expanded_contains_source(opaque, consumed.node) {
+        mark_expanded_source(opaque, consumed.node);
+        refill(consumed.node, opaque);
     }
 
     top_up_bootstrap_frontier(
@@ -801,7 +805,7 @@ pub(super) fn maybe_consume_bootstrap_frontier_candidate(
     if let Some(candidate) =
         unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
     {
-        opaque.active_candidate = candidate;
+        opaque.active_candidate = candidate.into();
     }
 }
 
@@ -829,7 +833,7 @@ pub(super) unsafe fn materialize_active_candidate_result(
         return false;
     }
 
-    let candidate = opaque.active_candidate;
+    let candidate = search::BeamCandidate::from(opaque.active_candidate);
     clear_active_scan_candidate(opaque);
     unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
 }
@@ -1191,10 +1195,7 @@ mod tests {
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("frontier head consumption should return the current best slot");
         assert_eq!(
-            (
-                consumed.element_tid.block_number,
-                consumed.element_tid.offset_number
-            ),
+            (consumed.node.block_number, consumed.node.offset_number),
             (7, 1),
             "consumption should return the previously best frontier slot"
         );
@@ -1217,10 +1218,7 @@ mod tests {
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("a remaining valid slot should still be consumable");
         assert_eq!(
-            (
-                consumed.element_tid.block_number,
-                consumed.element_tid.offset_number
-            ),
+            (consumed.node.block_number, consumed.node.offset_number),
             (7, 2),
             "the second consumption should return the reseated head slot"
         );
@@ -1265,7 +1263,7 @@ mod tests {
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("frontier head consumption should succeed");
         assert_eq!(
-            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (consumed.node.block_number, consumed.node.offset_number),
             (13, 1),
             "the lower-score candidate should be consumed first"
         );
@@ -1354,7 +1352,7 @@ mod tests {
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("frontier consumption should prefer the scheduler's best queued node");
         assert_eq!(
-            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (consumed.node.block_number, consumed.node.offset_number),
             (15, 2),
             "scheduler-owned best-node selection should override Vec score order during consumption"
         );
@@ -1673,12 +1671,7 @@ mod tests {
         let mut refilled_sources = Vec::new();
         refill_bootstrap_frontier_after_consume(
             &mut opaque,
-            ScanCandidate {
-                element_tid: consumed_tid,
-                source_tid: page::ItemPointer::INVALID,
-                score: -3.0,
-                score_valid: true,
-            },
+            search::BeamCandidate::new(consumed_tid, -3.0),
             |source_tid, opaque| {
                 refilled_sources.push(source_tid);
                 if source_tid == sibling_tid {
