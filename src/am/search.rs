@@ -128,6 +128,12 @@ where
         self.snapshot_frontier()
     }
 
+    pub fn queued_candidate(&self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
+        self.frontier.iter().find_map(|Reverse(queued)| {
+            (queued.candidate.node == node).then_some(queued.candidate)
+        })
+    }
+
     pub fn forget_queued(&mut self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
         let mut removed = None;
         let retained = self
@@ -703,6 +709,64 @@ mod tests {
             search.discovered(),
             &[BeamCandidate::new(3_u64, 0.3)],
             "consumed candidates should leave scheduler discovery state"
+        );
+    }
+
+    #[test]
+    fn beam_search_queued_candidate_returns_matching_frontier_entry_without_mutation() {
+        let mut search = BeamSearch::new(4);
+        search.seed_many([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::with_source(2_u64, 0.2, 9_u64),
+            BeamCandidate::new(3_u64, 0.3),
+        ]);
+
+        assert_eq!(
+            search.queued_candidate(2),
+            Some(BeamCandidate::with_source(2_u64, 0.2, 9_u64)),
+            "queued_candidate should expose the exact queued candidate for authority checks"
+        );
+        assert_eq!(
+            search.frontier_snapshot(),
+            vec![
+                BeamCandidate::new(1_u64, 0.1),
+                BeamCandidate::with_source(2_u64, 0.2, 9_u64),
+                BeamCandidate::new(3_u64, 0.3),
+            ],
+            "queued_candidate should not mutate frontier ordering or scheduler state"
+        );
+    }
+
+    #[test]
+    fn beam_search_queued_candidate_excludes_expanded_and_forgotten_nodes() {
+        let (edges, scores) = mock_graph();
+        let mut search = BeamSearch::new(4);
+        search.seed(BeamCandidate::new(1, scores[&1]));
+
+        let expanded = search
+            .expand_one(|candidate| {
+                edges[&candidate.node]
+                    .iter()
+                    .copied()
+                    .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                    .collect::<Vec<_>>()
+            })
+            .expect("seed should expand");
+        assert_eq!(expanded.node, 1);
+        assert_eq!(
+            search.queued_candidate(1),
+            None,
+            "expanded nodes should no longer appear as beam-owned frontier entries"
+        );
+
+        let forgotten = search
+            .forget_queued(3)
+            .expect("frontier node should still be forgettable after expansion");
+        assert_eq!(forgotten.node, 3);
+        assert_eq!(
+            search.queued_candidate(3),
+            None,
+            "forgotten nodes should disappear from targeted frontier lookup"
         );
     }
 }
