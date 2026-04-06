@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f9b5c9b`
+Current head: `be40792`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -163,6 +163,8 @@ Review triage at `46d00bb`:
 - Frontier debug coverage now exposes candidate provenance so regression tests can verify both entry-seeded and consume/refill-discovered candidate source tracking.
 - Bootstrap frontier seeding now keeps expanding from newly seeded candidates until the bounded frontier width is full or no unseen candidates remain, instead of stopping after the entry point's immediate adjacency only.
 - The bootstrap frontier pg coverage now asserts bounded frontier behavior plus coherent provenance, and a new pure unit test locks in the multi-hop fill order independent of page layout details.
+- Bootstrap frontier fill now runs through an explicit `BootstrapExpandPolicy` seam instead of open-coded insertion-order looping, with the current behavior preserved as `InsertionOrder`.
+- Added helper-level coverage that the explicit policy selects seeded candidates in insertion order, so later traversal work can change policy behind a stable selector instead of rewriting the fill loop.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -220,6 +222,7 @@ Open requests:
 - `59-consumed-candidate-refill-and-benchmark-baseline.md`
 - `60-scan-candidate-provenance.md`
 - `61-bootstrap-frontier-multihop-fill.md`
+- `62-bootstrap-expansion-policy-seam.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
