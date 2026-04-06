@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `1033d90`
+Current head: `5009995`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -264,6 +264,7 @@ Open requests:
 - `79-scan-owned-bootstrap-expansion-scheduler.md`
 - `80-forget-consumed-frontier-nodes.md`
 - `81-beam-owned-frontier-head-selection.md`
+- `82-scheduler-first-frontier-consume.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
