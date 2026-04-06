@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `be40792`
+Current head: `65fa7d2`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -165,6 +165,8 @@ Review triage at `46d00bb`:
 - The bootstrap frontier pg coverage now asserts bounded frontier behavior plus coherent provenance, and a new pure unit test locks in the multi-hop fill order independent of page layout details.
 - Bootstrap frontier fill now runs through an explicit `BootstrapExpandPolicy` seam instead of open-coded insertion-order looping, with the current behavior preserved as `InsertionOrder`.
 - Added helper-level coverage that the explicit policy selects seeded candidates in insertion order, so later traversal work can change policy behind a stable selector instead of rewriting the fill loop.
+- The bootstrap expansion policy is now score-ordered: among seeded but unexpanded candidates, the current lowest-score candidate expands first, with earlier slot order breaking ties.
+- Helper-level coverage now verifies the explicit policy prefers the best-scoring seeded candidate before falling back to the next best candidate.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -223,6 +225,7 @@ Open requests:
 - `60-scan-candidate-provenance.md`
 - `61-bootstrap-frontier-multihop-fill.md`
 - `62-bootstrap-expansion-policy-seam.md`
+- `63-score-ordered-bootstrap-expansion.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
