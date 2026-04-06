@@ -293,11 +293,7 @@ fn clear_active_scan_candidate(opaque: &mut TqScanOpaque) {
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
-    if opaque.candidate_frontier.is_null() {
-        opaque.candidate_frontier = Box::into_raw(Box::new(Vec::new()));
-    } else {
-        unsafe { &mut *opaque.candidate_frontier }.clear();
-    }
+    visible_frontier_mut(opaque).clear();
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -331,11 +327,43 @@ pub(super) fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] 
     }
 }
 
-fn candidate_frontier_mut(opaque: &mut TqScanOpaque) -> &mut Vec<ScanCandidate> {
+struct VisibleCandidateFrontier<'a> {
+    candidates: &'a mut Vec<ScanCandidate>,
+}
+
+impl VisibleCandidateFrontier<'_> {
+    fn clear(&mut self) {
+        self.candidates.clear();
+    }
+
+    fn len(&self) -> usize {
+        self.candidates.len()
+    }
+
+    fn push(&mut self, candidate: ScanCandidate) {
+        self.candidates.push(candidate);
+    }
+
+    fn extend(&mut self, candidates: impl IntoIterator<Item = ScanCandidate>) {
+        self.candidates.extend(candidates);
+    }
+
+    fn remove_node(&mut self, element_tid: page::ItemPointer) -> Option<ScanCandidate> {
+        let index = self
+            .candidates
+            .iter()
+            .position(|candidate| candidate.score_valid && candidate.element_tid == element_tid)?;
+        Some(self.candidates.remove(index))
+    }
+}
+
+fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> VisibleCandidateFrontier<'_> {
     if opaque.candidate_frontier.is_null() {
         opaque.candidate_frontier = Box::into_raw(Box::new(Vec::new()));
     }
-    unsafe { &mut *opaque.candidate_frontier }
+    VisibleCandidateFrontier {
+        candidates: unsafe { &mut *opaque.candidate_frontier },
+    }
 }
 
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
@@ -560,7 +588,7 @@ fn seed_discovered_candidates(
         return;
     }
 
-    candidate_frontier_mut(opaque).extend(candidates.iter().copied());
+    visible_frontier_mut(opaque).extend(candidates.iter().copied());
     for candidate in &candidates {
         mark_visited_element(opaque, candidate.element_tid);
     }
@@ -603,7 +631,7 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    while candidate_frontier_ref(opaque).len() < max_candidates {
+    while visible_frontier_mut(opaque).len() < max_candidates {
         let source_tid = match policy {
             BootstrapExpandPolicy::ScoreOrder => bootstrap_expansion_mut(opaque)
                 .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>())
@@ -652,10 +680,7 @@ fn take_candidate_frontier_node(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> Option<ScanCandidate> {
-    let index = candidate_frontier_ref(opaque)
-        .iter()
-        .position(|candidate| candidate.score_valid && candidate.element_tid == element_tid)?;
-    Some(candidate_frontier_mut(opaque).remove(index))
+    visible_frontier_mut(opaque).remove_node(element_tid)
 }
 
 fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
@@ -1105,7 +1130,7 @@ mod tests {
     fn consume_candidate_frontier_head_reselects_then_clears() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 7,
                 offset_number: 1,
@@ -1114,7 +1139,7 @@ mod tests {
             score: -2.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 7,
                 offset_number: 2,
@@ -1184,7 +1209,7 @@ mod tests {
     fn consuming_frontier_head_forgets_it_from_bootstrap_scheduler() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 13,
                 offset_number: 1,
@@ -1193,7 +1218,7 @@ mod tests {
             score: -3.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 13,
                 offset_number: 2,
@@ -1224,7 +1249,7 @@ mod tests {
     fn current_candidate_frontier_head_tid_prefers_scheduler_best_node() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 14,
                 offset_number: 1,
@@ -1233,7 +1258,7 @@ mod tests {
             score: -3.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 14,
                 offset_number: 2,
@@ -1264,7 +1289,7 @@ mod tests {
     fn consume_candidate_frontier_head_prefers_scheduler_best_node() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 15,
                 offset_number: 1,
@@ -1273,7 +1298,7 @@ mod tests {
             score: -3.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 15,
                 offset_number: 2,
@@ -1314,7 +1339,7 @@ mod tests {
     fn current_candidate_frontier_head_tid_drops_stale_scheduler_nodes() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 16,
                 offset_number: 1,
@@ -1419,7 +1444,7 @@ mod tests {
             offset_number: 3,
         };
         let mut opaque = TqScanOpaque::default();
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: entry_tid,
             source_tid: page::ItemPointer::INVALID,
             score: -3.0,
@@ -1494,13 +1519,13 @@ mod tests {
         };
         let mut opaque = TqScanOpaque::default();
         reset_scan_expanded_state(&mut opaque);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: entry_tid,
             source_tid: page::ItemPointer::INVALID,
             score: -3.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: sibling_tid,
             source_tid: entry_tid,
             score: -2.0,
@@ -1555,7 +1580,7 @@ mod tests {
             offset_number: 2,
         };
         let mut opaque = TqScanOpaque::default();
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: entry_tid,
             source_tid: page::ItemPointer::INVALID,
             score: -3.0,
@@ -1607,7 +1632,7 @@ mod tests {
         };
         let mut opaque = TqScanOpaque::default();
         reset_scan_expanded_state(&mut opaque);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: sibling_tid,
             source_tid: consumed_tid,
             score: -2.0,
@@ -1662,7 +1687,7 @@ mod tests {
     fn next_bootstrap_expand_index_prefers_lowest_score_under_score_order_policy() {
         let mut opaque = TqScanOpaque::default();
         reset_scan_expanded_state(&mut opaque);
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 10,
                 offset_number: 1,
@@ -1671,7 +1696,7 @@ mod tests {
             score: -3.0,
             score_valid: true,
         });
-        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+        visible_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 10,
                 offset_number: 2,
