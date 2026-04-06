@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `3a459a4`
+Current head: `f594ff7`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -64,6 +64,7 @@ Current tqhnsw state summary:
 - `amgettuple` now emits the current result score through `xs_orderbyvals[0]` / `xs_orderbynulls[0]` when it produces a tuple, so visible scan results now publish the same `<#>` value already tracked in scan-owned result state.
 - `amgettuple` now also clears the visible order-by score on exhaustion and empty-index false-return paths, and current order-by lifecycle coverage now verifies that the score slot starts empty, becomes non-null after tuple production, and clears again on exhaustion and `amrescan`.
 - `amrescan` now reads the index `ef_search` reloption into scan-owned state and uses it to size the current bootstrap frontier/refill path instead of the old hardcoded 3-slot ceiling.
+- Bootstrap result production now keeps consuming score-ordered bootstrap candidates until one materializes, instead of abandoning the frontier after the first dead candidate and dropping immediately to linear fallback.
 - The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
 - Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
 - The bootstrap linear scan now also computes and stores an operator-facing `<#>` score for the current result element by combining the cached prepared query with the representative heap row's persisted `gamma`.
@@ -234,6 +235,7 @@ Open requests:
 - `120-amgettuple-orderby-score-emission.md`
 - `121-amgettuple-orderby-score-lifecycle.md`
 - `122-bootstrap-frontier-ef-search-limit.md`
+- `123-skip-stale-bootstrap-candidates.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
