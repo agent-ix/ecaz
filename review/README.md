@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `1cf5968`
+Current head: `9fa6d6d`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -28,13 +28,13 @@ Current tqhnsw state summary:
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.
-- `amgettuple` still rejects actual tuple production, so planner-visible scan execution remains disabled in practice.
+- `amgettuple` now supports visible tuple production through the current forward-only bootstrap linear data-page scan for non-empty indexes.
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
-- `amgettuple` now returns `false` for valid rescans on empty indexes while keeping non-empty scan execution disabled.
+- `amgettuple` now returns `false` for valid rescans on empty indexes while keeping planner-visible ordered traversal disabled.
 - `amrescan` now persists the full query payload in scan-owned PostgreSQL memory and frees it during `amendscan`.
 - `amgettuple` now supports a forward-only linear data-page scan for non-empty indexes.
 - The current non-empty scan path now returns every heap TID from each live element tuple before advancing and keeps duplicate-drain progress in scan-local opaque state.
@@ -173,6 +173,7 @@ Review triage at `46d00bb`:
 - Partial bootstrap scan progress now advances frontier state and active-candidate state together, while tuple production still comes from the existing linear scan path.
 - Scan helpers can now materialize an active bootstrap candidate into the existing current-result plus pending-heap-tid drain machinery without changing the externally visible linear scan order yet.
 - Regression coverage now verifies that a duplicate-coalesced active candidate loads all of its heap tids into pending drain state and clears the active-candidate slot afterward.
+- Visible scan execution now uses that active-candidate materialization path when the linear cursor reaches the same element, so candidate state can populate current-result and duplicate-drain state without broad scan reordering.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -236,6 +237,7 @@ Open requests:
 - `65-scan-owned-bootstrap-expanded-state.md`
 - `66-bootstrap-candidate-consumption-state.md`
 - `67-active-candidate-pending-drain-bridge.md`
+- `68-visible-active-candidate-scan-bridge.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
