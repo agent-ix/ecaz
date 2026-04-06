@@ -321,6 +321,7 @@ Open requests:
 - `113-remove-stale-bootstrap-candidate-staging.md`
 - `114-remove-dead-bootstrap-expand-helper.md`
 - `115-gate-debug-only-frontier-helpers.md`
+- `116-current-result-debug-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
