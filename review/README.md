@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `65fa7d2`
+Current head: `6fc2af6`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -167,6 +167,8 @@ Review triage at `46d00bb`:
 - Added helper-level coverage that the explicit policy selects seeded candidates in insertion order, so later traversal work can change policy behind a stable selector instead of rewriting the fill loop.
 - The bootstrap expansion policy is now score-ordered: among seeded but unexpanded candidates, the current lowest-score candidate expands first, with earlier slot order breaking ties.
 - Helper-level coverage now verifies the explicit policy prefers the best-scoring seeded candidate before falling back to the next best candidate.
+- Bootstrap expanded-source bookkeeping now lives in scan-owned state instead of a helper-local vector, resets on `amrescan`, and frees on `amendscan`.
+- Frontier debug coverage now exposes the expanded-source set so tests can verify which seeded candidates have actually been expanded during bounded bootstrap fill.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -227,6 +229,7 @@ Open requests:
 - `62-bootstrap-expansion-policy-seam.md`
 - `63-score-ordered-bootstrap-expansion.md`
 - `64-bootstrap-expanded-state-groundwork.md`
+- `65-scan-owned-bootstrap-expanded-state.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
