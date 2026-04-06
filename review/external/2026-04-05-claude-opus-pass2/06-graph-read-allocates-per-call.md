@@ -1,0 +1,26 @@
+# 06 — graph element load allocates per call
+
+**Severity:** Low  
+**File:** `src/am/graph.rs:84–131`
+
+## Finding
+
+`read_page_tuple_bytes` copies the on-disk tuple into a heap-allocated `Vec<u8>` (line 128: `.to_vec()`) before releasing the buffer lock. The element and neighbor decode functions then parse from this owned copy.
+
+Every call to `load_graph_element` or `load_graph_neighbors` therefore allocates one `Vec<u8>` for the raw bytes, plus additional allocations inside the decoded structs (`heaptids: Vec<ItemPointer>`, `code: Vec<u8>`, `tids: Vec<ItemPointer>`).
+
+## Assessment
+
+The copy-before-unlock pattern is correct — holding a buffer pin across a return boundary would violate PostgreSQL's buffer manager contract. The current allocation cost is trivially small for the bootstrap frontier (3 candidates × 2 graph reads each ≈ 6 allocations per rescan).
+
+However, when ordered traversal wires up actual `ef_search`-sized frontier expansion, each `amgettuple` call may expand multiple candidates, each requiring 2+ graph reads. At `ef_search=64`, a single gettuple call could trigger ~128 small heap allocations.
+
+## Future optimization paths
+
+1. **Decode in-place under the buffer lock** — parse the element/neighbor tuple directly from the pinned page and copy only the fields that outlive the lock (element tid, gamma, score). The raw code bytes could be scored while the page is pinned, avoiding the code `Vec` entirely.
+
+2. **Reusable scratch buffer** — store a reusable `Vec<u8>` in scan opaque and pass it to `read_page_tuple_bytes` instead of allocating a new one each time.
+
+## Action
+
+No change needed at bootstrap scale. Flag for revisit during ordered-scan wiring.

@@ -1,0 +1,315 @@
+# Spec / Plan / Implementation Evaluation: tqvector
+
+**Reviewer:** Claude Opus (external session)
+**Date:** 2026-04-05
+**Commit:** `9b36751` (head at time of review)
+**Review Type:** Spec-plan-implementation alignment, trajectory assessment, architecture evaluation
+
+---
+
+## 1. Files Examined
+
+### Specification
+- `spec/spec.md` — master requirements specification
+- `spec/stakeholder/` — StR-001, StR-002, StR-003
+- `spec/usecase/` — US-001 through US-005
+- `spec/functional/` — FR-001 through FR-018
+- `spec/non-functional/` — NFR-001 through NFR-005
+- `spec/adr/` — ADR-001 through ADR-009
+- `spec/tests.md` — bidirectional requirements-to-tests mapping
+
+### Plan
+- `plan/plan.md` — implementation plan with dependency graph and phased execution
+- `plan/tasks/` — all 8 task files (phases 01-08)
+
+### Source
+- `src/lib.rs` (2,653 lines) — type I/O, encode, scoring functions, operators, pg_test suite
+- `src/quant/mod.rs` (36 lines) — module exports, CodeIndex type
+- `src/quant/codebook.rs` (148 lines) — Lloyd-Max optimal scalar quantizer
+- `src/quant/mse.rs` (31 lines) — MSE quantizer wrappers
+- `src/quant/qjl.rs` (14 lines) — QJL projection wrappers
+- `src/quant/prod.rs` (498 lines) — ProdQuantizer orchestrator, caching, scoring
+- `src/quant/hadamard.rs` (54 lines) — Fast Walsh-Hadamard Transform
+- `src/quant/rotation.rs` (66 lines) — SRHT rotation
+- `src/am/mod.rs` (2,933 lines) — all HNSW AM callbacks (build, insert, scan, vacuum, cost)
+- `src/am/page.rs` (712 lines) — tuple and page layout, serialization
+- `src/am/wal.rs` (66 lines) — GenericXLog RAII wrapper
+
+### Infrastructure
+- `Cargo.toml` — dependencies and build configuration
+- `sql/bootstrap.sql` — SQL DDL (type, functions, operators, access method, operator class)
+- `Makefile` — build, test, lint, audit targets
+- `AGENTS.md` — agent workflow and checkpoint rules
+
+### Reviews
+- `review/README.md` — current state summary, open/closed review requests
+- `review/external/2026-04-05-claude-opus/` — 22-finding code review (separate session)
+- Review requests 01-27 and feedback threads
+
+---
+
+## 2. Implementation vs Spec Alignment
+
+### Fully Implemented and Aligned
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| **FR-001** tqvector type registration | Done | Wire format matches spec section 8.1 exactly: dim(u16) + bits(u8) + seed(u64) + gamma(f32) + codes. 1536-dim 4-bit = 783 bytes total. Pack/unpack round-trips tested. |
+| **FR-002** Text I/O | Done | Format `[dim=D,bits=B,seed=S,gamma=G]:hex_codes` implemented in `tqvector_in`/`tqvector_out`. Error cases covered. |
+| **FR-003** Binary send/receive | Done | `tqvector_send`/`tqvector_recv` with truncation validation (< 15 bytes rejected). |
+| **FR-004** encode_to_tqvector | Done | Signature matches spec: `encode_to_tqvector(float4[], int, bigint DEFAULT 42)`. Pads to next power of 2. Rejects bits outside 2-8. Dimension boundary validation added. IMMUTABLE/STRICT/PARALLEL SAFE. |
+| **FR-005** Code-to-code inner product | Done | `tqvector_inner_product(a, b)` returns symmetric MSE-only estimate (v0.1 per spec). Rejects dimension mismatch. Zero-allocation raw-code fast path added. |
+| **FR-006** SQL operators and operator class | Done | `<#>` operator with both `(tqvector, tqvector)` and `(tqvector, float4[])` overloads. `tqvector_ip_ops` operator class DEFAULT for `tqhnsw`. Registered in `sql/bootstrap.sql`. |
+| **FR-007** HNSW page layout | Done | Metadata page 0 with M, ef_construction, entry point, dimensions, bits, max_level, seed. Element tuples (tag 0x01) with deleted flag, heap TIDs (up to 10 inline), neighbor TID pointer, code bytes. Neighbor tuples (tag 0x02) with per-layer arrays. Encode/decode round-trips tested. |
+| **FR-008** HNSW bulk build | Done | `ambuild` scans heap, builds hnsw_rs graph, serializes via two-pass (write tuples, fix TID pointers). `ambuildempty` creates empty metadata page. `amoptions` parses m, ef_construction, build_source_column. GenericXLog for all writes. |
+| **FR-011** WAL safety | Done | `GenericXLogTxn` RAII wrapper in `am/wal.rs` with start/register_buffer/finish and auto-abort on drop. All page modifications go through this wrapper. |
+| **FR-012** SQL bootstrap | Done | `CREATE EXTENSION tqvector` registers type, 8 functions, 2 operators, access method, operator class. `DROP EXTENSION CASCADE` cleans up. pgrx feature flags for pg14-pg17. |
+| **FR-013** Two-stage quantization | Done | SRHT rotation (diagonal signs via ChaCha8 + FWHT) + Lloyd-Max MSE quantization (bits-1 per dimension) + QJL 1-bit residual correction. Data-oblivious. 772-byte payload at 1536-dim 4-bit matches spec. |
+| **FR-015** ProdQuantizer orchestrator | Done | Fully determined by `(original_dim, bits, seed)`. APIs: `encode`, `decode_approximate`, `prepare_ip_query`, `score_ip_encoded`, `score_ip_codes_lite`. Arc-wrapped caching per backend. Zero-allocation scoring. 9 unit tests. |
+| **FR-017** Prepared-query inner product | Done | `tqvector_query_inner_product(candidate, query)` with LUT-based scoring. Reconstructs full payload from persisted `(gamma, code_bytes)`. Rejects dimension mismatch. |
+| **FR-018** Negative wrappers | Done | Both `tqvector_negative_inner_product` and `tqvector_negative_query_inner_product` return negated scores for ORDER BY ascending semantics. |
+
+### Partially Implemented
+
+| Requirement | Status | Gap |
+|-------------|--------|-----|
+| **FR-009** HNSW scan | Bootstrap only | Current: forward-only linear page walk (ADR-008). Missing: greedy descent from entry point, layer-0 beam search with BinaryHeap, ef_search GUC, distance-ordered results. Cost estimates set to MAX to prevent planner from choosing index scan. |
+| **FR-010** HNSW vacuum | Noop stub | `ambulkdelete` and `amvacuumcleanup` return empty stats. No three-pass deletion (mark, repair graph, finalize). No graph repair logic. |
+| **FR-016** HNSW insert | Partial | Duplicate coalescing works (up to 10 inline heap TIDs). Page allocation and tail reuse work. Missing: layer assignment via geometric distribution, greedy descent + beam search for neighbor selection, back-link updates. `build_source_column` indexes rejected at insert. |
+
+### Not Started
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| **FR-014** SIMD acceleration | Not started | All code paths are scalar. No AVX2/NEON implementations. No runtime feature detection. |
+| **NFR-001** Query latency benchmarks | Not started | No benchmark harness exists. |
+| **NFR-002** Storage accounting benchmarks | Not started | No measurement tooling. |
+| **NFR-003** Recall quality benchmarks | Not started | No recall test suite. No ground truth dataset. |
+| **NFR-004** Fuzz testing | Not started | No fuzzer configured. Unsafe audit not run. `cargo deny` target exists but not automated in CI. |
+| **NFR-005** CI gates | Not started | Makefile targets exist (fmt-check, lint, test, pg-test, deny, audit-unsafe) but no CI pipeline is configured. |
+
+---
+
+## 3. Module Structure Deviation
+
+The spec (section 16) prescribes this AM layout:
+
+```
+src/am/
+  mod.rs, build.rs, insert.rs, scan.rs, vacuum.rs, cost.rs, page.rs
+src/storage.rs
+src/distance.rs
+```
+
+Actual:
+
+```
+src/am/
+  mod.rs (2,933 lines — contains ALL of build, insert, scan, vacuum, cost)
+  page.rs (712 lines)
+  wal.rs (66 lines)
+```
+
+- `storage.rs` does not exist — packing logic is in `lib.rs` and `quant/prod.rs`.
+- `distance.rs` does not exist — scoring logic is in `lib.rs` and `quant/prod.rs`.
+- `am/build.rs`, `am/insert.rs`, `am/scan.rs`, `am/vacuum.rs`, `am/cost.rs` do not exist — all logic is in the monolithic `am/mod.rs`.
+
+**Assessment:** The storage.rs/distance.rs omission is acceptable — the functionality lives in logical places. The monolithic am/mod.rs is a growing concern at 2,933 lines and will become unmanageable when HNSW graph traversal scan is added (likely +500-800 lines). Split recommended before that work begins.
+
+---
+
+## 4. Plan vs Reality
+
+### Task Status Drift
+
+All 8 tasks in `plan/tasks/` show as "not started" despite significant implementation progress. Actual status based on code review:
+
+| Task | Plan Status | Actual Status |
+|------|------------|---------------|
+| 01 Quantizer Core | not started | **Complete** — all quant/ modules implemented and tested |
+| 02 Datum and I/O | not started | **Complete** — FR-001, FR-002, FR-003 all done |
+| 03 SQL Surface | not started | **Complete** — FR-004, FR-005, FR-006, FR-012, FR-017, FR-018 all done |
+| 04 Page Layout and WAL | not started | **Complete** — FR-007, FR-011 done |
+| 05 Build and Scan | not started | **Build complete, scan bootstrap only** — FR-008 done, FR-009 linear only |
+| 06 Vacuum and Insert | not started | **Insert partial, vacuum stub** — FR-016 partial, FR-010 noop |
+| 07 SIMD and Benchmarks | not started | **Not started** — FR-014, NFR-001/002/003 all pending |
+| 08 Safety and CI | not started | **Partial** — Makefile targets exist, no CI pipeline, no fuzzer |
+
+The plan is stale and not tracking actual progress.
+
+---
+
+## 5. Discoveries That Should Be Backported to Spec
+
+### 5a. FR-009: Phased Scan Approach Not Documented
+
+FR-009 describes HNSW scan with greedy descent + beam search + ef_search GUC. The implementation chose a bootstrap linear scan strategy (ADR-008) as an intermediate deliverable. This is documented in the ADR but not reflected in FR-009's acceptance criteria.
+
+**Recommendation:** Add a note to FR-009 acknowledging the phased approach — bootstrap linear scan as an intermediate state, with graph traversal as the target. Acceptance criteria should distinguish between bootstrap and final behavior.
+
+### 5b. FR-007: Heap TID Coalescing Not Documented in Page Layout
+
+Element tuples support up to 10 inline heap TIDs via duplicate coalescing (HEAPTID_INLINE_CAPACITY=10 in `am/page.rs`). This is a significant page layout decision documented only in ADR-009 and review packets, not in FR-007.
+
+**Recommendation:** Update FR-007 to document the multi-TID element tuple design and the inline capacity limit, since it's a page layout invariant that affects insert, scan, and vacuum behavior.
+
+### 5c. FR-016: build_source_column Insert Limitation
+
+FR-008 specifies `build_source_column` as a reloption for high-quality builds from raw fp32 vectors. The option is parsed and accepted at CREATE INDEX time but aminsert rejects indexes that have it set. The spec doesn't distinguish build-time vs insert-time behavior for this option.
+
+**Recommendation:** FR-016 should explicitly state that `build_source_column` indexes accept inserts of pre-encoded tqvector codes only — no raw vector insertion pathway exists in v0.1.
+
+### 5d. Planner Cost Override Strategy Undocumented
+
+The planner is currently blocked from choosing tqhnsw scans via MAX cost estimates returned from `amcostestimate`. This is deliberate (scan isn't distance-ordered yet) but not documented in any FR or ADR.
+
+**Recommendation:** Add an ADR documenting this strategy. Note that FR-009-AC requiring "index scan chosen over sequential" cannot be met until the cost override is lifted, which depends on graph traversal scan being complete.
+
+### 5e. Scan Block Count Cache
+
+`amrescan` caches the relation block count in scan-owned state so the bootstrap linear scan doesn't refetch it per gettuple call. This optimization is correct for the bootstrap scan but has implications for concurrent inserts — new pages added after rescan won't be seen.
+
+**Recommendation:** This is implementation detail, not spec-worthy. However, when graph traversal scan replaces linear scan, this cache should be re-evaluated since graph traversal follows neighbor pointers rather than scanning blocks sequentially.
+
+---
+
+## 6. Architecture Assessment
+
+### Architecture Is Holding
+
+The core design decisions remain sound and well-justified:
+
+| Decision | ADR | Assessment |
+|----------|-----|------------|
+| Own quantizer implementation | ADR-006 | Correct. Eliminates external dependency risk, enables zero-allocation scoring, permits SIMD optimization. ~1,000 LOC well-contained in `quant/`. |
+| hnsw_rs for bulk build only | ADR-002 | Pragmatic. Build delegates to a proven library; runtime ops own the graph in Postgres pages. Clean boundary. |
+| Raw pg_sys FFI for AM | ADR-004 | Necessary. pgrx has no AM macro support. Callback signatures match PostgreSQL expectations. |
+| Two-pass build serialization | ADR-003 | Clean. Write tuples first, fix up TID pointers second. Well-tested. |
+| Bootstrap linear scan | ADR-008 | Reasonable interim. Unblocks testing of insert, scoring, and scan lifecycle without requiring graph traversal. |
+| Duplicate heap TID coalescing | ADR-009 | Good decision for deduplication scenarios. 10-TID inline capacity is generous for typical workloads. |
+| Gamma persistence for QJL | ADR-007 | Correct. Enables high-quality prepared-query scoring path while keeping code-to-code as MSE-only in v0.1. |
+
+### One Architectural Risk: Linear-to-Graph Scan Transition
+
+The transition from linear page scan to HNSW graph traversal is the biggest single change remaining. Graph traversal requires:
+
+1. Reading neighbor tuples and following TID pointers across buffer pages
+2. Maintaining a visited set during beam search
+3. Managing buffer pins during multi-page traversal
+4. BinaryHeap for ordered result emission
+5. ef_search parameter control
+6. Greedy descent through layers > 0
+
+This is where pgvector's scan complexity lives (`hnsw_scan.c`), and it's the part that hasn't been prototyped yet. The current scan infrastructure (opaque state, metadata cache, prepared query cache, current-result slot) is good groundwork, but the traversal logic itself is the hard part.
+
+---
+
+## 7. External Review Triage Status
+
+The previous code review (2026-04-05-claude-opus, commit `79f695e`) identified 22 findings. Triage status based on review/README.md:
+
+### Addressed
+
+| Finding | Fix |
+|---------|-----|
+| #04 metadata re-read per gettuple | Cached in scan opaque (review #23) |
+| #06 SPI relation_options in hot path | Reads rd_options directly (review #24) |
+| #08 hnsw_rs wildcard dependency | Pinned to 0.3.4 (review #22) |
+| #10 offset_number u16 overflow | Checked u16 conversion (review #21) |
+| #14 dimension u16 truncation | Explicit validation before pack (review #20) |
+| #16 score_code_inner_product allocates per call | Zero-allocation raw-code path (review #25) |
+| #18 varlena detoast copy detection | Pointer comparison (review #19) |
+
+### Not Yet Addressed
+
+| Finding | Severity | Notes |
+|---------|----------|-------|
+| #01 quantizer cache unbounded growth | Medium | Acceptable for v0.1 per finding recommendation |
+| #02 O(n) duplicate scan per insert | High | Remains — will need index or hash for scale |
+| #03 with_locked_metadata unconditional write | Medium | Remains — unnecessary WAL on unmodified metadata |
+| #07 build holds all vectors in memory | Medium | Remains — streaming build needed for large tables |
+| #09 codebook index bounds at decode | Medium | Remains — no bounds check on decode path |
+| #11 metadata + data WAL not atomic | High | Remains — needs ADR documenting crash semantics |
+| #13 flush_build reinitializes metadata | Low | Remains |
+| #15 Lloyd-Max empty cluster degenerate | Low | Remains |
+| #20 build source scan snapshot leak on error | Medium | Remains |
+
+---
+
+## 8. Overall Trajectory Assessment
+
+### Strengths
+
+1. **Quantizer core is solid and complete.** The highest-risk component (TurboQuant math) is fully implemented, well-tested (9 unit tests + pg_test coverage), deterministic, and matches the paper's algorithm. This was the right thing to get right first.
+
+2. **Page layout and WAL safety are production-grade.** Proper GenericXLog RAII, encode/decode round-trips tested, checked offset conversions. The storage layer is trustworthy.
+
+3. **External review process is working.** 22 findings identified, 7 critical ones fixed, remainder triaged with clear rationale. The review packet workflow provides good traceability.
+
+4. **Incremental progress with narrow slices.** 27 review packets, each tied to a specific commit. The agent is following AGENTS.md discipline.
+
+5. **Performance optimizations are well-targeted.** Metadata caching, zero-allocation scoring, rd_options cache — all address real hot-path concerns identified in review.
+
+### Concerns
+
+1. **Scan is the critical gap.** The extension is currently unusable for index queries (planner blocked, linear scan only). Graph traversal scan (FR-009) is the longest pole to a functional extension. This is also the most complex remaining work — multi-page buffer management during beam search is where subtle correctness bugs hide.
+
+2. **Vacuum is noop.** FR-010's three-pass deletion with graph repair is the hardest correctness problem in the project. No progress yet. This blocks any production use case where data is ever deleted.
+
+3. **No recall validation exists.** Without recall benchmarks (NFR-003), there's no evidence that the quantizer + HNSW combination achieves the spec's ~94-99% recall targets. If recall is poor, significant rework of codebook generation or scoring may be needed. This is an existential risk that should be measured as soon as graph scan works.
+
+4. **Plan tracking is completely stale.** All tasks show "not started" despite phases 1-4 being substantially complete. The plan provides no value for progress tracking in its current state.
+
+5. **am/mod.rs at 2,933 lines will impede graph traversal work.** Adding beam search, visited set, and layer traversal to an already-monolithic file increases review difficulty and merge risk.
+
+---
+
+## 9. Recommendations
+
+### Priority 1: Immediate (pass to agent in next review cycle)
+
+**R-01: Split am/mod.rs before starting graph traversal scan.**
+Extract into `am/build.rs`, `am/insert.rs`, `am/scan.rs`, `am/vacuum.rs`, `am/cost.rs` per spec section 16. This is mechanical refactoring that reduces merge risk for the scan implementation. Do this as a standalone checkpoint before any scan work.
+
+**R-02: Update plan/tasks/ statuses.**
+Mark tasks 01-04 as complete. Mark task 05 as in-progress (build done, scan bootstrap). Mark task 06 as in-progress (insert partial, vacuum stub). This restores the plan as a useful tracking artifact.
+
+### Priority 2: Next implementation focus
+
+**R-03: Implement FR-009 graph traversal scan.**
+This is the critical path to a usable extension. Suggested order:
+1. Implement greedy descent from entry point through layers > 0
+2. Implement layer-0 beam search with BinaryHeap (ef_search candidates)
+3. Add `tqhnsw.ef_search` GUC (default 40, range 1-1000 per FR-009)
+4. Emit results in distance order
+5. Remove MAX cost estimates to enable planner selection
+6. Test recall against brute-force ground truth (even informal — just measure it)
+
+**R-04: Build a minimal recall benchmark.**
+Even before FR-014 (SIMD) or the full NFR-003 benchmark suite, measure Recall@10 on a synthetic dataset (e.g., 10K random 1536-dim vectors, m=8, ef_search=40). This validates the quantizer-to-scan pipeline end-to-end and catches integration errors early. If recall is below ~90%, investigate before investing in scan optimization.
+
+### Priority 3: Spec backports
+
+**R-05: Update FR-009** to document the phased scan approach (bootstrap linear scan as intermediate, graph traversal as target).
+
+**R-06: Update FR-007** to document HEAPTID_INLINE_CAPACITY=10 coalescing in element tuples.
+
+**R-07: Update FR-016** to state that `build_source_column` indexes reject raw vector inserts in v0.1.
+
+**R-08: Add ADR-010** for the planner cost override strategy (MAX costs until graph scan is complete).
+
+### Priority 4: Deferred but tracked
+
+**R-09: Vacuum (FR-010)** — complex, depends on working scan for testing. Implement after graph traversal scan is stable.
+
+**R-10: SIMD (FR-014)** — optimize after scalar correctness is locked and recall is measured.
+
+**R-11: Address remaining external review findings** — especially #02 (O(n) duplicate scan) and #11 (non-atomic metadata+data WAL) before any insert-heavy workload.
+
+**R-12: CI pipeline (NFR-005)** — wire up Makefile targets to GitHub Actions or equivalent before the project has more than one contributor.
+
+---
+
+## 10. Summary
+
+The tqvector implementation is **~70% complete toward a functional v0.1** (quantizer 100%, type/I/O 100%, build 100%, scan 30%, insert 60%, vacuum 0%, SIMD 0%, benchmarks 0%). The architecture is sound and the code quality is high. The critical path is FR-009 graph traversal scan — everything else (vacuum, SIMD, benchmarks) either depends on it or can wait. The agent should split am/mod.rs, update task tracking, then focus exclusively on graph traversal scan and a minimal recall validation.

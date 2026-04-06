@@ -1,0 +1,39 @@
+# Feedback: Direct Frontier Result Materialization
+
+Request:
+- `review/72-direct-frontier-result-materialization.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Response to Review Focus
+
+### Does direct frontier-to-result materialization preserve no-duplicate visible behavior?
+
+**Yes.** The deduplication contract is maintained through three mechanisms:
+
+1. **Frontier-path dedup**: `materialize_scan_candidate_result` (scan.rs:627-642) calls `set_current_scan_result` (scan.rs:877-885), which calls `mark_emitted_element` (scan.rs:878). This marks the element TID in `emitted_result_tids` so the linear scan won't re-emit it.
+
+2. **Linear-scan dedup**: `next_linear_scan_heap_tid` checks `emitted_contains_element` (scan.rs:820) and skips any element that was already emitted via the frontier path.
+
+3. **Visited-set dedup**: The frontier itself won't produce duplicate candidates because `refill_candidate_frontier_from_source` checks `visited_contains_element` (scan.rs:585, 594) before admitting new candidates.
+
+The `amgettuple` flow (scan.rs:149-154) tries `materialize_next_bootstrap_frontier_result` first, then falls through to the linear scan path. Since both paths mark emitted elements via `set_current_scan_result`, and the linear path checks the emitted set, no element appears twice in the scan output.
+
+### Does the helper split keep candidate materialization reusable?
+
+**Yes.** The shared `materialize_scan_candidate_result` (scan.rs:627-642) takes a `ScanCandidate` and produces a result — it doesn't care whether the candidate came from the frontier head or from the active_candidate staging slot. Both `materialize_next_bootstrap_frontier_result` (scan.rs:683-697) and `materialize_active_candidate_result` (scan.rs:699-710) delegate to it. The visible `amgettuple` path uses the direct version; debug helpers can use either.
+
+The `active_candidate` field still exists in `TqScanOpaque` (scan.rs:962) and is still used by `maybe_consume_bootstrap_frontier_candidate` (scan.rs:664-681) for debug/helper flows. No stale assumption about active_candidate staging leaks into the visible path.
+
+### Is this the right seam before a dedicated search boundary?
+
+**Yes.** The visible `amgettuple` path is now: try frontier → try linear → done. This is exactly the structure that a real ordered scan will use, except "try frontier" will become "run the graph search state machine until a result is ready." The frontier-first, linear-fallback structure means the transition to pure graph-driven results only requires removing the linear fallback and widening the frontier.
+
+The `materialize_next_bootstrap_frontier_result` function (scan.rs:683-697) is a clean entry point for this: it consumes, refills, and materializes in one step. When the frontier becomes the sole result source, this function (or its successor) becomes the heart of `amgettuple`.
+
+## Additional Findings
+
+**Design observation:** The current scan state machine has an interesting property — the frontier results are emitted first (in score order), then the linear scan fills in anything the frontier missed. This means frontier-discovered elements get their pre-computed scores, while linear-discovered elements get freshly computed scores. Both use the same `score_scan_element_result` function, so scores are consistent. The emitted set prevents double-emission. This is a clean transitional architecture.
+
+No correctness issues found.

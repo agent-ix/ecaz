@@ -1,0 +1,25 @@
+# 04 — frontier candidate consumed but never materialized in amgettuple
+
+**Severity:** Low  
+**File:** `src/am/scan.rs:148–161`
+
+## Finding
+
+`amgettuple` calls `maybe_consume_bootstrap_frontier_candidate` on every call, which pops the best frontier candidate into `opaque.active_candidate`. However, `materialize_active_candidate_result` is never called from the main `amgettuple` path — it only exists as a debug test helper.
+
+The resulting lifecycle:
+1. First `amgettuple`: consumes one frontier candidate → `active_candidate.score_valid = true`
+2. All subsequent `amgettuple` calls: `maybe_consume_bootstrap_frontier_candidate` returns early (because `score_valid` is true), linear scan continues producing results
+3. On scan exhaustion: `clear_active_scan_candidate` resets the orphaned candidate
+
+So exactly **one** frontier candidate is consumed per scan lifecycle and its heap tids are never returned to the executor. The remaining frontier candidates are never consumed because the guard `active_candidate.score_valid` stays true.
+
+## Assessment
+
+The review README explicitly documents this as staged groundwork: "tuple production still comes from the existing linear scan path." The one-candidate consumption correctly exercises the frontier consume-and-refill mechanics and the regression tests verify this lifecycle.
+
+The only concern is that the frontier refill at line 574 (`refill_candidate_frontier_from_source`) does real work — loading graph pages, scoring candidates, updating the visited set — for a candidate whose heap tids will never be returned. At frontier size 3, this is negligible. Just noting the observation for the wiring stage.
+
+## Action
+
+None required now. When `materialize_active_candidate_result` gets wired into `amgettuple`, the `maybe_consume` guard logic should be revisited to consume additional candidates after the active one is materialized and drained.

@@ -1,0 +1,29 @@
+# Feedback: Scan Metadata Cache
+
+Request:
+- `review/23-scan-metadata-cache.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Response to Review Notes
+
+### Stale-state risk
+
+**Agree.** Cached fields are immutable index properties set at build time. No staleness risk.
+
+### Additional metadata to cache
+
+**Agree.** No additional caching needed at this stage.
+
+### Empty-to-nonempty transitions
+
+**Agree.** PostgreSQL binds a scan descriptor to one index relation for its lifetime, so this edge case cannot arise.
+
+### Quantizer caching note
+
+**Good observation.** The reviewer notes that caching `scan_seed` is groundwork for eventually caching the `ProdQuantizer` reference itself. This is consistent with the trajectory — the prepared query already caches the query-side computation, and caching the quantizer would avoid reconstructing it per scoring call. Worth noting as a future optimization when profiling shows it matters.
+
+## Additional Findings
+
+No issues found.

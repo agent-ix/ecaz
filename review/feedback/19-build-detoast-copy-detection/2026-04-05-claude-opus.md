@@ -1,0 +1,25 @@
+# Feedback: Build Detoast Copy Detection
+
+Request:
+- `review/19-build-detoast-copy-detection.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Response to Review Notes
+
+### Pointer comparison for detoast ownership
+
+**Agree.** `!std::ptr::eq(varlena, original)` is the canonical ownership test for `pg_detoast_datum_packed`. The reviewer's analysis of the three call sites is correct.
+
+### Shared helper (`with_detoasted_tqvector`)
+
+**Agree — optional but justified.** Three call sites using the same detoast-then-pfree pattern is at the threshold for extraction. A `with_detoasted_tqvector<T>(datum, f)` helper would centralize the ownership logic and prevent copy-paste errors in future call sites. Not blocking but worth adding when touching these paths next.
+
+### Missing toasted-datum regression test
+
+**Agree this is hard.** 1536-dim 4-bit at 772 bytes sits well below the TOAST threshold. The reviewer correctly notes this would require wider dimensions or lower quantization bits. Not worth manufacturing for this stage.
+
+## Additional Findings
+
+No issues found. Clean fix.

@@ -1,0 +1,44 @@
+# 01 — aminsert holds metadata EXCLUSIVE lock during full duplicate scan
+
+**Severity:** Medium  
+**File:** `src/am/mod.rs:70–107`
+
+## Finding
+
+`tqhnsw_aminsert` calls `with_locked_metadata_page` and performs all work inside the closure: the O(n) `find_duplicate_element_tid` scan, the `coalesce_duplicate_heap_tid` or `append_heap_tuple` data writes, and then the unconditional metadata WAL writeback. The metadata page stays EXCLUSIVE-locked for the entire duration.
+
+The duplicate scan only needs to read `(dimensions, bits, seed, entry_point)` from metadata. On all inserts after the first, these fields do not change. The current design serializes all concurrent `aminsert` calls on the metadata page lock while each one individually scans every data page.
+
+## Concrete concern
+
+Two concurrent inserts to a 10,000-element index will each hold the metadata EXCLUSIVE lock while scanning all data pages. The second insert blocks until the first finishes its full scan + write + WAL, then performs its own full scan. This is a scalability bottleneck.
+
+## Suggested shape
+
+```
+// Read metadata under SHARE lock
+let metadata = read_metadata_page(index_relation);
+
+// Validate shape, find duplicates, append data — all outside metadata lock
+validate_shape(&metadata, &tuple);
+if let Some(dup) = find_duplicate_element_tid(...) {
+    coalesce_duplicate_heap_tid(...);
+    return;
+}
+let element_tid = append_heap_tuple(...);
+
+// Only take EXCLUSIVE lock to update entry_point if needed
+if metadata.entry_point == INVALID {
+    with_locked_metadata_page(index_relation, |meta| {
+        if meta.entry_point == INVALID {
+            meta.entry_point = element_tid;
+        }
+    });
+}
+```
+
+The first-insert path (empty index: `dimensions == 0 && bits == 0`) still needs EXCLUSIVE, but it only runs once.
+
+## Impact
+
+No correctness bug today. The insert path is already documented as O(n) per insert. But the EXCLUSIVE metadata lock amplifies the cost by preventing any concurrency between inserts. Narrowing the lock scope is a prerequisite for making the O(n) duplicate scan tolerable under concurrent load.
