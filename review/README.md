@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `d688919`
+Current head: `60adb1a`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -208,6 +208,7 @@ Review triage at `46d00bb`:
 - Internal visible-frontier iteration in `src/am/scan.rs` now stays in `BeamCandidate<ItemPointer>` form for selection paths, instead of converting back into `ScanCandidate` before immediately projecting back down to node/score data.
 - Remaining `src/am/scan.rs` unit-test frontier fixtures now construct `BeamCandidate<ItemPointer>` values directly through local helpers instead of populating `ScanCandidate` literals and converting them back into beam-native runtime state.
 - The old `ScanCandidate` boundary type and its beam conversion helpers are now gone from `src/am/scan.rs`; the hot path, test fixtures, and debug boundaries all use beam-native candidate state directly.
+- The unused `queued_candidate` lookup API and its tests are now gone from `src/am/search.rs`, leaving the shared beam surface focused on the scheduler operations the current scan path actually uses.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -315,6 +316,7 @@ Open requests:
 - `109-beam-native-frontier-debug-boundaries.md`
 - `110-beam-native-scan-test-fixtures.md`
 - `111-remove-dead-scan-candidate-boundary.md`
+- `112-remove-dead-queued-beam-lookup.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
