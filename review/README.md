@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `0217f33`
+Current head: `665ce49`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -194,6 +194,7 @@ Review triage at `46d00bb`:
 - Frontier-head reporting now exposes candidate TID identity instead of Vec slot index across scan debug/test surfaces, keeping the remaining Vec-index mapping confined to actual visible-container removal paths.
 - The old shared node-to-index frontier lookup helper is now gone; scheduler visibility checks use direct node containment, and the remaining node-to-index search is localized inside visible-frontier removal only.
 - The visible bootstrap frontier now has one explicit local container seam in `src/am/scan.rs`, so runtime paths and unit tests stop open-coding raw `Vec<ScanCandidate>` mutation for clear/len/push/extend/remove behavior.
+- The visible frontier now also has a read-side seam in `src/am/scan.rs`, so runtime containment, fallback head derivation, and frontier-length checks stop open-coding raw slice walks outside one local container API.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -281,6 +282,7 @@ Open requests:
 - `89-frontier-head-tid-surface.md`
 - `90-localized-frontier-node-lookup.md`
 - `91-visible-frontier-container-seam.md`
+- `92-visible-frontier-read-seam.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
