@@ -178,6 +178,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
                 free_scan_candidate_frontier(&mut *opaque.cast::<TqScanOpaque>());
+                free_bootstrap_expansion(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_expanded_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_emitted_set(&mut *opaque.cast::<TqScanOpaque>());
@@ -249,6 +250,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
     clear_active_scan_candidate(opaque);
+    reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
@@ -299,12 +301,28 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     opaque.candidate_frontier_head = None;
 }
 
+fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
+    let ef_search = ef_search.max(1);
+    if opaque.bootstrap_expansion.is_null() {
+        opaque.bootstrap_expansion = Box::into_raw(Box::new(search::BeamSearch::new(ef_search)));
+    } else {
+        *unsafe { &mut *opaque.bootstrap_expansion } = search::BeamSearch::new(ef_search);
+    }
+}
+
 fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
     if !opaque.candidate_frontier.is_null() {
         drop(unsafe { Box::from_raw(opaque.candidate_frontier) });
         opaque.candidate_frontier = ptr::null_mut();
     }
     opaque.candidate_frontier_head = None;
+}
+
+fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
+    if !opaque.bootstrap_expansion.is_null() {
+        drop(unsafe { Box::from_raw(opaque.bootstrap_expansion) });
+        opaque.bootstrap_expansion = ptr::null_mut();
+    }
 }
 
 pub(super) fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
@@ -327,6 +345,15 @@ pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandida
         .get(index)
         .copied()
         .unwrap_or_default()
+}
+
+fn bootstrap_expansion_mut(
+    opaque: &mut TqScanOpaque,
+) -> &mut search::BeamSearch<page::ItemPointer> {
+    if opaque.bootstrap_expansion.is_null() {
+        reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+    }
+    unsafe { &mut *opaque.bootstrap_expansion }
 }
 
 fn reset_scan_visited_state(opaque: &mut TqScanOpaque) {
@@ -504,21 +531,19 @@ fn scan_candidate_to_beam_candidate(
     }
 }
 
-fn seed_bootstrap_expansion_candidates(
-    expansion: &mut search::BeamSearch<page::ItemPointer>,
+fn bootstrap_expansion_seed_candidates(
     opaque: &TqScanOpaque,
     from_index: usize,
-) {
-    expansion.seed_many(
-        candidate_frontier_ref(opaque)
-            .iter()
-            .copied()
-            .skip(from_index)
-            .filter(|candidate| {
-                candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
-            })
-            .map(scan_candidate_to_beam_candidate),
-    );
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    candidate_frontier_ref(opaque)
+        .iter()
+        .copied()
+        .skip(from_index)
+        .filter(|candidate| {
+            candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
+        })
+        .map(scan_candidate_to_beam_candidate)
+        .collect()
 }
 
 fn fill_bootstrap_frontier<F>(
@@ -529,6 +554,7 @@ fn fill_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
+    reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
     top_up_bootstrap_frontier(opaque, max_candidates, policy, refill);
 }
@@ -541,12 +567,12 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    let mut expansion = search::BeamSearch::new(max_candidates.max(1));
-    seed_bootstrap_expansion_candidates(&mut expansion, opaque, 0);
+    let initial_candidates = bootstrap_expansion_seed_candidates(opaque, 0);
+    bootstrap_expansion_mut(opaque).seed_many(initial_candidates);
 
     while candidate_frontier_ref(opaque).len() < max_candidates {
         let source_tid = match policy {
-            BootstrapExpandPolicy::ScoreOrder => expansion
+            BootstrapExpandPolicy::ScoreOrder => bootstrap_expansion_mut(opaque)
                 .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>())
                 .map(|candidate| candidate.node),
         };
@@ -556,12 +582,14 @@ fn top_up_bootstrap_frontier<F>(
 
         let frontier_len_before = candidate_frontier_ref(opaque).len();
         if expanded_contains_source(opaque, source_tid) {
-            seed_bootstrap_expansion_candidates(&mut expansion, opaque, frontier_len_before);
+            let candidates = bootstrap_expansion_seed_candidates(opaque, frontier_len_before);
+            bootstrap_expansion_mut(opaque).seed_many(candidates);
             continue;
         }
         mark_expanded_source(opaque, source_tid);
         refill(source_tid, opaque);
-        seed_bootstrap_expansion_candidates(&mut expansion, opaque, frontier_len_before);
+        let candidates = bootstrap_expansion_seed_candidates(opaque, frontier_len_before);
+        bootstrap_expansion_mut(opaque).seed_many(candidates);
     }
 }
 
@@ -997,6 +1025,7 @@ pub(super) struct TqScanOpaque {
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
     pub(super) candidate_frontier: *mut Vec<ScanCandidate>,
+    pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) candidate_frontier_head: Option<usize>,
     pub(super) active_candidate: ScanCandidate,
     pub(super) current_result: CurrentScanResult,
@@ -1024,6 +1053,7 @@ impl Default for TqScanOpaque {
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
+            bootstrap_expansion: ptr::null_mut(),
             candidate_frontier_head: None,
             active_candidate: ScanCandidate::default(),
             current_result: CurrentScanResult::default(),
