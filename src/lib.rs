@@ -614,7 +614,6 @@ mod tests {
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let plan = Spi::connect(|client| {
             let rows = client

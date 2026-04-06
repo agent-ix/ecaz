@@ -13,7 +13,7 @@ fmt-check:
 
 ## Run Clippy (deny warnings)
 lint:
-	cargo clippy --all-targets --no-default-features --features pg17,bench -- -D warnings
+	cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings
 
 ## Run unit tests (no Postgres required)
 test:

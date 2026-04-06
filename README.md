@@ -39,18 +39,31 @@ LIMIT 10;
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) stable
-- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx): `cargo install cargo-pgrx`
-- PostgreSQL 14–17 dev headers
+- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) matching the `pgrx` version in `Cargo.toml`:
+  ```bash
+  cargo install cargo-pgrx --version "^0.17"
+  ```
+- System packages (Ubuntu/Debian):
+  ```bash
+  sudo apt-get install -y postgresql-server-dev-all postgresql-common \
+    build-essential pkg-config libssl-dev libreadline-dev bison flex
+  ```
 
 ## Getting Started
 
 ```bash
-cargo pgrx init          # builds a local Postgres for testing
+cargo pgrx init          # builds local Postgres instances for pg14–pg18
 make fmt                 # format code
 make lint                # clippy (deny warnings)
 make test                # unit tests
-make pg-test             # pgrx integration tests
+make pg-test             # pgrx integration tests (pg18 by default)
 make install             # install into local PG
+```
+
+To run integration tests against a specific version:
+
+```bash
+cargo pgrx test pg18
 ```
 
 ## Architecture
