@@ -327,6 +327,50 @@ pub(super) fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] 
     }
 }
 
+struct VisibleCandidateFrontierRef<'a> {
+    candidates: &'a [ScanCandidate],
+}
+
+impl VisibleCandidateFrontierRef<'_> {
+    fn len(&self) -> usize {
+        self.candidates.len()
+    }
+
+    fn contains_node(&self, element_tid: page::ItemPointer) -> bool {
+        self.candidates
+            .iter()
+            .copied()
+            .any(|candidate| candidate.score_valid && candidate.element_tid == element_tid)
+    }
+
+    fn best_tid_by_score(&self) -> Option<page::ItemPointer> {
+        let mut best: Option<ScanCandidate> = None;
+        for candidate in self.candidates.iter().copied() {
+            if !candidate.score_valid {
+                continue;
+            }
+
+            best = match best {
+                None => Some(candidate),
+                Some(best_candidate) => {
+                    if candidate.score < best_candidate.score {
+                        Some(candidate)
+                    } else {
+                        Some(best_candidate)
+                    }
+                }
+            };
+        }
+        best.map(|candidate| candidate.element_tid)
+    }
+}
+
+fn visible_frontier_ref(opaque: &TqScanOpaque) -> VisibleCandidateFrontierRef<'_> {
+    VisibleCandidateFrontierRef {
+        candidates: candidate_frontier_ref(opaque),
+    }
+}
+
 struct VisibleCandidateFrontier<'a> {
     candidates: &'a mut Vec<ScanCandidate>,
 }
@@ -377,10 +421,7 @@ fn candidate_frontier_contains(
     opaque: &TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> bool {
-    candidate_frontier_ref(opaque)
-        .iter()
-        .copied()
-        .any(|candidate| candidate.score_valid && candidate.element_tid == element_tid)
+    visible_frontier_ref(opaque).contains_node(element_tid)
 }
 
 fn scheduler_best_frontier_node(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
@@ -631,7 +672,7 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    while visible_frontier_mut(opaque).len() < max_candidates {
+    while visible_frontier_ref(opaque).len() < max_candidates {
         let source_tid = match policy {
             BootstrapExpandPolicy::ScoreOrder => bootstrap_expansion_mut(opaque)
                 .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>())
@@ -656,24 +697,7 @@ pub(super) fn current_candidate_frontier_head_tid(
         return Some(node);
     }
 
-    let mut best: Option<ScanCandidate> = None;
-    for candidate in candidate_frontier_ref(opaque).iter().copied() {
-        if !candidate.score_valid {
-            continue;
-        }
-
-        best = match best {
-            None => Some(candidate),
-            Some(best_candidate) => {
-                if candidate.score < best_candidate.score {
-                    Some(candidate)
-                } else {
-                    Some(best_candidate)
-                }
-            }
-        };
-    }
-    best.map(|candidate| candidate.element_tid)
+    visible_frontier_ref(opaque).best_tid_by_score()
 }
 
 fn take_candidate_frontier_node(
@@ -704,7 +728,7 @@ unsafe fn refill_candidate_frontier_from_source(
     }
 
     let max_successor_candidates =
-        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(candidate_frontier_ref(opaque).len());
+        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(visible_frontier_ref(opaque).len());
     if max_successor_candidates == 0 {
         return;
     }
