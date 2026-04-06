@@ -775,6 +775,23 @@ fn refill_bootstrap_frontier_after_consume<F>(
     );
 }
 
+fn materialize_next_bootstrap_candidate<CandidateFn, MaterializeFn>(
+    mut next_candidate: CandidateFn,
+    mut materialize: MaterializeFn,
+) -> bool
+where
+    CandidateFn: FnMut() -> Option<search::BeamCandidate<page::ItemPointer>>,
+    MaterializeFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> bool,
+{
+    while let Some(candidate) = next_candidate() {
+        if materialize(candidate) {
+            return true;
+        }
+    }
+
+    false
+}
+
 unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -783,12 +800,15 @@ unsafe fn materialize_next_bootstrap_frontier_result(
         return false;
     }
 
-    let Some(candidate) =
-        (unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) })
-    else {
-        return false;
-    };
-    unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
+    // temporary mutable borrows of `opaque` do not alias.
+    materialize_next_bootstrap_candidate(
+        || unsafe { consume_and_refill_bootstrap_frontier(index_relation, &mut *opaque_ptr) },
+        |candidate| unsafe {
+            materialize_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+        },
+    )
 }
 
 fn collect_successor_candidates<F>(
@@ -1123,6 +1143,53 @@ mod tests {
         score: f32,
     ) -> search::BeamCandidate<page::ItemPointer> {
         search::BeamCandidate::with_source(tid(block_number, offset_number), score, source_tid)
+    }
+
+    #[test]
+    fn materialize_next_bootstrap_candidate_skips_unmaterializable_candidates() {
+        let mut queued = vec![beam_candidate(21, 1, -3.0), beam_candidate(21, 2, -2.0)].into_iter();
+        let mut attempted = Vec::new();
+
+        let materialized = materialize_next_bootstrap_candidate(
+            || queued.next(),
+            |candidate| {
+                attempted.push((candidate.node.block_number, candidate.node.offset_number));
+                candidate.node.offset_number == 2
+            },
+        );
+
+        assert!(
+            materialized,
+            "bootstrap materialization should keep trying later candidates after one fails"
+        );
+        assert_eq!(
+            attempted,
+            vec![(21, 1), (21, 2)],
+            "candidate materialization should proceed in consumption order until one succeeds"
+        );
+    }
+
+    #[test]
+    fn materialize_next_bootstrap_candidate_returns_false_when_frontier_never_materializes() {
+        let mut queued = vec![beam_candidate(22, 1, -3.0), beam_candidate(22, 2, -2.0)].into_iter();
+        let mut attempts = 0;
+
+        let materialized = materialize_next_bootstrap_candidate(
+            || queued.next(),
+            |_candidate| {
+                attempts += 1;
+                false
+            },
+        );
+
+        assert!(
+            !materialized,
+            "bootstrap materialization should return false only after every candidate fails"
+        );
+        assert_eq!(
+            attempts, 2,
+            "bootstrap materialization should exhaust the queued frontier before giving up"
+        );
     }
 
     #[test]
