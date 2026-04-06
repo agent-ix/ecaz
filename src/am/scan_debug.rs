@@ -7,7 +7,7 @@ use pgrx::pg_sys;
 #[cfg(any(test, feature = "pg_test"))]
 use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
-use super::{graph, page};
+use super::{graph, page, search};
 
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -63,16 +63,27 @@ type DebugCandidateFrontierSlotConsume = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_candidate_slot(
+    candidate: Option<search::BeamCandidate<page::ItemPointer>>,
+) -> DebugCandidateSlot {
+    match candidate {
+        Some(candidate) => (
+            true,
+            (candidate.node.block_number, candidate.node.offset_number),
+            candidate.score,
+        ),
+        None => (false, (u32::MAX, u16::MAX), 0.0),
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
-    visible_frontier_snapshot(opaque)
+    visible_frontier_candidates(opaque)
         .into_iter()
         .map(|candidate| {
             (
-                candidate.score_valid,
-                (
-                    candidate.element_tid.block_number,
-                    candidate.element_tid.offset_number,
-                ),
+                true,
+                (candidate.node.block_number, candidate.node.offset_number),
                 candidate.score,
             )
         })
@@ -83,19 +94,16 @@ fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFronti
 fn debug_candidate_frontier_provenance_slots(
     opaque: &TqScanOpaque,
 ) -> DebugCandidateFrontierProvenanceSlots {
-    visible_frontier_snapshot(opaque)
+    visible_frontier_candidates(opaque)
         .into_iter()
         .map(|candidate| {
             (
-                candidate.score_valid,
-                (
-                    candidate.element_tid.block_number,
-                    candidate.element_tid.offset_number,
-                ),
-                (
-                    candidate.source_tid.block_number,
-                    candidate.source_tid.offset_number,
-                ),
+                true,
+                (candidate.node.block_number, candidate.node.offset_number),
+                candidate
+                    .source
+                    .map(|tid| (tid.block_number, tid.offset_number))
+                    .unwrap_or((u32::MAX, u16::MAX)),
                 candidate.score,
             )
         })
@@ -135,16 +143,8 @@ type DebugActiveCandidateMaterializationState = (
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_snapshot(opaque: &TqScanOpaque) -> DebugCandidateFrontier {
-    [candidate_slot(opaque, 0), candidate_slot(opaque, 1)].map(|candidate| {
-        (
-            candidate.score_valid,
-            (
-                candidate.element_tid.block_number,
-                candidate.element_tid.offset_number,
-            ),
-            candidate.score,
-        )
-    })
+    [visible_frontier_slot(opaque, 0), visible_frontier_slot(opaque, 1)]
+        .map(debug_candidate_slot)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -529,24 +529,14 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before = candidate_slot(opaque, 0);
-    let before_valid = before.score_valid;
-    let before_tid = (
-        before.element_tid.block_number,
-        before.element_tid.offset_number,
-    );
-    let before_score = before.score;
+    let (before_valid, before_tid, before_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let after = candidate_slot(opaque, 0);
-    let after_valid = after.score_valid;
-    let after_tid = (
-        after.element_tid.block_number,
-        after.element_tid.offset_number,
-    );
-    let after_score = after.score;
+    let (after_valid, after_tid, after_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -584,13 +574,8 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let successor = candidate_slot(opaque, 1);
-    let successor_valid = successor.score_valid;
-    let successor_tid = (
-        successor.element_tid.block_number,
-        successor.element_tid.offset_number,
-    );
-    let successor_score = successor.score;
+    let (successor_valid, successor_tid, successor_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 1));
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -972,26 +957,16 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before = candidate_slot(opaque, 0);
-    let before_valid = before.score_valid;
-    let before_tid = (
-        before.element_tid.block_number,
-        before.element_tid.offset_number,
-    );
-    let before_score = before.score;
+    let (before_valid, before_tid, before_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "entry-candidate lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let partial = candidate_slot(opaque, 0);
-    let partial_valid = partial.score_valid;
-    let partial_tid = (
-        partial.element_tid.block_number,
-        partial.element_tid.offset_number,
-    );
-    let partial_score = partial.score;
+    let (partial_valid, partial_tid, partial_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 0));
     let partial_result_tid = (
         opaque.current_result.element_tid.block_number,
         opaque.current_result.element_tid.offset_number,
@@ -1000,13 +975,8 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let exhausted = candidate_slot(opaque, 0);
-    let exhausted_valid = exhausted.score_valid;
-    let exhausted_tid = (
-        exhausted.element_tid.block_number,
-        exhausted.element_tid.offset_number,
-    );
-    let exhausted_score = exhausted.score;
+    let (exhausted_valid, exhausted_tid, exhausted_score) =
+        debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };

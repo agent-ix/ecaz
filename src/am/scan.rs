@@ -403,18 +403,19 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
     unsafe { &mut *opaque.candidate_frontier }
 }
 
-pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
-    visible_frontier_ref(opaque)
-        .slot(index)
-        .map(ScanCandidate::from)
-        .unwrap_or_default()
-}
-
-pub(super) fn visible_frontier_snapshot(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
+pub(super) fn visible_frontier_candidates(
+    opaque: &TqScanOpaque,
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
     visible_frontier_ref(opaque)
         .iter()
-        .map(ScanCandidate::from)
         .collect()
+}
+
+pub(super) fn visible_frontier_slot(
+    opaque: &TqScanOpaque,
+    index: usize,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    visible_frontier_ref(opaque).slot(index)
 }
 
 fn candidate_frontier_contains(
@@ -1199,11 +1200,13 @@ mod tests {
             "consuming the best slot should reselect the remaining valid candidate"
         );
         assert!(
-            candidate_slot(&opaque, 0).score_valid,
+            visible_frontier_slot(&opaque, 0).is_some(),
             "consuming the head should keep the remaining candidate valid"
         );
         assert_eq!(
-            candidate_slot(&opaque, 0).score,
+            visible_frontier_slot(&opaque, 0)
+                .map(|candidate| candidate.score)
+                .unwrap_or(0.0),
             3.5,
             "consuming the head should preserve the remaining candidate after compaction"
         );
@@ -1220,7 +1223,7 @@ mod tests {
             "consuming the last valid slot should invalidate the frontier head"
         );
         assert!(
-            visible_frontier_snapshot(&opaque).is_empty(),
+            visible_frontier_candidates(&opaque).is_empty(),
             "consuming both valid slots should leave the candidate vector empty"
         );
         assert!(
@@ -1350,11 +1353,11 @@ mod tests {
             "scheduler-owned best-node selection should override Vec score order during consumption"
         );
         assert_eq!(
-            candidate_slot(&opaque, 0).element_tid,
-            page::ItemPointer {
+            visible_frontier_slot(&opaque, 0).map(|candidate| candidate.node),
+            Some(page::ItemPointer {
                 block_number: 15,
                 offset_number: 1,
-            },
+            }),
             "consumption should remove the scheduler-selected visible candidate from the compacted frontier"
         );
     }
@@ -1498,26 +1501,26 @@ mod tests {
         );
 
         assert_eq!(
-            visible_frontier_snapshot(&opaque)
+            visible_frontier_candidates(&opaque)
                 .iter()
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
             vec![entry_tid, child_tid, grandchild_tid],
             "bootstrap frontier filling should keep expanding from newly seeded candidates until capacity is reached"
         );
         assert_eq!(
-            visible_frontier_snapshot(&opaque)[0].source_tid,
-            page::ItemPointer::INVALID,
+            visible_frontier_candidates(&opaque)[0].source,
+            None,
             "entry-seeded candidates should not claim a discovery source"
         );
         assert_eq!(
-            visible_frontier_snapshot(&opaque)[1].source_tid,
-            entry_tid,
+            visible_frontier_candidates(&opaque)[1].source,
+            Some(entry_tid),
             "first-hop candidates should record the entry candidate as their source"
         );
         assert_eq!(
-            visible_frontier_snapshot(&opaque)[2].source_tid,
-            child_tid,
+            visible_frontier_candidates(&opaque)[2].source,
+            Some(child_tid),
             "second-hop candidates should record the candidate they were expanded from"
         );
     }
@@ -1571,9 +1574,9 @@ mod tests {
         );
 
         assert_eq!(
-            visible_frontier_snapshot(&opaque)
+            visible_frontier_candidates(&opaque)
                 .iter()
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
             vec![entry_tid, sibling_tid, grandchild_tid],
             "top-up should keep expanding from remaining unexpanded candidates without resetting prior expanded-source state"
@@ -1622,9 +1625,9 @@ mod tests {
         );
 
         assert_eq!(
-            visible_frontier_snapshot(&opaque)
+            visible_frontier_candidates(&opaque)
                 .iter()
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
             vec![entry_tid],
             "top-up should not silently rebuild beam state from the visible frontier when the scheduler is empty"
@@ -1688,9 +1691,9 @@ mod tests {
             "consume/refill should continue by expanding another remaining frontier candidate first"
         );
         assert_eq!(
-            visible_frontier_snapshot(&opaque)
+            visible_frontier_candidates(&opaque)
                 .iter()
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
             vec![sibling_tid, grandchild_tid],
             "consume/refill should still top up from another remaining unexpanded frontier candidate"
