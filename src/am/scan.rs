@@ -398,6 +398,7 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
     unsafe { &mut *opaque.candidate_frontier }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) fn visible_frontier_candidates(
     opaque: &TqScanOpaque,
 ) -> Vec<search::BeamCandidate<page::ItemPointer>> {
@@ -406,6 +407,7 @@ pub(super) fn visible_frontier_candidates(
         .collect()
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) fn visible_frontier_slot(
     opaque: &TqScanOpaque,
     index: usize,
@@ -646,6 +648,7 @@ fn top_up_bootstrap_frontier<F>(
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) fn current_candidate_frontier_head_tid(
     opaque: &mut TqScanOpaque,
 ) -> Option<page::ItemPointer> {
