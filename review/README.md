@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `60adb1a`
+Current head: `a60b707`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -206,6 +206,7 @@ Review triage at `46d00bb`:
 - Runtime frontier consumption, refill, and direct materialization in `src/am/scan.rs` now also flow through `BeamCandidate<ItemPointer>` values, with `ScanCandidate` retained mainly for scan-owned persistent fields like `active_candidate` and for debug/test-facing snapshot surfaces.
 - The shared search seam now also exposes non-mutating queued-node lookup in `src/am/search.rs`, giving later scan-side ownership transfers a direct way to ask whether a node is still beam-owned without snapshotting or mutating scheduler state.
 - Internal visible-frontier iteration in `src/am/scan.rs` now stays in `BeamCandidate<ItemPointer>` form for selection paths, instead of converting back into `ScanCandidate` before immediately projecting back down to node/score data.
+- The stale `active_candidate` staging path is now gone from `src/am/scan.rs`; bootstrap candidates either materialize directly into current-result plus pending heap-TID drain state or remain in the visible frontier, and the debug-only materialization coverage now exercises that direct path instead of a separate active-candidate slot.
 - Remaining `src/am/scan.rs` unit-test frontier fixtures now construct `BeamCandidate<ItemPointer>` values directly through local helpers instead of populating `ScanCandidate` literals and converting them back into beam-native runtime state.
 - The old `ScanCandidate` boundary type and its beam conversion helpers are now gone from `src/am/scan.rs`; the hot path, test fixtures, and debug boundaries all use beam-native candidate state directly.
 - The unused `queued_candidate` lookup API and its tests are now gone from `src/am/search.rs`, leaving the shared beam surface focused on the scheduler operations the current scan path actually uses.
@@ -317,6 +318,7 @@ Open requests:
 - `110-beam-native-scan-test-fixtures.md`
 - `111-remove-dead-scan-candidate-boundary.md`
 - `112-remove-dead-queued-beam-lookup.md`
+- `113-remove-stale-bootstrap-candidate-staging.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
