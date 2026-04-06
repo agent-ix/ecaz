@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `19d4ca8`
+Current head: `1348872`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -196,6 +196,7 @@ Review triage at `46d00bb`:
 - The visible bootstrap frontier now has one explicit local container seam in `src/am/scan.rs`, so runtime paths and unit tests stop open-coding raw `Vec<ScanCandidate>` mutation for clear/len/push/extend/remove behavior.
 - The visible frontier now also has a read-side seam in `src/am/scan.rs`, so runtime containment, fallback head derivation, and frontier-length checks stop open-coding raw slice walks outside one local container API.
 - The visible frontier seam now also owns iteration and slot reads in `src/am/scan.rs`, so bootstrap seeding and fallback score-order reads no longer reach around the local container API for raw slice iteration.
+- The raw visible-frontier slice is now private to `src/am/scan.rs`; external scan debug helpers consume explicit snapshot/slot helpers instead of reaching across the module boundary for the frontier slice directly.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -285,6 +286,7 @@ Open requests:
 - `91-visible-frontier-container-seam.md`
 - `92-visible-frontier-read-seam.md`
 - `93-visible-frontier-iteration-seam.md`
+- `94-private-frontier-slice-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
