@@ -390,7 +390,7 @@ static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCand
 fn candidate_frontier_ref(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
     visible_frontier_ref(opaque)
         .iter()
-        .map(beam_candidate_to_scan_candidate)
+        .map(ScanCandidate::from)
         .collect()
 }
 
@@ -413,14 +413,14 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
     visible_frontier_ref(opaque)
         .slot(index)
-        .map(beam_candidate_to_scan_candidate)
+        .map(ScanCandidate::from)
         .unwrap_or_default()
 }
 
 pub(super) fn visible_frontier_snapshot(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
     visible_frontier_ref(opaque)
         .iter()
-        .map(beam_candidate_to_scan_candidate)
+        .map(ScanCandidate::from)
         .collect()
 }
 
@@ -1101,18 +1101,6 @@ impl From<search::BeamCandidate<page::ItemPointer>> for ScanCandidate {
             score_valid: true,
         }
     }
-}
-
-fn scan_candidate_to_beam_candidate(
-    candidate: ScanCandidate,
-) -> search::BeamCandidate<page::ItemPointer> {
-    candidate.into()
-}
-
-fn beam_candidate_to_scan_candidate(
-    candidate: search::BeamCandidate<page::ItemPointer>,
-) -> ScanCandidate {
-    candidate.into()
 }
 
 #[repr(C)]
