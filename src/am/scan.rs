@@ -319,11 +319,16 @@ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct VisibleCandidateFrontierState {
+    candidates: Vec<ScanCandidate>,
+}
+
 fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
     if opaque.candidate_frontier.is_null() {
         &[]
     } else {
-        unsafe { &*opaque.candidate_frontier }
+        &unsafe { &*opaque.candidate_frontier }.candidates
     }
 }
 
@@ -409,10 +414,11 @@ impl VisibleCandidateFrontier<'_> {
 
 fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> VisibleCandidateFrontier<'_> {
     if opaque.candidate_frontier.is_null() {
-        opaque.candidate_frontier = Box::into_raw(Box::new(Vec::new()));
+        opaque.candidate_frontier =
+            Box::into_raw(Box::new(VisibleCandidateFrontierState::default()));
     }
     VisibleCandidateFrontier {
-        candidates: unsafe { &mut *opaque.candidate_frontier },
+        candidates: &mut unsafe { &mut *opaque.candidate_frontier }.candidates,
     }
 }
 
@@ -1110,7 +1116,7 @@ pub(super) struct TqScanOpaque {
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
-    pub(super) candidate_frontier: *mut Vec<ScanCandidate>,
+    pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) active_candidate: ScanCandidate,
     pub(super) current_result: CurrentScanResult,
