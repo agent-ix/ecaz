@@ -22,6 +22,7 @@ pub(crate) use self::scan::{
     debug_begin_end_scan, debug_candidate_frontier_head_lifecycle,
     debug_consume_candidate_frontier_head, debug_consume_candidate_frontier_head_slots,
     debug_end_scan_twice, debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
+    debug_gettuple_consumes_bootstrap_candidate,
     debug_gettuple_after_rescan_result, debug_gettuple_backward_after_rescan,
     debug_gettuple_current_result_heap_progress, debug_gettuple_current_result_lifecycle,
     debug_gettuple_current_result_neighbors, debug_gettuple_current_result_state,

@@ -146,6 +146,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
+            maybe_consume_bootstrap_frontier_candidate((*scan).indexRelation, opaque);
             if let Some(heap_tid) = next_linear_scan_heap_tid(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
@@ -240,6 +241,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
+    clear_active_scan_candidate(opaque);
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
 }
@@ -274,6 +276,10 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
     opaque.current_result = CurrentScanResult::default();
+}
+
+fn clear_active_scan_candidate(opaque: &mut TqScanOpaque) {
+    opaque.active_candidate = ScanCandidate::default();
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -569,6 +575,23 @@ unsafe fn consume_and_refill_bootstrap_frontier(
     Some(consumed)
 }
 
+fn maybe_consume_bootstrap_frontier_candidate(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) {
+    if opaque.active_candidate.score_valid
+        || opaque.scan_exhausted
+        || opaque.pending_heaptid_count != 0
+        || opaque.scan_dimensions == 0
+    {
+        return;
+    }
+
+    if let Some(candidate) = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) } {
+        opaque.active_candidate = candidate;
+    }
+}
+
 fn collect_successor_candidates<F>(
     neighbor_tids: &[page::ItemPointer],
     max_candidates: usize,
@@ -615,6 +638,7 @@ unsafe fn next_linear_scan_heap_tid(
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
         clear_scan_candidate_state(opaque);
+        clear_active_scan_candidate(opaque);
         clear_scan_result_state(opaque);
         return None;
     }
@@ -693,6 +717,7 @@ unsafe fn next_linear_scan_heap_tid(
 
     opaque.scan_exhausted = true;
     clear_scan_candidate_state(opaque);
+    clear_active_scan_candidate(opaque);
     clear_scan_result_state(opaque);
     None
 }
@@ -804,6 +829,7 @@ struct TqScanOpaque {
     expanded_source_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: Option<usize>,
+    active_candidate: ScanCandidate,
     current_result: CurrentScanResult,
     next_block_number: u32,
     next_offset_number: u16,
@@ -829,6 +855,7 @@ impl Default for TqScanOpaque {
             expanded_source_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: None,
+            active_candidate: ScanCandidate::default(),
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
@@ -941,6 +968,15 @@ type DebugBootstrapSeedState = (
     DebugCandidateFrontierSlots,
     DebugCandidateFrontierProvenanceSlots,
     Vec<HeapTidCoords>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugBootstrapConsumeState = (
+    DebugCandidateHead,
+    DebugCandidateFrontierSlots,
+    (bool, HeapTidCoords, HeapTidCoords, f32),
+    DebugCandidateHead,
+    DebugCandidateFrontierSlots,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1431,6 +1467,58 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
         frontier_slots,
         frontier_provenance,
         expanded_sources,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugBootstrapConsumeState {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = opaque.candidate_frontier_head;
+    let before_slots = debug_candidate_frontier_slots(opaque);
+
+    assert!(
+        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        "bootstrap-consume helper requires a first tuple"
+    );
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let active_candidate = (
+        opaque.active_candidate.score_valid,
+        (
+            opaque.active_candidate.element_tid.block_number,
+            opaque.active_candidate.element_tid.offset_number,
+        ),
+        (
+            opaque.active_candidate.source_tid.block_number,
+            opaque.active_candidate.source_tid.offset_number,
+        ),
+        opaque.active_candidate.score,
+    );
+    let after_head = opaque.candidate_frontier_head;
+    let after_slots = debug_candidate_frontier_slots(opaque);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_head,
+        before_slots,
+        active_candidate,
+        after_head,
+        after_slots,
     )
 }
 

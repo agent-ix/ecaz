@@ -2580,8 +2580,8 @@ mod tests {
         .expect("index oid should exist");
         let (
             before_valid,
-            before_tid,
-            before_score,
+            _before_tid,
+            _before_score,
             partial_valid,
             partial_tid,
             partial_score,
@@ -2596,15 +2596,16 @@ mod tests {
         );
         assert_eq!(
             partial_valid, before_valid,
-            "entry candidate should stay valid after partial bootstrap scan progress"
+            "bootstrap candidate state should stay populated after partial scan progress"
         );
-        assert_eq!(
-            partial_tid, before_tid,
-            "entry candidate should stay attached to the metadata entry point during partial scan progress"
+        assert_ne!(
+            partial_tid,
+            (u32::MAX, u16::MAX),
+            "partial bootstrap scan progress should keep a concrete active candidate tid"
         );
-        assert_eq!(
-            partial_score, before_score,
-            "entry candidate score should stay stable during partial scan progress"
+        assert_ne!(
+            partial_score, 0.0,
+            "partial bootstrap scan progress should keep a concrete active candidate score"
         );
         assert!(
             !exhausted_valid,
@@ -2858,13 +2859,14 @@ mod tests {
             before_head, None,
             "non-empty frontier should expose a concrete head immediately after rescan"
         );
-        assert_eq!(
-            partial_head, before_head,
-            "frontier head should stay stable during partial bootstrap scan progress"
+        assert!(
+            partial_head != before_head || partial_frontier != before_frontier,
+            "partial bootstrap scan progress should now be allowed to advance bootstrap frontier state"
         );
         assert_eq!(
-            partial_frontier, before_frontier,
-            "partial bootstrap scan progress should not mutate the current two-slot frontier yet"
+            partial_head.is_some(),
+            partial_frontier.iter().any(|slot| slot.0),
+            "frontier head presence should still track whether any bootstrap candidates remain after partial progress"
         );
         assert_eq!(
             exhausted_head, None,
@@ -3084,6 +3086,57 @@ mod tests {
                 "refill should not fabricate a new candidate when the consumed adjacency adds nothing unseen"
             );
         }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_gettuple_consumes_bootstrap_candidate_state() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bootstrap_consume_state (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bootstrap_consume_state VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bootstrap_consume_state_idx ON tqhnsw_bootstrap_consume_state USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_bootstrap_consume_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_head, before_slots, active_candidate, after_head, after_slots) = unsafe {
+            am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        let consumed_index = before_head.expect("non-empty bootstrap frontier should expose a head");
+        let consumed_slot = before_slots[consumed_index];
+
+        assert!(
+            active_candidate.0,
+            "first amgettuple call should materialize one active bootstrap candidate"
+        );
+        assert_eq!(
+            active_candidate.1, consumed_slot.1,
+            "the active bootstrap candidate should come from the prior frontier head"
+        );
+        assert!(
+            !after_slots.iter().any(|slot| slot.1 == active_candidate.1),
+            "consuming the bootstrap head should remove that candidate from the frontier"
+        );
+        assert_eq!(
+            after_head.is_some(),
+            !after_slots.is_empty(),
+            "frontier-head presence should continue to track whether bootstrap candidates remain after first consumption"
+        );
     }
 
     #[pg_test]
