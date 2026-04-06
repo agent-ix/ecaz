@@ -1,6 +1,8 @@
 # Implementation Plan: tqvector
 
-This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text. The spec does not consistently use `relationships:` arrays for FR files, so this plan uses the explicit trace graph plus normative references in the requirement bodies.
+This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
+
+Last updated: 2026-04-05 (benchmark infrastructure complete at `9f80e28`).
 
 ## Requirements Summary
 
@@ -33,11 +35,11 @@ This plan is derived from the current `spec/` set for `tqvector`, with dependenc
 
 ### Non-Functional Requirements
 
-- [ ] **NFR-001**: Query latency and throughput targets.
-- [ ] **NFR-002**: Storage compression and index-size accounting.
-- [ ] **NFR-003**: Recall quality and benchmark methodology.
-- [ ] **NFR-004**: Safety and stability.
-- [ ] **NFR-005**: Build and CI quality gates.
+- [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
+- [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done (uniform + clustered + near-dup); HNSW-level blocked on scan._
+- [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
+- [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 
 ## Dependency Graph
 
@@ -59,6 +61,8 @@ This plan is derived from the current `spec/` set for `tqvector`, with dependenc
   Reason: scan uses prepared-query scoring against page tuples.
 - `FR-015 + FR-007 -> FR-016`
   Reason: insert uses code-to-code scoring against page tuples.
+- **`FR-009 (graph traversal) -> FR-016 (graph-aware insert), FR-010 (vacuum)`**
+  Reason: insert's greedy descent + beam search and vacuum's graph repair both reuse the same page-level graph traversal algorithm implemented for scan. This shared traversal helper is the critical dependency.
 - `FR-012`
   Reason: bootstrap/packaging is mostly independent, but final SQL registration depends on available functions and operators.
 - `FR-014`
@@ -70,278 +74,344 @@ This plan is derived from the current `spec/` set for `tqvector`, with dependenc
 - `NFR-005` applies to every merge point.
 - `NFR-001`, `NFR-002`, and `NFR-003` are verification-heavy and should not block initial correctness unless a design choice depends on benchmark evidence.
 
-## Critical Path
+---
 
-The shortest path to an end-to-end usable extension is:
+## Completed Phases
 
-1. `FR-013` quantization math
-2. `FR-015` orchestrator and core packing/scoring helpers
-3. `FR-001`, `FR-002`, `FR-003` type + I/O
-4. `FR-004`, `FR-005`, `FR-017`, `FR-018` SQL-callable encode/score functions
-5. `FR-006`, `FR-012` operators and extension packaging
-6. `FR-007` page layout
-7. `FR-008` bulk build
-8. `FR-009` scan
-9. `FR-011` WAL guarantees hardened across all write paths
-10. `FR-010` vacuum
-11. `FR-016` online insert
-12. `FR-014` SIMD optimization and full benchmark passes for `NFR-001` to `NFR-003`
+Phases 0-3 and the build half of Phase 4 are complete. Preserving the record here for traceability; active work is described in the Remaining Work section below.
 
-## Parallel Execution Plan
+### Phase 0: Scaffolding — COMPLETE
 
-### Phase 0: Scaffolding and repo setup
+- [x] Crate/module skeleton (type, quantizer, SQL functions, AM modules)
+- [ ] CI skeleton — Makefile targets exist, CI pipeline not wired (tracked in Task 08)
 
-- [x] Create crate/module skeleton for:
-  - type and I/O
-  - quantizer core
-  - SQL function bindings
-  - HNSW AM modules
-  - benchmark and test harnesses
-- [ ] Set up CI skeleton for `fmt`, `clippy`, unit tests, `cargo pgrx test`, and license checks.
+### Phase 1: Scalar quantizer core — COMPLETE
 
-Parallelism:
-- Workstream A: test harness and CI scaffolding
-- Workstream B: crate/module skeleton
+- [x] `FR-013` scalar math (SRHT/FWHT, codebook, MSE/QJL packing)
+- [x] `FR-015` scalar `ProdQuantizer` (constructor, encode/decode, query prep, scoring, cache)
 
-### Phase 1: Scalar quantizer core
+### Phase 2: Datum and SQL function surface — COMPLETE
 
-- [x] Implement `FR-013` scalar math:
-  - SRHT/FWHT
-  - codebook generation
-  - MSE packing
-  - QJL packing
-  - decode approximation helpers
-- [x] Implement `FR-015` scalar `ProdQuantizer`:
-  - constructor
-  - encode/decode
-  - query preparation
-  - `score_ip_encoded`
-  - `score_ip_encoded_lite`
-  - cache hooks
+- [x] `FR-001` datum pack/unpack and type registration
+- [x] `FR-002` text I/O
+- [x] `FR-003` binary send/receive
+- [x] `FR-004` `encode_to_tqvector`
+- [x] `FR-005`, `FR-017`, `FR-018` SQL-visible scoring functions
+- [x] `FR-006` operators and operator class
+- [x] `FR-012` extension packaging
 
-Parallelism:
-- Workstream A1: transforms and codebook generation
-- Workstream A2: packing/unpacking primitives
-- Workstream A3: orchestrator shell and cache structure
+### Phase 3: Page layout and storage engine base — COMPLETE
 
-Merge point:
-- `FR-015` cannot be completed until A1 and A2 land.
+- [x] `FR-007` page structs, tuple codecs, fit checks, level-cap logic
+- [x] `FR-011` GenericXLog wrapper utilities and write discipline
 
-### Phase 2: Datum and SQL function surface
+### Phase 4 (partial): HNSW bulk build — COMPLETE
 
-- [x] Implement `FR-001` datum pack/unpack and type registration.
-- [x] Implement `FR-002` text I/O.
-- [x] Implement `FR-003` binary send/receive.
-- [x] Implement `FR-004` `encode_to_tqvector`.
-- [x] Implement `FR-005`, `FR-017`, `FR-018` SQL-visible scoring functions.
-- [x] Implement `FR-006` operators and operator class.
-- [x] Implement `FR-012` extension packaging and SQL install/uninstall.
+- [x] `FR-008` bulk build using `hnsw_rs` plus two-pass serialization
+- [x] Scan lifecycle, query validation, metadata/prepared-query caching, bootstrap linear scan
+- [x] Insert shape validation, metadata init, duplicate coalescing, tail-page append/reuse
+- [x] AM module split: cost, vacuum, options, routine, build extracted from mod.rs
 
-Parallelism:
-- Workstream B1: datum/type/I/O (`FR-001` to `FR-003`)
-- Workstream B2: encode and score functions (`FR-004`, `FR-005`, `FR-017`, `FR-018`)
-- Workstream B3: SQL DDL/bootstrap (`FR-006`, `FR-012`)
+---
 
-Merge points:
-- B2 depends on Phase 1.
-- B3 depends on exported SQL functions from B1/B2.
+## Remaining Work
 
-### Phase 3: Page layout and storage engine base
+### Current State Summary
 
-- [x] Implement `FR-007` page structs, tuple codecs, fit checks, and level-cap logic.
-- [x] Implement `FR-011` GenericXLog wrapper utilities and write discipline.
+The extension is ~70% complete. All quantizer, type, scoring, page layout, and build code is done.
+The critical gap is FR-009 graph traversal scan — without it, index queries don't work.
+Insert and vacuum also need graph traversal for neighbor selection and graph repair, making scan the single gating dependency.
 
-Parallelism:
-- Workstream C1: tuple/page layout and page inspection helpers
-- Workstream C2: WAL/write abstraction layer
+### Remaining Dependency Graph
 
-Merge point:
-- C1 and C2 must converge before build, insert, or vacuum write paths.
+```
+                    ┌─────────────────────────┐
+                    │  A1: Finish am split     │
+                    │  (insert.rs, scan.rs)    │
+                    └───────────┬──────────────┘
+                                │
+                    ┌───────────▼──────────────┐
+                    │  A2: Graph traversal     │
+                    │  helpers (greedy descent  │
+                    │  + beam search on pages)  │
+                    └───────────┬──────────────┘
+                                │
+              ┌─────────────────┼─────────────────┐
+              │                 │                  │
+  ┌───────────▼────────┐  ┌────▼───────────┐  ┌──▼──────────────────┐
+  │  A3: Wire scan      │  │                │  │                     │
+  │  (amgettuple +      │  │  A5: Graph     │  │  A6: Vacuum         │
+  │  ef_search GUC +    │  │  insert        │  │  three-pass         │
+  │  planner enable)    │  │  (FR-016)      │  │  (FR-010)           │
+  └───────────┬─────────┘  └────────────────┘  └─────────────────────┘
+              │                    │                      │
+  ┌───────────▼─────────┐         │                      │
+  │  A4: Recall gate    │         │                      │
+  │  (measure recall,   │◄────────┘──────────────────────┘
+  │  go/no-go before    │    (drift/vacuum recall needs A5/A6)
+  │  proceeding)        │
+  └─────────────────────┘
 
-### Phase 4: HNSW build and query path
 
-- [x] Implement `FR-008` bulk build using `hnsw_rs` plus two-pass serialization.
-- [ ] Implement `FR-009` scan using prepared-query scoring and `ef_search`.
-  Current state: scan lifecycle, query ownership, metadata caching, prepared-query caching, and a forward linear bootstrap path are implemented; graph traversal, `ef_search`, and planner enablement remain pending.
+  PARALLEL (no dependencies on Track A):
 
-Parallelism:
-- Workstream D1: bulk-build heap scan, graph extraction, and TID fixup
-- Workstream D2: scan-state, greedy descent, and beam search
+  ┌─────────────────────┐    ┌─────────────────────┐
+  │  B1: SIMD (FR-014)  │    │  B2: CI (NFR-005)   │
+  │  AVX2+FMA, NEON,    │    │  + fuzz (NFR-004)   │
+  │  runtime detection  │    │                     │
+  └─────────────────────┘    └─────────────────────┘
+```
 
-Merge points:
-- D1 depends on Phase 3.
-- D2 depends on Phase 2 and Phase 3.
-- End-to-end indexed query testing starts once D1 and D2 both land.
+### Track A: Critical Path (serial, primary agent)
 
-### Phase 5: Maintenance paths
+All items are serial because each depends on the previous.
 
-- [ ] Implement `FR-010` vacuum with three-pass repair.
-- [ ] Implement `FR-016` online insert and insert-drift statistics.
-  Current state: live insert shape validation, metadata initialization, duplicate coalescing, and tail-page append/reuse are implemented; graph-aware insertion, drift statistics, and `build_source_column` insert support remain pending.
+#### A1: Finish am/mod.rs Split
+- **Scope:** Extract insert and scan callbacks into `am/insert.rs` and `am/scan.rs`. Mechanical refactor, no logic changes.
+- **Owns:** Structural prep for FR-009, FR-016
+- **Estimated new code:** ~100 lines (visibility adjustments)
+- **Difficulty:** Easy
+- **Exit criteria:** am/mod.rs contains only shared helpers (metadata, page utils, build callback). Each AM concern lives in its own file.
 
-Parallelism:
-- Workstream E1: vacuum and graph repair
-- Workstream E2: online insert and metadata/statistics exposure
+#### A2: Graph Traversal Helpers
+- **Scope:** Implement shared page-level greedy descent + beam search. Both scan (FR-009) and insert (FR-016) need this same algorithm — scan uses LUT scoring (`score_ip_encoded`), insert uses code-to-code scoring (`score_ip_codes_lite`). Factor the traversal as a generic helper parameterized by scoring function.
+- **Owns:** Shared foundation for FR-009, FR-016, FR-010
+- **Estimated new code:** ~250-350 lines
+- **Difficulty:** Hard — this is the core HNSW algorithm on Postgres buffer pages
+- **Key challenges:**
+  - Buffer pin management: read page, decode neighbor tuple, follow TID pointers, release buffer per tuple
+  - Visited set: HashSet of ItemPointer, potentially large for big indexes
+  - BinaryHeap ordering: min-heap for candidates (closest first), correct handling of negative inner product direction
+  - Layer traversal: read neighbor TIDs at correct layer offset within TqNeighborTuple
+- **Exit criteria:** A function like `hnsw_search(relation, entry_point, scorer, ef, max_layer) -> Vec<(f32, ItemPointer)>` that works on built indexes.
+- **Reference:** pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines), but tqvector needs raw page decode which adds complexity.
 
-Merge points:
-- Both depend on Phase 3.
-- E2 also depends on code-to-code scoring from Phase 2.
+#### A3: Wire Graph Traversal into Scan
+- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Add `ef_search` GUC. Replace MAX cost estimates with realistic planner costs. Handle result ordering via BinaryHeap in amgettuple.
+- **Owns:** FR-009 completion
+- **Estimated new code:** ~200-300 lines
+- **Difficulty:** Medium — wiring + GUC registration + planner integration
+- **Key deliverables:**
+  1. `amrescan` calls `hnsw_search` (from A2) and stores scored results in BinaryHeap
+  2. `amgettuple` pops from BinaryHeap, returns heap TIDs in distance order
+  3. `tqhnsw.ef_search` GUC (default 40, range 1-1000, PGC_USERSET)
+  4. `amcostestimate` returns realistic costs (remove ADR-011 override)
+  5. Duplicate heap TID handling for coalesced element tuples
+- **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan (confirmed by EXPLAIN) and returns distance-ordered results.
 
-### Phase 6: Optimization and verification
+#### A4: Recall Benchmark Gate
+- **Scope:** Measure Recall@10 on synthetic data. This is a go/no-go gate — if recall is below ~89% (m=8, ef=128 per NFR-003), stop and investigate before investing in insert/vacuum.
+- **Owns:** Initial NFR-003 validation
+- **Estimated new code:** ~200-300 lines (benchmark harness + ground truth generator)
+- **Difficulty:** Easy-Medium
+- **Key deliverables:**
+  1. Brute-force fp32 top-k ground truth generator
+  2. Recall@10 measurement (set intersection)
+  3. Test at multiple configurations: (m=8, ef=40), (m=8, ef=128), (m=8, ef=200), (m=16, ef=200)
+  4. Report recall numbers — these anchor all downstream quality claims
+- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. If not met, investigate root cause before proceeding.
 
-- [ ] Implement `FR-014` SIMD acceleration after scalar correctness is stable.
-- [ ] Execute `NFR-001` latency/throughput benchmarks.
-- [ ] Execute `NFR-002` storage accounting benchmarks.
-- [ ] Execute `NFR-003` recall, ablation, drift, and vacuum-impact benchmarks.
-- [ ] Harden `NFR-004` fuzzing, panic resistance, and unsafe audits.
-- [ ] Enforce `NFR-005` CI gates.
+#### A5: Graph-Aware Insert (FR-016)
+- **Scope:** Replace disconnected-append insert with graph-connected insert. Layer assignment, greedy descent via A2 helpers, beam search for neighbors, back-link updates, entry point promotion, drift statistics.
+- **Owns:** FR-016 completion
+- **Estimated new code:** ~400-600 lines
+- **Difficulty:** Hard
+- **Key challenges:**
+  - Lock ordering across multiple page writes (back-links touch many pages per insert)
+  - Pruning weakest neighbor when at capacity M (needs scoring of existing neighbors)
+  - Concurrency: two concurrent inserts touching overlapping neighbor lists
+  - Entry point update when new node has higher layer than current max
+  - Drift statistics: `inserted_since_rebuild` counter in metadata
+- **Dependencies:** A2 (traversal helpers), A3 (working scan for testing reachability)
+- **Exit criteria:** Inserted rows are reachable via HNSW scan. No deadlock under concurrent insert. Drift counter is queryable.
 
-Parallelism:
-- Workstream F1: SIMD optimization
-- Workstream F2: performance/storage benchmarking
-- Workstream F3: recall/drift/quality benchmarking
-- Workstream F4: safety audits and fuzzing
+#### A6: Vacuum Three-Pass (FR-010)
+- **Scope:** Implement ambulkdelete with mark/repair/finalize passes. Graph repair uses A2 traversal to find replacement neighbors. amvacuumcleanup updates pg_class stats.
+- **Owns:** FR-010 completion
+- **Estimated new code:** ~400-600 lines
+- **Difficulty:** Hard — graph repair while maintaining connectivity is the hardest correctness problem
+- **Key challenges:**
+  - Pass 2 graph repair: for each broken connection, search for replacement neighbors using A2 traversal with code-to-code scoring
+  - Concurrency with ongoing inserts and scans during vacuum
+  - Maintaining recall >= 80% of pre-vacuum after 10% deletion (FR-010-AC-2)
+  - GenericXLog for all page modifications during repair
+- **Dependencies:** A2 (traversal helpers), A5 (neighbor selection/pruning logic is shared with insert)
+- **Exit criteria:** Deleted rows absent from results. Recall maintained. No corruption under concurrent load.
 
-## Delegation / Parallel Worker Suggestions
+### Track B: Parallel Work (independent agent, can start immediately)
 
-These are the highest-value parallel slices if execution is delegated across agents or engineers:
+These items have no dependency on Track A. They depend only on the frozen scalar APIs from completed phases.
 
-- Worker 1: `quant/` math and `ProdQuantizer` scalar implementation
-- Worker 2: datum type, text/binary I/O, and SQL registration
-- Worker 3: page layout, tuple codecs, and WAL wrapper utilities
-- Worker 4: HNSW bulk build and graph serialization
-- Worker 5: HNSW scan and prepared-query path
-- Worker 6: vacuum + online insert maintenance paths
-- Worker 7: SIMD optimization and benchmark harnesses
-- Worker 8: CI, fuzzing, and unsafe-audit enforcement
+#### B1: SIMD Acceleration (FR-014)
+- **Scope:** AVX2+FMA and NEON implementations of `fwht`, `score_ip_encoded`, `score_ip_encoded_lite`, `qjl_bit_expand`. Runtime feature detection. Scalar fallback.
+- **Owns:** FR-014
+- **Estimated new code:** ~700-900 lines
+- **Difficulty:** Medium
+- **Key challenges:**
+  - FWHT butterfly pattern in AVX2 (register shuffles across 256-bit lanes)
+  - Variable bit-width MSE index unpacking in SIMD (bits range 2-8)
+  - Testing on both x86_64 and aarch64
+- **Dependencies:** None — scalar APIs are frozen
+- **Exit criteria:** SIMD-scalar equivalence within 1e-6 on 1000 random inputs. fwht AVX2 >= 3x scalar throughput. No SIGILL on unsupported CPU.
 
-Preferred sequencing for parallel teams:
+#### B2: CI Pipeline and Safety (NFR-004, NFR-005) — MOSTLY COMPLETE
+- **Scope:** Wire Makefile targets to GitHub Actions. Add fuzz harness for `tqvector_in`. Audit unsafe blocks for SAFETY comments. `cargo deny` in CI.
+- **Owns:** NFR-004, NFR-005
+- **Actual code:** CI YAML (57 new lines), 4 fuzz targets, 11 miri tests, 15 property tests, 13 layout assertions, clippy.toml, 18 Makefile targets
+- **Difficulty:** Easy
+- **Dependencies:** None
+- **Exit criteria:** PR merges require passing fmt, clippy, test, pgrx test, deny. Fuzz harness runs 10K random byte sequences without panic.
+- **Status:** All done except TC-036 (formal unsafe block audit). CI pipeline, fuzz, miri, proptest, layout-check, bench-action all landed.
 
-1. Start Workers 1, 2, 3, and 8 immediately.
-2. Start Worker 5 as soon as Workers 1 and 3 have stable interfaces.
-3. Start Worker 4 as soon as Worker 3 has stable tuple/page APIs.
-4. Start Worker 6 after Worker 3 and Worker 1 are merged.
-5. Start Worker 7 only after scalar APIs are frozen enough to optimize safely.
+### Track C: Post-Gate Verification (after A4 passes)
 
-Task files for distribution and tracking live under `plan/tasks/`.
+These items only make sense after graph scan is validated and recall is confirmed.
+
+#### C1: Full Benchmark Suite — INFRASTRUCTURE COMPLETE
+- **Scope:** NFR-001 latency/throughput benchmarks, NFR-002 storage accounting, NFR-003 full recall suite (ablation, drift after inserts, post-vacuum quality).
+- **Owns:** NFR-001, NFR-002, NFR-003 (full)
+- **Actual code:** ~2700 lines across 35 files (8 criterion suites, 3 iai suites, 2 dhat bins, 4 fuzz targets, 15 property tests, 13 layout assertions, recall harness with 3 data distributions, SQL scripts, CI integration, reporting template)
+- **Difficulty:** Medium
+- **Dependencies:** A3 (scan works), A4 (recall gate passed), A5 (insert drift), A6 (vacuum quality)
+- **Status:** All benchmark infrastructure is built and validated. Quantizer-level benchmarks (BC-010, BC-017 to BC-031) can run now. SQL-level benchmarks (BC-001 to BC-009, BC-011 to BC-016) remain blocked on working scan/insert/vacuum.
+- **Exit criteria:** Reproducible benchmark artifacts meeting or reporting against declared targets.
+
+---
+
+## Parallel Execution Summary
+
+```
+Time ──────────────────────────────────────────────────────────────►
+
+Agent 1 (critical path):
+  [A1: split] → [A2: traversal] → [A3: scan] → [A4: recall gate] → [A5: insert] → [A6: vacuum] → [C1: benchmarks]
+   ~1 sess       ~2-3 sess         ~1-2 sess     ~1 sess             ~2-3 sess      ~2-3 sess      ~1-2 sess
+
+Agent 2 (parallel):
+  [B1: SIMD ~~~~~~~~~~~~~~~~~~~~~~~~~~~] [B2: CI ~~~~~~]
+   ~2-3 sessions                          ~1 session
+
+                                                         ← merge SIMD after A3 confirms scalar correctness
+```
+
+**Minimum viable extension** (index queries work): A1 + A2 + A3 + A4 = **5-7 sessions**
+**Full v0.1 completion**: all tracks = **~12-18 sessions** total wall time
+
+---
+
+## Task File Mapping
+
+| Task File | Covers | Status |
+|-----------|--------|--------|
+| `01-quantizer-core.md` | Phase 1 | complete |
+| `02-datum-and-io.md` | Phase 2 (type/I/O) | complete |
+| `03-sql-surface.md` | Phase 2 (functions/operators) | complete |
+| `04-page-layout-and-wal.md` | Phase 3 | complete |
+| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | in progress |
+| `06-graph-insert.md` | A5 (graph-aware insert) | blocked on 05 |
+| `07-vacuum.md` | A6 (vacuum three-pass) | blocked on 05, 06 |
+| `08-simd.md` | B1 (SIMD acceleration) | not started, **can start now** |
+| `09-ci-and-safety.md` | B2 (CI pipeline, fuzz, audit) | mostly complete (unsafe audit remaining) |
+| `10-benchmarks.md` | C1 (full benchmark suite) | **infrastructure complete**, NFR runs blocked on 05 |
+
+---
 
 ## Test Plan
 
-### Module A: Datum and I/O
+### Module A: Datum and I/O — COMPLETE
 
-- [ ] `TC-001`, `TC-002`, `TC-003`: payload length and pack/unpack correctness for `FR-001`
-- [ ] `TC-004`, `TC-005`, `TC-006`: text parser/formatter correctness and error handling for `FR-002`
-- [ ] `TC-007`, `TC-104`: binary send/receive and truncation checks for `FR-003`
-- [ ] `TC-101`, `TC-102`, `TC-103`: SQL-level type visibility and text I/O
+- [x] `TC-001`, `TC-002`, `TC-003`: payload length and pack/unpack correctness for `FR-001`
+- [x] `TC-004`, `TC-005`, `TC-006`: text parser/formatter correctness and error handling for `FR-002`
+- [x] `TC-007`, `TC-104`: binary send/receive and truncation checks for `FR-003`
+- [x] `TC-101`, `TC-102`, `TC-103`: SQL-level type visibility and text I/O
 
-Entrance criteria:
-- Datum layout API exists.
+### Module B: Quantizer Core and Orchestrator — COMPLETE
 
-Exit criteria:
-- Round-trip and error-path tests pass at both unit and SQL levels.
-
-### Module B: Quantizer Core and Orchestrator
-
-- [ ] `TC-008` to `TC-015`: quantizer math, determinism, and fidelity for `FR-013`
-- [ ] `TC-019` to `TC-033`: `ProdQuantizer`, encode API, pack/unpack, cache reuse, and allocation guarantees for `FR-004` and `FR-015`
-- [ ] `TC-035`: random-input parser fuzz stability for `NFR-004`
+- [x] `TC-008` to `TC-015`: quantizer math, determinism, and fidelity for `FR-013`
+- [x] `TC-019` to `TC-033`: `ProdQuantizer`, encode API, pack/unpack, cache reuse, and allocation guarantees for `FR-004` and `FR-015`
+- [x] `PT-001` to `PT-010`: property tests for SRHT, pack/unpack, determinism, symmetry, score consistency, decode error bound
+- [x] `MI-001` to `MI-007`: miri UB tests for encode, pack/unpack, scoring, hadamard
+- [x] `FZ-001` to `FZ-002`: fuzz targets for parse_text and unpack_mse
+- [x] `TC-035`: random-input parser fuzz stability for `NFR-004`
 - [ ] `TC-036`: unsafe comment audit for `NFR-004`
 
-Entrance criteria:
-- Scalar quantizer primitives compile.
+### Module C: Scoring Surface — COMPLETE
 
-Exit criteria:
-- All scalar math and packing tests pass without panic.
+- [x] `TC-110`, `TC-111`, `TC-129`: code-to-code and query-to-code behavioral checks for `FR-005` and `FR-017`
+- [x] `TC-134`: negative wrapper correctness for `FR-018`
+- [x] `BC-010`: score_ip_encoded throughput measured (~95K scores/sec at 1536/4-bit)
+- [x] `BC-024` to `BC-026`: score_ip_from_parts, score_ip_encoded_lite, decode_approximate throughput
+- [x] `BC-027` to `BC-029`: iai-callgrind instruction count benchmarks (scoring, hadamard, bitpack)
+- [x] `BC-030`, `BC-031`: dhat heap profiling harnesses (scoring zero-alloc, encode profile)
+- [ ] `BC-003`: SQL-level scoring latency (blocked on scan)
 
-### Module C: Scoring Surface
+### Module D: SQL Registration and Packaging — COMPLETE
 
-- [ ] `TC-110`, `TC-111`, `TC-129`: code-to-code and query-to-code behavioral checks for `FR-005` and `FR-017`
-- [ ] `TC-134`: negative wrapper correctness for `FR-018`
-- [ ] `BC-003`, `BC-010`: microbenchmarks for the scoring hot paths
+- [x] `TC-108`, `TC-109`, `TC-114`: operators and operator class for `FR-006`
+- [x] `TC-101`, `TC-116`, `TC-130`: extension lifecycle and multi-version packaging for `FR-012`
 
-Entrance criteria:
-- `ProdQuantizer` scoring APIs exist and are callable from SQL bindings.
+### Module E: Page Layout and AM Build — COMPLETE
 
-Exit criteria:
-- Public scoring APIs match formulas and wrapper semantics.
+- [x] `TC-034`, `TC-117`, `TC-124`, `TC-126`, `TC-127`: page tuple correctness and page-extension/deadlock checks for `FR-007`
+- [x] `TC-112`, `TC-122`, `TC-123`, `TC-124`, `TC-125`: build-path correctness for `FR-008`
+- [x] `TC-119`: crash-recovery path for `FR-011`
+- [x] `PT-011` to `PT-015`: property tests for page tuple roundtrips, encoded_len
+- [x] `MI-008` to `MI-011`: miri UB tests for ItemPointer, element/neighbor/metadata tuples
+- [x] `FZ-003`, `FZ-004`: fuzz targets for element_tuple_decode and neighbor_tuple_decode
+- [x] `LA-001` to `LA-013`: size_of layout assertions (payload sizes, struct sizes, compression ratio)
+- [x] `BC-022`, `BC-023`: DataPage insert/read element and neighbor throughput
 
-### Module D: SQL Registration and Packaging
-
-- [ ] `TC-108`, `TC-109`, `TC-114`: operators and operator class for `FR-006`
-- [ ] `TC-101`, `TC-116`, `TC-130`: extension lifecycle and multi-version packaging for `FR-012`
-
-Entrance criteria:
-- SQL functions are exported.
-
-Exit criteria:
-- `CREATE EXTENSION`, operators, and pg14-pg17 support work.
-
-### Module E: Page Layout and AM Build
-
-- [ ] `TC-034`, `TC-117`, `TC-124`, `TC-126`, `TC-127`: page tuple correctness and page-extension/deadlock checks for `FR-007`
-- [ ] `TC-112`, `TC-122`, `TC-123`, `TC-124`, `TC-125`: build-path correctness for `FR-008`
-- [ ] `TC-119`: crash-recovery path for `FR-011`
-
-Entrance criteria:
-- Page structs and WAL wrappers compile.
-
-Exit criteria:
-- Build produces readable metadata and valid graph tuples.
-
-### Module F: Scan, Vacuum, and Insert
+### Module F: Scan, Vacuum, and Insert — IN PROGRESS
 
 - [ ] `TC-113`, `TC-120`, `TC-121`, `TC-131`: scan behavior for `FR-009`
 - [ ] `TC-115`, `TC-118`, `TC-132`, `BC-016`: vacuum behavior and post-vacuum quality for `FR-010`
 - [ ] `TC-128`, `TC-133`, `BC-011`: insert behavior and drift observability for `FR-016`
 
 Entrance criteria:
-- Bulk build and page traversal work.
+- Graph traversal helpers work on built indexes.
 
 Exit criteria:
 - Indexed query path, vacuum, and insert are all operational and measurable.
 
-### Module G: SIMD and Quality Verification
+### Module G: Benchmark Infrastructure — COMPLETE
+
+- [x] Criterion microbenchmarks: 8 suites covering all scoring variants, encode, prepare, hadamard, codebook, bitpack, page_codec, text_io
+- [x] iai-callgrind: 3 suites (scoring, hadamard, bitpack) for deterministic CI regression detection
+- [x] dhat heap profiling: 2 binaries (encode path, scoring zero-allocation verification)
+- [x] Quantizer-level recall harness: uniform (50K) + clustered (10K/50 clusters) + near-duplicate stress test
+- [x] `BC-017` to `BC-021`: quantizer recall at multiple distributions, bitwidths, dimensions
+- [x] `BC-022` to `BC-026`: DataPage and scoring variant throughput
+- [x] `BC-027` to `BC-031`: instruction count regression + heap profiling harnesses
+- [x] Makefile targets (18), CI pipeline (benchmark-action with 110% threshold)
+- [x] BENCHMARKS.md reporting template
+
+### Module H: SIMD and SQL-Level Verification — NOT STARTED
 
 - [ ] `TC-016`, `TC-017`, `TC-030`, `BC-008`: SIMD correctness and throughput for `FR-014`
-- [ ] `BC-001`, `BC-002`, `BC-003`, `BC-015`: latency and throughput for `NFR-001`
+- [ ] `BC-001`, `BC-002`, `BC-003`, `BC-015`: SQL-level latency and throughput for `NFR-001`
 - [ ] `BC-004`, `BC-009`: storage and relation-size accounting for `NFR-002`
-- [ ] `BC-005` to `BC-016` as applicable: recall, ablation, drift, and post-vacuum quality for `NFR-003`
+- [ ] `BC-005` to `BC-007`, `BC-011` to `BC-016`: HNSW recall, ablation, drift, post-vacuum quality for `NFR-003`
 
 Entrance criteria:
 - Scalar implementation passes all correctness tests.
+- Graph scan returns distance-ordered results.
 
 Exit criteria:
 - Benchmark artifacts are reproducible and meet or report against the declared targets.
 
-## Recommended Execution Order for Delegated Work
-
-### Must land first
-
-- [ ] Scalar quantizer math
-- [ ] Datum pack/unpack and type registration
-- [ ] Page layout and WAL utility layer
-
-### Can land in parallel after the foundations are stable
-
-- [ ] Public encode/score SQL functions
-- [ ] Extension SQL packaging
-- [ ] HNSW bulk build
-- [ ] HNSW scan
-- [ ] Safety tooling and CI checks
-
-### Should land last
-
-- [ ] Online insert
-- [ ] SIMD optimization
-- [ ] Full benchmark suite and quality gating
+---
 
 ## Risks and Coordination Notes
 
-- The highest merge-risk interfaces are:
-  - datum binary layout
-  - `ProdQuantizer` scoring signatures
-  - page tuple binary layout
-  - WAL wrapper APIs
-- Freeze those interfaces early before parallel workers fan out too far.
-- Do not optimize SIMD before scalar outputs are test-locked.
-- Do not start post-vacuum and insert-drift benchmarking before build/scan semantics are stable, or benchmark churn will hide correctness issues.
+### Frozen interfaces (no further changes expected)
+- datum binary layout
+- `ProdQuantizer` scoring signatures (`score_ip_encoded`, `score_ip_codes_lite`, `prepare_ip_query`)
+- page tuple binary layout (`TqElementTuple`, `TqNeighborTuple`)
+- WAL wrapper APIs (`GenericXLogTxn`)
+
+### Active risks
+- **Graph traversal correctness:** The A2 traversal helper is the foundation for scan, insert, and vacuum. A bug here propagates everywhere. Invest in thorough testing with known-graph topologies before building on top.
+- **Buffer pin discipline:** Traversal must read/decode/release per page. Holding pins across neighbor hops will deadlock or exhaust shared_buffers. Test with `max_buffer_pins` instrumentation.
+- **Recall uncertainty:** Until A4 measures recall, there is no evidence the quantizer+HNSW combination meets spec targets. This is an existential risk. Do not skip the recall gate.
+- **Insert lock ordering:** Back-link updates touch multiple pages per insert. Without a consistent lock ordering protocol, concurrent inserts can deadlock. Define and document the protocol in A5 before implementing.
+- **SIMD merge timing:** SIMD work (B1) can proceed in parallel but should not merge into main until after A3 confirms scalar scan correctness. Merging SIMD earlier risks masking scalar bugs behind SIMD-specific behavior.

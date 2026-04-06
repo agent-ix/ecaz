@@ -88,26 +88,104 @@ Bidirectional traceability between requirements and test cases.
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
 | TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read exposed metadata or stats view, assert total_live_nodes and inserted_since_rebuild are present and consistent after inserts |
 
+## Property Tests (`proptest`)
+
+| PT | Description | Traces | Method |
+|---|---|---|---|
+| PT-001 | SRHT preserves L2 norm | FR-013-AC-3 | `‖srht(x)‖ / ‖x‖ ≈ 1.0`, relative error < 1e-4, dim 2-512 |
+| PT-002 | SRHT roundtrip | FR-013-AC-3 | `inverse_srht(srht(x)) ≈ x`, element-wise error < 1e-4, dim 2-512 |
+| PT-003 | SRHT roundtrip at real-world dims | FR-013-AC-3 | Same as PT-002 at dims 384, 768, 1024, 1536 |
+| PT-004 | MSE pack/unpack roundtrip | FR-015-AC-5 | Arbitrary dim (1-2048), bits (1-7), random indices |
+| PT-005 | QJL pack/unpack roundtrip | FR-015-AC-5 | Arbitrary dim (1-4096), random bools |
+| PT-006 | Encode determinism | FR-013-AC-5, FR-015-AC-6 | Same input → byte-identical payload, dims 32-256 |
+| PT-007 | score_ip_codes_lite symmetry | FR-015-AC-4 | `score(a,b) == score(b,a)`, dims 32-256 |
+| PT-008 | payload_len matches actual | FR-015-AC-1 | `pack_payload(encode(v)).len() == payload_len(dim, bits)` |
+| PT-009 | score_ip_encoded == score_ip_from_parts | FR-015-AC-3 | Same data, both paths, within 1e-6 |
+| PT-010 | decode_approximate bounded cosine error | FR-013-AC-4 | Cosine similarity > threshold (0.3 for 2-bit, 0.6 for 4+bit) |
+| PT-011 | TqElementTuple encode/decode roundtrip | FR-007-AC-2 | Random fields, code_len 64-1536 |
+| PT-012 | TqNeighborTuple encode/decode roundtrip | FR-007-AC-2 | Random count 1-63 |
+| PT-013 | MetadataPage encode/decode roundtrip | FR-007-AC-1 | Random metadata fields |
+| PT-014 | ItemPointer encode/decode roundtrip | FR-007-AC-2 | Full u32/u16 range |
+| PT-015 | element_tuple_encoded_len correctness | FR-007-AC-2 | `encode().len() == encoded_len(code_len)` |
+
+## Miri Tests (UB Detection)
+
+| MI | Description | Traces | Method |
+|---|---|---|---|
+| MI-001 | Encode/decode roundtrip | FR-015 | dim=8 4-bit encode → decode_approximate, no UB |
+| MI-002 | MSE pack/unpack | FR-015-AC-5 | dim=16 3-bit, random indices, no UB |
+| MI-003 | QJL pack/unpack | FR-015-AC-5 | dim=16, random signs, no UB |
+| MI-004 | score_ip_encoded end-to-end | FR-015-AC-3 | dim=8 4-bit, no UB |
+| MI-005 | score_ip_codes_lite | FR-015-AC-4 | dim=8 4-bit, no UB |
+| MI-006 | fwht_in_place | FR-013-AC-3 | len=4, no UB |
+| MI-007 | orthonormal_fwht_in_place | FR-013-AC-3 | len=8, no UB |
+| MI-008 | ItemPointer roundtrip | FR-007-AC-2 | encode_into + decode, no UB |
+| MI-009 | TqElementTuple roundtrip | FR-007-AC-2 | Small tuple, no UB |
+| MI-010 | TqNeighborTuple roundtrip | FR-007-AC-2 | count=3, no UB |
+| MI-011 | MetadataPage roundtrip | FR-007-AC-1 | encode + decode, no UB |
+
+## Fuzz Targets (`cargo-fuzz`)
+
+| FZ | Description | Traces | Method |
+|---|---|---|---|
+| FZ-001 | parse_text | NFR-004, FR-002 | Arbitrary UTF-8 strings through text parser, no panic |
+| FZ-002 | unpack_mse | NFR-004, FR-015 | Structure-aware: first byte = dim, second = bits, rest = packed data |
+| FZ-003 | element_tuple_decode | NFR-004, FR-007 | Arbitrary bytes, code_len derived from first byte × 4 |
+| FZ-004 | neighbor_tuple_decode | NFR-004, FR-007 | Arbitrary bytes through TqNeighborTuple::decode |
+
+## Layout Assertions (`size_of_assertions`)
+
+| LA | Description | Traces | Expected |
+|---|---|---|---|
+| LA-001 | payload_len(1536, 4) | FR-001-AC-3 | 772 |
+| LA-002 | payload_len(1536, 2) | FR-001-AC-3 | 388 |
+| LA-003 | payload_len(1536, 3) | FR-001-AC-3 | Locked value |
+| LA-004 | payload_len(1536, 6) | FR-001-AC-3 | Locked value |
+| LA-005 | payload_len(1536, 8) | FR-001-AC-3 | 1540 |
+| LA-006 | mse_code_len(1536, 4) | FR-015 | 576 |
+| LA-007 | qjl_code_len(1536) | FR-015 | 192 |
+| LA-008 | ITEM_POINTER_BYTES | FR-007 | 6 |
+| LA-009 | mem::size_of::\<ItemPointer\>() | FR-007 | 8 |
+| LA-010 | PAGE_HEADER_BYTES | FR-007 | 24 |
+| LA-011 | HEAPTID_INLINE_CAPACITY | FR-007 | 10 |
+| LA-012 | element_tuple_encoded_len(768) | FR-007 | Locked value |
+| LA-013 | Compression ratio ≥ 7.8x | NFR-002 | 1536-dim 4-bit vs raw fp32 |
+
 ## Benchmarks
 
-| BC | Description | Traces | Target |
-|---|---|---|---|
-| BC-001 | HNSW top-10 latency (50K × 1536, 4-bit, m=8) | NFR-001 | p50 < 5ms, p99 < 15ms |
-| BC-002 | Sequential scan throughput (compressed-domain scoring) | NFR-001 | Report scores/sec and rows/sec on representative hardware |
-| BC-003 | Single `tqvector_inner_product` and `tqvector_query_inner_product` latency | NFR-001, FR-005, FR-017 | Report both latencies on representative hardware |
-| BC-004 | Index size (50K × 1536, 4-bit, m=8) | NFR-002 | Report payload bytes, tuple bytes, and total relation size |
-| BC-005 | Recall@10 (50K × 1536, m=8, ef=128) | NFR-003 | ≥ 89% |
-| BC-006 | Recall@10 (50K × 1536, m=8, ef=200) | NFR-003 | ≥ 93% |
-| BC-007 | Recall@10 (50K × 1536, m=16, ef=200) | NFR-003 | ≥ 97% |
-| BC-008 | FWHT AVX2 vs scalar throughput (dim=2048) | FR-014-AC-4 | ≥ 3x speedup |
-| BC-009 | 1M vectors disk usage (1536-dim, 4-bit) | NFR-002 | Report code bytes and total on-disk index bytes separately |
-| BC-010 | score_ip_encoded throughput (1536-dim 4-bit) | NFR-001, FR-015-AC-7 | > 200K scores/sec |
-| BC-011 | Recall drift after incremental inserts | NFR-003, FR-016 | Report recall vs fraction of rows inserted since bulk build |
-| BC-012 | Truncated-tail vs full-tail quality comparison | NFR-003, ADR-007 | Report Recall@10/100, NDCG@10, rank correlation, and storage delta |
-| BC-013 | Raw-query vs code-to-code scorer comparison | NFR-003, ADR-007 | Report quality gap and latency gap on identical query sets |
-| BC-014 | MSE+QJL vs MSE-only ablation | NFR-003, ADR-007 | Report quality gain attributable to the QJL term |
-| BC-015 | Warm-cache vs cold-cache HNSW latency | NFR-001 | Report both latency profiles under the same dataset and settings |
-| BC-016 | Post-vacuum recall (50K × 1536, 4-bit, m=8, 10% deleted) | NFR-003, FR-010 | After deleting 10% of rows and running VACUUM, recall@10 SHALL be ≥ 80% of pre-vacuum recall using NFR-003 methodology |
+| BC | Description | Traces | Target | Status |
+|---|---|---|---|---|
+| BC-001 | HNSW top-10 latency (50K × 1536, 4-bit, m=8) | NFR-001 | p50 < 5ms, p99 < 15ms | Blocked (scan) |
+| BC-002 | Sequential scan throughput (compressed-domain scoring) | NFR-001 | Report scores/sec and rows/sec on representative hardware | Blocked (scan) |
+| BC-003 | Single `tqvector_inner_product` and `tqvector_query_inner_product` latency | NFR-001, FR-005, FR-017 | Report both latencies on representative hardware | Blocked (scan) |
+| BC-004 | Index size (50K × 1536, 4-bit, m=8) | NFR-002 | Report payload bytes, tuple bytes, and total relation size | Blocked (scan) |
+| BC-005 | Recall@10 (50K × 1536, m=8, ef=128) | NFR-003 | ≥ 89% | Blocked (scan) |
+| BC-006 | Recall@10 (50K × 1536, m=8, ef=200) | NFR-003 | ≥ 93% | Blocked (scan) |
+| BC-007 | Recall@10 (50K × 1536, m=16, ef=200) | NFR-003 | ≥ 97% | Blocked (scan) |
+| BC-008 | FWHT AVX2 vs scalar throughput (dim=2048) | FR-014-AC-4 | ≥ 3x speedup | Blocked (SIMD) |
+| BC-009 | 1M vectors disk usage (1536-dim, 4-bit) | NFR-002 | Report code bytes and total on-disk index bytes separately | Blocked (scan) |
+| BC-010 | score_ip_encoded throughput (1536-dim 4-bit) | NFR-001, FR-015-AC-7 | > 200K scores/sec | **Measured: ~95K/s** |
+| BC-011 | Recall drift after incremental inserts | NFR-003, FR-016 | Report recall vs fraction of rows inserted since bulk build | Blocked (insert) |
+| BC-012 | Truncated-tail vs full-tail quality comparison | NFR-003, ADR-007 | Report Recall@10/100, NDCG@10, rank correlation, and storage delta | Blocked (scan) |
+| BC-013 | Raw-query vs code-to-code scorer comparison | NFR-003, ADR-007 | Report quality gap and latency gap on identical query sets | Blocked (scan) |
+| BC-014 | MSE+QJL vs MSE-only ablation | NFR-003, ADR-007 | Report quality gain attributable to the QJL term | Blocked (scan) |
+| BC-015 | Warm-cache vs cold-cache HNSW latency | NFR-001 | Report both latency profiles under the same dataset and settings | Blocked (scan) |
+| BC-016 | Post-vacuum recall (50K × 1536, 4-bit, m=8, 10% deleted) | NFR-003, FR-010 | After deleting 10% of rows and running VACUUM, recall@10 SHALL be ≥ 80% of pre-vacuum recall using NFR-003 methodology | Blocked (vacuum) |
+| BC-017 | Quantizer-level recall — uniform corpus (50K × 1536, 4-bit) | NFR-003 | Report Recall@1/10/100, NDCG@10, MAE, Spearman rho | **Harness ready** |
+| BC-018 | Quantizer-level recall — clustered corpus (10K × 1536, 50 clusters) | NFR-003 | Report same metrics as BC-017 on realistic clustered data | **Harness ready** |
+| BC-019 | Near-duplicate ranking preservation | NFR-003 | Quantized ranking preserves true nearest at angles 0.01-0.2 rad | **Harness ready** |
+| BC-020 | Bit-width sensitivity — uniform and clustered | NFR-003 | Report recall across bits 2-8 on both distributions | **Harness ready** |
+| BC-021 | Dimension sensitivity (128-1536, 4-bit) | NFR-003 | Report recall across dims on uniform corpus | **Harness ready** |
+| BC-022 | DataPage insert/read element throughput | FR-007, NFR-001 | Report ns/op for insert and read at code_len 192, 768 | **Measured** |
+| BC-023 | DataPage insert/read neighbor throughput | FR-007, NFR-001 | Report ns/op for insert and read at count 16, 32 | **Measured** |
+| BC-024 | score_ip_from_parts throughput | NFR-001, FR-015 | Report µs/score across dim/bit configs | **Measured** |
+| BC-025 | score_ip_encoded_lite throughput | NFR-001, FR-015 | Report µs/score across dim/bit configs | **Measured** |
+| BC-026 | decode_approximate throughput | NFR-001, FR-015 | Report µs/decode at 1536/4-bit and 3072/4-bit | **Measured** |
+| BC-027 | Instruction count regression — scoring hot loop | NFR-001 | iai-callgrind: score_ip_encoded, codes_lite, from_parts at 1536/4-bit | **Harness ready** |
+| BC-028 | Instruction count regression — hadamard | NFR-001 | iai-callgrind: fwht_in_place at 2048, 4096 | **Harness ready** |
+| BC-029 | Instruction count regression — bitpack | NFR-001 | iai-callgrind: pack/unpack MSE, pack QJL at 1536/3-bit | **Harness ready** |
+| BC-030 | Zero-allocation scoring verification | FR-015-AC-7 | dhat: 10Kx100 score_ip_encoded, zero heap allocations in profiled region | **Harness ready** |
+| BC-031 | Encode allocation profile | FR-015 | dhat: 1000x encode at 1536/4-bit, report allocation count and bytes | **Harness ready** |
 
 ## Benchmark Execution Rules
 
@@ -124,26 +202,26 @@ Bidirectional traceability between requirements and test cases.
 
 | Requirement | Test Cases |
 |---|---|
-| FR-001 | TC-001, TC-002, TC-003, TC-101 |
-| FR-002 | TC-004, TC-005, TC-006, TC-102, TC-103 |
+| FR-001 | TC-001, TC-002, TC-003, TC-101, LA-001 to LA-005 |
+| FR-002 | TC-004, TC-005, TC-006, TC-102, TC-103, FZ-001 |
 | FR-003 | TC-007, TC-104 |
 | FR-004 | TC-019, TC-020, TC-105, TC-106, TC-107 |
 | FR-005 | TC-110, TC-111, TC-129, BC-003 |
 | FR-006 | TC-108, TC-109, TC-114 |
-| FR-007 | TC-034, TC-117, TC-126, TC-127 |
+| FR-007 | TC-034, TC-117, TC-126, TC-127, PT-011 to PT-015, MI-008 to MI-011, FZ-003, FZ-004, LA-008 to LA-012, BC-022, BC-023 |
 | FR-008 | TC-112, TC-122, TC-123, TC-124, TC-125 |
 | FR-009 | TC-113, TC-114, TC-120, TC-121, TC-131 |
 | FR-010 | TC-115, TC-118, TC-132, BC-016 |
 | FR-011 | TC-119 |
 | FR-012 | TC-101, TC-116, TC-130 |
-| FR-013 | TC-008, TC-009, TC-010, TC-011, TC-012, TC-013, TC-014, TC-015, TC-018 |
+| FR-013 | TC-008 to TC-015, TC-018, PT-001 to PT-003, PT-006, PT-010, MI-001, MI-006, MI-007 |
 | FR-014 | TC-016, TC-017, TC-030, BC-008 |
-| FR-015 | TC-021, TC-022, TC-023, TC-024, TC-025, TC-026, TC-027, TC-028, TC-031, TC-032, TC-033, BC-010 |
+| FR-015 | TC-021 to TC-028, TC-031 to TC-033, PT-004 to PT-009, MI-001 to MI-005, FZ-002, LA-006, LA-007, BC-010, BC-024 to BC-031 |
 | FR-016 | TC-127, TC-128, TC-133, BC-011 |
 | FR-017 | TC-028, TC-029, TC-110, TC-129, BC-003 |
 | FR-018 | TC-134 |
-| NFR-001 | BC-001, BC-002, BC-003, BC-010, BC-015 |
-| NFR-002 | BC-004, BC-009 |
-| NFR-003 | BC-005, BC-006, BC-007, BC-011, BC-012, BC-013, BC-014 |
-| NFR-004 | TC-035, TC-036, TC-118, TC-119, all unit tests (no panic) |
-| NFR-005 | CI pipeline (fmt, clippy, test, pgrx test, deny) |
+| NFR-001 | BC-001, BC-002, BC-003, BC-010, BC-015, BC-022 to BC-029 |
+| NFR-002 | BC-004, BC-009, LA-013 |
+| NFR-003 | BC-005 to BC-007, BC-011 to BC-014, BC-017 to BC-021 |
+| NFR-004 | TC-035, TC-036, TC-118, TC-119, FZ-001 to FZ-004, MI-001 to MI-011, all unit tests (no panic) |
+| NFR-005 | CI pipeline (fmt, clippy, test, pgrx test, deny, proptest, layout-check, miri, bench-action) |
