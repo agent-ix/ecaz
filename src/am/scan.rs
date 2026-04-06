@@ -333,19 +333,12 @@ impl VisibleCandidateFrontierState {
         self.candidates.is_empty()
     }
 
-    fn iter(&self) -> impl Iterator<Item = ScanCandidate> + '_ {
-        self.candidates
-            .iter()
-            .copied()
-            .map(beam_candidate_to_scan_candidate)
+    fn iter(&self) -> impl Iterator<Item = search::BeamCandidate<page::ItemPointer>> + '_ {
+        self.candidates.iter().copied()
     }
 
-    fn slot(&self, index: usize) -> ScanCandidate {
-        self.candidates
-            .get(index)
-            .copied()
-            .map(beam_candidate_to_scan_candidate)
-            .unwrap_or_default()
+    fn slot(&self, index: usize) -> Option<search::BeamCandidate<page::ItemPointer>> {
+        self.candidates.get(index).copied()
     }
 
     fn contains_node(&self, element_tid: page::ItemPointer) -> bool {
@@ -392,7 +385,10 @@ static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCand
 };
 
 fn candidate_frontier_ref(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
-    visible_frontier_ref(opaque).iter().collect()
+    visible_frontier_ref(opaque)
+        .iter()
+        .map(beam_candidate_to_scan_candidate)
+        .collect()
 }
 
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
@@ -412,11 +408,17 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
 }
 
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
-    visible_frontier_ref(opaque).slot(index)
+    visible_frontier_ref(opaque)
+        .slot(index)
+        .map(beam_candidate_to_scan_candidate)
+        .unwrap_or_default()
 }
 
 pub(super) fn visible_frontier_snapshot(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
-    visible_frontier_ref(opaque).iter().collect()
+    visible_frontier_ref(opaque)
+        .iter()
+        .map(beam_candidate_to_scan_candidate)
+        .collect()
 }
 
 fn candidate_frontier_contains(
@@ -579,22 +581,17 @@ fn next_bootstrap_expand_tid(
             expansion.seed_many(
                 visible_frontier_ref(opaque)
                     .iter()
-                    .filter(|candidate| {
-                        candidate.score_valid
-                            && !expanded_contains_source(opaque, candidate.element_tid)
-                    })
-                    .map(scan_candidate_to_beam_candidate),
+                    .filter(|candidate| !expanded_contains_source(opaque, candidate.node)),
             );
 
             let best = expansion.peek_best()?;
             visible_frontier_ref(opaque)
                 .iter()
                 .find(|candidate| {
-                    candidate.score_valid
-                        && !expanded_contains_source(opaque, candidate.element_tid)
-                        && candidate.element_tid == best.node
+                    !expanded_contains_source(opaque, candidate.node)
+                        && candidate.node == best.node
                 })
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
         }
     }
 }
@@ -621,8 +618,7 @@ fn seed_discovered_candidates(
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     let candidates = visible_frontier_ref(opaque)
         .iter()
-        .filter(|candidate| !expanded_contains_source(opaque, candidate.element_tid))
-        .map(Into::into)
+        .filter(|candidate| !expanded_contains_source(opaque, candidate.node))
         .collect::<Vec<_>>();
     bootstrap_expansion_mut(opaque).seed_many(candidates);
 }
