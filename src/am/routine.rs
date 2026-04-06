@@ -1,8 +1,6 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::{
-    build, cost, options, scan, tqhnsw_aminsert, vacuum,
-};
+use super::{build, cost, insert, options, scan, vacuum};
 
 fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -35,7 +33,7 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
 
     amroutine.ambuild = Some(build::tqhnsw_ambuild);
     amroutine.ambuildempty = Some(build::tqhnsw_ambuildempty);
-    amroutine.aminsert = Some(tqhnsw_aminsert);
+    amroutine.aminsert = Some(insert::tqhnsw_aminsert);
     amroutine.aminsertcleanup = None;
     amroutine.ambulkdelete = Some(vacuum::tqhnsw_ambulkdelete);
     amroutine.amvacuumcleanup = Some(vacuum::tqhnsw_amvacuumcleanup);
