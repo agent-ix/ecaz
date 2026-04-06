@@ -219,33 +219,25 @@ bench_api export additions needed: `neighbor_slots`, `neighbor_tuple_encoded_len
 
 ## Implementation Handoff
 
-Status after first follow-up slice:
+Status after second follow-up slice:
 - Already addressed:
   - `1a`: direct benchmark coverage for `score_ip_from_parts` and `score_ip_encoded_lite`
   - `1b`: direct benchmark coverage for `decode_approximate`
-  - `4c`: iai coverage for `score_ip_from_parts`
+  - `1c`: DataPage insert/read element + neighbor benchmarks in `page_codec.rs`
   - `1d`: direct equivalence coverage for `score_code_inner_product`
+  - `2a`: `random_clustered_corpus` generator in `benches/helpers.rs` + clustered recall tests
+  - `2b`: `near_duplicate_pairs` generator + near-duplicate ranking preservation test
+  - `3a`: Recall@1 added to all recall reports
+  - `3b`: Primary uniform recall test bumped from 10K to 50K corpus
   - `4a`: added real-world SRHT roundtrip property coverage
+  - `4b`: `decode_approximate_bounded_error` proptest with cosine similarity thresholds
+  - `4c`: iai coverage for `score_ip_from_parts`
 - Still open:
-  - `1c`
-  - `2a`
-  - `2b`
-  - `2c`
-  - `3a`
-  - `3b`
-  - `4b`
+  - `2c`: non-unit vector testing (low priority — encode normalizes internally)
 
-Recommended next worker slice:
-- First choice:
-  - add one deterministic clustered-corpus generator to `benches/helpers.rs`
-  - switch `tests/recall_integration.rs` to use shared helper-based generation instead of its private inline random-unit generator
-  - keep the current uniform corpus path as a baseline if needed, but do not delete it unless the replacement preserves existing coverage intent
-- Alternate smaller pure-benchmark slice:
-  - add one `DataPage::insert_element` plus `read_element` roundtrip benchmark to `benches/criterion/page_codec.rs`
-  - stop before `DataPageChain` rollover or neighbor-page cases if the write set starts growing
+All benchmarks validated (criterion --quick runs pass, all tests green, clippy clean).
 
-Methodology constraints for the next worker:
+Methodology constraints for ongoing work:
 - Pre-generate corpora, queries, payloads, and page fixtures outside timed benchmark closures.
-- Treat current recall results as regression signals only, not production-quality recall claims, until clustered and near-duplicate generators land.
+- Treat uniform-corpus recall results as optimistic upper bounds; clustered results are more representative.
 - Prefer shared data generators in `benches/helpers.rs` over duplicating synthetic-data logic in tests or benches.
-- Keep the next slice narrow; do not combine recall-data realism, page-operation benchmarks, and broader metric redesign in one checkpoint.

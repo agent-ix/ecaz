@@ -39,8 +39,8 @@ pub mod bench_api {
     // Page codec
     pub use crate::am::page::{
         neighbor_slots, neighbor_tuple_encoded_len, DataPage, DataPageChain, ItemPointer,
-        MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
-        ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
+        MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+        PAGE_HEADER_BYTES,
     };
 
     // Text I/O
@@ -3051,7 +3051,9 @@ mod tests {
             let new_slot = after_provenance_slots
                 .iter()
                 .find(|slot| slot.0 && slot.1 == new_tids[0])
-                .expect("newly seeded candidate should remain present in the frontier provenance view");
+                .expect(
+                    "newly seeded candidate should remain present in the frontier provenance view",
+                );
             assert_eq!(
                 new_slot.2, consumed_tid,
                 "a candidate discovered during refill should record the consumed frontier head as its source"

@@ -1,7 +1,7 @@
 //! Microbenchmarks for page tuple encode/decode.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple};
+use tqvector::bench_api::{DataPage, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple};
 
 fn make_element_tuple(code_len: usize) -> TqElementTuple {
     TqElementTuple {
@@ -110,12 +110,63 @@ fn bench_metadata_roundtrip(c: &mut Criterion) {
     });
 }
 
+fn bench_page_insert_read_element(c: &mut Criterion) {
+    let mut group = c.benchmark_group("page/insert_read_element");
+    let page_size = 8192;
+    for &code_len in &[192, 768] {
+        let tuple = make_element_tuple(code_len);
+
+        group.throughput(Throughput::Elements(1));
+        group.bench_function(BenchmarkId::new("insert", format!("code{code_len}")), |b| {
+            b.iter_batched(
+                || DataPage::new(1, page_size),
+                |mut page| page.insert_element(&tuple),
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        // Pre-insert one tuple so we can benchmark reads
+        let mut page = DataPage::new(1, page_size);
+        let tid = page.insert_element(&tuple).unwrap();
+        group.bench_function(BenchmarkId::new("read", format!("code{code_len}")), |b| {
+            b.iter(|| page.read_element(tid, code_len));
+        });
+    }
+    group.finish();
+}
+
+fn bench_page_insert_read_neighbor(c: &mut Criterion) {
+    let mut group = c.benchmark_group("page/insert_read_neighbor");
+    let page_size = 8192;
+    for &count in &[16u16, 32] {
+        let tuple = make_neighbor_tuple(count);
+
+        group.throughput(Throughput::Elements(1));
+        group.bench_function(BenchmarkId::new("insert", format!("count{count}")), |b| {
+            b.iter_batched(
+                || DataPage::new(1, page_size),
+                |mut page| page.insert_neighbor(&tuple),
+                criterion::BatchSize::SmallInput,
+            );
+        });
+
+        let mut page = DataPage::new(1, page_size);
+        let tid = page.insert_neighbor(&tuple).unwrap();
+        group.bench_function(BenchmarkId::new("read", format!("count{count}")), |b| {
+            b.iter(|| page.read_neighbor(tid));
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_element_encode,
     bench_element_decode,
     bench_neighbor_encode,
     bench_neighbor_decode,
-    bench_metadata_roundtrip
+    bench_metadata_roundtrip,
+    bench_page_insert_read_element,
+    bench_page_insert_read_neighbor
 );
 criterion_main!(benches);

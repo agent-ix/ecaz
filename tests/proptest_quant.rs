@@ -152,7 +152,40 @@ proptest! {
     }
 }
 
-// P8: score_ip_encoded == score_ip_from_parts for same data.
+// P8b: decode_approximate produces a vector with bounded cosine similarity to the original.
+proptest! {
+    #[test]
+    fn decode_approximate_bounded_error(
+        dim in prop::sample::select(&[32, 64, 128, 256][..]),
+        bits in prop::sample::select(&[2u8, 3, 4, 6][..]),
+        seed in 0..50u64,
+    ) {
+        let quantizer = ProdQuantizer::new(dim, bits, 42);
+        let original = random_unit_vector(dim, seed + 4000);
+        let encoded = quantizer.encode(&original);
+        let payload = quantizer.pack_payload(&encoded);
+        let decoded = quantizer.decode_approximate(&payload);
+
+        // Cosine similarity between original and decoded
+        let dot: f32 = original.iter().zip(decoded.iter()).map(|(a, b)| a * b).sum();
+        let norm_o: f32 = original.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let norm_d: f32 = decoded.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let cosine = dot / (norm_o * norm_d).max(f32::EPSILON);
+
+        // Threshold depends on bitwidth — lower bits = more lossy
+        let threshold = match bits {
+            2 => 0.3,
+            3 => 0.5,
+            _ => 0.6,
+        };
+        prop_assert!(
+            cosine > threshold,
+            "cosine similarity {cosine:.4} below threshold {threshold} for dim={dim} bits={bits}"
+        );
+    }
+}
+
+// P9: score_ip_encoded == score_ip_from_parts for same data.
 proptest! {
     #[test]
     fn score_consistency(dim in prop::sample::select(&[32, 64, 256][..]), seed in 0..100u64) {

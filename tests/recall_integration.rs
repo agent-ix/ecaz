@@ -21,6 +21,84 @@ fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
     values
 }
 
+fn random_clustered_corpus(
+    dim: usize,
+    n: usize,
+    n_clusters: usize,
+    spread: f32,
+    seed: u64,
+) -> Vec<Vec<f32>> {
+    let centers: Vec<Vec<f32>> = (0..n_clusters)
+        .map(|i| random_unit_vector(dim, seed + 100_000 + i as u64))
+        .collect();
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed + 200_000);
+    let mut corpus = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let center = &centers[i % n_clusters];
+        let mut vec: Vec<f32> = center
+            .iter()
+            .map(|&c| {
+                let u1: f32 = rng.gen_range(0.0001f32..1.0);
+                let u2: f32 = rng.gen_range(0.0f32..std::f32::consts::TAU);
+                let noise = (-2.0 * u1.ln()).sqrt() * u2.cos() * spread;
+                c + noise
+            })
+            .collect();
+        let norm = vec.iter().map(|v| v * v).sum::<f32>().sqrt();
+        for v in &mut vec {
+            *v /= norm.max(f32::EPSILON);
+        }
+        corpus.push(vec);
+    }
+    corpus
+}
+
+fn near_duplicate_pairs(
+    dim: usize,
+    n: usize,
+    angle_radians: f32,
+    seed: u64,
+) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed + 300_000);
+    let mut bases = Vec::with_capacity(n);
+    let mut perturbed = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let base = random_unit_vector(dim, seed + i as u64);
+
+        let mut noise: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0f32..1.0)).collect();
+        let dot: f32 = noise.iter().zip(base.iter()).map(|(n, b)| n * b).sum();
+        for (n, b) in noise.iter_mut().zip(base.iter()) {
+            *n -= dot * b;
+        }
+        let noise_norm = noise.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if noise_norm < f32::EPSILON {
+            perturbed.push(base.clone());
+            bases.push(base);
+            continue;
+        }
+        for v in &mut noise {
+            *v /= noise_norm;
+        }
+
+        let cos_a = angle_radians.cos();
+        let sin_a = angle_radians.sin();
+        let pert: Vec<f32> = base
+            .iter()
+            .zip(noise.iter())
+            .map(|(&b, &n)| cos_a * b + sin_a * n)
+            .collect();
+        let norm = pert.iter().map(|v| v * v).sum::<f32>().sqrt();
+        let pert: Vec<f32> = pert.iter().map(|v| v / norm.max(f32::EPSILON)).collect();
+
+        bases.push(base);
+        perturbed.push(pert);
+    }
+    (bases, perturbed)
+}
+
 fn dot_product(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
@@ -46,11 +124,9 @@ fn recall_at_k(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, f32)], k: usiz
 }
 
 fn ndcg_at_k(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, f32)], k: usize) -> f32 {
-    // Build relevance map from ground truth
     let relevance: std::collections::HashMap<usize, f32> =
         true_top_k.iter().take(k).map(|(i, s)| (*i, *s)).collect();
 
-    // DCG of predicted ranking
     let dcg: f32 = pred_top_k
         .iter()
         .take(k)
@@ -61,7 +137,6 @@ fn ndcg_at_k(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, f32)], k: usize)
         })
         .sum();
 
-    // Ideal DCG (ground truth ranking)
     let idcg: f32 = true_top_k
         .iter()
         .take(k)
@@ -94,7 +169,6 @@ fn spearman_rank_correlation(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, 
         return 0.0;
     }
 
-    // Map index -> rank in predicted
     let pred_rank: std::collections::HashMap<usize, usize> = pred_top_k
         .iter()
         .enumerate()
@@ -104,7 +178,7 @@ fn spearman_rank_correlation(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, 
 
     let mut d_squared_sum = 0.0f64;
     for (true_rank, (idx, _)) in true_top_k.iter().enumerate().take(n) {
-        let pred_r = pred_rank.get(idx).copied().unwrap_or(n); // not found = worst rank
+        let pred_r = pred_rank.get(idx).copied().unwrap_or(n);
         let d = true_rank as f64 - pred_r as f64;
         d_squared_sum += d * d;
     }
@@ -114,12 +188,80 @@ fn spearman_rank_correlation(true_top_k: &[(usize, f32)], pred_top_k: &[(usize, 
 }
 
 struct RecallReport {
+    recall_at_1: f32,
     recall_at_10: f32,
     recall_at_100: f32,
     ndcg_at_10: f32,
     mean_abs_error: f32,
     spearman_rho: f32,
     top_k_overlap: f32,
+}
+
+fn run_recall_benchmark_with_corpus(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    dim: usize,
+    bits: u8,
+    seed: u64,
+) -> RecallReport {
+    let quantizer = ProdQuantizer::new(dim, bits, seed);
+    let payloads: Vec<Vec<u8>> = corpus
+        .iter()
+        .map(|v| quantizer.pack_payload(&quantizer.encode(v)))
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+
+        let prepared = quantizer.prepare_ip_query(query);
+        let mut scored: Vec<(usize, f32)> = payloads
+            .iter()
+            .enumerate()
+            .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
 }
 
 fn run_recall_benchmark(
@@ -135,70 +277,12 @@ fn run_recall_benchmark(
     let queries: Vec<Vec<f32>> = (0..n_queries)
         .map(|i| random_unit_vector(dim, seed + 1_000_000 + i as u64))
         .collect();
-
-    let quantizer = ProdQuantizer::new(dim, bits, seed);
-    let payloads: Vec<Vec<u8>> = corpus
-        .iter()
-        .map(|v| quantizer.pack_payload(&quantizer.encode(v)))
-        .collect();
-
-    let mut total_recall_10 = 0.0f32;
-    let mut total_recall_100 = 0.0f32;
-    let mut total_ndcg_10 = 0.0f32;
-    let mut total_mae = 0.0f32;
-    let mut total_spearman = 0.0f32;
-    let mut total_overlap = 0.0f32;
-
-    let k_max = 100.min(n_corpus);
-
-    for query in &queries {
-        // Ground truth
-        let true_top = brute_force_top_k(&corpus, query, k_max);
-
-        // Quantized scoring
-        let prepared = quantizer.prepare_ip_query(query);
-        let mut scored: Vec<(usize, f32)> = payloads
-            .iter()
-            .enumerate()
-            .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
-            .collect();
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        scored.truncate(k_max);
-
-        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
-        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
-        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
-
-        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
-        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
-        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
-        total_spearman += spearman_rank_correlation(&true_top, &scored);
-
-        // top-k set overlap
-        let true_set: std::collections::HashSet<usize> =
-            true_top.iter().take(10).map(|(i, _)| *i).collect();
-        let pred_set: std::collections::HashSet<usize> =
-            scored.iter().take(10).map(|(i, _)| *i).collect();
-        total_overlap +=
-            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
-    }
-
-    let n = n_queries as f32;
-    RecallReport {
-        recall_at_10: total_recall_10 / n,
-        recall_at_100: total_recall_100 / n,
-        ndcg_at_10: total_ndcg_10 / n,
-        mean_abs_error: total_mae / n,
-        spearman_rho: total_spearman / n,
-        top_k_overlap: total_overlap / n,
-    }
+    run_recall_benchmark_with_corpus(&corpus, &queries, dim, bits, seed)
 }
 
-#[test]
-#[ignore]
-fn quantizer_recall_10k_1536_4bit() {
-    let report = run_recall_benchmark(10_000, 50, 1536, 4, 42);
-    println!("\n=== Quantizer Recall (10K x 1536, 4-bit) ===");
+fn print_report(label: &str, report: &RecallReport) {
+    println!("\n=== {label} ===");
+    println!("Recall@1:      {:.2}%", report.recall_at_1 * 100.0);
     println!("Recall@10:     {:.2}%", report.recall_at_10 * 100.0);
     println!("Recall@100:    {:.2}%", report.recall_at_100 * 100.0);
     println!("NDCG@10:       {:.4}", report.ndcg_at_10);
@@ -207,19 +291,29 @@ fn quantizer_recall_10k_1536_4bit() {
     println!("Top-10 overlap:{:.2}%", report.top_k_overlap * 100.0);
 }
 
+// --- Uniform corpus tests (baseline) ---
+
+#[test]
+#[ignore]
+fn quantizer_recall_50k_1536_4bit() {
+    let report = run_recall_benchmark(50_000, 100, 1536, 4, 42);
+    print_report("Quantizer Recall — Uniform (50K x 1536, 4-bit)", &report);
+}
+
 #[test]
 #[ignore]
 fn quantizer_recall_1k_1536_bitwidth_sweep() {
-    println!("\n=== Bit-Width Sensitivity (1K x 1536) ===");
+    println!("\n=== Bit-Width Sensitivity — Uniform (1K x 1536) ===");
     println!(
-        "{:>5} {:>10} {:>10} {:>8}",
-        "bits", "Recall@10", "NDCG@10", "MAE"
+        "{:>5} {:>9} {:>10} {:>10} {:>8}",
+        "bits", "Recall@1", "Recall@10", "NDCG@10", "MAE"
     );
     for bits in [2u8, 3, 4, 5, 6, 7, 8] {
         let report = run_recall_benchmark(1_000, 20, 1536, bits, 42);
         println!(
-            "{:>5} {:>9.2}% {:>10.4} {:>8.6}",
+            "{:>5} {:>8.2}% {:>9.2}% {:>10.4} {:>8.6}",
             bits,
+            report.recall_at_1 * 100.0,
             report.recall_at_10 * 100.0,
             report.ndcg_at_10,
             report.mean_abs_error
@@ -230,15 +324,107 @@ fn quantizer_recall_1k_1536_bitwidth_sweep() {
 #[test]
 #[ignore]
 fn quantizer_recall_1k_dimension_sweep() {
-    println!("\n=== Dimension Sensitivity (1K, 4-bit) ===");
-    println!("{:>6} {:>10} {:>10}", "dim", "Recall@10", "NDCG@10");
+    println!("\n=== Dimension Sensitivity — Uniform (1K, 4-bit) ===");
+    println!(
+        "{:>6} {:>9} {:>10} {:>10}",
+        "dim", "Recall@1", "Recall@10", "NDCG@10"
+    );
     for dim in [128, 384, 768, 1536] {
         let report = run_recall_benchmark(1_000, 20, dim, 4, 42);
         println!(
-            "{:>6} {:>9.2}% {:>10.4}",
+            "{:>6} {:>8.2}% {:>9.2}% {:>10.4}",
             dim,
+            report.recall_at_1 * 100.0,
             report.recall_at_10 * 100.0,
             report.ndcg_at_10
+        );
+    }
+}
+
+// --- Clustered corpus tests (realistic) ---
+
+#[test]
+#[ignore]
+fn quantizer_recall_clustered_10k() {
+    let dim = 1536;
+    let seed = 42u64;
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    // Queries are cluster members too — simulates "find similar" workload
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    let report = run_recall_benchmark_with_corpus(&corpus, &queries, dim, 4, seed);
+    print_report(
+        "Quantizer Recall — Clustered (10K x 1536, 50 clusters, spread=0.3, 4-bit)",
+        &report,
+    );
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_clustered_bitwidth_sweep() {
+    let dim = 1536;
+    let seed = 42u64;
+    let corpus = random_clustered_corpus(dim, 1_000, 20, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 20, 20, 0.3, seed + 500_000);
+
+    println!("\n=== Bit-Width Sensitivity — Clustered (1K x 1536, 20 clusters) ===");
+    println!(
+        "{:>5} {:>9} {:>10} {:>10} {:>8}",
+        "bits", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+    for bits in [2u8, 3, 4, 6, 8] {
+        let report = run_recall_benchmark_with_corpus(&corpus, &queries, dim, bits, seed);
+        println!(
+            "{:>5} {:>8.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            bits,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+// --- Near-duplicate stress test ---
+
+#[test]
+#[ignore]
+fn quantizer_recall_near_duplicates() {
+    let dim = 1536;
+    let seed = 42u64;
+    let quantizer = ProdQuantizer::new(dim, 4, seed);
+
+    println!("\n=== Near-Duplicate Ranking Preservation (1536-dim, 4-bit) ===");
+    println!(
+        "{:>12} {:>12} {:>12} {:>12}",
+        "angle(rad)", "preserved", "total", "rate"
+    );
+
+    for &angle in &[0.01f32, 0.02, 0.05, 0.1, 0.2] {
+        let (bases, perturbed) = near_duplicate_pairs(dim, 200, angle, seed);
+        let mut preserved = 0usize;
+
+        for (base, pert) in bases.iter().zip(perturbed.iter()) {
+            // True: base should be closer to itself than to perturbed (trivially true
+            // since dot(base, base) = 1.0 > dot(base, pert) = cos(angle))
+            // Test: does quantized scoring preserve this ordering?
+            let prepared = quantizer.prepare_ip_query(base);
+            let payload_base = quantizer.pack_payload(&quantizer.encode(base));
+            let payload_pert = quantizer.pack_payload(&quantizer.encode(pert));
+            let score_base = quantizer.score_ip_encoded(&prepared, &payload_base);
+            let score_pert = quantizer.score_ip_encoded(&prepared, &payload_pert);
+
+            if score_base > score_pert {
+                preserved += 1;
+            }
+        }
+
+        println!(
+            "{:>12.4} {:>12} {:>12} {:>11.1}%",
+            angle,
+            preserved,
+            200,
+            preserved as f32 / 200.0 * 100.0
         );
     }
 }
@@ -247,7 +433,16 @@ fn quantizer_recall_1k_dimension_sweep() {
 #[test]
 fn recall_harness_smoke_test() {
     let report = run_recall_benchmark(100, 5, 32, 4, 42);
-    // Just verify it runs without panic and returns reasonable values
+    assert!(report.recall_at_1 >= 0.0 && report.recall_at_1 <= 1.0);
     assert!(report.recall_at_10 >= 0.0 && report.recall_at_10 <= 1.0);
     assert!(report.ndcg_at_10 >= 0.0);
+}
+
+#[test]
+fn recall_harness_clustered_smoke_test() {
+    let corpus = random_clustered_corpus(32, 100, 5, 0.5, 42);
+    let queries = random_clustered_corpus(32, 5, 5, 0.5, 99);
+    let report = run_recall_benchmark_with_corpus(&corpus, &queries, 32, 4, 42);
+    assert!(report.recall_at_1 >= 0.0 && report.recall_at_1 <= 1.0);
+    assert!(report.recall_at_10 >= 0.0 && report.recall_at_10 <= 1.0);
 }
