@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `116935f`
+Current head: `4916605`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -181,6 +181,7 @@ Review triage at `46d00bb`:
 - Pure traversal mechanics now have a dedicated home in `src/am/search.rs`, which currently provides a self-contained beam-search helper with visited/frontier ownership and best-first expansion tests, but is not yet wired into `amgettuple`.
 - Live insert execution now has a dedicated `src/am/insert.rs` module, while `src/am/mod.rs` retains only the shared helpers that insert/build/scan still depend on.
 - Shared metadata/page/debug utilities now live in `src/am/shared.rs`, build-only helper tests now live in `src/am/build.rs`, and `src/am/mod.rs` is down to module wiring, constants, and narrow reexports.
+- Scan debug/test helpers now live in `src/am/scan_debug.rs`, leaving `src/am/scan.rs` focused on scan execution, traversal state, and runtime helpers.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -252,6 +253,7 @@ Open requests:
 - `73-search-module-boundary.md`
 - `74-insert-module-boundary.md`
 - `75-shared-am-helper-boundary.md`
+- `76-scan-debug-module-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
