@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `17c6e6f`
+Current head: `f9b5c9b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -161,6 +161,8 @@ Review triage at `46d00bb`:
 - Property and wrapper coverage now include SRHT roundtrip at real-world padded dimensions and direct equivalence coverage for `score_code_inner_product`.
 - Scan frontier candidates now also carry explicit discovery provenance: seeded entry candidates have no source element, while adjacency-discovered candidates record the element tid they were expanded from.
 - Frontier debug coverage now exposes candidate provenance so regression tests can verify both entry-seeded and consume/refill-discovered candidate source tracking.
+- Bootstrap frontier seeding now keeps expanding from newly seeded candidates until the bounded frontier width is full or no unseen candidates remain, instead of stopping after the entry point's immediate adjacency only.
+- The bootstrap frontier pg coverage now asserts bounded frontier behavior plus coherent provenance, and a new pure unit test locks in the multi-hop fill order independent of page layout details.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -217,6 +219,7 @@ Open requests:
 - `58-benchmark-coverage-and-data-quality.md`
 - `59-consumed-candidate-refill-and-benchmark-baseline.md`
 - `60-scan-candidate-provenance.md`
+- `61-bootstrap-frontier-multihop-fill.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
