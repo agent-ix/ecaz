@@ -497,13 +497,24 @@ fn fill_bootstrap_frontier<F>(
     opaque: &mut TqScanOpaque,
     max_candidates: usize,
     policy: BootstrapExpandPolicy,
-    mut refill: F,
+    refill: F,
 )
 where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
     reset_scan_expanded_state(opaque);
+    top_up_bootstrap_frontier(opaque, max_candidates, policy, refill);
+}
 
+fn top_up_bootstrap_frontier<F>(
+    opaque: &mut TqScanOpaque,
+    max_candidates: usize,
+    policy: BootstrapExpandPolicy,
+    mut refill: F,
+)
+where
+    F: FnMut(page::ItemPointer, &mut TqScanOpaque),
+{
     while candidate_frontier_ref(opaque).len() < max_candidates {
         let expand_index = match next_bootstrap_expand_index(opaque, policy) {
             Some(index) => index,
@@ -610,7 +621,16 @@ unsafe fn consume_and_refill_bootstrap_frontier(
     opaque: &mut TqScanOpaque,
 ) -> Option<ScanCandidate> {
     let consumed = consume_candidate_frontier_head(opaque)?;
+    mark_expanded_source(opaque, consumed.element_tid);
     unsafe { refill_candidate_frontier_from_source(index_relation, opaque, consumed.element_tid) };
+    top_up_bootstrap_frontier(
+        opaque,
+        MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
+        BootstrapExpandPolicy::ScoreOrder,
+        |source_tid, opaque| unsafe {
+            refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
+        },
+    );
     Some(consumed)
 }
 
@@ -2427,6 +2447,74 @@ mod tests {
             candidate_frontier_ref(&opaque)[2].source_tid,
             child_tid,
             "second-hop candidates should record the candidate they were expanded from"
+        );
+    }
+
+    #[test]
+    fn top_up_bootstrap_frontier_preserves_expanded_state() {
+        let entry_tid = page::ItemPointer {
+            block_number: 11,
+            offset_number: 1,
+        };
+        let sibling_tid = page::ItemPointer {
+            block_number: 11,
+            offset_number: 2,
+        };
+        let grandchild_tid = page::ItemPointer {
+            block_number: 11,
+            offset_number: 3,
+        };
+        let mut opaque = TqScanOpaque::default();
+        reset_scan_expanded_state(&mut opaque);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: entry_tid,
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: sibling_tid,
+            source_tid: entry_tid,
+            score: -2.0,
+            score_valid: true,
+        });
+        mark_expanded_source(&mut opaque, entry_tid);
+
+        top_up_bootstrap_frontier(
+            &mut opaque,
+            3,
+            BootstrapExpandPolicy::ScoreOrder,
+            |source_tid, opaque| {
+                if source_tid == sibling_tid
+                    && candidate_frontier_ref(opaque)
+                        .iter()
+                        .all(|candidate| candidate.element_tid != grandchild_tid)
+                {
+                    candidate_frontier_mut(opaque).push(ScanCandidate {
+                        element_tid: grandchild_tid,
+                        source_tid,
+                        score: -1.0,
+                        score_valid: true,
+                    });
+                }
+            },
+        );
+
+        assert_eq!(
+            candidate_frontier_ref(&opaque)
+                .iter()
+                .map(|candidate| candidate.element_tid)
+                .collect::<Vec<_>>(),
+            vec![entry_tid, sibling_tid, grandchild_tid],
+            "top-up should keep expanding from remaining unexpanded candidates without resetting prior expanded-source state"
+        );
+        assert!(
+            expanded_contains_source(&opaque, entry_tid),
+            "top-up should preserve previously expanded sources"
+        );
+        assert!(
+            expanded_contains_source(&opaque, sibling_tid),
+            "top-up should record the newly expanded candidate source"
         );
     }
 

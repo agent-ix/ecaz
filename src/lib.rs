@@ -3055,7 +3055,7 @@ mod tests {
         );
         assert!(
             after_slots.len() <= before_slots.len(),
-            "bootstrap refill should add at most one replacement candidate"
+            "bootstrap refill should stay within the current bounded frontier width"
         );
         assert_eq!(
             after_head.is_some(),
@@ -3089,15 +3089,37 @@ mod tests {
                 "a candidate discovered during refill should record the consumed frontier head as its source"
             );
         } else {
-            assert_eq!(
-                after_slots.len(),
-                before_slots.len() - 1,
-                "without an unseen consumed-neighbor candidate, the frontier should shrink by the consumed slot"
-            );
-            assert!(
-                new_tids.is_empty(),
-                "refill should not fabricate a new candidate when the consumed adjacency adds nothing unseen"
-            );
+            if after_slots.len() == before_slots.len() {
+                assert_eq!(
+                    new_tids.len(),
+                    1,
+                    "bounded refill should add exactly one replacement candidate when another remaining frontier candidate can expand"
+                );
+                let new_slot = after_provenance_slots
+                    .iter()
+                    .find(|slot| slot.0 && slot.1 == new_tids[0])
+                    .expect(
+                        "newly seeded candidate should remain present in the frontier provenance view",
+                    );
+                assert_ne!(
+                    new_slot.2, consumed_tid,
+                    "when the consumed adjacency contributes nothing unseen, any replacement should come from another remaining frontier candidate"
+                );
+                assert!(
+                    before_tids.contains(&new_slot.2) || after_tids.contains(&new_slot.2),
+                    "replacement candidates should record a still-seeded frontier source"
+                );
+            } else {
+                assert_eq!(
+                    after_slots.len(),
+                    before_slots.len() - 1,
+                    "without any expandable remaining frontier candidate, the frontier should shrink by the consumed slot"
+                );
+                assert!(
+                    new_tids.is_empty(),
+                    "refill should not fabricate a new candidate when no eligible expansion source exists"
+                );
+            }
         }
     }
 
