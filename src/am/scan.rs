@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::ptr;
+use std::sync::Arc;
 
 use pgrx::{pg_sys, FromDatum, PgBox};
 
-use crate::quant::prod::PreparedQuery;
+use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 
 use super::graph;
 use super::page;
@@ -225,19 +226,21 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let prepared = crate::quant::prod::ProdQuantizer::cached(
-        metadata.dimensions as usize,
-        metadata.bits,
-        metadata.seed,
-    )
-    .prepare_ip_query(query);
+    let quantizer =
+        ProdQuantizer::cached(metadata.dimensions as usize, metadata.bits, metadata.seed);
+    let prepared = quantizer.prepare_ip_query(query);
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
+    opaque.cached_quantizer = Arc::into_raw(quantizer);
 }
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
     if !opaque.prepared_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.prepared_query) });
         opaque.prepared_query = ptr::null_mut();
+    }
+    if !opaque.cached_quantizer.is_null() {
+        drop(unsafe { Arc::from_raw(opaque.cached_quantizer) });
+        opaque.cached_quantizer = ptr::null();
     }
 }
 
@@ -378,9 +381,10 @@ impl VisibleCandidateFrontierState {
     }
 }
 
-static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCandidateFrontierState {
-    candidates: Vec::new(),
-};
+static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState =
+    VisibleCandidateFrontierState {
+        candidates: Vec::new(),
+    };
 
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
@@ -402,9 +406,7 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFront
 pub(super) fn visible_frontier_candidates(
     opaque: &TqScanOpaque,
 ) -> Vec<search::BeamCandidate<page::ItemPointer>> {
-    visible_frontier_ref(opaque)
-        .iter()
-        .collect()
+    visible_frontier_ref(opaque).iter().collect()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -417,10 +419,7 @@ pub(super) fn visible_frontier_slot(
 
 fn with_visible_frontier_and_bootstrap_expansion<R>(
     opaque: &mut TqScanOpaque,
-    f: impl FnOnce(
-        &VisibleCandidateFrontierState,
-        &mut search::BeamSearch<page::ItemPointer>,
-    ) -> R,
+    f: impl FnOnce(&VisibleCandidateFrontierState, &mut search::BeamSearch<page::ItemPointer>) -> R,
 ) -> R {
     let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
     let expansion = bootstrap_expansion_mut(opaque) as *mut search::BeamSearch<page::ItemPointer>;
@@ -566,10 +565,7 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
-    seed_discovered_candidates(
-        opaque,
-        [search::BeamCandidate::new(entry.tid, entry_score)],
-    );
+    seed_discovered_candidates(opaque, [search::BeamCandidate::new(entry.tid, entry_score)]);
 
     fill_bootstrap_frontier(
         opaque,
@@ -585,10 +581,7 @@ fn seed_discovered_candidates(
     opaque: &mut TqScanOpaque,
     candidates: impl IntoIterator<Item = impl Into<search::BeamCandidate<page::ItemPointer>>>,
 ) {
-    let candidates = candidates
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<_>>();
+    let candidates = candidates.into_iter().map(Into::into).collect::<Vec<_>>();
     if candidates.is_empty() {
         return;
     }
@@ -665,9 +658,10 @@ fn take_candidate_frontier_node(
 fn consume_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    let candidate = with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
-        expansion.take_best_matching(|node| visible_frontier.contains_node(node))
-    });
+    let candidate =
+        with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+            expansion.take_best_matching(|node| visible_frontier.contains_node(node))
+        });
     if let Some(candidate) = candidate {
         return take_candidate_frontier_node(opaque, candidate.node);
     }
@@ -734,9 +728,8 @@ pub(super) unsafe fn materialize_scan_candidate_result(
     opaque: &mut TqScanOpaque,
     candidate: search::BeamCandidate<page::ItemPointer>,
 ) -> bool {
-    let element = unsafe {
-        graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len)
-    };
+    let element =
+        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
     if element.deleted || element.heaptids.is_empty() {
         return false;
     }
@@ -918,12 +911,11 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
     if opaque.prepared_query.is_null() {
         pgrx::error!("tqhnsw scan scoring requires a prepared query");
     }
+    if opaque.cached_quantizer.is_null() {
+        pgrx::error!("tqhnsw scan scoring requires a cached quantizer");
+    }
 
-    let quantizer = crate::quant::prod::ProdQuantizer::cached(
-        opaque.scan_dimensions as usize,
-        opaque.scan_bits,
-        opaque.scan_seed,
-    );
+    let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
 }
@@ -1015,6 +1007,7 @@ pub(super) struct TqScanOpaque {
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
+    pub(super) cached_quantizer: *const ProdQuantizer,
     pub(super) scan_dimensions: u16,
     pub(super) scan_bits: u8,
     pub(super) scan_seed: u64,
@@ -1041,6 +1034,7 @@ impl Default for TqScanOpaque {
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
+            cached_quantizer: ptr::null(),
             scan_dimensions: 0,
             scan_bits: 0,
             scan_seed: 0,
@@ -1091,6 +1085,43 @@ mod tests {
     }
 
     #[test]
+    fn prepared_query_cache_lifetime_tracks_scan_state() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 32,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 4,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+        };
+        let query = [1.0_f32, 2.0, 3.0, 4.0];
+        let mut opaque = TqScanOpaque::default();
+
+        store_scan_prepared_query(&mut opaque, &query, &metadata);
+
+        assert!(
+            !opaque.prepared_query.is_null(),
+            "storing a prepared query should retain the prepared-query payload"
+        );
+        assert!(
+            !opaque.cached_quantizer.is_null(),
+            "storing a prepared query should retain the quantizer used to score future elements"
+        );
+
+        free_scan_prepared_query(&mut opaque);
+
+        assert!(
+            opaque.prepared_query.is_null(),
+            "freeing scan prepared-query state should release the prepared query payload"
+        );
+        assert!(
+            opaque.cached_quantizer.is_null(),
+            "freeing scan prepared-query state should release the cached quantizer too"
+        );
+    }
+
+    #[test]
     fn consume_candidate_frontier_head_reselects_then_clears() {
         let mut opaque = TqScanOpaque::default();
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
@@ -1136,7 +1167,8 @@ mod tests {
             "the second consumption should return the reseated head slot"
         );
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque), None,
+            current_candidate_frontier_head_tid(&mut opaque),
+            None,
             "consuming the last valid slot should invalidate the frontier head"
         );
         assert!(
@@ -1180,15 +1212,13 @@ mod tests {
         visible_frontier_mut(&mut opaque).push(beam_candidate(14, 1, -3.0));
         visible_frontier_mut(&mut opaque).push(beam_candidate(14, 2, -1.0));
 
-        bootstrap_expansion_mut(&mut opaque).seed(
-            search::BeamCandidate::new(
-                page::ItemPointer {
-                    block_number: 14,
-                    offset_number: 2,
-                },
-                -1.0,
-            ),
-        );
+        bootstrap_expansion_mut(&mut opaque).seed(search::BeamCandidate::new(
+            page::ItemPointer {
+                block_number: 14,
+                offset_number: 2,
+            },
+            -1.0,
+        ));
         assert_eq!(
             current_candidate_frontier_head_tid(&mut opaque)
                 .map(|tid| (tid.block_number, tid.offset_number)),
@@ -1204,15 +1234,13 @@ mod tests {
         visible_frontier_mut(&mut opaque).push(beam_candidate(15, 1, -3.0));
         visible_frontier_mut(&mut opaque).push(beam_candidate(15, 2, -1.0));
 
-        bootstrap_expansion_mut(&mut opaque).seed(
-            search::BeamCandidate::new(
-                page::ItemPointer {
-                    block_number: 15,
-                    offset_number: 2,
-                },
-                -1.0,
-            ),
-        );
+        bootstrap_expansion_mut(&mut opaque).seed(search::BeamCandidate::new(
+            page::ItemPointer {
+                block_number: 15,
+                offset_number: 2,
+            },
+            -1.0,
+        ));
 
         let consumed = consume_candidate_frontier_head(&mut opaque)
             .expect("frontier consumption should prefer the scheduler's best queued node");
@@ -1237,24 +1265,20 @@ mod tests {
         reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
         visible_frontier_mut(&mut opaque).push(beam_candidate(16, 1, -2.0));
 
-        bootstrap_expansion_mut(&mut opaque).seed(
-            search::BeamCandidate::new(
-                page::ItemPointer {
-                    block_number: 16,
-                    offset_number: 9,
-                },
-                -3.0,
-            ),
-        );
-        bootstrap_expansion_mut(&mut opaque).seed(
-            search::BeamCandidate::new(
-                page::ItemPointer {
-                    block_number: 16,
-                    offset_number: 1,
-                },
-                -2.0,
-            ),
-        );
+        bootstrap_expansion_mut(&mut opaque).seed(search::BeamCandidate::new(
+            page::ItemPointer {
+                block_number: 16,
+                offset_number: 9,
+            },
+            -3.0,
+        ));
+        bootstrap_expansion_mut(&mut opaque).seed(search::BeamCandidate::new(
+            page::ItemPointer {
+                block_number: 16,
+                offset_number: 1,
+            },
+            -2.0,
+        ));
 
         assert_eq!(
             current_candidate_frontier_head_tid(&mut opaque)
@@ -1333,22 +1357,20 @@ mod tests {
             &mut opaque,
             3,
             BootstrapExpandPolicy::ScoreOrder,
-            |source_tid, opaque| {
-                match (source_tid.block_number, source_tid.offset_number) {
-                    (9, 1) => {
-                        seed_discovered_candidates(
-                            opaque,
-                            [sourced_beam_candidate(9, 2, source_tid, -2.0)],
-                        );
-                    }
-                    (9, 2) => {
-                        seed_discovered_candidates(
-                            opaque,
-                            [sourced_beam_candidate(9, 3, source_tid, -1.0)],
-                        );
-                    }
-                    _ => {}
+            |source_tid, opaque| match (source_tid.block_number, source_tid.offset_number) {
+                (9, 1) => {
+                    seed_discovered_candidates(
+                        opaque,
+                        [sourced_beam_candidate(9, 2, source_tid, -2.0)],
+                    );
                 }
+                (9, 2) => {
+                    seed_discovered_candidates(
+                        opaque,
+                        [sourced_beam_candidate(9, 3, source_tid, -1.0)],
+                    );
+                }
+                _ => {}
             },
         );
 
@@ -1527,12 +1549,7 @@ mod tests {
         let mut opaque = TqScanOpaque::default();
         reset_scan_expanded_state(&mut opaque);
         visible_frontier_mut(&mut opaque).push(beam_candidate(10, 1, -3.0));
-        visible_frontier_mut(&mut opaque).push(sourced_beam_candidate(
-            10,
-            2,
-            tid(10, 1),
-            -4.0,
-        ));
+        visible_frontier_mut(&mut opaque).push(sourced_beam_candidate(10, 2, tid(10, 1), -4.0));
 
         assert_eq!(
             visible_frontier_ref(&opaque)
