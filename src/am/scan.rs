@@ -357,11 +357,11 @@ fn find_candidate_frontier_index(
         .map(|(index, _)| index)
 }
 
-fn scheduler_best_frontier_index(opaque: &mut TqScanOpaque) -> Option<usize> {
+fn scheduler_best_frontier_node(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
     loop {
         let best = bootstrap_expansion_mut(opaque).peek_best()?;
-        if let Some(index) = find_candidate_frontier_index(opaque, best.node) {
-            return Some(index);
+        if find_candidate_frontier_index(opaque, best.node).is_some() {
+            return Some(best.node);
         }
 
         bootstrap_expansion_mut(opaque).forget_queued(best.node);
@@ -625,8 +625,8 @@ fn top_up_bootstrap_frontier<F>(
 }
 
 pub(super) fn current_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<usize> {
-    if let Some(index) = scheduler_best_frontier_index(opaque) {
-        return Some(index);
+    if let Some(node) = scheduler_best_frontier_node(opaque) {
+        return find_candidate_frontier_index(opaque, node);
     }
 
     let mut best: Option<(usize, ScanCandidate)> = None;
@@ -651,12 +651,23 @@ pub(super) fn current_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Opti
     best.map(|(index, _)| index)
 }
 
-fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
-    let head = current_candidate_frontier_head(opaque)?;
+fn take_candidate_frontier_node(
+    opaque: &mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> Option<ScanCandidate> {
+    let index = find_candidate_frontier_index(opaque, element_tid)?;
+    Some(candidate_frontier_mut(opaque).remove(index))
+}
 
-    let consumed = candidate_frontier_mut(opaque).remove(head);
-    bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
-    Some(consumed)
+fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
+    if let Some(node) = scheduler_best_frontier_node(opaque) {
+        let consumed = take_candidate_frontier_node(opaque, node)?;
+        bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
+        return Some(consumed);
+    }
+
+    let head = current_candidate_frontier_head(opaque)?;
+    Some(candidate_frontier_mut(opaque).remove(head))
 }
 
 unsafe fn refill_candidate_frontier_from_source(
