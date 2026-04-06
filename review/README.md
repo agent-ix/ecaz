@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `4916605`
+Current head: `03106c8`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -182,6 +182,7 @@ Review triage at `46d00bb`:
 - Live insert execution now has a dedicated `src/am/insert.rs` module, while `src/am/mod.rs` retains only the shared helpers that insert/build/scan still depend on.
 - Shared metadata/page/debug utilities now live in `src/am/shared.rs`, build-only helper tests now live in `src/am/build.rs`, and `src/am/mod.rs` is down to module wiring, constants, and narrow reexports.
 - Scan debug/test helpers now live in `src/am/scan_debug.rs`, leaving `src/am/scan.rs` focused on scan execution, traversal state, and runtime helpers.
+- Scan reloptions now include `ef_search` groundwork, `src/am/search.rs` now exposes incremental beam-search APIs, and bootstrap expansion-source selection in `src/am/scan.rs` now goes through that shared search seam.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -254,6 +255,7 @@ Open requests:
 - `74-insert-module-boundary.md`
 - `75-shared-am-helper-boundary.md`
 - `76-scan-debug-module-boundary.md`
+- `77-ef-search-and-search-api-groundwork.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
