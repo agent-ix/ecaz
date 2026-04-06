@@ -64,8 +64,8 @@ type DebugCandidateFrontierSlotConsume = (
 
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
-    candidate_frontier_ref(opaque)
-        .iter()
+    visible_frontier_snapshot(opaque)
+        .into_iter()
         .map(|candidate| {
             (
                 candidate.score_valid,
@@ -83,8 +83,8 @@ fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFronti
 fn debug_candidate_frontier_provenance_slots(
     opaque: &TqScanOpaque,
 ) -> DebugCandidateFrontierProvenanceSlots {
-    candidate_frontier_ref(opaque)
-        .iter()
+    visible_frontier_snapshot(opaque)
+        .into_iter()
         .map(|candidate| {
             (
                 candidate.score_valid,

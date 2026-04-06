@@ -319,7 +319,7 @@ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
     }
 }
 
-pub(super) fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
+fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
     if opaque.candidate_frontier.is_null() {
         &[]
     } else {
@@ -418,6 +418,10 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> VisibleCandidateFrontier<'
 
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
     visible_frontier_ref(opaque).slot(index)
+}
+
+pub(super) fn visible_frontier_snapshot(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
+    visible_frontier_ref(opaque).iter().collect()
 }
 
 fn candidate_frontier_contains(
