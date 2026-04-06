@@ -535,6 +535,57 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() || (*scan).xs_orderbynulls.is_null() {
+            return None;
+        }
+        if *(*scan).xs_orderbynulls {
+            return None;
+        }
+
+        f32::from_datum(*(*scan).xs_orderbyvals, false)
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let before = debug_scan_orderby_score(scan);
+
+    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let after_first = debug_scan_orderby_score(scan);
+
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    let exhausted = debug_scan_orderby_score(scan);
+
+    let mut rescan_orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    let rescanned = debug_scan_orderby_score(scan);
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (before, after_first, exhausted, rescanned)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,

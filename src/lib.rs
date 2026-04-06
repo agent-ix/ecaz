@@ -2422,6 +2422,52 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_clears_orderby_score_on_rescan() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_orderby_lifecycle (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_orderby_lifecycle VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_orderby_lifecycle_idx ON tqhnsw_gettuple_orderby_lifecycle USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_orderby_lifecycle_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before, after_first, exhausted, rescanned) = unsafe {
+            am::debug_gettuple_orderby_score_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
+
+        assert_eq!(
+            before, None,
+            "order-by output should start empty before tuple production"
+        );
+        assert!(
+            after_first.is_some(),
+            "first tuple production should publish a non-null order-by score"
+        );
+        assert_eq!(
+            exhausted, None,
+            "exhaustion should clear the visible order-by score instead of leaving stale output"
+        );
+        assert_eq!(
+            rescanned, None,
+            "amrescan should clear any prior order-by score before the next tuple is produced"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_lifecycle() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_result_lifecycle (id bigint primary key, embedding tqvector)",

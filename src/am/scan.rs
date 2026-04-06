@@ -144,6 +144,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             if opaque.scan_dimensions == 0 {
+                clear_scan_orderby_output(scan);
                 return false;
             }
 
@@ -166,6 +167,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                 return true;
             }
 
+            clear_scan_orderby_output(scan);
             false
         })
     }
@@ -948,6 +950,14 @@ fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
 
         *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
         *(*scan).xs_orderbynulls = false;
+    }
+}
+
+fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        if !(*scan).xs_orderbynulls.is_null() {
+            *(*scan).xs_orderbynulls = true;
+        }
     }
 }
 
