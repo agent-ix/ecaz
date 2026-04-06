@@ -320,6 +320,7 @@ Open requests:
 - `112-remove-dead-queued-beam-lookup.md`
 - `113-remove-stale-bootstrap-candidate-staging.md`
 - `114-remove-dead-bootstrap-expand-helper.md`
+- `115-gate-debug-only-frontier-helpers.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
