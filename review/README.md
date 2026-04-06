@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `3541e71`
+Current head: `86e45ec`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -307,6 +307,7 @@ Open requests:
 - `103-visible-frontier-beam-iteration.md`
 - `104-active-candidate-beam-state.md`
 - `105-frontier-remove-node-beam-return.md`
+- `106-beam-native-frontier-head-selection.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
