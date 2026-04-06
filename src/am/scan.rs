@@ -347,11 +347,11 @@ impl VisibleCandidateFrontierState {
             .any(|candidate| candidate.node == element_tid)
     }
 
-    fn best_tid_by_score(&self) -> Option<page::ItemPointer> {
+    fn best_candidate_by_score(&self) -> Option<search::BeamCandidate<page::ItemPointer>> {
         self.candidates
             .iter()
             .min_by(|left, right| left.score.total_cmp(&right.score))
-            .map(|candidate| candidate.node)
+            .copied()
     }
 
     fn clear(&mut self) {
@@ -431,11 +431,22 @@ fn candidate_frontier_contains(
     visible_frontier_ref(opaque).contains_node(element_tid)
 }
 
-fn scheduler_best_frontier_node(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
+fn scheduler_best_frontier_candidate(
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
     let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
     bootstrap_expansion_mut(opaque)
         .peek_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
-        .map(|candidate| candidate.node)
+}
+
+fn current_candidate_frontier_head(
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    if let Some(candidate) = scheduler_best_frontier_candidate(opaque) {
+        return Some(candidate);
+    }
+
+    visible_frontier_ref(opaque).best_candidate_by_score()
 }
 
 fn bootstrap_expansion_mut(
@@ -669,11 +680,7 @@ fn top_up_bootstrap_frontier<F>(
 pub(super) fn current_candidate_frontier_head_tid(
     opaque: &mut TqScanOpaque,
 ) -> Option<page::ItemPointer> {
-    if let Some(node) = scheduler_best_frontier_node(opaque) {
-        return Some(node);
-    }
-
-    visible_frontier_ref(opaque).best_tid_by_score()
+    current_candidate_frontier_head(opaque).map(|candidate| candidate.node)
 }
 
 fn take_candidate_frontier_node(
@@ -693,8 +700,8 @@ fn consume_candidate_frontier_head(
         return take_candidate_frontier_node(opaque, candidate.node);
     }
 
-    let head_tid = current_candidate_frontier_head_tid(opaque)?;
-    take_candidate_frontier_node(opaque, head_tid)
+    let head = current_candidate_frontier_head(opaque)?;
+    take_candidate_frontier_node(opaque, head.node)
 }
 
 unsafe fn refill_candidate_frontier_from_source(
