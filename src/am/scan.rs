@@ -1058,46 +1058,6 @@ impl Default for CurrentScanResult {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub(super) struct ScanCandidate {
-    pub(super) element_tid: page::ItemPointer,
-    pub(super) source_tid: page::ItemPointer,
-    pub(super) score: f32,
-    pub(super) score_valid: bool,
-}
-
-impl Default for ScanCandidate {
-    fn default() -> Self {
-        Self {
-            element_tid: page::ItemPointer::INVALID,
-            source_tid: page::ItemPointer::INVALID,
-            score: 0.0,
-            score_valid: false,
-        }
-    }
-}
-
-impl From<ScanCandidate> for search::BeamCandidate<page::ItemPointer> {
-    fn from(candidate: ScanCandidate) -> Self {
-        match candidate.source_tid {
-            page::ItemPointer::INVALID => Self::new(candidate.element_tid, candidate.score),
-            source_tid => Self::with_source(candidate.element_tid, candidate.score, source_tid),
-        }
-    }
-}
-
-impl From<search::BeamCandidate<page::ItemPointer>> for ScanCandidate {
-    fn from(candidate: search::BeamCandidate<page::ItemPointer>) -> Self {
-        Self {
-            element_tid: candidate.node,
-            source_tid: candidate.source.unwrap_or(page::ItemPointer::INVALID),
-            score: candidate.score,
-            score_valid: true,
-        }
-    }
-}
-
-#[repr(C)]
 #[derive(Debug)]
 pub(super) struct TqScanOpaque {
     pub(super) rescan_called: bool,
