@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `ab1b188`
+Current head: `d469c5a`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -60,6 +60,7 @@ Current tqhnsw state summary:
 - `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
 - The scan prepared-query cache now also retains the corresponding `ProdQuantizer` instance in scan-owned state, so candidate scoring no longer reacquires the shared quantizer cache for every scored element.
 - Scan debug/test bootstrap frontier helpers no longer preserve a stale fixed two-slot alias; they now expose the current `Vec`-backed visible frontier shape directly.
+- The remaining scan unsafe audit nits now have an explicit non-aliasing `SAFETY` contract on the split-borrow frontier/scheduler helper, and `amendscan` now casts the opaque scan state once before teardown.
 - The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
 - Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
 - The bootstrap linear scan now also computes and stores an operator-facing `<#>` score for the current result element by combining the cached prepared query with the representative heap row's persisted `gamma`.
@@ -151,6 +152,7 @@ Review triage at `46d00bb`:
 - Addressed external review `16-score-code-inner-product-allocates-per-call.md` by adding a raw-code scorer that avoids temporary payload allocation.
 - Addressed external review `02-score-element-cached-per-call.md` by retaining the prepared query's `ProdQuantizer` in scan-owned state and freeing it alongside the prepared query during scan teardown.
 - Addressed external review `03-debug-frontier-stale-type-alias.md` by removing the stale two-slot debug frontier alias and switching the remaining debug/test helpers to `Vec`-backed frontier snapshots.
+- Addressed external reviews `04-split-borrow-raw-pointer-fragility.md` and `05-amendscan-repeated-cast.md` with an explicit split-borrow `SAFETY` comment and a single cast-once teardown pattern in `amendscan`.
 - Addressed outside feedback on `13-amgettuple-empty-index-noop.md` by adding explicit repeated-empty-scan and empty-rescan coverage.
 - Addressed outside feedback on `14-rescan-query-payload-state.md` by rejecting oversized scan queries before storing scan-owned payload state.
 - Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by removing the unreachable saturated-offset overflow branch in the linear scan cursor.
@@ -331,6 +333,7 @@ Open requests:
 - `116-current-result-debug-boundary.md`
 - `117-scan-quantizer-hot-path-cache.md`
 - `118-remove-stale-debug-frontier-alias.md`
+- `119-scan-unsafe-audit-cleanup.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
