@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `ad6b45b`
+Current head: `1664deb`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -203,6 +203,7 @@ Review triage at `46d00bb`:
 - Scheduler-first frontier consumption now also goes through a search-owned `take_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer pairs scheduler head selection with a separate `forget_queued` cleanup step.
 - The owned visible frontier in `src/am/scan.rs` now stores shared `search::BeamCandidate<ItemPointer>` entries internally instead of a second scan-local candidate payload type, while keeping debug/materialization surfaces exposed as `ScanCandidate`.
 - Runtime bootstrap candidate seeding and successor collection in `src/am/scan.rs` now flow through shared `BeamCandidate<ItemPointer>` values directly, shrinking `ScanCandidate` further toward a boundary/debug/materialization role instead of a hot-path runtime container.
+- Runtime frontier consumption, refill, and direct materialization in `src/am/scan.rs` now also flow through `BeamCandidate<ItemPointer>` values, with `ScanCandidate` retained mainly for scan-owned persistent fields like `active_candidate` and for debug/test-facing snapshot surfaces.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -299,6 +300,7 @@ Open requests:
 - `98-search-owned-scheduler-consume.md`
 - `99-visible-frontier-beam-candidate-storage.md`
 - `100-beam-candidates-through-runtime-seeding.md`
+- `101-beam-candidates-through-runtime-consume.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
