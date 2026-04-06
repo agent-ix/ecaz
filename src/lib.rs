@@ -2790,10 +2790,10 @@ mod tests {
             .min_by(|(left_index, left), (right_index, right)| {
                 left.2.total_cmp(&right.2).then(left_index.cmp(right_index))
             })
-            .map(|(index, _)| index);
+            .map(|(_, slot)| slot.1);
         assert_eq!(
             head, expected_head,
-            "frontier head should pick the best valid slot across the current widened bootstrap frontier"
+            "frontier head should pick the best valid candidate across the current widened bootstrap frontier"
         );
 
         let entry_tid = frontier_provenance
@@ -2932,14 +2932,17 @@ mod tests {
             before_head, None,
             "non-empty frontier should expose a concrete head before consumption"
         );
-        let consumed_slot = before_head.expect("non-empty frontier should expose a head");
-        let remaining_slot = if consumed_slot == 0 { 1 } else { 0 };
+        let consumed_tid = before_head.expect("non-empty frontier should expose a head");
+        let remaining_slot = before_frontier
+            .iter()
+            .position(|slot| slot.0 && slot.1 != consumed_tid)
+            .unwrap_or(0);
 
         if before_frontier[remaining_slot].0 {
             assert_eq!(
                 after_first_head,
-                Some(0),
-                "when another candidate remains valid, consuming the head should compact it to the new head slot"
+                Some(before_frontier[remaining_slot].1),
+                "when another candidate remains valid, consuming the head should expose that remaining candidate as the new head"
             );
             assert_eq!(
                 after_first_frontier[0],
