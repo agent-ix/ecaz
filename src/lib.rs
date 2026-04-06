@@ -2935,10 +2935,9 @@ mod tests {
         let consumed_tid = before_head.expect("non-empty frontier should expose a head");
         let remaining_slot = before_frontier
             .iter()
-            .position(|slot| slot.0 && slot.1 != consumed_tid)
-            .unwrap_or(0);
+            .position(|slot| slot.0 && slot.1 != consumed_tid);
 
-        if before_frontier[remaining_slot].0 {
+        if let Some(remaining_slot) = remaining_slot {
             assert_eq!(
                 after_first_head,
                 Some(before_frontier[remaining_slot].1),

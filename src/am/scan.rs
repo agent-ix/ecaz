@@ -345,22 +345,20 @@ pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandida
         .unwrap_or_default()
 }
 
-fn find_candidate_frontier_index(
+fn candidate_frontier_contains(
     opaque: &TqScanOpaque,
     element_tid: page::ItemPointer,
-) -> Option<usize> {
+) -> bool {
     candidate_frontier_ref(opaque)
         .iter()
         .copied()
-        .enumerate()
-        .find(|(_, candidate)| candidate.score_valid && candidate.element_tid == element_tid)
-        .map(|(index, _)| index)
+        .any(|candidate| candidate.score_valid && candidate.element_tid == element_tid)
 }
 
 fn scheduler_best_frontier_node(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
     loop {
         let best = bootstrap_expansion_mut(opaque).peek_best()?;
-        if find_candidate_frontier_index(opaque, best.node).is_some() {
+        if candidate_frontier_contains(opaque, best.node) {
             return Some(best.node);
         }
 
@@ -506,10 +504,10 @@ unsafe fn initialize_scan_entry_candidate(
     );
 }
 
-fn next_bootstrap_expand_index(
+fn next_bootstrap_expand_tid(
     opaque: &TqScanOpaque,
     policy: BootstrapExpandPolicy,
-) -> Option<usize> {
+) -> Option<page::ItemPointer> {
     match policy {
         BootstrapExpandPolicy::ScoreOrder => {
             let mut expansion = search::BeamSearch::new(MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
@@ -527,13 +525,12 @@ fn next_bootstrap_expand_index(
             let best = expansion.peek_best()?;
             candidate_frontier_ref(opaque)
                 .iter()
-                .enumerate()
-                .find(|(_, candidate)| {
+                .find(|candidate| {
                     candidate.score_valid
                         && !expanded_contains_source(opaque, candidate.element_tid)
                         && candidate.element_tid == best.node
                 })
-                .map(|(index, _)| index)
+                .map(|candidate| candidate.element_tid)
         }
     }
 }
@@ -655,7 +652,9 @@ fn take_candidate_frontier_node(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
 ) -> Option<ScanCandidate> {
-    let index = find_candidate_frontier_index(opaque, element_tid)?;
+    let index = candidate_frontier_ref(opaque)
+        .iter()
+        .position(|candidate| candidate.score_valid && candidate.element_tid == element_tid)?;
     Some(candidate_frontier_mut(opaque).remove(index))
 }
 
@@ -1686,8 +1685,11 @@ mod tests {
         });
 
         assert_eq!(
-            next_bootstrap_expand_index(&opaque, BootstrapExpandPolicy::ScoreOrder),
-            Some(1),
+            next_bootstrap_expand_tid(&opaque, BootstrapExpandPolicy::ScoreOrder),
+            Some(page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            }),
             "the explicit score-order policy should expand the lowest-score unexpanded seeded candidate first"
         );
 
@@ -1699,8 +1701,11 @@ mod tests {
             },
         );
         assert_eq!(
-            next_bootstrap_expand_index(&opaque, BootstrapExpandPolicy::ScoreOrder),
-            Some(0),
+            next_bootstrap_expand_tid(&opaque, BootstrapExpandPolicy::ScoreOrder),
+            Some(page::ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            }),
             "after the best candidate is marked expanded, the score-order policy should fall back to the next best seeded candidate"
         );
     }
