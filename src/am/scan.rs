@@ -249,7 +249,6 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
-    clear_active_scan_candidate(opaque);
     reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
@@ -286,10 +285,6 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
     opaque.current_result = CurrentScanResult::default();
-}
-
-fn clear_active_scan_candidate(opaque: &mut TqScanOpaque) {
-    opaque.active_candidate = None;
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -418,19 +413,24 @@ pub(super) fn visible_frontier_slot(
     visible_frontier_ref(opaque).slot(index)
 }
 
-fn candidate_frontier_contains(
-    opaque: &TqScanOpaque,
-    element_tid: page::ItemPointer,
-) -> bool {
-    visible_frontier_ref(opaque).contains_node(element_tid)
+fn with_visible_frontier_and_bootstrap_expansion<R>(
+    opaque: &mut TqScanOpaque,
+    f: impl FnOnce(
+        &VisibleCandidateFrontierState,
+        &mut search::BeamSearch<page::ItemPointer>,
+    ) -> R,
+) -> R {
+    let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
+    let expansion = bootstrap_expansion_mut(opaque) as *mut search::BeamSearch<page::ItemPointer>;
+    unsafe { f(&*visible_frontier, &mut *expansion) }
 }
 
 fn scheduler_best_frontier_candidate(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
-    bootstrap_expansion_mut(opaque)
-        .peek_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
+    with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+        expansion.peek_best_matching(|node| visible_frontier.contains_node(node))
+    })
 }
 
 fn current_candidate_frontier_head(
@@ -687,10 +687,10 @@ fn take_candidate_frontier_node(
 fn consume_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
-    if let Some(candidate) = bootstrap_expansion_mut(opaque)
-        .take_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
-    {
+    let candidate = with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+        expansion.take_best_matching(|node| visible_frontier.contains_node(node))
+    });
+    if let Some(candidate) = candidate {
         return take_candidate_frontier_node(opaque, candidate.node);
     }
 
@@ -751,7 +751,7 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     Some(consumed)
 }
 
-unsafe fn materialize_scan_candidate_result(
+pub(super) unsafe fn materialize_scan_candidate_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     candidate: search::BeamCandidate<page::ItemPointer>,
@@ -788,25 +788,6 @@ fn refill_bootstrap_frontier_after_consume<F>(
     );
 }
 
-pub(super) fn maybe_consume_bootstrap_frontier_candidate(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) {
-    if opaque.active_candidate.is_some()
-        || opaque.scan_exhausted
-        || opaque.pending_heaptid_count != 0
-        || opaque.scan_dimensions == 0
-    {
-        return;
-    }
-
-    if let Some(candidate) =
-        unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) }
-    {
-        opaque.active_candidate = Some(candidate);
-    }
-}
-
 unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -820,22 +801,6 @@ unsafe fn materialize_next_bootstrap_frontier_result(
     else {
         return false;
     };
-    unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
-}
-
-pub(super) unsafe fn materialize_active_candidate_result(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) -> bool {
-    if opaque.active_candidate.is_none() || opaque.pending_heaptid_count != 0 {
-        return false;
-    }
-
-    let candidate = opaque
-        .active_candidate
-        .take()
-        .expect("active candidate should be present when materialization starts");
-    clear_active_scan_candidate(opaque);
     unsafe { materialize_scan_candidate_result(index_relation, opaque, candidate) }
 }
 
@@ -885,7 +850,6 @@ unsafe fn next_linear_scan_heap_tid(
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
         clear_scan_candidate_state(opaque);
-        clear_active_scan_candidate(opaque);
         clear_scan_result_state(opaque);
         return None;
     }
@@ -950,23 +914,11 @@ unsafe fn next_linear_scan_heap_tid(
             if emitted_contains_element(opaque, element_tid) {
                 continue;
             }
-            if opaque
-                .active_candidate
-                .is_some_and(|candidate| candidate.node == element_tid)
-            {
-                let active_score = opaque
-                    .active_candidate
-                    .map(|candidate| candidate.score)
-                    .expect("active candidate should be present when matching the linear cursor");
-                set_current_scan_result(opaque, element_tid, active_score);
-                clear_active_scan_candidate(opaque);
-            } else {
-                set_current_scan_result(
-                    opaque,
-                    element_tid,
-                    score_scan_element_result(opaque, element.gamma, &element.code),
-                );
-            }
+            set_current_scan_result(
+                opaque,
+                element_tid,
+                score_scan_element_result(opaque, element.gamma, &element.code),
+            );
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -980,7 +932,6 @@ unsafe fn next_linear_scan_heap_tid(
 
     opaque.scan_exhausted = true;
     clear_scan_candidate_state(opaque);
-    clear_active_scan_candidate(opaque);
     clear_scan_result_state(opaque);
     None
 }
@@ -1074,7 +1025,6 @@ pub(super) struct TqScanOpaque {
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
-    pub(super) active_candidate: Option<search::BeamCandidate<page::ItemPointer>>,
     pub(super) current_result: CurrentScanResult,
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
@@ -1101,7 +1051,6 @@ impl Default for TqScanOpaque {
             emitted_result_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             bootstrap_expansion: ptr::null_mut(),
-            active_candidate: None,
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,

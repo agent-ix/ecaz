@@ -126,16 +126,14 @@ type DebugBootstrapSeedState = (
 type DebugBootstrapConsumeState = (
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
-    (bool, HeapTidCoords, HeapTidCoords, f32),
     HeapTidCoords,
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-type DebugActiveCandidateMaterializationState = (
+type DebugBootstrapCandidateMaterializationState = (
     (bool, HeapTidCoords, f32),
-    bool,
     HeapTidCoords,
     Vec<HeapTidCoords>,
     bool,
@@ -650,19 +648,6 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     );
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let active_candidate = (
-        opaque.active_candidate.is_some(),
-        opaque
-            .active_candidate
-            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
-            .unwrap_or((u32::MAX, u16::MAX)),
-        opaque
-            .active_candidate
-            .and_then(|candidate| candidate.source)
-            .map(|tid| (tid.block_number, tid.offset_number))
-            .unwrap_or((u32::MAX, u16::MAX)),
-        opaque.active_candidate.map(|candidate| candidate.score).unwrap_or(0.0),
-    );
     let current_result_tid = (
         opaque.current_result.element_tid.block_number,
         opaque.current_result.element_tid.offset_number,
@@ -677,7 +662,6 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     (
         before_head,
         before_slots,
-        active_candidate,
         current_result_tid,
         after_head,
         after_slots,
@@ -685,10 +669,10 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_materialize_active_candidate_result(
+pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> DebugActiveCandidateMaterializationState {
+) -> DebugBootstrapCandidateMaterializationState {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -700,16 +684,17 @@ pub(crate) unsafe fn debug_materialize_active_candidate_result(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    maybe_consume_bootstrap_frontier_candidate(index_relation, opaque);
-    let active_before = (
-        opaque.active_candidate.is_some(),
-        opaque
-            .active_candidate
+    let candidate = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+    let candidate_before = (
+        candidate.is_some(),
+        candidate
             .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
             .unwrap_or((u32::MAX, u16::MAX)),
-        opaque.active_candidate.map(|candidate| candidate.score).unwrap_or(0.0),
+        candidate.map(|candidate| candidate.score).unwrap_or(0.0),
     );
-    let materialized = unsafe { materialize_active_candidate_result(index_relation, opaque) };
+    let materialized = candidate.is_some_and(|candidate| unsafe {
+        materialize_scan_candidate_result(index_relation, opaque, candidate)
+    });
     let current_result_tid = (
         opaque.current_result.element_tid.block_number,
         opaque.current_result.element_tid.offset_number,
@@ -718,17 +703,15 @@ pub(crate) unsafe fn debug_materialize_active_candidate_result(
         .iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
-    let active_cleared = opaque.active_candidate.is_none();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
-        active_before,
-        materialized,
+        candidate_before,
         current_result_tid,
         pending_heap_tids,
-        active_cleared,
+        materialized,
     )
 }
 

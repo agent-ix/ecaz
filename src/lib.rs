@@ -3160,7 +3160,6 @@ mod tests {
         let (
             before_head,
             before_slots,
-            active_candidate,
             current_result_tid,
             after_head,
             after_slots,
@@ -3168,10 +3167,6 @@ mod tests {
             am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
-        assert!(
-            !active_candidate.0,
-            "first amgettuple call should now materialize the consumed bootstrap candidate instead of leaving it active"
-        );
         let consumed_slot = before_slots
             .into_iter()
             .find(|slot| slot.1 == current_result_tid)
@@ -3196,57 +3191,49 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_active_candidate_materializes_into_pending_drain() {
+    fn test_tqhnsw_bootstrap_candidate_materializes_into_pending_drain() {
         Spi::run(
-            "CREATE TABLE tqhnsw_active_candidate_materialize (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE tqhnsw_bootstrap_candidate_materialize (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_active_candidate_materialize VALUES
+            "INSERT INTO tqhnsw_bootstrap_candidate_materialize VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_active_candidate_materialize_idx ON tqhnsw_active_candidate_materialize USING tqhnsw \
+            "CREATE INDEX tqhnsw_bootstrap_candidate_materialize_idx ON tqhnsw_bootstrap_candidate_materialize USING tqhnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_active_candidate_materialize_idx'::regclass::oid",
+            "SELECT 'tqhnsw_bootstrap_candidate_materialize_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (active_before, materialized, current_result_tid, pending_heap_tids, active_cleared) =
-            unsafe {
-                am::debug_materialize_active_candidate_result(
-                    index_oid,
-                    vec![1.0, 0.0, 0.5, -1.0],
-                )
-            };
+        let (candidate_before, current_result_tid, pending_heap_tids, materialized) = unsafe {
+            am::debug_materialize_bootstrap_candidate_result(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
 
         assert!(
-            active_before.0,
-            "bootstrap candidate consumption should produce an active candidate before materialization"
+            candidate_before.0,
+            "bootstrap frontier should yield a candidate before direct materialization"
         );
         assert!(
             materialized,
-            "active candidate should materialize into the pending heap-tid drain path"
+            "bootstrap candidate should materialize into the pending heap-tid drain path"
         );
         assert_eq!(
-            current_result_tid, active_before.1,
-            "materializing the active candidate should attach current-result state to that candidate"
+            current_result_tid, candidate_before.1,
+            "materializing the bootstrap candidate should attach current-result state to that candidate"
         );
         assert_eq!(
             pending_heap_tids.len(),
             2,
-            "duplicate-coalesced active candidates should populate all duplicate heap tids into pending drain state"
-        );
-        assert!(
-            active_cleared,
-            "active candidate state should clear once it has been materialized into pending drain state"
+            "duplicate-coalesced bootstrap candidates should populate all duplicate heap tids into pending drain state"
         );
     }
 
