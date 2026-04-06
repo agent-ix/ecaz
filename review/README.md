@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `548ac5a`
+Current head: `ef01ba7`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -192,6 +192,7 @@ Review triage at `46d00bb`:
 - Visible frontier head is now derived on demand from the scan-owned scheduler plus Vec fallback instead of being cached as separate mutable scan state, shrinking one remaining piece of Vec-side authority during the dual-structure transition.
 - Scheduler-first frontier consumption now removes the visible candidate by scheduler-chosen element TID before falling back to a Vec-head scan, reducing one more runtime dependency on Vec index bookkeeping during the dual-structure phase.
 - Frontier-head reporting now exposes candidate TID identity instead of Vec slot index across scan debug/test surfaces, keeping the remaining Vec-index mapping confined to actual visible-container removal paths.
+- The old shared node-to-index frontier lookup helper is now gone; scheduler visibility checks use direct node containment, and the remaining node-to-index search is localized inside visible-frontier removal only.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -277,6 +278,7 @@ Open requests:
 - `87-derived-frontier-head-state.md`
 - `88-scheduler-node-first-consume.md`
 - `89-frontier-head-tid-surface.md`
+- `90-localized-frontier-node-lookup.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
