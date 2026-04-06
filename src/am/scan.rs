@@ -380,7 +380,25 @@ unsafe fn initialize_scan_entry_candidate(
     });
     mark_visited_element(opaque, entry.tid);
 
-    unsafe { refill_candidate_frontier_from_source(index_relation, opaque, entry.tid) };
+    fill_bootstrap_frontier(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES, |source_tid, opaque| unsafe {
+        refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
+    });
+}
+
+fn fill_bootstrap_frontier<F>(opaque: &mut TqScanOpaque, max_candidates: usize, mut refill: F)
+where
+    F: FnMut(page::ItemPointer, &mut TqScanOpaque),
+{
+    let mut expand_index = 0usize;
+
+    while candidate_frontier_ref(opaque).len() < max_candidates {
+        let source_tid = match candidate_frontier_ref(opaque).get(expand_index) {
+            Some(candidate) => candidate.element_tid,
+            None => break,
+        };
+        refill(source_tid, opaque);
+        expand_index += 1;
+    }
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
@@ -1997,6 +2015,80 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![first_valid, second_valid],
             "collection should return live candidates in neighbor order up to the requested limit"
+        );
+    }
+
+    #[test]
+    fn fill_bootstrap_frontier_can_expand_beyond_entry_neighbors() {
+        let entry_tid = page::ItemPointer {
+            block_number: 9,
+            offset_number: 1,
+        };
+        let child_tid = page::ItemPointer {
+            block_number: 9,
+            offset_number: 2,
+        };
+        let grandchild_tid = page::ItemPointer {
+            block_number: 9,
+            offset_number: 3,
+        };
+        let mut opaque = TqScanOpaque::default();
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: entry_tid,
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+
+        fill_bootstrap_frontier(&mut opaque, 3, |source_tid, opaque| {
+            let frontier = candidate_frontier_mut(opaque);
+            match (source_tid.block_number, source_tid.offset_number) {
+                (9, 1) if frontier.iter().all(|candidate| candidate.element_tid != child_tid) => {
+                    frontier.push(ScanCandidate {
+                        element_tid: child_tid,
+                        source_tid,
+                        score: -2.0,
+                        score_valid: true,
+                    });
+                }
+                (9, 2)
+                    if frontier
+                        .iter()
+                        .all(|candidate| candidate.element_tid != grandchild_tid) =>
+                {
+                    frontier.push(ScanCandidate {
+                        element_tid: grandchild_tid,
+                        source_tid,
+                        score: -1.0,
+                        score_valid: true,
+                    });
+                }
+                _ => {}
+            }
+        });
+
+        assert_eq!(
+            candidate_frontier_ref(&opaque)
+                .iter()
+                .map(|candidate| candidate.element_tid)
+                .collect::<Vec<_>>(),
+            vec![entry_tid, child_tid, grandchild_tid],
+            "bootstrap frontier filling should keep expanding from newly seeded candidates until capacity is reached"
+        );
+        assert_eq!(
+            candidate_frontier_ref(&opaque)[0].source_tid,
+            page::ItemPointer::INVALID,
+            "entry-seeded candidates should not claim a discovery source"
+        );
+        assert_eq!(
+            candidate_frontier_ref(&opaque)[1].source_tid,
+            entry_tid,
+            "first-hop candidates should record the entry candidate as their source"
+        );
+        assert_eq!(
+            candidate_frontier_ref(&opaque)[2].source_tid,
+            child_tid,
+            "second-hop candidates should record the candidate they were expanded from"
         );
     }
 }
