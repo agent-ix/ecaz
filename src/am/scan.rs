@@ -621,17 +621,34 @@ unsafe fn consume_and_refill_bootstrap_frontier(
     opaque: &mut TqScanOpaque,
 ) -> Option<ScanCandidate> {
     let consumed = consume_candidate_frontier_head(opaque)?;
-    mark_expanded_source(opaque, consumed.element_tid);
-    unsafe { refill_candidate_frontier_from_source(index_relation, opaque, consumed.element_tid) };
+    refill_bootstrap_frontier_after_consume(
+        opaque,
+        consumed,
+        |source_tid, opaque| unsafe {
+            refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
+        },
+    );
+    Some(consumed)
+}
+
+fn refill_bootstrap_frontier_after_consume<F>(
+    opaque: &mut TqScanOpaque,
+    consumed: ScanCandidate,
+    mut refill: F,
+) where
+    F: FnMut(page::ItemPointer, &mut TqScanOpaque),
+{
+    if !expanded_contains_source(opaque, consumed.element_tid) {
+        mark_expanded_source(opaque, consumed.element_tid);
+        refill(consumed.element_tid, opaque);
+    }
+
     top_up_bootstrap_frontier(
         opaque,
         MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
         BootstrapExpandPolicy::ScoreOrder,
-        |source_tid, opaque| unsafe {
-            refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
-        },
+        refill,
     );
-    Some(consumed)
 }
 
 fn maybe_consume_bootstrap_frontier_candidate(
@@ -2515,6 +2532,75 @@ mod tests {
         assert!(
             expanded_contains_source(&opaque, sibling_tid),
             "top-up should record the newly expanded candidate source"
+        );
+    }
+
+    #[test]
+    fn refill_after_consume_skips_already_expanded_source() {
+        let consumed_tid = page::ItemPointer {
+            block_number: 12,
+            offset_number: 1,
+        };
+        let sibling_tid = page::ItemPointer {
+            block_number: 12,
+            offset_number: 2,
+        };
+        let grandchild_tid = page::ItemPointer {
+            block_number: 12,
+            offset_number: 3,
+        };
+        let mut opaque = TqScanOpaque::default();
+        reset_scan_expanded_state(&mut opaque);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: sibling_tid,
+            source_tid: consumed_tid,
+            score: -2.0,
+            score_valid: true,
+        });
+        mark_expanded_source(&mut opaque, consumed_tid);
+
+        let mut refilled_sources = Vec::new();
+        refill_bootstrap_frontier_after_consume(
+            &mut opaque,
+            ScanCandidate {
+                element_tid: consumed_tid,
+                source_tid: page::ItemPointer::INVALID,
+                score: -3.0,
+                score_valid: true,
+            },
+            |source_tid, opaque| {
+                refilled_sources.push(source_tid);
+                if source_tid == sibling_tid
+                    && candidate_frontier_ref(opaque)
+                        .iter()
+                        .all(|candidate| candidate.element_tid != grandchild_tid)
+                {
+                    candidate_frontier_mut(opaque).push(ScanCandidate {
+                        element_tid: grandchild_tid,
+                        source_tid,
+                        score: -1.0,
+                        score_valid: true,
+                    });
+                }
+            },
+        );
+
+        assert!(
+            !refilled_sources.contains(&consumed_tid),
+            "consume/refill should not reread a source that was already expanded during earlier bootstrap work"
+        );
+        assert_eq!(
+            refilled_sources.first().copied(),
+            Some(sibling_tid),
+            "consume/refill should continue by expanding another remaining frontier candidate first"
+        );
+        assert_eq!(
+            candidate_frontier_ref(&opaque)
+                .iter()
+                .map(|candidate| candidate.element_tid)
+                .collect::<Vec<_>>(),
+            vec![sibling_tid, grandchild_tid],
+            "consume/refill should still top up from another remaining unexpanded frontier candidate"
         );
     }
 
