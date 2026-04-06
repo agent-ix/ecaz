@@ -795,6 +795,26 @@ where
     false
 }
 
+fn materialize_next_bootstrap_candidate_with_refill<CandidateFn, MaterializeFn, RefillFn>(
+    mut next_candidate: CandidateFn,
+    mut materialize: MaterializeFn,
+    mut refill_after_success: RefillFn,
+) -> bool
+where
+    CandidateFn: FnMut() -> Option<search::BeamCandidate<page::ItemPointer>>,
+    MaterializeFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> bool,
+    RefillFn: FnMut(search::BeamCandidate<page::ItemPointer>),
+{
+    while let Some(candidate) = next_candidate() {
+        if materialize(candidate) {
+            refill_after_success(candidate);
+            return true;
+        }
+    }
+
+    false
+}
+
 unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -806,10 +826,19 @@ unsafe fn materialize_next_bootstrap_frontier_result(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
     // temporary mutable borrows of `opaque` do not alias.
-    materialize_next_bootstrap_candidate(
-        || unsafe { consume_and_refill_bootstrap_frontier(index_relation, &mut *opaque_ptr) },
+    materialize_next_bootstrap_candidate_with_refill(
+        || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
         |candidate| unsafe {
             materialize_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+        },
+        |candidate| {
+            refill_bootstrap_frontier_after_consume(
+                unsafe { &mut *opaque_ptr },
+                candidate,
+                |source_tid, opaque| unsafe {
+                    refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
+                },
+            );
         },
     )
 }
@@ -1192,6 +1221,39 @@ mod tests {
         assert_eq!(
             attempts, 2,
             "bootstrap materialization should exhaust the queued frontier before giving up"
+        );
+    }
+
+    #[test]
+    fn materialize_next_bootstrap_candidate_refills_only_after_successful_adjudication() {
+        let candidate_a = beam_candidate(23, 1, -3.0);
+        let candidate_b = beam_candidate(23, 2, -2.0);
+        let mut queued = vec![candidate_a, candidate_b].into_iter();
+        let mut attempted = Vec::new();
+        let mut refilled_after = Vec::new();
+
+        let materialized = materialize_next_bootstrap_candidate_with_refill(
+            || queued.next(),
+            |candidate| {
+                attempted.push(candidate.node);
+                candidate == candidate_b
+            },
+            |candidate| refilled_after.push(candidate.node),
+        );
+
+        assert!(
+            materialized,
+            "bootstrap materialization should still succeed once a later visible candidate materializes"
+        );
+        assert_eq!(
+            attempted,
+            vec![candidate_a.node, candidate_b.node],
+            "bootstrap candidates should be adjudicated in consume order before any refill path runs"
+        );
+        assert_eq!(
+            refilled_after,
+            vec![candidate_b.node],
+            "bootstrap refill should only run for the candidate that actually materialized"
         );
     }
 
