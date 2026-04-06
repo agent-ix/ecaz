@@ -387,13 +387,6 @@ static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCand
     candidates: Vec::new(),
 };
 
-fn candidate_frontier_ref(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
-    visible_frontier_ref(opaque)
-        .iter()
-        .map(ScanCandidate::from)
-        .collect()
-}
-
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
@@ -1227,7 +1220,7 @@ mod tests {
             "consuming the last valid slot should invalidate the frontier head"
         );
         assert!(
-            candidate_frontier_ref(&opaque).is_empty(),
+            visible_frontier_snapshot(&opaque).is_empty(),
             "consuming both valid slots should leave the candidate vector empty"
         );
         assert!(
@@ -1505,7 +1498,7 @@ mod tests {
         );
 
         assert_eq!(
-            candidate_frontier_ref(&opaque)
+            visible_frontier_snapshot(&opaque)
                 .iter()
                 .map(|candidate| candidate.element_tid)
                 .collect::<Vec<_>>(),
@@ -1513,17 +1506,17 @@ mod tests {
             "bootstrap frontier filling should keep expanding from newly seeded candidates until capacity is reached"
         );
         assert_eq!(
-            candidate_frontier_ref(&opaque)[0].source_tid,
+            visible_frontier_snapshot(&opaque)[0].source_tid,
             page::ItemPointer::INVALID,
             "entry-seeded candidates should not claim a discovery source"
         );
         assert_eq!(
-            candidate_frontier_ref(&opaque)[1].source_tid,
+            visible_frontier_snapshot(&opaque)[1].source_tid,
             entry_tid,
             "first-hop candidates should record the entry candidate as their source"
         );
         assert_eq!(
-            candidate_frontier_ref(&opaque)[2].source_tid,
+            visible_frontier_snapshot(&opaque)[2].source_tid,
             child_tid,
             "second-hop candidates should record the candidate they were expanded from"
         );
@@ -1578,7 +1571,7 @@ mod tests {
         );
 
         assert_eq!(
-            candidate_frontier_ref(&opaque)
+            visible_frontier_snapshot(&opaque)
                 .iter()
                 .map(|candidate| candidate.element_tid)
                 .collect::<Vec<_>>(),
@@ -1629,7 +1622,7 @@ mod tests {
         );
 
         assert_eq!(
-            candidate_frontier_ref(&opaque)
+            visible_frontier_snapshot(&opaque)
                 .iter()
                 .map(|candidate| candidate.element_tid)
                 .collect::<Vec<_>>(),
@@ -1695,7 +1688,7 @@ mod tests {
             "consume/refill should continue by expanding another remaining frontier candidate first"
         );
         assert_eq!(
-            candidate_frontier_ref(&opaque)
+            visible_frontier_snapshot(&opaque)
                 .iter()
                 .map(|candidate| candidate.element_tid)
                 .collect::<Vec<_>>(),
