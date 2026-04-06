@@ -359,6 +359,17 @@ fn find_candidate_frontier_index(
         .map(|(index, _)| index)
 }
 
+fn scheduler_best_frontier_index(opaque: &mut TqScanOpaque) -> Option<usize> {
+    loop {
+        let best = bootstrap_expansion_mut(opaque).peek_best()?;
+        if let Some(index) = find_candidate_frontier_index(opaque, best.node) {
+            return Some(index);
+        }
+
+        bootstrap_expansion_mut(opaque).forget_queued(best.node);
+    }
+}
+
 fn bootstrap_expansion_mut(
     opaque: &mut TqScanOpaque,
 ) -> &mut search::BeamSearch<page::ItemPointer> {
@@ -620,12 +631,9 @@ fn top_up_bootstrap_frontier<F>(
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
-    if let Some(best_node) = bootstrap_expansion_mut(opaque).peek_best().map(|candidate| candidate.node)
-    {
-        if let Some(index) = find_candidate_frontier_index(opaque, best_node) {
-            opaque.candidate_frontier_head = Some(index);
-            return;
-        }
+    if let Some(index) = scheduler_best_frontier_index(opaque) {
+        opaque.candidate_frontier_head = Some(index);
+        return;
     }
 
     let mut best: Option<(usize, ScanCandidate)> = None;
@@ -651,10 +659,7 @@ fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
 }
 
 fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
-    let head = bootstrap_expansion_mut(opaque)
-        .peek_best()
-        .and_then(|candidate| find_candidate_frontier_index(opaque, candidate.node))
-        .or(opaque.candidate_frontier_head)?;
+    let head = scheduler_best_frontier_index(opaque).or(opaque.candidate_frontier_head)?;
 
     let consumed = candidate_frontier_mut(opaque).remove(head);
     bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
@@ -1309,6 +1314,55 @@ mod tests {
                 offset_number: 1,
             },
             "consumption should remove the scheduler-selected visible candidate from the compacted frontier"
+        );
+    }
+
+    #[test]
+    fn recompute_candidate_frontier_head_drops_stale_scheduler_nodes() {
+        let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 16,
+                offset_number: 1,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -2.0,
+            score_valid: true,
+        });
+
+        bootstrap_expansion_mut(&mut opaque).seed(
+            search::BeamCandidate::new(
+                page::ItemPointer {
+                    block_number: 16,
+                    offset_number: 9,
+                },
+                -3.0,
+            ),
+        );
+        bootstrap_expansion_mut(&mut opaque).seed(
+            search::BeamCandidate::new(
+                page::ItemPointer {
+                    block_number: 16,
+                    offset_number: 1,
+                },
+                -2.0,
+            ),
+        );
+
+        recompute_candidate_frontier_head(&mut opaque);
+
+        assert_eq!(
+            opaque.candidate_frontier_head,
+            Some(0),
+            "stale scheduler nodes should be dropped until the best queued visible frontier node can be mapped"
+        );
+        assert_eq!(
+            bootstrap_expansion_mut(&mut opaque)
+                .peek_best()
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
+            Some((16, 1)),
+            "recompute should purge unmappable scheduler nodes instead of leaving them at the head forever"
         );
     }
 
