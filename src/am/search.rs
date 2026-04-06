@@ -91,6 +91,23 @@ where
         self.frontier.peek().map(|Reverse(queued)| queued.candidate)
     }
 
+    pub fn peek_best_matching<MatchFn>(
+        &mut self,
+        mut matches: MatchFn,
+    ) -> Option<BeamCandidate<NodeId>>
+    where
+        MatchFn: FnMut(NodeId) -> bool,
+    {
+        loop {
+            let best = self.peek_best()?;
+            if matches(best.node) {
+                return Some(best);
+            }
+
+            self.forget_queued(best.node);
+        }
+    }
+
     pub fn frontier_snapshot(&self) -> Vec<BeamCandidate<NodeId>> {
         self.snapshot_frontier()
     }
@@ -605,6 +622,44 @@ mod tests {
             search.visited_count(),
             4,
             "non-removals should preserve visited accounting"
+        );
+    }
+
+    #[test]
+    fn beam_search_peek_best_matching_skips_stale_leaders() {
+        let mut search = BeamSearch::new(4);
+        search.seed_many([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+            BeamCandidate::new(3_u64, 0.3),
+        ]);
+
+        let best = search.peek_best_matching(|node| node != 1);
+        assert_eq!(
+            best,
+            Some(BeamCandidate::new(2_u64, 0.2)),
+            "stale unmatched leaders should be dropped until a live candidate remains"
+        );
+        assert_eq!(
+            search.frontier_snapshot(),
+            vec![BeamCandidate::new(2_u64, 0.2), BeamCandidate::new(3_u64, 0.3)],
+            "dropping stale leaders should also prune them from the queued frontier"
+        );
+    }
+
+    #[test]
+    fn beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier() {
+        let mut search = BeamSearch::new(4);
+        search.seed_many([BeamCandidate::new(1_u64, 0.1), BeamCandidate::new(2_u64, 0.2)]);
+
+        assert_eq!(
+            search.peek_best_matching(|_| false),
+            None,
+            "a fully stale frontier should drain away and report no best candidate"
+        );
+        assert!(
+            search.is_empty(),
+            "draining a fully stale frontier should leave the scheduler empty"
         );
     }
 }

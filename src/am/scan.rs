@@ -428,14 +428,10 @@ fn candidate_frontier_contains(
 }
 
 fn scheduler_best_frontier_node(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
-    loop {
-        let best = bootstrap_expansion_mut(opaque).peek_best()?;
-        if candidate_frontier_contains(opaque, best.node) {
-            return Some(best.node);
-        }
-
-        bootstrap_expansion_mut(opaque).forget_queued(best.node);
-    }
+    let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
+    bootstrap_expansion_mut(opaque)
+        .peek_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
+        .map(|candidate| candidate.node)
 }
 
 fn bootstrap_expansion_mut(
