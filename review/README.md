@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `804693f`
+Current head: `2853b29`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -185,6 +185,7 @@ Review triage at `46d00bb`:
 - Scan reloptions now include `ef_search` groundwork, `src/am/search.rs` now exposes incremental beam-search APIs, and bootstrap expansion-source selection in `src/am/scan.rs` now goes through that shared search seam.
 - Bootstrap frontier top-up in `src/am/scan.rs` now runs through one incremental shared beam scheduler per top-up cycle instead of reconstructing source arbitration on every loop iteration.
 - Bootstrap expansion scheduling state now also persists in scan-owned state across top-up cycles instead of rebuilding a temporary beam scheduler every time.
+- Consumed bootstrap frontier nodes are now explicitly forgotten from the scan-owned beam scheduler, tightening alignment between visible frontier state and shared search state.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -260,6 +261,7 @@ Open requests:
 - `77-ef-search-and-search-api-groundwork.md`
 - `78-incremental-bootstrap-top-up-scheduler.md`
 - `79-scan-owned-bootstrap-expansion-scheduler.md`
+- `80-forget-consumed-frontier-nodes.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
