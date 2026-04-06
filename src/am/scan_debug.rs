@@ -666,16 +666,17 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let active_candidate = (
-        opaque.active_candidate.score_valid,
-        (
-            opaque.active_candidate.element_tid.block_number,
-            opaque.active_candidate.element_tid.offset_number,
-        ),
-        (
-            opaque.active_candidate.source_tid.block_number,
-            opaque.active_candidate.source_tid.offset_number,
-        ),
-        opaque.active_candidate.score,
+        opaque.active_candidate.is_some(),
+        opaque
+            .active_candidate
+            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
+            .unwrap_or((u32::MAX, u16::MAX)),
+        opaque
+            .active_candidate
+            .and_then(|candidate| candidate.source)
+            .map(|tid| (tid.block_number, tid.offset_number))
+            .unwrap_or((u32::MAX, u16::MAX)),
+        opaque.active_candidate.map(|candidate| candidate.score).unwrap_or(0.0),
     );
     let current_result_tid = (
         opaque.current_result.element_tid.block_number,
@@ -716,12 +717,12 @@ pub(crate) unsafe fn debug_materialize_active_candidate_result(
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     maybe_consume_bootstrap_frontier_candidate(index_relation, opaque);
     let active_before = (
-        opaque.active_candidate.score_valid,
-        (
-            opaque.active_candidate.element_tid.block_number,
-            opaque.active_candidate.element_tid.offset_number,
-        ),
-        opaque.active_candidate.score,
+        opaque.active_candidate.is_some(),
+        opaque
+            .active_candidate
+            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
+            .unwrap_or((u32::MAX, u16::MAX)),
+        opaque.active_candidate.map(|candidate| candidate.score).unwrap_or(0.0),
     );
     let materialized = unsafe { materialize_active_candidate_result(index_relation, opaque) };
     let current_result_tid = (
@@ -732,7 +733,7 @@ pub(crate) unsafe fn debug_materialize_active_candidate_result(
         .iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
-    let active_cleared = !opaque.active_candidate.score_valid;
+    let active_cleared = opaque.active_candidate.is_none();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
