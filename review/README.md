@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `5a5d620`
+Current head: `0c7a79f`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -199,6 +199,7 @@ Review triage at `46d00bb`:
 - The raw visible-frontier slice is now private to `src/am/scan.rs`; external scan debug helpers consume explicit snapshot/slot helpers instead of reaching across the module boundary for the frontier slice directly.
 - Scan state now owns the visible frontier through an explicit container state type in `src/am/scan.rs` instead of a raw `*mut Vec<ScanCandidate>`, which removes the last raw-Vec pointer from `TqScanOpaque` without changing frontier behavior.
 - Visible-frontier behavior now lives directly on the owned frontier-state type in `src/am/scan.rs`, replacing the extra read/write wrapper structs and making the container boundary simpler and more explicit.
+- Stale queued bootstrap nodes are now cleaned up through a search-owned `peek_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer open-codes the scheduler loop that peeks, validates visibility, forgets stale nodes, and retries.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -291,6 +292,7 @@ Open requests:
 - `94-private-frontier-slice-boundary.md`
 - `95-owned-visible-frontier-state.md`
 - `96-frontier-behavior-on-owned-state.md`
+- `97-search-owned-stale-frontier-cleanup.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
