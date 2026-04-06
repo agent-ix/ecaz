@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f2ad000`
+Current head: `f2321c5`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -175,6 +175,7 @@ Review triage at `46d00bb`:
 - Regression coverage now verifies that a duplicate-coalesced active candidate loads all of its heap tids into pending drain state and clears the active-candidate slot afterward.
 - Visible scan execution now uses that active-candidate materialization path when the linear cursor reaches the same element, so candidate state can populate current-result and duplicate-drain state without broad scan reordering.
 - Active bootstrap candidates can now materialize into visible tuple production before linear fallback, and scan-owned emitted-element state now prevents the later linear pass from returning those same element heap tids a second time.
+- After each candidate consume, bounded bootstrap refill now preserves expanded-source state and keeps topping up the frontier with the same score-ordered multi-hop policy instead of stopping after one direct neighbor refill.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -240,6 +241,7 @@ Open requests:
 - `67-active-candidate-pending-drain-bridge.md`
 - `68-visible-active-candidate-scan-bridge.md`
 - `69-active-candidate-first-visible-results.md`
+- `70-bootstrap-frontier-top-up-after-consume.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
