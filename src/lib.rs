@@ -2924,6 +2924,50 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_rescan_respects_ef_search_frontier_limit() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_candidate_frontier_limit (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_candidate_frontier_limit VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_candidate_frontier_limit_idx ON tqhnsw_candidate_frontier_limit USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 1)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_candidate_frontier_limit_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert_eq!(
+            frontier.len(),
+            1,
+            "ef_search=1 should cap the visible bootstrap frontier at one candidate"
+        );
+        assert_eq!(
+            frontier_slots.len(),
+            1,
+            "debug frontier slots should match the configured bootstrap frontier limit"
+        );
+        assert_eq!(
+            frontier_provenance.len(),
+            1,
+            "frontier provenance should track only the single retained candidate"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_frontier_head_persists_until_exhaustion() {
         Spi::run(
             "CREATE TABLE tqhnsw_frontier_head_lifecycle (id bigint primary key, embedding tqvector)",
@@ -3081,7 +3125,7 @@ mod tests {
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_frontier_head_refill_idx ON tqhnsw_frontier_head_refill USING tqhnsw \
-             (embedding tqvector_ip_ops)",
+             (embedding tqvector_ip_ops) WITH (ef_search = 3)",
         )
         .expect("index creation should succeed");
 

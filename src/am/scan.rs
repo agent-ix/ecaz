@@ -107,6 +107,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
+            opaque.bootstrap_frontier_limit =
+                usize::try_from(super::options::relation_options((*scan).indexRelation).ef_search)
+                    .expect("ef_search should fit in usize")
+                    .max(1);
             store_scan_query(opaque, &query);
             store_scan_prepared_query(opaque, &query, &metadata);
             reset_scan_position(opaque);
@@ -257,7 +261,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
-    reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+    reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
@@ -306,6 +310,10 @@ fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) 
     } else {
         *unsafe { &mut *opaque.bootstrap_expansion } = search::BeamSearch::new(ef_search);
     }
+}
+
+fn bootstrap_frontier_limit(opaque: &TqScanOpaque) -> usize {
+    opaque.bootstrap_frontier_limit.max(1)
 }
 
 fn free_scan_candidate_frontier(opaque: &mut TqScanOpaque) {
@@ -456,7 +464,7 @@ fn bootstrap_expansion_mut(
     opaque: &mut TqScanOpaque,
 ) -> &mut search::BeamSearch<page::ItemPointer> {
     if opaque.bootstrap_expansion.is_null() {
-        reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     }
     unsafe { &mut *opaque.bootstrap_expansion }
 }
@@ -577,7 +585,7 @@ unsafe fn initialize_scan_entry_candidate(
 
     fill_bootstrap_frontier(
         opaque,
-        MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
+        bootstrap_frontier_limit(opaque),
         BootstrapExpandPolicy::ScoreOrder,
         |source_tid, opaque| unsafe {
             refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
@@ -688,7 +696,7 @@ unsafe fn refill_candidate_frontier_from_source(
     }
 
     let max_successor_candidates =
-        MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(visible_frontier_ref(opaque).len());
+        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier_ref(opaque).len());
     if max_successor_candidates == 0 {
         return;
     }
@@ -761,7 +769,7 @@ fn refill_bootstrap_frontier_after_consume<F>(
 
     top_up_bootstrap_frontier(
         opaque,
-        MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
+        bootstrap_frontier_limit(opaque),
         BootstrapExpandPolicy::ScoreOrder,
         refill,
     );
@@ -1044,6 +1052,7 @@ pub(super) struct TqScanOpaque {
     pub(super) scan_seed: u64,
     pub(super) scan_code_len: usize,
     pub(super) scan_block_count: u32,
+    pub(super) bootstrap_frontier_limit: usize,
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
@@ -1071,6 +1080,7 @@ impl Default for TqScanOpaque {
             scan_seed: 0,
             scan_code_len: 0,
             scan_block_count: 0,
+            bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
             visited_tids: ptr::null_mut(),
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
