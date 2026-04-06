@@ -77,7 +77,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 );
             }
 
-            let metadata = super::read_metadata_page((*scan).indexRelation);
+            let metadata = super::shared::read_metadata_page((*scan).indexRelation);
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -773,7 +773,7 @@ unsafe fn next_linear_scan_heap_tid(
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-        let line_pointer_count = super::page_line_pointer_count(page_ptr);
+        let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
         let offset_start = if block_number == opaque.next_block_number {
             opaque.next_offset_number.max(1)
         } else {
@@ -781,7 +781,7 @@ unsafe fn next_linear_scan_heap_tid(
         };
 
         for offset in offset_start..=line_pointer_count {
-            let item_id = unsafe { &*super::page_item_id(page_ptr, offset) };
+            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset) };
             if item_id.lp_flags() == 0 {
                 continue;
             }
@@ -1549,7 +1549,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
-    let metadata = unsafe { super::read_metadata_page(index_relation) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let entry_tid = (
         metadata.entry_point.block_number,
         metadata.entry_point.offset_number,
@@ -2260,7 +2260,7 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let metadata = unsafe { super::read_metadata_page(index_relation) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         return Vec::new();

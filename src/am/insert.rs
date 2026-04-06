@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
-use super::{build, decode_heap_tid, options, page, page_item_id, page_line_pointer_count, wal};
+use super::{build, options, page, shared, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
@@ -18,7 +18,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            let heap_tid = decode_heap_tid(heap_tid);
+            let heap_tid = shared::decode_heap_tid(heap_tid);
             let tuple = build::build_heap_tuple(values, isnull, heap_tid);
             let options = options::relation_options(index_relation);
             let code_len = tuple.code.len();
@@ -29,7 +29,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 );
             }
 
-            super::with_locked_metadata_page(index_relation, |metadata| {
+            shared::with_locked_metadata_page(index_relation, |metadata| {
                 if metadata.dimensions == 0 && metadata.bits == 0 {
                     metadata.dimensions = tuple.dimensions;
                     metadata.bits = tuple.bits;
@@ -291,10 +291,10 @@ unsafe fn find_duplicate_element_tid(
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-        let line_pointer_count = page_line_pointer_count(page_ptr);
+        let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
         for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
             if item_id.lp_flags() == 0 {
                 continue;
             }
@@ -361,7 +361,7 @@ unsafe fn coalesce_duplicate_heap_tid(
         unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
             .cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-    let item_id = unsafe { &*page_item_id(page_ptr, element_tid.offset_number) };
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!("tqhnsw duplicate element tuple slot is unused");
     }

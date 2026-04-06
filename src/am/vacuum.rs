@@ -1,6 +1,6 @@
 use pgrx::pg_sys;
 
-use super::tqhnsw_noop_vacuum_stats;
+use super::shared::tqhnsw_noop_vacuum_stats;
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,

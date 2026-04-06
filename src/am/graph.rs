@@ -98,7 +98,7 @@ unsafe fn read_page_tuple_bytes(
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-    let line_pointer_count = super::page_line_pointer_count(page_ptr);
+    let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!(
@@ -108,7 +108,7 @@ unsafe fn read_page_tuple_bytes(
         );
     }
 
-    let item_id = unsafe { &*super::page_item_id(page_ptr, tuple_tid.offset_number) };
+    let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!("tqhnsw graph read found unused {tuple_kind} tuple slot");

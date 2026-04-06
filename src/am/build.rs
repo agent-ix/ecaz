@@ -1,15 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::ffi::c_void;
 use std::ptr;
 
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
 
-use super::{
-    average_source_representatives, initialize_metadata_page, options, page, wal, P_NEW,
-    tqhnsw_build_callback,
-};
+use super::{options, page, shared, wal, P_NEW};
 
 #[derive(Debug, Clone)]
 pub(super) struct BuildTuple {
@@ -34,6 +32,42 @@ pub(super) struct BuildState {
     pub(super) seed: Option<u64>,
 }
 
+pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
+    _index: pg_sys::Relation,
+    tid: pg_sys::ItemPointer,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    _tuple_is_alive: bool,
+    state: *mut c_void,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &mut *state.cast::<BuildState>();
+            let heap_tid = shared::decode_heap_tid(tid);
+            let tuple = build_heap_tuple(values, isnull, heap_tid);
+            state.push(tuple);
+        })
+    }
+}
+
+pub(super) fn average_source_representatives(
+    existing: &mut [f32],
+    existing_count: usize,
+    incoming: &[f32],
+    incoming_count: usize,
+) {
+    assert_eq!(existing.len(), incoming.len());
+    assert!(existing_count > 0);
+    assert!(incoming_count > 0);
+
+    let total_count = existing_count + incoming_count;
+    for (existing_value, incoming_value) in existing.iter_mut().zip(incoming.iter()) {
+        *existing_value = ((*existing_value * existing_count as f32)
+            + (*incoming_value * incoming_count as f32))
+            / total_count as f32;
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -43,7 +77,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
 
-            initialize_metadata_page(index_relation, state.initial_metadata());
+            shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
             let heap_tuples = if state.options.build_source_column.is_some() {
                 tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state)
@@ -85,7 +119,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sy
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = BuildState::new(index_relation);
-            initialize_metadata_page(index_relation, state.initial_metadata());
+            shared::initialize_metadata_page(index_relation, state.initial_metadata());
         })
     }
 }
@@ -538,7 +572,7 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
 
     unsafe { write_data_pages(index_relation, &data_pages) };
     unsafe {
-        initialize_metadata_page(
+        shared::initialize_metadata_page(
             index_relation,
             page::MetadataPage {
                 m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
@@ -877,5 +911,251 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::
 
         unsafe { wal_txn.finish() };
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn encoded_code(vector: &[f32], bits: u8, seed: u64) -> Vec<u8> {
+        let quantizer = crate::quant::prod::ProdQuantizer::cached(vector.len(), bits, seed);
+        let encoded = quantizer.encode(vector);
+        let mut code = encoded.mse_packed;
+        code.extend_from_slice(&encoded.qjl_packed);
+        code
+    }
+
+    #[test]
+    fn scored_neighbor_graph_prefers_similarity_over_insert_order() {
+        let seed = 42_u64;
+        let bits = 8_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 8,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[0.98, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 1,
+                ef_construction: 32,
+                build_source_column: None,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(8),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let graph = build_scored_neighbor_graph(&state);
+
+        assert_eq!(graph.len(), 3);
+        assert_eq!(graph[0], vec![2]);
+        assert_eq!(graph[2], vec![0]);
+    }
+
+    #[test]
+    fn hnsw_graph_builds_for_small_dataset() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                build_source_column: None,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let nodes = build_hnsw_graph(&state);
+
+        assert_eq!(nodes.len(), 3);
+        assert!(nodes.iter().any(|node| !node.neighbors.is_empty()));
+    }
+
+    #[test]
+    fn source_scored_entry_point_prefers_raw_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 64,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: vec![
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x00, 0x00],
+                    source_vector: Some(vec![1.0, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 2,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0xff, 0xff],
+                    source_vector: Some(vec![0.9, 0.1]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 3,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x00, 0x01],
+                    source_vector: Some(vec![-1.0, 0.0]),
+                    source_count: 1,
+                },
+            ],
+            dimensions: Some(2),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let graph_nodes = vec![
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![1],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![2],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbors: vec![1],
+            },
+        ];
+        let element_tids = vec![
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 1,
+            },
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 2,
+            },
+            page::ItemPointer {
+                block_number: 2,
+                offset_number: 3,
+            },
+        ];
+
+        let entry_point = choose_entry_point(&element_tids, &graph_nodes, &state)
+            .expect("entry point should exist");
+        assert_eq!(entry_point, element_tids[0]);
+    }
+
+    #[test]
+    fn average_source_representative_weights_by_duplicate_count() {
+        let mut representative = vec![1.0, 0.0];
+        average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
+        assert_eq!(representative, vec![0.5, 0.5]);
+
+        average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
+        assert_eq!(representative, vec![0.75, 0.75]);
     }
 }
