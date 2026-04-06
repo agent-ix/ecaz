@@ -3113,7 +3113,14 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (before_head, before_slots, active_candidate, after_head, after_slots) = unsafe {
+        let (
+            before_head,
+            before_slots,
+            active_candidate,
+            current_result_tid,
+            after_head,
+            after_slots,
+        ) = unsafe {
             am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
@@ -3121,15 +3128,22 @@ mod tests {
         let consumed_slot = before_slots[consumed_index];
 
         assert!(
-            active_candidate.0,
-            "first amgettuple call should materialize one active bootstrap candidate"
+            active_candidate.0 || current_result_tid == consumed_slot.1,
+            "first amgettuple call should either keep the consumed bootstrap candidate active or materialize it into current-result state"
         );
-        assert_eq!(
-            active_candidate.1, consumed_slot.1,
-            "the active bootstrap candidate should come from the prior frontier head"
-        );
+        if active_candidate.0 {
+            assert_eq!(
+                active_candidate.1, consumed_slot.1,
+                "when the consumed bootstrap candidate remains active, it should come from the prior frontier head"
+            );
+        } else {
+            assert_eq!(
+                current_result_tid, consumed_slot.1,
+                "when the linear cursor reaches the consumed bootstrap candidate immediately, it should materialize that candidate into current-result state"
+            );
+        }
         assert!(
-            !after_slots.iter().any(|slot| slot.1 == active_candidate.1),
+            !after_slots.iter().any(|slot| slot.1 == consumed_slot.1),
             "consuming the bootstrap head should remove that candidate from the frontier"
         );
         assert_eq!(

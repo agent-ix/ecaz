@@ -717,14 +717,21 @@ unsafe fn next_linear_scan_heap_tid(
                 "scan offset should fit in page-local u16 range"
             );
             opaque.next_offset_number = offset + 1;
-            set_current_scan_result(
-                opaque,
-                page::ItemPointer {
-                    block_number,
-                    offset_number: offset,
-                },
-                score_scan_element_result(opaque, element.gamma, &element.code),
-            );
+            let element_tid = page::ItemPointer {
+                block_number,
+                offset_number: offset,
+            };
+            if opaque.active_candidate.score_valid && opaque.active_candidate.element_tid == element_tid
+            {
+                set_current_scan_result(opaque, element_tid, opaque.active_candidate.score);
+                clear_active_scan_candidate(opaque);
+            } else {
+                set_current_scan_result(
+                    opaque,
+                    element_tid,
+                    score_scan_element_result(opaque, element.gamma, &element.code),
+                );
+            }
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -996,6 +1003,7 @@ type DebugBootstrapConsumeState = (
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
     (bool, HeapTidCoords, HeapTidCoords, f32),
+    HeapTidCoords,
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
 );
@@ -1537,6 +1545,10 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         ),
         opaque.active_candidate.score,
     );
+    let current_result_tid = (
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
+    );
     let after_head = opaque.candidate_frontier_head;
     let after_slots = debug_candidate_frontier_slots(opaque);
 
@@ -1547,6 +1559,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         before_head,
         before_slots,
         active_candidate,
+        current_result_tid,
         after_head,
         after_slots,
     )
