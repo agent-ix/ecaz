@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `0c7a79f`
+Current head: `5e082a5`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -200,6 +200,7 @@ Review triage at `46d00bb`:
 - Scan state now owns the visible frontier through an explicit container state type in `src/am/scan.rs` instead of a raw `*mut Vec<ScanCandidate>`, which removes the last raw-Vec pointer from `TqScanOpaque` without changing frontier behavior.
 - Visible-frontier behavior now lives directly on the owned frontier-state type in `src/am/scan.rs`, replacing the extra read/write wrapper structs and making the container boundary simpler and more explicit.
 - Stale queued bootstrap nodes are now cleaned up through a search-owned `peek_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer open-codes the scheduler loop that peeks, validates visibility, forgets stale nodes, and retries.
+- Scheduler-first frontier consumption now also goes through a search-owned `take_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer pairs scheduler head selection with a separate `forget_queued` cleanup step.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -293,6 +294,7 @@ Open requests:
 - `95-owned-visible-frontier-state.md`
 - `96-frontier-behavior-on-owned-state.md`
 - `97-search-owned-stale-frontier-cleanup.md`
+- `98-search-owned-scheduler-consume.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
