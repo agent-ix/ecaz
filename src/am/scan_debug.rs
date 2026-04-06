@@ -619,12 +619,12 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let frontier = debug_candidate_frontier_snapshot(opaque);
     let frontier_slots = debug_candidate_frontier_slots(opaque);
     let frontier_provenance = debug_candidate_frontier_provenance_slots(opaque);
     let expanded_sources = debug_sorted_expanded_source_tids(opaque);
-    let head = opaque.candidate_frontier_head;
+    let head = current_candidate_frontier_head(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -653,8 +653,8 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = opaque.candidate_frontier_head;
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = current_candidate_frontier_head(opaque);
     let before_slots = debug_candidate_frontier_slots(opaque);
 
     assert!(
@@ -662,7 +662,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         "bootstrap-consume helper requires a first tuple"
     );
 
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let active_candidate = (
         opaque.active_candidate.score_valid,
         (
@@ -679,7 +679,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         opaque.current_result.element_tid.block_number,
         opaque.current_result.element_tid.offset_number,
     );
-    let after_head = opaque.candidate_frontier_head;
+    let after_head = current_candidate_frontier_head(opaque);
     let after_slots = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -759,22 +759,22 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = opaque.candidate_frontier_head;
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_head = current_candidate_frontier_head(opaque);
     let before_frontier = debug_candidate_frontier_snapshot(opaque);
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "frontier-head lifecycle helper requires a first tuple"
     );
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let partial_head = opaque.candidate_frontier_head;
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let partial_head = current_candidate_frontier_head(opaque);
     let partial_frontier = debug_candidate_frontier_snapshot(opaque);
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
-    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let exhausted_head = opaque.candidate_frontier_head;
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let exhausted_head = current_candidate_frontier_head(opaque);
     let exhausted_frontier = debug_candidate_frontier_snapshot(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -807,16 +807,16 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = opaque.candidate_frontier_head;
+    let before_head = current_candidate_frontier_head(opaque);
     let before_frontier = debug_candidate_frontier_snapshot(opaque);
 
     let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
-    let after_first_head = opaque.candidate_frontier_head;
+    let after_first_head = current_candidate_frontier_head(opaque);
     let after_first_frontier = debug_candidate_frontier_snapshot(opaque);
 
     unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let after_second_head = opaque.candidate_frontier_head;
+    let after_second_head = current_candidate_frontier_head(opaque);
     let after_second_frontier = debug_candidate_frontier_snapshot(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -849,7 +849,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = opaque.candidate_frontier_head;
+    let before_head = current_candidate_frontier_head(opaque);
     let before_slots = debug_candidate_frontier_slots(opaque);
     let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     let consumed_tid = consumed
@@ -878,7 +878,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
         })
         .unwrap_or_default();
 
-    let after_head = opaque.candidate_frontier_head;
+    let after_head = current_candidate_frontier_head(opaque);
     let after_slots = debug_candidate_frontier_slots(opaque);
     let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
 
