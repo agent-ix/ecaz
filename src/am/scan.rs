@@ -336,16 +336,22 @@ impl VisibleCandidateFrontierRef<'_> {
         self.candidates.len()
     }
 
+    fn iter(&self) -> impl Iterator<Item = ScanCandidate> + '_ {
+        self.candidates.iter().copied()
+    }
+
+    fn slot(&self, index: usize) -> ScanCandidate {
+        self.candidates.get(index).copied().unwrap_or_default()
+    }
+
     fn contains_node(&self, element_tid: page::ItemPointer) -> bool {
-        self.candidates
-            .iter()
-            .copied()
+        self.iter()
             .any(|candidate| candidate.score_valid && candidate.element_tid == element_tid)
     }
 
     fn best_tid_by_score(&self) -> Option<page::ItemPointer> {
         let mut best: Option<ScanCandidate> = None;
-        for candidate in self.candidates.iter().copied() {
+        for candidate in self.iter() {
             if !candidate.score_valid {
                 continue;
             }
@@ -411,10 +417,7 @@ fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> VisibleCandidateFrontier<'
 }
 
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
-    candidate_frontier_ref(opaque)
-        .get(index)
-        .copied()
-        .unwrap_or_default()
+    visible_frontier_ref(opaque).slot(index)
 }
 
 fn candidate_frontier_contains(
@@ -581,9 +584,8 @@ fn next_bootstrap_expand_tid(
         BootstrapExpandPolicy::ScoreOrder => {
             let mut expansion = search::BeamSearch::new(MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
             expansion.seed_many(
-                candidate_frontier_ref(opaque)
+                visible_frontier_ref(opaque)
                     .iter()
-                    .copied()
                     .filter(|candidate| {
                         candidate.score_valid
                             && !expanded_contains_source(opaque, candidate.element_tid)
@@ -592,7 +594,7 @@ fn next_bootstrap_expand_tid(
             );
 
             let best = expansion.peek_best()?;
-            candidate_frontier_ref(opaque)
+            visible_frontier_ref(opaque)
                 .iter()
                 .find(|candidate| {
                     candidate.score_valid
@@ -641,9 +643,8 @@ fn seed_discovered_candidates(
 }
 
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
-    let candidates = candidate_frontier_ref(opaque)
+    let candidates = visible_frontier_ref(opaque)
         .iter()
-        .copied()
         .filter(|candidate| candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid))
         .map(scan_candidate_to_beam_candidate)
         .collect::<Vec<_>>();
