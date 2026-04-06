@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `ed07802`
+Current head: `b2b7022`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -310,6 +310,7 @@ Open requests:
 - `106-beam-native-frontier-head-selection.md`
 - `107-remove-redundant-scan-beam-adapters.md`
 - `108-remove-test-only-frontier-alias.md`
+- `109-beam-native-frontier-debug-boundaries.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
