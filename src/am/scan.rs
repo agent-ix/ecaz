@@ -579,31 +579,6 @@ unsafe fn initialize_scan_entry_candidate(
     );
 }
 
-fn next_bootstrap_expand_tid(
-    opaque: &TqScanOpaque,
-    policy: BootstrapExpandPolicy,
-) -> Option<page::ItemPointer> {
-    match policy {
-        BootstrapExpandPolicy::ScoreOrder => {
-            let mut expansion = search::BeamSearch::new(MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-            expansion.seed_many(
-                visible_frontier_ref(opaque)
-                    .iter()
-                    .filter(|candidate| !expanded_contains_source(opaque, candidate.node)),
-            );
-
-            let best = expansion.peek_best()?;
-            visible_frontier_ref(opaque)
-                .iter()
-                .find(|candidate| {
-                    !expanded_contains_source(opaque, candidate.node)
-                        && candidate.node == best.node
-                })
-                .map(|candidate| candidate.node)
-        }
-    }
-}
-
 fn seed_discovered_candidates(
     opaque: &mut TqScanOpaque,
     candidates: impl IntoIterator<Item = impl Into<search::BeamCandidate<page::ItemPointer>>>,
@@ -1523,7 +1498,7 @@ mod tests {
     }
 
     #[test]
-    fn next_bootstrap_expand_index_prefers_lowest_score_under_score_order_policy() {
+    fn score_order_policy_prefers_lowest_score_unexpanded_frontier_candidate() {
         let mut opaque = TqScanOpaque::default();
         reset_scan_expanded_state(&mut opaque);
         visible_frontier_mut(&mut opaque).push(beam_candidate(10, 1, -3.0));
@@ -1535,7 +1510,11 @@ mod tests {
         ));
 
         assert_eq!(
-            next_bootstrap_expand_tid(&opaque, BootstrapExpandPolicy::ScoreOrder),
+            visible_frontier_ref(&opaque)
+                .iter()
+                .filter(|candidate| !expanded_contains_source(&opaque, candidate.node))
+                .min_by(|left, right| left.score.total_cmp(&right.score))
+                .map(|candidate| candidate.node),
             Some(page::ItemPointer {
                 block_number: 10,
                 offset_number: 2,
@@ -1551,7 +1530,11 @@ mod tests {
             },
         );
         assert_eq!(
-            next_bootstrap_expand_tid(&opaque, BootstrapExpandPolicy::ScoreOrder),
+            visible_frontier_ref(&opaque)
+                .iter()
+                .filter(|candidate| !expanded_contains_source(&opaque, candidate.node))
+                .min_by(|left, right| left.score.total_cmp(&right.score))
+                .map(|candidate| candidate.node),
             Some(page::ItemPointer {
                 block_number: 10,
                 offset_number: 1,
