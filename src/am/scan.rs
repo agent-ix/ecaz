@@ -594,6 +594,19 @@ fn top_up_bootstrap_frontier<F>(
 }
 
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
+    if let Some(best_node) = bootstrap_expansion_mut(opaque).peek_best().map(|candidate| candidate.node)
+    {
+        if let Some((index, _)) = candidate_frontier_ref(opaque)
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, candidate)| candidate.score_valid && candidate.element_tid == best_node)
+        {
+            opaque.candidate_frontier_head = Some(index);
+            return;
+        }
+    }
+
     let mut best: Option<(usize, ScanCandidate)> = None;
     for (index, candidate) in candidate_frontier_ref(opaque).iter().copied().enumerate() {
         if !candidate.score_valid {
@@ -1190,6 +1203,47 @@ mod tests {
                 .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((13, 2)),
             "consuming a frontier head should immediately forget it from the scan-owned scheduler"
+        );
+    }
+
+    #[test]
+    fn recompute_candidate_frontier_head_prefers_scheduler_best_node() {
+        let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 14,
+                offset_number: 1,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 14,
+                offset_number: 2,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -1.0,
+            score_valid: true,
+        });
+
+        bootstrap_expansion_mut(&mut opaque).seed(
+            search::BeamCandidate::new(
+                page::ItemPointer {
+                    block_number: 14,
+                    offset_number: 2,
+                },
+                -1.0,
+            ),
+        );
+        recompute_candidate_frontier_head(&mut opaque);
+
+        assert_eq!(
+            opaque.candidate_frontier_head,
+            Some(1),
+            "frontier-head recomputation should prefer the scan-owned scheduler's current best queued node"
         );
     }
 
