@@ -705,10 +705,11 @@ fn take_candidate_frontier_node(
 }
 
 fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
-    if let Some(node) = scheduler_best_frontier_node(opaque) {
-        let consumed = take_candidate_frontier_node(opaque, node)?;
-        bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
-        return Some(consumed);
+    let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
+    if let Some(candidate) = bootstrap_expansion_mut(opaque)
+        .take_best_matching(|node| unsafe { (&*visible_frontier).contains_node(node) })
+    {
+        return take_candidate_frontier_node(opaque, candidate.node);
     }
 
     let head_tid = current_candidate_frontier_head_tid(opaque)?;

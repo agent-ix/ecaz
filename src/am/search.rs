@@ -108,6 +108,22 @@ where
         }
     }
 
+    pub fn take_best_matching<MatchFn>(
+        &mut self,
+        mut matches: MatchFn,
+    ) -> Option<BeamCandidate<NodeId>>
+    where
+        MatchFn: FnMut(NodeId) -> bool,
+    {
+        loop {
+            let best = self.peek_best()?;
+            let removed = self.forget_queued(best.node)?;
+            if matches(removed.node) {
+                return Some(removed);
+            }
+        }
+    }
+
     pub fn frontier_snapshot(&self) -> Vec<BeamCandidate<NodeId>> {
         self.snapshot_frontier()
     }
@@ -660,6 +676,33 @@ mod tests {
         assert!(
             search.is_empty(),
             "draining a fully stale frontier should leave the scheduler empty"
+        );
+    }
+
+    #[test]
+    fn beam_search_take_best_matching_consumes_first_live_candidate() {
+        let mut search = BeamSearch::new(4);
+        search.seed_many([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+            BeamCandidate::new(3_u64, 0.3),
+        ]);
+
+        let taken = search.take_best_matching(|node| node != 1);
+        assert_eq!(
+            taken,
+            Some(BeamCandidate::new(2_u64, 0.2)),
+            "take_best_matching should drop stale leaders and consume the first live candidate"
+        );
+        assert_eq!(
+            search.frontier_snapshot(),
+            vec![BeamCandidate::new(3_u64, 0.3)],
+            "take_best_matching should remove both stale leaders and the consumed live candidate"
+        );
+        assert_eq!(
+            search.discovered(),
+            &[BeamCandidate::new(3_u64, 0.3)],
+            "consumed candidates should leave scheduler discovery state"
         );
     }
 }
