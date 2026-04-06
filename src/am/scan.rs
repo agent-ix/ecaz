@@ -374,6 +374,7 @@ unsafe fn initialize_scan_entry_candidate(
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
     candidate_frontier_mut(opaque).push(ScanCandidate {
         element_tid: entry.tid,
+        source_tid: page::ItemPointer::INVALID,
         score: entry_score,
         score_valid: true,
     });
@@ -455,6 +456,7 @@ unsafe fn refill_candidate_frontier_from_source(
 
             Some(ScanCandidate {
                 element_tid: neighbor.tid,
+                source_tid,
                 score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
                 score_valid: true,
             })
@@ -681,6 +683,7 @@ impl Default for CurrentScanResult {
 #[derive(Debug, Clone, Copy)]
 struct ScanCandidate {
     element_tid: page::ItemPointer,
+    source_tid: page::ItemPointer,
     score: f32,
     score_valid: bool,
 }
@@ -689,6 +692,7 @@ impl Default for ScanCandidate {
     fn default() -> Self {
         Self {
             element_tid: page::ItemPointer::INVALID,
+            source_tid: page::ItemPointer::INVALID,
             score: 0.0,
             score_valid: false,
         }
@@ -755,10 +759,16 @@ type DebugCandidateSlot = (bool, HeapTidCoords, f32);
 type DebugCandidateFrontier = [DebugCandidateSlot; 2];
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateProvenanceSlot = (bool, HeapTidCoords, HeapTidCoords, f32);
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateHead = Option<usize>;
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierSlots = Vec<DebugCandidateSlot>;
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugCandidateFrontierProvenanceSlots = Vec<DebugCandidateProvenanceSlot>;
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierLifecycle = (
@@ -787,6 +797,7 @@ type DebugCandidateFrontierSlotConsume = (
     Vec<HeapTidCoords>,
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
+    DebugCandidateFrontierProvenanceSlots,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -799,6 +810,29 @@ fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFronti
                 (
                     candidate.element_tid.block_number,
                     candidate.element_tid.offset_number,
+                ),
+                candidate.score,
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_candidate_frontier_provenance_slots(
+    opaque: &TqScanOpaque,
+) -> DebugCandidateFrontierProvenanceSlots {
+    candidate_frontier_ref(opaque)
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.score_valid,
+                (
+                    candidate.element_tid.block_number,
+                    candidate.element_tid.offset_number,
+                ),
+                (
+                    candidate.source_tid.block_number,
+                    candidate.source_tid.offset_number,
                 ),
                 candidate.score,
             )
@@ -1260,6 +1294,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     DebugCandidateHead,
     DebugCandidateFrontier,
     DebugCandidateFrontierSlots,
+    DebugCandidateFrontierProvenanceSlots,
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -1274,12 +1309,13 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let frontier = debug_candidate_frontier_snapshot(opaque);
     let frontier_slots = debug_candidate_frontier_slots(opaque);
+    let frontier_provenance = debug_candidate_frontier_provenance_slots(opaque);
     let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (head, frontier, frontier_slots)
+    (head, frontier, frontier_slots, frontier_provenance)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1412,6 +1448,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
 
     let after_head = opaque.candidate_frontier_head;
     let after_slots = debug_candidate_frontier_slots(opaque);
+    let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1422,6 +1459,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
         consumed_neighbors,
         after_head,
         after_slots,
+        after_provenance_slots,
     )
 }
 
@@ -1846,6 +1884,7 @@ mod tests {
                 block_number: 7,
                 offset_number: 1,
             },
+            source_tid: page::ItemPointer::INVALID,
             score: -2.0,
             score_valid: true,
         });
@@ -1854,6 +1893,7 @@ mod tests {
                 block_number: 7,
                 offset_number: 2,
             },
+            source_tid: page::ItemPointer::INVALID,
             score: 3.5,
             score_valid: true,
         });
@@ -1935,6 +1975,7 @@ mod tests {
 
                 Some(ScanCandidate {
                     element_tid: neighbor_tid,
+                    source_tid: page::ItemPointer::INVALID,
                     score: 2.5,
                     score_valid: true,
                 })

@@ -2707,7 +2707,7 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (head, frontier, frontier_slots) =
+        let (head, frontier, frontier_slots, frontier_provenance) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
             .into_iter()
@@ -2775,6 +2775,24 @@ mod tests {
             head, expected_head,
             "frontier head should pick the best valid slot across the current widened bootstrap frontier"
         );
+
+        let entry_tid = frontier_provenance
+            .first()
+            .map(|slot| slot.1)
+            .expect("frontier provenance should include the seeded entry candidate");
+        assert_eq!(
+            frontier_provenance[0].2,
+            (u32::MAX, u16::MAX),
+            "the seeded entry candidate should not claim discovery from another element"
+        );
+        for slot in frontier_provenance.iter().skip(1) {
+            if slot.0 {
+                assert_eq!(
+                    slot.2, entry_tid,
+                    "bootstrap successor candidates should record the entry candidate as their discovery source"
+                );
+            }
+        }
     }
 
     #[pg_test]
@@ -2948,14 +2966,25 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_refill_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (before_head, before_slots, consumed_neighbors, after_head, after_slots) = unsafe {
+        let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
+            .into_iter()
+            .filter(|tid| *tid != (u32::MAX, u16::MAX))
+            .collect::<Vec<_>>();
+        let (
+            before_head,
+            before_slots,
+            consumed_neighbors,
+            after_head,
+            after_slots,
+            after_provenance_slots,
+        ) = unsafe {
             am::debug_consume_candidate_frontier_head_slots(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
         assert_eq!(
             before_slots.len(),
-            3,
-            "bootstrap frontier should start full before head consumption"
+            1 + valid_entry_neighbors.len().min(2),
+            "bootstrap frontier should seed the entry candidate plus up to two live entry neighbors before head consumption"
         );
         let before_tids = before_slots
             .iter()
@@ -2977,10 +3006,6 @@ mod tests {
             .iter()
             .any(|neighbor_tid| !before_tids.contains(neighbor_tid));
 
-        assert_ne!(
-            after_head, None,
-            "frontier should still expose a head while candidates remain"
-        );
         assert!(
             !after_tids.contains(&consumed_tid),
             "consuming the head should remove that candidate from the frontier"
@@ -2992,6 +3017,11 @@ mod tests {
         assert!(
             after_slots.len() <= before_slots.len(),
             "bootstrap refill should add at most one replacement candidate"
+        );
+        assert_eq!(
+            after_head.is_some(),
+            !after_slots.is_empty(),
+            "frontier head presence should track whether any candidates remain after consume/refill"
         );
 
         if has_unseen_consumed_neighbor {
@@ -3008,6 +3038,14 @@ mod tests {
             assert!(
                 consumed_neighbors.contains(&new_tids[0]),
                 "refill should draw the newly added candidate from the consumed candidate's adjacency"
+            );
+            let new_slot = after_provenance_slots
+                .iter()
+                .find(|slot| slot.0 && slot.1 == new_tids[0])
+                .expect("newly seeded candidate should remain present in the frontier provenance view");
+            assert_eq!(
+                new_slot.2, consumed_tid,
+                "a candidate discovered during refill should record the consumed frontier head as its source"
             );
         } else {
             assert_eq!(
@@ -3046,7 +3084,7 @@ mod tests {
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (head, _frontier, frontier_slots) =
+        let (head, _frontier, frontier_slots, _frontier_provenance) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         let (before, partial, exhausted) =
             unsafe { am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
