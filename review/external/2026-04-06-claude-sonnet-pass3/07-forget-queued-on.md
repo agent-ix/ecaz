@@ -1,0 +1,20 @@
+# 07 — `BeamSearch::forget_queued` is O(n) drain-rebuild
+
+**Severity:** Observation (no action required now)  
+**File:** `src/am/search.rs:131-155`
+
+## Finding
+
+`forget_queued` drains the entire `BinaryHeap` into a `Vec`, filters out the target node, and rebuilds the heap. This is O(n) where n is the frontier size. Called from `peek_best_matching` and `take_best_matching` for stale-node cleanup, and indirectly from `consume_candidate_frontier_head`.
+
+## Assessment
+
+At `MAX_BOOTSTRAP_FRONTIER_CANDIDATES = 3`, negligible. At `ef_search = 40`, the heap has at most ~40 entries — still fast enough.
+
+More importantly: when A3 replaces the dual-structure consume/refill pattern with direct `BeamSearch::run()`, `forget_queued` is no longer called from the scan hot path. `run()` uses `expand_one()` which calls `pop_best()` — O(log n), no drain-rebuild.
+
+The O(n) issue only matters if the dual-structure pattern persists beyond A3, which it won't.
+
+## Impact
+
+None for current or post-A3 code.

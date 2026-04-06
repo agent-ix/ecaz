@@ -120,7 +120,10 @@ Current tqhnsw state summary:
 
 External review bundles:
 - `review/external/2026-04-05-claude-opus/README.md`
+- `review/external/2026-04-05-claude-opus-pass2/README.md`
 - `review/external/2026-04-05-spec-plan-eval/evaluation.md`
+- `review/external/2026-04-06-claude-sonnet-pass3/README.md`
+- `review/external/2026-04-06-plan-arch-eval/evaluation.md`
 
 Review triage at `46d00bb`:
 - Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.

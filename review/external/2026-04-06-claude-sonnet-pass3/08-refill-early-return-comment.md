@@ -1,0 +1,28 @@
+# 08 — `refill_candidate_frontier_from_source` silent early return when frontier full
+
+**Severity:** Observation (no action required)  
+**File:** `src/am/scan.rs:710-714`
+
+## Finding
+
+```rust
+let max_successor_candidates =
+    MAX_BOOTSTRAP_FRONTIER_CANDIDATES.saturating_sub(visible_frontier_ref(opaque).len());
+if max_successor_candidates == 0 {
+    return;
+}
+```
+
+When the frontier is already at capacity, the refill exits silently without loading any neighbors. The calling `top_up_bootstrap_frontier` loop then also exits because `visible_frontier_ref(opaque).len() < max_candidates` is false.
+
+## Assessment
+
+Correct behavior. The interaction between the early return and the outer loop termination condition is sound. A short comment would help readers understand the intent without tracing into the caller:
+
+```rust
+// Frontier already at capacity — skip neighbor loading this cycle.
+```
+
+## Impact
+
+None. Minor readability improvement.

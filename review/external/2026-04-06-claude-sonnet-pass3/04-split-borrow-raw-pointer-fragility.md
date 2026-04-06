@@ -1,0 +1,32 @@
+# 04 — `with_visible_frontier_and_bootstrap_expansion` raw pointer split-borrow
+
+**Severity:** Low  
+**File:** `src/am/scan.rs:416-426`
+
+## Finding
+
+This helper casts `&VisibleCandidateFrontierState` and `&mut BeamSearch` to raw pointers to work around the borrow checker. Both are heap-allocated behind disjoint pointers in `TqScanOpaque`, so Rust can't prove they don't alias through a single `&mut TqScanOpaque`:
+
+```rust
+let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
+let expansion = bootstrap_expansion_mut(opaque) as *mut search::BeamSearch<page::ItemPointer>;
+unsafe { f(&*visible_frontier, &mut *expansion) }
+```
+
+## Concrete concern
+
+This is **sound** because `candidate_frontier` and `bootstrap_expansion` are disjoint heap allocations — `Box::into_raw` produces independent pointers. However, this invariant is implicit. If someone later changed one of these fields to point into or alias the other (e.g., embedding the frontier inside the `BeamSearch`), this would become UB without any compiler warning.
+
+When the dual-structure collapses during A3 (frontier absorbed into `BeamSearch`), this function goes away entirely, so the fragility window is short.
+
+## Suggested shape
+
+Add a `// SAFETY:` comment documenting the non-aliasing invariant:
+```rust
+// SAFETY: candidate_frontier and bootstrap_expansion are disjoint Box heap
+// allocations in TqScanOpaque, so borrowing both simultaneously is sound.
+```
+
+## Impact
+
+No current correctness issue. Documentation hygiene for unsafe audit (TC-036).

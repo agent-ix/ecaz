@@ -1,0 +1,35 @@
+# 02 — `score_scan_element_result` acquires mutex + hash lookup + Arc clone per element scored
+
+**Severity:** Medium  
+**File:** `src/am/scan.rs:939-951`
+
+## Finding
+
+`score_scan_element_result` calls `ProdQuantizer::cached()` on every element scored. `cached()` acquires a `Mutex<HashMap>` lock, performs a hash lookup on `(dim, bits, seed)`, and clones the `Arc<ProdQuantizer>`.
+
+The quantizer parameters `(scan_dimensions, scan_bits, scan_seed)` are constant for the lifetime of a scan. `store_scan_prepared_query` (line 228) already calls `cached()` once during `amrescan` but discards the `Arc`.
+
+## Concrete concern
+
+At `MAX_BOOTSTRAP_FRONTIER_CANDIDATES = 3`, the overhead is negligible. When real graph search runs `ef_search = 40` and expands hundreds of candidates, each `amrescan` call will acquire the mutex and hash-lookup once per candidate scored. The mutex acquisition is the heavier part — not the atomic refcount.
+
+Under concurrent scans on the same backend, mutex contention on the quantizer cache becomes a serialization point between scans that should otherwise be independent.
+
+## Suggested shape
+
+Add a cached quantizer pointer to `TqScanOpaque`, populated during `store_scan_prepared_query`:
+
+```rust
+// In store_scan_prepared_query:
+let quantizer = crate::quant::prod::ProdQuantizer::cached(...);
+opaque.prepared_query = Box::into_raw(Box::new(quantizer.prepare_ip_query(query)));
+opaque.cached_quantizer = Arc::into_raw(quantizer);  // or store the Arc directly
+```
+
+Change `score_scan_element_result` to use `opaque.cached_quantizer` directly.
+
+Free in `amendscan` alongside `prepared_query`.
+
+## Impact
+
+Eliminates one mutex lock + one hash lookup + one atomic increment per element scored during graph traversal. Prerequisite for hot-path performance when `ef_search` wires in.
