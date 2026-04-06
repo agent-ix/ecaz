@@ -2887,10 +2887,7 @@ mod tests {
         );
         assert_eq!(
             exhausted_frontier,
-            [
-                (false, (u32::MAX, u16::MAX), 0.0),
-                (false, (u32::MAX, u16::MAX), 0.0),
-            ],
+            Vec::<(bool, (u32, u16), f32)>::new(),
             "full scan exhaustion should clear both frontier slots"
         );
     }
