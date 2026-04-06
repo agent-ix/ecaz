@@ -608,10 +608,6 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    if bootstrap_expansion_mut(opaque).is_empty() {
-        seed_existing_frontier_into_expansion(opaque);
-    }
-
     while candidate_frontier_ref(opaque).len() < max_candidates {
         let source_tid = match policy {
             BootstrapExpandPolicy::ScoreOrder => bootstrap_expansion_mut(opaque)
@@ -1515,6 +1511,8 @@ mod tests {
             score_valid: true,
         });
         mark_expanded_source(&mut opaque, entry_tid);
+        reset_bootstrap_expansion_state(&mut opaque, 3);
+        seed_existing_frontier_into_expansion(&mut opaque);
 
         top_up_bootstrap_frontier(
             &mut opaque,
@@ -1551,6 +1549,53 @@ mod tests {
     }
 
     #[test]
+    fn top_up_bootstrap_frontier_requires_seeded_scheduler() {
+        let entry_tid = page::ItemPointer {
+            block_number: 12,
+            offset_number: 1,
+        };
+        let sibling_tid = page::ItemPointer {
+            block_number: 12,
+            offset_number: 2,
+        };
+        let mut opaque = TqScanOpaque::default();
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: entry_tid,
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        reset_bootstrap_expansion_state(&mut opaque, 3);
+
+        top_up_bootstrap_frontier(
+            &mut opaque,
+            3,
+            BootstrapExpandPolicy::ScoreOrder,
+            |_, opaque| {
+                seed_discovered_candidates(opaque, [ScanCandidate {
+                    element_tid: sibling_tid,
+                    source_tid: entry_tid,
+                    score: -2.0,
+                    score_valid: true,
+                }]);
+            },
+        );
+
+        assert_eq!(
+            candidate_frontier_ref(&opaque)
+                .iter()
+                .map(|candidate| candidate.element_tid)
+                .collect::<Vec<_>>(),
+            vec![entry_tid],
+            "top-up should not silently rebuild beam state from the visible frontier when the scheduler is empty"
+        );
+        assert!(
+            !expanded_contains_source(&opaque, entry_tid),
+            "without a seeded scheduler, top-up should not mark any source as expanded"
+        );
+    }
+
+    #[test]
     fn refill_after_consume_skips_already_expanded_source() {
         let consumed_tid = page::ItemPointer {
             block_number: 12,
@@ -1573,6 +1618,8 @@ mod tests {
             score_valid: true,
         });
         mark_expanded_source(&mut opaque, consumed_tid);
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        seed_existing_frontier_into_expansion(&mut opaque);
 
         let mut refilled_sources = Vec::new();
         refill_bootstrap_frontier_after_consume(
