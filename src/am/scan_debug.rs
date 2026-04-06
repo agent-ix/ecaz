@@ -55,6 +55,7 @@ type DebugCandidateFrontierConsume = (
 type DebugCandidateFrontierSlotConsume = (
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
+    HeapTidCoords,
     Vec<HeapTidCoords>,
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
@@ -850,15 +851,23 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = opaque.candidate_frontier_head;
     let before_slots = debug_candidate_frontier_slots(opaque);
-    let consumed_neighbors = before_head
-        .and_then(|index| before_slots.get(index))
-        .map(|slot| {
-            let consumed_tid = page::ItemPointer {
-                block_number: slot.1 .0,
-                offset_number: slot.1 .1,
-            };
+    let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+    let consumed_tid = consumed
+        .map(|candidate| {
+            (
+                candidate.element_tid.block_number,
+                candidate.element_tid.offset_number,
+            )
+        })
+        .unwrap_or((u32::MAX, u16::MAX));
+    let consumed_neighbors = consumed
+        .map(|candidate| {
             let (_, neighbors) = unsafe {
-                graph::load_graph_adjacency(index_relation, consumed_tid, opaque.scan_code_len)
+                graph::load_graph_adjacency(
+                    index_relation,
+                    candidate.element_tid,
+                    opaque.scan_code_len,
+                )
             };
             neighbors
                 .tids
@@ -868,8 +877,6 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-
-    unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
 
     let after_head = opaque.candidate_frontier_head;
     let after_slots = debug_candidate_frontier_slots(opaque);
@@ -881,6 +888,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     (
         before_head,
         before_slots,
+        consumed_tid,
         consumed_neighbors,
         after_head,
         after_slots,

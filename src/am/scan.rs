@@ -347,6 +347,18 @@ pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandida
         .unwrap_or_default()
 }
 
+fn find_candidate_frontier_index(
+    opaque: &TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> Option<usize> {
+    candidate_frontier_ref(opaque)
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, candidate)| candidate.score_valid && candidate.element_tid == element_tid)
+        .map(|(index, _)| index)
+}
+
 fn bootstrap_expansion_mut(
     opaque: &mut TqScanOpaque,
 ) -> &mut search::BeamSearch<page::ItemPointer> {
@@ -596,12 +608,7 @@ fn top_up_bootstrap_frontier<F>(
 fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
     if let Some(best_node) = bootstrap_expansion_mut(opaque).peek_best().map(|candidate| candidate.node)
     {
-        if let Some((index, _)) = candidate_frontier_ref(opaque)
-            .iter()
-            .copied()
-            .enumerate()
-            .find(|(_, candidate)| candidate.score_valid && candidate.element_tid == best_node)
-        {
+        if let Some(index) = find_candidate_frontier_index(opaque, best_node) {
             opaque.candidate_frontier_head = Some(index);
             return;
         }
@@ -630,11 +637,10 @@ fn recompute_candidate_frontier_head(opaque: &mut TqScanOpaque) {
 }
 
 fn consume_candidate_frontier_head(opaque: &mut TqScanOpaque) -> Option<ScanCandidate> {
-    let head = opaque.candidate_frontier_head?;
-
-    if head >= candidate_frontier_ref(opaque).len() {
-        return None;
-    }
+    let head = bootstrap_expansion_mut(opaque)
+        .peek_best()
+        .and_then(|candidate| find_candidate_frontier_index(opaque, candidate.node))
+        .or(opaque.candidate_frontier_head)?;
 
     let consumed = candidate_frontier_mut(opaque).remove(head);
     bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid);
@@ -1244,6 +1250,57 @@ mod tests {
             opaque.candidate_frontier_head,
             Some(1),
             "frontier-head recomputation should prefer the scan-owned scheduler's current best queued node"
+        );
+    }
+
+    #[test]
+    fn consume_candidate_frontier_head_prefers_scheduler_best_node() {
+        let mut opaque = TqScanOpaque::default();
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 15,
+                offset_number: 1,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 15,
+                offset_number: 2,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -1.0,
+            score_valid: true,
+        });
+
+        opaque.candidate_frontier_head = Some(0);
+        bootstrap_expansion_mut(&mut opaque).seed(
+            search::BeamCandidate::new(
+                page::ItemPointer {
+                    block_number: 15,
+                    offset_number: 2,
+                },
+                -1.0,
+            ),
+        );
+
+        let consumed = consume_candidate_frontier_head(&mut opaque)
+            .expect("frontier consumption should prefer the scheduler's best queued node");
+        assert_eq!(
+            (consumed.element_tid.block_number, consumed.element_tid.offset_number),
+            (15, 2),
+            "scheduler-owned best-node selection should override a stale cached head index during consumption"
+        );
+        assert_eq!(
+            candidate_slot(&opaque, 0).element_tid,
+            page::ItemPointer {
+                block_number: 15,
+                offset_number: 1,
+            },
+            "consumption should remove the scheduler-selected visible candidate from the compacted frontier"
         );
     }
 

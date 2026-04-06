@@ -3012,6 +3012,7 @@ mod tests {
         let (
             before_head,
             before_slots,
+            consumed_tid,
             consumed_neighbors,
             after_head,
             after_slots,
@@ -3037,14 +3038,15 @@ mod tests {
             .difference(&before_tids)
             .copied()
             .collect::<Vec<_>>();
-        let consumed_tid = before_head
-            .and_then(|index| before_slots.get(index))
-            .map(|slot| slot.1)
-            .expect("non-empty frontier should expose a consumed head slot");
         let has_unseen_consumed_neighbor = consumed_neighbors
             .iter()
             .any(|neighbor_tid| !before_tids.contains(neighbor_tid));
 
+        assert_ne!(
+            consumed_tid,
+            (u32::MAX, u16::MAX),
+            "non-empty frontier should expose an actually consumed candidate"
+        );
         assert!(
             !after_tids.contains(&consumed_tid),
             "consuming the head should remove that candidate from the frontier"
@@ -3061,6 +3063,10 @@ mod tests {
             after_head.is_some(),
             !after_slots.is_empty(),
             "frontier head presence should track whether any candidates remain after consume/refill"
+        );
+        assert!(
+            before_head.is_some(),
+            "non-empty frontier should expose a head before consume/refill"
         );
 
         if has_unseen_consumed_neighbor {
@@ -3160,13 +3166,14 @@ mod tests {
             am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
-        let consumed_index = before_head.expect("non-empty bootstrap frontier should expose a head");
-        let consumed_slot = before_slots[consumed_index];
-
         assert!(
             !active_candidate.0,
             "first amgettuple call should now materialize the consumed bootstrap candidate instead of leaving it active"
         );
+        let consumed_slot = before_slots
+            .into_iter()
+            .find(|slot| slot.1 == current_result_tid)
+            .expect("first amgettuple call should materialize one of the visible bootstrap frontier slots");
         assert_eq!(
             current_result_tid, consumed_slot.1,
             "first amgettuple call should attach current-result state to the consumed bootstrap candidate"
@@ -3179,6 +3186,10 @@ mod tests {
             after_head.is_some(),
             !after_slots.is_empty(),
             "frontier-head presence should continue to track whether bootstrap candidates remain after first consumption"
+        );
+        assert!(
+            before_head.is_some(),
+            "non-empty bootstrap frontier should expose a head before first consumption"
         );
     }
 
