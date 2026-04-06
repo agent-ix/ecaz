@@ -450,7 +450,7 @@ fn scheduler_best_frontier_candidate(
     })
 }
 
-fn current_candidate_frontier_head(
+pub(super) fn current_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     if let Some(candidate) = scheduler_best_frontier_candidate(opaque) {
@@ -731,6 +731,7 @@ unsafe fn refill_candidate_frontier_from_source(
     seed_discovered_candidates(opaque, successor_candidates);
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -815,7 +816,7 @@ where
     false
 }
 
-unsafe fn materialize_next_bootstrap_frontier_result(
+pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {

@@ -753,7 +753,7 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let candidate = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
+    let candidate = current_candidate_frontier_head(opaque);
     let candidate_before = (
         candidate.is_some(),
         candidate
@@ -761,9 +761,7 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
             .unwrap_or((u32::MAX, u16::MAX)),
         candidate.map(|candidate| candidate.score).unwrap_or(0.0),
     );
-    let materialized = candidate.is_some_and(|candidate| unsafe {
-        materialize_scan_candidate_result(index_relation, opaque, candidate)
-    });
+    let materialized = unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) };
     let current_result_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
     let pending_heap_tids = opaque.pending_heaptids[..opaque.pending_heaptid_count as usize]
         .iter()
