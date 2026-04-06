@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `2853b29`
+Current head: `1033d90`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -186,6 +186,7 @@ Review triage at `46d00bb`:
 - Bootstrap frontier top-up in `src/am/scan.rs` now runs through one incremental shared beam scheduler per top-up cycle instead of reconstructing source arbitration on every loop iteration.
 - Bootstrap expansion scheduling state now also persists in scan-owned state across top-up cycles instead of rebuilding a temporary beam scheduler every time.
 - Consumed bootstrap frontier nodes are now explicitly forgotten from the scan-owned beam scheduler, tightening alignment between visible frontier state and shared search state.
+- Recomputed visible frontier-head selection now prefers the scan-owned beam scheduler's best queued node, with the old vector scan retained as a fallback safety path.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -262,6 +263,7 @@ Open requests:
 - `78-incremental-bootstrap-top-up-scheduler.md`
 - `79-scan-owned-bootstrap-expansion-scheduler.md`
 - `80-forget-consumed-frontier-nodes.md`
+- `81-beam-owned-frontier-head-selection.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
