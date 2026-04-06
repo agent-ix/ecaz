@@ -226,6 +226,7 @@ Open requests:
 - `61-bootstrap-frontier-multihop-fill.md`
 - `62-bootstrap-expansion-policy-seam.md`
 - `63-score-ordered-bootstrap-expansion.md`
+- `64-bootstrap-expanded-state-groundwork.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
