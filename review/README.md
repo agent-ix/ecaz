@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `60cfbfa`
+Current head: `17c6e6f`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -159,6 +159,8 @@ Review triage at `46d00bb`:
 - The benchmark and integration-test baseline now uses the narrow always-available `bench_api` surface instead of a separate `bench` feature gate.
 - Benchmark coverage now includes hot-path `score_ip_from_parts`, `score_ip_encoded_lite`, and `decode_approximate` criterion benches plus `score_ip_from_parts` iai-callgrind coverage.
 - Property and wrapper coverage now include SRHT roundtrip at real-world padded dimensions and direct equivalence coverage for `score_code_inner_product`.
+- Scan frontier candidates now also carry explicit discovery provenance: seeded entry candidates have no source element, while adjacency-discovered candidates record the element tid they were expanded from.
+- Frontier debug coverage now exposes candidate provenance so regression tests can verify both entry-seeded and consume/refill-discovered candidate source tracking.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -214,6 +216,7 @@ Open requests:
 - `57-bootstrap-frontier-refill-after-consume.md`
 - `58-benchmark-coverage-and-data-quality.md`
 - `59-consumed-candidate-refill-and-benchmark-baseline.md`
+- `60-scan-candidate-provenance.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
