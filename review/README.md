@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `b2b7022`
+Current head: `34f0bd4`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -206,6 +206,7 @@ Review triage at `46d00bb`:
 - Runtime frontier consumption, refill, and direct materialization in `src/am/scan.rs` now also flow through `BeamCandidate<ItemPointer>` values, with `ScanCandidate` retained mainly for scan-owned persistent fields like `active_candidate` and for debug/test-facing snapshot surfaces.
 - The shared search seam now also exposes non-mutating queued-node lookup in `src/am/search.rs`, giving later scan-side ownership transfers a direct way to ask whether a node is still beam-owned without snapshotting or mutating scheduler state.
 - Internal visible-frontier iteration in `src/am/scan.rs` now stays in `BeamCandidate<ItemPointer>` form for selection paths, instead of converting back into `ScanCandidate` before immediately projecting back down to node/score data.
+- Remaining `src/am/scan.rs` unit-test frontier fixtures now construct `BeamCandidate<ItemPointer>` values directly through local helpers instead of populating `ScanCandidate` literals and converting them back into beam-native runtime state.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -311,6 +312,7 @@ Open requests:
 - `107-remove-redundant-scan-beam-adapters.md`
 - `108-remove-test-only-frontier-alias.md`
 - `109-beam-native-frontier-debug-boundaries.md`
+- `110-beam-native-scan-test-fixtures.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
