@@ -480,13 +480,12 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
-    candidate_frontier_mut(opaque).push(ScanCandidate {
+    seed_discovered_candidates(opaque, [ScanCandidate {
         element_tid: entry.tid,
         source_tid: page::ItemPointer::INVALID,
         score: entry_score,
         score_valid: true,
-    });
-    mark_visited_element(opaque, entry.tid);
+    }]);
 
     fill_bootstrap_frontier(
         opaque,
@@ -566,19 +565,14 @@ fn seed_discovered_candidates(
     );
 }
 
-fn bootstrap_expansion_seed_candidates(
-    opaque: &TqScanOpaque,
-    from_index: usize,
-) -> Vec<search::BeamCandidate<page::ItemPointer>> {
-    candidate_frontier_ref(opaque)
+fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
+    let candidates = candidate_frontier_ref(opaque)
         .iter()
         .copied()
-        .skip(from_index)
-        .filter(|candidate| {
-            candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
-        })
+        .filter(|candidate| candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid))
         .map(scan_candidate_to_beam_candidate)
-        .collect()
+        .collect::<Vec<_>>();
+    bootstrap_expansion_mut(opaque).seed_many(candidates);
 }
 
 fn fill_bootstrap_frontier<F>(
@@ -591,6 +585,7 @@ fn fill_bootstrap_frontier<F>(
 {
     reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
+    seed_existing_frontier_into_expansion(opaque);
     top_up_bootstrap_frontier(opaque, max_candidates, policy, refill);
 }
 
@@ -602,8 +597,9 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    let initial_candidates = bootstrap_expansion_seed_candidates(opaque, 0);
-    bootstrap_expansion_mut(opaque).seed_many(initial_candidates);
+    if bootstrap_expansion_mut(opaque).is_empty() {
+        seed_existing_frontier_into_expansion(opaque);
+    }
 
     while candidate_frontier_ref(opaque).len() < max_candidates {
         let source_tid = match policy {
@@ -1205,8 +1201,7 @@ mod tests {
             score: -1.0,
             score_valid: true,
         });
-        let seeds = bootstrap_expansion_seed_candidates(&opaque, 0);
-        bootstrap_expansion_mut(&mut opaque).seed_many(seeds);
+        seed_existing_frontier_into_expansion(&mut opaque);
         recompute_candidate_frontier_head(&mut opaque);
 
         let consumed = consume_candidate_frontier_head(&mut opaque)
