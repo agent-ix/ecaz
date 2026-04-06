@@ -319,6 +319,7 @@ Open requests:
 - `111-remove-dead-scan-candidate-boundary.md`
 - `112-remove-dead-queued-beam-lookup.md`
 - `113-remove-stale-bootstrap-candidate-staging.md`
+- `114-remove-dead-bootstrap-expand-helper.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
