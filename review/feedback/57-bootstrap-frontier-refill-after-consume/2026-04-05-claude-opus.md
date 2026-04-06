@@ -6,24 +6,28 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Line Numbers Updated
+
+`refill_bootstrap_frontier_after_consume` now at scan.rs:745. Beam scheduler additions have shifted all line numbers. Refill semantics unchanged.
+
 ## Answers to Review Questions
 
 ### Is consume-and-refill from entry adjacency the right bridge, or does it overfit the entry point?
 
-**It was the right bridge — and it's already been generalized.** The current implementation (`refill_bootstrap_frontier_after_consume`, scan.rs:644-662) expands from the *consumed candidate's* adjacency (not the entry adjacency), then calls `top_up_bootstrap_frontier` to fill remaining capacity from the best unexpanded source in the frontier. This is already candidate-local expansion, not entry-point-specific.
+**It was the right bridge — and it's already been generalized.** The current implementation (`refill_bootstrap_frontier_after_consume`, scan.rs:745-763) expands from the *consumed candidate's* adjacency (not the entry adjacency), then calls `top_up_bootstrap_frontier` to fill remaining capacity from the best unexpanded source in the frontier. This is already candidate-local expansion, not entry-point-specific.
 
 The flow is:
 1. Consume frontier head → get consumed candidate
-2. If consumed candidate hasn't been used as an expansion source yet, expand from its neighbors (scan.rs:651-653)
-3. Top-up from the best unexpanded frontier candidate if capacity remains (scan.rs:656-661)
+2. If consumed candidate hasn't been used as an expansion source yet, expand from its neighbors (scan.rs:751-753)
+3. Top-up from the best unexpanded frontier candidate if capacity remains (scan.rs:757-763)
 
 This is structurally very close to the HNSW greedy-descent expansion loop: consume the best candidate, expand its neighbors, repeat. The bootstrap wrapping (fixed cap, expansion policy) will give way to ef_search-bounded traversal, but the consume → expand → refill shape is correct.
 
 ### Invariants around visited-state or frontier uniqueness?
 
-The visited set correctly prevents re-adding already-seen elements: `refill_candidate_frontier_from_source` (scan.rs:585) checks `visited_contains_element` before loading or scoring a neighbor. New candidates are marked visited immediately after being added to the frontier (scan.rs:608-610).
+The visited set correctly prevents re-adding already-seen elements: `refill_candidate_frontier_from_source` (scan.rs:670) checks `visited_contains_element` before loading or scoring a neighbor. New candidates are marked visited immediately after being added to the frontier (scan.rs:570).
 
-The `expanded_source_tids` set (scan.rs:376-397) prevents double-expanding the same source. `refill_bootstrap_frontier_after_consume` marks the consumed element as expanded (scan.rs:652) before calling its refill. This is the right two-set invariant: visited prevents re-scoring, expanded prevents re-expanding.
+The `expanded_source_tids` set (scan.rs:413-441) prevents double-expanding the same source. `refill_bootstrap_frontier_after_consume` marks the consumed element as expanded (scan.rs:752) before calling its refill. This is the right two-set invariant: visited prevents re-scoring, expanded prevents re-expanding.
 
 No frontier uniqueness violation found — a candidate can only enter the frontier if it passes the visited check, and once added it's immediately marked visited.
 

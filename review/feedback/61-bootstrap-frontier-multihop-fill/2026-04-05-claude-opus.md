@@ -6,11 +6,15 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Line Numbers Updated
+
+`fill_bootstrap_frontier` now at scan.rs:589. `top_up_bootstrap_frontier` at scan.rs:603. `next_bootstrap_expand_index` at scan.rs:510. Semantics unchanged — beam scheduler now provides expansion ordering.
+
 ## Response to Review Focus
 
 ### Is bounded multi-hop fill the right next traversal seam?
 
-**Yes.** The `fill_bootstrap_frontier` → `top_up_bootstrap_frontier` loop (scan.rs:495-525) is structurally identical to the inner loop of HNSW greedy search: pick the best unexpanded candidate, expand its neighbors into the frontier, repeat until full or nothing left to expand. The only differences from real traversal are:
+**Yes.** The `fill_bootstrap_frontier` → `top_up_bootstrap_frontier` loop (scan.rs:589-631) is structurally identical to the inner loop of HNSW greedy search: pick the best unexpanded candidate, expand its neighbors into the frontier, repeat until full or nothing left to expand. The only differences from real traversal are:
 
 1. The frontier cap is `MAX_BOOTSTRAP_FRONTIER_CANDIDATES` (3) instead of `ef_search`
 2. Expansion happens at `amrescan` time, not during `amgettuple`
@@ -18,7 +22,7 @@ Request:
 
 These are parameter and timing differences, not structural ones. The multi-hop fill doesn't introduce hidden assumptions — it's a direct precursor to the traversal loop.
 
-The `expanded_source_tids` set correctly prevents infinite re-expansion: once a candidate is expanded, it won't be selected again by `next_bootstrap_expand_index` (scan.rs:484). The loop terminates either when the frontier is full or all candidates have been expanded.
+The `expanded_source_tids` set correctly prevents infinite re-expansion: once a candidate is expanded, it won't be selected again by `next_bootstrap_expand_index` (scan.rs:510). The loop terminates either when the frontier is full or all candidates have been expanded.
 
 ### Does insertion-order expansion make sense for this stage?
 

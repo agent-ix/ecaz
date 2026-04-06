@@ -6,19 +6,23 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Line Numbers Updated
+
+Function locations shifted due to module extraction and beam scheduler additions. `fill_bootstrap_frontier` is now at scan.rs:589, `top_up_bootstrap_frontier` at scan.rs:603. Semantics unchanged — the beam scheduler now provides ordering within the same fill loop.
+
 ## Answers to Review Questions
 
 ### Is three total seeded candidates sensible, or should this stage stay at two?
 
 **Three is the right step.** The entry point plus up to two neighbors represents the minimum "I can see past my immediate starting position" capability. Two candidates (entry + one neighbor) is degenerate — it doesn't test whether the frontier can meaningfully compare alternatives. Three candidates forces the head-selection and expansion logic to actually choose among candidates, which validates the scoring-based ordering before the frontier grows further.
 
-`MAX_BOOTSTRAP_FRONTIER_CANDIDATES = 3` (scan.rs:11) is an honest placeholder that exercises the full frontier machinery without pretending to implement beam search. The `fill_bootstrap_frontier` → `top_up_bootstrap_frontier` loop (scan.rs:495-524) correctly expands from the best unexpanded source until the frontier hits the cap or runs out of expandable sources.
+`MAX_BOOTSTRAP_FRONTIER_CANDIDATES = 3` (scan.rs:12) is an honest placeholder that exercises the full frontier machinery without pretending to implement beam search. The `fill_bootstrap_frontier` → `top_up_bootstrap_frontier` loop (scan.rs:589-631) correctly expands from the best unexpanded source until the frontier hits the cap or runs out of expandable sources.
 
 ### Ordering or lifecycle edges from widened seeding?
 
-No ambiguity found. The wider seeding flows through the same `fill_bootstrap_frontier` → `refill_candidate_frontier_from_source` path that the two-candidate version used. The visited set is seeded correctly: `mark_visited_element` is called for the entry (scan.rs:463) and for every new candidate produced during refill (scan.rs:608-610). The head is recomputed after every frontier mutation.
+No ambiguity found. The wider seeding flows through the same `fill_bootstrap_frontier` → `refill_candidate_frontier_from_source` path that the two-candidate version used. The visited set is seeded correctly: `mark_visited_element` is called for the entry (scan.rs:493) and for every new candidate produced during refill (scan.rs:570). The head is recomputed after every frontier mutation.
 
-One observation: the `expanded_source_tids` set (scan.rs:376-397) tracks which frontier candidates have been used as expansion sources. This prevents re-expanding the same source during `top_up_bootstrap_frontier`. The initial `fill_bootstrap_frontier` call (scan.rs:495-504) resets this set before the first fill, which is correct — it means the entry candidate starts as unexpanded and gets expanded as the first source.
+One observation: the `expanded_source_tids` set (scan.rs:413-441) tracks which frontier candidates have been used as expansion sources. This prevents re-expanding the same source during `top_up_bootstrap_frontier`. The initial `fill_bootstrap_frontier` call (scan.rs:589-600) resets this set before the first fill, which is correct — it means the entry candidate starts as unexpanded and gets expanded as the first source.
 
 ### Is the two-slot/full-slot debug mismatch acceptable?
 

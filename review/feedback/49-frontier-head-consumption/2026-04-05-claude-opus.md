@@ -6,17 +6,19 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Review Partially Superseded
+
+The "fixed two-slot candidate frontier" described in this review is now a `Vec<ScanCandidate>` + `BeamSearch` scheduler. Consumption now goes through the beam scheduler first. Answers below reflect current code.
+
 ## Answers to Review Questions
 
 ### Is it correct for head consumption to return the consumed slot while leaving the other slots untouched?
 
-**Yes.** `consume_candidate_frontier_head` (scan.rs:552-561) removes only the head slot via `Vec::remove(head)`, which shifts subsequent elements left, then recomputes the head from whatever remains. This is exactly right — consumption should only affect the consumed element. The remaining candidates are still valid exploration targets.
-
-The `Vec::remove` shift means indices change after consumption, which is why recomputation is mandatory. The implementation handles this correctly by calling `recompute_candidate_frontier_head` immediately after the remove.
+**Yes.** `consume_candidate_frontier_head` (scan.rs:639-648) now first consults the beam scheduler via `peek_best()` to find the best node, maps it to a Vec index via `find_candidate_frontier_index`, falling back to the cached `candidate_frontier_head`. After `Vec::remove(head)`, it calls `bootstrap_expansion_mut(opaque).forget_queued(consumed.element_tid)` (scan.rs:646) to keep the beam scheduler in sync, then recomputes the head. This dual-structure maintenance is the key invariant: the Vec and the beam scheduler must agree on which nodes exist.
 
 ### Is recomputing from the remaining valid slot sufficient groundwork?
 
-**Yes.** The recomputation scans all remaining candidates and picks the best valid one. This is the correct minimal behavior — it doesn't assume anything about frontier size or ordering invariants beyond "pick the lowest-scoring valid candidate." When a `BinaryHeap` replaces the Vec, `recompute` becomes `peek()` and `consume` becomes `pop()`, but the semantic contract is identical.
+**Yes — and the `BinaryHeap` transition is already happening.** The beam scheduler's `BinaryHeap` is now the primary source for head selection and consumption. `recompute` first tries `peek_best()` (O(1)), and `consume` first tries `peek_best()` + `find_candidate_frontier_index` before falling back to the cached Vec index. The Vec linear scan is now the fallback, not the primary path. The `forget_queued` call (scan.rs:646) keeps the heap and Vec synchronized on consume.
 
 ### Missing edge cases around empty frontier or double-consumption?
 

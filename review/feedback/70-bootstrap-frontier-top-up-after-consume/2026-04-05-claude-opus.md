@@ -3,6 +3,10 @@
 **Reviewer:** Claude Opus  
 **Date:** 2026-04-05
 
+## Note: Line Numbers Updated
+
+`refill_bootstrap_frontier_after_consume` now at scan.rs:745. `top_up_bootstrap_frontier` at scan.rs:603. `refill_candidate_frontier_from_source` at scan.rs:670. All functions now also interact with the BeamSearch scheduler for ordering. Semantics unchanged.
+
 ## Overall assessment
 
 The refactored consume/refill path is correct and internally consistent. The key improvement — preserving expanded-source state across consume/refill and reusing `top_up_bootstrap_frontier` for post-consume fill — makes the bounded frontier behavior symmetric between initial seeding and ongoing traversal.
@@ -12,27 +16,27 @@ The refactored consume/refill path is correct and internally consistent. The key
 ### 1. Expanded-source persistence boundary is correct
 
 - `fill_bootstrap_frontier` (initial seeding, called from `initialize_scan_entry_candidate`): calls `reset_scan_expanded_state` first, then `top_up_bootstrap_frontier`. This gives a fresh expanded set for the initial fill.
-- `refill_bootstrap_frontier_after_consume` (post-consume): does NOT reset expanded state. The consumed candidate is marked expanded at line 642 before refill, and `top_up_bootstrap_frontier` respects the existing expanded set.
+- `refill_bootstrap_frontier_after_consume` (post-consume): does NOT reset expanded state. The consumed candidate is marked expanded at line 752 before refill, and `top_up_bootstrap_frontier` respects the existing expanded set.
 
 This means sources expanded during initial seeding stay marked through subsequent consume/refill cycles, which prevents re-expansion. This is correct behavior — a source should only expand once across the entire frontier lifecycle within a scan pass.
 
 ### 2. No re-expansion or over-expansion possible
 
-The `top_up_bootstrap_frontier` loop (lines 518–529) is bounded by two conditions:
+The `top_up_bootstrap_frontier` loop (scan.rs:603-631) is bounded by two conditions:
 - `candidate_frontier_ref(opaque).len() < max_candidates` — stops when frontier is full
 - `next_bootstrap_expand_index` returns `None` — stops when no unexpanded candidate exists
 
-`mark_expanded_source` is called before each refill (line 527), so the same source cannot be selected twice by `next_bootstrap_expand_index` (which filters on `expanded_contains_source`). Combined with the `visited_tids` set preventing re-seeding of already-seen elements, the expand/refill cycle is guaranteed to terminate and to never re-discover the same candidate.
+`mark_expanded_source` is called before each refill (scan.rs:624), so the same source cannot be selected twice by `next_bootstrap_expand_index` (which filters on `expanded_contains_source`). Combined with the `visited_tids` set preventing re-seeding of already-seen elements, the expand/refill cycle is guaranteed to terminate and to never re-discover the same candidate.
 
 ### 3. `refill_bootstrap_frontier_after_consume` uses the consumed element's adjacency first
 
-Line 641–644: if the consumed candidate was not yet expanded (which it won't be if it was freshly consumed from the frontier), its adjacency is explored first via `refill(consumed.element_tid, opaque)`. Then `top_up_bootstrap_frontier` picks up any remaining unexpanded candidates to fill the frontier to capacity.
+scan.rs:751-754: if the consumed candidate was not yet expanded (which it won't be if it was freshly consumed from the frontier), its adjacency is explored first via `refill(consumed.element_tid, opaque)`. Then `top_up_bootstrap_frontier` picks up any remaining unexpanded candidates to fill the frontier to capacity.
 
 This is the right priority: the consumed candidate is the best available path to follow (since it was the frontier head), so expanding it first gives the best chance of finding good successors before falling back to expanding other frontier members.
 
 ### 4. Redundant visited check still present
 
-In `refill_candidate_frontier_from_source` (lines 588 and 597), `visited_contains_element` is checked twice for the same tid — once for `neighbor_tid` and once for `neighbor.tid`, which are always identical (`load_graph_element` returns the same tid it was given). This was noted in the pass-2 external review. Not a correctness issue but worth cleaning up.
+In `refill_candidate_frontier_from_source` (scan.rs:690-700), `visited_contains_element` is checked twice for the same tid — once for `neighbor_tid` and once for `neighbor.tid`, which are always identical (`load_graph_element` returns the same tid it was given). This was noted in the pass-2 external review. Not a correctness issue but worth cleaning up.
 
 ### 5. Call depth during top-up
 

@@ -32,7 +32,7 @@ If the active candidate points to a duplicate-coalesced element (multiple heap T
 
 ### Is helper-only staging the right step?
 
-**Yes.** The materialization path is fully functional but only exercised through debug helpers and pg regression coverage (scan.rs:1672+), not through `amgettuple` result production. This means the bridge can be validated in isolation before changing visible scan ordering. The debug helper (`debug_materialize_active_candidate_result`) exercises the full chain: consume → activate → materialize → verify drain state. This is the right staging before flipping the switch.
+**Superseded — this is now exercised in the visible path.** The current `amgettuple` (scan.rs:150) calls `materialize_next_bootstrap_frontier_result` which consumes frontier candidates and materializes them as visible results. The materialization path is no longer helper-only. Debug helpers for this are in `scan_debug.rs:699+`. This means the bridge can be validated in isolation before changing visible scan ordering. The debug helper (`debug_materialize_active_candidate_result`) exercises the full chain: consume → activate → materialize → verify drain state. This is the right staging before flipping the switch.
 
 ## Additional Findings
 

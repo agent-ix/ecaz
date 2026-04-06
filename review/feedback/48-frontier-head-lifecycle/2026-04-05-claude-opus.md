@@ -6,13 +6,17 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Review Partially Superseded
+
+The "two-slot" frontier described in this review is now a `Vec<ScanCandidate>` + `BeamSearch` scheduler. The lifecycle questions are addressed below against the current code.
+
 ## Answers to Review Questions
 
 ### Is it correct for the frontier head to remain unchanged through partial linear-scan progress?
 
-**Yes.** The bootstrap linear scan walks pages sequentially via `next_block_number`/`next_offset_number` — it does not consume candidates from the frontier. The frontier is seeded at `amrescan` time as structural groundwork for ordered traversal. During linear scan progress, the frontier is inert decoration. The head remaining stable through partial progress correctly reflects this: nothing in the linear scan path mutates the frontier.
+**Partially superseded.** The current `amgettuple` (scan.rs:149-167) now consumes frontier candidates *before* falling through to the linear scan. `materialize_next_bootstrap_frontier_result` (scan.rs:770-784) consumes the head and materializes it as a result. So the frontier *does* mutate during scan progress — it's no longer inert decoration. The linear scan is now the fallback path after the frontier is exhausted.
 
-Verified: the linear scan path (`next_linear_scan_heap_tid`, scan.rs:756+) only clears frontier state on full exhaustion, not during page iteration.
+The lifecycle is still correct: exhaustion clears candidate state (scan.rs:933-937), and rescan resets everything via `reset_scan_position` (scan.rs:244-257).
 
 ### Is full-exhaustion frontier clearing the right boundary?
 

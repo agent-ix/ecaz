@@ -1,0 +1,36 @@
+# Feedback: Frontier Head TID Surface
+
+Request:
+- `review/89-frontier-head-tid-surface.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-06
+
+## Response to Review Focus
+
+### Is candidate-TID head reporting the right intermediate contract?
+
+**Yes.** `current_candidate_frontier_head_tid` (scan.rs:704-712) returns `Option<page::ItemPointer>` — a candidate identity, not a slot position. This is the right abstraction because:
+1. The beam scheduler thinks in TIDs (node identity), not indices
+2. Candidate identity is stable across Vec mutations (unlike indices which shift on remove)
+3. All downstream consumers (consume, debug, materialization) need the TID anyway
+
+The function signature makes this explicit: it's a `pub(super)` function visible to `scan_debug.rs`, which now asserts head semantics in TID terms. Confirmed in `scan_debug.rs` — 13 call sites all use `current_candidate_frontier_head_tid` and compare against expected TIDs (e.g., line 627, 658, 684, etc.).
+
+### Do any remaining debug/runtime paths expose Vec slot semantics?
+
+**One residual.** `candidate_slot(opaque, index)` (scan.rs:425-427) still exposes positional slot access for debug helpers. This is used in `scan_debug.rs` at lines 138, 532, 543, 587, 974, 987, 1002 for snapshot-style assertions ("what's in slot 0/1"). These are convenience accessors for debug visualization — they don't drive runtime behavior and don't affect correctness.
+
+The runtime paths (`amgettuple` → `materialize_next_bootstrap_frontier_result` → `consume_candidate_frontier_head`) are fully TID-driven. No runtime path asks "what's in slot N."
+
+### Should the next slice target the last real Vec-index dependency?
+
+**Yes.** The remaining Vec-index dependency is inside `VisibleCandidateFrontier::remove_node` (scan.rs:406-411) which does `position()` + `Vec::remove()`. This is already encapsulated behind the container seam, so it's not externally visible. The next useful step is either:
+1. Narrowing the container seam further (reviews 91-95)
+2. Moving the container behind `search.rs`
+
+Reviews 90-95 take path 1, which is the right staging.
+
+## Additional Findings
+
+No issues found. Clean surface transition from index to identity semantics.

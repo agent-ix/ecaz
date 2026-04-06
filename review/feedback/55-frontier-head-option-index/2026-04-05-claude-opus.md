@@ -6,11 +6,15 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Code Has Evolved
+
+The `candidate_frontier_head: Option<usize>` still exists (scan.rs:1049) but is now secondary to the beam scheduler's `peek_best()`. `recompute_candidate_frontier_head` (scan.rs:618-647) consults the beam scheduler first and only falls back to the Vec scan if the scheduler can't map to a Vec index. The `Option<usize>` is becoming a compatibility shim.
+
 ## Answers to Review Questions
 
 ### Is removing the `u8` sentinel now the right precursor to wider frontier growth?
 
-**Yes.** The `u8::MAX` sentinel capped the addressable frontier to 255 slots and conflated "no head" with a magic value. `Option<usize>` is idiomatic Rust, makes the "no valid head" state type-safe (`None`), and removes any artificial width limit. This is the right cleanup before the frontier starts growing beyond the initial seeded pair.
+**Yes — and the wider growth has arrived.** The `Option<usize>` is now used as a fallback head index alongside the beam scheduler. The sentinel removal was the right precursor.
 
 ### Remaining slot-oriented assumptions?
 

@@ -1,0 +1,39 @@
+# Feedback: Scan-Owned Bootstrap Expansion Scheduler
+
+Request:
+- `review/79-scan-owned-bootstrap-expansion-scheduler.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Answers to Review Questions
+
+### Is the scan-owned scheduler lifetime/reset/free behavior correct?
+
+**Yes.** Verified the lifecycle:
+
+- **Allocation**: `reset_bootstrap_expansion_state` (scan.rs:304-311) — creates `BeamSearch::new(ef_search)` via `Box::into_raw`, or resets existing one. Called from `reset_scan_position` (scan.rs:253) and `fill_bootstrap_frontier` (scan.rs:586) and `bootstrap_expansion_mut` lazy init (scan.rs:365-368).
+
+- **Reset on rescan**: `reset_scan_position` → `reset_bootstrap_expansion_state(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES)` — creates a fresh `BeamSearch`. The old one is overwritten (not leaked — the Box is replaced in place at scan.rs:309).
+
+- **Free on amendscan**: `free_bootstrap_expansion` (scan.rs:321-326) — drops via `Box::from_raw` and nulls the pointer. Called from `tqhnsw_amendscan` (scan.rs:181).
+
+- **Null safety**: `bootstrap_expansion_mut` (scan.rs:362-369) lazy-initializes if null.
+
+The lifecycle follows the same pattern as `visited_tids`, `expanded_source_tids`, and `candidate_frontier`. No leak or use-after-free.
+
+### Can the scheduler and `expanded_source_tids` drift out of sync?
+
+**No drift under current consume/refill rules.** The two structures track different concerns:
+- Beam scheduler tracks "what's in the scored frontier" (for ordering)
+- `expanded_source_tids` tracks "whose neighbors have we loaded" (for I/O dedup)
+
+They're both reset together during `reset_scan_position` → `reset_bootstrap_expansion_state` + `reset_scan_expanded_state`. During operation, `seed_discovered_candidates` (scan.rs:545-565) always adds to both the frontier Vec and the beam scheduler, and `consume_candidate_frontier_head` (scan.rs:655-656) removes from both the frontier Vec and the beam scheduler via `forget_queued`. The `expanded_source_tids` set is updated independently based on which sources actually get expanded. No sync gap found.
+
+### Is this the right intermediate step?
+
+**Yes.** The scan-owned `bootstrap_expansion: *mut BeamSearch<ItemPointer>` in `TqScanOpaque` (scan.rs:1048) persists across `amgettuple` calls, which means the beam scheduler's state (frontier, visited, discovery order) survives between consume/refill cycles. This eliminates the per-cycle reconstruction cost and makes the scheduler a real part of the scan state machine.
+
+## Additional Findings
+
+The `TqScanOpaque` struct now has 18 fields (scan.rs:1034-1058), including 6 heap-allocated pointers (`query_values`, `prepared_query`, `visited_tids`, `expanded_source_tids`, `emitted_result_tids`, `candidate_frontier`, `bootstrap_expansion`). All follow the same `Box::into_raw` / `Box::from_raw` pattern with explicit free in `amendscan`. The pattern is consistent but the struct is growing — when the transition to a unified `BeamSearch`-owned frontier completes, several of these fields should collapse.

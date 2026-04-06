@@ -6,11 +6,15 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Implementation Has Evolved
+
+The `ScoreOrder` policy now routes through the `BeamSearch` scheduler's `expand_one()` (scan.rs:602-604) rather than an inline `min_by` scan. The beam scheduler's `BinaryHeap` provides inherent score ordering. The `next_bootstrap_expand_index` function (scan.rs:501-531) also uses a temporary `BeamSearch` to find the best unexpanded candidate.
+
 ## Response to Review Focus
 
 ### Is score-ordered expansion the right bootstrap policy?
 
-**Yes.** Score-ordered expansion means the frontier grows by exploring the most promising candidates first — this is the fundamental HNSW greedy-descent heuristic. The `ScoreOrder` policy (scan.rs:480-491) picks the lowest-scoring unexpanded candidate (lowest `<#>` value = most similar to query), breaking ties by slot index.
+**Yes.** Score-ordered expansion is now implemented through `BeamSearch::expand_one()` which pops the best candidate from the `BinaryHeap` frontier. This is the HNSW greedy-descent heuristic expressed through the search module rather than inline ordering logic. Tie-breaking uses insertion sequence (search.rs:209) rather than slot index.
 
 This creates the right behavior: during `amrescan` seeding, the entry candidate is expanded first (as the only candidate), then among its neighbors the best-scored one is expanded next, and so on. This means the bootstrap frontier is populated with the best local neighborhood of the entry point, ordered by query similarity.
 

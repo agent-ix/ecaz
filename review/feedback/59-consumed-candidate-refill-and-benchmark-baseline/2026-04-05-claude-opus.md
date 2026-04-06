@@ -6,15 +6,19 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Line Numbers Updated
+
+`refill_bootstrap_frontier_after_consume` now at scan.rs:745. `top_up_bootstrap_frontier` at scan.rs:603. Semantics unchanged.
+
 ## Response to Review Focus Areas
 
 ### Scan correctness: consumed-candidate refill contract
 
-The refill contract is correct. After consuming the frontier head, `refill_bootstrap_frontier_after_consume` (scan.rs:644-662) expands from the consumed candidate's neighbors if it hasn't been expanded before, then tops up from the best unexpanded frontier candidate. The visited set prevents re-scoring, and the expanded-source set prevents re-expanding. This matches the intended traversal groundwork.
+The refill contract is correct. After consuming the frontier head, `refill_bootstrap_frontier_after_consume` (scan.rs:745-763) expands from the consumed candidate's neighbors if it hasn't been expanded before, then tops up from the best unexpanded frontier candidate. The visited set prevents re-scoring, and the expanded-source set prevents re-expanding. This matches the intended traversal groundwork.
 
 The frontier compaction semantics are sound: `Vec::remove(head)` shifts elements, then `recompute_candidate_frontier_head` re-derives the best index. The refill may grow the Vec back toward `MAX_BOOTSTRAP_FRONTIER_CANDIDATES`, or it may not (if no unseen neighbors exist). Both outcomes are handled — the frontier simply operates at whatever size it reaches.
 
-One edge worth noting: if all frontier candidates have been expanded and the frontier shrinks below `MAX_BOOTSTRAP_FRONTIER_CANDIDATES`, the `top_up_bootstrap_frontier` loop (scan.rs:515-524) will break immediately because `next_bootstrap_expand_index` returns `None`. This is correct — there's nothing left to expand from.
+One edge worth noting: if all frontier candidates have been expanded and the frontier shrinks below `MAX_BOOTSTRAP_FRONTIER_CANDIDATES`, the `top_up_bootstrap_frontier` loop (scan.rs:603-631) will break immediately because `next_bootstrap_expand_index` returns `None`. This is correct — there's nothing left to expand from.
 
 ### Benchmark surface: bench_api narrowness
 

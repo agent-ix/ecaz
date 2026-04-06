@@ -1,0 +1,29 @@
+# Feedback: Scan Debug Module Boundary
+
+Request:
+- `review/76-scan-debug-module-boundary.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-05
+
+## Answers to Review Questions
+
+### Is the `scan` vs `scan_debug` boundary clean enough for parallel work?
+
+**Yes.** Verified: `scan.rs` is 1618 lines of runtime execution logic. `scan_debug.rs` is 1312 lines of `#[cfg(any(test, feature = "pg_test"))]` debug/test helpers. The split is clean — `scan_debug.rs` imports via `use super::scan::*` (line 8), which gives it access to `pub(super)` internals like `TqScanOpaque`, `ScanCandidate`, `candidate_frontier_ref`, `consume_and_refill_bootstrap_frontier`, etc.
+
+This means traversal work in `scan.rs` can proceed without touching the debug surface, and new debug helpers can be added to `scan_debug.rs` without growing `scan.rs`. The boundary enables parallel development.
+
+### Should any newly `pub(super)` scan internals be hidden behind narrower helpers?
+
+The `pub(super)` surface in `scan.rs` includes: `candidate_frontier_ref`, `candidate_slot`, `consume_and_refill_bootstrap_frontier`, `maybe_consume_bootstrap_frontier_candidate`, `materialize_active_candidate_result`, `read_scan_query`, `CurrentScanResult`, `ScanCandidate`, `TqScanOpaque`.
+
+This is a reasonable width for the debug module's needs. The debug helpers need direct access to scan opaque fields to snapshot state at various lifecycle points. Wrapping each field in a getter would add boilerplate without improving encapsulation — `scan_debug.rs` is already `#[cfg(test)]`-only and module-internal.
+
+### Does the updated pg regression surface match the intended executor contract?
+
+Verified: `mod.rs` re-exports 27 debug functions from `scan_debug` (lines 35-50). These cover the full scan lifecycle: rescan, entry candidate, frontier, consumption, materialization, exhaustion, visited state. The debug surface matches the executor's state machine.
+
+## Additional Findings
+
+No issues found. The extraction addresses the debug helper proliferation noted in earlier reviews — scan.rs dropped from ~2673 lines to 1618 by moving ~1312 lines of test infrastructure into its own file.

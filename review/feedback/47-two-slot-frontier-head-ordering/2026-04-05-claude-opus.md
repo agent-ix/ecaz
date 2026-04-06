@@ -6,19 +6,19 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Review Partially Superseded
+
+The "two-slot" frontier described in this review no longer exists. The current implementation uses a `Vec<ScanCandidate>` frontier (scan.rs:1047) with a `BeamSearch<ItemPointer>` scheduler (scan.rs:1048) backed by a `BinaryHeap`. Head selection now consults the beam scheduler first via `peek_best()` (scan.rs:619), falling back to a linear Vec scan. The core questions about head ordering are addressed below against the current architecture.
+
 ## Answers to Review Questions
 
 ### Is `valid first, then lower score` the right ordering rule?
 
-**Yes.** The `recompute_candidate_frontier_head` implementation (scan.rs:529-549) skips candidates with `!score_valid` then selects the lowest score among valid candidates, breaking ties by lower index. This correctly implements the `<#>` convention where lower = more similar. The tie-break on index is arbitrary but deterministic, which is what matters at this stage.
-
-One observation: the function iterates the entire Vec on every recomputation. This is fine for small frontiers but will need to be replaced when the Vec grows to `MAX_BOOTSTRAP_FRONTIER_CANDIDATES` size. The current call pattern — recompute after every push/remove — means this is O(n) per frontier mutation. For the bootstrap frontier sizes involved this is negligible, but worth noting as a future optimization point when profiling.
+**Yes — and it has since been augmented.** The current `recompute_candidate_frontier_head` (scan.rs:608-637) now first consults the scan-owned `BeamSearch` scheduler via `peek_best()`, mapping the best beam node back to a Vec index via `find_candidate_frontier_index`. The original linear-scan ordering rule (lowest score, tie-break by index) is preserved as a fallback for cases where the scheduler and frontier Vec are not yet in sync. This dual-path design is the right intermediate step: the beam scheduler becomes the authoritative source while the Vec scan provides safety.
 
 ### Should the frontier head be explicit state or lazily derived?
 
-**Explicit state is the right call.** Storing `candidate_frontier_head: Option<usize>` in `TqScanOpaque` avoids recomputing on every access and makes the "no valid head" state explicit (via `None`). The alternative — deriving lazily from the Vec — would either require a scan on every head access or push the ordering logic into every caller. The current approach centralizes ordering in `recompute_candidate_frontier_head` and lets consumers just read the stored index.
-
-The `Option<usize>` representation is clean — `None` means no valid candidate, `Some(i)` is the best slot index. This directly maps to what `consume_candidate_frontier_head` needs.
+**Explicit state is correct, and is now secondary to the beam scheduler.** The `candidate_frontier_head: Option<usize>` still exists as a cached index into the Vec (scan.rs:1049), but `consume_candidate_frontier_head` (scan.rs:639-648) now derives the head primarily from `bootstrap_expansion_mut(opaque).peek_best()`, falling back to the cached index. The cached head is becoming a compatibility shim rather than the authoritative source. This transition is sound — the beam scheduler's `BinaryHeap` provides O(1) peek and O(log n) pop, which is strictly better than the Vec linear scan.
 
 ### Missing lifecycle edges around head recomputation?
 

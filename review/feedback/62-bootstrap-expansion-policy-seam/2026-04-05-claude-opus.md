@@ -6,6 +6,10 @@ Request:
 **Reviewer:** Claude (Opus)
 **Date:** 2026-04-05
 
+## Note: Partially Superseded
+
+`InsertionOrder` policy no longer exists in the codebase — only `ScoreOrder` remains (scan.rs:14-17). Additionally, `next_bootstrap_expand_index` (scan.rs:501-531) now routes through the `BeamSearch` scheduler rather than inline `min_by` logic.
+
 ## Response to Review Focus
 
 ### Is the policy seam at the right level?

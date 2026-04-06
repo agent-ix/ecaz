@@ -1,0 +1,54 @@
+# Feedback: Owned Visible Frontier State
+
+Request:
+- `review/95-owned-visible-frontier-state.md`
+
+**Reviewer:** Claude (Opus)
+**Date:** 2026-04-06
+
+## Response to Review Focus
+
+### Is the owned frontier-state type the right narrow replacement for the raw Vec pointer?
+
+**Yes.** `TqScanOpaque.candidate_frontier` is now `*mut VisibleCandidateFrontierState` (scan.rs:1119) instead of the old `*mut Vec<ScanCandidate>`. The state type (scan.rs:322-325) wraps `Vec<ScanCandidate>` with a named struct that carries all the container methods.
+
+This is the right boundary because:
+1. **Type identity**: the frontier is now a named concept in the type system, not an anonymous Vec. This makes it greppable, documentable, and refactorable as a unit.
+2. **Encapsulated mutation**: all Vec operations go through `VisibleCandidateFrontierState` methods. No raw Vec access from outside the type.
+3. **Null-safe accessors**: `visible_frontier_ref` (scan.rs:399-405) returns `&EMPTY_VISIBLE_FRONTIER_STATE` on null, and `visible_frontier_mut` (scan.rs:407-413) lazily allocates. The null-pointer pattern is consistent with other scan-owned state (`visited_tids`, `expanded_source_tids`, `emitted_result_tids`).
+
+The `EMPTY_VISIBLE_FRONTIER_STATE` static (scan.rs:391-393) is a nice touch — it avoids allocation until mutation is needed, and `visible_frontier_ref` never returns a nullable reference.
+
+### Did any lifecycle or pointer-management assumptions change?
+
+**No.** The lifecycle is identical to the prior `*mut Vec<ScanCandidate>` pattern:
+- **Allocation**: lazy in `visible_frontier_mut` via `Box::into_raw(Box::new(VisibleCandidateFrontierState::default()))` (scan.rs:409-410)
+- **Reset**: `visible_frontier_mut(opaque).clear()` — clears the inner Vec without deallocating the outer Box
+- **Free**: `drop(Box::from_raw(opaque.candidate_frontier))` in `free_scan_candidate_state` (verified exists in amendscan cleanup path)
+
+The `#[derive(Default)]` on `VisibleCandidateFrontierState` produces `VisibleCandidateFrontierState { candidates: Vec::new() }`, which is the same starting state as `Vec::new()`. No behavior change.
+
+### Should the next move be richer behavior on this type or shifting authority into `search.rs`?
+
+**Shifting authority.** The encapsulation is complete:
+- Write seam: `clear`, `push`, `extend`, `remove_node`
+- Read seam: `len`, `is_empty`, `iter`, `slot`, `contains_node`, `best_tid_by_score`
+- Debug seam: `visible_frontier_snapshot`, `candidate_slot`
+- Private internals: `candidate_frontier_ref` (raw slice, private to `scan.rs`)
+
+The type has the right surface for its current role. Adding more behavior (e.g., combined seed-and-mark, integrated beam sync) would start duplicating what `search.rs` should own. The natural next step is to move `VisibleCandidateFrontierState` (or a successor type that also carries the beam scheduler) into `search.rs`, giving the search module ownership of both the ordering and the candidate data.
+
+The dual-container architecture (Vec + BeamSearch) is now fully encapsulated within scan's local abstractions. The next ownership transfer can move both containers together.
+
+## Additional Findings
+
+**Architecture observation:** Reviews 85-95 form a clean 11-slice progression:
+1. **Defensive sync** (85): stale-node purge loop
+2. **Remove implicit sync** (86): no silent reseed
+3. **Remove cached state** (87): derived head
+4. **TID-first operations** (88-90): consume by node, head by TID, remove shared index helper
+5. **Container encapsulation** (91-95): write seam → read seam → iteration seam → private boundary → owned type
+
+Each slice removed exactly one piece of Vec-index coupling or added exactly one encapsulation layer. No slice attempted more than one structural change. This is model incremental refactoring — the kind that can be reviewed, tested, and reverted independently.
+
+No correctness issues found.

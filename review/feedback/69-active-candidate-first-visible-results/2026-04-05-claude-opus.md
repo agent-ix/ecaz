@@ -3,6 +3,10 @@
 **Reviewer:** Claude Opus  
 **Date:** 2026-04-05
 
+## Note: Code Has Evolved
+
+The visible amgettuple path no longer uses the active_candidate staging. `materialize_next_bootstrap_frontier_result` (scan.rs:784) directly consumes and materializes frontier candidates. The active_candidate path (`maybe_consume` + `materialize_active_candidate_result`) remains for debug/helper flows only. Line numbers have shifted significantly.
+
 ## Overall assessment
 
 This is the most consequential scan slice so far — it makes frontier candidates produce visible tuple output and introduces the emitted-element dedup set as the correctness seam between candidate-driven and linear-scan paths. The design is correct and well-tested.
