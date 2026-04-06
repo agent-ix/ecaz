@@ -13,6 +13,7 @@ mod graph;
 mod options;
 pub mod page;
 mod routine;
+mod search;
 mod scan;
 mod vacuum;
 pub mod wal;
