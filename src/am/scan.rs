@@ -365,13 +365,17 @@ impl VisibleCandidateFrontierState {
         self.candidates.clear();
     }
 
-    fn push(&mut self, candidate: ScanCandidate) {
-        self.candidates.push(scan_candidate_to_beam_candidate(candidate));
+    fn push(&mut self, candidate: impl Into<search::BeamCandidate<page::ItemPointer>>) {
+        self.candidates.push(candidate.into());
     }
 
-    fn extend(&mut self, candidates: impl IntoIterator<Item = ScanCandidate>) {
+    fn extend<I, C>(&mut self, candidates: I)
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<search::BeamCandidate<page::ItemPointer>>,
+    {
         self.candidates
-            .extend(candidates.into_iter().map(scan_candidate_to_beam_candidate));
+            .extend(candidates.into_iter().map(Into::into));
     }
 
     fn remove_node(&mut self, element_tid: page::ItemPointer) -> Option<ScanCandidate> {
@@ -550,12 +554,10 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
-    seed_discovered_candidates(opaque, [ScanCandidate {
-        element_tid: entry.tid,
-        source_tid: page::ItemPointer::INVALID,
-        score: entry_score,
-        score_valid: true,
-    }]);
+    seed_discovered_candidates(
+        opaque,
+        [search::BeamCandidate::new(entry.tid, entry_score)],
+    );
 
     fill_bootstrap_frontier(
         opaque,
@@ -597,37 +599,13 @@ fn next_bootstrap_expand_tid(
     }
 }
 
-fn scan_candidate_to_beam_candidate(
-    candidate: ScanCandidate,
-) -> search::BeamCandidate<page::ItemPointer> {
-    match candidate.source_tid {
-        page::ItemPointer::INVALID => {
-            search::BeamCandidate::new(candidate.element_tid, candidate.score)
-        }
-        source_tid => {
-            search::BeamCandidate::with_source(candidate.element_tid, candidate.score, source_tid)
-        }
-    }
-}
-
-fn beam_candidate_to_scan_candidate(
-    candidate: search::BeamCandidate<page::ItemPointer>,
-) -> ScanCandidate {
-    ScanCandidate {
-        element_tid: candidate.node,
-        source_tid: candidate.source.unwrap_or(page::ItemPointer::INVALID),
-        score: candidate.score,
-        score_valid: true,
-    }
-}
-
 fn seed_discovered_candidates(
     opaque: &mut TqScanOpaque,
-    candidates: impl IntoIterator<Item = ScanCandidate>,
+    candidates: impl IntoIterator<Item = impl Into<search::BeamCandidate<page::ItemPointer>>>,
 ) {
     let candidates = candidates
         .into_iter()
-        .filter(|candidate| candidate.score_valid)
+        .map(Into::into)
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         return;
@@ -635,20 +613,16 @@ fn seed_discovered_candidates(
 
     visible_frontier_mut(opaque).extend(candidates.iter().copied());
     for candidate in &candidates {
-        mark_visited_element(opaque, candidate.element_tid);
+        mark_visited_element(opaque, candidate.node);
     }
-    bootstrap_expansion_mut(opaque).seed_many(
-        candidates
-            .into_iter()
-            .map(scan_candidate_to_beam_candidate),
-    );
+    bootstrap_expansion_mut(opaque).seed_many(candidates);
 }
 
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     let candidates = visible_frontier_ref(opaque)
         .iter()
-        .filter(|candidate| candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid))
-        .map(scan_candidate_to_beam_candidate)
+        .filter(|candidate| !expanded_contains_source(opaque, candidate.element_tid))
+        .map(Into::into)
         .collect::<Vec<_>>();
     bootstrap_expansion_mut(opaque).seed_many(candidates);
 }
@@ -755,12 +729,11 @@ unsafe fn refill_candidate_frontier_from_source(
                 return None;
             }
 
-            Some(ScanCandidate {
-                element_tid: neighbor.tid,
+            Some(search::BeamCandidate::with_source(
+                neighbor.tid,
+                score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
                 source_tid,
-                score: score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
-                score_valid: true,
-            })
+            ))
         });
     seed_discovered_candidates(opaque, successor_candidates);
 }
@@ -865,9 +838,9 @@ fn collect_successor_candidates<F>(
     neighbor_tids: &[page::ItemPointer],
     max_candidates: usize,
     mut candidate_for_tid: F,
-) -> Vec<ScanCandidate>
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
 where
-    F: FnMut(page::ItemPointer) -> Option<ScanCandidate>,
+    F: FnMut(page::ItemPointer) -> Option<search::BeamCandidate<page::ItemPointer>>,
 {
     let mut candidates = Vec::new();
     if max_candidates == 0 {
@@ -1092,6 +1065,38 @@ impl Default for ScanCandidate {
             score_valid: false,
         }
     }
+}
+
+impl From<ScanCandidate> for search::BeamCandidate<page::ItemPointer> {
+    fn from(candidate: ScanCandidate) -> Self {
+        match candidate.source_tid {
+            page::ItemPointer::INVALID => Self::new(candidate.element_tid, candidate.score),
+            source_tid => Self::with_source(candidate.element_tid, candidate.score, source_tid),
+        }
+    }
+}
+
+impl From<search::BeamCandidate<page::ItemPointer>> for ScanCandidate {
+    fn from(candidate: search::BeamCandidate<page::ItemPointer>) -> Self {
+        Self {
+            element_tid: candidate.node,
+            source_tid: candidate.source.unwrap_or(page::ItemPointer::INVALID),
+            score: candidate.score,
+            score_valid: true,
+        }
+    }
+}
+
+fn scan_candidate_to_beam_candidate(
+    candidate: ScanCandidate,
+) -> search::BeamCandidate<page::ItemPointer> {
+    candidate.into()
+}
+
+fn beam_candidate_to_scan_candidate(
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) -> ScanCandidate {
+    candidate.into()
 }
 
 #[repr(C)]
@@ -1430,12 +1435,7 @@ mod tests {
             |neighbor_tid| {
                 visited.push((neighbor_tid.block_number, neighbor_tid.offset_number));
 
-                Some(ScanCandidate {
-                    element_tid: neighbor_tid,
-                    source_tid: page::ItemPointer::INVALID,
-                    score: 2.5,
-                    score_valid: true,
-                })
+                Some(search::BeamCandidate::new(neighbor_tid, 2.5))
             },
         );
 
@@ -1450,7 +1450,7 @@ mod tests {
         assert_eq!(
             candidates
                 .into_iter()
-                .map(|candidate| candidate.element_tid)
+                .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
             vec![first_valid, second_valid],
             "collection should return live candidates in neighbor order up to the requested limit"
