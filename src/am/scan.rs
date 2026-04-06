@@ -543,6 +543,29 @@ fn scan_candidate_to_beam_candidate(
     }
 }
 
+fn seed_discovered_candidates(
+    opaque: &mut TqScanOpaque,
+    candidates: impl IntoIterator<Item = ScanCandidate>,
+) {
+    let candidates = candidates
+        .into_iter()
+        .filter(|candidate| candidate.score_valid)
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return;
+    }
+
+    candidate_frontier_mut(opaque).extend(candidates.iter().copied());
+    for candidate in &candidates {
+        mark_visited_element(opaque, candidate.element_tid);
+    }
+    bootstrap_expansion_mut(opaque).seed_many(
+        candidates
+            .into_iter()
+            .map(scan_candidate_to_beam_candidate),
+    );
+}
+
 fn bootstrap_expansion_seed_candidates(
     opaque: &TqScanOpaque,
     from_index: usize,
@@ -592,16 +615,11 @@ fn top_up_bootstrap_frontier<F>(
             break;
         };
 
-        let frontier_len_before = candidate_frontier_ref(opaque).len();
         if expanded_contains_source(opaque, source_tid) {
-            let candidates = bootstrap_expansion_seed_candidates(opaque, frontier_len_before);
-            bootstrap_expansion_mut(opaque).seed_many(candidates);
             continue;
         }
         mark_expanded_source(opaque, source_tid);
         refill(source_tid, opaque);
-        let candidates = bootstrap_expansion_seed_candidates(opaque, frontier_len_before);
-        bootstrap_expansion_mut(opaque).seed_many(candidates);
     }
 }
 
@@ -690,12 +708,7 @@ unsafe fn refill_candidate_frontier_from_source(
                 score_valid: true,
             })
         });
-    if !successor_candidates.is_empty() {
-        candidate_frontier_mut(opaque).extend(successor_candidates.iter().copied());
-        for candidate in successor_candidates {
-            mark_visited_element(opaque, candidate.element_tid);
-        }
-    }
+    seed_discovered_candidates(opaque, successor_candidates);
 
     recompute_candidate_frontier_head(opaque);
 }
@@ -1377,31 +1390,22 @@ mod tests {
             3,
             BootstrapExpandPolicy::ScoreOrder,
             |source_tid, opaque| {
-                let frontier = candidate_frontier_mut(opaque);
                 match (source_tid.block_number, source_tid.offset_number) {
-                    (9, 1)
-                        if frontier
-                            .iter()
-                            .all(|candidate| candidate.element_tid != child_tid) =>
-                    {
-                        frontier.push(ScanCandidate {
+                    (9, 1) => {
+                        seed_discovered_candidates(opaque, [ScanCandidate {
                             element_tid: child_tid,
                             source_tid,
                             score: -2.0,
                             score_valid: true,
-                        });
+                        }]);
                     }
-                    (9, 2)
-                        if frontier
-                            .iter()
-                            .all(|candidate| candidate.element_tid != grandchild_tid) =>
-                    {
-                        frontier.push(ScanCandidate {
+                    (9, 2) => {
+                        seed_discovered_candidates(opaque, [ScanCandidate {
                             element_tid: grandchild_tid,
                             source_tid,
                             score: -1.0,
                             score_valid: true,
-                        });
+                        }]);
                     }
                     _ => {}
                 }
@@ -1468,17 +1472,13 @@ mod tests {
             3,
             BootstrapExpandPolicy::ScoreOrder,
             |source_tid, opaque| {
-                if source_tid == sibling_tid
-                    && candidate_frontier_ref(opaque)
-                        .iter()
-                        .all(|candidate| candidate.element_tid != grandchild_tid)
-                {
-                    candidate_frontier_mut(opaque).push(ScanCandidate {
+                if source_tid == sibling_tid {
+                    seed_discovered_candidates(opaque, [ScanCandidate {
                         element_tid: grandchild_tid,
                         source_tid,
                         score: -1.0,
                         score_valid: true,
-                    });
+                    }]);
                 }
             },
         );
@@ -1536,17 +1536,13 @@ mod tests {
             },
             |source_tid, opaque| {
                 refilled_sources.push(source_tid);
-                if source_tid == sibling_tid
-                    && candidate_frontier_ref(opaque)
-                        .iter()
-                        .all(|candidate| candidate.element_tid != grandchild_tid)
-                {
-                    candidate_frontier_mut(opaque).push(ScanCandidate {
+                if source_tid == sibling_tid {
+                    seed_discovered_candidates(opaque, [ScanCandidate {
                         element_tid: grandchild_tid,
                         source_tid,
                         score: -1.0,
                         score_valid: true,
-                    });
+                    }]);
                 }
             },
         );
