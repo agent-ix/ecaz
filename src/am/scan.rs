@@ -321,7 +321,7 @@ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
 
 #[derive(Debug, Default)]
 pub(super) struct VisibleCandidateFrontierState {
-    candidates: Vec<ScanCandidate>,
+    candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
 }
 
 impl VisibleCandidateFrontierState {
@@ -334,37 +334,31 @@ impl VisibleCandidateFrontierState {
     }
 
     fn iter(&self) -> impl Iterator<Item = ScanCandidate> + '_ {
-        self.candidates.iter().copied()
+        self.candidates
+            .iter()
+            .copied()
+            .map(beam_candidate_to_scan_candidate)
     }
 
     fn slot(&self, index: usize) -> ScanCandidate {
-        self.candidates.get(index).copied().unwrap_or_default()
+        self.candidates
+            .get(index)
+            .copied()
+            .map(beam_candidate_to_scan_candidate)
+            .unwrap_or_default()
     }
 
     fn contains_node(&self, element_tid: page::ItemPointer) -> bool {
-        self.iter()
-            .any(|candidate| candidate.score_valid && candidate.element_tid == element_tid)
+        self.candidates
+            .iter()
+            .any(|candidate| candidate.node == element_tid)
     }
 
     fn best_tid_by_score(&self) -> Option<page::ItemPointer> {
-        let mut best: Option<ScanCandidate> = None;
-        for candidate in self.iter() {
-            if !candidate.score_valid {
-                continue;
-            }
-
-            best = match best {
-                None => Some(candidate),
-                Some(best_candidate) => {
-                    if candidate.score < best_candidate.score {
-                        Some(candidate)
-                    } else {
-                        Some(best_candidate)
-                    }
-                }
-            };
-        }
-        best.map(|candidate| candidate.element_tid)
+        self.candidates
+            .iter()
+            .min_by(|left, right| left.score.total_cmp(&right.score))
+            .map(|candidate| candidate.node)
     }
 
     fn clear(&mut self) {
@@ -372,19 +366,20 @@ impl VisibleCandidateFrontierState {
     }
 
     fn push(&mut self, candidate: ScanCandidate) {
-        self.candidates.push(candidate);
+        self.candidates.push(scan_candidate_to_beam_candidate(candidate));
     }
 
     fn extend(&mut self, candidates: impl IntoIterator<Item = ScanCandidate>) {
-        self.candidates.extend(candidates);
+        self.candidates
+            .extend(candidates.into_iter().map(scan_candidate_to_beam_candidate));
     }
 
     fn remove_node(&mut self, element_tid: page::ItemPointer) -> Option<ScanCandidate> {
         let index = self
             .candidates
             .iter()
-            .position(|candidate| candidate.score_valid && candidate.element_tid == element_tid)?;
-        Some(self.candidates.remove(index))
+            .position(|candidate| candidate.node == element_tid)?;
+        Some(beam_candidate_to_scan_candidate(self.candidates.remove(index)))
     }
 }
 
@@ -392,8 +387,8 @@ static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCand
     candidates: Vec::new(),
 };
 
-fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
-    &visible_frontier_ref(opaque).candidates
+fn candidate_frontier_ref(opaque: &TqScanOpaque) -> Vec<ScanCandidate> {
+    visible_frontier_ref(opaque).iter().collect()
 }
 
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
@@ -612,6 +607,17 @@ fn scan_candidate_to_beam_candidate(
         source_tid => {
             search::BeamCandidate::with_source(candidate.element_tid, candidate.score, source_tid)
         }
+    }
+}
+
+fn beam_candidate_to_scan_candidate(
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) -> ScanCandidate {
+    ScanCandidate {
+        element_tid: candidate.node,
+        source_tid: candidate.source.unwrap_or(page::ItemPointer::INVALID),
+        score: candidate.score,
+        score_valid: true,
     }
 }
 
