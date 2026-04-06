@@ -324,21 +324,13 @@ pub(super) struct VisibleCandidateFrontierState {
     candidates: Vec<ScanCandidate>,
 }
 
-fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
-    if opaque.candidate_frontier.is_null() {
-        &[]
-    } else {
-        &unsafe { &*opaque.candidate_frontier }.candidates
-    }
-}
-
-struct VisibleCandidateFrontierRef<'a> {
-    candidates: &'a [ScanCandidate],
-}
-
-impl VisibleCandidateFrontierRef<'_> {
+impl VisibleCandidateFrontierState {
     fn len(&self) -> usize {
         self.candidates.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.candidates.is_empty()
     }
 
     fn iter(&self) -> impl Iterator<Item = ScanCandidate> + '_ {
@@ -374,25 +366,9 @@ impl VisibleCandidateFrontierRef<'_> {
         }
         best.map(|candidate| candidate.element_tid)
     }
-}
 
-fn visible_frontier_ref(opaque: &TqScanOpaque) -> VisibleCandidateFrontierRef<'_> {
-    VisibleCandidateFrontierRef {
-        candidates: candidate_frontier_ref(opaque),
-    }
-}
-
-struct VisibleCandidateFrontier<'a> {
-    candidates: &'a mut Vec<ScanCandidate>,
-}
-
-impl VisibleCandidateFrontier<'_> {
     fn clear(&mut self) {
         self.candidates.clear();
-    }
-
-    fn len(&self) -> usize {
-        self.candidates.len()
     }
 
     fn push(&mut self, candidate: ScanCandidate) {
@@ -412,14 +388,28 @@ impl VisibleCandidateFrontier<'_> {
     }
 }
 
-fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> VisibleCandidateFrontier<'_> {
+static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState = VisibleCandidateFrontierState {
+    candidates: Vec::new(),
+};
+
+fn candidate_frontier_ref(opaque: &TqScanOpaque) -> &[ScanCandidate] {
+    &visible_frontier_ref(opaque).candidates
+}
+
+fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
+    if opaque.candidate_frontier.is_null() {
+        &EMPTY_VISIBLE_FRONTIER_STATE
+    } else {
+        unsafe { &*opaque.candidate_frontier }
+    }
+}
+
+fn visible_frontier_mut(opaque: &mut TqScanOpaque) -> &mut VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
         opaque.candidate_frontier =
             Box::into_raw(Box::new(VisibleCandidateFrontierState::default()));
     }
-    VisibleCandidateFrontier {
-        candidates: &mut unsafe { &mut *opaque.candidate_frontier }.candidates,
-    }
+    unsafe { &mut *opaque.candidate_frontier }
 }
 
 pub(super) fn candidate_slot(opaque: &TqScanOpaque, index: usize) -> ScanCandidate {
