@@ -176,16 +176,17 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
                 return;
             }
 
-            let opaque = (*scan).opaque;
-            if !opaque.is_null() {
-                free_scan_candidate_frontier(&mut *opaque.cast::<TqScanOpaque>());
-                free_bootstrap_expansion(&mut *opaque.cast::<TqScanOpaque>());
-                free_scan_expanded_set(&mut *opaque.cast::<TqScanOpaque>());
-                free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
-                free_scan_emitted_set(&mut *opaque.cast::<TqScanOpaque>());
-                free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
-                free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
-                pg_sys::pfree(opaque);
+            let opaque_ptr = (*scan).opaque;
+            if !opaque_ptr.is_null() {
+                let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
+                free_scan_candidate_frontier(opaque);
+                free_bootstrap_expansion(opaque);
+                free_scan_expanded_set(opaque);
+                free_scan_visited_set(opaque);
+                free_scan_emitted_set(opaque);
+                free_scan_prepared_query(opaque);
+                free_scan_query(opaque);
+                pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
             }
         })
@@ -423,6 +424,9 @@ fn with_visible_frontier_and_bootstrap_expansion<R>(
 ) -> R {
     let visible_frontier = visible_frontier_ref(opaque) as *const VisibleCandidateFrontierState;
     let expansion = bootstrap_expansion_mut(opaque) as *mut search::BeamSearch<page::ItemPointer>;
+    // SAFETY: `candidate_frontier` and `bootstrap_expansion` are separate Box-backed heap
+    // allocations owned by `TqScanOpaque`, so borrowing the frontier immutably and the
+    // scheduler mutably at the same time cannot alias.
     unsafe { f(&*visible_frontier, &mut *expansion) }
 }
 
