@@ -2730,6 +2730,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(
+            !frontier.is_empty(),
+            "bootstrap frontier should not be empty immediately after rescan"
+        );
+        assert!(
             frontier[0].0,
             "first frontier slot should hold the seeded entry candidate"
         );
@@ -2743,26 +2747,18 @@ mod tests {
             "first frontier slot should carry a computed score"
         );
 
-        if frontier[1].0 {
+        if let Some(second) = frontier.get(1) {
             assert_ne!(
-                frontier[1].1,
+                second.1,
                 (u32::MAX, u16::MAX),
                 "second frontier slot should expose a concrete element tid when present"
             );
             assert_ne!(
-                frontier[1].2, 0.0,
+                second.2, 0.0,
                 "second frontier slot should carry a computed score when present"
             );
         } else {
-            assert_eq!(
-                frontier[1].1,
-                (u32::MAX, u16::MAX),
-                "empty second frontier slot should clear its element tid"
-            );
-            assert_eq!(
-                frontier[1].2, 0.0,
-                "empty second frontier slot should clear its score"
-            );
+            assert_eq!(frontier.len(), 1, "a missing second frontier slot should mean the Vec contains only the seeded entry candidate");
         }
 
         assert_eq!(
@@ -2940,27 +2936,25 @@ mod tests {
                 Some(before_frontier[remaining_slot].1),
                 "when another candidate remains valid, consuming the head should expose that remaining candidate as the new head"
             );
-            assert_eq!(
-                after_first_frontier[0],
-                before_frontier[remaining_slot],
+            assert!(
+                after_first_frontier
+                    .iter()
+                    .any(|slot| slot.1 == before_frontier[remaining_slot].1),
                 "consuming the current head should preserve the remaining candidate after compaction"
             );
-            assert_eq!(
-                after_first_frontier[1],
-                (false, (u32::MAX, u16::MAX), 0.0),
-                "the compacted candidate vector should leave no second frontier slot populated yet"
+            assert!(
+                !after_first_frontier
+                    .iter()
+                    .any(|slot| slot.1 == consumed_tid),
+                "consuming the current head should remove that candidate from the frontier Vec"
             );
         } else {
             assert_eq!(
                 after_first_head, None,
                 "consuming the only valid candidate should invalidate the frontier head"
             );
-            assert_eq!(
-                after_first_frontier,
-                [
-                    (false, (u32::MAX, u16::MAX), 0.0),
-                    (false, (u32::MAX, u16::MAX), 0.0),
-                ],
+            assert!(
+                after_first_frontier.is_empty(),
                 "consuming the only valid candidate should leave the compacted frontier empty"
             );
         }
@@ -2971,11 +2965,8 @@ mod tests {
         );
         assert_eq!(
             after_second_frontier,
-            [
-                (false, (u32::MAX, u16::MAX), 0.0),
-                (false, (u32::MAX, u16::MAX), 0.0),
-            ],
-            "after consuming both available slots, the two-slot frontier should be fully cleared"
+            Vec::<(bool, (u32, u16), f32)>::new(),
+            "after consuming both available slots, the frontier Vec should be fully cleared"
         );
     }
 

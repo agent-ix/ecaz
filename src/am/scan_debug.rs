@@ -17,9 +17,6 @@ pub(crate) type HeapTidCoords = (u32, u16);
 type DebugCandidateSlot = (bool, HeapTidCoords, f32);
 
 #[cfg(any(test, feature = "pg_test"))]
-type DebugCandidateFrontier = [DebugCandidateSlot; 2];
-
-#[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateProvenanceSlot = (bool, HeapTidCoords, HeapTidCoords, f32);
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -44,11 +41,11 @@ type DebugCandidateFrontierLifecycle = (
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateFrontierConsume = (
     DebugCandidateHead,
-    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
     DebugCandidateHead,
-    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
     DebugCandidateHead,
-    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -96,11 +93,6 @@ fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFronti
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-fn debug_candidate_frontier_pair(opaque: &TqScanOpaque) -> DebugCandidateFrontier {
-    [visible_frontier_slot(opaque, 0), visible_frontier_slot(opaque, 1)].map(debug_candidate_slot)
-}
-
-#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_provenance_slots(
     opaque: &TqScanOpaque,
 ) -> DebugCandidateFrontierProvenanceSlots {
@@ -126,7 +118,7 @@ type DebugVisitedSeedsLifecycle = (Vec<HeapTidCoords>, Vec<HeapTidCoords>, Vec<H
 #[cfg(any(test, feature = "pg_test"))]
 type DebugBootstrapSeedState = (
     DebugCandidateHead,
-    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
     DebugCandidateFrontierSlots,
     DebugCandidateFrontierProvenanceSlots,
     Vec<HeapTidCoords>,
@@ -601,8 +593,8 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let frontier = debug_candidate_frontier_pair(opaque);
     let frontier_slots = debug_candidate_frontier_slots(opaque);
+    let frontier = frontier_slots.clone();
     let frontier_provenance = debug_candidate_frontier_provenance_slots(opaque);
     let expanded_sources = debug_sorted_expanded_source_tids(opaque);
     let head = current_candidate_frontier_head_tid(opaque)
@@ -774,18 +766,18 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = current_candidate_frontier_head_tid(opaque)
         .map(|tid| (tid.block_number, tid.offset_number));
-    let before_frontier = debug_candidate_frontier_pair(opaque);
+    let before_frontier = debug_candidate_frontier_slots(opaque);
 
     let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
     let after_first_head = current_candidate_frontier_head_tid(opaque)
         .map(|tid| (tid.block_number, tid.offset_number));
-    let after_first_frontier = debug_candidate_frontier_pair(opaque);
+    let after_first_frontier = debug_candidate_frontier_slots(opaque);
 
     unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     let after_second_head = current_candidate_frontier_head_tid(opaque)
         .map(|tid| (tid.block_number, tid.offset_number));
-    let after_second_frontier = debug_candidate_frontier_pair(opaque);
+    let after_second_frontier = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
