@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `254a70e`
+Current head: `0c61523`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -178,6 +178,7 @@ Review triage at `46d00bb`:
 - After each candidate consume, bounded bootstrap refill now preserves expanded-source state and keeps topping up the frontier with the same score-ordered multi-hop policy instead of stopping after one direct neighbor refill.
 - Consume/refill now skips rereading a consumed source if that source was already expanded during earlier bootstrap work, while still topping up from other remaining unexpanded frontier candidates.
 - Visible candidate-first tuple production now consumes the next bootstrap frontier candidate directly into current-result plus pending heap-TID drain state instead of staging through `active_candidate` first, while keeping `active_candidate` available for narrower helper/debug paths.
+- Pure traversal mechanics now have a dedicated home in `src/am/search.rs`, which currently provides a self-contained beam-search helper with visited/frontier ownership and best-first expansion tests, but is not yet wired into `amgettuple`.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -246,6 +247,7 @@ Open requests:
 - `70-bootstrap-frontier-top-up-after-consume.md`
 - `71-skip-reexpanding-consumed-bootstrap-sources.md`
 - `72-direct-frontier-result-materialization.md`
+- `73-search-module-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
