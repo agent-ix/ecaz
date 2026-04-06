@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `03106c8`
+Current head: `712ac84`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -183,6 +183,7 @@ Review triage at `46d00bb`:
 - Shared metadata/page/debug utilities now live in `src/am/shared.rs`, build-only helper tests now live in `src/am/build.rs`, and `src/am/mod.rs` is down to module wiring, constants, and narrow reexports.
 - Scan debug/test helpers now live in `src/am/scan_debug.rs`, leaving `src/am/scan.rs` focused on scan execution, traversal state, and runtime helpers.
 - Scan reloptions now include `ef_search` groundwork, `src/am/search.rs` now exposes incremental beam-search APIs, and bootstrap expansion-source selection in `src/am/scan.rs` now goes through that shared search seam.
+- Bootstrap frontier top-up in `src/am/scan.rs` now runs through one incremental shared beam scheduler per top-up cycle instead of reconstructing source arbitration on every loop iteration.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -256,6 +257,7 @@ Open requests:
 - `75-shared-am-helper-boundary.md`
 - `76-scan-debug-module-boundary.md`
 - `77-ef-search-and-search-api-groundwork.md`
+- `78-incremental-bootstrap-top-up-scheduler.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
