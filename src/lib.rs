@@ -2708,7 +2708,7 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (head, frontier, frontier_slots, frontier_provenance) =
+        let (head, frontier, frontier_slots, frontier_provenance, expanded_sources) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
             .into_iter()
@@ -2802,6 +2802,21 @@ mod tests {
                 );
             }
         }
+
+        let mut expected_expanded_sources = frontier_provenance
+            .iter()
+            .filter_map(|slot| {
+                (slot.0 && slot.2 != (u32::MAX, u16::MAX))
+                    .then_some(slot.2)
+                    .or_else(|| (slot.0 && slot.2 == (u32::MAX, u16::MAX)).then_some(slot.1))
+            })
+            .collect::<Vec<_>>();
+        expected_expanded_sources.sort_unstable();
+        expected_expanded_sources.dedup();
+        assert_eq!(
+            expanded_sources, expected_expanded_sources,
+            "bootstrap expanded-source state should track each seeded source element exactly once"
+        );
     }
 
     #[pg_test]
@@ -3095,7 +3110,7 @@ mod tests {
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        let (head, _frontier, frontier_slots, _frontier_provenance) =
+        let (head, _frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
         let (before, partial, exhausted) =
             unsafe { am::debug_visited_seed_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };

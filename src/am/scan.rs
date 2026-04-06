@@ -171,6 +171,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
             let opaque = (*scan).opaque;
             if !opaque.is_null() {
                 free_scan_candidate_frontier(&mut *opaque.cast::<TqScanOpaque>());
+                free_scan_expanded_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
@@ -239,6 +240,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
+    reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
 }
 
@@ -358,6 +360,37 @@ fn visited_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointe
     unsafe { &*opaque.visited_tids }.contains(&element_tid)
 }
 
+fn reset_scan_expanded_state(opaque: &mut TqScanOpaque) {
+    if opaque.expanded_source_tids.is_null() {
+        opaque.expanded_source_tids = Box::into_raw(Box::new(HashSet::new()));
+    } else {
+        unsafe { &mut *opaque.expanded_source_tids }.clear();
+    }
+}
+
+fn free_scan_expanded_set(opaque: &mut TqScanOpaque) {
+    if !opaque.expanded_source_tids.is_null() {
+        drop(unsafe { Box::from_raw(opaque.expanded_source_tids) });
+        opaque.expanded_source_tids = ptr::null_mut();
+    }
+}
+
+fn mark_expanded_source(opaque: &mut TqScanOpaque, source_tid: page::ItemPointer) {
+    if opaque.expanded_source_tids.is_null() || source_tid == page::ItemPointer::INVALID {
+        return;
+    }
+
+    unsafe { &mut *opaque.expanded_source_tids }.insert(source_tid);
+}
+
+fn expanded_contains_source(opaque: &TqScanOpaque, source_tid: page::ItemPointer) -> bool {
+    if opaque.expanded_source_tids.is_null() || source_tid == page::ItemPointer::INVALID {
+        return false;
+    }
+
+    unsafe { &*opaque.expanded_source_tids }.contains(&source_tid)
+}
+
 unsafe fn initialize_scan_entry_candidate(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
@@ -398,14 +431,13 @@ unsafe fn initialize_scan_entry_candidate(
 fn next_bootstrap_expand_index(
     opaque: &TqScanOpaque,
     policy: BootstrapExpandPolicy,
-    expanded: &[bool],
 ) -> Option<usize> {
     match policy {
         BootstrapExpandPolicy::ScoreOrder => candidate_frontier_ref(opaque)
             .iter()
             .enumerate()
-            .filter(|(index, candidate)| {
-                candidate.score_valid && !expanded.get(*index).copied().unwrap_or(true)
+            .filter(|(_, candidate)| {
+                candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
             })
             .min_by(|(left_index, left), (right_index, right)| {
                 left.score
@@ -425,10 +457,10 @@ fn fill_bootstrap_frontier<F>(
 where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    let mut expanded = vec![false; candidate_frontier_ref(opaque).len()];
+    reset_scan_expanded_state(opaque);
 
     while candidate_frontier_ref(opaque).len() < max_candidates {
-        let expand_index = match next_bootstrap_expand_index(opaque, policy, &expanded) {
+        let expand_index = match next_bootstrap_expand_index(opaque, policy) {
             Some(index) => index,
             None => break,
         };
@@ -436,14 +468,8 @@ where
             Some(candidate) => candidate.element_tid,
             None => break,
         };
-        if expand_index >= expanded.len() {
-            expanded.resize(candidate_frontier_ref(opaque).len(), false);
-        }
-        expanded[expand_index] = true;
+        mark_expanded_source(opaque, source_tid);
         refill(source_tid, opaque);
-        if expanded.len() < candidate_frontier_ref(opaque).len() {
-            expanded.resize(candidate_frontier_ref(opaque).len(), false);
-        }
     }
 }
 
@@ -775,6 +801,7 @@ struct TqScanOpaque {
     scan_code_len: usize,
     scan_block_count: u32,
     visited_tids: *mut HashSet<page::ItemPointer>,
+    expanded_source_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: Option<usize>,
     current_result: CurrentScanResult,
@@ -799,6 +826,7 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             visited_tids: ptr::null_mut(),
+            expanded_source_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: None,
             current_result: CurrentScanResult::default(),
@@ -907,12 +935,35 @@ fn debug_candidate_frontier_provenance_slots(
 type DebugVisitedSeedsLifecycle = (Vec<HeapTidCoords>, Vec<HeapTidCoords>, Vec<HeapTidCoords>);
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugBootstrapSeedState = (
+    DebugCandidateHead,
+    DebugCandidateFrontier,
+    DebugCandidateFrontierSlots,
+    DebugCandidateFrontierProvenanceSlots,
+    Vec<HeapTidCoords>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_sorted_visited_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
     if opaque.visited_tids.is_null() {
         return Vec::new();
     }
 
     let mut tids = unsafe { &*opaque.visited_tids }
+        .iter()
+        .map(|tid| (tid.block_number, tid.offset_number))
+        .collect::<Vec<_>>();
+    tids.sort_unstable();
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
+    if opaque.expanded_source_tids.is_null() {
+        return Vec::new();
+    }
+
+    let mut tids = unsafe { &*opaque.expanded_source_tids }
         .iter()
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
@@ -1353,12 +1404,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 pub(crate) unsafe fn debug_rescan_candidate_frontier(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (
-    DebugCandidateHead,
-    DebugCandidateFrontier,
-    DebugCandidateFrontierSlots,
-    DebugCandidateFrontierProvenanceSlots,
-) {
+) -> DebugBootstrapSeedState {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1373,12 +1419,19 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     let frontier = debug_candidate_frontier_snapshot(opaque);
     let frontier_slots = debug_candidate_frontier_slots(opaque);
     let frontier_provenance = debug_candidate_frontier_provenance_slots(opaque);
+    let expanded_sources = debug_sorted_expanded_source_tids(opaque);
     let head = opaque.candidate_frontier_head;
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (head, frontier, frontier_slots, frontier_provenance)
+    (
+        head,
+        frontier,
+        frontier_slots,
+        frontier_provenance,
+        expanded_sources,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2150,6 +2203,7 @@ mod tests {
     #[test]
     fn next_bootstrap_expand_index_prefers_lowest_score_under_score_order_policy() {
         let mut opaque = TqScanOpaque::default();
+        reset_scan_expanded_state(&mut opaque);
         candidate_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
                 block_number: 10,
@@ -2172,24 +2226,18 @@ mod tests {
             score_valid: true,
         });
 
-        let mut expanded = vec![false, false];
         assert_eq!(
-            next_bootstrap_expand_index(
-                &opaque,
-                BootstrapExpandPolicy::ScoreOrder,
-                &expanded
-            ),
+            next_bootstrap_expand_index(&opaque, BootstrapExpandPolicy::ScoreOrder),
             Some(1),
             "the explicit score-order policy should expand the lowest-score unexpanded seeded candidate first"
         );
 
-        expanded[1] = true;
+        mark_expanded_source(&mut opaque, page::ItemPointer {
+            block_number: 10,
+            offset_number: 2,
+        });
         assert_eq!(
-            next_bootstrap_expand_index(
-                &opaque,
-                BootstrapExpandPolicy::ScoreOrder,
-                &expanded
-            ),
+            next_bootstrap_expand_index(&opaque, BootstrapExpandPolicy::ScoreOrder),
             Some(0),
             "after the best candidate is marked expanded, the score-order policy should fall back to the next best seeded candidate"
         );
