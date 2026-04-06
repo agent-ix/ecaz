@@ -10,6 +10,11 @@ use super::page;
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BootstrapExpandPolicy {
+    InsertionOrder,
+}
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
@@ -380,24 +385,57 @@ unsafe fn initialize_scan_entry_candidate(
     });
     mark_visited_element(opaque, entry.tid);
 
-    fill_bootstrap_frontier(opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES, |source_tid, opaque| unsafe {
-        refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
-    });
+    fill_bootstrap_frontier(
+        opaque,
+        MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
+        BootstrapExpandPolicy::InsertionOrder,
+        |source_tid, opaque| unsafe {
+            refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
+        },
+    );
 }
 
-fn fill_bootstrap_frontier<F>(opaque: &mut TqScanOpaque, max_candidates: usize, mut refill: F)
+fn next_bootstrap_expand_index(
+    opaque: &TqScanOpaque,
+    policy: BootstrapExpandPolicy,
+    expanded: &[bool],
+) -> Option<usize> {
+    match policy {
+        BootstrapExpandPolicy::InsertionOrder => candidate_frontier_ref(opaque)
+            .iter()
+            .enumerate()
+            .find_map(|(index, _)| (!expanded.get(index).copied().unwrap_or(true)).then_some(index)),
+    }
+}
+
+fn fill_bootstrap_frontier<F>(
+    opaque: &mut TqScanOpaque,
+    max_candidates: usize,
+    policy: BootstrapExpandPolicy,
+    mut refill: F,
+)
 where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
-    let mut expand_index = 0usize;
+    let mut expanded = vec![false; candidate_frontier_ref(opaque).len()];
 
     while candidate_frontier_ref(opaque).len() < max_candidates {
+        let expand_index = match next_bootstrap_expand_index(opaque, policy, &expanded) {
+            Some(index) => index,
+            None => break,
+        };
         let source_tid = match candidate_frontier_ref(opaque).get(expand_index) {
             Some(candidate) => candidate.element_tid,
             None => break,
         };
+        if expand_index >= expanded.len() {
+            expanded.resize(candidate_frontier_ref(opaque).len(), false);
+        }
+        expanded[expand_index] = true;
         refill(source_tid, opaque);
-        expand_index += 1;
+        if expanded.len() < candidate_frontier_ref(opaque).len() {
+            expanded.resize(candidate_frontier_ref(opaque).len(), false);
+        }
     }
 }
 
@@ -453,9 +491,8 @@ unsafe fn refill_candidate_frontier_from_source(
         return;
     }
 
-    let (_, neighbors) = unsafe {
-        graph::load_graph_adjacency(index_relation, source_tid, opaque.scan_code_len)
-    };
+    let (_, neighbors) =
+        unsafe { graph::load_graph_adjacency(index_relation, source_tid, opaque.scan_code_len) };
     let successor_candidates =
         collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
             if visited_contains_element(opaque, neighbor_tid) {
@@ -1448,11 +1485,12 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
         .and_then(|index| before_slots.get(index))
         .map(|slot| {
             let consumed_tid = page::ItemPointer {
-                block_number: slot.1.0,
-                offset_number: slot.1.1,
+                block_number: slot.1 .0,
+                offset_number: slot.1 .1,
             };
-            let (_, neighbors) =
-                unsafe { graph::load_graph_adjacency(index_relation, consumed_tid, opaque.scan_code_len) };
+            let (_, neighbors) = unsafe {
+                graph::load_graph_adjacency(index_relation, consumed_tid, opaque.scan_code_len)
+            };
             neighbors
                 .tids
                 .into_iter()
@@ -2040,32 +2078,41 @@ mod tests {
             score_valid: true,
         });
 
-        fill_bootstrap_frontier(&mut opaque, 3, |source_tid, opaque| {
-            let frontier = candidate_frontier_mut(opaque);
-            match (source_tid.block_number, source_tid.offset_number) {
-                (9, 1) if frontier.iter().all(|candidate| candidate.element_tid != child_tid) => {
-                    frontier.push(ScanCandidate {
-                        element_tid: child_tid,
-                        source_tid,
-                        score: -2.0,
-                        score_valid: true,
-                    });
+        fill_bootstrap_frontier(
+            &mut opaque,
+            3,
+            BootstrapExpandPolicy::InsertionOrder,
+            |source_tid, opaque| {
+                let frontier = candidate_frontier_mut(opaque);
+                match (source_tid.block_number, source_tid.offset_number) {
+                    (9, 1)
+                        if frontier
+                            .iter()
+                            .all(|candidate| candidate.element_tid != child_tid) =>
+                    {
+                        frontier.push(ScanCandidate {
+                            element_tid: child_tid,
+                            source_tid,
+                            score: -2.0,
+                            score_valid: true,
+                        });
+                    }
+                    (9, 2)
+                        if frontier
+                            .iter()
+                            .all(|candidate| candidate.element_tid != grandchild_tid) =>
+                    {
+                        frontier.push(ScanCandidate {
+                            element_tid: grandchild_tid,
+                            source_tid,
+                            score: -1.0,
+                            score_valid: true,
+                        });
+                    }
+                    _ => {}
                 }
-                (9, 2)
-                    if frontier
-                        .iter()
-                        .all(|candidate| candidate.element_tid != grandchild_tid) =>
-                {
-                    frontier.push(ScanCandidate {
-                        element_tid: grandchild_tid,
-                        source_tid,
-                        score: -1.0,
-                        score_valid: true,
-                    });
-                }
-                _ => {}
-            }
-        });
+            },
+        );
 
         assert_eq!(
             candidate_frontier_ref(&opaque)
@@ -2089,6 +2136,54 @@ mod tests {
             candidate_frontier_ref(&opaque)[2].source_tid,
             child_tid,
             "second-hop candidates should record the candidate they were expanded from"
+        );
+    }
+
+    #[test]
+    fn next_bootstrap_expand_index_respects_insertion_order_policy() {
+        let mut opaque = TqScanOpaque::default();
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            source_tid: page::ItemPointer::INVALID,
+            score: -3.0,
+            score_valid: true,
+        });
+        candidate_frontier_mut(&mut opaque).push(ScanCandidate {
+            element_tid: page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+            source_tid: page::ItemPointer {
+                block_number: 10,
+                offset_number: 1,
+            },
+            score: -4.0,
+            score_valid: true,
+        });
+
+        let mut expanded = vec![false, false];
+        assert_eq!(
+            next_bootstrap_expand_index(
+                &opaque,
+                BootstrapExpandPolicy::InsertionOrder,
+                &expanded
+            ),
+            Some(0),
+            "the explicit insertion-order policy should expand the first unexpanded seeded candidate first"
+        );
+
+        expanded[0] = true;
+        assert_eq!(
+            next_bootstrap_expand_index(
+                &opaque,
+                BootstrapExpandPolicy::InsertionOrder,
+                &expanded
+            ),
+            Some(1),
+            "after the first source is marked expanded, the insertion-order policy should advance to the next seeded candidate"
         );
     }
 }
