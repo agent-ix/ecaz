@@ -2374,6 +2374,54 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_gettuple_emits_orderby_score() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_gettuple_orderby_score (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_gettuple_orderby_score VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_gettuple_orderby_score_idx ON tqhnsw_gettuple_orderby_score USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_gettuple_orderby_score_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        let (found, orderby_is_null, orderby_score) =
+            unsafe { am::debug_gettuple_orderby_score(index_oid, query.clone()) };
+        let expected_score = Spi::get_one::<f32>(&format!(
+            "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
+             FROM tqhnsw_gettuple_orderby_score WHERE id = 1",
+            query[0], query[1], query[2], query[3],
+        ))
+        .expect("score query should succeed")
+        .expect("score should exist");
+
+        assert!(
+            found,
+            "first gettuple call should produce a tuple for a non-empty index"
+        );
+        assert!(
+            !orderby_is_null,
+            "visible tuple production should populate xs_orderbynulls[0] as non-null"
+        );
+        assert_eq!(
+            orderby_score, expected_score,
+            "amgettuple should publish the current result score through xs_orderbyvals[0]"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_current_result_lifecycle() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_result_lifecycle (id bigint primary key, embedding tqvector)",
@@ -3145,13 +3193,7 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (
-            before_head,
-            before_slots,
-            current_result_tid,
-            after_head,
-            after_slots,
-        ) = unsafe {
+        let (before_head, before_slots, current_result_tid, after_head, after_slots) = unsafe {
             am::debug_gettuple_consumes_bootstrap_candidate(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 

@@ -2,13 +2,12 @@
 use std::ptr;
 
 #[cfg(any(test, feature = "pg_test"))]
-use pgrx::pg_sys;
+use pgrx::{pg_sys, FromDatum};
 
 #[cfg(any(test, feature = "pg_test"))]
 use super::scan::*;
 #[cfg(any(test, feature = "pg_test"))]
 use super::{graph, page, search};
-
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) type HeapTidCoords = (u32, u16);
@@ -502,6 +501,40 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_orderby_score(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (bool, bool, f32) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let is_null = if unsafe { (*scan).xs_orderbynulls.is_null() } {
+        true
+    } else {
+        unsafe { *(*scan).xs_orderbynulls }
+    };
+    let score = if unsafe { (*scan).xs_orderbyvals.is_null() } {
+        0.0
+    } else {
+        f32::from_datum(unsafe { *(*scan).xs_orderbyvals }, is_null)
+            .expect("orderby score should decode")
+    };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (found, is_null, score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -814,21 +847,12 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let before_slots = debug_candidate_frontier_slots(opaque);
     let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     let consumed_tid = consumed
-        .map(|candidate| {
-            (
-                candidate.node.block_number,
-                candidate.node.offset_number,
-            )
-        })
+        .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
         .unwrap_or((u32::MAX, u16::MAX));
     let consumed_neighbors = consumed
         .map(|candidate| {
             let (_, neighbors) = unsafe {
-                graph::load_graph_adjacency(
-                    index_relation,
-                    candidate.node,
-                    opaque.scan_code_len,
-                )
+                graph::load_graph_adjacency(index_relation, candidate.node, opaque.scan_code_len)
             };
             neighbors
                 .tids

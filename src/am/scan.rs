@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::ptr;
 use std::sync::Arc;
 
-use pgrx::{pg_sys, FromDatum, PgBox};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 
@@ -151,6 +151,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             if materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque) {
                 if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
                     set_scan_heap_tid(scan, heap_tid);
+                    set_scan_orderby_score(scan, opaque.current_result.score());
                     return true;
                 }
             }
@@ -161,6 +162,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                 opaque.scan_code_len,
             ) {
                 set_scan_heap_tid(scan, heap_tid);
+                set_scan_orderby_score(scan, opaque.current_result.score());
                 return true;
             }
 
@@ -931,6 +933,21 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
             heap_tid.block_number,
             heap_tid.offset_number,
         );
+    }
+}
+
+fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() {
+            (*scan).xs_orderbyvals =
+                pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>()).cast::<pg_sys::Datum>();
+        }
+        if (*scan).xs_orderbynulls.is_null() {
+            (*scan).xs_orderbynulls = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+        }
+
+        *(*scan).xs_orderbyvals = score.into_datum().expect("score should convert to datum");
+        *(*scan).xs_orderbynulls = false;
     }
 }
 

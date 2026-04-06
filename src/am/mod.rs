@@ -7,9 +7,9 @@ mod insert;
 mod options;
 pub mod page;
 mod routine;
-mod search;
 mod scan;
 mod scan_debug;
+mod search;
 mod shared;
 mod vacuum;
 pub mod wal;
@@ -40,10 +40,10 @@ pub(crate) use self::scan_debug::{
     debug_gettuple_consumes_bootstrap_candidate, debug_gettuple_current_result_heap_progress,
     debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_neighbors,
     debug_gettuple_current_result_state, debug_gettuple_exhaustion_state,
-    debug_gettuple_rescan_after_exhaustion, debug_gettuple_rescan_after_partial,
-    debug_gettuple_scan_heap_tids, debug_gettuple_without_rescan,
-    debug_materialize_bootstrap_candidate_result, debug_rescan_candidate_frontier,
-    debug_rescan_entry_candidate_state, debug_rescan_null_query,
+    debug_gettuple_orderby_score, debug_gettuple_rescan_after_exhaustion,
+    debug_gettuple_rescan_after_partial, debug_gettuple_scan_heap_tids,
+    debug_gettuple_without_rescan, debug_materialize_bootstrap_candidate_result,
+    debug_rescan_candidate_frontier, debug_rescan_entry_candidate_state, debug_rescan_null_query,
     debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
     debug_rescan_successor_candidate_state, debug_rescan_with_index_qual,
     debug_rescan_with_multiple_orderbys, debug_visited_seed_lifecycle,
