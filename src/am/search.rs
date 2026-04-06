@@ -124,10 +124,6 @@ where
         }
     }
 
-    pub fn frontier_snapshot(&self) -> Vec<BeamCandidate<NodeId>> {
-        self.snapshot_frontier()
-    }
-
     pub fn forget_queued(&mut self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
         let mut removed = None;
         let retained = self
@@ -435,8 +431,7 @@ mod tests {
             "discovery order should preserve the first accepted instance of each node"
         );
         assert_eq!(
-            search
-                .frontier_snapshot()
+            search.snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -474,8 +469,7 @@ mod tests {
             "after expanding the seed, the next-best discovered neighbor should become the frontier head"
         );
         assert_eq!(
-            search
-                .frontier_snapshot()
+            search.snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -494,8 +488,7 @@ mod tests {
             .expect("second expansion should consume the current best frontier node");
         assert_eq!(second.node, 3);
         assert_eq!(
-            search
-                .frontier_snapshot()
+            search.snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -539,7 +532,7 @@ mod tests {
             "run() should remain equivalent to repeated expand_one() steps"
         );
         assert_eq!(
-            incremental.frontier_snapshot(),
+            incremental.snapshot_frontier(),
             trace.frontier,
             "incremental stepping should leave the same remaining frontier as run()"
         );
@@ -564,8 +557,7 @@ mod tests {
             .expect("queued node should be removable from the frontier");
         assert_eq!(removed, BeamCandidate::new(3_u64, 0.2));
         assert_eq!(
-            search
-                .frontier_snapshot()
+            search.snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -626,8 +618,7 @@ mod tests {
             "unknown nodes should leave scheduler state untouched"
         );
         assert_eq!(
-            search
-                .frontier_snapshot()
+            search.snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -657,7 +648,7 @@ mod tests {
             "stale unmatched leaders should be dropped until a live candidate remains"
         );
         assert_eq!(
-            search.frontier_snapshot(),
+            search.snapshot_frontier(),
             vec![BeamCandidate::new(2_u64, 0.2), BeamCandidate::new(3_u64, 0.3)],
             "dropping stale leaders should also prune them from the queued frontier"
         );
@@ -695,7 +686,7 @@ mod tests {
             "take_best_matching should drop stale leaders and consume the first live candidate"
         );
         assert_eq!(
-            search.frontier_snapshot(),
+            search.snapshot_frontier(),
             vec![BeamCandidate::new(3_u64, 0.3)],
             "take_best_matching should remove both stale leaders and the consumed live candidate"
         );
