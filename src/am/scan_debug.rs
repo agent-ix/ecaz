@@ -77,13 +77,18 @@ fn debug_candidate_slot(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
+    (tid.block_number, tid.offset_number)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
     visible_frontier_candidates(opaque)
         .into_iter()
         .map(|candidate| {
             (
                 true,
-                (candidate.node.block_number, candidate.node.offset_number),
+                debug_item_pointer_coords(candidate.node),
                 candidate.score,
             )
         })
@@ -104,10 +109,10 @@ fn debug_candidate_frontier_provenance_slots(
         .map(|candidate| {
             (
                 true,
-                (candidate.node.block_number, candidate.node.offset_number),
+                debug_item_pointer_coords(candidate.node),
                 candidate
                     .source
-                    .map(|tid| (tid.block_number, tid.offset_number))
+                    .map(debug_item_pointer_coords)
                     .unwrap_or((u32::MAX, u16::MAX)),
                 candidate.score,
             )
@@ -478,22 +483,16 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_found = opaque.current_result.element_tid != page::ItemPointer::INVALID;
-    let before_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let before_score = opaque.current_result.score_valid;
-    let before_score_value = opaque.current_result.score;
+    let before_found = opaque.current_result.has_element();
+    let before_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let before_score = opaque.current_result.score_valid();
+    let before_score_value = opaque.current_result.score();
 
     let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let after_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let after_score = opaque.current_result.score_valid;
-    let after_score_value = opaque.current_result.score;
+    let after_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let after_score = opaque.current_result.score_valid();
+    let after_score_value = opaque.current_result.score();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -637,8 +636,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let before_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
     let before_slots = debug_candidate_frontier_slots(opaque);
 
     assert!(
@@ -647,12 +645,8 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     );
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let current_result_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let after_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let current_result_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let after_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
     let after_slots = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -687,17 +681,14 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
     let candidate_before = (
         candidate.is_some(),
         candidate
-            .map(|candidate| (candidate.node.block_number, candidate.node.offset_number))
+            .map(|candidate| debug_item_pointer_coords(candidate.node))
             .unwrap_or((u32::MAX, u16::MAX)),
         candidate.map(|candidate| candidate.score).unwrap_or(0.0),
     );
     let materialized = candidate.is_some_and(|candidate| unsafe {
         materialize_scan_candidate_result(index_relation, opaque, candidate)
     });
-    let current_result_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
+    let current_result_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
     let pending_heap_tids = opaque.pending_heaptids[..opaque.pending_heaptid_count as usize]
         .iter()
         .map(|tid| (tid.block_number, tid.offset_number))
@@ -949,10 +940,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let (partial_valid, partial_tid, partial_score) =
         debug_candidate_slot(visible_frontier_slot(opaque, 0));
-    let partial_result_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
+    let partial_result_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
@@ -1008,32 +996,23 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         "first tuple production should succeed for lifecycle debug helper"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let first_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
+    let first_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "second tuple production should succeed for duplicate-drain lifecycle debug helper"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let second_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let second_score = opaque.current_result.score_valid;
-    let second_score_value = opaque.current_result.score;
+    let second_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let second_score = opaque.current_result.score_valid();
+    let second_score_value = opaque.current_result.score();
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let exhausted_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let exhausted_score = opaque.current_result.score_valid;
-    let exhausted_score_value = opaque.current_result.score;
+    let exhausted_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let exhausted_score = opaque.current_result.score_valid();
+    let exhausted_score_value = opaque.current_result.score();
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
@@ -1042,11 +1021,8 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let rescanned_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let rescanned_score = opaque.current_result.score_valid;
+    let rescanned_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let rescanned_score = opaque.current_result.score_valid();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -1084,14 +1060,11 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
     );
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let current_result_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
+    let current_result_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
     let (_element, neighbors) = unsafe {
         graph::load_graph_adjacency(
             index_relation,
-            opaque.current_result.element_tid,
+            opaque.current_result.element_tid(),
             opaque.scan_code_len,
         )
     };
@@ -1122,26 +1095,17 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         "heap-progress debug helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let first_heap_tid = (
-        opaque.current_result.heap_tid.block_number,
-        opaque.current_result.heap_tid.offset_number,
-    );
-    let element_tid = (
-        opaque.current_result.element_tid.block_number,
-        opaque.current_result.element_tid.offset_number,
-    );
-    let first_score = opaque.current_result.score;
+    let first_heap_tid = debug_item_pointer_coords(opaque.current_result.heap_tid());
+    let element_tid = debug_item_pointer_coords(opaque.current_result.element_tid());
+    let first_score = opaque.current_result.score();
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "heap-progress debug helper requires a duplicate tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let second_heap_tid = (
-        opaque.current_result.heap_tid.block_number,
-        opaque.current_result.heap_tid.offset_number,
-    );
-    let second_score = opaque.current_result.score;
+    let second_heap_tid = debug_item_pointer_coords(opaque.current_result.heap_tid());
+    let second_score = opaque.current_result.score();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };

@@ -969,10 +969,32 @@ pub(super) unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CurrentScanResult {
-    pub(super) element_tid: page::ItemPointer,
-    pub(super) heap_tid: page::ItemPointer,
-    pub(super) score: f32,
-    pub(super) score_valid: bool,
+    element_tid: page::ItemPointer,
+    heap_tid: page::ItemPointer,
+    score: f32,
+    score_valid: bool,
+}
+
+impl CurrentScanResult {
+    pub(super) fn has_element(&self) -> bool {
+        self.element_tid != page::ItemPointer::INVALID
+    }
+
+    pub(super) fn element_tid(&self) -> page::ItemPointer {
+        self.element_tid
+    }
+
+    pub(super) fn heap_tid(&self) -> page::ItemPointer {
+        self.heap_tid
+    }
+
+    pub(super) fn score(&self) -> f32 {
+        self.score
+    }
+
+    pub(super) fn score_valid(&self) -> bool {
+        self.score_valid
+    }
 }
 
 impl Default for CurrentScanResult {
