@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `1664deb`
+Current head: `41b2e35`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -204,6 +204,8 @@ Review triage at `46d00bb`:
 - The owned visible frontier in `src/am/scan.rs` now stores shared `search::BeamCandidate<ItemPointer>` entries internally instead of a second scan-local candidate payload type, while keeping debug/materialization surfaces exposed as `ScanCandidate`.
 - Runtime bootstrap candidate seeding and successor collection in `src/am/scan.rs` now flow through shared `BeamCandidate<ItemPointer>` values directly, shrinking `ScanCandidate` further toward a boundary/debug/materialization role instead of a hot-path runtime container.
 - Runtime frontier consumption, refill, and direct materialization in `src/am/scan.rs` now also flow through `BeamCandidate<ItemPointer>` values, with `ScanCandidate` retained mainly for scan-owned persistent fields like `active_candidate` and for debug/test-facing snapshot surfaces.
+- The shared search seam now also exposes non-mutating queued-node lookup in `src/am/search.rs`, giving later scan-side ownership transfers a direct way to ask whether a node is still beam-owned without snapshotting or mutating scheduler state.
+- Internal visible-frontier iteration in `src/am/scan.rs` now stays in `BeamCandidate<ItemPointer>` form for selection paths, instead of converting back into `ScanCandidate` before immediately projecting back down to node/score data.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -301,6 +303,8 @@ Open requests:
 - `99-visible-frontier-beam-candidate-storage.md`
 - `100-beam-candidates-through-runtime-seeding.md`
 - `101-beam-candidates-through-runtime-consume.md`
+- `102-queued-beam-candidate-lookup.md`
+- `103-visible-frontier-beam-iteration.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
