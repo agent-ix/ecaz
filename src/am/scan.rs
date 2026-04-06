@@ -495,11 +495,30 @@ fn scan_candidate_to_beam_candidate(
     candidate: ScanCandidate,
 ) -> search::BeamCandidate<page::ItemPointer> {
     match candidate.source_tid {
-        page::ItemPointer::INVALID => search::BeamCandidate::new(candidate.element_tid, candidate.score),
+        page::ItemPointer::INVALID => {
+            search::BeamCandidate::new(candidate.element_tid, candidate.score)
+        }
         source_tid => {
             search::BeamCandidate::with_source(candidate.element_tid, candidate.score, source_tid)
         }
     }
+}
+
+fn seed_bootstrap_expansion_candidates(
+    expansion: &mut search::BeamSearch<page::ItemPointer>,
+    opaque: &TqScanOpaque,
+    from_index: usize,
+) {
+    expansion.seed_many(
+        candidate_frontier_ref(opaque)
+            .iter()
+            .copied()
+            .skip(from_index)
+            .filter(|candidate| {
+                candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
+            })
+            .map(scan_candidate_to_beam_candidate),
+    );
 }
 
 fn fill_bootstrap_frontier<F>(
@@ -522,17 +541,27 @@ fn top_up_bootstrap_frontier<F>(
 ) where
     F: FnMut(page::ItemPointer, &mut TqScanOpaque),
 {
+    let mut expansion = search::BeamSearch::new(max_candidates.max(1));
+    seed_bootstrap_expansion_candidates(&mut expansion, opaque, 0);
+
     while candidate_frontier_ref(opaque).len() < max_candidates {
-        let expand_index = match next_bootstrap_expand_index(opaque, policy) {
-            Some(index) => index,
-            None => break,
+        let source_tid = match policy {
+            BootstrapExpandPolicy::ScoreOrder => expansion
+                .expand_one(|_| std::iter::empty::<search::BeamCandidate<page::ItemPointer>>())
+                .map(|candidate| candidate.node),
         };
-        let source_tid = match candidate_frontier_ref(opaque).get(expand_index) {
-            Some(candidate) => candidate.element_tid,
-            None => break,
+        let Some(source_tid) = source_tid else {
+            break;
         };
+
+        let frontier_len_before = candidate_frontier_ref(opaque).len();
+        if expanded_contains_source(opaque, source_tid) {
+            seed_bootstrap_expansion_candidates(&mut expansion, opaque, frontier_len_before);
+            continue;
+        }
         mark_expanded_source(opaque, source_tid);
         refill(source_tid, opaque);
+        seed_bootstrap_expansion_candidates(&mut expansion, opaque, frontier_len_before);
     }
 }
 
