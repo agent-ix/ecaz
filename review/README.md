@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `e55a71c`
+Current head: `116935f`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -180,6 +180,7 @@ Review triage at `46d00bb`:
 - Visible candidate-first tuple production now consumes the next bootstrap frontier candidate directly into current-result plus pending heap-TID drain state instead of staging through `active_candidate` first, while keeping `active_candidate` available for narrower helper/debug paths.
 - Pure traversal mechanics now have a dedicated home in `src/am/search.rs`, which currently provides a self-contained beam-search helper with visited/frontier ownership and best-first expansion tests, but is not yet wired into `amgettuple`.
 - Live insert execution now has a dedicated `src/am/insert.rs` module, while `src/am/mod.rs` retains only the shared helpers that insert/build/scan still depend on.
+- Shared metadata/page/debug utilities now live in `src/am/shared.rs`, build-only helper tests now live in `src/am/build.rs`, and `src/am/mod.rs` is down to module wiring, constants, and narrow reexports.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -250,6 +251,7 @@ Open requests:
 - `72-direct-frontier-result-materialization.md`
 - `73-search-module-boundary.md`
 - `74-insert-module-boundary.md`
+- `75-shared-am-helper-boundary.md`
 
 Closed requests:
 - `01-aminsert-groundwork.md`
