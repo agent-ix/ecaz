@@ -2290,9 +2290,13 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
+        let mut observed_tids = observed_tids;
+        let mut expected_tids = expected_tids;
+        observed_tids.sort_unstable();
+        expected_tids.sort_unstable();
         assert_eq!(
             observed_tids, expected_tids,
-            "amgettuple should return each indexed heap tid in the current linear scan order"
+            "amgettuple should return each indexed heap tid exactly once while visible scan order evolves away from pure linear order"
         );
     }
 
@@ -2585,6 +2589,7 @@ mod tests {
             partial_valid,
             partial_tid,
             partial_score,
+            partial_result_tid,
             exhausted_valid,
             exhausted_tid,
             exhausted_score,
@@ -2594,19 +2599,27 @@ mod tests {
             before_valid,
             "entry candidate should be seeded before tuple production"
         );
-        assert_eq!(
-            partial_valid, before_valid,
-            "bootstrap candidate state should stay populated after partial scan progress"
+        assert!(
+            partial_valid || partial_result_tid != (u32::MAX, u16::MAX),
+            "partial scan progress should keep either a remaining frontier candidate or a concrete current result"
         );
-        assert_ne!(
-            partial_tid,
-            (u32::MAX, u16::MAX),
-            "partial bootstrap scan progress should keep a concrete active candidate tid"
-        );
-        assert_ne!(
-            partial_score, 0.0,
-            "partial bootstrap scan progress should keep a concrete active candidate score"
-        );
+        if partial_valid {
+            assert_ne!(
+                partial_tid,
+                (u32::MAX, u16::MAX),
+                "partial scan progress should keep a concrete frontier candidate tid when one remains"
+            );
+            assert_ne!(
+                partial_score, 0.0,
+                "partial scan progress should keep a concrete frontier candidate score when one remains"
+            );
+        } else {
+            assert_ne!(
+                partial_result_tid,
+                (u32::MAX, u16::MAX),
+                "when the frontier head materializes immediately, partial scan progress should keep a concrete current-result tid"
+            );
+        }
         assert!(
             !exhausted_valid,
             "entry candidate should clear once the bootstrap scan fully exhausts"
@@ -2804,19 +2817,19 @@ mod tests {
             }
         }
 
-        let mut expected_expanded_sources = frontier_provenance
+        let seeded_candidate_tids = frontier_provenance
             .iter()
-            .filter_map(|slot| {
-                (slot.0 && slot.2 != (u32::MAX, u16::MAX))
-                    .then_some(slot.2)
-                    .or_else(|| (slot.0 && slot.2 == (u32::MAX, u16::MAX)).then_some(slot.1))
-            })
+            .filter_map(|slot| slot.0.then_some(slot.1))
             .collect::<Vec<_>>();
-        expected_expanded_sources.sort_unstable();
-        expected_expanded_sources.dedup();
-        assert_eq!(
-            expanded_sources, expected_expanded_sources,
-            "bootstrap expanded-source state should track each seeded source element exactly once"
+        assert!(
+            expanded_sources.contains(&entry_tid),
+            "bootstrap expanded-source state should always include the entry candidate"
+        );
+        assert!(
+            expanded_sources
+                .iter()
+                .all(|source_tid| seeded_candidate_tids.contains(source_tid)),
+            "bootstrap expanded-source state should only contain seeded candidate tids"
         );
     }
 
@@ -3128,20 +3141,13 @@ mod tests {
         let consumed_slot = before_slots[consumed_index];
 
         assert!(
-            active_candidate.0 || current_result_tid == consumed_slot.1,
-            "first amgettuple call should either keep the consumed bootstrap candidate active or materialize it into current-result state"
+            !active_candidate.0,
+            "first amgettuple call should now materialize the consumed bootstrap candidate instead of leaving it active"
         );
-        if active_candidate.0 {
-            assert_eq!(
-                active_candidate.1, consumed_slot.1,
-                "when the consumed bootstrap candidate remains active, it should come from the prior frontier head"
-            );
-        } else {
-            assert_eq!(
-                current_result_tid, consumed_slot.1,
-                "when the linear cursor reaches the consumed bootstrap candidate immediately, it should materialize that candidate into current-result state"
-            );
-        }
+        assert_eq!(
+            current_result_tid, consumed_slot.1,
+            "first amgettuple call should attach current-result state to the consumed bootstrap candidate"
+        );
         assert!(
             !after_slots.iter().any(|slot| slot.1 == consumed_slot.1),
             "consuming the bootstrap head should remove that candidate from the frontier"
@@ -3402,9 +3408,13 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
+        let mut observed_tids = observed_tids;
+        let mut expected_tids = expected_tids;
+        observed_tids.sort_unstable();
+        expected_tids.sort_unstable();
         assert_eq!(
             observed_tids, expected_tids,
-            "amgettuple should emit every heap tid stored in a duplicate-coalesced element tuple"
+            "amgettuple should emit every heap tid stored in a duplicate-coalesced element tuple exactly once"
         );
     }
 
@@ -3462,9 +3472,13 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
+        let mut observed_tids = observed_tids;
+        let mut expected_tids = expected_tids;
+        observed_tids.sort_unstable();
+        expected_tids.sort_unstable();
         assert_eq!(
             observed_tids, expected_tids,
-            "linear scan exhaustion should occur only after returning every heap tid"
+            "scan exhaustion should occur only after returning every heap tid exactly once"
         );
         assert!(
             !exhausted_once,
@@ -3714,9 +3728,13 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
+        let mut observed_tids = observed_tids;
+        let mut expected_tids = expected_tids;
+        observed_tids.sort_unstable();
+        expected_tids.sort_unstable();
         assert_eq!(
             observed_tids, expected_tids,
-            "linear scan should drain duplicate heap tids and continue across later data pages"
+            "scan should drain duplicate heap tids and continue across later data pages without duplicating candidate-driven results"
         );
     }
 

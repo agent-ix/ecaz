@@ -147,6 +147,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
 
             let opaque = &mut *opaque_ptr;
             maybe_consume_bootstrap_frontier_candidate((*scan).indexRelation, opaque);
+            if materialize_active_candidate_result((*scan).indexRelation, opaque) {
+                if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
+                    set_scan_heap_tid(scan, heap_tid);
+                    return true;
+                }
+            }
             if let Some(heap_tid) = next_linear_scan_heap_tid(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
@@ -174,6 +180,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
                 free_scan_candidate_frontier(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_expanded_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_visited_set(&mut *opaque.cast::<TqScanOpaque>());
+                free_scan_emitted_set(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_prepared_query(&mut *opaque.cast::<TqScanOpaque>());
                 free_scan_query(&mut *opaque.cast::<TqScanOpaque>());
                 pg_sys::pfree(opaque);
@@ -244,6 +251,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     clear_active_scan_candidate(opaque);
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
+    reset_scan_emitted_state(opaque);
 }
 
 fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
@@ -395,6 +403,37 @@ fn expanded_contains_source(opaque: &TqScanOpaque, source_tid: page::ItemPointer
     }
 
     unsafe { &*opaque.expanded_source_tids }.contains(&source_tid)
+}
+
+fn reset_scan_emitted_state(opaque: &mut TqScanOpaque) {
+    if opaque.emitted_result_tids.is_null() {
+        opaque.emitted_result_tids = Box::into_raw(Box::new(HashSet::new()));
+    } else {
+        unsafe { &mut *opaque.emitted_result_tids }.clear();
+    }
+}
+
+fn free_scan_emitted_set(opaque: &mut TqScanOpaque) {
+    if !opaque.emitted_result_tids.is_null() {
+        drop(unsafe { Box::from_raw(opaque.emitted_result_tids) });
+        opaque.emitted_result_tids = ptr::null_mut();
+    }
+}
+
+fn mark_emitted_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer) {
+    if opaque.emitted_result_tids.is_null() || element_tid == page::ItemPointer::INVALID {
+        return;
+    }
+
+    unsafe { &mut *opaque.emitted_result_tids }.insert(element_tid);
+}
+
+fn emitted_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
+    if opaque.emitted_result_tids.is_null() || element_tid == page::ItemPointer::INVALID {
+        return false;
+    }
+
+    unsafe { &*opaque.emitted_result_tids }.contains(&element_tid)
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -721,6 +760,9 @@ unsafe fn next_linear_scan_heap_tid(
                 block_number,
                 offset_number: offset,
             };
+            if emitted_contains_element(opaque, element_tid) {
+                continue;
+            }
             if opaque.active_candidate.score_valid && opaque.active_candidate.element_tid == element_tid
             {
                 set_current_scan_result(opaque, element_tid, opaque.active_candidate.score);
@@ -775,6 +817,7 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
 }
 
 fn set_current_scan_result(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer, score: f32) {
+    mark_emitted_element(opaque, element_tid);
     opaque.current_result = CurrentScanResult {
         element_tid,
         heap_tid: page::ItemPointer::INVALID,
@@ -855,6 +898,7 @@ struct TqScanOpaque {
     scan_block_count: u32,
     visited_tids: *mut HashSet<page::ItemPointer>,
     expanded_source_tids: *mut HashSet<page::ItemPointer>,
+    emitted_result_tids: *mut HashSet<page::ItemPointer>,
     candidate_frontier: *mut Vec<ScanCandidate>,
     candidate_frontier_head: Option<usize>,
     active_candidate: ScanCandidate,
@@ -881,6 +925,7 @@ impl Default for TqScanOpaque {
             scan_block_count: 0,
             visited_tids: ptr::null_mut(),
             expanded_source_tids: ptr::null_mut(),
+            emitted_result_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             candidate_frontier_head: None,
             active_candidate: ScanCandidate::default(),
@@ -1806,6 +1851,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     bool,
     HeapTidCoords,
     f32,
+    HeapTidCoords,
     bool,
     HeapTidCoords,
     f32,
@@ -1842,6 +1888,10 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         partial.element_tid.offset_number,
     );
     let partial_score = partial.score;
+    let partial_result_tid = (
+        opaque.current_result.element_tid.block_number,
+        opaque.current_result.element_tid.offset_number,
+    );
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
@@ -1864,6 +1914,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         partial_valid,
         partial_tid,
         partial_score,
+        partial_result_tid,
         exhausted_valid,
         exhausted_tid,
         exhausted_score,
