@@ -12,7 +12,7 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BootstrapExpandPolicy {
-    InsertionOrder,
+    ScoreOrder,
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
@@ -388,7 +388,7 @@ unsafe fn initialize_scan_entry_candidate(
     fill_bootstrap_frontier(
         opaque,
         MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
-        BootstrapExpandPolicy::InsertionOrder,
+        BootstrapExpandPolicy::ScoreOrder,
         |source_tid, opaque| unsafe {
             refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
         },
@@ -401,10 +401,18 @@ fn next_bootstrap_expand_index(
     expanded: &[bool],
 ) -> Option<usize> {
     match policy {
-        BootstrapExpandPolicy::InsertionOrder => candidate_frontier_ref(opaque)
+        BootstrapExpandPolicy::ScoreOrder => candidate_frontier_ref(opaque)
             .iter()
             .enumerate()
-            .find_map(|(index, _)| (!expanded.get(index).copied().unwrap_or(true)).then_some(index)),
+            .filter(|(index, candidate)| {
+                candidate.score_valid && !expanded.get(*index).copied().unwrap_or(true)
+            })
+            .min_by(|(left_index, left), (right_index, right)| {
+                left.score
+                    .total_cmp(&right.score)
+                    .then(left_index.cmp(right_index))
+            })
+            .map(|(index, _)| index),
     }
 }
 
@@ -2081,7 +2089,7 @@ mod tests {
         fill_bootstrap_frontier(
             &mut opaque,
             3,
-            BootstrapExpandPolicy::InsertionOrder,
+            BootstrapExpandPolicy::ScoreOrder,
             |source_tid, opaque| {
                 let frontier = candidate_frontier_mut(opaque);
                 match (source_tid.block_number, source_tid.offset_number) {
@@ -2140,7 +2148,7 @@ mod tests {
     }
 
     #[test]
-    fn next_bootstrap_expand_index_respects_insertion_order_policy() {
+    fn next_bootstrap_expand_index_prefers_lowest_score_under_score_order_policy() {
         let mut opaque = TqScanOpaque::default();
         candidate_frontier_mut(&mut opaque).push(ScanCandidate {
             element_tid: page::ItemPointer {
@@ -2168,22 +2176,22 @@ mod tests {
         assert_eq!(
             next_bootstrap_expand_index(
                 &opaque,
-                BootstrapExpandPolicy::InsertionOrder,
-                &expanded
-            ),
-            Some(0),
-            "the explicit insertion-order policy should expand the first unexpanded seeded candidate first"
-        );
-
-        expanded[0] = true;
-        assert_eq!(
-            next_bootstrap_expand_index(
-                &opaque,
-                BootstrapExpandPolicy::InsertionOrder,
+                BootstrapExpandPolicy::ScoreOrder,
                 &expanded
             ),
             Some(1),
-            "after the first source is marked expanded, the insertion-order policy should advance to the next seeded candidate"
+            "the explicit score-order policy should expand the lowest-score unexpanded seeded candidate first"
+        );
+
+        expanded[1] = true;
+        assert_eq!(
+            next_bootstrap_expand_index(
+                &opaque,
+                BootstrapExpandPolicy::ScoreOrder,
+                &expanded
+            ),
+            Some(0),
+            "after the best candidate is marked expanded, the score-order policy should fall back to the next best seeded candidate"
         );
     }
 }
