@@ -7,6 +7,7 @@ use crate::quant::prod::PreparedQuery;
 
 use super::graph;
 use super::page;
+use super::search;
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 
@@ -463,18 +464,41 @@ fn next_bootstrap_expand_index(
     policy: BootstrapExpandPolicy,
 ) -> Option<usize> {
     match policy {
-        BootstrapExpandPolicy::ScoreOrder => candidate_frontier_ref(opaque)
-            .iter()
-            .enumerate()
-            .filter(|(_, candidate)| {
-                candidate.score_valid && !expanded_contains_source(opaque, candidate.element_tid)
-            })
-            .min_by(|(left_index, left), (right_index, right)| {
-                left.score
-                    .total_cmp(&right.score)
-                    .then(left_index.cmp(right_index))
-            })
-            .map(|(index, _)| index),
+        BootstrapExpandPolicy::ScoreOrder => {
+            let mut expansion = search::BeamSearch::new(MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+            expansion.seed_many(
+                candidate_frontier_ref(opaque)
+                    .iter()
+                    .copied()
+                    .filter(|candidate| {
+                        candidate.score_valid
+                            && !expanded_contains_source(opaque, candidate.element_tid)
+                    })
+                    .map(scan_candidate_to_beam_candidate),
+            );
+
+            let best = expansion.peek_best()?;
+            candidate_frontier_ref(opaque)
+                .iter()
+                .enumerate()
+                .find(|(_, candidate)| {
+                    candidate.score_valid
+                        && !expanded_contains_source(opaque, candidate.element_tid)
+                        && candidate.element_tid == best.node
+                })
+                .map(|(index, _)| index)
+        }
+    }
+}
+
+fn scan_candidate_to_beam_candidate(
+    candidate: ScanCandidate,
+) -> search::BeamCandidate<page::ItemPointer> {
+    match candidate.source_tid {
+        page::ItemPointer::INVALID => search::BeamCandidate::new(candidate.element_tid, candidate.score),
+        source_tid => {
+            search::BeamCandidate::with_source(candidate.element_tid, candidate.score, source_tid)
+        }
     }
 }
 

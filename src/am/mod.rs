@@ -20,6 +20,9 @@ pub(super) const TQHNSW_MAX_M: i32 = 100;
 pub(super) const TQHNSW_DEFAULT_EF_CONSTRUCTION: i32 = 64;
 pub(super) const TQHNSW_MIN_EF_CONSTRUCTION: i32 = 10;
 pub(super) const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
+pub(super) const TQHNSW_DEFAULT_EF_SEARCH: i32 = 40;
+pub(super) const TQHNSW_MIN_EF_SEARCH: i32 = 1;
+pub(super) const TQHNSW_MAX_EF_SEARCH: i32 = 1000;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 
 #[cfg(any(test, feature = "pg_test"))]

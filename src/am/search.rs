@@ -61,6 +61,24 @@ where
         self.push_candidate(candidate)
     }
 
+    pub fn seed_many<I>(&mut self, candidates: I) -> usize
+    where
+        I: IntoIterator<Item = BeamCandidate<NodeId>>,
+    {
+        candidates
+            .into_iter()
+            .filter(|candidate| self.push_candidate(*candidate))
+            .count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.frontier.is_empty()
+    }
+
+    pub fn frontier_len(&self) -> usize {
+        self.frontier.len()
+    }
+
     pub fn visited_count(&self) -> usize {
         self.visited.len()
     }
@@ -69,8 +87,31 @@ where
         &self.discovery_order
     }
 
+    pub fn peek_best(&self) -> Option<BeamCandidate<NodeId>> {
+        self.frontier.peek().map(|Reverse(queued)| queued.candidate)
+    }
+
+    pub fn frontier_snapshot(&self) -> Vec<BeamCandidate<NodeId>> {
+        self.snapshot_frontier()
+    }
+
     pub fn pop_best(&mut self) -> Option<BeamCandidate<NodeId>> {
         self.frontier.pop().map(|Reverse(queued)| queued.candidate)
+    }
+
+    pub fn expand_one<NeighborFn, NeighborIter>(
+        &mut self,
+        mut neighbors: NeighborFn,
+    ) -> Option<BeamCandidate<NodeId>>
+    where
+        NeighborFn: FnMut(&BeamCandidate<NodeId>) -> NeighborIter,
+        NeighborIter: IntoIterator<Item = BeamCandidate<NodeId>>,
+    {
+        let candidate = self.pop_best()?;
+        for neighbor in neighbors(&candidate) {
+            self.push_candidate(neighbor);
+        }
+        Some(candidate)
     }
 
     pub fn run<NeighborFn, NeighborIter>(&mut self, mut neighbors: NeighborFn) -> BeamTrace<NodeId>
@@ -80,14 +121,11 @@ where
     {
         let mut expanded = Vec::new();
         while expanded.len() < self.ef_search {
-            let Some(candidate) = self.pop_best() else {
+            let Some(candidate) = self.expand_one(|candidate| neighbors(candidate)) else {
                 break;
             };
 
             expanded.push(candidate);
-            for neighbor in neighbors(&candidate) {
-                self.push_candidate(neighbor);
-            }
         }
 
         BeamTrace {
@@ -314,6 +352,142 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![5, 2],
             "the remaining frontier should preserve the unexpanded best candidates discovered before the budget expired"
+        );
+    }
+
+    #[test]
+    fn beam_search_seed_many_accepts_unique_candidates_only() {
+        let mut search = BeamSearch::new(4);
+        let seeded = search.seed_many([
+            BeamCandidate::new(1_u64, 0.9),
+            BeamCandidate::new(3_u64, 0.2),
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.7),
+        ]);
+
+        assert_eq!(seeded, 3, "seed_many should count only newly accepted nodes");
+        assert_eq!(
+            search
+                .discovered()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![1, 3, 2],
+            "discovery order should preserve the first accepted instance of each node"
+        );
+        assert_eq!(
+            search
+                .frontier_snapshot()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3, 2, 1],
+            "frontier snapshot should stay sorted best-first after multi-seed initialization"
+        );
+    }
+
+    #[test]
+    fn beam_search_expand_one_matches_incremental_best_first_progress() {
+        let (edges, scores) = mock_graph();
+        let mut search = BeamSearch::new(4);
+        search.seed(BeamCandidate::new(1, scores[&1]));
+
+        assert!(!search.is_empty(), "seeded search should expose non-empty frontier");
+        assert_eq!(
+            search.peek_best().map(|candidate| candidate.node),
+            Some(1),
+            "peek_best should expose the current best frontier candidate without consuming it"
+        );
+
+        let first = search
+            .expand_one(|candidate| {
+                edges[&candidate.node]
+                    .iter()
+                    .copied()
+                    .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                    .collect::<Vec<_>>()
+            })
+            .expect("first expansion should consume the entry seed");
+        assert_eq!(first.node, 1);
+        assert_eq!(
+            search.peek_best().map(|candidate| candidate.node),
+            Some(3),
+            "after expanding the seed, the next-best discovered neighbor should become the frontier head"
+        );
+        assert_eq!(
+            search
+                .frontier_snapshot()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3, 4, 2],
+            "incremental expansion should keep the frontier sorted best-first"
+        );
+
+        let second = search
+            .expand_one(|candidate| {
+                edges[&candidate.node]
+                    .iter()
+                    .copied()
+                    .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                    .collect::<Vec<_>>()
+            })
+            .expect("second expansion should consume the current best frontier node");
+        assert_eq!(second.node, 3);
+        assert_eq!(
+            search
+                .frontier_snapshot()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![6, 5, 4, 2],
+            "second incremental expansion should discover successors and preserve best-first order"
+        );
+    }
+
+    #[test]
+    fn beam_search_run_matches_repeated_expand_one() {
+        let (edges, scores) = mock_graph();
+
+        let mut incremental = BeamSearch::new(4);
+        incremental.seed(BeamCandidate::new(1, scores[&1]));
+        let mut expanded = Vec::new();
+        while expanded.len() < 4 {
+            let Some(candidate) = incremental.expand_one(|candidate| {
+                edges[&candidate.node]
+                    .iter()
+                    .copied()
+                    .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                    .collect::<Vec<_>>()
+            }) else {
+                break;
+            };
+            expanded.push(candidate);
+        }
+
+        let mut batch = BeamSearch::new(4);
+        batch.seed(BeamCandidate::new(1, scores[&1]));
+        let trace = batch.run(|candidate| {
+            edges[&candidate.node]
+                .iter()
+                .copied()
+                .map(|node| BeamCandidate::with_source(node, scores[&node], candidate.node))
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            expanded, trace.expanded,
+            "run() should remain equivalent to repeated expand_one() steps"
+        );
+        assert_eq!(
+            incremental.frontier_snapshot(),
+            trace.frontier,
+            "incremental stepping should leave the same remaining frontier as run()"
+        );
+        assert_eq!(
+            incremental.discovered(),
+            trace.discovered.as_slice(),
+            "incremental stepping should preserve the same discovery order as run()"
         );
     }
 }

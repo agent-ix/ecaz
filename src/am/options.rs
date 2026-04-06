@@ -5,7 +5,8 @@ use pgrx::pg_sys;
 
 use super::{
     TQHNSW_DEFAULT_EF_CONSTRUCTION, TQHNSW_DEFAULT_M, TQHNSW_MAX_EF_CONSTRUCTION, TQHNSW_MAX_M,
-    TQHNSW_MIN_EF_CONSTRUCTION, TQHNSW_MIN_M,
+    TQHNSW_MIN_EF_CONSTRUCTION, TQHNSW_MIN_M, TQHNSW_DEFAULT_EF_SEARCH,
+    TQHNSW_MAX_EF_SEARCH, TQHNSW_MIN_EF_SEARCH,
 };
 
 #[repr(C)]
@@ -14,6 +15,7 @@ struct TqHnswReloptions {
     vl_len_: i32,
     m: i32,
     ef_construction: i32,
+    ef_search: i32,
     build_source_column_offset: i32,
 }
 
@@ -21,6 +23,7 @@ struct TqHnswReloptions {
 pub(super) struct TqHnswOptions {
     pub(super) m: i32,
     pub(super) ef_construction: i32,
+    pub(super) ef_search: i32,
     pub(super) build_source_column: Option<String>,
 }
 
@@ -28,6 +31,7 @@ impl TqHnswOptions {
     const DEFAULT: Self = Self {
         m: TQHNSW_DEFAULT_M,
         ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
+        ef_search: TQHNSW_DEFAULT_EF_SEARCH,
         build_source_column: None,
     };
 }
@@ -60,6 +64,17 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
                 TQHNSW_MIN_EF_CONSTRUCTION,
                 TQHNSW_MAX_EF_CONSTRUCTION,
                 offset_of!(TqHnswReloptions, ef_construction) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"ef_search\0".as_ptr().cast(),
+                b"Candidate list width used during scan search.\0"
+                    .as_ptr()
+                    .cast(),
+                TQHNSW_DEFAULT_EF_SEARCH,
+                TQHNSW_MIN_EF_SEARCH,
+                TQHNSW_MAX_EF_SEARCH,
+                offset_of!(TqHnswReloptions, ef_search) as i32,
             );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
@@ -105,6 +120,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
     TqHnswOptions {
         m: reloptions.m,
         ef_construction: reloptions.ef_construction,
+        ef_search: reloptions.ef_search,
         build_source_column,
     }
 }

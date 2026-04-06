@@ -975,6 +975,7 @@ mod tests {
             options: options::TqHnswOptions {
                 m: 1,
                 ef_construction: 32,
+                ef_search: 40,
                 build_source_column: None,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1041,6 +1042,7 @@ mod tests {
             options: options::TqHnswOptions {
                 m: 10,
                 ef_construction: 90,
+                ef_search: 40,
                 build_source_column: None,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1065,6 +1067,7 @@ mod tests {
             options: options::TqHnswOptions {
                 m: 2,
                 ef_construction: 64,
+                ef_search: 40,
                 build_source_column: Some("source".to_owned()),
             },
             page_size: pg_sys::BLCKSZ as usize,
