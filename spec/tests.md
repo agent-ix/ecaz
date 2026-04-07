@@ -49,6 +49,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-035 | Fuzz tqvector_in with random byte sequences | NFR-004 | Feed 10,000 random byte slices (lengths 0–2048) to the text input parser; assert no panic, no crash — only Ok or Err |
 | TC-036 | All unsafe blocks have SAFETY comments | NFR-004 | grep for `unsafe` blocks in src/; assert every one is preceded by a `// SAFETY:` comment within 3 lines |
 | TC-037 | ReadStream callback signatures and state carriers match FR-019 | FR-019 | Unit-test graph and linear callback signatures plus `GraphPrefetchState` / `LinearPrefetchState` exhaustion behavior |
+| TC-043 | ReadStream callbacks return blocks then end-of-stream | FR-019 | Unit-test pure graph and linear callback helpers so PG18 bindings only need to translate `EndOfStream` into `InvalidBlockNumber` |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires both the `tqvector` option and the `tqhnsw` access method |
 | TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |

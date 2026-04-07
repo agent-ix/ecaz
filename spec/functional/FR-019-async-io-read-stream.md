@@ -21,6 +21,9 @@ Current staged behavior:
   expose the intended graph-stream mode (`READ_STREAM_DEFAULT`), linear-stream mode
   (`READ_STREAM_SEQUENTIAL`), their random-versus-sequential access patterns, the intended
   callback names and state types, and the `InvalidBlockNumber` end-of-stream sentinel.
+- Those helpers MAY also define pure callback functions that consume planner-owned callback state
+  and return either the next block number or an explicit end-of-stream result, leaving the actual
+  PostgreSQL `InvalidBlockNumber` conversion to the eventual PG18 binding layer.
 - Read-only snapshot helpers MAY also report that PG18 ReadStream callback surfaces, scan wiring,
   and vacuum wiring all remain unavailable.
 - Those helpers SHALL stay descriptive only; they do not imply that any scan or vacuum path

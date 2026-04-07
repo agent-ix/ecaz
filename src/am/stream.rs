@@ -51,6 +51,12 @@ pub(crate) struct ReadStreamCallbackSignature {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReadStreamCallbackResult {
+    Block(u32),
+    EndOfStream,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReadStreamSnapshot {
     pub graph_stream_mode: &'static str,
     pub linear_stream_mode: &'static str,
@@ -71,6 +77,13 @@ pub(crate) fn graph_callback_signature() -> ReadStreamCallbackSignature {
     }
 }
 
+pub(crate) fn graph_prefetch_callback(state: &mut GraphPrefetchState) -> ReadStreamCallbackResult {
+    match state.next_block() {
+        Some(block) => ReadStreamCallbackResult::Block(block),
+        None => ReadStreamCallbackResult::EndOfStream,
+    }
+}
+
 pub(crate) fn linear_callback_signature() -> ReadStreamCallbackSignature {
     ReadStreamCallbackSignature {
         callback_name: "linear_prefetch_cb",
@@ -78,6 +91,15 @@ pub(crate) fn linear_callback_signature() -> ReadStreamCallbackSignature {
         access_pattern: "sequential",
         state_type: "LinearPrefetchState",
         end_of_stream_sentinel: "InvalidBlockNumber",
+    }
+}
+
+pub(crate) fn linear_prefetch_callback(
+    state: &mut LinearPrefetchState,
+) -> ReadStreamCallbackResult {
+    match state.next_block() {
+        Some(block) => ReadStreamCallbackResult::Block(block),
+        None => ReadStreamCallbackResult::EndOfStream,
     }
 }
 
@@ -98,8 +120,9 @@ pub(crate) fn stream_snapshot() -> ReadStreamSnapshot {
 #[cfg(test)]
 mod tests {
     use super::{
-        graph_callback_signature, linear_callback_signature, stream_snapshot, GraphPrefetchState,
-        LinearPrefetchState, ReadStreamCallbackSignature, ReadStreamSnapshot,
+        graph_callback_signature, graph_prefetch_callback, linear_callback_signature,
+        linear_prefetch_callback, stream_snapshot, GraphPrefetchState, LinearPrefetchState,
+        ReadStreamCallbackResult, ReadStreamCallbackSignature, ReadStreamSnapshot,
     };
 
     #[test]
@@ -157,6 +180,24 @@ mod tests {
     }
 
     #[test]
+    fn graph_prefetch_callback_returns_blocks_then_end_of_stream() {
+        let mut state = GraphPrefetchState::new(vec![11, 14]);
+
+        assert_eq!(
+            graph_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(11)
+        );
+        assert_eq!(
+            graph_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(14)
+        );
+        assert_eq!(
+            graph_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::EndOfStream
+        );
+    }
+
+    #[test]
     fn linear_prefetch_state_advances_sequentially_until_exhausted() {
         let mut state = LinearPrefetchState::new(21, 23);
 
@@ -164,5 +205,23 @@ mod tests {
         assert_eq!(state.next_block(), Some(22));
         assert_eq!(state.next_block(), Some(23));
         assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
+    fn linear_prefetch_callback_returns_blocks_then_end_of_stream() {
+        let mut state = LinearPrefetchState::new(21, 22);
+
+        assert_eq!(
+            linear_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(21)
+        );
+        assert_eq!(
+            linear_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::Block(22)
+        );
+        assert_eq!(
+            linear_prefetch_callback(&mut state),
+            ReadStreamCallbackResult::EndOfStream
+        );
     }
 }
