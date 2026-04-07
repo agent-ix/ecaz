@@ -107,10 +107,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
-            opaque.bootstrap_frontier_limit =
-                usize::try_from(super::options::relation_options((*scan).indexRelation).ef_search)
-                    .expect("ef_search should fit in usize")
-                    .max(1);
+            let scan_tuning = super::options::resolve_scan_tuning(
+                &super::options::relation_options((*scan).indexRelation),
+            );
+            opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
+                .expect("ef_search should fit in usize")
+                .max(1);
             store_scan_query(opaque, &query);
             store_scan_prepared_query(opaque, &query, &metadata);
             reset_scan_position(opaque);

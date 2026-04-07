@@ -4088,6 +4088,53 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_session_ef_search_override_limits_runtime_frontier() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_session_runtime_frontier_limit (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_session_runtime_frontier_limit VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_session_runtime_frontier_limit_idx ON tqhnsw_session_runtime_frontier_limit USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 3)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 1").expect("session override should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_session_runtime_frontier_limit_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_head, frontier, frontier_slots, frontier_provenance, _expanded_sources) =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert_eq!(
+            frontier.len(),
+            1,
+            "non-default session ef_search should override the reloption during scan bootstrap"
+        );
+        assert_eq!(
+            frontier_slots.len(),
+            1,
+            "runtime frontier slots should honor the resolved session override width"
+        );
+        assert_eq!(
+            frontier_provenance.len(),
+            1,
+            "runtime frontier provenance should also honor the resolved session override width"
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_session_ef_search_defaults_to_relation_setting() {
         Spi::run(
             "CREATE TABLE tqhnsw_session_ef_search_reloption (id bigint primary key, embedding tqvector)",
