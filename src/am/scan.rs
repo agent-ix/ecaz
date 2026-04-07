@@ -855,6 +855,7 @@ where
     None
 }
 
+#[cfg(test)]
 fn select_next_bootstrap_candidate_with_refill<CandidateFn, SelectFn, RefillFn>(
     mut next_candidate: CandidateFn,
     mut select: SelectFn,
@@ -887,17 +888,37 @@ unsafe fn try_select_next_bootstrap_frontier_result(
     }
 
     let opaque_ptr = opaque as *mut TqScanOpaque;
-    // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
-    // temporary mutable borrows of `opaque` do not alias.
-    select_next_bootstrap_candidate_with_refill(
-        || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
-        |candidate| unsafe {
-            select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
-        },
-        |candidate| {
-            unsafe {
-                refill_bootstrap_frontier_after_success(index_relation, &mut *opaque_ptr, candidate)
-            };
+    // SAFETY: `candidate_frontier` and `bootstrap_expansion` remain separate Box-backed heap
+    // allocations, and the traversal callbacks execute sequentially inside the search-owned
+    // helper, so these temporary mutable borrows of `opaque` do not alias.
+    with_visible_frontier_mut_and_bootstrap_expansion(
+        unsafe { &mut *opaque_ptr },
+        |visible_frontier, expansion| unsafe {
+            visible_frontier.select_next_with_refill(
+                expansion,
+                |candidate| {
+                    select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+                },
+                |node| expanded_contains_source(&*opaque_ptr, node),
+                |node| mark_expanded_source(&mut *opaque_ptr, node),
+                |source_tid, visible_frontier, expansion| {
+                    refill_candidate_frontier_from_source_into(
+                        index_relation,
+                        &mut *opaque_ptr,
+                        visible_frontier,
+                        expansion,
+                        source_tid,
+                    );
+                },
+                |visible_frontier, expansion| {
+                    top_up_bootstrap_frontier_from_visible_seeds_into(
+                        index_relation,
+                        &mut *opaque_ptr,
+                        visible_frontier,
+                        expansion,
+                    );
+                },
+            )
         },
     )
 }

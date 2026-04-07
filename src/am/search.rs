@@ -148,6 +148,46 @@ where
         top_up_from_visible(self, expansion);
     }
 
+    pub fn select_next_with_refill<
+        Selection,
+        SelectFn,
+        ExpandedFn,
+        MarkExpandedFn,
+        RefillFn,
+        TopUpFn,
+    >(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        mut select: SelectFn,
+        source_is_expanded: ExpandedFn,
+        mark_source_expanded: MarkExpandedFn,
+        refill_source: RefillFn,
+        top_up_from_visible: TopUpFn,
+    ) -> Option<Selection>
+    where
+        SelectFn: FnMut(BeamCandidate<NodeId>) -> Option<Selection>,
+        ExpandedFn: FnMut(NodeId) -> bool,
+        MarkExpandedFn: FnMut(NodeId),
+        RefillFn: FnMut(NodeId, &mut Self, &mut BeamSearch<NodeId>),
+        TopUpFn: FnMut(&mut Self, &mut BeamSearch<NodeId>),
+    {
+        while let Some(candidate) = self.consume_best(expansion) {
+            if let Some(selection) = select(candidate) {
+                self.advance_after_consume(
+                    expansion,
+                    candidate,
+                    source_is_expanded,
+                    mark_source_expanded,
+                    refill_source,
+                    top_up_from_visible,
+                );
+                return Some(selection);
+            }
+        }
+
+        None
+    }
+
     fn best_candidate_by_score(&self) -> Option<BeamCandidate<NodeId>> {
         self.candidates
             .iter()
@@ -1013,6 +1053,64 @@ mod tests {
             visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
             vec![2, 3],
             "advance_after_consume should still let top-up extend the visible frontier after an already expanded source is consumed"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_select_next_with_refill_skips_until_selected_then_advances() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed_many([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+        let attempted = RefCell::new(Vec::new());
+        let steps = RefCell::new(Vec::new());
+
+        let selected = visible.select_next_with_refill(
+            &mut expansion,
+            |candidate| {
+                attempted.borrow_mut().push(candidate.node);
+                (candidate.node == 2).then_some(candidate.score)
+            },
+            |_node| false,
+            |node| steps.borrow_mut().push(format!("mark:{node}")),
+            |node, visible, expansion| {
+                steps.borrow_mut().push(format!("refill:{node}"));
+                visible.push(BeamCandidate::new(3_u64, 0.15));
+                expansion.seed(BeamCandidate::new(3_u64, 0.15));
+            },
+            |visible, expansion| {
+                steps.borrow_mut().push("top_up".to_string());
+                visible.push(BeamCandidate::new(4_u64, 0.18));
+                expansion.seed(BeamCandidate::new(4_u64, 0.18));
+            },
+        );
+
+        assert_eq!(
+            selected,
+            Some(0.2),
+            "select_next_with_refill should return the first successful selection value"
+        );
+        assert_eq!(
+            attempted.into_inner(),
+            vec![1, 2],
+            "select_next_with_refill should keep consuming candidates until one selects"
+        );
+        assert_eq!(
+            steps.into_inner(),
+            vec!["mark:2", "refill:2", "top_up"],
+            "select_next_with_refill should only advance the frontier after a successful selection"
+        );
+        assert_eq!(
+            visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
+            vec![3, 4],
+            "select_next_with_refill should leave rejected and selected candidates consumed while retaining newly seeded follow-up candidates"
         );
     }
 }
