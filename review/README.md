@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `fefdfb8`
+Current head: `ac4386e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -78,6 +78,7 @@ Current tqhnsw state summary:
 - Bootstrap and linear paths in `src/am/scan.rs` now both materialize through one shared current-result/pending-drain helper, reducing another remaining difference between graph-side and linear-side result production.
 - Scan execution phase in `src/am/scan.rs` now lives in one explicit enum (`Bootstrap`, `Linear`, `Exhausted`) instead of split booleans, so phase transitions and exhaustion checks go through one shared runtime contract across scan, debug, and tests.
 - Top-level tuple production in `src/am/scan.rs` now goes through one shared `produce_next_scan_heap_tid` helper, so `amgettuple` no longer open-codes “drain current result, materialize next result, drain it again.”
+- Scan result teardown in `src/am/scan.rs` now goes through one shared clear path too, so clearing `current_result` also clears pending duplicate-drain state instead of relying on scattered reset sites.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -257,6 +258,7 @@ Open requests:
 - `133-shared-scan-result-materialization-state.md`
 - `134-explicit-scan-execution-phase.md`
 - `135-extract-staged-scan-tuple-production-helper.md`
+- `136-unified-scan-result-state-clearing.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
