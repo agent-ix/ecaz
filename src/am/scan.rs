@@ -156,19 +156,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             if emit_pending_scan_heap_tid(scan, opaque) {
                 return true;
             }
-            if !opaque.bootstrap_phase_complete
-                && materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque)
-            {
-                let emitted = emit_pending_scan_heap_tid(scan, opaque);
-                debug_assert!(
-                    emitted,
-                    "bootstrap materialization should seed pending heap tids before returning true"
-                );
-                if emitted {
-                    return true;
-                }
-            }
-            if materialize_next_linear_scan_result(
+            if materialize_next_scan_result(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
                 opaque,
@@ -177,7 +165,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                 let emitted = emit_pending_scan_heap_tid(scan, opaque);
                 debug_assert!(
                     emitted,
-                    "linear result materialization should seed pending heap tids before returning true"
+                    "scan result materialization should seed pending heap tids before returning true"
                 );
                 if emitted {
                     return true;
@@ -877,6 +865,21 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
         complete_bootstrap_phase(opaque);
     }
     materialized
+}
+
+unsafe fn materialize_next_scan_result(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    code_len: usize,
+) -> bool {
+    if !opaque.bootstrap_phase_complete
+        && unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
+    {
+        return true;
+    }
+
+    unsafe { materialize_next_linear_scan_result(index_relation, heap_relation, opaque, code_len) }
 }
 
 fn collect_successor_candidates<F>(
