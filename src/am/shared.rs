@@ -273,6 +273,16 @@ pub(crate) struct IndexAdminSnapshot {
     pub planner_scan_enabled: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IndexExplainSnapshot {
+    pub planner_scan_enabled: bool,
+    pub ordered_scan_ready: bool,
+    pub planner_gate_reason: &'static str,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub total_live_nodes: usize,
+}
+
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
@@ -293,6 +303,21 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
             options::EfSearchSource::Session => "session",
         },
         planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+    }
+}
+
+pub(crate) unsafe fn index_explain_snapshot(
+    index_relation: pg_sys::Relation,
+) -> IndexExplainSnapshot {
+    let admin = unsafe { index_admin_snapshot(index_relation) };
+    IndexExplainSnapshot {
+        planner_scan_enabled: admin.planner_scan_enabled,
+        ordered_scan_ready: false,
+        planner_gate_reason:
+            "planner scan selection is disabled until ordered tqhnsw execution is credible",
+        effective_ef_search: admin.effective_ef_search,
+        effective_source: admin.effective_source,
+        total_live_nodes: admin.total_live_nodes,
     }
 }
 

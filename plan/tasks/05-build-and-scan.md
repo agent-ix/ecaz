@@ -11,6 +11,8 @@ Progress notes:
   while planner-visible scans remain disabled per ADR-011.
 - Planner/admin scaffolding may now expose read-only effective tuning and current live-node counts
   without enabling planner-visible scans.
+- Planner/explain scaffolding may also expose explicit gate-state reasoning without promising that
+  PostgreSQL EXPLAIN can yet choose or display a tqhnsw index scan.
 
 ## Scope
 

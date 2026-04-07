@@ -28,6 +28,8 @@ Implementation stages:
   planner costs per ADR-011.
 - Current planner groundwork MAY also expose read-only SQL/admin snapshot state for effective
   tuning and planner gate status before EXPLAIN or planner-visible scan selection are enabled.
+- Current planner groundwork MAY also expose explain-oriented snapshot state that says ordered scan
+  is not yet ready and explains why the planner gate remains in place.
 
 ### `ambeginscan`
 

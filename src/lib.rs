@@ -321,6 +321,35 @@ fn tqhnsw_index_admin_snapshot(
     ))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_explain_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(ordered_scan_ready, bool),
+        name!(planner_gate_reason, String),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(total_live_nodes, i64),
+    ),
+> {
+    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid) };
+    let snapshot = unsafe { am::index_explain_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.ordered_scan_ready,
+        snapshot.planner_gate_reason.to_owned(),
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
+    ))
+}
+
 fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
@@ -808,6 +837,87 @@ mod tests {
 
         let _ = Spi::get_one::<i64>(
             "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_explain_snapshot_reports_planner_gate_state() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_explain_snapshot (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_explain_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_explain_snapshot_idx ON tqhnsw_explain_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 91)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+
+        let planner_scan_enabled = Spi::get_one::<bool>(
+            "SELECT planner_scan_enabled FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let ordered_scan_ready = Spi::get_one::<bool>(
+            "SELECT ordered_scan_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let planner_gate_reason = Spi::get_one::<String>(
+            "SELECT planner_gate_reason FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_ef_search = Spi::get_one::<i32>(
+            "SELECT effective_ef_search FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_source = Spi::get_one::<String>(
+            "SELECT effective_source FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let total_live_nodes = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+
+        assert!(!planner_scan_enabled, "planner gate should still be off");
+        assert!(
+            !ordered_scan_ready,
+            "ordered traversal should not be reported as ready yet"
+        );
+        assert!(
+            planner_gate_reason.contains("disabled"),
+            "planner snapshot should explain why tqhnsw scans stay gated"
+        );
+        assert_eq!(effective_ef_search, 91);
+        assert_eq!(effective_source, "relation");
+        assert_eq!(total_live_nodes, 2);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_explain_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_explain_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_explain_snapshot_wrong_am_idx ON tqhnsw_explain_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_wrong_am_idx'::regclass)",
         );
     }
 

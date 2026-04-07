@@ -36,6 +36,12 @@ pub(crate) unsafe fn index_admin_snapshot(
     unsafe { shared::index_admin_snapshot(index_relation) }
 }
 
+pub(crate) unsafe fn index_explain_snapshot(
+    index_relation: pgrx::pg_sys::Relation,
+) -> shared::IndexExplainSnapshot {
+    unsafe { shared::index_explain_snapshot(index_relation) }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{
