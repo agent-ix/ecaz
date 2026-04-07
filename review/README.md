@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `037a785`
+Current head: `419caef`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -89,6 +89,7 @@ Current tqhnsw state summary:
 - Staged result selection in `src/am/scan.rs` now dispatches explicitly on `ScanExecutionPhase` instead of relying on bootstrap/linear/exhausted fallthrough checks, making the bootstrap-to-linear behavior more visible at the selection seam itself.
 - Bootstrap completion in `src/am/scan.rs` is now owned by the phase dispatcher instead of the bootstrap selector helper itself, so the selector only tries to select while the staged executor explicitly decides when bootstrap is done and linear fallback may begin.
 - The older non-refill bootstrap selection helper in `src/am/scan.rs` is now fenced to test-only builds, leaving the refill-aware selector as the sole production bootstrap-selection path.
+- Exhaustion in `src/am/scan.rs` now owns current-result teardown itself, so the linear selector no longer has to remember to clear result state separately at each exhausted return site.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -279,6 +280,7 @@ Open requests:
 - `144-explicit-phase-dispatch-for-staged-selection.md`
 - `145-explicit-bootstrap-completion-at-phase-dispatch.md`
 - `146-gate-test-only-bootstrap-selection-helper.md`
+- `147-exhaustion-owns-result-state-clearing.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
