@@ -602,21 +602,13 @@ unsafe fn initialize_scan_entry_candidate(
             graph::run_layer0_beam_search(
                 index_relation,
                 opaque.scan_code_len,
-                1,
+                bootstrap_limit,
                 [entry_candidate],
                 |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
                 |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
             )
         };
         seed_bootstrap_trace(opaque, bootstrap_limit, trace);
-        top_up_bootstrap_frontier(
-            opaque,
-            bootstrap_limit,
-            BootstrapExpandPolicy::ScoreOrder,
-            |source_tid, opaque| unsafe {
-                refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
-            },
-        );
         return;
     }
 
@@ -644,17 +636,10 @@ fn seed_bootstrap_trace(
         .into_iter()
         .take(max_candidates)
         .collect::<Vec<_>>();
+    let entry_candidate = visible_candidates.first().copied();
     seed_discovered_candidates(opaque, visible_candidates.iter().copied());
-
-    let visible_nodes = visible_candidates
-        .iter()
-        .map(|candidate| candidate.node)
-        .collect::<HashSet<_>>();
-    for expanded in trace.expanded {
-        if visible_nodes.contains(&expanded.node) {
-            mark_expanded_source(opaque, expanded.node);
-            bootstrap_expansion_mut(opaque).forget_queued(expanded.node);
-        }
+    if let Some(entry_candidate) = entry_candidate {
+        mark_expanded_source(opaque, entry_candidate.node);
     }
 }
 
@@ -2128,6 +2113,44 @@ mod tests {
                 offset_number: 1,
             }),
             "after the best candidate is marked expanded, the score-order policy should fall back to the next best seeded candidate"
+        );
+    }
+
+    #[test]
+    fn seed_bootstrap_trace_marks_only_seed_entry_as_expanded() {
+        let entry_tid = tid(15, 1);
+        let sibling_tid = tid(15, 2);
+        let grandchild_tid = tid(15, 3);
+        let mut opaque = TqScanOpaque::default();
+
+        seed_bootstrap_trace(
+            &mut opaque,
+            3,
+            search::BeamTrace {
+                discovered: vec![
+                    beam_candidate(15, 1, -3.0),
+                    sourced_beam_candidate(15, 2, entry_tid, -2.0),
+                    sourced_beam_candidate(15, 3, sibling_tid, -1.0),
+                ],
+                expanded: vec![
+                    beam_candidate(15, 1, -3.0),
+                    sourced_beam_candidate(15, 2, entry_tid, -2.0),
+                ],
+                frontier: vec![sourced_beam_candidate(15, 3, sibling_tid, -1.0)],
+            },
+        );
+
+        assert!(
+            expanded_contains_source(&opaque, entry_tid),
+            "trace seeding should keep the entry candidate marked expanded"
+        );
+        assert!(
+            !expanded_contains_source(&opaque, sibling_tid),
+            "trace seeding should not pre-mark later discovered candidates as expanded"
+        );
+        assert!(
+            !expanded_contains_source(&opaque, grandchild_tid),
+            "trace seeding should leave deeper discovered candidates available for later refill"
         );
     }
 }
