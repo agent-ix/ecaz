@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `95a9d78`
+Current head: `31bab71`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -73,6 +73,7 @@ Current tqhnsw state summary:
 - The explicit bootstrap-phase completion bit in `src/am/scan.rs` now also has pg/debug coverage, so the current staged executor proves that bootstrap execution eventually marks itself complete, clears visible frontier state, and resets on `amrescan`.
 - Pending heap-TID drain is now an explicit first step in `amgettuple`, so duplicate emission from an already-materialized current result no longer falls through the linear-scan helper before bootstrap or linear candidate selection resumes.
 - The linear fallback helper in `src/am/scan.rs` no longer carries a dead pending-result drain branch; pending duplicate emission is now owned entirely by the top-level `amgettuple` flow.
+- The linear path in `src/am/scan.rs` now mirrors the bootstrap path structurally: it materializes the next result into `current_result` plus pending heap TIDs first, and lets the top-level `amgettuple` drain step emit the visible tuple.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -247,6 +248,7 @@ Open requests:
 - `128-bootstrap-phase-debug-transition.md`
 - `129-pending-result-drain-before-fallback.md`
 - `130-linear-helper-without-pending-drain.md`
+- `131-explicit-linear-result-materialization.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
