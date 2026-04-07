@@ -66,6 +66,8 @@ EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `t
 Current staged behavior:
 - Until ADR-011 is retired, planner/explain snapshot helpers MAY report why `tqhnsw` is still
   gated off, but EXPLAIN itself is not yet expected to show a `tqhnsw` index scan.
+- Explain-facing snapshot helpers MAY also report the intended `<#>` ordering semantics
+  (`strategy 1` / `COMPARE_LT`) and that PG18 strategy-translation callbacks are still unavailable.
 
 ### FR-006-AC-3: Operator commutativity
 `a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.

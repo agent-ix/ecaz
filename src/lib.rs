@@ -332,6 +332,9 @@ fn tqhnsw_index_explain_snapshot(
         name!(planner_scan_enabled, bool),
         name!(ordered_scan_ready, bool),
         name!(planner_gate_reason, String),
+        name!(ordering_strategy, i32),
+        name!(ordering_compare_type, String),
+        name!(pg18_strategy_translation_ready, bool),
         name!(effective_ef_search, i32),
         name!(effective_source, String),
         name!(total_live_nodes, i64),
@@ -346,6 +349,9 @@ fn tqhnsw_index_explain_snapshot(
         snapshot.planner_scan_enabled,
         snapshot.ordered_scan_ready,
         snapshot.planner_gate_reason.to_owned(),
+        snapshot.ordering_strategy,
+        snapshot.ordering_compare_type.to_owned(),
+        snapshot.pg18_strategy_translation_ready,
         snapshot.effective_ef_search,
         snapshot.effective_source.to_owned(),
         i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
@@ -943,6 +949,21 @@ mod tests {
         )
         .expect("snapshot query should succeed")
         .expect("snapshot should return one row");
+        let ordering_strategy = Spi::get_one::<i32>(
+            "SELECT ordering_strategy FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let ordering_compare_type = Spi::get_one::<String>(
+            "SELECT ordering_compare_type FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_strategy_translation_ready = Spi::get_one::<bool>(
+            "SELECT pg18_strategy_translation_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
         let effective_ef_search = Spi::get_one::<i32>(
             "SELECT effective_ef_search FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
         )
@@ -967,6 +988,18 @@ mod tests {
         assert!(
             planner_gate_reason.contains("disabled"),
             "planner snapshot should explain why tqhnsw scans stay gated"
+        );
+        assert_eq!(
+            ordering_strategy, 1,
+            "explain snapshot should expose the operator ordering strategy number"
+        );
+        assert_eq!(
+            ordering_compare_type, "COMPARE_LT",
+            "explain snapshot should expose the intended PG18 ordering semantics"
+        );
+        assert!(
+            !pg18_strategy_translation_ready,
+            "explain snapshot should keep PG18 strategy translation explicitly unavailable for now"
         );
         assert_eq!(effective_ef_search, 91);
         assert_eq!(effective_source, "relation");

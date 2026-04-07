@@ -12,6 +12,9 @@ Progress notes:
 - The cost snapshot now also reports that its current tree-height input comes from a
   `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
   activation boundary explicit without pretending PG18 support already exists.
+- The explain snapshot now also exposes the intended PG18 strategy-translation target
+  (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
+  actually grows PG18 toolchain support.
 
 ## Scope
 

@@ -278,6 +278,9 @@ pub(crate) struct IndexExplainSnapshot {
     pub planner_scan_enabled: bool,
     pub ordered_scan_ready: bool,
     pub planner_gate_reason: &'static str,
+    pub ordering_strategy: i32,
+    pub ordering_compare_type: &'static str,
+    pub pg18_strategy_translation_ready: bool,
     pub effective_ef_search: i32,
     pub effective_source: &'static str,
     pub total_live_nodes: usize,
@@ -339,11 +342,15 @@ pub(crate) unsafe fn index_explain_snapshot(
     index_relation: pg_sys::Relation,
 ) -> IndexExplainSnapshot {
     let admin = unsafe { index_admin_snapshot(index_relation) };
+    let translation = super::cost::strategy_translation_snapshot();
     IndexExplainSnapshot {
         planner_scan_enabled: admin.planner_scan_enabled,
         ordered_scan_ready: false,
         planner_gate_reason:
             "planner scan selection is disabled until ordered tqhnsw execution is credible",
+        ordering_strategy: translation.ordering_strategy,
+        ordering_compare_type: translation.ordering_compare_type.as_str(),
+        pg18_strategy_translation_ready: translation.pg18_callback_ready,
         effective_ef_search: admin.effective_ef_search,
         effective_source: admin.effective_source,
         total_live_nodes: admin.total_live_nodes,

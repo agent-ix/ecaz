@@ -35,6 +35,28 @@ pub(crate) struct PlannerTreeHeightInput {
     pub pg18_callback_ready: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlannerCompareType {
+    Invalid,
+    Lt,
+}
+
+impl PlannerCompareType {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Invalid => "COMPARE_INVALID",
+            Self::Lt => "COMPARE_LT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StrategyTranslationSnapshot {
+    pub ordering_strategy: i32,
+    pub ordering_compare_type: PlannerCompareType,
+    pub pg18_callback_ready: bool,
+}
+
 pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
     PlannerCostEstimate {
         startup_cost: f64::MAX,
@@ -57,6 +79,28 @@ pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightI
     PlannerTreeHeightInput {
         tree_height: f64::from(max_level),
         source: "metadata_fallback",
+        pg18_callback_ready: false,
+    }
+}
+
+pub(crate) fn strategy_to_compare_type(strategy: i32) -> PlannerCompareType {
+    match strategy {
+        1 => PlannerCompareType::Lt,
+        _ => PlannerCompareType::Invalid,
+    }
+}
+
+pub(crate) fn compare_type_to_strategy(compare_type: PlannerCompareType) -> i32 {
+    match compare_type {
+        PlannerCompareType::Lt => 1,
+        PlannerCompareType::Invalid => 0,
+    }
+}
+
+pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+    StrategyTranslationSnapshot {
+        ordering_strategy: 1,
+        ordering_compare_type: strategy_to_compare_type(1),
         pg18_callback_ready: false,
     }
 }
@@ -136,8 +180,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 #[cfg(test)]
 mod tests {
     use super::{
-        estimate_planner_cost, metadata_fallback_tree_height, PlannerCostConstants,
-        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
+        compare_type_to_strategy, estimate_planner_cost, metadata_fallback_tree_height,
+        strategy_to_compare_type, strategy_translation_snapshot, PlannerCompareType,
+        PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
+        StrategyTranslationSnapshot,
     };
 
     fn default_constants() -> PlannerCostConstants {
@@ -266,5 +312,29 @@ mod tests {
                 pg18_callback_ready: false,
             }
         );
+    }
+
+    #[test]
+    fn strategy_translation_snapshot_stays_explicitly_unwired_until_pg18_support_exists() {
+        assert_eq!(
+            strategy_translation_snapshot(),
+            StrategyTranslationSnapshot {
+                ordering_strategy: 1,
+                ordering_compare_type: PlannerCompareType::Lt,
+                pg18_callback_ready: false,
+            }
+        );
+    }
+
+    #[test]
+    fn strategy_translation_maps_ordering_strategy_to_compare_lt() {
+        assert_eq!(strategy_to_compare_type(1), PlannerCompareType::Lt);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Lt), 1);
+    }
+
+    #[test]
+    fn strategy_translation_rejects_invalid_inputs() {
+        assert_eq!(strategy_to_compare_type(99), PlannerCompareType::Invalid);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Invalid), 0);
     }
 }

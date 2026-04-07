@@ -15,6 +15,13 @@ traces:
 
 On PG18, the extension SHALL implement `amtranslatestrategy` and `amtranslatecmptype` callbacks and set the `amconsistentordering` flag to enable the optimizer to reason about the `<#>` operator's ordering semantics.
 
+Current staged behavior:
+- Before the repository has PostgreSQL 18 toolchain support, pure helper-level scaffolding MAY
+  encode the intended strategy/CompareType mapping and expose that mapping through read-only
+  planner/explain snapshot helpers.
+- Those scaffolds SHALL report that PG18 strategy-translation callbacks are not yet wired, so
+  planner-visible behavior is not implied prematurely.
+
 ### CompareType Mapping
 
 tqvector defines one strategy number:
