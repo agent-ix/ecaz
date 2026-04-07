@@ -127,23 +127,69 @@ The extension implements two scoring paths:
 
 Both paths are SIMD-accelerated (AVX2+FMA on x86_64, NEON on aarch64) with scalar fallback.
 
-### 3.5 Scaling Boundary: Cross-Agent Fan-Out
+### 3.5 PG18 Integration Architecture
+
+PostgreSQL 18 introduces several infrastructure improvements that tqvector integrates with:
+
+```mermaid
+graph TD
+    subgraph "PG18 Infrastructure"
+        AIO["Async I/O Subsystem<br/>(io_method: sync|worker|io_uring)"]
+        RS["ReadStream API<br/>(read_stream_begin_relation)"]
+        AMH["amgettreeheight<br/>amtranslatestrategy"]
+        EXPLAIN["Custom EXPLAIN Options<br/>(RegisterExtensionExplainOption)"]
+        PGSTAT["Custom Cumulative Stats<br/>(pgstat_register_kind)"]
+        MAGIC["PG_MODULE_MAGIC_EXT"]
+        GINPAR["Parallel Build Infrastructure<br/>(ParallelContext, Sharedsort)"]
+    end
+
+    subgraph "tqhnsw Integration"
+        GS["Graph Stream<br/>(neighbor prefetch)"]
+        LS["Linear Stream<br/>(sequential scan)"]
+        VS["Vacuum Stream<br/>(tuple counting)"]
+        COST["Cost Estimation<br/>(amcostestimate)"]
+        STRAT["Strategy Translation"]
+        DIAG["Scan Diagnostics"]
+        STATS["Operational Metrics"]
+        PBUILD["Parallel Heap Scan<br/>+ Encode"]
+    end
+
+    RS --> GS
+    RS --> LS
+    RS --> VS
+    AIO --> RS
+    AMH --> COST
+    AMH --> STRAT
+    EXPLAIN --> DIAG
+    PGSTAT --> STATS
+    GINPAR --> PBUILD
+```
+
+**Key integration points:**
+- **Async I/O** (FR-019): Two `ReadStream` instances — random-access for graph traversal, sequential for linear scan — provide 3-4x cold-cache speedup by prefetching pages before the scan blocks on them
+- **Cost estimation** (FR-020): Real cost model replaces `f64::MAX`, enabling planner-driven index selection. `amgettreeheight` reports HNSW `max_level` for refined estimates.
+- **Parallel build** (FR-021): Workers do parallel heap scan + tqvector validation via shared tuplesort; leader builds graph serially
+- **Diagnostics** (FR-024, FR-025): Custom EXPLAIN options show per-query scan stats; custom pgstat tracks aggregate metrics
+- **Strategy translation** (FR-023): `amtranslatestrategy`/`amtranslatecmptype` enable optimizer reasoning about `<#>` ordering semantics
+
+### 3.6 Scaling Boundary: Cross-Agent Fan-Out
 
 For cross-agent queries, the query router fans out to all shards. This works for the current partition count (16 shards) but flat fan-out degrades beyond ~200-500 shards. The extension itself does not own routing, but the query router must be designed for eventual hierarchical routing (regional aggregators). The extension SHALL NOT assume or enforce any fan-out strategy.
 
-### 3.6 Intended Users
+### 3.7 Intended Users
 
 - **Agent memory system**: primary consumer — stores and queries per-agent embedding memories
 - **Platform engineers**: install, configure, and monitor the extension in PostgreSQL clusters
 - **Application developers**: use `tqvector` type and `<#>` operator in SQL queries for ANN search
 
-### 3.7 Design Constraints
+### 3.8 Design Constraints
 
 - **MIT License**: the extension must be MIT licensed (we own it)
 - **Own quantizer**: the extension implements TurboQuant's two-stage quantization (MSE + QJL) directly — no external quantizer crate dependency. This ensures compact storage (~783-byte datums at 1536-dim 4-bit), zero-allocation prepared-query scoring, and SIMD acceleration.
 - **Graph quality boundary**: bulk build MAY consume raw fp32 vectors from a caller-supplied source column or expression to construct a higher-quality HNSW graph, but the persisted index stores only `tqvector` codes. Runtime inserts operate on compressed codes unless an explicit raw-vector insert API is added in a later version.
 - **pgvector page layout compatibility**: follow pgvector's page layout patterns exactly for element tuples and neighbor tuples (with `tqvector` code bytes replacing fp32 vector bytes)
-- **pgrx framework**: must compile under the pgrx build system and support pg14–pg17
+- **pgrx framework**: must compile under the pgrx build system and support pg17–pg18 (pg14–16 dropped per ADR-016)
+- **PG18 primary target**: PostgreSQL 18 is the primary build target and default feature. PG18-specific features (async I/O, custom EXPLAIN, custom pgstat, new AM callbacks) are gated behind `#[cfg(feature = "pg18")]`. PG17 remains supported with feature-flag fallback to synchronous I/O and without the new planner callbacks.
 - **Dual-architecture SIMD**: AVX2+FMA for x86_64 and NEON for aarch64 (AWS Graviton), with runtime feature detection and scalar fallback on both architectures
 
 ---
@@ -344,6 +390,9 @@ Bidirectional traceability SHALL be maintained between:
 | Integration tests | HNSW index build, scan, vacuum on realistic data |
 | Recall benchmarks | Recall@10 at 50k x 1536 against known ground truth |
 | SIMD validation | Scalar vs SIMD output equivalence for all accelerated functions |
+| PG18 AIO benchmarks | Cold-cache vs warm-cache latency across io_method and effective_io_concurrency settings |
+| Parallel build benchmarks | Serial vs parallel build time at 1/2/4 workers |
+| EXPLAIN diagnostics | Custom EXPLAIN option output validation |
 
 ---
 
@@ -403,5 +452,16 @@ src/
 - pgvector storage layout: https://lantern.dev/blog/pgvector-storage
 - pgrx framework: https://docs.rs/pgrx/latest/pgrx/
 - Agent memory architecture: `~/dev/agent-memory-context.md`
+
+### Competitive Landscape and Architecture Decisions
+
+- ADR-017: HNSW over IVF — topology-agnostic indexing for heterogeneous data shapes
+- ADR-018: HNSW graph quality with TurboQuant-compressed distances
+- ADR-019: WAL write amplification mitigation strategy
+- ADR-020: TurboQuant competitive positioning in the PostgreSQL vector quantization landscape
+- Weaviate Rotational Quantization: https://weaviate.io/blog/8-bit-rotational-quantization
+- VectorChord RaBitQ: https://blog.vectorchord.ai/vectorchord-store-400k-vectors-for-1-in-postgresql
+- DiskANN paper: https://suhasjs.github.io/files/diskann_neurips19.pdf
+- HNSW data ordering effects: https://arxiv.org/html/2405.17813v1
 
 ---

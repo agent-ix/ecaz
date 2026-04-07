@@ -187,6 +187,63 @@ Bidirectional traceability between requirements and test cases.
 | BC-030 | Zero-allocation scoring verification | FR-015-AC-7 | dhat: 10Kx100 score_ip_encoded, zero heap allocations in profiled region | **Harness ready** |
 | BC-031 | Encode allocation profile | FR-015 | dhat: 1000x encode at 1536/4-bit, report allocation count and bytes | **Harness ready** |
 
+## PG18 Integration Tests (`cargo pgrx test --features pg18`)
+
+| TC | Description | Traces | Method |
+|---|---|---|---|
+| TC-201 | Graph scan uses ReadStream on PG18 | FR-019-AC-1 | Instrument scan to verify read_stream_next_buffer is called instead of ReadBufferExtended during bootstrap |
+| TC-202 | Linear scan uses ReadStream on PG18 | FR-019-AC-1 | Instrument scan to verify read_stream_next_buffer is called during linear scan fallback |
+| TC-203 | PG17 fallback uses ReadBufferExtended | FR-019-AC-2 | Compile with `--features pg17`, verify no read_stream symbols linked |
+| TC-204 | No buffer pin leaks after amendscan | FR-019-AC-4 | After scan completes, verify zero outstanding buffer pins via pg_buffercache |
+| TC-205 | Vacuum tuple count uses streaming reads | FR-019-AC-5 | On PG18, verify count_element_tuples uses ReadStream |
+| TC-206 | Planner selects tqhnsw for ORDER BY LIMIT | FR-020-AC-1 | `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows Index Scan on 10K-row table |
+| TC-207 | Planner may prefer seqscan on small tables | FR-020-AC-2 | `EXPLAIN` on 50-row table, verify planner considers seqscan |
+| TC-208 | Cost model reads metadata | FR-020-AC-3 | Create indexes with different m values, verify EXPLAIN costs differ |
+| TC-209 | amgettreeheight returns max_level | FR-020-AC-4 | Build index, verify amgettreeheight returns expected level |
+| TC-210 | Parallel build with 4 workers | FR-021-AC-1 | `SET max_parallel_maintenance_workers = 4; CREATE INDEX ...`, verify workers launched |
+| TC-211 | Parallel build correctness | FR-021-AC-2 | Compare recall of parallel-built vs serial-built index on same data |
+| TC-212 | Small table serial fallback | FR-021-AC-5 | 100-row table build does not launch workers |
+| TC-213 | Vacuum removes dead heap TIDs | FR-022-AC-1, FR-022-AC-2 | DELETE + VACUUM + search, verify deleted row absent |
+| TC-214 | Vacuum maintains graph connectivity | FR-022-AC-3 | Delete 10%, VACUUM, measure recall ≥ 80% of pre-vacuum |
+| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | Run VACUUM + INSERT + SELECT concurrently for 60s, no errors |
+| TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
+| TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
+| TC-218 | EXPLAIN (tqvector) recognized | FR-024-AC-1 | `EXPLAIN (tqvector) SELECT ...` parses without error |
+| TC-219 | EXPLAIN (tqvector) shows stats | FR-024-AC-2 | Output includes Bootstrap Expansions, Elements Scored, etc. |
+| TC-220 | EXPLAIN without tqvector option: no extra output | FR-024-AC-3 | Standard EXPLAIN does not show tqvector stats |
+| TC-221 | EXPLAIN (tqvector, ANALYZE) shows actuals | FR-024-AC-4 | Non-zero counter values in output |
+| TC-222 | tqvector_stats() returns counters | FR-025-AC-1 | SELECT * FROM tqvector_stats() returns row |
+| TC-223 | Stats counters increment | FR-025-AC-2 | Run 10 scans, verify total_scans_started ≥ 10 |
+| TC-224 | Stats reset works | FR-025-AC-3 | Reset, verify all counters zero |
+| TC-225 | pg_get_loaded_modules shows tqvector | FR-026-AC-1 | Query pg_get_loaded_modules, verify name and version |
+| TC-226 | Module version matches Cargo.toml | FR-026-AC-2 | Compare reported version to Cargo.toml version field |
+| TC-227 | PG18 build succeeds | FR-027-AC-1 | `cargo pgrx build --features pg18 --release` exits 0 |
+| TC-228 | PG17 build succeeds | FR-027-AC-2 | `cargo pgrx build --features pg17 --release` exits 0 |
+| TC-229 | _PG_init registers hooks | FR-027-AC-4 | After CREATE EXTENSION, verify EXPLAIN option and pgstat kind are registered |
+| TC-230 | ADR-011 f64::MAX override removed | FR-020-AC-5 | Inspect source: no `f64::MAX` in cost.rs; ADR-011 status is SUPERSEDED |
+| TC-231 | CREATE INDEX CONCURRENTLY with parallel workers | FR-021-AC-4 | `SET max_parallel_maintenance_workers = 2; CREATE INDEX CONCURRENTLY ... USING tqhnsw ...` succeeds, index is usable |
+| TC-232 | Parallel build uses GenericXLog | FR-021-AC-6 | Inspect source: all page writes in leader graph serialization use GenericXLogStart/Finish |
+| TC-233 | Vacuum page writes use GenericXLog | FR-022-AC-5 | Inspect source: all page writes in ambulkdelete use GenericXLogStart/Finish. REINDEX after kill -9 during vacuum recovers cleanly |
+| TC-234 | Vacuum updates pg_class.reltuples | FR-022-AC-6 | Delete 100 rows from 1000-row table, VACUUM, verify `SELECT reltuples FROM pg_class WHERE relname = 'idx'` reflects ~900 |
+| TC-235 | Strategy translation callbacks registered | FR-023-AC-1 | On PG18, verify `amtranslatestrategy` and `amtranslatecmptype` are non-null in IndexAmRoutine via pg_am inspection |
+| TC-236 | amtranslatecmptype reverse mapping | FR-023-AC-3 | Verify `amtranslatecmptype(COMPARE_LT)` returns strategy 1 |
+| TC-237 | EXPLAIN hook chains with previous hook | FR-024-AC-5 | Install a dummy explain_per_node_hook before loading tqvector, verify both hooks fire on EXPLAIN |
+| TC-238 | Stats persist within session | FR-025-AC-4 | Run 5 scans, read stats, run 5 more scans, verify counters accumulated (not reset between queries) |
+| TC-239 | tqvector_stats() absent on PG17 | FR-025-AC-5 | Compile with `--features pg17`, verify `SELECT * FROM tqvector_stats()` raises ERROR or function does not exist |
+| TC-240 | PG17 and PG18 tests both pass | FR-027-AC-3 | CI matrix: `cargo pgrx test pg17` and `cargo pgrx test pg18` both exit 0 |
+
+## PG18 Benchmarks
+
+| BC | Description | Traces | Target | Status |
+|---|---|---|---|---|
+| BC-032 | Cold-cache HNSW latency: io_method=sync vs worker vs io_uring | NFR-006, FR-019 | Report p50/p99 at effective_io_concurrency=0,4,8,16,32 | Blocked (PG18) |
+| BC-033 | Cold-cache HNSW speedup: streaming vs sync baseline | NFR-006, FR-019 | ≥ 2x improvement at eic=16 | Blocked (PG18) |
+| BC-034 | Warm-cache HNSW: streaming vs sync (regression check) | NFR-006, FR-019 | No regression (≤ 5% overhead) | Blocked (PG18) |
+| BC-035 | Cold-cache linear scan: streaming vs sync | NFR-006, FR-019 | Report throughput improvement | Blocked (PG18) |
+| BC-036 | Parallel build speedup: 1 vs 2 vs 4 workers (100K rows) | FR-021 | 4 workers ≤ 60% of serial time | Blocked (PG18) |
+| BC-037 | Parallel build: parallel vs serial recall comparison | FR-021 | Within 1% recall difference | Blocked (PG18) |
+| BC-038 | Vacuum impact on scan latency (50K, 10% deleted) | FR-022 | Report pre/post vacuum scan latency | Blocked (PG18) |
+
 ## Benchmark Execution Rules
 
 - All benchmark reports SHALL identify the dataset, row count, dimensionality, query count, random seed, hardware, PostgreSQL version, compiler profile, and relevant PostgreSQL settings.
@@ -225,3 +282,13 @@ Bidirectional traceability between requirements and test cases.
 | NFR-003 | BC-005 to BC-007, BC-011 to BC-014, BC-017 to BC-021 |
 | NFR-004 | TC-035, TC-036, TC-118, TC-119, FZ-001 to FZ-004, MI-001 to MI-011, all unit tests (no panic) |
 | NFR-005 | CI pipeline (fmt, clippy, test, pgrx test, deny, proptest, layout-check, miri, bench-action) |
+| FR-019 | TC-201, TC-202, TC-203, TC-204, TC-205, BC-032, BC-033, BC-034, BC-035 |
+| FR-020 | TC-206, TC-207, TC-208, TC-209, TC-230 |
+| FR-021 | TC-210, TC-211, TC-212, TC-231, TC-232, BC-036, BC-037 |
+| FR-022 | TC-213, TC-214, TC-215, TC-233, TC-234, BC-038 |
+| FR-023 | TC-216, TC-217, TC-235, TC-236 |
+| FR-024 | TC-218, TC-219, TC-220, TC-221, TC-237 |
+| FR-025 | TC-222, TC-223, TC-224, TC-238, TC-239 |
+| FR-026 | TC-225, TC-226 |
+| FR-027 | TC-227, TC-228, TC-229, TC-240 |
+| NFR-006 | BC-032, BC-033, BC-034, BC-035 |
