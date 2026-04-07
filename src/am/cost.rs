@@ -39,6 +39,13 @@ pub(crate) struct PlannerTreeHeightInput {
 pub(crate) enum PlannerCompareType {
     Invalid,
     Lt,
+    Le,
+    Eq,
+    Ge,
+    Gt,
+    Ne,
+    Overlap,
+    ContainedBy,
 }
 
 impl PlannerCompareType {
@@ -46,6 +53,13 @@ impl PlannerCompareType {
         match self {
             Self::Invalid => "COMPARE_INVALID",
             Self::Lt => "COMPARE_LT",
+            Self::Le => "COMPARE_LE",
+            Self::Eq => "COMPARE_EQ",
+            Self::Ge => "COMPARE_GE",
+            Self::Gt => "COMPARE_GT",
+            Self::Ne => "COMPARE_NE",
+            Self::Overlap => "COMPARE_OVERLAP",
+            Self::ContainedBy => "COMPARE_CONTAINED_BY",
         }
     }
 }
@@ -97,7 +111,14 @@ pub(crate) fn strategy_to_compare_type(strategy: i32) -> PlannerCompareType {
 pub(crate) fn compare_type_to_strategy(compare_type: PlannerCompareType) -> i32 {
     match compare_type {
         PlannerCompareType::Lt => 1,
-        PlannerCompareType::Invalid => 0,
+        PlannerCompareType::Invalid
+        | PlannerCompareType::Le
+        | PlannerCompareType::Eq
+        | PlannerCompareType::Ge
+        | PlannerCompareType::Gt
+        | PlannerCompareType::Ne
+        | PlannerCompareType::Overlap
+        | PlannerCompareType::ContainedBy => 0,
     }
 }
 
@@ -342,7 +363,18 @@ mod tests {
 
     #[test]
     fn strategy_translation_rejects_invalid_inputs() {
+        assert_eq!(strategy_to_compare_type(0), PlannerCompareType::Invalid);
         assert_eq!(strategy_to_compare_type(99), PlannerCompareType::Invalid);
         assert_eq!(compare_type_to_strategy(PlannerCompareType::Invalid), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Le), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Eq), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Ge), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Gt), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Ne), 0);
+        assert_eq!(compare_type_to_strategy(PlannerCompareType::Overlap), 0);
+        assert_eq!(
+            compare_type_to_strategy(PlannerCompareType::ContainedBy),
+            0
+        );
     }
 }

@@ -18,6 +18,8 @@ Progress notes:
 - The explain snapshot now also exposes the intended PG18 strategy-translation target
   (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
   actually grows PG18 toolchain support.
+- `src/am/cost.rs` now also models the broader `CompareType` domain explicitly so the reverse
+  mapping back to strategy 1 is pure code, unit-tested, and only accepts `COMPARE_LT`.
 - The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
   keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
   actually exists in the repository.
@@ -57,7 +59,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 
 - [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
 - [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. A pure callback-value helper now exists in `am/cost.rs`; the PG18 `IndexAmRoutine` binding is still pending.
-- [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. PG18 feature-gated. Place in `am/cost.rs`.
+- [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. The pure mapping now models non-`LT` compare types explicitly in `am/cost.rs`; the PG18 callback binding is still pending.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
 - [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
 - [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. Pure callback-signature helpers and state-carrier types now exist in `am/stream.rs`; actual PG18 callback bindings are still pending.

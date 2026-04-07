@@ -19,6 +19,9 @@ Current staged behavior:
 - Before the repository has PostgreSQL 18 toolchain support, pure helper-level scaffolding MAY
   encode the intended strategy/CompareType mapping and expose that mapping through read-only
   planner/explain snapshot helpers.
+- Those same helpers MAY also model the broader generic `CompareType` domain explicitly so reverse
+  mappings to strategy 1 are only accepted for `COMPARE_LT`, while every other compare type falls
+  back to `InvalidStrategy` in pure unit-tested code.
 - Those scaffolds SHALL report that PG18 strategy-translation callbacks are not yet wired, so
   planner-visible behavior is not implied prematurely.
 
