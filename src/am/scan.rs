@@ -250,27 +250,15 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::Bootstrap;
     clear_scan_candidate_state(opaque);
-    clear_scan_result_state(opaque);
+    opaque.result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
 }
 
-fn clear_pending_scan_heaptids(opaque: &mut TqScanOpaque) {
-    opaque.result_state.clear_pending();
-}
-
-fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
-    opaque.result_state.store_pending(heaptids);
-}
-
-fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
-    opaque.result_state.take_pending()
-}
-
 fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
-    if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
+    if let Some(heap_tid) = opaque.result_state.take_pending() {
         set_scan_heap_tid(scan, heap_tid);
         set_scan_orderby_score(scan, opaque.result_state.current().score());
         return true;
@@ -300,10 +288,6 @@ unsafe fn produce_next_scan_heap_tid(
     }
 
     false
-}
-
-fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
-    opaque.result_state.clear();
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -795,8 +779,8 @@ pub(super) unsafe fn materialize_scan_candidate_result(
 }
 
 fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    set_current_scan_result(opaque, selected.element_tid, selected.score);
-    store_pending_scan_heaptids(opaque, &selected.heap_tids);
+    mark_emitted_element(opaque, selected.element_tid);
+    opaque.result_state.materialize(selected);
 }
 
 fn refill_bootstrap_frontier_after_consume<F>(
@@ -940,7 +924,7 @@ unsafe fn select_next_linear_scan_result(
 ) -> Option<SelectedScanResult> {
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         mark_scan_exhausted(opaque);
-        clear_scan_result_state(opaque);
+        opaque.result_state.clear();
         return None;
     }
 
@@ -1018,7 +1002,7 @@ unsafe fn select_next_linear_scan_result(
     }
 
     mark_scan_exhausted(opaque);
-    clear_scan_result_state(opaque);
+    opaque.result_state.clear();
     None
 }
 
@@ -1095,11 +1079,6 @@ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
             *(*scan).xs_orderbynulls = true;
         }
     }
-}
-
-fn set_current_scan_result(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer, score: f32) {
-    mark_emitted_element(opaque, element_tid);
-    opaque.result_state.set_current(element_tid, score);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1208,6 +1187,11 @@ impl ScanResultState {
     fn clear(&mut self) {
         self.clear_pending();
         self.current = CurrentScanResult::default();
+    }
+
+    fn materialize(&mut self, selected: SelectedScanResult) {
+        self.set_current(selected.element_tid, selected.score);
+        self.store_pending(&selected.heap_tids);
     }
 
     fn set_current(&mut self, element_tid: page::ItemPointer, score: f32) {
@@ -1486,14 +1470,14 @@ mod tests {
     }
 
     #[test]
-    fn take_pending_scan_heap_tid_advances_current_result_progress() {
+    fn scan_result_state_take_pending_advances_current_result_progress() {
         let mut opaque = TqScanOpaque::default();
-        set_current_scan_result(&mut opaque, tid(25, 1), -3.0);
-        store_pending_scan_heaptids(&mut opaque, &[tid(30, 1), tid(30, 2)]);
+        opaque.result_state.set_current(tid(25, 1), -3.0);
+        opaque.result_state.store_pending(&[tid(30, 1), tid(30, 2)]);
 
-        let first = take_pending_scan_heap_tid(&mut opaque);
-        let second = take_pending_scan_heap_tid(&mut opaque);
-        let exhausted = take_pending_scan_heap_tid(&mut opaque);
+        let first = opaque.result_state.take_pending();
+        let second = opaque.result_state.take_pending();
+        let exhausted = opaque.result_state.take_pending();
 
         assert_eq!(
             first,
@@ -1525,12 +1509,12 @@ mod tests {
     }
 
     #[test]
-    fn clear_scan_result_state_clears_pending_heap_tid_drain() {
+    fn scan_result_state_clear_clears_pending_heap_tid_drain() {
         let mut opaque = TqScanOpaque::default();
-        set_current_scan_result(&mut opaque, tid(26, 1), -4.0);
-        store_pending_scan_heaptids(&mut opaque, &[tid(31, 1), tid(31, 2)]);
+        opaque.result_state.set_current(tid(26, 1), -4.0);
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
 
-        clear_scan_result_state(&mut opaque);
+        opaque.result_state.clear();
 
         assert!(
             !opaque.result_state.current().has_element(),
