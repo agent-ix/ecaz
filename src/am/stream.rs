@@ -9,6 +9,11 @@ impl GraphPrefetchState {
         Self { blocks, index: 0 }
     }
 
+    pub(crate) fn reset(&mut self, blocks: Vec<u32>) {
+        self.blocks = blocks;
+        self.index = 0;
+    }
+
     pub(crate) fn next_block(&mut self) -> Option<u32> {
         let block = self.blocks.get(self.index).copied()?;
         self.index += 1;
@@ -28,6 +33,11 @@ impl LinearPrefetchState {
             next_block,
             max_block,
         }
+    }
+
+    pub(crate) fn reset(&mut self, next_block: u32, max_block: u32) {
+        self.next_block = next_block;
+        self.max_block = max_block;
     }
 
     pub(crate) fn next_block(&mut self) -> Option<u32> {
@@ -180,6 +190,20 @@ mod tests {
     }
 
     #[test]
+    fn graph_prefetch_state_reset_restarts_with_new_batch() {
+        let mut state = GraphPrefetchState::new(vec![11, 14, 18]);
+
+        assert_eq!(state.next_block(), Some(11));
+        assert_eq!(state.next_block(), Some(14));
+
+        state.reset(vec![21, 22]);
+
+        assert_eq!(state.next_block(), Some(21));
+        assert_eq!(state.next_block(), Some(22));
+        assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
     fn graph_prefetch_callback_returns_blocks_then_end_of_stream() {
         let mut state = GraphPrefetchState::new(vec![11, 14]);
 
@@ -204,6 +228,20 @@ mod tests {
         assert_eq!(state.next_block(), Some(21));
         assert_eq!(state.next_block(), Some(22));
         assert_eq!(state.next_block(), Some(23));
+        assert_eq!(state.next_block(), None);
+    }
+
+    #[test]
+    fn linear_prefetch_state_reset_restarts_range() {
+        let mut state = LinearPrefetchState::new(21, 23);
+
+        assert_eq!(state.next_block(), Some(21));
+        assert_eq!(state.next_block(), Some(22));
+
+        state.reset(30, 31);
+
+        assert_eq!(state.next_block(), Some(30));
+        assert_eq!(state.next_block(), Some(31));
         assert_eq!(state.next_block(), None);
     }
 

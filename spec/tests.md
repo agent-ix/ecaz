@@ -50,6 +50,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-036 | All unsafe blocks have SAFETY comments | NFR-004 | grep for `unsafe` blocks in src/; assert every one is preceded by a `// SAFETY:` comment within 3 lines |
 | TC-037 | ReadStream callback signatures and state carriers match FR-019 | FR-019 | Unit-test graph and linear callback signatures plus `GraphPrefetchState` / `LinearPrefetchState` exhaustion behavior |
 | TC-043 | ReadStream callbacks return blocks then end-of-stream | FR-019 | Unit-test pure graph and linear callback helpers so PG18 bindings only need to translate `EndOfStream` into `InvalidBlockNumber` |
+| TC-047 | ReadStream state carriers reset cleanly for reuse | FR-019 | Unit-test `GraphPrefetchState::reset(...)` and `LinearPrefetchState::reset(...)` so the staged D1 seam already matches `read_stream_reset()` and `amrescan` lifecycle expectations |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires the `tqvector` option, `IndexScan` node kind, and `tqhnsw` access method |
 | TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
