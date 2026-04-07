@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ptr;
 
 use pgrx::pg_sys;
@@ -107,7 +108,9 @@ where
         neighbor_tids
             .into_iter()
             .filter(|neighbor_tid| keep_neighbor_tid(*neighbor_tid))
-            .map(|neighbor_tid| unsafe { load_graph_element(index_relation, neighbor_tid, code_len) }),
+            .map(|neighbor_tid| unsafe {
+                load_graph_element(index_relation, neighbor_tid, code_len)
+            }),
         |neighbor| score_candidate(neighbor),
     )
 }
@@ -136,12 +139,134 @@ where
     })
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Layer0VisibleSeedExpansion {
+    pub expanded_source_tids: Vec<page::ItemPointer>,
+    pub discovered_candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
+}
+
+pub(crate) unsafe fn load_layer0_refill_successors<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    source_tid: page::ItemPointer,
+    max_successor_candidates: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
+        return Vec::new();
+    }
+
+    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| unsafe {
+        load_layer0_successor_candidates(
+            index_relation,
+            source_tid,
+            code_len,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
+pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    max_successor_candidates: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Layer0VisibleSeedExpansion
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates(
+            index_relation,
+            source_tid,
+            code_len,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
 fn valid_layer0_neighbor_tids(neighbor_tids: &[page::ItemPointer]) -> Vec<page::ItemPointer> {
     neighbor_tids
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .collect()
+}
+
+fn refill_successors_with_successors<SuccessorFn>(
+    source_tid: page::ItemPointer,
+    max_successor_candidates: usize,
+    successors: SuccessorFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SuccessorFn: FnMut(page::ItemPointer) -> Vec<search::BeamCandidate<page::ItemPointer>>,
+{
+    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
+        return Vec::new();
+    }
+
+    run_layer0_beam_search_with_successors(
+        1,
+        [search::BeamCandidate::new(source_tid, 0.0)],
+        successors,
+    )
+    .frontier
+    .into_iter()
+    .take(max_successor_candidates)
+    .collect()
+}
+
+fn expand_visible_seeds_with_successors<SeedIter, SuccessorFn>(
+    max_successor_candidates: usize,
+    seeds: SeedIter,
+    successors: SuccessorFn,
+) -> Layer0VisibleSeedExpansion
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    SuccessorFn: FnMut(page::ItemPointer) -> Vec<search::BeamCandidate<page::ItemPointer>>,
+{
+    let seeds = seeds.into_iter().collect::<Vec<_>>();
+    if max_successor_candidates == 0 || seeds.is_empty() {
+        return Layer0VisibleSeedExpansion {
+            expanded_source_tids: Vec::new(),
+            discovered_candidates: Vec::new(),
+        };
+    }
+
+    let seed_nodes = seeds
+        .iter()
+        .map(|candidate| candidate.node)
+        .collect::<HashSet<_>>();
+    let trace = run_layer0_beam_search_with_successors(
+        max_successor_candidates,
+        seeds.iter().copied(),
+        successors,
+    );
+
+    Layer0VisibleSeedExpansion {
+        expanded_source_tids: trace
+            .expanded
+            .into_iter()
+            .map(|candidate| candidate.node)
+            .collect(),
+        discovered_candidates: trace
+            .discovered
+            .into_iter()
+            .filter(|candidate| !seed_nodes.contains(&candidate.node))
+            .take(max_successor_candidates)
+            .collect(),
+    }
 }
 
 fn run_layer0_beam_search_with_successors<SeedIter, SuccessorFn>(
@@ -297,7 +422,9 @@ mod tests {
 
         assert_eq!(
             candidates,
-            vec![search::BeamCandidate::with_source(keep_tid, 0.25, source_tid)],
+            vec![search::BeamCandidate::with_source(
+                keep_tid, 0.25, source_tid
+            )],
             "layer-0 successor loading should keep only live neighbors with heap tids",
         );
     }
@@ -320,9 +447,17 @@ mod tests {
                         search::BeamCandidate::with_source(right_tid, 0.1, seed_tid),
                     ]
                 } else if source_tid == right_tid {
-                    vec![search::BeamCandidate::with_source(right_best_tid, 0.05, right_tid)]
+                    vec![search::BeamCandidate::with_source(
+                        right_best_tid,
+                        0.05,
+                        right_tid,
+                    )]
                 } else if source_tid == left_tid {
-                    vec![search::BeamCandidate::with_source(left_best_tid, 0.2, left_tid)]
+                    vec![search::BeamCandidate::with_source(
+                        left_best_tid,
+                        0.2,
+                        left_tid,
+                    )]
                 } else {
                     Vec::new()
                 }
@@ -346,6 +481,85 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![left_best_tid],
             "remaining frontier should preserve best-first order after the expansion budget",
+        );
+    }
+
+    #[test]
+    fn refill_successors_with_successors_returns_best_frontier_candidates() {
+        let source_tid = tid(2, 1);
+        let slow_tid = tid(2, 2);
+        let fast_tid = tid(2, 3);
+        let skipped_deeper_tid = tid(2, 4);
+
+        let successors = refill_successors_with_successors(source_tid, 2, |source| {
+            if source == source_tid {
+                vec![
+                    search::BeamCandidate::with_source(slow_tid, 0.4, source_tid),
+                    search::BeamCandidate::with_source(fast_tid, 0.1, source_tid),
+                ]
+            } else if source == fast_tid {
+                vec![search::BeamCandidate::with_source(
+                    skipped_deeper_tid,
+                    0.05,
+                    fast_tid,
+                )]
+            } else {
+                Vec::new()
+            }
+        });
+
+        assert_eq!(
+            successors,
+            vec![
+                search::BeamCandidate::with_source(fast_tid, 0.1, source_tid),
+                search::BeamCandidate::with_source(slow_tid, 0.4, source_tid),
+            ],
+            "single-source refill should expose the remaining best-first frontier successors after expanding the consumed source once",
+        );
+    }
+
+    #[test]
+    fn expand_visible_seeds_with_successors_reports_expanded_sources_and_non_seed_discoveries() {
+        let seed_a_tid = tid(3, 1);
+        let seed_b_tid = tid(3, 2);
+        let child_tid = tid(3, 3);
+        let grandchild_tid = tid(3, 4);
+
+        let expansion = expand_visible_seeds_with_successors(
+            2,
+            [
+                search::BeamCandidate::new(seed_a_tid, 0.3),
+                search::BeamCandidate::new(seed_b_tid, 0.2),
+            ],
+            |source| {
+                if source == seed_b_tid {
+                    vec![search::BeamCandidate::with_source(
+                        child_tid, 0.1, seed_b_tid,
+                    )]
+                } else if source == child_tid {
+                    vec![search::BeamCandidate::with_source(
+                        grandchild_tid,
+                        0.05,
+                        child_tid,
+                    )]
+                } else {
+                    Vec::new()
+                }
+            },
+        );
+
+        assert_eq!(
+            expansion.expanded_source_tids,
+            vec![seed_b_tid, child_tid],
+            "visible-seed expansion should report the actual best-first seed/source nodes it expanded under the traversal budget",
+        );
+        assert_eq!(
+            expansion.discovered_candidates,
+            vec![
+                search::BeamCandidate::with_source(child_tid, 0.1, seed_b_tid),
+                search::BeamCandidate::with_source(grandchild_tid, 0.05, child_tid),
+            ],
+            "visible-seed expansion should drop the original seeds and keep only newly discovered candidates in traversal order",
         );
     }
 }

@@ -682,12 +682,12 @@ unsafe fn refill_candidate_frontier_from_source_into(
         return;
     }
 
-    let trace = unsafe {
-        graph::run_layer0_beam_search(
+    let successors = unsafe {
+        graph::load_layer0_refill_successors(
             index_relation,
             opaque.scan_code_len,
-            1,
-            [search::BeamCandidate::new(source_tid, 0.0)],
+            source_tid,
+            max_successor_candidates,
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
             |neighbor| {
                 Some(score_scan_element_result(
@@ -698,16 +698,7 @@ unsafe fn refill_candidate_frontier_from_source_into(
             },
         )
     };
-    seed_discovered_candidates_into(
-        opaque,
-        visible_frontier,
-        expansion,
-        trace
-            .frontier
-            .into_iter()
-            .take(max_successor_candidates)
-            .collect(),
-    );
+    seed_discovered_candidates_into(opaque, visible_frontier, expansion, successors);
 }
 
 unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
@@ -730,12 +721,8 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
         return;
     }
 
-    let seed_nodes = seed_candidates
-        .iter()
-        .map(|candidate| candidate.node)
-        .collect::<HashSet<_>>();
-    let trace = unsafe {
-        graph::run_layer0_beam_search(
+    let expansion_trace = unsafe {
+        graph::expand_layer0_visible_seeds(
             index_relation,
             opaque.scan_code_len,
             max_successor_candidates,
@@ -750,19 +737,14 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
             },
         )
     };
-    for expanded in trace.expanded {
-        mark_expanded_source(opaque, expanded.node);
+    for expanded_source_tid in expansion_trace.expanded_source_tids {
+        mark_expanded_source(opaque, expanded_source_tid);
     }
     seed_discovered_candidates_into(
         opaque,
         visible_frontier,
         expansion,
-        trace
-            .discovered
-            .into_iter()
-            .filter(|candidate| !seed_nodes.contains(&candidate.node))
-            .take(max_successor_candidates)
-            .collect(),
+        expansion_trace.discovered_candidates,
     );
 }
 
