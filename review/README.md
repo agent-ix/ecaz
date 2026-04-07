@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f040715`
+Current head: `0d5324b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -84,6 +84,7 @@ Current tqhnsw state summary:
 - Bootstrap candidate adjudication in `src/am/scan.rs` now also selects a `SelectedScanResult` before shared materialization, so both bootstrap and linear paths use the same select-then-materialize shape.
 - Staged scan execution in `src/am/scan.rs` now routes bootstrap-vs-linear result selection through one phase-aware `select_next_scan_result` seam before the shared materialization step, leaving bootstrap-specific refill behavior internal to bootstrap selection instead of the top-level executor path.
 - Scan result bookkeeping in `src/am/scan.rs` now lives more directly on `ScanResultState`: materialization, pending duplicate drain, and clearing no longer bounce through separate free-function wrappers around the owned result-state container.
+- Top-level tuple production in `src/am/scan.rs` now consumes staged result selection directly, instead of routing that step through an extra boolean-valued `materialize_next_scan_result` helper between selection and visible tuple emission.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -269,6 +270,7 @@ Open requests:
 - `139-bootstrap-selection-before-materialization.md`
 - `140-phase-aware-staged-result-selection.md`
 - `141-result-state-owned-bookkeeping.md`
+- `142-direct-staged-selection-in-tuple-production.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
