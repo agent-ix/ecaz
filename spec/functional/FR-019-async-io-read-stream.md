@@ -24,6 +24,9 @@ Current staged behavior:
 - Those helpers MAY also define pure callback functions that consume planner-owned callback state
   and return either the next block number or an explicit end-of-stream result, leaving the actual
   PostgreSQL `InvalidBlockNumber` conversion to the eventual PG18 binding layer.
+- Those same state carriers MAY also expose pure reset helpers so the staged D1 seam already
+  models graph-batch reuse after `read_stream_reset()` and linear-range restart after `amrescan`
+  without wiring any PostgreSQL 18 APIs on PG17.
 - Read-only snapshot helpers MAY also report that PG18 ReadStream callback surfaces, scan wiring,
   and vacuum wiring all remain unavailable.
 - Those helpers SHALL stay descriptive only; they do not imply that any scan or vacuum path

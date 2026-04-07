@@ -67,6 +67,9 @@ Progress notes:
 - `src/am/stream.rs` now also defines pure callback functions for the graph and linear prefetch
   paths, returning either a block number or an explicit end-of-stream result so the eventual PG18
   binding only has to translate that result into `InvalidBlockNumber`.
+- The planner-owned ReadStream state carriers in `src/am/stream.rs` now also support pure reset
+  operations, so the staged D1 seam already matches graph-batch reuse after `read_stream_reset()`
+  and linear-range restart after `amrescan` without touching the runtime scan lane.
 
 ## Scope
 
