@@ -155,12 +155,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
-            if produce_next_scan_heap_tid(
-                scan,
-                (*scan).indexRelation,
-                opaque,
-                opaque.scan_code_len,
-            ) {
+            if produce_next_scan_heap_tid(scan, (*scan).indexRelation, opaque, opaque.scan_code_len)
+            {
                 return true;
             }
 
@@ -335,74 +331,10 @@ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
     }
 }
 
-#[derive(Debug, Default)]
-pub(super) struct VisibleCandidateFrontierState {
-    candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
-}
-
-impl VisibleCandidateFrontierState {
-    fn len(&self) -> usize {
-        self.candidates.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.candidates.is_empty()
-    }
-
-    fn iter(&self) -> impl Iterator<Item = search::BeamCandidate<page::ItemPointer>> + '_ {
-        self.candidates.iter().copied()
-    }
-
-    fn slot(&self, index: usize) -> Option<search::BeamCandidate<page::ItemPointer>> {
-        self.candidates.get(index).copied()
-    }
-
-    fn contains_node(&self, element_tid: page::ItemPointer) -> bool {
-        self.candidates
-            .iter()
-            .any(|candidate| candidate.node == element_tid)
-    }
-
-    fn best_candidate_by_score(&self) -> Option<search::BeamCandidate<page::ItemPointer>> {
-        self.candidates
-            .iter()
-            .min_by(|left, right| left.score.total_cmp(&right.score))
-            .copied()
-    }
-
-    fn clear(&mut self) {
-        self.candidates.clear();
-    }
-
-    fn push(&mut self, candidate: impl Into<search::BeamCandidate<page::ItemPointer>>) {
-        self.candidates.push(candidate.into());
-    }
-
-    fn extend<I, C>(&mut self, candidates: I)
-    where
-        I: IntoIterator<Item = C>,
-        C: Into<search::BeamCandidate<page::ItemPointer>>,
-    {
-        self.candidates
-            .extend(candidates.into_iter().map(Into::into));
-    }
-
-    fn remove_node(
-        &mut self,
-        element_tid: page::ItemPointer,
-    ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-        let index = self
-            .candidates
-            .iter()
-            .position(|candidate| candidate.node == element_tid)?;
-        Some(self.candidates.remove(index))
-    }
-}
+type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
 
 static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState =
-    VisibleCandidateFrontierState {
-        candidates: Vec::new(),
-    };
+    VisibleCandidateFrontierState::empty();
 
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
@@ -447,25 +379,24 @@ fn with_visible_frontier_and_bootstrap_expansion<R>(
     unsafe { f(&*visible_frontier, &mut *expansion) }
 }
 
-fn scheduler_best_frontier_candidate(
+fn with_visible_frontier_mut_and_bootstrap_expansion<R>(
     opaque: &mut TqScanOpaque,
-) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
-        expansion.peek_best_matching(|node| visible_frontier.contains_node(node))
-    })
+    f: impl FnOnce(&mut VisibleCandidateFrontierState, &mut search::BeamSearch<page::ItemPointer>) -> R,
+) -> R {
+    let visible_frontier = visible_frontier_mut(opaque) as *mut VisibleCandidateFrontierState;
+    let expansion = bootstrap_expansion_mut(opaque) as *mut search::BeamSearch<page::ItemPointer>;
+    // SAFETY: `candidate_frontier` and `bootstrap_expansion` are separate Box-backed heap
+    // allocations owned by `TqScanOpaque`, so borrowing the frontier and the scheduler mutably
+    // at the same time cannot alias.
+    unsafe { f(&mut *visible_frontier, &mut *expansion) }
 }
 
 fn candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    if let Some(candidate) = scheduler_best_frontier_candidate(opaque) {
-        return Some(candidate);
-    }
-
-    // The scheduler tracks unexpanded expansion sources, not all still-visible result
-    // candidates. After bootstrap fill reaches capacity, the visible frontier can still hold
-    // candidates whose scheduler entries were already consumed during expansion.
-    visible_frontier_ref(opaque).best_candidate_by_score()
+    with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+        visible_frontier.best_candidate(expansion)
+    })
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -606,7 +537,13 @@ unsafe fn initialize_scan_entry_candidate(
             bootstrap_limit,
             [entry_candidate],
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+            |neighbor| {
+                Some(score_scan_element_result(
+                    opaque,
+                    neighbor.gamma,
+                    &neighbor.code,
+                ))
+            },
         )
     };
     seed_bootstrap_trace(opaque, bootstrap_limit, trace);
@@ -696,26 +633,12 @@ fn top_up_bootstrap_frontier<F>(
     }
 }
 
-fn take_candidate_frontier_node(
-    opaque: &mut TqScanOpaque,
-    element_tid: page::ItemPointer,
-) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    visible_frontier_mut(opaque).remove_node(element_tid)
-}
-
 fn consume_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
-    let candidate =
-        with_visible_frontier_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
-            expansion.take_best_matching(|node| visible_frontier.contains_node(node))
-        });
-    if let Some(candidate) = candidate {
-        return take_candidate_frontier_node(opaque, candidate.node);
-    }
-
-    let head = candidate_frontier_head(opaque)?;
-    take_candidate_frontier_node(opaque, head.node)
+    with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+        visible_frontier.consume_best(expansion)
+    })
 }
 
 unsafe fn refill_candidate_frontier_from_source(
@@ -740,7 +663,13 @@ unsafe fn refill_candidate_frontier_from_source(
             1,
             [search::BeamCandidate::new(source_tid, 0.0)],
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+            |neighbor| {
+                Some(score_scan_element_result(
+                    opaque,
+                    neighbor.gamma,
+                    &neighbor.code,
+                ))
+            },
         )
     };
     seed_discovered_candidates(
@@ -778,7 +707,13 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds(
             max_successor_candidates,
             seed_candidates.iter().copied(),
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+            |neighbor| {
+                Some(score_scan_element_result(
+                    opaque,
+                    neighbor.gamma,
+                    &neighbor.code,
+                ))
+            },
         )
     };
     for expanded in trace.expanded {
@@ -914,14 +849,12 @@ unsafe fn try_select_next_bootstrap_frontier_result(
     // temporary mutable borrows of `opaque` do not alias.
     select_next_bootstrap_candidate_with_refill(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
-        |candidate| unsafe { select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate) },
+        |candidate| unsafe {
+            select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+        },
         |candidate| {
             unsafe {
-                refill_bootstrap_frontier_after_success(
-                    index_relation,
-                    &mut *opaque_ptr,
-                    candidate,
-                )
+                refill_bootstrap_frontier_after_success(index_relation, &mut *opaque_ptr, candidate)
             };
         },
     )
@@ -932,7 +865,8 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let Some(selected) = (unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) })
+    let Some(selected) =
+        (unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) })
     else {
         complete_bootstrap_phase(opaque);
         return false;
@@ -1506,7 +1440,8 @@ mod tests {
             "exhausting the scan should clear the current result slot"
         );
         assert_eq!(
-            opaque.result_state.pending_count(), 0,
+            opaque.result_state.pending_count(),
+            0,
             "exhausting the scan should also clear pending duplicate-drain state"
         );
     }
@@ -1556,11 +1491,13 @@ mod tests {
             "draining pending heap tids should keep the current-result heap tid aligned with the last emitted duplicate"
         );
         assert_eq!(
-            opaque.result_state.pending_count(), 0,
+            opaque.result_state.pending_count(),
+            0,
             "draining all queued heap tids should reset the pending count"
         );
         assert_eq!(
-            opaque.result_state.pending_index(), 0,
+            opaque.result_state.pending_index(),
+            0,
             "draining all queued heap tids should reset the pending index too"
         );
     }
@@ -1578,15 +1515,22 @@ mod tests {
             "clearing scan result state should also clear the current result slot"
         );
         assert_eq!(
-            opaque.result_state.pending_count(), 0,
+            opaque.result_state.pending_count(),
+            0,
             "clearing scan result state should clear any pending duplicate drain state"
         );
         assert_eq!(
-            opaque.result_state.pending_index(), 0,
+            opaque.result_state.pending_index(),
+            0,
             "clearing scan result state should reset duplicate drain progress"
         );
         assert_eq!(
-            opaque.result_state.pending_heap_tids().first().copied().unwrap_or(page::ItemPointer::INVALID),
+            opaque
+                .result_state
+                .pending_heap_tids()
+                .first()
+                .copied()
+                .unwrap_or(page::ItemPointer::INVALID),
             page::ItemPointer::INVALID,
             "clearing scan result state should wipe the pending heap-tid buffer too"
         );
@@ -1620,7 +1564,8 @@ mod tests {
             "shared result materialization should preserve the supplied score"
         );
         assert_eq!(
-            opaque.result_state.pending_count(), 2,
+            opaque.result_state.pending_count(),
+            2,
             "shared result materialization should seed pending duplicate drain"
         );
         assert_eq!(

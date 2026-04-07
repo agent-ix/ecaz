@@ -34,6 +34,114 @@ pub struct BeamTrace<NodeId> {
     pub frontier: Vec<BeamCandidate<NodeId>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct VisibleFrontier<NodeId> {
+    candidates: Vec<BeamCandidate<NodeId>>,
+}
+
+impl<NodeId> VisibleFrontier<NodeId> {
+    pub const fn empty() -> Self {
+        Self {
+            candidates: Vec::new(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.candidates.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.candidates.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.candidates.clear();
+    }
+
+    pub fn push(&mut self, candidate: impl Into<BeamCandidate<NodeId>>) {
+        self.candidates.push(candidate.into());
+    }
+
+    pub fn extend<I, C>(&mut self, candidates: I)
+    where
+        I: IntoIterator<Item = C>,
+        C: Into<BeamCandidate<NodeId>>,
+    {
+        self.candidates
+            .extend(candidates.into_iter().map(Into::into));
+    }
+}
+
+impl<NodeId> Default for VisibleFrontier<NodeId> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<NodeId> VisibleFrontier<NodeId>
+where
+    NodeId: Copy,
+{
+    pub fn iter(&self) -> impl Iterator<Item = BeamCandidate<NodeId>> + '_ {
+        self.candidates.iter().copied()
+    }
+
+    pub fn slot(&self, index: usize) -> Option<BeamCandidate<NodeId>> {
+        self.candidates.get(index).copied()
+    }
+}
+
+impl<NodeId> VisibleFrontier<NodeId>
+where
+    NodeId: Copy + Eq + Hash,
+{
+    pub fn contains_node(&self, node: NodeId) -> bool {
+        self.candidates
+            .iter()
+            .any(|candidate| candidate.node == node)
+    }
+
+    pub fn best_candidate(
+        &self,
+        expansion: &mut BeamSearch<NodeId>,
+    ) -> Option<BeamCandidate<NodeId>> {
+        if let Some(candidate) = expansion.peek_best_matching(|node| self.contains_node(node)) {
+            return Some(candidate);
+        }
+
+        // The scheduler tracks queued traversal sources, not every still-visible result
+        // candidate, so a fully drained scheduler must fall back to the visible Vec itself.
+        self.best_candidate_by_score()
+    }
+
+    pub fn consume_best(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+    ) -> Option<BeamCandidate<NodeId>> {
+        if let Some(candidate) = expansion.take_best_matching(|node| self.contains_node(node)) {
+            return self.remove_node(candidate.node);
+        }
+
+        let head = self.best_candidate_by_score()?;
+        self.remove_node(head.node)
+    }
+
+    fn best_candidate_by_score(&self) -> Option<BeamCandidate<NodeId>> {
+        self.candidates
+            .iter()
+            .min_by(|left, right| left.score.total_cmp(&right.score))
+            .copied()
+    }
+
+    fn remove_node(&mut self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
+        let index = self
+            .candidates
+            .iter()
+            .position(|candidate| candidate.node == node)?;
+        Some(self.candidates.remove(index))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BeamSearch<NodeId> {
     ef_search: usize,
@@ -420,7 +528,10 @@ mod tests {
             BeamCandidate::new(2_u64, 0.7),
         ]);
 
-        assert_eq!(seeded, 3, "seed_many should count only newly accepted nodes");
+        assert_eq!(
+            seeded, 3,
+            "seed_many should count only newly accepted nodes"
+        );
         assert_eq!(
             search
                 .discovered()
@@ -431,7 +542,8 @@ mod tests {
             "discovery order should preserve the first accepted instance of each node"
         );
         assert_eq!(
-            search.snapshot_frontier()
+            search
+                .snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -446,7 +558,10 @@ mod tests {
         let mut search = BeamSearch::new(4);
         search.seed(BeamCandidate::new(1, scores[&1]));
 
-        assert!(!search.is_empty(), "seeded search should expose non-empty frontier");
+        assert!(
+            !search.is_empty(),
+            "seeded search should expose non-empty frontier"
+        );
         assert_eq!(
             search.peek_best().map(|candidate| candidate.node),
             Some(1),
@@ -469,7 +584,8 @@ mod tests {
             "after expanding the seed, the next-best discovered neighbor should become the frontier head"
         );
         assert_eq!(
-            search.snapshot_frontier()
+            search
+                .snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -488,7 +604,8 @@ mod tests {
             .expect("second expansion should consume the current best frontier node");
         assert_eq!(second.node, 3);
         assert_eq!(
-            search.snapshot_frontier()
+            search
+                .snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -557,7 +674,8 @@ mod tests {
             .expect("queued node should be removable from the frontier");
         assert_eq!(removed, BeamCandidate::new(3_u64, 0.2));
         assert_eq!(
-            search.snapshot_frontier()
+            search
+                .snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -618,7 +736,8 @@ mod tests {
             "unknown nodes should leave scheduler state untouched"
         );
         assert_eq!(
-            search.snapshot_frontier()
+            search
+                .snapshot_frontier()
                 .iter()
                 .map(|candidate| candidate.node)
                 .collect::<Vec<_>>(),
@@ -649,7 +768,10 @@ mod tests {
         );
         assert_eq!(
             search.snapshot_frontier(),
-            vec![BeamCandidate::new(2_u64, 0.2), BeamCandidate::new(3_u64, 0.3)],
+            vec![
+                BeamCandidate::new(2_u64, 0.2),
+                BeamCandidate::new(3_u64, 0.3)
+            ],
             "dropping stale leaders should also prune them from the queued frontier"
         );
     }
@@ -657,7 +779,10 @@ mod tests {
     #[test]
     fn beam_search_peek_best_matching_returns_none_after_dropping_fully_stale_frontier() {
         let mut search = BeamSearch::new(4);
-        search.seed_many([BeamCandidate::new(1_u64, 0.1), BeamCandidate::new(2_u64, 0.2)]);
+        search.seed_many([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
 
         assert_eq!(
             search.peek_best_matching(|_| false),
@@ -697,4 +822,94 @@ mod tests {
         );
     }
 
+    #[test]
+    fn visible_frontier_best_candidate_prefers_live_scheduler_node() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed_many([
+            BeamCandidate::new(9_u64, 0.05),
+            BeamCandidate::new(2_u64, 0.2),
+            BeamCandidate::new(1_u64, 0.1),
+        ]);
+
+        assert_eq!(
+            visible.best_candidate(&mut expansion),
+            Some(BeamCandidate::new(1_u64, 0.1)),
+            "best_candidate should drop stale scheduler leaders until the current live visible node remains"
+        );
+        assert_eq!(
+            expansion.snapshot_frontier(),
+            vec![
+                BeamCandidate::new(1_u64, 0.1),
+                BeamCandidate::new(2_u64, 0.2)
+            ],
+            "best_candidate should prune stale scheduler nodes while preserving live queued order"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_best_candidate_falls_back_after_scheduler_drains() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed_many([
+            BeamCandidate::new(9_u64, 0.05),
+            BeamCandidate::new(8_u64, 0.07),
+        ]);
+
+        assert_eq!(
+            visible.best_candidate(&mut expansion),
+            Some(BeamCandidate::new(1_u64, 0.1)),
+            "best_candidate should fall back to Vec score order once the scheduler drains away as fully stale"
+        );
+        assert!(
+            expansion.is_empty(),
+            "dropping a fully stale scheduler should leave the queued expansion state empty"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_consume_best_prefers_live_scheduler_node() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed_many([
+            BeamCandidate::new(9_u64, 0.05),
+            BeamCandidate::new(2_u64, 0.2),
+            BeamCandidate::new(1_u64, 0.1),
+        ]);
+
+        let consumed = visible.consume_best(&mut expansion);
+        assert_eq!(
+            consumed,
+            Some(BeamCandidate::new(1_u64, 0.1)),
+            "consume_best should drop stale scheduler leaders and consume the first live visible node"
+        );
+        assert_eq!(
+            visible
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![2],
+            "consume_best should remove the consumed visible node from the compacted frontier"
+        );
+        assert_eq!(
+            expansion.snapshot_frontier(),
+            vec![BeamCandidate::new(2_u64, 0.2)],
+            "consume_best should keep the scheduler aligned with the remaining live visible frontier"
+        );
+    }
 }
