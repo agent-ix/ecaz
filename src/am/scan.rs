@@ -877,17 +877,21 @@ unsafe fn select_next_scan_result(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<SelectedScanResult> {
-    if opaque.execution_phase.is_bootstrap() {
-        if let Some(selected) = unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) } {
-            return Some(selected);
+    match opaque.execution_phase {
+        ScanExecutionPhase::Bootstrap => {
+            if let Some(selected) =
+                unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) }
+            {
+                return Some(selected);
+            }
+
+            unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
         }
+        ScanExecutionPhase::Linear => unsafe {
+            select_next_linear_scan_result(index_relation, opaque, code_len)
+        },
+        ScanExecutionPhase::Exhausted => None,
     }
-
-    if opaque.execution_phase.is_exhausted() {
-        return None;
-    }
-
-    unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
 }
 
 unsafe fn select_next_linear_scan_result(
