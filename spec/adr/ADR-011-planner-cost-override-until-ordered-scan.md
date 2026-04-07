@@ -37,6 +37,7 @@ This is an intentional temporary gate, not the final costing model.
 
 Planner/integration groundwork may still land behind this gate, including:
 
+- pure cost-model helpers and unit tests that are not yet wired into `amcostestimate`
 - session-level `tqhnsw.ef_search` override registration
 - relation-versus-session precedence resolution
 - planner/explain/statistics-facing snapshot helpers

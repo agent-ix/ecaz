@@ -15,6 +15,11 @@ traces:
 
 The extension SHALL implement a production-ready `amcostestimate` callback that provides realistic cost estimates to the PostgreSQL query planner, replacing the current `f64::MAX` override (ADR-011). On PG18, the extension SHALL additionally implement `amgettreeheight` to report the HNSW graph height for planner refinement.
 
+Current staged behavior:
+- A pure cost-model helper MAY exist and be unit-tested behind ADR-011 while the live
+  `amcostestimate` callback still returns prohibitive costs to keep planner-visible `tqhnsw` scans
+  disabled.
+
 ### Cost Model
 
 ```

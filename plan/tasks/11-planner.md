@@ -1,6 +1,12 @@
 # Task 11: Planner Integration
 
-Status: not started
+Status: in progress
+
+Progress notes:
+- ADR-011 still keeps live planner costing disabled in `amcostestimate`.
+- A pure FR-020 cost-model helper now exists in `src/am/cost.rs` with unit coverage for the large-
+  table crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
+  heuristic behavior.
 
 ## Scope
 
@@ -10,13 +16,13 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 
 ### D1: Planner Scaffolding (parallel-ready, no gate dependency)
 
-- [ ] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
+- [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
 - [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. PG18 feature-gated. Place in `am/cost.rs`.
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. PG18 feature-gated. Place in `am/cost.rs`.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). Place counter struct in `am/explain.rs`.
 - [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
 - [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. PG18 feature-gated. Place in `am/stream.rs`.
-- [ ] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.
+- [x] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.
 
 ### D2: Wire Planner (gated on A4 recall gate)
 
