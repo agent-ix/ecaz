@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `7e5d15e`
+Current head: `124ff6e`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -71,6 +71,7 @@ Current tqhnsw state summary:
 - The bootstrap linear scan now also computes and stores an operator-facing `<#>` score for the current result element by combining the cached prepared query with the representative heap row's persisted `gamma`.
 - Current-result score coverage now verifies that score validity flips on with first tuple production, remains attached while draining duplicate heap TIDs from one element, and clears back to zero on exhaustion.
 - The explicit bootstrap-phase completion bit in `src/am/scan.rs` now also has pg/debug coverage, so the current staged executor proves that bootstrap execution eventually marks itself complete, clears visible frontier state, and resets on `amrescan`.
+- Pending heap-TID drain is now an explicit first step in `amgettuple`, so duplicate emission from an already-materialized current result no longer falls through the linear-scan helper before bootstrap or linear candidate selection resumes.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -243,6 +244,7 @@ Open requests:
 - `126-align-debug-bootstrap-materialization-with-runtime.md`
 - `127-explicit-bootstrap-to-linear-transition.md`
 - `128-bootstrap-phase-debug-transition.md`
+- `129-pending-result-drain-before-fallback.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
