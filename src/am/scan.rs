@@ -156,7 +156,6 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             if produce_next_scan_heap_tid(
                 scan,
                 (*scan).indexRelation,
-                (*scan).heapRelation,
                 opaque,
                 opaque.scan_code_len,
             ) {
@@ -270,7 +269,6 @@ fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOp
 unsafe fn produce_next_scan_heap_tid(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
@@ -278,7 +276,8 @@ unsafe fn produce_next_scan_heap_tid(
         return true;
     }
 
-    if unsafe { materialize_next_scan_result(index_relation, heap_relation, opaque, code_len) } {
+    if let Some(selected) = unsafe { select_next_scan_result(index_relation, opaque, code_len) } {
+        materialize_selected_scan_result(opaque, selected);
         let emitted = emit_pending_scan_heap_tid(scan, opaque);
         debug_assert!(
             emitted,
@@ -902,19 +901,6 @@ unsafe fn select_next_scan_result(
     }
 
     unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
-}
-
-unsafe fn materialize_next_scan_result(
-    index_relation: pg_sys::Relation,
-    _heap_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-    code_len: usize,
-) -> bool {
-    if let Some(selected) = unsafe { select_next_scan_result(index_relation, opaque, code_len) } {
-        materialize_selected_scan_result(opaque, selected);
-        return true;
-    }
-    false
 }
 
 unsafe fn select_next_linear_scan_result(
