@@ -44,6 +44,7 @@ pub(crate) use self::scan_debug::{
     debug_gettuple_orderby_score, debug_gettuple_orderby_score_lifecycle,
     debug_gettuple_rescan_after_exhaustion, debug_gettuple_rescan_after_partial,
     debug_gettuple_scan_heap_tids, debug_gettuple_without_rescan,
+    debug_bootstrap_phase_transition,
     debug_materialize_bootstrap_candidate_result, debug_rescan_candidate_frontier,
     debug_rescan_entry_candidate_state, debug_rescan_null_query,
     debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,

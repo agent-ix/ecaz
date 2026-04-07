@@ -124,6 +124,9 @@ type DebugBootstrapSeedState = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugBootstrapPhaseTransition = (bool, bool, DebugCandidateHead, DebugCandidateFrontierSlots, bool);
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugBootstrapConsumeState = (
     DebugCandidateHead,
     DebugCandidateFrontierSlots,
@@ -776,6 +779,59 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
         current_result_tid,
         pending_heap_tids,
         materialized,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_bootstrap_phase_transition(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugBootstrapPhaseTransition {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let before_complete = opaque.bootstrap_phase_complete;
+
+    while !opaque.bootstrap_phase_complete
+        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+    {}
+
+    if !opaque.bootstrap_phase_complete {
+        let _ = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    }
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let after_complete = opaque.bootstrap_phase_complete;
+    let after_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
+    let after_frontier = debug_candidate_frontier_slots(opaque);
+
+    let mut rescan_orderby = pg_sys::ScanKeyData {
+        sk_argument: query_datum,
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+
+    let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
+    let rescanned_complete = opaque.bootstrap_phase_complete;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        before_complete,
+        after_complete,
+        after_head,
+        after_frontier,
+        rescanned_complete,
     )
 }
 

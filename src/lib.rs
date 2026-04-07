@@ -3358,6 +3358,58 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_bootstrap_phase_completes_and_resets_on_rescan() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bootstrap_phase_transition (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bootstrap_phase_transition VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bootstrap_phase_transition_idx ON tqhnsw_bootstrap_phase_transition USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_bootstrap_phase_transition_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (before_complete, after_complete, after_head, after_frontier, rescanned_complete) =
+            unsafe {
+                am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+            };
+
+        assert!(
+            !before_complete,
+            "amrescan should always start with bootstrap traversal enabled"
+        );
+        assert!(
+            after_complete,
+            "non-empty scan execution should eventually complete the current bootstrap phase"
+        );
+        assert_eq!(
+            after_head, None,
+            "once bootstrap phase completes, the visible frontier head should stay cleared"
+        );
+        assert_eq!(
+            after_frontier,
+            Vec::<(bool, (u32, u16), f32)>::new(),
+            "once bootstrap phase completes, the visible frontier should be cleared too"
+        );
+        assert!(
+            !rescanned_complete,
+            "amrescan should reset bootstrap-phase completion for the next execution"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_visited_seed_state_tracks_frontier_candidates() {
         Spi::run(
             "CREATE TABLE tqhnsw_visited_seed_state (id bigint primary key, embedding tqvector)",
