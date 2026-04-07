@@ -169,6 +169,30 @@ where
         expansion.seed_many(candidates);
     }
 
+    pub fn seed_bootstrap_trace<MarkVisitedFn, MarkExpandedFn>(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        trace: BeamTrace<NodeId>,
+        max_candidates: usize,
+        mark_visited: MarkVisitedFn,
+        mut mark_entry_expanded: MarkExpandedFn,
+    ) where
+        MarkVisitedFn: FnMut(NodeId),
+        MarkExpandedFn: FnMut(NodeId),
+    {
+        let visible_candidates = trace
+            .discovered
+            .into_iter()
+            .take(max_candidates)
+            .collect::<Vec<_>>();
+        let entry_candidate = visible_candidates.first().copied();
+
+        self.seed_discovered(expansion, visible_candidates, mark_visited);
+        if let Some(entry_candidate) = entry_candidate {
+            mark_entry_expanded(entry_candidate.node);
+        }
+    }
+
     pub fn select_next_with_refill<
         Selection,
         SelectFn,
@@ -1115,6 +1139,55 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![3, 2],
             "seed_discovered should seed discovered candidates into the scheduler in best-first order"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_seed_bootstrap_trace_seeds_and_marks_entry_source() {
+        let mut visible = VisibleFrontier::default();
+        let mut expansion = BeamSearch::new(3);
+        let visited = RefCell::new(Vec::new());
+        let expanded = RefCell::new(Vec::new());
+
+        visible.seed_bootstrap_trace(
+            &mut expansion,
+            BeamTrace {
+                discovered: vec![
+                    BeamCandidate::new(1_u64, 0.1),
+                    BeamCandidate::with_source(2_u64, 0.2, 1_u64),
+                    BeamCandidate::with_source(3_u64, 0.3, 2_u64),
+                ],
+                expanded: Vec::new(),
+                frontier: Vec::new(),
+            },
+            2,
+            |node| visited.borrow_mut().push(node),
+            |node| expanded.borrow_mut().push(node),
+        );
+
+        assert_eq!(
+            visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
+            vec![1, 2],
+            "seed_bootstrap_trace should keep only the discovered candidates within the runtime bootstrap limit"
+        );
+        assert_eq!(
+            visited.into_inner(),
+            vec![1, 2],
+            "seed_bootstrap_trace should mark each retained discovered candidate as visited"
+        );
+        assert_eq!(
+            expanded.into_inner(),
+            vec![1],
+            "seed_bootstrap_trace should mark only the retained entry candidate source as expanded"
+        );
+        assert_eq!(
+            expansion
+                .snapshot_frontier()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![1, 2],
+            "seed_bootstrap_trace should seed the retained bootstrap candidates into the scheduler"
         );
     }
 

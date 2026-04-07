@@ -556,17 +556,19 @@ fn seed_bootstrap_trace(
 ) {
     reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
-
-    let visible_candidates = trace
-        .discovered
-        .into_iter()
-        .take(max_candidates)
-        .collect::<Vec<_>>();
-    let entry_candidate = visible_candidates.first().copied();
-    seed_discovered_candidates(opaque, visible_candidates.iter().copied());
-    if let Some(entry_candidate) = entry_candidate {
-        mark_expanded_source(opaque, entry_candidate.node);
-    }
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    with_visible_frontier_mut_and_bootstrap_expansion(
+        unsafe { &mut *opaque_ptr },
+        |visible_frontier, expansion| {
+            visible_frontier.seed_bootstrap_trace(
+                expansion,
+                trace,
+                max_candidates,
+                |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
+                |node| mark_expanded_source(unsafe { &mut *opaque_ptr }, node),
+            );
+        },
+    );
 }
 
 fn seed_discovered_candidates(
