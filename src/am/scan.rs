@@ -453,7 +453,7 @@ fn scheduler_best_frontier_candidate(
     })
 }
 
-pub(super) fn current_candidate_frontier_head(
+fn candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     if let Some(candidate) = scheduler_best_frontier_candidate(opaque) {
@@ -464,6 +464,13 @@ pub(super) fn current_candidate_frontier_head(
     // candidates. After bootstrap fill reaches capacity, the visible frontier can still hold
     // candidates whose scheduler entries were already consumed during expansion.
     visible_frontier_ref(opaque).best_candidate_by_score()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(super) fn current_candidate_frontier_head(
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    candidate_frontier_head(opaque)
 }
 
 fn bootstrap_expansion_mut(
@@ -667,7 +674,7 @@ fn top_up_bootstrap_frontier<F>(
 pub(super) fn current_candidate_frontier_head_tid(
     opaque: &mut TqScanOpaque,
 ) -> Option<page::ItemPointer> {
-    current_candidate_frontier_head(opaque).map(|candidate| candidate.node)
+    candidate_frontier_head(opaque).map(|candidate| candidate.node)
 }
 
 fn take_candidate_frontier_node(
@@ -688,7 +695,7 @@ fn consume_candidate_frontier_head(
         return take_candidate_frontier_node(opaque, candidate.node);
     }
 
-    let head = current_candidate_frontier_head(opaque)?;
+    let head = candidate_frontier_head(opaque)?;
     take_candidate_frontier_node(opaque, head.node)
 }
 
