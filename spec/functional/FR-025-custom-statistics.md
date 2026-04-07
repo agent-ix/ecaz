@@ -14,6 +14,13 @@ traces:
 
 On PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
 
+Current staged behavior:
+- Before PostgreSQL 18 support exists in this repository, pure statistics-scaffolding helpers MAY
+  expose the intended SQL function name and report that both pgstat-kind registration and SQL
+  function wiring remain unavailable.
+- Those helpers SHALL stay descriptive only; they do not imply that `tqvector_stats()` exists on
+  PG17 or that any counters are being accumulated through PostgreSQL's statistics system.
+
 ### PG18 Custom Statistics API
 
 PG18 introduces `pgstat_register_kind()` which allows extensions to register custom statistics types that integrate with PostgreSQL's standard statistics infrastructure.

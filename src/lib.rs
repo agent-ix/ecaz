@@ -431,6 +431,24 @@ fn tqhnsw_index_cost_snapshot(
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_stats_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(stats_function_name, String),
+        name!(pg18_pgstat_kind_ready, bool),
+        name!(pg18_sql_function_ready, bool),
+    ),
+> {
+    let snapshot = am::stats_snapshot();
+    TableIterator::once((
+        snapshot.function_name.to_owned(),
+        snapshot.pg18_pgstat_kind_ready,
+        snapshot.pg18_sql_function_ready,
+    ))
+}
+
 fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
@@ -1260,6 +1278,39 @@ mod tests {
 
         let _ = Spi::get_one::<f64>(
             "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_stats_snapshot_reports_pg18_stats_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT stats_function_name FROM tqhnsw_stats_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("stats function name should be non-null"),
+            "tqvector_stats"
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_pgstat_kind_ready FROM tqhnsw_stats_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 pgstat kind readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_sql_function_ready FROM tqhnsw_stats_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 stats sql readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'tqvector_stats')",
+            )
+            .expect("catalog query should succeed")
+            .expect("exists should be non-null")
         );
     }
 

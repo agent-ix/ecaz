@@ -18,6 +18,9 @@ Progress notes:
 - The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
   keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
   actually exists in the repository.
+- A read-only `tqhnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
+  function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
+  PostgreSQL 18 support actually exists in the repository.
 
 ## Scope
 
@@ -48,6 +51,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 - FR-020 (planner cost estimation)
 - FR-023 (strategy translation)
 - FR-024 (custom EXPLAIN)
+- FR-025 (custom cumulative statistics scaffolding)
 - FR-019 (async I/O)
 
 ## Dependencies
@@ -65,6 +69,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 
 - `am/cost.rs` — cost model, `amgettreeheight`, strategy translation
 - `am/explain.rs` — EXPLAIN hook and counter struct
+- `am/stats.rs` — custom statistics scaffolding
 - `am/stream.rs` — ReadStream callbacks
 - ADR-011 marked superseded
 
@@ -82,6 +87,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 These files do NOT overlap with the graph search agent's `am/scan.rs` and `am/search.rs`:
 - `am/cost.rs` — planner agent owns
 - `am/explain.rs` — planner agent owns
+- `am/stats.rs` — planner agent owns
 - `am/stream.rs` — planner agent owns
 
 Coordination point: D2 wiring touches `am/scan.rs` (counter increments, ReadStream creation). This should happen AFTER the graph search agent completes A3/A4 and is no longer actively modifying scan.

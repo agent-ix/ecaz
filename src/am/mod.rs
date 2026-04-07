@@ -12,6 +12,7 @@ mod scan;
 mod scan_debug;
 mod search;
 mod shared;
+mod stats;
 mod vacuum;
 pub mod wal;
 
@@ -47,6 +48,10 @@ pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::IndexCostSnapshot {
     unsafe { shared::index_cost_snapshot(index_relation) }
+}
+
+pub(crate) fn stats_snapshot() -> stats::StatsSnapshot {
+    stats::stats_snapshot()
 }
 
 #[cfg(any(test, feature = "pg_test"))]
