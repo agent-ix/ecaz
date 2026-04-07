@@ -148,6 +148,27 @@ where
         top_up_from_visible(self, expansion);
     }
 
+    pub fn seed_discovered<I, MarkVisitedFn>(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        candidates: I,
+        mut mark_visited: MarkVisitedFn,
+    ) where
+        I: IntoIterator<Item = BeamCandidate<NodeId>>,
+        MarkVisitedFn: FnMut(NodeId),
+    {
+        let candidates = candidates.into_iter().collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return;
+        }
+
+        self.extend(candidates.iter().copied());
+        for candidate in &candidates {
+            mark_visited(candidate.node);
+        }
+        expansion.seed_many(candidates);
+    }
+
     pub fn select_next_with_refill<
         Selection,
         SelectFn,
@@ -1053,6 +1074,47 @@ mod tests {
             visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
             vec![2, 3],
             "advance_after_consume should still let top-up extend the visible frontier after an already expanded source is consumed"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_seed_discovered_marks_nodes_and_seeds_scheduler() {
+        let mut visible = VisibleFrontier::default();
+        visible.push(BeamCandidate::new(1_u64, 0.1));
+
+        let mut expansion = BeamSearch::new(4);
+        let visited = RefCell::new(Vec::new());
+
+        visible.seed_discovered(
+            &mut expansion,
+            [
+                BeamCandidate::new(2_u64, 0.2),
+                BeamCandidate::new(3_u64, 0.15),
+            ],
+            |node| visited.borrow_mut().push(node),
+        );
+
+        assert_eq!(
+            visible
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "seed_discovered should append new runtime candidates onto the visible frontier"
+        );
+        assert_eq!(
+            visited.into_inner(),
+            vec![2, 3],
+            "seed_discovered should mark every discovered node as visited before later traversals"
+        );
+        assert_eq!(
+            expansion
+                .snapshot_frontier()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3, 2],
+            "seed_discovered should seed discovered candidates into the scheduler in best-first order"
         );
     }
 

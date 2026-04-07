@@ -582,31 +582,11 @@ fn seed_discovered_candidates(
     with_visible_frontier_mut_and_bootstrap_expansion(
         unsafe { &mut *opaque_ptr },
         |visible_frontier, expansion| {
-            seed_discovered_candidates_into(
-                unsafe { &mut *opaque_ptr },
-                visible_frontier,
-                expansion,
-                candidates,
-            );
+            visible_frontier.seed_discovered(expansion, candidates, |node| {
+                mark_visited_element(unsafe { &mut *opaque_ptr }, node)
+            });
         },
     );
-}
-
-fn seed_discovered_candidates_into(
-    opaque: &mut TqScanOpaque,
-    visible_frontier: &mut VisibleCandidateFrontierState,
-    expansion: &mut search::BeamSearch<page::ItemPointer>,
-    candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
-) {
-    if candidates.is_empty() {
-        return;
-    }
-
-    visible_frontier.extend(candidates.iter().copied());
-    for candidate in &candidates {
-        mark_visited_element(opaque, candidate.node);
-    }
-    expansion.seed_many(candidates);
 }
 
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
@@ -698,7 +678,9 @@ unsafe fn refill_candidate_frontier_from_source_into(
             },
         )
     };
-    seed_discovered_candidates_into(opaque, visible_frontier, expansion, successors);
+    visible_frontier.seed_discovered(expansion, successors, |node| {
+        mark_visited_element(opaque, node)
+    });
 }
 
 unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
@@ -740,12 +722,9 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     for expanded_source_tid in expansion_trace.expanded_source_tids {
         mark_expanded_source(opaque, expanded_source_tid);
     }
-    seed_discovered_candidates_into(
-        opaque,
-        visible_frontier,
-        expansion,
-        expansion_trace.discovered_candidates,
-    );
+    visible_frontier.seed_discovered(expansion, expansion_trace.discovered_candidates, |node| {
+        mark_visited_element(opaque, node)
+    });
 }
 
 unsafe fn refill_bootstrap_frontier_after_success(
