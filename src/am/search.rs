@@ -126,6 +126,28 @@ where
         self.remove_node(head.node)
     }
 
+    pub fn advance_after_consume<ExpandedFn, MarkExpandedFn, RefillFn, TopUpFn>(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        consumed: BeamCandidate<NodeId>,
+        mut source_is_expanded: ExpandedFn,
+        mut mark_source_expanded: MarkExpandedFn,
+        mut refill_source: RefillFn,
+        mut top_up_from_visible: TopUpFn,
+    ) where
+        ExpandedFn: FnMut(NodeId) -> bool,
+        MarkExpandedFn: FnMut(NodeId),
+        RefillFn: FnMut(NodeId, &mut Self, &mut BeamSearch<NodeId>),
+        TopUpFn: FnMut(&mut Self, &mut BeamSearch<NodeId>),
+    {
+        if !source_is_expanded(consumed.node) {
+            mark_source_expanded(consumed.node);
+            refill_source(consumed.node, self, expansion);
+        }
+
+        top_up_from_visible(self, expansion);
+    }
+
     fn best_candidate_by_score(&self) -> Option<BeamCandidate<NodeId>> {
         self.candidates
             .iter()
@@ -363,6 +385,7 @@ fn candidate_order<NodeId>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use std::collections::HashMap;
 
     fn mock_graph() -> (HashMap<u64, Vec<u64>>, HashMap<u64, f32>) {
@@ -910,6 +933,86 @@ mod tests {
             expansion.snapshot_frontier(),
             vec![BeamCandidate::new(2_u64, 0.2)],
             "consume_best should keep the scheduler aligned with the remaining live visible frontier"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_advance_after_consume_marks_refills_and_tops_up_unexpanded_source() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([BeamCandidate::new(2_u64, 0.2)]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed(BeamCandidate::new(2_u64, 0.2));
+        let steps = RefCell::new(Vec::new());
+
+        visible.advance_after_consume(
+            &mut expansion,
+            BeamCandidate::new(1_u64, 0.1),
+            |_node| false,
+            |node| steps.borrow_mut().push(format!("mark:{node}")),
+            |node, visible, expansion| {
+                steps.borrow_mut().push(format!("refill:{node}"));
+                visible.push(BeamCandidate::new(3_u64, 0.15));
+                expansion.seed(BeamCandidate::new(3_u64, 0.15));
+            },
+            |visible, expansion| {
+                steps.borrow_mut().push("top_up".to_string());
+                visible.push(BeamCandidate::new(4_u64, 0.18));
+                expansion.seed(BeamCandidate::new(4_u64, 0.18));
+            },
+        );
+
+        assert_eq!(
+            steps.into_inner(),
+            vec!["mark:1", "refill:1", "top_up"],
+            "advance_after_consume should mark, refill, then top up when the consumed source has not been expanded yet"
+        );
+        assert_eq!(
+            visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
+            vec![2, 3, 4],
+            "advance_after_consume should allow refill and top-up stages to extend the visible frontier"
+        );
+        assert_eq!(
+            expansion.snapshot_frontier()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3, 4, 2],
+            "advance_after_consume should let refill and top-up stages reseed the scheduler in best-first order"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_advance_after_consume_skips_refill_for_expanded_source() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([BeamCandidate::new(2_u64, 0.2)]);
+
+        let mut expansion = BeamSearch::new(4);
+        expansion.seed(BeamCandidate::new(2_u64, 0.2));
+        let steps = RefCell::new(Vec::new());
+
+        visible.advance_after_consume(
+            &mut expansion,
+            BeamCandidate::new(1_u64, 0.1),
+            |node| node == 1,
+            |node| steps.borrow_mut().push(format!("mark:{node}")),
+            |node, _visible, _expansion| steps.borrow_mut().push(format!("refill:{node}")),
+            |visible, expansion| {
+                steps.borrow_mut().push("top_up".to_string());
+                visible.push(BeamCandidate::new(3_u64, 0.15));
+                expansion.seed(BeamCandidate::new(3_u64, 0.15));
+            },
+        );
+
+        assert_eq!(
+            steps.into_inner(),
+            vec!["top_up"],
+            "advance_after_consume should skip mark/refill work for already expanded sources while still allowing visible-seed top-up"
+        );
+        assert_eq!(
+            visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
+            vec![2, 3],
+            "advance_after_consume should still let top-up extend the visible frontier after an already expanded source is consumed"
         );
     }
 }

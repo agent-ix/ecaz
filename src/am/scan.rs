@@ -578,11 +578,35 @@ fn seed_discovered_candidates(
         return;
     }
 
-    visible_frontier_mut(opaque).extend(candidates.iter().copied());
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    with_visible_frontier_mut_and_bootstrap_expansion(
+        unsafe { &mut *opaque_ptr },
+        |visible_frontier, expansion| {
+            seed_discovered_candidates_into(
+                unsafe { &mut *opaque_ptr },
+                visible_frontier,
+                expansion,
+                candidates,
+            );
+        },
+    );
+}
+
+fn seed_discovered_candidates_into(
+    opaque: &mut TqScanOpaque,
+    visible_frontier: &mut VisibleCandidateFrontierState,
+    expansion: &mut search::BeamSearch<page::ItemPointer>,
+    candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
+) {
+    if candidates.is_empty() {
+        return;
+    }
+
+    visible_frontier.extend(candidates.iter().copied());
     for candidate in &candidates {
         mark_visited_element(opaque, candidate.node);
     }
-    bootstrap_expansion_mut(opaque).seed_many(candidates);
+    expansion.seed_many(candidates);
 }
 
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
@@ -641,9 +665,11 @@ fn consume_candidate_frontier_head(
     })
 }
 
-unsafe fn refill_candidate_frontier_from_source(
+unsafe fn refill_candidate_frontier_from_source_into(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
+    visible_frontier: &mut VisibleCandidateFrontierState,
+    expansion: &mut search::BeamSearch<page::ItemPointer>,
     source_tid: page::ItemPointer,
 ) {
     if source_tid == page::ItemPointer::INVALID {
@@ -651,7 +677,7 @@ unsafe fn refill_candidate_frontier_from_source(
     }
 
     let max_successor_candidates =
-        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier_ref(opaque).len());
+        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier.len());
     if max_successor_candidates == 0 {
         return;
     }
@@ -672,23 +698,31 @@ unsafe fn refill_candidate_frontier_from_source(
             },
         )
     };
-    seed_discovered_candidates(
+    seed_discovered_candidates_into(
         opaque,
-        trace.frontier.into_iter().take(max_successor_candidates),
+        visible_frontier,
+        expansion,
+        trace
+            .frontier
+            .into_iter()
+            .take(max_successor_candidates)
+            .collect(),
     );
 }
 
-unsafe fn top_up_bootstrap_frontier_from_visible_seeds(
+unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
+    visible_frontier: &mut VisibleCandidateFrontierState,
+    expansion: &mut search::BeamSearch<page::ItemPointer>,
 ) {
     let max_successor_candidates =
-        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier_ref(opaque).len());
+        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier.len());
     if max_successor_candidates == 0 {
         return;
     }
 
-    let seed_candidates = visible_frontier_ref(opaque)
+    let seed_candidates = visible_frontier
         .iter()
         .filter(|candidate| !expanded_contains_source(opaque, candidate.node))
         .collect::<Vec<_>>();
@@ -719,13 +753,16 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds(
     for expanded in trace.expanded {
         mark_expanded_source(opaque, expanded.node);
     }
-    seed_discovered_candidates(
+    seed_discovered_candidates_into(
         opaque,
+        visible_frontier,
+        expansion,
         trace
             .discovered
             .into_iter()
             .filter(|candidate| !seed_nodes.contains(&candidate.node))
-            .take(max_successor_candidates),
+            .take(max_successor_candidates)
+            .collect(),
     );
 }
 
@@ -734,12 +771,35 @@ unsafe fn refill_bootstrap_frontier_after_success(
     opaque: &mut TqScanOpaque,
     consumed: search::BeamCandidate<page::ItemPointer>,
 ) {
-    if !expanded_contains_source(opaque, consumed.node) {
-        mark_expanded_source(opaque, consumed.node);
-        unsafe { refill_candidate_frontier_from_source(index_relation, opaque, consumed.node) };
-    }
-
-    unsafe { top_up_bootstrap_frontier_from_visible_seeds(index_relation, opaque) };
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    with_visible_frontier_mut_and_bootstrap_expansion(
+        unsafe { &mut *opaque_ptr },
+        |visible_frontier, expansion| unsafe {
+            visible_frontier.advance_after_consume(
+                expansion,
+                consumed,
+                |node| expanded_contains_source(&*opaque_ptr, node),
+                |node| mark_expanded_source(&mut *opaque_ptr, node),
+                |source_tid, visible_frontier, expansion| {
+                    refill_candidate_frontier_from_source_into(
+                        index_relation,
+                        &mut *opaque_ptr,
+                        visible_frontier,
+                        expansion,
+                        source_tid,
+                    );
+                },
+                |visible_frontier, expansion| {
+                    top_up_bootstrap_frontier_from_visible_seeds_into(
+                        index_relation,
+                        &mut *opaque_ptr,
+                        visible_frontier,
+                        expansion,
+                    );
+                },
+            );
+        },
+    );
 }
 
 #[cfg(any(test, feature = "pg_test"))]
