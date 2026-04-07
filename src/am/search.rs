@@ -237,6 +237,27 @@ where
         self.seed_discovered(expansion, discovered_candidates, mark_visited);
     }
 
+    pub fn refill_from_source<LoadFn, DiscoveredIter, MarkVisitedFn>(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        max_candidates: usize,
+        source: NodeId,
+        mut load_successors: LoadFn,
+        mark_visited: MarkVisitedFn,
+    ) where
+        LoadFn: FnMut(NodeId, usize) -> DiscoveredIter,
+        DiscoveredIter: IntoIterator<Item = BeamCandidate<NodeId>>,
+        MarkVisitedFn: FnMut(NodeId),
+    {
+        let max_successor_candidates = max_candidates.saturating_sub(self.len());
+        if max_successor_candidates == 0 {
+            return;
+        }
+
+        let successors = load_successors(source, max_successor_candidates);
+        self.seed_discovered(expansion, successors, mark_visited);
+    }
+
     pub fn select_next_with_refill<
         Selection,
         SelectFn,
@@ -1298,6 +1319,60 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![4],
             "top_up_from_visible_seeds should seed newly discovered successors into the scheduler"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_refill_from_source_uses_remaining_capacity_and_seeds() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        let visited = RefCell::new(Vec::new());
+        let callback_inputs = RefCell::new(Vec::new());
+
+        visible.refill_from_source(
+            &mut expansion,
+            3,
+            9_u64,
+            |source, remaining_capacity| {
+                callback_inputs
+                    .borrow_mut()
+                    .push((source, remaining_capacity));
+                vec![BeamCandidate::with_source(3_u64, 0.15, source)]
+            },
+            |node| visited.borrow_mut().push(node),
+        );
+
+        assert_eq!(
+            callback_inputs.into_inner(),
+            vec![(9, 1)],
+            "refill_from_source should pass the consumed source and remaining frontier capacity to the successor loader"
+        );
+        assert_eq!(
+            visited.into_inner(),
+            vec![3],
+            "refill_from_source should mark discovered successors as visited before later traversals"
+        );
+        assert_eq!(
+            visible
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "refill_from_source should append discovered successors onto the visible frontier"
+        );
+        assert_eq!(
+            expansion
+                .snapshot_frontier()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![3],
+            "refill_from_source should seed discovered successors into the scheduler"
         );
     }
 

@@ -654,35 +654,29 @@ unsafe fn refill_candidate_frontier_from_source_into(
     expansion: &mut search::BeamSearch<page::ItemPointer>,
     source_tid: page::ItemPointer,
 ) {
-    if source_tid == page::ItemPointer::INVALID {
-        return;
-    }
-
-    let max_successor_candidates =
-        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier.len());
-    if max_successor_candidates == 0 {
-        return;
-    }
-
-    let successors = unsafe {
-        graph::load_layer0_refill_successors(
-            index_relation,
-            opaque.scan_code_len,
-            source_tid,
-            max_successor_candidates,
-            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| {
-                Some(score_scan_element_result(
-                    opaque,
-                    neighbor.gamma,
-                    &neighbor.code,
-                ))
-            },
-        )
-    };
-    visible_frontier.seed_discovered(expansion, successors, |node| {
-        mark_visited_element(opaque, node)
-    });
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    visible_frontier.refill_from_source(
+        expansion,
+        bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
+        source_tid,
+        |source_tid, max_successor_candidates| unsafe {
+            graph::load_layer0_refill_successors(
+                index_relation,
+                (&*opaque_ptr).scan_code_len,
+                source_tid,
+                max_successor_candidates,
+                |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                |neighbor| {
+                    Some(score_scan_element_result(
+                        &*opaque_ptr,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            )
+        },
+        |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
+    );
 }
 
 unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
