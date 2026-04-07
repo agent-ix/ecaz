@@ -28,6 +28,9 @@ Current staged behavior:
   reusable counter struct into the eventual `ExplainPropertyInteger` / `ExplainPropertyBool`
   payloads and a pure gating helper that requires both the `tqvector` option and the `tqhnsw`
   access method before any emission occurs.
+- Those same helpers MAY also define the intended EXPLAIN group contract, including the
+  `"TQVector Stats"` label plus the expectation that the eventual hook will bracket emission with
+  `ExplainOpenGroup` and `ExplainCloseGroup`.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
@@ -141,7 +144,7 @@ On PG17, the custom EXPLAIN API does not exist. During the current staged implem
 counter contract may be exposed through read-only scaffolding helpers, but the actual counter
 fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
 embedding by the scan lane, pure ExplainProperty-emission helpers may exist in `am/explain.rs`,
-and no EXPLAIN hook is registered.
+the output group contract may also exist in pure form there, and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 

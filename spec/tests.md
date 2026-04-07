@@ -52,6 +52,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-043 | ReadStream callbacks return blocks then end-of-stream | FR-019 | Unit-test pure graph and linear callback helpers so PG18 bindings only need to translate `EndOfStream` into `InvalidBlockNumber` |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires both the `tqvector` option and the `tqhnsw` access method |
+| TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
 | TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
 | TC-039 | Metadata tree-height callback value matches max_level | FR-020 | Unit-test `metadata_tree_height_callback_value(max_level)` across edge cases, including `u8::MAX` |
 | TC-044 | PG18 callback-named planner helpers preserve pure contracts | FR-020, FR-023 | Unit-test `amgettreeheight_callback_value`, `amtranslatestrategy_callback`, and `amtranslatecmptype_callback` so the PG18 callback seam matches the existing pure behavior |

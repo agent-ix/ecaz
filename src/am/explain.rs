@@ -24,6 +24,13 @@ pub(crate) struct ExplainProperty {
     pub value: ExplainPropertyValue,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExplainOutputGroup {
+    pub group_label: &'static str,
+    pub opened_with: &'static str,
+    pub closed_with: &'static str,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TqExplainCounters {
     pub stats_bootstrap_expansions: u32,
@@ -90,6 +97,14 @@ pub(crate) fn should_emit_explain_properties(
     access_method_name: &str,
 ) -> bool {
     explain_option_enabled && access_method_name == "tqhnsw"
+}
+
+pub(crate) fn explain_output_group() -> ExplainOutputGroup {
+    ExplainOutputGroup {
+        group_label: "TQVector Stats",
+        opened_with: "ExplainOpenGroup",
+        closed_with: "ExplainCloseGroup",
+    }
 }
 
 impl TqExplainCounters {
@@ -162,9 +177,9 @@ impl TqExplainCounters {
 #[cfg(test)]
 mod tests {
     use super::{
-        explain_counter_definitions, explain_option_snapshot, should_emit_explain_properties,
-        ExplainCounterDefinition, ExplainOptionSnapshot, ExplainProperty, ExplainPropertyValue,
-        TqExplainCounters,
+        explain_counter_definitions, explain_option_snapshot, explain_output_group,
+        should_emit_explain_properties, ExplainCounterDefinition, ExplainOptionSnapshot,
+        ExplainOutputGroup, ExplainProperty, ExplainPropertyValue, TqExplainCounters,
     };
 
     #[test]
@@ -220,6 +235,18 @@ mod tests {
                     increments_when: "ProdQuantizer was reused from cache",
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn explain_output_group_matches_fr024_hook_contract() {
+        assert_eq!(
+            explain_output_group(),
+            ExplainOutputGroup {
+                group_label: "TQVector Stats",
+                opened_with: "ExplainOpenGroup",
+                closed_with: "ExplainCloseGroup",
+            }
         );
     }
 
