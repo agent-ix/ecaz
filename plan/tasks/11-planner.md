@@ -33,8 +33,9 @@ Progress notes:
   record/reset helpers so the scan lane can embed it in `TqScanOpaque` later without planner-lane
   edits to `scan.rs`.
 - `src/am/explain.rs` now also defines pure ExplainProperty-emission helpers plus a pure emission
-  gate that only allows output when both the `tqvector` option and the `tqhnsw` access method are
-  present, giving the future PG18 hook a concrete D1 contract without adding more SQL surfaces.
+  gate that only allows output when the `tqvector` option, `IndexScan` node kind, and `tqhnsw`
+  access method are all present, giving the future PG18 hook a concrete D1 contract without adding
+  more SQL surfaces.
 - `src/am/explain.rs` now also defines the pure EXPLAIN group contract for `"TQVector Stats"`,
   including the expected `ExplainOpenGroup` / `ExplainCloseGroup` bracketing, so the future hook
   has explicit section-shape metadata as well as per-property emission.

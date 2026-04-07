@@ -31,6 +31,19 @@ pub(crate) struct ExplainOutputGroup {
     pub closed_with: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExplainNodeKind {
+    IndexScan,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExplainHookContext<'a> {
+    pub explain_option_enabled: bool,
+    pub node_kind: ExplainNodeKind,
+    pub access_method_name: &'a str,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TqExplainCounters {
     pub stats_bootstrap_expansions: u32,
@@ -92,11 +105,10 @@ pub(crate) fn explain_counter_definitions() -> &'static [ExplainCounterDefinitio
     &EXPLAIN_COUNTER_DEFINITIONS
 }
 
-pub(crate) fn should_emit_explain_properties(
-    explain_option_enabled: bool,
-    access_method_name: &str,
-) -> bool {
-    explain_option_enabled && access_method_name == "tqhnsw"
+pub(crate) fn should_emit_explain_properties(context: ExplainHookContext<'_>) -> bool {
+    context.explain_option_enabled
+        && context.node_kind == ExplainNodeKind::IndexScan
+        && context.access_method_name == "tqhnsw"
 }
 
 pub(crate) fn explain_output_group() -> ExplainOutputGroup {
@@ -178,8 +190,9 @@ impl TqExplainCounters {
 mod tests {
     use super::{
         explain_counter_definitions, explain_option_snapshot, explain_output_group,
-        should_emit_explain_properties, ExplainCounterDefinition, ExplainOptionSnapshot,
-        ExplainOutputGroup, ExplainProperty, ExplainPropertyValue, TqExplainCounters,
+        should_emit_explain_properties, ExplainCounterDefinition, ExplainHookContext,
+        ExplainNodeKind, ExplainOptionSnapshot, ExplainOutputGroup, ExplainProperty,
+        ExplainPropertyValue, TqExplainCounters,
     };
 
     #[test]
@@ -341,9 +354,26 @@ mod tests {
     }
 
     #[test]
-    fn explain_property_emission_requires_both_option_and_tqhnsw_access_method() {
-        assert!(should_emit_explain_properties(true, "tqhnsw"));
-        assert!(!should_emit_explain_properties(false, "tqhnsw"));
-        assert!(!should_emit_explain_properties(true, "btree"));
+    fn explain_property_emission_requires_option_index_scan_and_tqhnsw_access_method() {
+        assert!(should_emit_explain_properties(ExplainHookContext {
+            explain_option_enabled: true,
+            node_kind: ExplainNodeKind::IndexScan,
+            access_method_name: "tqhnsw",
+        }));
+        assert!(!should_emit_explain_properties(ExplainHookContext {
+            explain_option_enabled: false,
+            node_kind: ExplainNodeKind::IndexScan,
+            access_method_name: "tqhnsw",
+        }));
+        assert!(!should_emit_explain_properties(ExplainHookContext {
+            explain_option_enabled: true,
+            node_kind: ExplainNodeKind::Other,
+            access_method_name: "tqhnsw",
+        }));
+        assert!(!should_emit_explain_properties(ExplainHookContext {
+            explain_option_enabled: true,
+            node_kind: ExplainNodeKind::IndexScan,
+            access_method_name: "btree",
+        }));
     }
 }

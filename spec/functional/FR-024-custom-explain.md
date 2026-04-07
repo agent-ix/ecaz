@@ -26,8 +26,8 @@ Current staged behavior:
   `scan.rs` directly.
 - The staged implementation MAY also define pure ExplainProperty-emission helpers that map the
   reusable counter struct into the eventual `ExplainPropertyInteger` / `ExplainPropertyBool`
-  payloads and a pure gating helper that requires both the `tqvector` option and the `tqhnsw`
-  access method before any emission occurs.
+  payloads and a pure gating helper that requires the `tqvector` option, an `IndexScan` node kind,
+  and the `tqhnsw` access method before any emission occurs.
 - Those same helpers MAY also define the intended EXPLAIN group contract, including the
   `"TQVector Stats"` label plus the expectation that the eventual hook will bracket emission with
   `ExplainOpenGroup` and `ExplainCloseGroup`.
@@ -144,7 +144,8 @@ On PG17, the custom EXPLAIN API does not exist. During the current staged implem
 counter contract may be exposed through read-only scaffolding helpers, but the actual counter
 fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
 embedding by the scan lane, pure ExplainProperty-emission helpers may exist in `am/explain.rs`,
-the output group contract may also exist in pure form there, and no EXPLAIN hook is registered.
+the output group contract may also exist in pure form there, a pure hook-context gate may require
+the option plus `IndexScan` plus `tqhnsw`, and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 
