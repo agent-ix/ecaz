@@ -759,18 +759,19 @@ unsafe fn refill_candidate_frontier_from_source(
         return;
     }
 
-    let successor_candidates = unsafe {
-        graph::load_layer0_successor_candidates(
+    let trace = unsafe {
+        graph::run_layer0_beam_search(
             index_relation,
-            source_tid,
             opaque.scan_code_len,
+            1,
+            [search::BeamCandidate::new(source_tid, 0.0)],
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
             |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
         )
     };
     seed_discovered_candidates(
         opaque,
-        successor_candidates.into_iter().take(max_successor_candidates),
+        trace.frontier.into_iter().take(max_successor_candidates),
     );
 }
 
