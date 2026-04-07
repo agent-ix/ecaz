@@ -788,6 +788,7 @@ fn refill_bootstrap_frontier_after_consume<F>(
     );
 }
 
+#[cfg(test)]
 fn select_next_bootstrap_candidate<CandidateFn, SelectFn>(
     mut next_candidate: CandidateFn,
     mut select: SelectFn,
