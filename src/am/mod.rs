@@ -23,12 +23,18 @@ pub(super) const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
 pub(super) const TQHNSW_DEFAULT_EF_SEARCH: i32 = 40;
 pub(super) const TQHNSW_MIN_EF_SEARCH: i32 = 1;
 pub(super) const TQHNSW_MAX_EF_SEARCH: i32 = 1000;
+pub(super) const TQHNSW_PLANNER_SCAN_ENABLED: bool = false;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
+
+pub(crate) fn register_gucs() {
+    options::register_gucs();
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{
-    debug_index_metadata, debug_index_pages, debug_vacuum_stats, DebugIndexDataPage,
+    debug_index_metadata, debug_index_pages, debug_planner_tuning_snapshot, debug_vacuum_stats,
+    DebugIndexDataPage, DebugPlannerTuningSnapshot,
 };
 
 #[cfg(any(test, feature = "pg_test"))]

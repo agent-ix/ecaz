@@ -4,6 +4,9 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use super::{page, wal, P_NEW};
 
+#[cfg(any(test, feature = "pg_test"))]
+use super::{options, TQHNSW_PLANNER_SCAN_ENABLED};
+
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: page::MetadataPage,
@@ -262,7 +265,47 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn read_data_page(index_relation: pg_sys::Relation, block_number: u32) -> DebugIndexDataPage {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DebugPlannerTuningSnapshot {
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_scan_enabled: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuningSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
+    DebugPlannerTuningSnapshot {
+        relation_ef_search: tuning.relation_ef_search,
+        session_ef_search: tuning.session_ef_search,
+        effective_ef_search: tuning.effective_ef_search,
+        effective_source: match tuning.source {
+            options::EfSearchSource::Relation => "relation",
+            options::EfSearchSource::Session => "session",
+        },
+        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_planner_tuning_snapshot(
+    index_oid: pg_sys::Oid,
+) -> DebugPlannerTuningSnapshot {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let snapshot = planner_tuning_snapshot(index_relation);
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    snapshot
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn read_data_page(
+    index_relation: pg_sys::Relation,
+    block_number: u32,
+) -> DebugIndexDataPage {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -305,7 +348,10 @@ unsafe fn read_data_page(index_relation: pg_sys::Relation, block_number: u32) ->
     }
 
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    DebugIndexDataPage { block_number, tuples }
+    DebugIndexDataPage {
+        block_number,
+        tuples,
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -332,10 +378,9 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     info.index = index_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
-    let stats =
-        unsafe {
-            super::vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
-        };
+    let stats = unsafe {
+        super::vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
+    };
     let stats = unsafe { super::vacuum::tqhnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 

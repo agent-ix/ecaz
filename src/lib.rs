@@ -11,6 +11,11 @@ mod quant;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
+#[pg_guard]
+pub extern "C-unwind" fn _PG_init() {
+    am::register_gucs();
+}
+
 /// Public API surface for benchmarks and integration tests.
 /// This stays narrow and explicit so benchmark and integration code can reuse
 /// storage/quantizer helpers without reaching through internal modules directly.
@@ -2965,6 +2970,80 @@ mod tests {
             1,
             "frontier provenance should track only the single retained candidate"
         );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_session_ef_search_defaults_to_relation_setting() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_session_ef_search_reloption (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_session_ef_search_reloption VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_session_ef_search_reloption_idx ON tqhnsw_session_ef_search_reloption USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_session_ef_search_reloption_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
+
+        assert_eq!(snapshot.relation_ef_search, 111);
+        assert_eq!(snapshot.session_ef_search, None);
+        assert_eq!(
+            snapshot.effective_ef_search, 111,
+            "default session setting should fall back to the index reloption"
+        );
+        assert_eq!(snapshot.effective_source, "relation");
+        assert!(
+            !snapshot.planner_scan_enabled,
+            "planner-facing scan selection should remain explicitly disabled"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_session_ef_search_overrides_reloption() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_session_ef_search_override (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_session_ef_search_override VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_session_ef_search_override_idx ON tqhnsw_session_ef_search_override USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 7").expect("session override should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_session_ef_search_override_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
+
+        assert_eq!(snapshot.relation_ef_search, 111);
+        assert_eq!(snapshot.session_ef_search, Some(7));
+        assert_eq!(
+            snapshot.effective_ef_search, 7,
+            "non-default session setting should override the index reloption"
+        );
+        assert_eq!(snapshot.effective_source, "session");
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
     }
 
     #[pg_test]

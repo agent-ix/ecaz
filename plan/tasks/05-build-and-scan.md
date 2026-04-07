@@ -6,7 +6,9 @@ Progress notes:
 - Build path is implemented and validated.
 - Scan lifecycle, query payload ownership, metadata caching, prepared-query caching, and bootstrap
   linear tuple production are implemented.
-- Graph traversal, `ef_search`, distance ordering, and planner enablement remain pending.
+- Graph traversal, distance ordering, and planner enablement remain pending.
+- `ef_search` now has a split control surface direction: relation default plus session override,
+  while planner-visible scans remain disabled per ADR-011.
 
 ## Scope
 

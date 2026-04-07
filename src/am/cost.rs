@@ -1,5 +1,7 @@
 use pgrx::pg_sys;
 
+use super::TQHNSW_PLANNER_SCAN_ENABLED;
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     _path: *mut pg_sys::IndexPath,
@@ -12,8 +14,11 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 ) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            // Prefer explicit non-selection over accidental planner use until the scan
-            // path is implemented.
+            // Prefer explicit non-selection over accidental planner use until the
+            // ordered execution contract is credible.
+            if TQHNSW_PLANNER_SCAN_ENABLED {
+                pgrx::error!("tqhnsw planner costing is not implemented for enabled planner scans");
+            }
             *index_startup_cost = f64::MAX;
             *index_total_cost = f64::MAX;
             *index_selectivity = 0.0;

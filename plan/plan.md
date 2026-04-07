@@ -129,15 +129,17 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 ### Current State Summary
 
 The extension is ~70% complete. All quantizer, type, scoring, page layout, and build code is done.
-The critical gap is FR-009 graph traversal scan — without it, index queries don't work.
-Insert and vacuum also need graph traversal for neighbor selection and graph repair, making scan the single gating dependency.
+The critical gap is FR-009 ordered graph traversal scan — without it, index queries don't work.
+Planner/config groundwork can progress in parallel, but planner-visible scans remain intentionally
+disabled behind ADR-011. Insert and vacuum also need graph traversal for neighbor selection and
+graph repair, making scan the single gating dependency.
 
 ### Remaining Dependency Graph
 
 ```
                     ┌─────────────────────────┐
                     │  A1: Finish am split     │
-                    │  (insert.rs, scan.rs)    │
+                    │  (complete)              │
                     └───────────┬──────────────┘
                                 │
                     ┌───────────▼──────────────┐
@@ -190,9 +192,13 @@ All items are serial because each depends on the previous.
 - **Estimated new code:** ~100 lines (visibility adjustments)
 - **Difficulty:** Easy
 - **Exit criteria:** am/mod.rs contains only shared helpers (metadata, page utils, build callback). Each AM concern lives in its own file.
+- **Status:** Complete
 
 #### A2: Graph Traversal Helpers
-- **Scope:** Implement shared page-level greedy descent + beam search. Both scan (FR-009) and insert (FR-016) need this same algorithm — scan uses LUT scoring (`score_ip_encoded`), insert uses code-to-code scoring (`score_ip_codes_lite`). Factor the traversal as a generic helper parameterized by scoring function.
+- **Scope:** Finish the remaining shared page-level traversal seam: layer-0 neighbor slicing,
+  page-level greedy/beam traversal, and the ownership boundary between traversal state and scan
+  scoring inputs. Both scan (FR-009) and insert (FR-016) need this same algorithm — scan uses LUT
+  scoring (`score_ip_encoded`), insert uses code-to-code scoring (`score_ip_codes_lite`).
 - **Owns:** Shared foundation for FR-009, FR-016, FR-010
 - **Estimated new code:** ~250-350 lines
 - **Difficulty:** Hard — this is the core HNSW algorithm on Postgres buffer pages
@@ -205,10 +211,13 @@ All items are serial because each depends on the previous.
 - **Reference:** pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines), but tqvector needs raw page decode which adds complexity.
 
 #### A3: Wire Graph Traversal into Scan
-- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Add `ef_search` GUC. Handle result ordering via BinaryHeap in amgettuple. Planner cost activation is deferred to Track D (after recall gate).
-- **Owns:** FR-009 scan mechanics (cost estimation moved to Task 11 / Track D)
-- **Estimated new code:** ~150-200 lines
-- **Difficulty:** Medium — wiring + GUC registration
+- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Consume the resolved
+  `ef_search` control surface (session override over reloption). Replace MAX cost estimates with
+  realistic planner costs only after the ordered execution contract is credible. Handle result
+  ordering via BinaryHeap in amgettuple.
+- **Owns:** FR-009 completion
+- **Estimated new code:** ~200-300 lines
+- **Difficulty:** Medium — wiring + GUC registration + planner integration
 - **Key deliverables:**
   1. `amrescan` calls `hnsw_search` (from A2) and stores scored results in BinaryHeap
   2. `amgettuple` pops from BinaryHeap, returns heap TIDs in distance order
@@ -217,7 +226,9 @@ All items are serial because each depends on the previous.
 - **Exit criteria:** `SET enable_seqscan = off; SELECT ... ORDER BY col <#> $query LIMIT 10` returns distance-ordered results via index scan. ADR-011 cost gate remains active.
 
 #### A4: Recall Benchmark Gate
-- **Scope:** Measure Recall@10 on synthetic data. This is a go/no-go gate — if recall is below ~89% (m=8, ef=128 per NFR-003), stop and investigate before investing in insert/vacuum.
+- **Scope:** Measure Recall@10 on synthetic data after ordered result buffering is in place. This
+  is a go/no-go gate — if recall is below ~89% (m=8, ef=128 per NFR-003), stop and investigate
+  before investing in insert/vacuum.
 - **Owns:** Initial NFR-003 validation
 - **Estimated new code:** ~200-300 lines (benchmark harness + ground truth generator)
 - **Difficulty:** Easy-Medium

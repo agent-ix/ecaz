@@ -15,7 +15,7 @@ query state, and a bootstrap linear non-empty scan.
 It does not yet have:
 
 - HNSW graph traversal
-- `ef_search`
+- ordered-traversal consumption of the resolved `ef_search` tuning surface
 - distance-ordered result production
 - planner-visible ordered scan semantics that match the operator class contract
 
@@ -34,6 +34,14 @@ Specifically:
 - the planner therefore avoids choosing `tqhnsw` scans in normal execution
 
 This is an intentional temporary gate, not the final costing model.
+
+Planner/integration groundwork may still land behind this gate, including:
+
+- session-level `tqhnsw.ef_search` override registration
+- relation-versus-session precedence resolution
+- planner/explain/statistics-facing snapshot helpers
+
+Those surfaces do not by themselves make planner-visible scans safe.
 
 ## Consequences
 

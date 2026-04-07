@@ -16,5 +16,10 @@ traces:
 
 1. `CREATE EXTENSION tqvector` registers the type, operators, and access method
 2. `DROP EXTENSION tqvector CASCADE` cleanly removes all objects
-3. The extension supports PostgreSQL 14, 15, 16, and 17
+3. The current packaged extension supports PostgreSQL 14, 15, 16, and 17
 4. `cargo pgrx install --release` produces a valid extension package
+
+Current productization direction:
+
+- PostgreSQL 18 support is planned as an in-place upgrade of the same `tqvector` extension
+  identity, per ADR-017.
