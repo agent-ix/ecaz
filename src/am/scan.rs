@@ -168,15 +168,20 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
                     return true;
                 }
             }
-            if let Some(heap_tid) = next_linear_scan_heap_tid(
+            if materialize_next_linear_scan_result(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
                 opaque,
                 opaque.scan_code_len,
             ) {
-                set_scan_heap_tid(scan, heap_tid);
-                set_scan_orderby_score(scan, opaque.current_result.score());
-                return true;
+                let emitted = emit_pending_scan_heap_tid(scan, opaque);
+                debug_assert!(
+                    emitted,
+                    "linear result materialization should seed pending heap tids before returning true"
+                );
+                if emitted {
+                    return true;
+                }
             }
 
             clear_scan_orderby_output(scan);
@@ -903,21 +908,21 @@ where
     candidates
 }
 
-unsafe fn next_linear_scan_heap_tid(
+unsafe fn materialize_next_linear_scan_result(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
-) -> Option<page::ItemPointer> {
+) -> bool {
     if opaque.scan_exhausted {
-        return None;
+        return false;
     }
 
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
         complete_bootstrap_phase(opaque);
         clear_scan_result_state(opaque);
-        return None;
+        return false;
     }
 
     for block_number in opaque.next_block_number..opaque.scan_block_count {
@@ -988,7 +993,7 @@ unsafe fn next_linear_scan_heap_tid(
 
             store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-            return take_pending_scan_heap_tid(opaque);
+            return true;
         }
 
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -999,7 +1004,7 @@ unsafe fn next_linear_scan_heap_tid(
     opaque.scan_exhausted = true;
     complete_bootstrap_phase(opaque);
     clear_scan_result_state(opaque);
-    None
+    false
 }
 
 unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
