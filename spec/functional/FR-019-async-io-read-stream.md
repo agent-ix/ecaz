@@ -19,7 +19,8 @@ On PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` c
 Current staged behavior:
 - Before PostgreSQL 18 support exists in this repository, pure ReadStream-scaffolding helpers MAY
   expose the intended graph-stream mode (`READ_STREAM_DEFAULT`), linear-stream mode
-  (`READ_STREAM_SEQUENTIAL`), and their random-versus-sequential access patterns.
+  (`READ_STREAM_SEQUENTIAL`), their random-versus-sequential access patterns, the intended
+  callback names and state types, and the `InvalidBlockNumber` end-of-stream sentinel.
 - Read-only snapshot helpers MAY also report that PG18 ReadStream callback surfaces, scan wiring,
   and vacuum wiring all remain unavailable.
 - Those helpers SHALL stay descriptive only; they do not imply that any scan or vacuum path

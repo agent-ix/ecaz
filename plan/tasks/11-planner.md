@@ -37,6 +37,9 @@ Progress notes:
 - A read-only `tqhnsw_read_stream_snapshot()` SQL surface now exposes the intended graph and
   linear ReadStream modes plus access patterns while keeping callback, scan, and vacuum readiness
   explicitly false until PG18 async-I/O support actually lands.
+- `src/am/stream.rs` now also defines pure `GraphPrefetchState` / `LinearPrefetchState` types plus
+  callback-signature helpers for the intended graph and linear ReadStream callbacks, keeping the
+  PG18 binding work separate from runtime scan wiring.
 
 ## Scope
 
@@ -51,7 +54,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. PG18 feature-gated. Place in `am/cost.rs`.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A pure counter-contract snapshot now exists in `am/explain.rs`, but storage/wiring is still pending.
 - [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
-- [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. PG18 feature-gated. Place in `am/stream.rs`.
+- [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. Pure callback-signature helpers and state-carrier types now exist in `am/stream.rs`; actual PG18 callback bindings are still pending.
 - [x] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.
 
 ### D2: Wire Planner (gated on A4 recall gate)
