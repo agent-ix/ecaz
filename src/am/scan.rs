@@ -597,30 +597,17 @@ unsafe fn initialize_scan_entry_candidate(
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
     let bootstrap_limit = bootstrap_frontier_limit(opaque);
 
-    if bootstrap_limit > 1 {
-        let trace = unsafe {
-            graph::run_layer0_beam_search(
-                index_relation,
-                opaque.scan_code_len,
-                bootstrap_limit,
-                [entry_candidate],
-                |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-                |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
-            )
-        };
-        seed_bootstrap_trace(opaque, bootstrap_limit, trace);
-        return;
-    }
-
-    seed_discovered_candidates(opaque, [entry_candidate]);
-    fill_bootstrap_frontier(
-        opaque,
-        bootstrap_limit,
-        BootstrapExpandPolicy::ScoreOrder,
-        |source_tid, opaque| unsafe {
-            refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
-        },
-    );
+    let trace = unsafe {
+        graph::run_layer0_beam_search(
+            index_relation,
+            opaque.scan_code_len,
+            bootstrap_limit,
+            [entry_candidate],
+            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
+            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+        )
+    };
+    seed_bootstrap_trace(opaque, bootstrap_limit, trace);
 }
 
 fn seed_bootstrap_trace(
