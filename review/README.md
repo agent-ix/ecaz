@@ -257,6 +257,12 @@ Review triage at `46d00bb`:
   extension identity.
 - The implementation plan and FR-009/US-004 surfaces now distinguish near-term planner groundwork
   from the later ordered-traversal and planner-enablement phases.
+- `tqhnsw_index_admin_snapshot(regclass)` now exposes a read-only SQL/admin surface for a tqhnsw
+  index's live-node count, effective `ef_search`, tuning source, and planner gate state.
+- That admin snapshot currently reports `inserted_since_rebuild` as explicitly unavailable (`NULL`)
+  until live insert drift accounting is implemented, keeping FR-016 staging honest.
+- Admin snapshot coverage now verifies both the happy path and rejection of non-`tqhnsw` indexes,
+  and the test matrix now records this planner/admin statistics scaffolding explicitly.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -295,6 +301,7 @@ Open requests:
 - `147-exhaustion-owns-result-state-clearing.md`
 - `148-gate-frontier-head-candidate-accessor.md`
 - `126-ef-search-control-surface-and-planner-gate-scaffolding.md`
+- `127-admin-snapshot-for-planner-and-insert-stats.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
