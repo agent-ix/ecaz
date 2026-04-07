@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `e6c2c2d`
+Current head: `d42b59f`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -240,6 +240,7 @@ Open requests:
 - `124-frontier-fallback-after-scheduler-drain.md`
 - `125-defer-bootstrap-refill-until-adjudication.md`
 - `126-align-debug-bootstrap-materialization-with-runtime.md`
+- `127-explicit-bootstrap-to-linear-transition.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
