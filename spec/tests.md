@@ -51,6 +51,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-037 | ReadStream callback signatures and state carriers match FR-019 | FR-019 | Unit-test graph and linear callback signatures plus `GraphPrefetchState` / `LinearPrefetchState` exhaustion behavior |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires both the `tqvector` option and the `tqhnsw` access method |
+| TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
 | TC-039 | Metadata tree-height callback value matches max_level | FR-020 | Unit-test `metadata_tree_height_callback_value(max_level)` across edge cases, including `u8::MAX` |
 | TC-040 | Strategy reverse mapping rejects non-LT CompareTypes | FR-023 | Unit-test `compare_type_to_strategy(...)` across `COMPARE_INVALID`, `COMPARE_EQ`, `COMPARE_LE`, `COMPARE_GE`, `COMPARE_GT`, `COMPARE_NE`, `COMPARE_OVERLAP`, and `COMPARE_CONTAINED_BY` |
 
