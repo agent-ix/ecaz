@@ -45,7 +45,14 @@ Each review topic is a directory under `review/`:
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - Commit each green code checkpoint.
 - After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
-- Push committed checkpoints and review-packet updates to `origin/main`.
+- Push committed checkpoints and review-packet updates to the remote immediately after committing. Feedback that exists only locally is invisible to other agents.
+
+## Reviewer Workflow
+
+- When leaving feedback on a branch, commit to **that branch** and push immediately.
+- If reviewing multiple branches, commit and push feedback to each branch separately.
+- Never run destructive git operations (reset, rebase, drop commits) without reading the affected commits and getting explicit confirmation from the user first.
+- After pushing, verify the push succeeded before moving on.
 
 ## Local Safety Rules
 
