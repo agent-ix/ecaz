@@ -453,6 +453,32 @@ fn tqhnsw_stats_snapshot() -> TableIterator<
 
 #[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
+fn tqhnsw_read_stream_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(graph_stream_mode, String),
+        name!(linear_stream_mode, String),
+        name!(graph_stream_access_pattern, String),
+        name!(linear_stream_access_pattern, String),
+        name!(pg18_callback_surface_ready, bool),
+        name!(pg18_scan_wiring_ready, bool),
+        name!(pg18_vacuum_wiring_ready, bool),
+    ),
+> {
+    let snapshot = am::stream_snapshot();
+    TableIterator::once((
+        snapshot.graph_stream_mode.to_owned(),
+        snapshot.linear_stream_mode.to_owned(),
+        snapshot.graph_stream_access_pattern.to_owned(),
+        snapshot.linear_stream_access_pattern.to_owned(),
+        snapshot.pg18_callback_surface_ready,
+        snapshot.pg18_scan_wiring_ready,
+        snapshot.pg18_vacuum_wiring_ready,
+    ))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
 fn tqhnsw_pg18_upgrade_snapshot() -> TableIterator<
     'static,
     (
@@ -517,6 +543,7 @@ fn tqhnsw_planner_integration_snapshot(
         name!(planner_cost_callback_live, bool),
         name!(pg18_callback_surface_ready, bool),
         name!(pg18_diagnostics_surface_ready, bool),
+        name!(pg18_read_stream_surface_ready, bool),
         name!(effective_ef_search, i32),
         name!(effective_source, String),
         name!(planner_gate_reason, String),
@@ -537,6 +564,7 @@ fn tqhnsw_planner_integration_snapshot(
         snapshot.planner_cost_callback_live,
         snapshot.pg18_callback_surface_ready,
         snapshot.pg18_diagnostics_surface_ready,
+        snapshot.pg18_read_stream_surface_ready,
         snapshot.effective_ef_search,
         snapshot.effective_source.to_owned(),
         snapshot.planner_gate_reason.to_owned(),
@@ -1406,6 +1434,53 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_read_stream_snapshot_reports_pg18_stream_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>("SELECT graph_stream_mode FROM tqhnsw_read_stream_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("graph stream mode should be non-null"),
+            "READ_STREAM_DEFAULT"
+        );
+        assert_eq!(
+            Spi::get_one::<String>("SELECT linear_stream_mode FROM tqhnsw_read_stream_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("linear stream mode should be non-null"),
+            "READ_STREAM_SEQUENTIAL"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT graph_stream_access_pattern FROM tqhnsw_read_stream_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("graph stream access pattern should be non-null"),
+            "random"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT linear_stream_access_pattern FROM tqhnsw_read_stream_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("linear stream access pattern should be non-null"),
+            "sequential"
+        );
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_callback_surface_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream callback readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_scan_wiring_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream scan wiring readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_vacuum_wiring_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream vacuum wiring readiness should be non-null"));
+    }
+
+    #[pg_test]
     fn test_tqhnsw_pg18_upgrade_snapshot_reports_current_boundary() {
         assert_eq!(
             Spi::get_one::<String>("SELECT extension_name FROM tqhnsw_pg18_upgrade_snapshot()",)
@@ -1556,6 +1631,13 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("pg18 diagnostics readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_read_stream_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 read stream readiness should be non-null")
         );
         assert_eq!(
             Spi::get_one::<i32>(

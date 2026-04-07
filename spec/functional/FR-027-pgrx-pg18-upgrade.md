@@ -20,6 +20,8 @@ Current staged behavior:
   readiness is still pending.
 - Read-only diagnostics snapshot helpers MAY also report consolidated EXPLAIN/pgstat readiness so
   the broader PG18 productization boundary is queryable before toolchain work lands.
+- Read-only ReadStream snapshot helpers MAY also report the intended graph-versus-linear stream
+  modes and keep callback/scan/vacuum readiness explicitly false until PG18 support lands.
 - Those helpers SHALL stay descriptive only; they do not imply that PG18 builds, tests, or default
   feature selection already work.
 

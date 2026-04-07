@@ -13,6 +13,7 @@ mod scan_debug;
 mod search;
 mod shared;
 mod stats;
+mod stream;
 mod vacuum;
 pub mod wal;
 
@@ -52,6 +53,10 @@ pub(crate) unsafe fn index_cost_snapshot(
 
 pub(crate) fn stats_snapshot() -> stats::StatsSnapshot {
     stats::stats_snapshot()
+}
+
+pub(crate) fn stream_snapshot() -> shared::ReadStreamSnapshot {
+    shared::read_stream_snapshot()
 }
 
 pub(crate) fn pg18_upgrade_snapshot() -> shared::Pg18UpgradeSnapshot {

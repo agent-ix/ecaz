@@ -31,6 +31,9 @@ Progress notes:
 - A read-only `tqhnsw_planner_integration_snapshot(...)` SQL surface now exposes the current
   cross-lane planner blockers in one place: modeled cost scaffolding is ready, but ordered scan
   credibility, live planner activation, and PG18 callback/diagnostics readiness remain false.
+- A read-only `tqhnsw_read_stream_snapshot()` SQL surface now exposes the intended graph and
+  linear ReadStream modes plus access patterns while keeping callback, scan, and vacuum readiness
+  explicitly false until PG18 async-I/O support actually lands.
 
 ## Scope
 

@@ -341,6 +341,17 @@ pub(crate) struct Pg18DiagnosticsSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadStreamSnapshot {
+    pub graph_stream_mode: &'static str,
+    pub linear_stream_mode: &'static str,
+    pub graph_stream_access_pattern: &'static str,
+    pub linear_stream_access_pattern: &'static str,
+    pub pg18_callback_surface_ready: bool,
+    pub pg18_scan_wiring_ready: bool,
+    pub pg18_vacuum_wiring_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlannerIntegrationSnapshot {
     pub planner_scan_enabled: bool,
     pub ordered_scan_ready: bool,
@@ -349,6 +360,7 @@ pub(crate) struct PlannerIntegrationSnapshot {
     pub planner_cost_callback_live: bool,
     pub pg18_callback_surface_ready: bool,
     pub pg18_diagnostics_surface_ready: bool,
+    pub pg18_read_stream_surface_ready: bool,
     pub effective_ef_search: i32,
     pub effective_source: &'static str,
     pub planner_gate_reason: &'static str,
@@ -484,6 +496,19 @@ pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
     }
 }
 
+pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
+    let stream = super::stream::stream_snapshot();
+    ReadStreamSnapshot {
+        graph_stream_mode: stream.graph_stream_mode,
+        linear_stream_mode: stream.linear_stream_mode,
+        graph_stream_access_pattern: stream.graph_stream_access_pattern,
+        linear_stream_access_pattern: stream.linear_stream_access_pattern,
+        pg18_callback_surface_ready: stream.pg18_callback_surface_ready,
+        pg18_scan_wiring_ready: stream.pg18_scan_wiring_ready,
+        pg18_vacuum_wiring_ready: stream.pg18_vacuum_wiring_ready,
+    }
+}
+
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
@@ -491,6 +516,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
     let explain = unsafe { index_explain_snapshot(index_relation) };
     let cost = unsafe { index_cost_snapshot(index_relation) };
     let diagnostics = pg18_diagnostics_snapshot();
+    let stream = read_stream_snapshot();
 
     PlannerIntegrationSnapshot {
         planner_scan_enabled: explain.planner_scan_enabled,
@@ -504,6 +530,9 @@ pub(crate) unsafe fn planner_integration_snapshot(
             && diagnostics.pg18_explain_per_node_hook_ready
             && diagnostics.pg18_pgstat_kind_ready
             && diagnostics.pg18_stats_sql_function_ready,
+        pg18_read_stream_surface_ready: stream.pg18_callback_surface_ready
+            && stream.pg18_scan_wiring_ready
+            && stream.pg18_vacuum_wiring_ready,
         effective_ef_search: admin.effective_ef_search,
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
