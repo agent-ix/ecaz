@@ -54,6 +54,10 @@ pub(crate) fn stats_snapshot() -> stats::StatsSnapshot {
     stats::stats_snapshot()
 }
 
+pub(crate) fn pg18_upgrade_snapshot() -> shared::Pg18UpgradeSnapshot {
+    shared::pg18_upgrade_snapshot()
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{

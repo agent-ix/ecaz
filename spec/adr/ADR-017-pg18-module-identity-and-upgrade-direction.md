@@ -56,3 +56,5 @@ Near-term upgrade plan:
 1. Add `pg18` feature support in Cargo and validation scripts.
 2. Update US-004 and packaging docs when PG18 is actually supported, not before.
 3. Keep migration and upgrade testing under the same `tqvector` extension name.
+4. Keep read-only upgrade snapshot surfaces aligned with the current staged reality while the
+   toolchain work remains pending.

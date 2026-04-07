@@ -14,6 +14,13 @@ traces:
 
 The extension SHALL add PostgreSQL 18 as a supported target via pgrx feature flags, making PG18 the default build target while maintaining PG17 compatibility.
 
+Current staged behavior:
+- Before the pgrx/toolchain upgrade lands, read-only upgrade snapshot helpers MAY report the
+  current default feature, whether a `pg18` Cargo feature exists, and whether PG18 default-build
+  readiness is still pending.
+- Those helpers SHALL stay descriptive only; they do not imply that PG18 builds, tests, or default
+  feature selection already work.
+
 ### Cargo.toml Changes
 
 Drop PG14-16 (never tested, no users, pgrx template boilerplate). Support PG17 as fallback, PG18 as default:

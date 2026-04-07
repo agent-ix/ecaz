@@ -21,6 +21,10 @@ Progress notes:
 - A read-only `tqhnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
   function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
   PostgreSQL 18 support actually exists in the repository.
+- A read-only `tqhnsw_pg18_upgrade_snapshot()` SQL surface now exposes the intended stable
+  extension identity (`tqvector`, `$libdir/tqvector`) while keeping `pg18` Cargo-feature,
+  default-build, and `PG_MODULE_MAGIC_EXT` readiness explicitly false until the toolchain upgrade
+  actually lands.
 
 ## Scope
 

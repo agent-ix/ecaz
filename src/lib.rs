@@ -449,6 +449,34 @@ fn tqhnsw_stats_snapshot() -> TableIterator<
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_pg18_upgrade_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(extension_name, String),
+        name!(cargo_package_version, String),
+        name!(module_pathname, String),
+        name!(cargo_default_feature, String),
+        name!(cargo_pg18_feature_defined, bool),
+        name!(pg18_default_build_ready, bool),
+        name!(pg18_module_magic_ext_ready, bool),
+        name!(single_extension_identity, bool),
+    ),
+> {
+    let snapshot = am::pg18_upgrade_snapshot();
+    TableIterator::once((
+        snapshot.extension_name.to_owned(),
+        snapshot.cargo_package_version.to_owned(),
+        snapshot.module_pathname.to_owned(),
+        snapshot.cargo_default_feature.to_owned(),
+        snapshot.cargo_pg18_feature_defined,
+        snapshot.pg18_default_build_ready,
+        snapshot.pg18_module_magic_ext_ready,
+        snapshot.single_extension_identity,
+    ))
+}
+
 fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
@@ -1311,6 +1339,70 @@ mod tests {
             )
             .expect("catalog query should succeed")
             .expect("exists should be non-null")
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pg18_upgrade_snapshot_reports_current_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT extension_name FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("extension name should be non-null"),
+            "tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT cargo_package_version FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("package version should be non-null"),
+            env!("CARGO_PKG_VERSION")
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT module_pathname FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("module pathname should be non-null"),
+            "$libdir/tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT cargo_default_feature FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("default feature should be non-null"),
+            "pg17"
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT cargo_pg18_feature_defined FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 feature flag should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_default_build_ready FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 default build readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_module_magic_ext_ready FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 module magic readiness should be non-null")
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT single_extension_identity FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("single identity flag should be non-null")
         );
     }
 

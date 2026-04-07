@@ -14,6 +14,13 @@ traces:
 
 On PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and version, making this information available via `pg_get_loaded_modules()` for diagnostics and version tracking.
 
+Current staged behavior:
+- Before PostgreSQL 18 support exists in this repository, read-only upgrade snapshot helpers MAY
+  expose the intended extension identity (`tqvector`, `$libdir/tqvector`) and report that
+  `PG_MODULE_MAGIC_EXT` wiring is still unavailable.
+- Those helpers SHALL stay descriptive only; they do not imply that `pg_get_loaded_modules()` can
+  already report tqvector name/version on PG17.
+
 ### Implementation
 
 ```rust

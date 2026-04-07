@@ -318,6 +318,18 @@ pub(crate) struct IndexCostSnapshot {
     pub gated_correlation: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pg18UpgradeSnapshot {
+    pub extension_name: &'static str,
+    pub cargo_package_version: &'static str,
+    pub module_pathname: &'static str,
+    pub cargo_default_feature: &'static str,
+    pub cargo_pg18_feature_defined: bool,
+    pub pg18_default_build_ready: bool,
+    pub pg18_module_magic_ext_ready: bool,
+    pub single_extension_identity: bool,
+}
+
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
@@ -420,6 +432,19 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
         gated_total_cost: gated.total_cost,
         gated_selectivity: gated.selectivity,
         gated_correlation: gated.correlation,
+    }
+}
+
+pub(crate) fn pg18_upgrade_snapshot() -> Pg18UpgradeSnapshot {
+    Pg18UpgradeSnapshot {
+        extension_name: "tqvector",
+        cargo_package_version: env!("CARGO_PKG_VERSION"),
+        module_pathname: "$libdir/tqvector",
+        cargo_default_feature: "pg17",
+        cargo_pg18_feature_defined: false,
+        pg18_default_build_ready: false,
+        pg18_module_magic_ext_ready: false,
+        single_extension_identity: true,
     }
 }
 
