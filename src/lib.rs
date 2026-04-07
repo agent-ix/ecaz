@@ -368,6 +368,9 @@ fn tqhnsw_index_cost_snapshot(
         name!(m, i32),
         name!(dimensions, i32),
         name!(max_level, i32),
+        name!(resolved_tree_height, f64),
+        name!(tree_height_source, String),
+        name!(pg18_tree_height_callback_ready, bool),
         name!(index_pages, f64),
         name!(reltuples, f64),
         name!(random_page_cost, f64),
@@ -397,6 +400,9 @@ fn tqhnsw_index_cost_snapshot(
         snapshot.m,
         i32::from(snapshot.dimensions),
         i32::from(snapshot.max_level),
+        snapshot.resolved_tree_height,
+        snapshot.tree_height_source.to_owned(),
+        snapshot.pg18_tree_height_callback_ready,
         snapshot.index_pages,
         snapshot.reltuples,
         snapshot.random_page_cost,
@@ -1068,6 +1074,29 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("dimensions should be non-null"),
             4
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT resolved_tree_height FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("resolved tree height should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT tree_height_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("tree height source should be non-null"),
+            "metadata_fallback"
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_tree_height_callback_ready FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 tree-height callback flag should be non-null")
         );
         assert!(
             Spi::get_one::<f64>(

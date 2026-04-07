@@ -9,7 +9,7 @@ pub(crate) struct PlannerCostInputs {
     pub m: i32,
     pub ef_search: i32,
     pub dimensions: u16,
-    pub max_level: u8,
+    pub tree_height: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,6 +26,13 @@ pub(crate) struct PlannerCostEstimate {
     pub selectivity: f64,
     pub correlation: f64,
     pub index_pages: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlannerTreeHeightInput {
+    pub tree_height: f64,
+    pub source: &'static str,
+    pub pg18_callback_ready: bool,
 }
 
 pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
@@ -46,6 +53,14 @@ pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
     }
 }
 
+pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
+    PlannerTreeHeightInput {
+        tree_height: f64::from(max_level),
+        source: "metadata_fallback",
+        pg18_callback_ready: false,
+    }
+}
+
 pub(crate) fn estimate_planner_cost(
     inputs: PlannerCostInputs,
     constants: PlannerCostConstants,
@@ -62,9 +77,9 @@ pub(crate) fn estimate_planner_cost(
     let dimensions = f64::from(inputs.dimensions);
     let m = f64::from(inputs.m);
     let ef_search = f64::from(inputs.ef_search);
-    let tree_height = f64::from(inputs.max_level);
+    let tree_height = inputs.tree_height;
 
-    let (startup_cost, total_cost) = if inputs.max_level == 0 {
+    let (startup_cost, total_cost) = if tree_height <= 0.0 {
         let linear_cost = inputs.index_pages * constants.seq_page_cost;
         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * dimensions;
         (0.0, linear_cost + linear_cpu)
@@ -120,7 +135,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 
 #[cfg(test)]
 mod tests {
-    use super::{estimate_planner_cost, PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs};
+    use super::{
+        estimate_planner_cost, metadata_fallback_tree_height, PlannerCostConstants,
+        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
+    };
 
     fn default_constants() -> PlannerCostConstants {
         PlannerCostConstants {
@@ -155,7 +173,7 @@ mod tests {
                 m: 8,
                 ef_search: 40,
                 dimensions: 1536,
-                max_level: 3,
+                tree_height: 3.0,
             },
             constants,
         );
@@ -177,7 +195,7 @@ mod tests {
                 m: 8,
                 ef_search: 40,
                 dimensions: 1536,
-                max_level: 3,
+                tree_height: 3.0,
             },
             constants,
         );
@@ -198,7 +216,7 @@ mod tests {
                 m: 8,
                 ef_search: 40,
                 dimensions: 1536,
-                max_level: 3,
+                tree_height: 3.0,
             },
             default_constants(),
         );
@@ -225,7 +243,7 @@ mod tests {
                 m: 8,
                 ef_search: 40,
                 dimensions: 128,
-                max_level: 0,
+                tree_height: 0.0,
             },
             constants,
         );
@@ -236,5 +254,17 @@ mod tests {
 
         assert_eq!(estimate.startup_cost, 0.0);
         assert_eq!(estimate.total_cost, expected_total_cost);
+    }
+
+    #[test]
+    fn planner_cost_tree_height_defaults_to_metadata_until_pg18_callback_exists() {
+        assert_eq!(
+            metadata_fallback_tree_height(4),
+            PlannerTreeHeightInput {
+                tree_height: 4.0,
+                source: "metadata_fallback",
+                pg18_callback_ready: false,
+            }
+        );
     }
 }

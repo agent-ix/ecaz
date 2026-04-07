@@ -21,6 +21,9 @@ Current staged behavior:
   disabled.
 - Read-only planner-cost snapshot helpers MAY expose both the modeled FR-020 estimate and the
   still-gated live callback contract for inspection, without changing planner behavior.
+- Until PostgreSQL 18 support exists in the build/toolchain surface, staged planner-cost helpers
+  MAY source `tree_height` from metadata-page `max_level` explicitly and report that this is a
+  metadata fallback rather than a live `amgettreeheight` callback result.
 
 ### Cost Model
 

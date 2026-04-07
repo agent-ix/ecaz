@@ -294,6 +294,9 @@ pub(crate) struct IndexCostSnapshot {
     pub m: i32,
     pub dimensions: u16,
     pub max_level: u8,
+    pub resolved_tree_height: f64,
+    pub tree_height_source: &'static str,
+    pub pg18_tree_height_callback_ready: bool,
     pub index_pages: f64,
     pub reltuples: f64,
     pub random_page_cost: f64,
@@ -358,6 +361,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
         (*(*index_relation).rd_rel)
             .reltuples
     } as f64;
+    let tree_height = super::cost::metadata_fallback_tree_height(metadata.max_level);
     let constants = unsafe { super::cost::current_planner_cost_constants() };
     let modeled = super::cost::estimate_planner_cost(
         super::cost::PlannerCostInputs {
@@ -366,7 +370,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
             m: relation_options.m,
             ef_search: tuning.effective_ef_search,
             dimensions: metadata.dimensions,
-            max_level: metadata.max_level,
+            tree_height: tree_height.tree_height,
         },
         constants,
     );
@@ -386,6 +390,9 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
         m: relation_options.m,
         dimensions: metadata.dimensions,
         max_level: metadata.max_level,
+        resolved_tree_height: tree_height.tree_height,
+        tree_height_source: tree_height.source,
+        pg18_tree_height_callback_ready: tree_height.pg18_callback_ready,
         index_pages,
         reltuples,
         random_page_cost: constants.random_page_cost,

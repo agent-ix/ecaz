@@ -43,6 +43,8 @@ Planner/integration groundwork may still land behind this gate, including:
 - planner/explain/statistics-facing snapshot helpers
 - planner-facing cost snapshot helpers that show modeled FR-020 outputs alongside the still-gated
   live callback contract
+- planner-facing cost snapshot helpers that make current tree-height sourcing explicit, including a
+  metadata-fallback seam until PG18 `amgettreeheight` wiring actually exists
 - planner-facing explain snapshot helpers that report the gate state explicitly without claiming
   that EXPLAIN can yet show a tqhnsw index scan
 

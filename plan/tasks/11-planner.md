@@ -9,6 +9,9 @@ Progress notes:
   heuristic behavior.
 - A read-only `tqhnsw_index_cost_snapshot(...)` SQL surface now exposes modeled FR-020 costs and
   the still-gated live callback contract side by side for planner/admin inspection.
+- The cost snapshot now also reports that its current tree-height input comes from a
+  `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
+  activation boundary explicit without pretending PG18 support already exists.
 
 ## Scope
 
