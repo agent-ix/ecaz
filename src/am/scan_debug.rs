@@ -695,8 +695,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     let frontier = frontier_slots.clone();
     let frontier_provenance = debug_candidate_frontier_provenance_slots(opaque);
     let expanded_sources = debug_sorted_expanded_source_tids(opaque);
-    let head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let head = current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node));
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -726,7 +725,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
+    let before_head = current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node));
     let before_slots = debug_candidate_frontier_slots(opaque);
 
     assert!(
@@ -736,7 +735,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let current_result_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
-    let after_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
+    let after_head = current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_slots = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -822,7 +821,7 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let after_complete = !opaque.execution_phase.is_bootstrap();
-    let after_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
+    let after_head = current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_frontier = debug_candidate_frontier_slots(opaque);
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -863,8 +862,8 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let before_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let before_frontier = debug_candidate_frontier_slots(opaque);
 
     assert!(
@@ -872,15 +871,15 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
         "frontier-head lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let partial_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let partial_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let partial_frontier = debug_candidate_frontier_slots(opaque);
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let exhausted_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let exhausted_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let exhausted_frontier = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -913,19 +912,19 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let before_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let before_frontier = debug_candidate_frontier_slots(opaque);
 
     let first_consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     debug_assert_eq!(first_consumed.is_some(), before_head.is_some());
-    let after_first_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let after_first_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_first_frontier = debug_candidate_frontier_slots(opaque);
 
     unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
-    let after_second_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let after_second_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_second_frontier = debug_candidate_frontier_slots(opaque);
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -958,8 +957,8 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let before_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let before_slots = debug_candidate_frontier_slots(opaque);
     let consumed = unsafe { consume_and_refill_bootstrap_frontier(index_relation, opaque) };
     let consumed_tid = consumed
@@ -979,8 +978,8 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
         })
         .unwrap_or_default();
 
-    let after_head = current_candidate_frontier_head_tid(opaque)
-        .map(|tid| (tid.block_number, tid.offset_number));
+    let after_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_slots = debug_candidate_frontier_slots(opaque);
     let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
 

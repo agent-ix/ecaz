@@ -670,13 +670,6 @@ fn top_up_bootstrap_frontier<F>(
     }
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-pub(super) fn current_candidate_frontier_head_tid(
-    opaque: &mut TqScanOpaque,
-) -> Option<page::ItemPointer> {
-    candidate_frontier_head(opaque).map(|candidate| candidate.node)
-}
-
 fn take_candidate_frontier_node(
     opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
@@ -1614,8 +1607,8 @@ mod tests {
         visible_frontier_mut(&mut opaque).push(beam_candidate(7, 1, -2.0));
         visible_frontier_mut(&mut opaque).push(beam_candidate(7, 2, 3.5));
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque)
-                .map(|tid| (tid.block_number, tid.offset_number)),
+            candidate_frontier_head(&mut opaque)
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((7, 1)),
             "frontier head should start at the lower-scoring valid candidate"
         );
@@ -1628,8 +1621,8 @@ mod tests {
             "consumption should return the previously best frontier slot"
         );
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque)
-                .map(|tid| (tid.block_number, tid.offset_number)),
+            candidate_frontier_head(&mut opaque)
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((7, 2)),
             "consuming the best slot should reselect the remaining valid candidate"
         );
@@ -1653,7 +1646,7 @@ mod tests {
             "the second consumption should return the reseated head slot"
         );
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque),
+            candidate_frontier_head(&mut opaque).map(|candidate| candidate.node),
             None,
             "consuming the last valid slot should invalidate the frontier head"
         );
@@ -1706,8 +1699,8 @@ mod tests {
             -1.0,
         ));
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque)
-                .map(|tid| (tid.block_number, tid.offset_number)),
+            candidate_frontier_head(&mut opaque)
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((14, 2)),
             "frontier-head derivation should prefer the scan-owned scheduler's current best queued node"
         );
@@ -1731,8 +1724,8 @@ mod tests {
             "expanding both seeded sources should drain the scheduler while leaving the visible frontier intact"
         );
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque)
-                .map(|tid| (tid.block_number, tid.offset_number)),
+            candidate_frontier_head(&mut opaque)
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((17, 1)),
             "frontier-head derivation must still fall back to the visible frontier once the scheduler has no queued expansion sources"
         );
@@ -1792,8 +1785,8 @@ mod tests {
         ));
 
         assert_eq!(
-            current_candidate_frontier_head_tid(&mut opaque)
-                .map(|tid| (tid.block_number, tid.offset_number)),
+            candidate_frontier_head(&mut opaque)
+                .map(|candidate| (candidate.node.block_number, candidate.node.offset_number)),
             Some((16, 1)),
             "stale scheduler nodes should be dropped until the best queued visible frontier node can be mapped"
         );
