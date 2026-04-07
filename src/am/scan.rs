@@ -783,8 +783,19 @@ fn materialize_scored_scan_result(
     score: f32,
     heap_tids: &[page::ItemPointer],
 ) {
-    set_current_scan_result(opaque, element_tid, score);
-    store_pending_scan_heaptids(opaque, heap_tids);
+    materialize_selected_scan_result(
+        opaque,
+        SelectedScanResult {
+            element_tid,
+            score,
+            heap_tids: heap_tids.to_vec(),
+        },
+    );
+}
+
+fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
+    set_current_scan_result(opaque, selected.element_tid, selected.score);
+    store_pending_scan_heaptids(opaque, &selected.heap_tids);
 }
 
 fn refill_bootstrap_frontier_after_consume<F>(
@@ -943,6 +954,21 @@ unsafe fn materialize_next_linear_scan_result(
         return false;
     }
 
+    if let Some(selected) = unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) } {
+        materialize_selected_scan_result(opaque, selected);
+        return true;
+    }
+
+    mark_scan_exhausted(opaque);
+    clear_scan_result_state(opaque);
+    false
+}
+
+unsafe fn select_next_linear_scan_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    code_len: usize,
+) -> Option<SelectedScanResult> {
     for block_number in opaque.next_block_number..opaque.scan_block_count {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
@@ -1003,14 +1029,12 @@ unsafe fn materialize_next_linear_scan_result(
             if emitted_contains_element(opaque, element_tid) {
                 continue;
             }
-            materialize_scored_scan_result(
-                opaque,
-                element_tid,
-                score_scan_element_result(opaque, element.gamma, &element.code),
-                &element.heaptids,
-            );
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-            return true;
+            return Some(SelectedScanResult {
+                element_tid,
+                score: score_scan_element_result(opaque, element.gamma, &element.code),
+                heap_tids: element.heaptids,
+            });
         }
 
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -1018,9 +1042,7 @@ unsafe fn materialize_next_linear_scan_result(
         opaque.next_offset_number = 1;
     }
 
-    mark_scan_exhausted(opaque);
-    clear_scan_result_state(opaque);
-    false
+    None
 }
 
 unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
@@ -1126,6 +1148,13 @@ impl Default for CurrentScanResult {
             score_valid: false,
         }
     }
+}
+
+#[derive(Debug)]
+struct SelectedScanResult {
+    element_tid: page::ItemPointer,
+    score: f32,
+    heap_tids: Vec<page::ItemPointer>,
 }
 
 #[repr(C)]
@@ -1516,11 +1545,13 @@ mod tests {
     fn materialize_scored_scan_result_seeds_current_result_and_pending_drain() {
         let mut opaque = TqScanOpaque::default();
 
-        materialize_scored_scan_result(
+        materialize_selected_scan_result(
             &mut opaque,
-            tid(26, 1),
-            -4.5,
-            &[tid(31, 1), tid(31, 2)],
+            SelectedScanResult {
+                element_tid: tid(26, 1),
+                score: -4.5,
+                heap_tids: vec![tid(31, 1), tid(31, 2)],
+            },
         );
 
         assert_eq!(
