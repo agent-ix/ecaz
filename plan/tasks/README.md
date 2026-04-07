@@ -2,22 +2,33 @@
 
 These task files are the parallel execution breakdown for `tqvector`.
 
-## Recommended start order
+## Completed
 
-1. `01-quantizer-core.md`
-2. `02-datum-and-io.md`
-3. `04-page-layout-and-wal.md`
-4. `08-safety-and-ci.md`
+1. `01-quantizer-core.md` — Phase 1
+2. `02-datum-and-io.md` — Phase 2 (type/I/O)
+3. `03-sql-surface.md` — Phase 2 (functions/operators)
+4. `04-page-layout-and-wal.md` — Phase 3
 
-## Start after foundations stabilize
+## Active Tracks
 
-1. `03-sql-surface.md`
-2. `05-build-and-scan.md`
+### Agent 1: Graph Search (critical path)
 
-## Start after indexed query path exists
+5. `05-graph-scan.md` — A1-A4 (in progress)
+6. `06-graph-insert.md` — A5 (blocked on 05)
+7. `07-vacuum.md` — A6 (blocked on 05, 06)
 
-1. `06-vacuum-and-insert.md`
-2. `07-simd-and-benchmarks.md`
+### Agent 2: Planner Integration
+
+11. `11-planner.md` — D1 scaffold (**can start now**), D2 wire (blocked on 05/A4)
+
+### Agent 3: SIMD / CI
+
+8. `08-simd.md` — B1 (**can start now**)
+9. `09-ci-and-safety.md` — B2 (mostly complete)
+
+### Post-Gate
+
+10. `10-benchmarks.md` — C1 (infrastructure complete, NFR runs blocked on 05)
 
 ## Coordination rules
 
@@ -25,3 +36,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 - Freeze `ProdQuantizer` scoring interfaces before SIMD work begins.
 - Freeze page tuple and WAL helper APIs before build, vacuum, and insert proceed independently.
 - Keep benchmark work off the critical path until correctness is stable.
+- **Planner agent owns `am/cost.rs`, `am/explain.rs`, `am/stream.rs`.** Graph search agent owns `am/scan.rs`, `am/search.rs`. No overlapping file edits during D1.
+- **D2 wiring touches `am/scan.rs`** — only start D2 after graph search agent completes A3/A4 and is no longer modifying scan.
+- **Do not remove ADR-011** (`f64::MAX` cost gate) until A4 recall gate passes. This is the planner activation gate.
+- Merge SIMD after A3 confirms scalar correctness.

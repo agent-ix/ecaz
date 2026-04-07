@@ -32,6 +32,10 @@ Last updated: 2026-04-05 (benchmark infrastructure complete at `9f80e28`).
 - [ ] **FR-016**: HNSW online insert callbacks and insert-drift statistics.
 - [x] **FR-017**: Prepared-query inner product function.
 - [x] **FR-018**: Negative score wrapper functions.
+- [ ] **FR-019**: Async I/O via PG18 `read_stream` API.
+- [ ] **FR-020**: Planner cost estimation (`amcostestimate`, `amgettreeheight`).
+- [ ] **FR-023**: Strategy translation callbacks (PG18).
+- [ ] **FR-024**: Custom EXPLAIN scan diagnostics (PG18).
 
 ### Non-Functional Requirements
 
@@ -63,6 +67,12 @@ Last updated: 2026-04-05 (benchmark infrastructure complete at `9f80e28`).
   Reason: insert uses code-to-code scoring against page tuples.
 - **`FR-009 (graph traversal) -> FR-016 (graph-aware insert), FR-010 (vacuum)`**
   Reason: insert's greedy descent + beam search and vacuum's graph repair both reuse the same page-level graph traversal algorithm implemented for scan. This shared traversal helper is the critical dependency.
+- **`FR-009 (validated scan + recall gate) -> FR-020 (cost estimation)`**
+  Reason: realistic cost estimates require a working ordered scan. ADR-011 gates planner activation until recall is validated (A4).
+- `FR-020 -> FR-023, FR-024`
+  Reason: strategy translation and custom EXPLAIN only matter once the planner can select the index.
+- `FR-009 -> FR-019`
+  Reason: async I/O replaces synchronous buffer reads in scan hot path; needs working scan first.
 - `FR-012`
   Reason: bootstrap/packaging is mostly independent, but final SQL registration depends on available functions and operators.
 - `FR-014`
@@ -141,8 +151,8 @@ Insert and vacuum also need graph traversal for neighbor selection and graph rep
   ┌───────────▼────────┐  ┌────▼───────────┐  ┌──▼──────────────────┐
   │  A3: Wire scan      │  │                │  │                     │
   │  (amgettuple +      │  │  A5: Graph     │  │  A6: Vacuum         │
-  │  ef_search GUC +    │  │  insert        │  │  three-pass         │
-  │  planner enable)    │  │  (FR-016)      │  │  (FR-010)           │
+  │  ef_search GUC)     │  │  insert        │  │  three-pass         │
+  │                     │  │  (FR-016)      │  │  (FR-010)           │
   └───────────┬─────────┘  └────────────────┘  └─────────────────────┘
               │                    │                      │
   ┌───────────▼─────────┐         │                      │
@@ -150,16 +160,24 @@ Insert and vacuum also need graph traversal for neighbor selection and graph rep
   │  (measure recall,   │◄────────┘──────────────────────┘
   │  go/no-go before    │    (drift/vacuum recall needs A5/A6)
   │  proceeding)        │
-  └─────────────────────┘
+  └───────────┬─────────┘
+              │
+              │ GATES
+              ▼
+  ┌───────────────────────────────────────────┐
+  │  D2: Wire planner (FR-020 costs,         │
+  │  remove ADR-011, FR-023, FR-024, FR-019) │
+  └───────────────────────────────────────────┘
 
 
   PARALLEL (no dependencies on Track A):
 
-  ┌─────────────────────┐    ┌─────────────────────┐
-  │  B1: SIMD (FR-014)  │    │  B2: CI (NFR-005)   │
-  │  AVX2+FMA, NEON,    │    │  + fuzz (NFR-004)   │
-  │  runtime detection  │    │                     │
-  └─────────────────────┘    └─────────────────────┘
+  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────────┐
+  │  B1: SIMD (FR-014)  │    │  B2: CI (NFR-005)   │    │  D1: Planner scaffold   │
+  │  AVX2+FMA, NEON,    │    │  + fuzz (NFR-004)   │    │  (cost model tests,     │
+  │  runtime detection  │    │                     │    │  strategy stubs,        │
+  └─────────────────────┘    └─────────────────────┘    │  EXPLAIN skeleton)      │
+                                                        └─────────────────────────┘
 ```
 
 ### Track A: Critical Path (serial, primary agent)
@@ -187,17 +205,16 @@ All items are serial because each depends on the previous.
 - **Reference:** pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines), but tqvector needs raw page decode which adds complexity.
 
 #### A3: Wire Graph Traversal into Scan
-- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Add `ef_search` GUC. Replace MAX cost estimates with realistic planner costs. Handle result ordering via BinaryHeap in amgettuple.
-- **Owns:** FR-009 completion
-- **Estimated new code:** ~200-300 lines
-- **Difficulty:** Medium — wiring + GUC registration + planner integration
+- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Add `ef_search` GUC. Handle result ordering via BinaryHeap in amgettuple. Planner cost activation is deferred to Track D (after recall gate).
+- **Owns:** FR-009 scan mechanics (cost estimation moved to Task 11 / Track D)
+- **Estimated new code:** ~150-200 lines
+- **Difficulty:** Medium — wiring + GUC registration
 - **Key deliverables:**
   1. `amrescan` calls `hnsw_search` (from A2) and stores scored results in BinaryHeap
   2. `amgettuple` pops from BinaryHeap, returns heap TIDs in distance order
   3. `tqhnsw.ef_search` GUC (default 40, range 1-1000, PGC_USERSET)
-  4. `amcostestimate` returns realistic costs (remove ADR-011 override)
-  5. Duplicate heap TID handling for coalesced element tuples
-- **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan (confirmed by EXPLAIN) and returns distance-ordered results.
+  4. Duplicate heap TID handling for coalesced element tuples
+- **Exit criteria:** `SET enable_seqscan = off; SELECT ... ORDER BY col <#> $query LIMIT 10` returns distance-ordered results via index scan. ADR-011 cost gate remains active.
 
 #### A4: Recall Benchmark Gate
 - **Scope:** Measure Recall@10 on synthetic data. This is a go/no-go gate — if recall is below ~89% (m=8, ef=128 per NFR-003), stop and investigate before investing in insert/vacuum.
@@ -263,6 +280,41 @@ These items have no dependency on Track A. They depend only on the frozen scalar
 - **Exit criteria:** PR merges require passing fmt, clippy, test, pgrx test, deny. Fuzz harness runs 10K random byte sequences without panic.
 - **Status:** All done except TC-036 (formal unsafe block audit). CI pipeline, fuzz, miri, proptest, layout-check, bench-action all landed.
 
+### Track D: Planner Integration (independent agent, partially parallel)
+
+Planner integration spans two phases: scaffolding that can start now, and wiring that is gated on the recall gate (A4).
+
+#### D1: Planner Scaffolding (can start now)
+- **Scope:** Build the cost model, strategy translation, custom EXPLAIN, and async I/O scaffolding behind PG-version feature gates. All code compiles and is testable in isolation but is not activated in `amcostestimate` (ADR-011 gate remains).
+- **Owns:** FR-020 (partial), FR-023, FR-024, FR-019 (scaffolding only)
+- **Estimated new code:** ~400-500 lines
+- **Difficulty:** Medium
+- **Key deliverables:**
+  1. Cost model function computing startup/total cost from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples) — unit-testable without a running index
+  2. `amgettreeheight` callback reading max_level from metadata page (PG18, feature-gated)
+  3. `amtranslatestrategy` / `amtranslatecmptype` stubs returning `COMPARE_LT` for strategy 1 (PG18, feature-gated)
+  4. `TqScanOpaque` counter fields for custom EXPLAIN (stats_bootstrap_expansions, stats_pages_read, etc.)
+  5. EXPLAIN hook skeleton that reads counters and emits ExplainProperty calls (PG18, feature-gated)
+  6. ReadStream callback signatures for graph and linear streams (PG18, feature-gated, not yet wired into scan loop)
+  7. Unit tests for cost model: planner selects index at 10K rows, prefers seqscan at 50 rows, handles edge cases (empty index, zero reltuples)
+- **File ownership:** `am/cost.rs` (cost model + amgettreeheight), `am/explain.rs` (EXPLAIN hook), `am/stream.rs` (async I/O). These files do not overlap with graph search agent's `am/scan.rs` and `am/search.rs`.
+- **Exit criteria:** All scaffolding compiles, tests pass, but `amcostestimate` still returns `f64::MAX`. No functional change to query behavior.
+
+#### D2: Wire Planner (gated on A4 recall gate)
+- **Scope:** Replace ADR-011 `f64::MAX` override with the real cost model from D1. Wire async I/O streams into scan loop. Activate EXPLAIN counters. Mark ADR-011 as superseded.
+- **Owns:** FR-020 (activation), FR-019 (activation), FR-024 (activation)
+- **Estimated new code:** ~100-150 lines (wiring, not new logic)
+- **Difficulty:** Easy-Medium — connecting scaffolding to live paths
+- **Key deliverables:**
+  1. `amcostestimate` calls real cost model function instead of returning `f64::MAX`
+  2. ReadStream instances created in `amrescan`, used in scan loop, destroyed in `amendscan`
+  3. EXPLAIN counters incremented during scan execution
+  4. ADR-011 marked superseded
+  5. FR-020-AC-1 validated: EXPLAIN shows index scan on 10K-row table
+  6. FR-020-AC-2 validated: planner prefers seqscan on 50-row table
+- **Dependencies:** A4 (recall gate must pass), D1 (scaffolding must be complete)
+- **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan without `enable_seqscan = off`. EXPLAIN (tqvector) shows scan stats on PG18.
+
 ### Track C: Post-Gate Verification (after A4 passes)
 
 These items only make sense after graph scan is validated and recall is confirmed.
@@ -281,13 +333,19 @@ These items only make sense after graph scan is validated and recall is confirme
 ## Parallel Execution Summary
 
 ```
-Time ──────────────────────────────────────────────────────────────►
+Time ──────────────────────────────────────────────────────────────────────────────────►
 
-Agent 1 (critical path):
+Agent 1 (graph search — critical path):
   [A1: split] → [A2: traversal] → [A3: scan] → [A4: recall gate] → [A5: insert] → [A6: vacuum] → [C1: benchmarks]
    ~1 sess       ~2-3 sess         ~1-2 sess     ~1 sess             ~2-3 sess      ~2-3 sess      ~1-2 sess
 
-Agent 2 (parallel):
+Agent 2 (planner):
+  [D1: scaffold ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]  →  [D2: wire planner] → done
+   ~2-3 sessions (parallel, no gate dependency)     │    ~1 session
+                                                    │
+                                              BLOCKED until A4 passes
+
+Agent 3 (SIMD / CI):
   [B1: SIMD ~~~~~~~~~~~~~~~~~~~~~~~~~~~] [B2: CI ~~~~~~]
    ~2-3 sessions                          ~1 session
 
@@ -313,6 +371,7 @@ Agent 2 (parallel):
 | `08-simd.md` | B1 (SIMD acceleration) | not started, **can start now** |
 | `09-ci-and-safety.md` | B2 (CI pipeline, fuzz, audit) | mostly complete (unsafe audit remaining) |
 | `10-benchmarks.md` | C1 (full benchmark suite) | **infrastructure complete**, NFR runs blocked on 05 |
+| `11-planner.md` | D1 + D2 (planner integration) | not started, **D1 can start now**, D2 blocked on A4 |
 
 ---
 
@@ -372,6 +431,25 @@ Entrance criteria:
 
 Exit criteria:
 - Indexed query path, vacuum, and insert are all operational and measurable.
+
+### Module I: Planner Integration — NOT STARTED
+
+- [ ] Cost model unit tests: planner selects index at 10K rows, prefers seqscan at 50 rows, handles edge cases for `FR-020`
+- [ ] `FR-020-AC-1`: EXPLAIN shows index scan on 10K-row table
+- [ ] `FR-020-AC-2`: planner prefers seqscan on 50-row table
+- [ ] `FR-020-AC-3`: cost model reads metadata (m, ef_search, dimensions, max_level)
+- [ ] `FR-020-AC-4`: `amgettreeheight` returns max_level on PG18
+- [ ] `FR-020-AC-5`: ADR-011 marked superseded
+- [ ] Strategy translation: `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `COMPARE_INVALID` otherwise for `FR-023`
+- [ ] Custom EXPLAIN: `EXPLAIN (tqvector)` shows scan counters on PG18 for `FR-024`
+- [ ] Async I/O: ReadStream prefetch improves cold-cache scan latency on PG18 for `FR-019`
+
+Entrance criteria:
+- D1 scaffolding: none (can start now with unit tests against cost model function)
+- D2 wiring: A4 recall gate passed, graph search agent no longer modifying `am/scan.rs`
+
+Exit criteria:
+- Planner naturally selects tqhnsw index on large tables without `enable_seqscan = off`.
 
 ### Module G: Benchmark Infrastructure — COMPLETE
 

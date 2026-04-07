@@ -16,7 +16,7 @@ Complete the HNSW scan path from module split through validated recall measureme
 
 - [ ] **A1: Finish am split.** Extract insert and scan into `am/insert.rs` and `am/scan.rs`. Mechanical refactor, no logic changes.
 - [ ] **A2: Graph traversal helpers.** Implement shared greedy descent + beam search over Postgres buffer pages. Parameterize by scoring function so scan (LUT) and insert (code-to-code) can both use it. Key concerns: buffer pin discipline, visited set, BinaryHeap ordering, layer traversal.
-- [ ] **A3: Wire scan.** Replace `next_linear_scan_heap_tid` with graph-based search. `amrescan` calls traversal helper and stores scored results. `amgettuple` pops from BinaryHeap in distance order. Add `tqhnsw.ef_search` GUC. Replace MAX cost estimates with realistic planner costs.
+- [ ] **A3: Wire scan.** Replace `next_linear_scan_heap_tid` with graph-based search. `amrescan` calls traversal helper and stores scored results. `amgettuple` pops from BinaryHeap in distance order. Add `tqhnsw.ef_search` GUC. ADR-011 cost gate remains active — planner cost activation is in Task 11 (Track D).
 - [ ] **A4: Recall gate.** Measure Recall@10 on synthetic data (10K+ vectors, 1536-dim, 4-bit). Brute-force fp32 ground truth. Test at (m=8,ef=40), (m=8,ef=128), (m=8,ef=200), (m=16,ef=200). Gate: Recall@10 >= 89% at m=8 ef=128. If not met, investigate before proceeding.
 
 ## Owns
@@ -33,6 +33,7 @@ Complete the HNSW scan path from module split through validated recall measureme
 - Task 06 (graph-aware insert needs traversal helpers from A2)
 - Task 07 (vacuum needs traversal helpers from A2)
 - Task 10 (full benchmarks need working scan)
+- Task 11 / D2 (planner wiring gated on A4 recall gate)
 - End-to-end indexed ANN search
 
 ## Deliverables
@@ -41,7 +42,6 @@ Complete the HNSW scan path from module split through validated recall measureme
 - `hnsw_search` shared traversal helper
 - `amgettuple` returning distance-ordered results
 - `tqhnsw.ef_search` GUC
-- Realistic `amcostestimate`
 - Recall@10 measurement harness and initial results
 
 ## Primary Tests
