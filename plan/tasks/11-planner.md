@@ -44,6 +44,9 @@ Progress notes:
 - `src/am/stats.rs` now also defines a reusable `TqStatsCounters` struct with pure record/reset
   helpers so the runtime lane can increment the staged FR-025 metrics later without requiring this
   branch to edit `scan.rs` or wire PostgreSQL pgstat support early.
+- `src/am/stats.rs` now also defines pure summary logic for the staged FR-025 derived rates
+  (`bootstrap_hit_rate`, `quantizer_cache_rate`), so the eventual SQL surface and pgstat glue do
+  not have to invent those computations later.
 - A read-only `tqhnsw_pg18_upgrade_snapshot()` SQL surface now exposes the intended stable
   extension identity (`tqvector`, `$libdir/tqvector`) while keeping `pg18` Cargo-feature,
   default-build, and `PG_MODULE_MAGIC_EXT` readiness explicitly false until the toolchain upgrade

@@ -22,6 +22,9 @@ Current staged behavior:
   code so the runtime lane can increment the intended metrics and the future PG18 pgstat glue can
   flush them into PostgreSQL's statistics infrastructure without requiring this branch to edit
   `scan.rs`.
+- Those same helpers MAY also define pure summary logic for the derived SQL-facing rates shown
+  below, including `bootstrap_hit_rate` and `quantizer_cache_rate`, without implying that
+  `tqvector_stats()` exists on PG17.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `tqvector_stats()` exists on
@@ -97,8 +100,8 @@ SELECT pg_stat_reset_shared('tqvector');
 
 On PG17, the custom statistics API does not exist. The extension SHALL not register any pgstat kind. The `tqvector_stats()` function SHALL NOT be defined. Counter increments SHALL be compiled out.
 During the current staged implementation, a reusable planner-owned counter struct may exist in
-`am/stats.rs`, but no PostgreSQL pgstat kind is registered and no SQL-visible cumulative statistics
-are exposed.
+`am/stats.rs`, pure summary helpers for the intended derived rates may also exist there, but no
+PostgreSQL pgstat kind is registered and no SQL-visible cumulative statistics are exposed.
 
 ## Acceptance Criteria
 

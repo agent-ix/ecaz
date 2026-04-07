@@ -54,6 +54,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires both the `tqvector` option and the `tqhnsw` access method |
 | TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
 | TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
+| TC-046 | Cumulative statistics summary computes derived rates | FR-025 | Unit-test pure FR-025 summary logic for `bootstrap_hit_rate` and `quantizer_cache_rate`, including zero-denominator handling |
 | TC-039 | Metadata tree-height callback value matches max_level | FR-020 | Unit-test `metadata_tree_height_callback_value(max_level)` across edge cases, including `u8::MAX` |
 | TC-044 | PG18 callback-named planner helpers preserve pure contracts | FR-020, FR-023 | Unit-test `amgettreeheight_callback_value`, `amtranslatestrategy_callback`, and `amtranslatecmptype_callback` so the PG18 callback seam matches the existing pure behavior |
 | TC-040 | Strategy reverse mapping rejects non-LT CompareTypes | FR-023 | Unit-test `compare_type_to_strategy(...)` across `COMPARE_INVALID`, `COMPARE_EQ`, `COMPARE_LE`, `COMPARE_GE`, `COMPARE_GT`, `COMPARE_NE`, `COMPARE_OVERLAP`, and `COMPARE_CONTAINED_BY` |
