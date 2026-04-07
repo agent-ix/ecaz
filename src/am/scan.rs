@@ -153,23 +153,14 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
-            if emit_pending_scan_heap_tid(scan, opaque) {
-                return true;
-            }
-            if materialize_next_scan_result(
+            if produce_next_scan_heap_tid(
+                scan,
                 (*scan).indexRelation,
                 (*scan).heapRelation,
                 opaque,
                 opaque.scan_code_len,
             ) {
-                let emitted = emit_pending_scan_heap_tid(scan, opaque);
-                debug_assert!(
-                    emitted,
-                    "scan result materialization should seed pending heap tids before returning true"
-                );
-                if emitted {
-                    return true;
-                }
+                return true;
             }
 
             clear_scan_orderby_output(scan);
@@ -301,6 +292,29 @@ fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOp
         set_scan_heap_tid(scan, heap_tid);
         set_scan_orderby_score(scan, opaque.current_result.score());
         return true;
+    }
+
+    false
+}
+
+unsafe fn produce_next_scan_heap_tid(
+    scan: pg_sys::IndexScanDesc,
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    code_len: usize,
+) -> bool {
+    if emit_pending_scan_heap_tid(scan, opaque) {
+        return true;
+    }
+
+    if unsafe { materialize_next_scan_result(index_relation, heap_relation, opaque, code_len) } {
+        let emitted = emit_pending_scan_heap_tid(scan, opaque);
+        debug_assert!(
+            emitted,
+            "scan result materialization should seed pending heap tids before returning true"
+        );
+        return emitted;
     }
 
     false
