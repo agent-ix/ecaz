@@ -747,15 +747,71 @@ unsafe fn refill_candidate_frontier_from_source(
     );
 }
 
+unsafe fn top_up_bootstrap_frontier_from_visible_seeds(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) {
+    let max_successor_candidates =
+        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier_ref(opaque).len());
+    if max_successor_candidates == 0 {
+        return;
+    }
+
+    let seed_candidates = visible_frontier_ref(opaque)
+        .iter()
+        .filter(|candidate| !expanded_contains_source(opaque, candidate.node))
+        .collect::<Vec<_>>();
+    if seed_candidates.is_empty() {
+        return;
+    }
+
+    let seed_nodes = seed_candidates
+        .iter()
+        .map(|candidate| candidate.node)
+        .collect::<HashSet<_>>();
+    let trace = unsafe {
+        graph::run_layer0_beam_search(
+            index_relation,
+            opaque.scan_code_len,
+            max_successor_candidates,
+            seed_candidates.iter().copied(),
+            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
+            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+        )
+    };
+    for expanded in trace.expanded {
+        mark_expanded_source(opaque, expanded.node);
+    }
+    seed_discovered_candidates(
+        opaque,
+        trace
+            .discovered
+            .into_iter()
+            .filter(|candidate| !seed_nodes.contains(&candidate.node))
+            .take(max_successor_candidates),
+    );
+}
+
+unsafe fn refill_bootstrap_frontier_after_success(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    consumed: search::BeamCandidate<page::ItemPointer>,
+) {
+    if !expanded_contains_source(opaque, consumed.node) {
+        mark_expanded_source(opaque, consumed.node);
+        unsafe { refill_candidate_frontier_from_source(index_relation, opaque, consumed.node) };
+    }
+
+    unsafe { top_up_bootstrap_frontier_from_visible_seeds(index_relation, opaque) };
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     let consumed = consume_candidate_frontier_head(opaque)?;
-    refill_bootstrap_frontier_after_consume(opaque, consumed, |source_tid, opaque| unsafe {
-        refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
-    });
+    unsafe { refill_bootstrap_frontier_after_success(index_relation, opaque, consumed) };
     Some(consumed)
 }
 
@@ -858,13 +914,13 @@ unsafe fn try_select_next_bootstrap_frontier_result(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
         |candidate| unsafe { select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate) },
         |candidate| {
-            refill_bootstrap_frontier_after_consume(
-                unsafe { &mut *opaque_ptr },
-                candidate,
-                |source_tid, opaque| unsafe {
-                    refill_candidate_frontier_from_source(index_relation, opaque, source_tid)
-                },
-            );
+            unsafe {
+                refill_bootstrap_frontier_after_success(
+                    index_relation,
+                    &mut *opaque_ptr,
+                    candidate,
+                )
+            };
         },
     )
 }
