@@ -258,41 +258,21 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
 }
 
 fn clear_pending_scan_heaptids(opaque: &mut TqScanOpaque) {
-    opaque.pending_heaptids.fill(page::ItemPointer::INVALID);
-    opaque.pending_heaptid_count = 0;
-    opaque.pending_heaptid_index = 0;
+    opaque.result_state.clear_pending();
 }
 
 fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
-    debug_assert!(heaptids.len() <= page::HEAPTID_INLINE_CAPACITY);
-
-    clear_pending_scan_heaptids(opaque);
-    opaque.pending_heaptid_count =
-        u8::try_from(heaptids.len()).expect("heap tid count should fit in u8");
-
-    for (index, tid) in heaptids.iter().copied().enumerate() {
-        opaque.pending_heaptids[index] = tid;
-    }
+    opaque.result_state.store_pending(heaptids);
 }
 
 fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPointer> {
-    if opaque.pending_heaptid_index >= opaque.pending_heaptid_count {
-        return None;
-    }
-
-    let tid = opaque.pending_heaptids[opaque.pending_heaptid_index as usize];
-    opaque.pending_heaptid_index += 1;
-    if opaque.pending_heaptid_index >= opaque.pending_heaptid_count {
-        clear_pending_scan_heaptids(opaque);
-    }
-    update_current_scan_result_heap_tid(opaque, tid);
-    Some(tid)
+    opaque.result_state.take_pending()
 }
 
 fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
     if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
         set_scan_heap_tid(scan, heap_tid);
-        set_scan_orderby_score(scan, opaque.current_result.score());
+        set_scan_orderby_score(scan, opaque.result_state.current().score());
         return true;
     }
 
@@ -323,8 +303,7 @@ unsafe fn produce_next_scan_heap_tid(
 }
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
-    clear_pending_scan_heaptids(opaque);
-    opaque.current_result = CurrentScanResult::default();
+    opaque.result_state.clear();
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -869,7 +848,7 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if opaque.pending_heaptid_count != 0
+    if opaque.result_state.pending_count() != 0
         || !opaque.execution_phase.is_bootstrap()
         || opaque.scan_dimensions == 0
     {
@@ -1092,18 +1071,7 @@ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
 
 fn set_current_scan_result(opaque: &mut TqScanOpaque, element_tid: page::ItemPointer, score: f32) {
     mark_emitted_element(opaque, element_tid);
-    opaque.current_result = CurrentScanResult {
-        element_tid,
-        heap_tid: page::ItemPointer::INVALID,
-        score,
-        score_valid: true,
-    };
-}
-
-fn update_current_scan_result_heap_tid(opaque: &mut TqScanOpaque, heap_tid: page::ItemPointer) {
-    if opaque.current_result.element_tid != page::ItemPointer::INVALID {
-        opaque.current_result.heap_tid = heap_tid;
-    }
+    opaque.result_state.set_current(element_tid, score);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1161,6 +1129,96 @@ impl Default for CurrentScanResult {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ScanResultState {
+    current: CurrentScanResult,
+    pending_heaptids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
+    pending_heaptid_count: u8,
+    pending_heaptid_index: u8,
+}
+
+impl ScanResultState {
+    fn clear_pending(&mut self) {
+        self.pending_heaptids.fill(page::ItemPointer::INVALID);
+        self.pending_heaptid_count = 0;
+        self.pending_heaptid_index = 0;
+    }
+
+    fn store_pending(&mut self, heaptids: &[page::ItemPointer]) {
+        debug_assert!(heaptids.len() <= page::HEAPTID_INLINE_CAPACITY);
+
+        self.clear_pending();
+        self.pending_heaptid_count =
+            u8::try_from(heaptids.len()).expect("heap tid count should fit in u8");
+
+        for (index, tid) in heaptids.iter().copied().enumerate() {
+            self.pending_heaptids[index] = tid;
+        }
+    }
+
+    fn take_pending(&mut self) -> Option<page::ItemPointer> {
+        if self.pending_heaptid_index >= self.pending_heaptid_count {
+            return None;
+        }
+
+        let tid = self.pending_heaptids[self.pending_heaptid_index as usize];
+        self.pending_heaptid_index += 1;
+        if self.pending_heaptid_index >= self.pending_heaptid_count {
+            self.clear_pending();
+        }
+        self.update_current_heap_tid(tid);
+        Some(tid)
+    }
+
+    fn clear(&mut self) {
+        self.clear_pending();
+        self.current = CurrentScanResult::default();
+    }
+
+    fn set_current(&mut self, element_tid: page::ItemPointer, score: f32) {
+        self.current = CurrentScanResult {
+            element_tid,
+            heap_tid: page::ItemPointer::INVALID,
+            score,
+            score_valid: true,
+        };
+    }
+
+    fn update_current_heap_tid(&mut self, heap_tid: page::ItemPointer) {
+        if self.current.element_tid != page::ItemPointer::INVALID {
+            self.current.heap_tid = heap_tid;
+        }
+    }
+
+    pub(super) fn current(&self) -> CurrentScanResult {
+        self.current
+    }
+
+    pub(super) fn pending_count(&self) -> u8 {
+        self.pending_heaptid_count
+    }
+
+    pub(super) fn pending_index(&self) -> u8 {
+        self.pending_heaptid_index
+    }
+
+    pub(super) fn pending_heap_tids(&self) -> &[page::ItemPointer] {
+        &self.pending_heaptids[..self.pending_heaptid_count as usize]
+    }
+}
+
+impl Default for ScanResultState {
+    fn default() -> Self {
+        Self {
+            current: CurrentScanResult::default(),
+            pending_heaptids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
+            pending_heaptid_count: 0,
+            pending_heaptid_index: 0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) enum ScanExecutionPhase {
     #[default]
@@ -1198,13 +1256,10 @@ pub(super) struct TqScanOpaque {
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
-    pub(super) current_result: CurrentScanResult,
+    pub(super) result_state: ScanResultState,
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
-    pub(super) pending_heaptids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
-    pub(super) pending_heaptid_count: u8,
-    pub(super) pending_heaptid_index: u8,
 }
 
 impl Default for TqScanOpaque {
@@ -1226,13 +1281,10 @@ impl Default for TqScanOpaque {
             emitted_result_tids: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             bootstrap_expansion: ptr::null_mut(),
-            current_result: CurrentScanResult::default(),
+            result_state: ScanResultState::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::Bootstrap,
-            pending_heaptids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
-            pending_heaptid_count: 0,
-            pending_heaptid_index: 0,
         }
     }
 }
@@ -1415,16 +1467,16 @@ mod tests {
             "pending result drain should stop once the queued heap tids are exhausted"
         );
         assert_eq!(
-            opaque.current_result.heap_tid(),
+            opaque.result_state.current().heap_tid(),
             tid(30, 2),
             "draining pending heap tids should keep the current-result heap tid aligned with the last emitted duplicate"
         );
         assert_eq!(
-            opaque.pending_heaptid_count, 0,
+            opaque.result_state.pending_count(), 0,
             "draining all queued heap tids should reset the pending count"
         );
         assert_eq!(
-            opaque.pending_heaptid_index, 0,
+            opaque.result_state.pending_index(), 0,
             "draining all queued heap tids should reset the pending index too"
         );
     }
@@ -1438,21 +1490,25 @@ mod tests {
         clear_scan_result_state(&mut opaque);
 
         assert!(
-            !opaque.current_result.has_element(),
+            !opaque.result_state.current().has_element(),
             "clearing scan result state should also clear the current result slot"
         );
         assert_eq!(
-            opaque.pending_heaptid_count, 0,
+            opaque.result_state.pending_count(), 0,
             "clearing scan result state should clear any pending duplicate drain state"
         );
         assert_eq!(
-            opaque.pending_heaptid_index, 0,
+            opaque.result_state.pending_index(), 0,
             "clearing scan result state should reset duplicate drain progress"
         );
         assert_eq!(
-            opaque.pending_heaptids[0],
+            opaque.result_state.pending_heap_tids().first().copied().unwrap_or(page::ItemPointer::INVALID),
             page::ItemPointer::INVALID,
             "clearing scan result state should wipe the pending heap-tid buffer too"
+        );
+        assert!(
+            opaque.result_state.pending_heap_tids().is_empty(),
+            "clearing scan result state should expose no pending heap tids after reset"
         );
     }
 
@@ -1468,26 +1524,26 @@ mod tests {
         );
 
         assert_eq!(
-            opaque.current_result.element_tid(),
+            opaque.result_state.current().element_tid(),
             tid(26, 1),
             "shared result materialization should record the element tid on current-result state"
         );
         assert_eq!(
-            opaque.current_result.score(),
+            opaque.result_state.current().score(),
             -4.5,
             "shared result materialization should preserve the supplied score"
         );
         assert_eq!(
-            opaque.pending_heaptid_count, 2,
+            opaque.result_state.pending_count(), 2,
             "shared result materialization should seed pending duplicate drain"
         );
         assert_eq!(
-            opaque.pending_heaptids[0],
+            opaque.result_state.pending_heap_tids()[0],
             tid(31, 1),
             "shared result materialization should preserve heap-tid order for later drain"
         );
         assert_eq!(
-            opaque.pending_heaptids[1],
+            opaque.result_state.pending_heap_tids()[1],
             tid(31, 2),
             "shared result materialization should retain all supplied heap tids"
         );
