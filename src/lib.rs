@@ -76,23 +76,24 @@ fn tqhnsw_access_method_oid() -> pg_sys::Oid {
         .expect("tqhnsw access method should exist")
 }
 
-unsafe fn open_valid_tqhnsw_index(index_oid: pg_sys::Oid) -> pg_sys::Relation {
+unsafe fn open_valid_tqhnsw_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
         .expect("opened index relation should expose pg_class metadata");
     if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("tqhnsw_index_admin_snapshot requires an index relation");
+        pgrx::error!("{caller_name} requires an index relation");
     }
     if rd_rel.relam != tqhnsw_access_method_oid() {
         let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
             .to_string_lossy()
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!(
-            "tqhnsw_index_admin_snapshot requires a tqhnsw index, got relation \"{relation_name}\""
-        );
+        pgrx::error!("{caller_name} requires a tqhnsw index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -303,7 +304,7 @@ fn tqhnsw_index_admin_snapshot(
         name!(planner_scan_enabled, bool),
     ),
 > {
-    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid) };
+    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_admin_snapshot") };
     let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
@@ -336,7 +337,8 @@ fn tqhnsw_index_explain_snapshot(
         name!(total_live_nodes, i64),
     ),
 > {
-    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid) };
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_explain_snapshot") };
     let snapshot = unsafe { am::index_explain_snapshot(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
@@ -905,7 +907,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    #[should_panic(expected = "tqhnsw_index_explain_snapshot requires a tqhnsw index")]
     fn test_tqhnsw_index_explain_snapshot_rejects_non_tqhnsw_index() {
         Spi::run(
             "CREATE TABLE tqhnsw_explain_snapshot_wrong_am (id bigint primary key, value bigint)",
