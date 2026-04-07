@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
-use super::page;
+use super::{page, search};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GraphElement {
@@ -90,11 +90,59 @@ pub(crate) unsafe fn load_layer0_neighbor_tids(
     valid_layer0_neighbor_tids(&neighbors.tids)
 }
 
+pub(crate) unsafe fn load_layer0_successor_candidates<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    code_len: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let neighbor_tids = unsafe { load_layer0_neighbor_tids(index_relation, source_tid, code_len) };
+    layer0_successor_candidates_from_elements(
+        source_tid,
+        neighbor_tids
+            .into_iter()
+            .filter(|neighbor_tid| keep_neighbor_tid(*neighbor_tid))
+            .map(|neighbor_tid| unsafe { load_graph_element(index_relation, neighbor_tid, code_len) }),
+        |neighbor| score_candidate(neighbor),
+    )
+}
+
 fn valid_layer0_neighbor_tids(neighbor_tids: &[page::ItemPointer]) -> Vec<page::ItemPointer> {
     neighbor_tids
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .collect()
+}
+
+fn layer0_successor_candidates_from_elements<I, F>(
+    source_tid: page::ItemPointer,
+    neighbors: I,
+    mut score_candidate: F,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    I: IntoIterator<Item = GraphElement>,
+    F: FnMut(&GraphElement) -> Option<f32>,
+{
+    neighbors
+        .into_iter()
+        .filter_map(|neighbor| {
+            if neighbor.deleted || neighbor.heaptids.is_empty() {
+                return None;
+            }
+
+            let score = score_candidate(&neighbor)?;
+            Some(search::BeamCandidate::with_source(
+                neighbor.tid,
+                score,
+                source_tid,
+            ))
+        })
         .collect()
 }
 
@@ -172,6 +220,47 @@ mod tests {
             valid_layer0_neighbor_tids(&neighbors),
             vec![tid(7, 1), tid(7, 2), tid(7, 3)],
             "layer-0 neighbor loading should skip INVALID slots while preserving neighbor order",
+        );
+    }
+
+    fn graph_element(
+        tid: page::ItemPointer,
+        deleted: bool,
+        heaptids: Vec<page::ItemPointer>,
+        gamma: f32,
+    ) -> GraphElement {
+        GraphElement {
+            tid,
+            level: 0,
+            deleted,
+            heaptids,
+            gamma,
+            neighbortid: page::ItemPointer::INVALID,
+            code: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn layer0_successor_candidates_from_elements_skips_unselectable_neighbors() {
+        let source_tid = tid(5, 1);
+        let keep_tid = tid(5, 2);
+        let skip_deleted_tid = tid(5, 3);
+        let skip_empty_tid = tid(5, 4);
+
+        let candidates = layer0_successor_candidates_from_elements(
+            source_tid,
+            vec![
+                graph_element(keep_tid, false, vec![tid(9, 1)], 0.25),
+                graph_element(skip_deleted_tid, true, vec![tid(9, 2)], 0.5),
+                graph_element(skip_empty_tid, false, Vec::new(), 0.75),
+            ],
+            |neighbor| Some(neighbor.gamma),
+        );
+
+        assert_eq!(
+            candidates,
+            vec![search::BeamCandidate::with_source(keep_tid, 0.25, source_tid)],
+            "layer-0 successor loading should keep only live neighbors with heap tids",
         );
     }
 }

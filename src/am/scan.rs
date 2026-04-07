@@ -707,32 +707,19 @@ unsafe fn refill_candidate_frontier_from_source(
         return;
     }
 
-    let neighbor_tids = unsafe {
-        graph::load_layer0_neighbor_tids(index_relation, source_tid, opaque.scan_code_len)
+    let successor_candidates = unsafe {
+        graph::load_layer0_successor_candidates(
+            index_relation,
+            source_tid,
+            opaque.scan_code_len,
+            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
+            |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+        )
     };
-    let successor_candidates =
-        collect_successor_candidates(&neighbor_tids, max_successor_candidates, |neighbor_tid| {
-            if visited_contains_element(opaque, neighbor_tid) {
-                return None;
-            }
-
-            let neighbor = unsafe {
-                graph::load_graph_element(index_relation, neighbor_tid, opaque.scan_code_len)
-            };
-            if neighbor.deleted
-                || neighbor.heaptids.is_empty()
-                || visited_contains_element(opaque, neighbor.tid)
-            {
-                return None;
-            }
-
-            Some(search::BeamCandidate::with_source(
-                neighbor.tid,
-                score_scan_element_result(opaque, neighbor.gamma, &neighbor.code),
-                source_tid,
-            ))
-        });
-    seed_discovered_candidates(opaque, successor_candidates);
+    seed_discovered_candidates(
+        opaque,
+        successor_candidates.into_iter().take(max_successor_candidates),
+    );
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -982,6 +969,7 @@ unsafe fn select_next_linear_scan_result(
     None
 }
 
+#[cfg(test)]
 fn collect_successor_candidates<F>(
     neighbor_tids: &[page::ItemPointer],
     max_candidates: usize,
