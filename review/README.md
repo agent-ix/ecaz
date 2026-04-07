@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `419caef`
+Current head: `f6b09f9`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -90,6 +90,7 @@ Current tqhnsw state summary:
 - Bootstrap completion in `src/am/scan.rs` is now owned by the phase dispatcher instead of the bootstrap selector helper itself, so the selector only tries to select while the staged executor explicitly decides when bootstrap is done and linear fallback may begin.
 - The older non-refill bootstrap selection helper in `src/am/scan.rs` is now fenced to test-only builds, leaving the refill-aware selector as the sole production bootstrap-selection path.
 - Exhaustion in `src/am/scan.rs` now owns current-result teardown itself, so the linear selector no longer has to remember to clear result state separately at each exhausted return site.
+- The full frontier-head candidate accessor in `src/am/scan.rs` is now debug-only, while production scan code uses a private internal helper for the same selection logic.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -281,6 +282,7 @@ Open requests:
 - `145-explicit-bootstrap-completion-at-phase-dispatch.md`
 - `146-gate-test-only-bootstrap-selection-helper.md`
 - `147-exhaustion-owns-result-state-clearing.md`
+- `148-gate-frontier-head-candidate-accessor.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
