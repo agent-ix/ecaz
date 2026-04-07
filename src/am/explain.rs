@@ -12,6 +12,17 @@ pub(crate) struct ExplainCounterDefinition {
     pub increments_when: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TqExplainCounters {
+    pub stats_bootstrap_expansions: u32,
+    pub stats_bootstrap_pages_read: u32,
+    pub stats_linear_pages_read: u32,
+    pub stats_elements_scored: u32,
+    pub stats_elements_skipped: u32,
+    pub stats_heap_tids_returned: u32,
+    pub stats_quantizer_cache_hit: bool,
+}
+
 const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
@@ -62,11 +73,45 @@ pub(crate) fn explain_counter_definitions() -> &'static [ExplainCounterDefinitio
     &EXPLAIN_COUNTER_DEFINITIONS
 }
 
+impl TqExplainCounters {
+    pub(crate) fn record_bootstrap_expansion(&mut self) {
+        self.stats_bootstrap_expansions += 1;
+    }
+
+    pub(crate) fn record_bootstrap_page_read(&mut self) {
+        self.stats_bootstrap_pages_read += 1;
+    }
+
+    pub(crate) fn record_linear_page_read(&mut self) {
+        self.stats_linear_pages_read += 1;
+    }
+
+    pub(crate) fn record_element_scored(&mut self) {
+        self.stats_elements_scored += 1;
+    }
+
+    pub(crate) fn record_element_skipped(&mut self) {
+        self.stats_elements_skipped += 1;
+    }
+
+    pub(crate) fn record_heap_tid_returned(&mut self) {
+        self.stats_heap_tids_returned += 1;
+    }
+
+    pub(crate) fn record_quantizer_cache_hit(&mut self) {
+        self.stats_quantizer_cache_hit = true;
+    }
+
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         explain_counter_definitions, explain_option_snapshot, ExplainCounterDefinition,
-        ExplainOptionSnapshot,
+        ExplainOptionSnapshot, TqExplainCounters,
     };
 
     #[test]
@@ -123,5 +168,48 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn explain_counters_record_each_staged_statistic() {
+        let mut counters = TqExplainCounters::default();
+
+        counters.record_bootstrap_expansion();
+        counters.record_bootstrap_page_read();
+        counters.record_linear_page_read();
+        counters.record_element_scored();
+        counters.record_element_skipped();
+        counters.record_heap_tid_returned();
+        counters.record_quantizer_cache_hit();
+
+        assert_eq!(
+            counters,
+            TqExplainCounters {
+                stats_bootstrap_expansions: 1,
+                stats_bootstrap_pages_read: 1,
+                stats_linear_pages_read: 1,
+                stats_elements_scored: 1,
+                stats_elements_skipped: 1,
+                stats_heap_tids_returned: 1,
+                stats_quantizer_cache_hit: true,
+            }
+        );
+    }
+
+    #[test]
+    fn explain_counters_reset_back_to_zero_state() {
+        let mut counters = TqExplainCounters {
+            stats_bootstrap_expansions: 2,
+            stats_bootstrap_pages_read: 3,
+            stats_linear_pages_read: 5,
+            stats_elements_scored: 7,
+            stats_elements_skipped: 11,
+            stats_heap_tids_returned: 13,
+            stats_quantizer_cache_hit: true,
+        };
+
+        counters.reset();
+
+        assert_eq!(counters, TqExplainCounters::default());
     }
 }

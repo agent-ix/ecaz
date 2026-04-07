@@ -21,6 +21,9 @@ Progress notes:
 - A read-only `tqhnsw_explain_counter_snapshot()` SQL surface now exposes the intended EXPLAIN
   counter names, types, and increment conditions while keeping scan-opaque counter storage and
   runtime counter wiring explicitly false until the execution lane is ready.
+- `src/am/explain.rs` now also defines a reusable `TqExplainCounters` struct with pure
+  record/reset helpers so the scan lane can embed it in `TqScanOpaque` later without planner-lane
+  edits to `scan.rs`.
 - A read-only `tqhnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
   function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
   PostgreSQL 18 support actually exists in the repository.
@@ -52,7 +55,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 - [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
 - [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. PG18 feature-gated. Place in `am/cost.rs`.
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. PG18 feature-gated. Place in `am/cost.rs`.
-- [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A pure counter-contract snapshot now exists in `am/explain.rs`, but storage/wiring is still pending.
+- [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
 - [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
 - [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. Pure callback-signature helpers and state-carrier types now exist in `am/stream.rs`; actual PG18 callback bindings are still pending.
 - [x] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.

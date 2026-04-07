@@ -21,6 +21,9 @@ Current staged behavior:
   `explain_per_node_hook` wiring remain unavailable.
 - Those same helpers MAY also expose the intended counter names, types, and increment conditions
   while keeping both scan-opaque counter storage and runtime counter wiring explicitly unavailable.
+- The staged implementation MAY also define a reusable counter struct in planner-owned code so the
+  scan lane can embed it in `TqScanOpaque` later without requiring the planner lane to edit
+  `scan.rs` directly.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
@@ -132,7 +135,8 @@ When `tqvector` is not specified in the EXPLAIN options, the hook SHALL return i
 
 On PG17, the custom EXPLAIN API does not exist. During the current staged implementation, the
 counter contract may be exposed through read-only scaffolding helpers, but the actual counter
-fields are not yet wired into `TqScanOpaque` and no EXPLAIN hook is registered.
+fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
+embedding by the scan lane, and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 
