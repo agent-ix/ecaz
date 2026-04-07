@@ -825,7 +825,7 @@ where
     None
 }
 
-unsafe fn select_next_bootstrap_frontier_result(
+unsafe fn try_select_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> Option<SelectedScanResult> {
@@ -839,7 +839,7 @@ unsafe fn select_next_bootstrap_frontier_result(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
     // temporary mutable borrows of `opaque` do not alias.
-    let selected = select_next_bootstrap_candidate_with_refill(
+    select_next_bootstrap_candidate_with_refill(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
         |candidate| unsafe { select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate) },
         |candidate| {
@@ -851,11 +851,7 @@ unsafe fn select_next_bootstrap_frontier_result(
                 },
             );
         },
-    );
-    if selected.is_none() {
-        complete_bootstrap_phase(opaque);
-    }
-    selected
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -863,8 +859,9 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let Some(selected) = (unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) })
+    let Some(selected) = (unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) })
     else {
+        complete_bootstrap_phase(opaque);
         return false;
     };
 
@@ -880,11 +877,12 @@ unsafe fn select_next_scan_result(
     match opaque.execution_phase {
         ScanExecutionPhase::Bootstrap => {
             if let Some(selected) =
-                unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) }
+                unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) }
             {
                 return Some(selected);
             }
 
+            complete_bootstrap_phase(opaque);
             unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
         }
         ScanExecutionPhase::Linear => unsafe {
