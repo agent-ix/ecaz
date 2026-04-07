@@ -909,10 +909,6 @@ unsafe fn next_linear_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<page::ItemPointer> {
-    if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
-        return Some(heap_tid);
-    }
-
     if opaque.scan_exhausted {
         return None;
     }
