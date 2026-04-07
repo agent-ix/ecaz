@@ -340,6 +340,22 @@ pub(crate) struct Pg18DiagnosticsSnapshot {
     pub pg18_stats_sql_function_ready: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannerIntegrationSnapshot {
+    pub planner_scan_enabled: bool,
+    pub ordered_scan_ready: bool,
+    pub runtime_ordered_scan_ready: bool,
+    pub planner_cost_model_ready: bool,
+    pub planner_cost_callback_live: bool,
+    pub pg18_callback_surface_ready: bool,
+    pub pg18_diagnostics_surface_ready: bool,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_gate_reason: &'static str,
+    pub next_runtime_blocker: &'static str,
+    pub next_pg18_blocker: &'static str,
+}
+
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
@@ -393,10 +409,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let index_pages = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     } as f64;
-    let reltuples = unsafe {
-        (*(*index_relation).rd_rel)
-            .reltuples
-    } as f64;
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let tree_height = super::cost::metadata_fallback_tree_height(metadata.max_level);
     let constants = unsafe { super::cost::current_planner_cost_constants() };
     let modeled = super::cost::estimate_planner_cost(
@@ -468,6 +481,36 @@ pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
         pg18_explain_per_node_hook_ready: explain.pg18_explain_per_node_hook_ready,
         pg18_pgstat_kind_ready: stats.pg18_pgstat_kind_ready,
         pg18_stats_sql_function_ready: stats.pg18_sql_function_ready,
+    }
+}
+
+pub(crate) unsafe fn planner_integration_snapshot(
+    index_relation: pg_sys::Relation,
+) -> PlannerIntegrationSnapshot {
+    let admin = unsafe { index_admin_snapshot(index_relation) };
+    let explain = unsafe { index_explain_snapshot(index_relation) };
+    let cost = unsafe { index_cost_snapshot(index_relation) };
+    let diagnostics = pg18_diagnostics_snapshot();
+
+    PlannerIntegrationSnapshot {
+        planner_scan_enabled: explain.planner_scan_enabled,
+        ordered_scan_ready: explain.ordered_scan_ready,
+        runtime_ordered_scan_ready: false,
+        planner_cost_model_ready: true,
+        planner_cost_callback_live: false,
+        pg18_callback_surface_ready: cost.pg18_tree_height_callback_ready
+            && explain.pg18_strategy_translation_ready,
+        pg18_diagnostics_surface_ready: diagnostics.pg18_custom_explain_option_ready
+            && diagnostics.pg18_explain_per_node_hook_ready
+            && diagnostics.pg18_pgstat_kind_ready
+            && diagnostics.pg18_stats_sql_function_ready,
+        effective_ef_search: admin.effective_ef_search,
+        effective_source: admin.effective_source,
+        planner_gate_reason: explain.planner_gate_reason,
+        next_runtime_blocker:
+            "ordered tqhnsw scan semantics and recall validation are not yet credible",
+        next_pg18_blocker:
+            "pgrx pg18 feature support and callback bindings are not yet implemented",
     }
 }
 

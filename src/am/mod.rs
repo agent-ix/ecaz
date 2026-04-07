@@ -62,6 +62,12 @@ pub(crate) fn pg18_diagnostics_snapshot() -> shared::Pg18DiagnosticsSnapshot {
     shared::pg18_diagnostics_snapshot()
 }
 
+pub(crate) unsafe fn planner_integration_snapshot(
+    index_relation: pgrx::pg_sys::Relation,
+) -> shared::PlannerIntegrationSnapshot {
+    unsafe { shared::planner_integration_snapshot(index_relation) }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{
@@ -72,9 +78,10 @@ pub(crate) use self::shared::{
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::scan_debug::{
-    debug_begin_end_scan, debug_candidate_frontier_head_lifecycle,
-    debug_consume_candidate_frontier_head, debug_consume_candidate_frontier_head_slots,
-    debug_end_scan_twice, debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
+    debug_begin_end_scan, debug_bootstrap_phase_transition,
+    debug_candidate_frontier_head_lifecycle, debug_consume_candidate_frontier_head,
+    debug_consume_candidate_frontier_head_slots, debug_end_scan_twice,
+    debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
     debug_gettuple_after_rescan_result, debug_gettuple_backward_after_rescan,
     debug_gettuple_consumes_bootstrap_candidate, debug_gettuple_current_result_heap_progress,
     debug_gettuple_current_result_lifecycle, debug_gettuple_current_result_neighbors,
@@ -82,7 +89,6 @@ pub(crate) use self::scan_debug::{
     debug_gettuple_orderby_score, debug_gettuple_orderby_score_lifecycle,
     debug_gettuple_rescan_after_exhaustion, debug_gettuple_rescan_after_partial,
     debug_gettuple_scan_heap_tids, debug_gettuple_without_rescan,
-    debug_bootstrap_phase_transition,
     debug_materialize_bootstrap_candidate_result, debug_rescan_candidate_frontier,
     debug_rescan_entry_candidate_state, debug_rescan_null_query,
     debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,

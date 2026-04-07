@@ -28,6 +28,9 @@ Progress notes:
 - A read-only `tqhnsw_pg18_diagnostics_snapshot()` SQL surface now exposes the intended custom
   EXPLAIN option and statistics function names together while keeping all PG18 diagnostics
   readiness flags explicitly false until the toolchain and hook/pgstat lanes actually land.
+- A read-only `tqhnsw_planner_integration_snapshot(...)` SQL surface now exposes the current
+  cross-lane planner blockers in one place: modeled cost scaffolding is ready, but ordered scan
+  credibility, live planner activation, and PG18 callback/diagnostics readiness remain false.
 
 ## Scope
 

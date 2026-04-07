@@ -30,6 +30,9 @@ Implementation stages:
   tuning and planner gate status before EXPLAIN or planner-visible scan selection are enabled.
 - Current planner groundwork MAY also expose explain-oriented snapshot state that says ordered scan
   is not yet ready and explains why the planner gate remains in place.
+- Current planner groundwork MAY also expose a consolidated planner-integration snapshot that keeps
+  the runtime ordered-scan blocker and the PG18 callback/toolchain blocker explicit in one
+  read-only surface for cross-lane integration work.
 
 ### `ambeginscan`
 

@@ -47,6 +47,8 @@ Planner/integration groundwork may still land behind this gate, including:
   metadata-fallback seam until PG18 `amgettreeheight` wiring actually exists
 - planner-facing explain snapshot helpers that report the gate state explicitly without claiming
   that EXPLAIN can yet show a tqhnsw index scan
+- planner-facing integration snapshot helpers that make the remaining runtime ordered-scan blocker
+  and PG18 callback/toolchain blocker explicit without enabling planner selection
 
 Those surfaces do not by themselves make planner-visible scans safe.
 

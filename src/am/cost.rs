@@ -135,10 +135,7 @@ pub(crate) fn estimate_planner_cost(
         let linear_cost = linear_pages * constants.seq_page_cost;
         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * dimensions;
         let startup_cost = graph_cost + graph_cpu;
-        (
-            startup_cost,
-            startup_cost + linear_cost + linear_cpu,
-        )
+        (startup_cost, startup_cost + linear_cost + linear_cpu)
     };
 
     PlannerCostEstimate {
@@ -294,9 +291,8 @@ mod tests {
             constants,
         );
         let expected_tuple_estimate = 120.0;
-        let expected_total_cost =
-            12.0 * constants.seq_page_cost
-                + expected_tuple_estimate * constants.cpu_operator_cost * 128.0;
+        let expected_total_cost = 12.0 * constants.seq_page_cost
+            + expected_tuple_estimate * constants.cpu_operator_cost * 128.0;
 
         assert_eq!(estimate.startup_cost, 0.0);
         assert_eq!(estimate.total_cost, expected_total_cost);
