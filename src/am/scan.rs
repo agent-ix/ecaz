@@ -763,20 +763,6 @@ unsafe fn select_scan_candidate_result(
     })
 }
 
-pub(super) unsafe fn materialize_scan_candidate_result(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-    candidate: search::BeamCandidate<page::ItemPointer>,
-) -> bool {
-    let Some(selected) = (unsafe { select_scan_candidate_result(index_relation, opaque, candidate) })
-    else {
-        return false;
-    };
-
-    materialize_selected_scan_result(opaque, selected);
-    true
-}
-
 fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
     mark_emitted_element(opaque, selected.element_tid);
     opaque.result_state.materialize(selected);
@@ -872,6 +858,7 @@ unsafe fn select_next_bootstrap_frontier_result(
     selected
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
