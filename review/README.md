@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `f6b09f9`
+Current head: `a6e9b15`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -263,6 +263,34 @@ Review triage at `46d00bb`:
   until live insert drift accounting is implemented, keeping FR-016 staging honest.
 - Admin snapshot coverage now verifies both the happy path and rejection of non-`tqhnsw` indexes,
   and the test matrix now records this planner/admin statistics scaffolding explicitly.
+- `tqhnsw_index_explain_snapshot(regclass)` now exposes a separate explain-oriented snapshot that
+  reports the hard planner gate, `ordered_scan_ready = false`, explicit gate reasoning, and the
+  effective tuning values without claiming that PostgreSQL EXPLAIN can already choose `tqhnsw`.
+- The shared snapshot validation helper in `src/lib.rs` now reports the calling SQL function name,
+  so admin and explain snapshot rejection paths no longer emit misleading cross-surface errors.
+- `src/am/cost.rs` now carries a pure FR-020 cost-model helper plus unit coverage for large-table
+  crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
+  heuristics, while the live `amcostestimate` callback remains hard-gated by ADR-011.
+- `tqhnsw_index_cost_snapshot(regclass)` now exposes a read-only planner-cost snapshot that shows
+  modeled FR-020 outputs, the still-gated live callback contract, and the tuning/metadata inputs
+  used to compute the model without enabling planner-visible scans.
+- The cost snapshot now reports `resolved_tree_height`, `tree_height_source`, and
+  `pg18_tree_height_callback_ready`, making the metadata-fallback seam explicit until PG18 callback
+  wiring exists.
+- The explain snapshot now also exposes the intended PG18 strategy-translation contract
+  (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false.
+- The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
+  keeping PG18 option registration and per-node hook readiness explicitly false.
+- `tqhnsw_stats_snapshot()` now exposes the intended `tqvector_stats` identity while keeping PG18
+  pgstat-kind and SQL-surface readiness explicitly false.
+- `tqhnsw_pg18_upgrade_snapshot()` now exposes the intended stable extension identity
+  (`tqvector`, `$libdir/tqvector`) while keeping `pg18` Cargo-feature, default-build, and
+  `PG_MODULE_MAGIC_EXT` readiness explicitly false.
+- `tqhnsw_pg18_diagnostics_snapshot()` now exposes the intended custom EXPLAIN option and
+  statistics function names together while keeping all PG18 diagnostics readiness flags false.
+- `tqhnsw_planner_integration_snapshot(regclass)` now exposes the current cross-lane planner
+  integration state in one place: modeled cost scaffolding is ready, but ordered scan credibility,
+  live planner activation, and PG18 callback/diagnostics readiness all remain explicitly blocked.
 
 Review instructions:
 - Prefer correctness findings over style comments.
@@ -302,6 +330,16 @@ Open requests:
 - `148-gate-frontier-head-candidate-accessor.md`
 - `126-ef-search-control-surface-and-planner-gate-scaffolding.md`
 - `127-admin-snapshot-for-planner-and-insert-stats.md`
+- `133-explain-snapshot-for-planner-gate.md`
+- `134-planner-cost-model-scaffolding.md`
+- `135-cost-snapshot-for-gated-planner-model.md`
+- `136-explicit-tree-height-fallback-in-cost-snapshot.md`
+- `137-strategy-translation-scaffolding-in-explain-snapshot.md`
+- `138-custom-explain-scaffolding-in-explain-snapshot.md`
+- `139-statistics-scaffolding-snapshot.md`
+- `140-pg18-upgrade-boundary-snapshot.md`
+- `141-consolidated-pg18-diagnostics-snapshot.md`
+- `142-planner-integration-blockers-snapshot.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
