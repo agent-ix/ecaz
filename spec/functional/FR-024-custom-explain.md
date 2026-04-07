@@ -15,6 +15,13 @@ traces:
 
 On PG18, the extension SHALL register a custom EXPLAIN option `tqvector` that, when enabled, causes EXPLAIN output to include tqvector-specific scan statistics for each Index Scan node using the `tqhnsw` access method.
 
+Current staged behavior:
+- Before PostgreSQL 18 support exists in this repository, pure explain-scaffolding helpers MAY
+  expose the intended EXPLAIN option name and report that both option registration and
+  `explain_per_node_hook` wiring remain unavailable.
+- Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
+  that any PostgreSQL EXPLAIN hook is registered on PG17.
+
 ### Registration
 
 In `_PG_init()`:

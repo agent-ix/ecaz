@@ -2,6 +2,7 @@
 
 mod build;
 mod cost;
+mod explain;
 mod graph;
 mod insert;
 mod options;

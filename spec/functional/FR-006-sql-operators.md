@@ -68,6 +68,8 @@ Current staged behavior:
   gated off, but EXPLAIN itself is not yet expected to show a `tqhnsw` index scan.
 - Explain-facing snapshot helpers MAY also report the intended `<#>` ordering semantics
   (`strategy 1` / `COMPARE_LT`) and that PG18 strategy-translation callbacks are still unavailable.
+- Explain-facing snapshot helpers MAY also report the intended custom EXPLAIN option name
+  (`tqvector`) and that PG18 EXPLAIN option / hook wiring is still unavailable.
 
 ### FR-006-AC-3: Operator commutativity
 `a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.

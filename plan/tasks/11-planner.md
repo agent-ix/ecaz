@@ -15,6 +15,9 @@ Progress notes:
 - The explain snapshot now also exposes the intended PG18 strategy-translation target
   (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
   actually grows PG18 toolchain support.
+- The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
+  keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
+  actually exists in the repository.
 
 ## Scope
 

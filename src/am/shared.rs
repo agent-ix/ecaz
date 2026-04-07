@@ -281,6 +281,9 @@ pub(crate) struct IndexExplainSnapshot {
     pub ordering_strategy: i32,
     pub ordering_compare_type: &'static str,
     pub pg18_strategy_translation_ready: bool,
+    pub explain_option_name: &'static str,
+    pub pg18_custom_explain_option_ready: bool,
+    pub pg18_explain_per_node_hook_ready: bool,
     pub effective_ef_search: i32,
     pub effective_source: &'static str,
     pub total_live_nodes: usize,
@@ -343,6 +346,7 @@ pub(crate) unsafe fn index_explain_snapshot(
 ) -> IndexExplainSnapshot {
     let admin = unsafe { index_admin_snapshot(index_relation) };
     let translation = super::cost::strategy_translation_snapshot();
+    let explain = super::explain::explain_option_snapshot();
     IndexExplainSnapshot {
         planner_scan_enabled: admin.planner_scan_enabled,
         ordered_scan_ready: false,
@@ -351,6 +355,9 @@ pub(crate) unsafe fn index_explain_snapshot(
         ordering_strategy: translation.ordering_strategy,
         ordering_compare_type: translation.ordering_compare_type.as_str(),
         pg18_strategy_translation_ready: translation.pg18_callback_ready,
+        explain_option_name: explain.option_name,
+        pg18_custom_explain_option_ready: explain.pg18_custom_explain_option_ready,
+        pg18_explain_per_node_hook_ready: explain.pg18_explain_per_node_hook_ready,
         effective_ef_search: admin.effective_ef_search,
         effective_source: admin.effective_source,
         total_live_nodes: admin.total_live_nodes,

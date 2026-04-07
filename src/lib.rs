@@ -335,6 +335,9 @@ fn tqhnsw_index_explain_snapshot(
         name!(ordering_strategy, i32),
         name!(ordering_compare_type, String),
         name!(pg18_strategy_translation_ready, bool),
+        name!(explain_option_name, String),
+        name!(pg18_custom_explain_option_ready, bool),
+        name!(pg18_explain_per_node_hook_ready, bool),
         name!(effective_ef_search, i32),
         name!(effective_source, String),
         name!(total_live_nodes, i64),
@@ -352,6 +355,9 @@ fn tqhnsw_index_explain_snapshot(
         snapshot.ordering_strategy,
         snapshot.ordering_compare_type.to_owned(),
         snapshot.pg18_strategy_translation_ready,
+        snapshot.explain_option_name.to_owned(),
+        snapshot.pg18_custom_explain_option_ready,
+        snapshot.pg18_explain_per_node_hook_ready,
         snapshot.effective_ef_search,
         snapshot.effective_source.to_owned(),
         i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
@@ -964,6 +970,21 @@ mod tests {
         )
         .expect("snapshot query should succeed")
         .expect("snapshot should return one row");
+        let explain_option_name = Spi::get_one::<String>(
+            "SELECT explain_option_name FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_custom_explain_option_ready = Spi::get_one::<bool>(
+            "SELECT pg18_custom_explain_option_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_explain_per_node_hook_ready = Spi::get_one::<bool>(
+            "SELECT pg18_explain_per_node_hook_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
         let effective_ef_search = Spi::get_one::<i32>(
             "SELECT effective_ef_search FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
         )
@@ -1000,6 +1021,18 @@ mod tests {
         assert!(
             !pg18_strategy_translation_ready,
             "explain snapshot should keep PG18 strategy translation explicitly unavailable for now"
+        );
+        assert_eq!(
+            explain_option_name, "tqvector",
+            "explain snapshot should expose the intended custom EXPLAIN option name"
+        );
+        assert!(
+            !pg18_custom_explain_option_ready,
+            "explain snapshot should keep PG18 custom EXPLAIN option registration explicitly unavailable for now"
+        );
+        assert!(
+            !pg18_explain_per_node_hook_ready,
+            "explain snapshot should keep PG18 explain hook wiring explicitly unavailable for now"
         );
         assert_eq!(effective_ef_search, 91);
         assert_eq!(effective_source, "relation");
