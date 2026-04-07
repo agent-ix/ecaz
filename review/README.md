@@ -1,56 +1,302 @@
 # Review Packet
 
-## Structure
+Current head: `f6b09f9`
 
-Each review topic lives in its own directory under `review/`:
+Purpose:
+- Leave focused review requests for another agent to process independently.
+- Keep each request narrow and tied to the current validated state.
 
-    review/{NN}-{topic}/
-      request.md
-      feedback/
-        {YYYY-MM-DD}-{seq}-{agent}.md
+Validation status at this checkpoint:
+- `cargo test`
+- `cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 
-- `request.md` is the review request written by the implementing agent.
-- `feedback/` contains responses from any agent (reviewer or coder).
-- A topic may have only feedback and no request (e.g. cross-cutting observations).
+Current tqhnsw state summary:
+- Build path is implemented and tested.
+- Planner still avoids using `tqhnsw` scans.
+- `aminsert` supports a narrow live path:
+  - validates `(dimensions, bits, seed)` against metadata
+  - serializes empty-index metadata initialization under an exclusive metadata-page lock
+  - initializes empty-index metadata on first insert
+  - appends disconnected level-0 nodes
+  - reuses tail page when possible
+  - allocates a new page when the tail page cannot fit another neighbor+element pair
+  - coalesces duplicate encoded vectors into existing element tuples
+  - rejects duplicate heap-TID overflow
+  - rejects `build_source_column` indexes
+- Vacuum callbacks are benign no-ops that return current page/tuple stats.
+- `ambeginscan` allocates a real scan descriptor plus opaque state.
+- `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
+- `amgettuple` now requires `amrescan`-initialized scan state before execution.
+- `amgettuple` now supports visible tuple production through the current forward-only bootstrap linear data-page scan for non-empty indexes.
+- `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
+- Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
+- Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
+- Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
+- Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
+- `amgettuple` now returns `false` for valid rescans on empty indexes while keeping planner-visible ordered traversal disabled.
+- `amrescan` now persists the full query payload in scan-owned PostgreSQL memory and frees it during `amendscan`.
+- `amgettuple` now supports a forward-only linear data-page scan for non-empty indexes.
+- The current non-empty scan path now returns every heap TID from each live element tuple before advancing and keeps duplicate-drain progress in scan-local opaque state.
+- Query-payload ownership, linear scan cursor state, and duplicate heap-TID progress all now live in scan-owned opaque memory.
+- `tqvector_query_inner_product` now reconstructs the full persisted quantized payload from `(gamma, code_bytes)` before calling the prepared-query scorer.
+- Query-inner-product coverage now verifies that the SQL-facing scorer uses the persisted `gamma` term instead of passing only code bytes into the quantizer API.
+- Linear scan coverage now verifies that repeated `amgettuple` calls stay `false` after exhaustion.
+- Linear scan coverage now verifies that `amgettuple` still rejects backward scan direction after a valid `amrescan`.
+- Linear scan coverage now verifies that `amrescan` after full exhaustion restarts tuple production from the beginning.
+- Build-time detoast handling now uses pointer comparison against the original datum to decide whether `pg_detoast_datum_packed` returned an allocated copy.
+- `encode_to_tqvector` now rejects embeddings whose dimension exceeds the persisted `u16` limit instead of truncating on pack.
+- The in-memory `DataPage` tuple insertion path now uses a checked `u16` conversion for returned offset numbers.
+- The `hnsw_rs` Cargo dependency is now pinned to the currently locked `0.3.4` release instead of `*`.
+- `amrescan` now caches scan dimensions, bits, and derived code length in scan-owned opaque state so `amgettuple` no longer rereads the metadata page on every call.
+- `relation_options` now reads parsed reloptions directly from the relation descriptor cache instead of issuing an SPI catalog query on every `aminsert`.
+- Code-to-code inner-product scoring now has a zero-allocation raw-code fast path, and `score_code_inner_product` no longer builds temporary fake payload buffers on each call.
+- Empty-index scan coverage now explicitly verifies repeated `amgettuple` calls stay `false` and that `amrescan` on an empty index still produces no tuples.
+- `amrescan` now rejects oversized `real[]` queries with an explicit dimension error instead of relying on an internal `u16` conversion panic.
+- The linear scan cursor now uses a direct `offset + 1` advance with a `debug_assert!` on the page-local `u16` invariant instead of carrying an unreachable saturation branch.
+- Query-scoring coverage now explicitly exercises candidate/query dimension mismatch and the negative-query wrapper contract.
+- Linear scan coverage now explicitly verifies that a duplicate-heavy scan continues correctly across multiple data pages and mixed element/neighbor tuple pages.
+- `amrescan` now caches the current relation block count in scan-owned state so the bootstrap linear scan does not re-fetch it on every tuple-producing call.
+- `amrescan` now also caches a prepared quantizer query object in scan-owned state for non-empty indexes as groundwork for ordered traversal.
+- The scan prepared-query cache now also retains the corresponding `ProdQuantizer` instance in scan-owned state, so candidate scoring no longer reacquires the shared quantizer cache for every scored element.
+- Scan debug/test bootstrap frontier helpers no longer preserve a stale fixed two-slot alias; they now expose the current `Vec`-backed visible frontier shape directly.
+- The remaining scan unsafe audit nits now have an explicit non-aliasing `SAFETY` contract on the split-borrow frontier/scheduler helper, and `amendscan` now casts the opaque scan state once before teardown.
+- `amgettuple` now emits the current result score through `xs_orderbyvals[0]` / `xs_orderbynulls[0]` when it produces a tuple, so visible scan results now publish the same `<#>` value already tracked in scan-owned result state.
+- `amgettuple` now also clears the visible order-by score on exhaustion and empty-index false-return paths, and current order-by lifecycle coverage now verifies that the score slot starts empty, becomes non-null after tuple production, and clears again on exhaustion and `amrescan`.
+- `amrescan` now reads the index `ef_search` reloption into scan-owned state and uses it to size the current bootstrap frontier/refill path instead of the old hardcoded 3-slot ceiling.
+- Bootstrap result production now keeps consuming score-ordered bootstrap candidates until one materializes, instead of abandoning the frontier after the first dead candidate and dropping immediately to linear fallback.
+- Visible frontier head selection still requires a Vec fallback after scheduler drain, because the scheduler currently tracks unexpanded expansion sources rather than all still-emittable visible candidates.
+- The bootstrap linear scan now also tracks an explicit current-result tuple pointer in scan-owned state, clearing it on rescan and exhaustion so later ordered execution can hang score/result bookkeeping off a stable slot.
+- Current-result lifecycle coverage now verifies that duplicate draining stays attached to the same element tuple and that the current-result slot clears on exhaustion and on `amrescan`.
+- The bootstrap linear scan now also computes and stores an operator-facing `<#>` score for the current result element by combining the cached prepared query with the representative heap row's persisted `gamma`.
+- Current-result score coverage now verifies that score validity flips on with first tuple production, remains attached while draining duplicate heap TIDs from one element, and clears back to zero on exhaustion.
+- The explicit bootstrap-phase completion bit in `src/am/scan.rs` now also has pg/debug coverage, so the current staged executor proves that bootstrap execution eventually marks itself complete, clears visible frontier state, and resets on `amrescan`.
+- Pending heap-TID drain is now an explicit first step in `amgettuple`, so duplicate emission from an already-materialized current result no longer falls through the linear-scan helper before bootstrap or linear candidate selection resumes.
+- The linear fallback helper in `src/am/scan.rs` no longer carries a dead pending-result drain branch; pending duplicate emission is now owned entirely by the top-level `amgettuple` flow.
+- The linear path in `src/am/scan.rs` now mirrors the bootstrap path structurally: it materializes the next result into `current_result` plus pending heap TIDs first, and lets the top-level `amgettuple` drain step emit the visible tuple.
+- Top-level staged execution in `src/am/scan.rs` now goes through one shared “materialize next result” step before the common pending-drain emission path, instead of open-coding separate bootstrap-vs-linear materialization branches in `amgettuple`.
+- Bootstrap and linear paths in `src/am/scan.rs` now both materialize through one shared current-result/pending-drain helper, reducing another remaining difference between graph-side and linear-side result production.
+- Scan execution phase in `src/am/scan.rs` now lives in one explicit enum (`Bootstrap`, `Linear`, `Exhausted`) instead of split booleans, so phase transitions and exhaustion checks go through one shared runtime contract across scan, debug, and tests.
+- Top-level tuple production in `src/am/scan.rs` now goes through one shared `produce_next_scan_heap_tid` helper, so `amgettuple` no longer open-codes “drain current result, materialize next result, drain it again.”
+- Scan result teardown in `src/am/scan.rs` now goes through one shared clear path too, so clearing `current_result` also clears pending duplicate-drain state instead of relying on scattered reset sites.
+- Scan result production state in `src/am/scan.rs` now lives in one explicit `ScanResultState` container, grouping `current_result` and pending duplicate-drain state structurally instead of keeping them as parallel fields on `TqScanOpaque`.
+- The linear scan path in `src/am/scan.rs` now selects a `SelectedScanResult` first and then runs the shared result materialization seam, instead of materializing directly inside the page-read loop.
+- Bootstrap candidate adjudication in `src/am/scan.rs` now also selects a `SelectedScanResult` before shared materialization, so both bootstrap and linear paths use the same select-then-materialize shape.
+- Staged scan execution in `src/am/scan.rs` now routes bootstrap-vs-linear result selection through one phase-aware `select_next_scan_result` seam before the shared materialization step, leaving bootstrap-specific refill behavior internal to bootstrap selection instead of the top-level executor path.
+- Scan result bookkeeping in `src/am/scan.rs` now lives more directly on `ScanResultState`: materialization, pending duplicate drain, and clearing no longer bounce through separate free-function wrappers around the owned result-state container.
+- Top-level tuple production in `src/am/scan.rs` now consumes staged result selection directly, instead of routing that step through an extra boolean-valued `materialize_next_scan_result` helper between selection and visible tuple emission.
+- `src/am/scan.rs` no longer exposes the unused `materialize_scan_candidate_result` wrapper in production code, and the remaining `materialize_next_bootstrap_frontier_result` helper is now explicitly fenced to test/pg-test builds because runtime tuple production no longer depends on it.
+- Staged result selection in `src/am/scan.rs` now dispatches explicitly on `ScanExecutionPhase` instead of relying on bootstrap/linear/exhausted fallthrough checks, making the bootstrap-to-linear behavior more visible at the selection seam itself.
+- Bootstrap completion in `src/am/scan.rs` is now owned by the phase dispatcher instead of the bootstrap selector helper itself, so the selector only tries to select while the staged executor explicitly decides when bootstrap is done and linear fallback may begin.
+- The older non-refill bootstrap selection helper in `src/am/scan.rs` is now fenced to test-only builds, leaving the refill-aware selector as the sole production bootstrap-selection path.
+- Exhaustion in `src/am/scan.rs` now owns current-result teardown itself, so the linear selector no longer has to remember to clear result state separately at each exhausted return site.
+- The full frontier-head candidate accessor in `src/am/scan.rs` is now debug-only, while production scan code uses a private internal helper for the same selection logic.
+- Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
+- Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
+- ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
+- ADR for gamma-aware duplicate semantics: `spec/adr/ADR-010-gamma-aware-duplicate-coalescing.md`
+- Plan/task tracking now reflects the implemented phases instead of leaving completed work marked as not started.
+- FR-007, FR-009, and FR-016 now backport the current staged implementation boundaries into the functional spec.
+- ADR for the planner cost gate: `spec/adr/ADR-011-planner-cost-override-until-ordered-scan.md`
+- `src/am/mod.rs` splitting has started by extracting planner-cost and vacuum callbacks into dedicated submodules with no behavior change.
+- `src/am/mod.rs` now also extracts relation-option parsing and `amoptions` registration into a dedicated module with no behavior change.
+- `src/am/mod.rs` now also extracts AM routine assembly plus the SQL handler entrypoints into a dedicated module with no behavior change.
+- `src/am/mod.rs` now also extracts the build entry callbacks into a dedicated module while leaving deeper build helpers in place.
+- `src/am/mod.rs` now also extracts build tuple decoding and `build_source_column` heap scan plumbing into the build module.
+- `src/am/mod.rs` now also extracts graph construction, entry-point selection, and staged data-page writes into the build module.
+- The build module now owns `BuildState` and `BuildTuple`, leaving `src/am/mod.rs` focused much more narrowly on live insert and scan behavior.
+- Scan descriptor lifecycle, scan-local state, bootstrap linear scan execution, and scan debug helpers now live in `src/am/scan.rs`.
+- ADR for long-horizon AM growth boundaries: `spec/adr/ADR-012-am-module-boundaries-for-growth.md`
+- Scan-side page-read helpers can now load persisted neighbor refs for an element tuple directly from index storage as groundwork for upcoming traversal state.
+- Current-result graph-read coverage now verifies that a produced scan result has concrete neighbor refs and that the metadata entry point's persisted neighbor refs target real element tuples.
+- The current on-disk neighbor tuple layout is still a flat adjacency list, not a layer-segmented HNSW representation, so this slice intentionally stops at page-level graph access instead of promising true layer-aware traversal.
+- Shared graph-page reads now live in `src/am/graph.rs` so scan execution can consume validated element and neighbor records through one seam.
+- Scan-local current-result state now lives in one explicit struct carrying element TID, current heap TID, and score, giving later ordered traversal a stable result-shaped slot.
+- Duplicate-drain coverage now verifies that the current-result heap TID advances across duplicates while the element TID and score stay stable.
+- `amrescan` now seeds one explicit entry candidate from the persisted metadata entry point for non-empty indexes, carrying the minimum traversal-start payload of element TID plus score.
+- Entry-candidate coverage now verifies that the seeded candidate points at the metadata entry point immediately after rescan and clears again once the current bootstrap scan fully exhausts.
+- Entry-candidate lifecycle coverage now also verifies that the seeded candidate remains stable through partial bootstrap scan progress and only clears on full exhaustion.
+- Scan state now also seeds one successor candidate from the entry point's persisted flat adjacency list when a live neighbor exists.
+- Successor-candidate coverage now verifies that any seeded successor points at one of the persisted entry-point neighbor refs and carries a computed score.
+- Entry and successor candidates now live in one explicit fixed two-slot frontier container instead of two unrelated scan-state fields.
+- Frontier-shape coverage now verifies that the first slot is the seeded entry candidate and the second slot is either a concrete scored successor or a cleared empty slot.
+- The two-slot frontier now also carries one explicit head-selection rule: valid candidates first, then lower score wins.
+- Frontier ordering coverage now verifies that the reported head slot matches the current two-slot ordering rule.
+- Frontier-head lifecycle coverage now verifies that the reported head and both frontier slots remain stable during partial bootstrap scan progress and both clear on full exhaustion.
+- The fixed two-slot frontier now also has one explicit head-consumption helper that clears the current best slot and recomputes the next head under the existing ordering rule.
+- Frontier-consumption coverage now verifies that consuming the current head either reselects the remaining valid slot or clears the frontier completely when no valid slot remains.
+- Successor-candidate seeding now skips `INVALID` neighbor TIDs before attempting graph element loads, instead of letting an invalid ref fall through to page reads.
+- Successor-candidate coverage now verifies that seeding skips `INVALID` refs and continues until a concrete neighbor candidate is available.
+- `TqElementTuple` now persists `gamma` in the on-disk element payload, and `GraphElement` now exposes that stored `gamma` on the shared graph read surface.
+- Build-time and live-insert element writers now persist `gamma`, and regression coverage now verifies that distinct-gamma same-code tuples retain their stored gamma values in the index.
+- ADR-013 is now accepted to record the page-layout decision and the follow-on plan to remove heap-fetch scoring and duplicate checks from the hot path.
+- Scan scoring now uses persisted element gamma plus code bytes directly, instead of fetching a representative heap row and rebuilding a temporary payload per candidate.
+- Duplicate lookup now compares persisted element gamma directly, removing representative-heap gamma fetches from the live insert hot path.
+- `ProdQuantizer` now exposes `score_ip_from_parts(prepared, gamma, code_bytes)` and coverage verifies it matches the payload scorer while honoring the supplied gamma term.
+- Scan-owned state now also allocates a visited-element set, seeds it from the currently valid frontier candidates during `amrescan`, and frees it during `amendscan`.
+- Visited-state coverage now verifies that the seeded set matches the valid frontier candidate tids and stays stable through the current bootstrap linear scan.
+- The scan candidate frontier now lives in scan-owned heap memory as a `Vec<ScanCandidate>` referenced from scan opaque instead of one fixed two-slot struct field.
+- Frontier-head consumption now removes the current best candidate from that vector and compacts the remaining candidates before recomputing the head.
+- Frontier-consumption coverage now verifies the compaction behavior explicitly: when one valid candidate remains it reseats to slot 0, and when none remain the debug frontier snapshot clears completely.
+- The scan frontier head is now tracked as an optional `usize` index instead of a `u8` sentinel, removing the artificial panic boundary once the frontier grows beyond 255 entries.
+- Existing debug and regression coverage now model “no head” as `None` instead of `u8::MAX`, while keeping the current two-slot frontier snapshot unchanged for this still-bounded stage.
+- The bootstrap frontier now seeds the entry candidate plus up to two live neighbors from the entry point's persisted adjacency, instead of stopping after the first live successor.
+- Frontier debug coverage now exposes the full seeded frontier slot list in addition to the existing two-slot snapshot, so tests can verify widened seeding without changing the current narrow debug view everywhere else.
+- Visited-state expectations now derive from the full seeded frontier contents, and the frontier-consumption pg regression now uses a two-row fixture so its two-candidate lifecycle contract stays intentional.
+- Frontier-head consumption now refills from the remaining entry-point neighbor list, using the visited-element set to avoid reseeding already seen candidates.
+- Scan state now keeps the bootstrap entry TID explicitly so consume-and-refill can reuse the persisted entry adjacency without pretending full traversal state already exists.
+- Added regression coverage that on a wider fixture, consuming one frontier head removes that candidate and backfills exactly one previously unseen entry-neighbor candidate while capacity remains.
 
-## Number Ranges
+External review bundles:
+- `review/external/2026-04-05-claude-opus/README.md`
+- `review/external/2026-04-05-claude-opus-pass2/README.md`
+- `review/external/2026-04-05-spec-plan-eval/evaluation.md`
+- `review/external/2026-04-06-claude-sonnet-pass3/README.md`
+- `review/external/2026-04-06-plan-arch-eval/evaluation.md`
 
-| Range       | Agent  | Area                |
-|-------------|--------|---------------------|
-| 1–9999      | coder1 | core scan/build/index |
-| 10000–19999 | coder2 | planner integration |
-| 20000+      | reserved | future agents     |
+Review triage at `46d00bb`:
+- Addressed `01-aminsert-groundwork.md` comment 1 by locking the metadata page across the current narrow `aminsert` path.
+- Addressed `01-aminsert-groundwork.md` comment 4 with a sequential empty-index second-insert regression test.
+- Marked `01-aminsert-groundwork.md` comments 2, 3, and 5 as not needed for this stage because they are optimization or future-invariant notes rather than current defects.
+- Addressed `02-tail-page-reuse-and-rollover.md` comment 5 with rollover-followed-by-reuse regression coverage.
+- Marked `02-tail-page-reuse-and-rollover.md` comments 1-4 and 6 as not needed for this stage because they validate accepted current behavior.
+- Marked `03-duplicate-coalescing-and-capacity.md` comments 1-6 as not needed for this stage because the review found no current correctness gap or missing test that justifies more change.
+- Marked `04-build-source-live-insert-rejection.md` comments 1-6 as not needed for this stage because the review found the current restriction correct and sufficiently covered.
+- Addressed `07-rescan-query-validation.md` comment 7 with explicit regression tests for the reviewed `amrescan` defensive cases.
+- Marked `07-rescan-query-validation.md` comments 1-6 and 8 as not needed for this stage because they are validation of current behavior or future-slice notes rather than actionable defects.
+- Addressed `05-vacuum-noop-callbacks.md` comments 6 and 7 with empty-index and repeated-vacuum regression coverage.
+- Marked `05-vacuum-noop-callbacks.md` comments 1-5 and 8 as not needed for this stage because they document accepted current behavior rather than requiring code changes.
+- Addressed `06-scan-descriptor-scaffolding.md` comment 6 with repeated-`amendscan` idempotency coverage.
+- Marked `06-scan-descriptor-scaffolding.md` comments 1-5 and 7 as not needed for this stage because they validate accepted lifecycle behavior.
+- Marked `08-amgettuple-state-gating.md` comments 1-7 as not needed for this stage; the repeated-rescan note remains blocked on the current fatal scan-execution boundary and does not justify more helper surface yet.
+- Addressed external review `18-varlena-detoast-check-inverted.md` by switching both build detoast paths to pointer-comparison copy detection.
+- Addressed external review `14-encoding-dimension-u16-truncation.md` by adding explicit dimension validation before packing tqvector datums.
+- Addressed external review `10-page-layout-offset-number-u16-overflow.md` by using a checked offset-number conversion in `DataPage::insert_raw_tuple`.
+- Addressed external review `08-hnsw-rs-wildcard-dependency.md` by pinning `hnsw_rs` to the currently locked `0.3.4` release.
+- Addressed external review `04-linear-scan-reads-metadata-every-gettuple.md` by caching scan metadata during `amrescan` and reusing it in `amgettuple`.
+- Addressed external review `06-relation-options-spi-in-hot-path.md` by reading reloptions directly from `rd_options`.
+- Addressed external review `16-score-code-inner-product-allocates-per-call.md` by adding a raw-code scorer that avoids temporary payload allocation.
+- Addressed external review `02-score-element-cached-per-call.md` by retaining the prepared query's `ProdQuantizer` in scan-owned state and freeing it alongside the prepared query during scan teardown.
+- Addressed external review `03-debug-frontier-stale-type-alias.md` by removing the stale two-slot debug frontier alias and switching the remaining debug/test helpers to `Vec`-backed frontier snapshots.
+- Addressed external reviews `04-split-borrow-raw-pointer-fragility.md` and `05-amendscan-repeated-cast.md` with an explicit split-borrow `SAFETY` comment and a single cast-once teardown pattern in `amendscan`.
+- Addressed the next ordered-scan plumbing slice by publishing `current_result.score` through the AM order-by output slots on tuple production.
+- Addressed outside feedback on `13-amgettuple-empty-index-noop.md` by adding explicit repeated-empty-scan and empty-rescan coverage.
+- Addressed outside feedback on `14-rescan-query-payload-state.md` by rejecting oversized scan queries before storing scan-owned payload state.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by removing the unreachable saturated-offset overflow branch in the linear scan cursor.
+- Addressed outside feedback on `16-query-inner-product-gamma-payload.md` by adding explicit coverage for dimension mismatch errors and the negative-query wrapper.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` with a regression that combines duplicate draining, neighbor-tuple skipping, and multi-page scan advancement.
+- Addressed outside feedback on `15-amgettuple-linear-forward-scan.md` by caching the relation block count in scan state instead of re-reading it for each bootstrap scan step.
+- Remaining open feedback notes around page-lock batching and larger architectural changes are deferred while ordered scan execution groundwork continues.
+- Ordered-scan follow-on work now starts from explicit scan-local current-result state; planner enablement and score emission remain deferred.
+- Addressed the next ordered-scan groundwork slice by teaching the bootstrap scan to compute a current-result `<#>` value from the cached prepared query plus persisted candidate `gamma`.
+- Duplicate coalescing is now query-score-correct for persisted tqvectors, but future ordered-scan work still needs candidate-local access to `gamma` without representative heap fetches.
+- Addressed the next structural boundary by extracting scan execution into `src/am/scan.rs` so traversal work grows in the scan module instead of re-expanding `src/am/mod.rs`.
+- Frontier-head consumption now refills from the consumed candidate's adjacency when that adjacency exposes an unseen candidate, and otherwise shrinks cleanly without fabricating a replacement.
+- The benchmark and integration-test baseline now uses the narrow always-available `bench_api` surface instead of a separate `bench` feature gate.
+- Benchmark coverage now includes hot-path `score_ip_from_parts`, `score_ip_encoded_lite`, and `decode_approximate` criterion benches plus `score_ip_from_parts` iai-callgrind coverage.
+- Property and wrapper coverage now include SRHT roundtrip at real-world padded dimensions and direct equivalence coverage for `score_code_inner_product`.
+- Scan frontier candidates now also carry explicit discovery provenance: seeded entry candidates have no source element, while adjacency-discovered candidates record the element tid they were expanded from.
+- Frontier debug coverage now exposes candidate provenance so regression tests can verify both entry-seeded and consume/refill-discovered candidate source tracking.
+- Bootstrap frontier seeding now keeps expanding from newly seeded candidates until the bounded frontier width is full or no unseen candidates remain, instead of stopping after the entry point's immediate adjacency only.
+- The bootstrap frontier pg coverage now asserts bounded frontier behavior plus coherent provenance, and a new pure unit test locks in the multi-hop fill order independent of page layout details.
+- Bootstrap frontier fill now runs through an explicit `BootstrapExpandPolicy` seam instead of open-coded insertion-order looping, with the current behavior preserved as `InsertionOrder`.
+- Added helper-level coverage that the explicit policy selects seeded candidates in insertion order, so later traversal work can change policy behind a stable selector instead of rewriting the fill loop.
+- The bootstrap expansion policy is now score-ordered: among seeded but unexpanded candidates, the current lowest-score candidate expands first, with earlier slot order breaking ties.
+- Helper-level coverage now verifies the explicit policy prefers the best-scoring seeded candidate before falling back to the next best candidate.
+- Bootstrap expanded-source bookkeeping now lives in scan-owned state instead of a helper-local vector, resets on `amrescan`, and frees on `amendscan`.
+- Frontier debug coverage now exposes the expanded-source set so tests can verify which seeded candidates have actually been expanded during bounded bootstrap fill.
+- `amgettuple` now consumes one bootstrap frontier candidate into explicit scan-owned active-candidate state before falling back to the current linear tuple scan.
+- Partial bootstrap scan progress now advances frontier state and active-candidate state together, while tuple production still comes from the existing linear scan path.
+- Scan helpers can now materialize an active bootstrap candidate into the existing current-result plus pending-heap-tid drain machinery without changing the externally visible linear scan order yet.
+- Regression coverage now verifies that a duplicate-coalesced active candidate loads all of its heap tids into pending drain state and clears the active-candidate slot afterward.
+- Visible scan execution now uses that active-candidate materialization path when the linear cursor reaches the same element, so candidate state can populate current-result and duplicate-drain state without broad scan reordering.
+- Active bootstrap candidates can now materialize into visible tuple production before linear fallback, and scan-owned emitted-element state now prevents the later linear pass from returning those same element heap tids a second time.
+- After each candidate consume, bounded bootstrap refill now preserves expanded-source state and keeps topping up the frontier with the same score-ordered multi-hop policy instead of stopping after one direct neighbor refill.
+- Consume/refill now skips rereading a consumed source if that source was already expanded during earlier bootstrap work, while still topping up from other remaining unexpanded frontier candidates.
+- Visible candidate-first tuple production now consumes the next bootstrap frontier candidate directly into current-result plus pending heap-TID drain state instead of staging through `active_candidate` first, while keeping `active_candidate` available for narrower helper/debug paths.
+- Pure traversal mechanics now have a dedicated home in `src/am/search.rs`, which currently provides a self-contained beam-search helper with visited/frontier ownership and best-first expansion tests, but is not yet wired into `amgettuple`.
+- Live insert execution now has a dedicated `src/am/insert.rs` module, while `src/am/mod.rs` retains only the shared helpers that insert/build/scan still depend on.
+- Shared metadata/page/debug utilities now live in `src/am/shared.rs`, build-only helper tests now live in `src/am/build.rs`, and `src/am/mod.rs` is down to module wiring, constants, and narrow reexports.
+- Scan debug/test helpers now live in `src/am/scan_debug.rs`, leaving `src/am/scan.rs` focused on scan execution, traversal state, and runtime helpers.
+- Scan reloptions now include `ef_search` groundwork, `src/am/search.rs` now exposes incremental beam-search APIs, and bootstrap expansion-source selection in `src/am/scan.rs` now goes through that shared search seam.
+- Bootstrap frontier top-up in `src/am/scan.rs` now runs through one incremental shared beam scheduler per top-up cycle instead of reconstructing source arbitration on every loop iteration.
+- Bootstrap expansion scheduling state now also persists in scan-owned state across top-up cycles instead of rebuilding a temporary beam scheduler every time.
+- Consumed bootstrap frontier nodes are now explicitly forgotten from the scan-owned beam scheduler, tightening alignment between visible frontier state and shared search state.
+- Recomputed visible frontier-head selection now prefers the scan-owned beam scheduler's best queued node, with the old vector scan retained as a fallback safety path.
+- Visible frontier-head selection and frontier-head consumption now defensively purge stale queued scheduler nodes that no longer map to any live visible frontier candidate instead of repeatedly peeking the same unmappable scheduler head.
+- Bootstrap frontier top-up no longer silently reseeds the beam scheduler from the visible frontier when the scheduler is empty; helper/test paths that expect top-up to run now seed the scheduler explicitly instead of relying on hidden Vec-to-beam recovery.
+- Visible frontier head is now derived on demand from the scan-owned scheduler plus Vec fallback instead of being cached as separate mutable scan state, shrinking one remaining piece of Vec-side authority during the dual-structure transition.
+- Scheduler-first frontier consumption now removes the visible candidate by scheduler-chosen element TID before falling back to a Vec-head scan, reducing one more runtime dependency on Vec index bookkeeping during the dual-structure phase.
+- Frontier-head reporting now exposes candidate TID identity instead of Vec slot index across scan debug/test surfaces, keeping the remaining Vec-index mapping confined to actual visible-container removal paths.
+- The old shared node-to-index frontier lookup helper is now gone; scheduler visibility checks use direct node containment, and the remaining node-to-index search is localized inside visible-frontier removal only.
+- The visible bootstrap frontier now has one explicit local container seam in `src/am/scan.rs`, so runtime paths and unit tests stop open-coding raw `Vec<ScanCandidate>` mutation for clear/len/push/extend/remove behavior.
+- The visible frontier now also has a read-side seam in `src/am/scan.rs`, so runtime containment, fallback head derivation, and frontier-length checks stop open-coding raw slice walks outside one local container API.
+- The visible frontier seam now also owns iteration and slot reads in `src/am/scan.rs`, so bootstrap seeding and fallback score-order reads no longer reach around the local container API for raw slice iteration.
+- The raw visible-frontier slice is now private to `src/am/scan.rs`; external scan debug helpers consume explicit snapshot/slot helpers instead of reaching across the module boundary for the frontier slice directly.
+- Scan state now owns the visible frontier through an explicit container state type in `src/am/scan.rs` instead of a raw `*mut Vec<ScanCandidate>`, which removes the last raw-Vec pointer from `TqScanOpaque` without changing frontier behavior.
+- Visible-frontier behavior now lives directly on the owned frontier-state type in `src/am/scan.rs`, replacing the extra read/write wrapper structs and making the container boundary simpler and more explicit.
+- Stale queued bootstrap nodes are now cleaned up through a search-owned `peek_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer open-codes the scheduler loop that peeks, validates visibility, forgets stale nodes, and retries.
+- Scheduler-first frontier consumption now also goes through a search-owned `take_best_matching` API in `src/am/search.rs`, so `src/am/scan.rs` no longer pairs scheduler head selection with a separate `forget_queued` cleanup step.
+- The owned visible frontier in `src/am/scan.rs` now stores shared `search::BeamCandidate<ItemPointer>` entries internally instead of a second scan-local candidate payload type, while keeping debug/materialization surfaces exposed as `ScanCandidate`.
+- Runtime bootstrap candidate seeding and successor collection in `src/am/scan.rs` now flow through shared `BeamCandidate<ItemPointer>` values directly, shrinking `ScanCandidate` further toward a boundary/debug/materialization role instead of a hot-path runtime container.
+- Runtime frontier consumption, refill, and direct materialization in `src/am/scan.rs` now also flow through `BeamCandidate<ItemPointer>` values, with `ScanCandidate` retained mainly for scan-owned persistent fields like `active_candidate` and for debug/test-facing snapshot surfaces.
+- The shared search seam now also exposes non-mutating queued-node lookup in `src/am/search.rs`, giving later scan-side ownership transfers a direct way to ask whether a node is still beam-owned without snapshotting or mutating scheduler state.
+- Internal visible-frontier iteration in `src/am/scan.rs` now stays in `BeamCandidate<ItemPointer>` form for selection paths, instead of converting back into `ScanCandidate` before immediately projecting back down to node/score data.
+- The stale `active_candidate` staging path is now gone from `src/am/scan.rs`; bootstrap candidates either materialize directly into current-result plus pending heap-TID drain state or remain in the visible frontier, and the debug-only materialization coverage now exercises that direct path instead of a separate active-candidate slot.
+- Remaining `src/am/scan.rs` unit-test frontier fixtures now construct `BeamCandidate<ItemPointer>` values directly through local helpers instead of populating `ScanCandidate` literals and converting them back into beam-native runtime state.
+- The old `ScanCandidate` boundary type and its beam conversion helpers are now gone from `src/am/scan.rs`; the hot path, test fixtures, and debug boundaries all use beam-native candidate state directly.
+- The unused `queued_candidate` lookup API and its tests are now gone from `src/am/search.rs`, leaving the shared beam surface focused on the scheduler operations the current scan path actually uses.
+- `tqhnsw` now registers a session-level `tqhnsw.ef_search` GUC and resolves it against the
+  existing index reloption so planner/runtime tuning has one explicit effective search-breadth
+  value plus a recorded source (`relation` or `session`).
+- Planner-visible `tqhnsw` scans remain explicitly disabled, and planner-facing groundwork now has
+  a debug/test snapshot surface that reports effective `ef_search` and gate state without turning
+  planner selection on early.
+- ADR-014 and ADR-015 are now marked decided, ADR-016 records the `ef_search` control-surface
+  decision, and ADR-017 records that planned PostgreSQL 18 support keeps the existing `tqvector`
+  extension identity.
+- The implementation plan and FR-009/US-004 surfaces now distinguish near-term planner groundwork
+  from the later ordered-traversal and planner-enablement phases.
 
-Each agent allocates the next number in their range when creating a new topic.
-
-## Feedback Files
-
-Filename: `{YYYY-MM-DD}-{seq}-{agent}.md`
-
-- `seq` orders multiple files from the same day (01, 02, ...).
-- `agent` is the short name of the agent that wrote the file.
-
-Each feedback file must include frontmatter:
-
-    ---
-    agent: {agent-name}
-    role: {coder|reviewer}
-    model: {model-id}
-    date: {YYYY-MM-DD}
-    seq: {N}
-    ---
-
-## Agents
-
-| Name     | Role     |
-|----------|----------|
-| coder1   | coder    |
-| coder2   | coder    |
-| reviewer | reviewer |
-
-## Rules
-
+Review instructions:
 - Prefer correctness findings over style comments.
 - Focus on behavior, invariants, page/WAL safety, SQL-surface coherence, and missing tests.
 - Treat the current on-disk layout as intentional unless a small, concrete defect requires change.
-- Do not close review requests yourself. Leave requests open until an outside reviewer has responded.
+- Keep request files in `review/` and put outside feedback under `review/feedback/<request-slug>/`.
+
+Open requests:
+- `120-amgettuple-orderby-score-emission.md`
+- `121-amgettuple-orderby-score-lifecycle.md`
+- `122-bootstrap-frontier-ef-search-limit.md`
+- `123-skip-stale-bootstrap-candidates.md`
+- `124-frontier-fallback-after-scheduler-drain.md`
+- `125-defer-bootstrap-refill-until-adjudication.md`
+- `126-align-debug-bootstrap-materialization-with-runtime.md`
+- `127-explicit-bootstrap-to-linear-transition.md`
+- `128-bootstrap-phase-debug-transition.md`
+- `129-pending-result-drain-before-fallback.md`
+- `130-linear-helper-without-pending-drain.md`
+- `131-explicit-linear-result-materialization.md`
+- `132-unified-staged-result-materialization.md`
+- `133-shared-scan-result-materialization-state.md`
+- `134-explicit-scan-execution-phase.md`
+- `135-extract-staged-scan-tuple-production-helper.md`
+- `136-unified-scan-result-state-clearing.md`
+- `137-scan-result-state-container.md`
+- `138-linear-selection-before-materialization.md`
+- `139-bootstrap-selection-before-materialization.md`
+- `140-phase-aware-staged-result-selection.md`
+- `141-result-state-owned-bookkeeping.md`
+- `142-direct-staged-selection-in-tuple-production.md`
+- `143-trim-legacy-bootstrap-materialization-surface.md`
+- `144-explicit-phase-dispatch-for-staged-selection.md`
+- `145-explicit-bootstrap-completion-at-phase-dispatch.md`
+- `146-gate-test-only-bootstrap-selection-helper.md`
+- `147-exhaustion-owns-result-state-clearing.md`
+- `148-gate-frontier-head-candidate-accessor.md`
+- `126-ef-search-control-surface-and-planner-gate-scaffolding.md`
+- Historical request files `01` through `119` are closed for bookkeeping.
+- Reopen an older request only when new outside feedback lands against it.
+
+Closed requests:
+- `01` through `119`
