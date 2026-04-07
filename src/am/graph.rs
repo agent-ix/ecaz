@@ -81,6 +81,23 @@ pub(crate) unsafe fn load_graph_adjacency(
     (element, neighbors)
 }
 
+pub(crate) unsafe fn load_layer0_neighbor_tids(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    code_len: usize,
+) -> Vec<page::ItemPointer> {
+    let (_, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
+    valid_layer0_neighbor_tids(&neighbors.tids)
+}
+
+fn valid_layer0_neighbor_tids(neighbor_tids: &[page::ItemPointer]) -> Vec<page::ItemPointer> {
+    neighbor_tids
+        .iter()
+        .copied()
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .collect()
+}
+
 unsafe fn read_page_tuple_bytes(
     index_relation: pg_sys::Relation,
     tuple_tid: page::ItemPointer,
@@ -128,4 +145,33 @@ unsafe fn read_page_tuple_bytes(
         unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) }.to_vec();
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     tuple_bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tid(block_number: u32, offset_number: u16) -> page::ItemPointer {
+        page::ItemPointer {
+            block_number,
+            offset_number,
+        }
+    }
+
+    #[test]
+    fn valid_layer0_neighbor_tids_skips_invalid() {
+        let neighbors = vec![
+            page::ItemPointer::INVALID,
+            tid(7, 1),
+            tid(7, 2),
+            page::ItemPointer::INVALID,
+            tid(7, 3),
+        ];
+
+        assert_eq!(
+            valid_layer0_neighbor_tids(&neighbors),
+            vec![tid(7, 1), tid(7, 2), tid(7, 3)],
+            "layer-0 neighbor loading should skip INVALID slots while preserving neighbor order",
+        );
+    }
 }

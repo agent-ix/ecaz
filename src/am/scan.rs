@@ -707,10 +707,11 @@ unsafe fn refill_candidate_frontier_from_source(
         return;
     }
 
-    let (_, neighbors) =
-        unsafe { graph::load_graph_adjacency(index_relation, source_tid, opaque.scan_code_len) };
+    let neighbor_tids = unsafe {
+        graph::load_layer0_neighbor_tids(index_relation, source_tid, opaque.scan_code_len)
+    };
     let successor_candidates =
-        collect_successor_candidates(&neighbors.tids, max_successor_candidates, |neighbor_tid| {
+        collect_successor_candidates(&neighbor_tids, max_successor_candidates, |neighbor_tid| {
             if visited_contains_element(opaque, neighbor_tid) {
                 return None;
             }
