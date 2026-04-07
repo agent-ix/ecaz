@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `0d5324b`
+Current head: `5de9a4b`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -85,6 +85,7 @@ Current tqhnsw state summary:
 - Staged scan execution in `src/am/scan.rs` now routes bootstrap-vs-linear result selection through one phase-aware `select_next_scan_result` seam before the shared materialization step, leaving bootstrap-specific refill behavior internal to bootstrap selection instead of the top-level executor path.
 - Scan result bookkeeping in `src/am/scan.rs` now lives more directly on `ScanResultState`: materialization, pending duplicate drain, and clearing no longer bounce through separate free-function wrappers around the owned result-state container.
 - Top-level tuple production in `src/am/scan.rs` now consumes staged result selection directly, instead of routing that step through an extra boolean-valued `materialize_next_scan_result` helper between selection and visible tuple emission.
+- `src/am/scan.rs` no longer exposes the unused `materialize_scan_candidate_result` wrapper in production code, and the remaining `materialize_next_bootstrap_frontier_result` helper is now explicitly fenced to test/pg-test builds because runtime tuple production no longer depends on it.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -271,6 +272,7 @@ Open requests:
 - `140-phase-aware-staged-result-selection.md`
 - `141-result-state-owned-bookkeeping.md`
 - `142-direct-staged-selection-in-tuple-production.md`
+- `143-trim-legacy-bootstrap-materialization-surface.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
