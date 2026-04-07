@@ -19,6 +19,8 @@ Current staged behavior:
 - Before PostgreSQL 18 support exists in this repository, pure explain-scaffolding helpers MAY
   expose the intended EXPLAIN option name and report that both option registration and
   `explain_per_node_hook` wiring remain unavailable.
+- Those same helpers MAY also expose the intended counter names, types, and increment conditions
+  while keeping both scan-opaque counter storage and runtime counter wiring explicitly unavailable.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
@@ -128,7 +130,9 @@ When `tqvector` is not specified in the EXPLAIN options, the hook SHALL return i
 
 ### PG Version Compatibility
 
-On PG17, the custom EXPLAIN API does not exist. The counter fields still exist in `TqScanOpaque` (they are useful for testing), but no EXPLAIN hook is registered.
+On PG17, the custom EXPLAIN API does not exist. During the current staged implementation, the
+counter contract may be exposed through read-only scaffolding helpers, but the actual counter
+fields are not yet wired into `TqScanOpaque` and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 

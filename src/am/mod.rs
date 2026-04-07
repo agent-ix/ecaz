@@ -55,6 +55,10 @@ pub(crate) fn stats_snapshot() -> stats::StatsSnapshot {
     stats::stats_snapshot()
 }
 
+pub(crate) fn explain_counter_snapshot() -> Vec<shared::ExplainCounterSnapshotRow> {
+    shared::explain_counter_snapshot()
+}
+
 pub(crate) fn stream_snapshot() -> shared::ReadStreamSnapshot {
     shared::read_stream_snapshot()
 }

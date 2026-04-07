@@ -341,6 +341,15 @@ pub(crate) struct Pg18DiagnosticsSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExplainCounterSnapshotRow {
+    pub counter_name: &'static str,
+    pub counter_type: &'static str,
+    pub increments_when: &'static str,
+    pub scan_opaque_storage_ready: bool,
+    pub runtime_wiring_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReadStreamSnapshot {
     pub graph_stream_mode: &'static str,
     pub linear_stream_mode: &'static str,
@@ -494,6 +503,19 @@ pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
         pg18_pgstat_kind_ready: stats.pg18_pgstat_kind_ready,
         pg18_stats_sql_function_ready: stats.pg18_sql_function_ready,
     }
+}
+
+pub(crate) fn explain_counter_snapshot() -> Vec<ExplainCounterSnapshotRow> {
+    super::explain::explain_counter_definitions()
+        .iter()
+        .map(|definition| ExplainCounterSnapshotRow {
+            counter_name: definition.counter_name,
+            counter_type: definition.counter_type,
+            increments_when: definition.increments_when,
+            scan_opaque_storage_ready: false,
+            runtime_wiring_ready: false,
+        })
+        .collect()
 }
 
 pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {

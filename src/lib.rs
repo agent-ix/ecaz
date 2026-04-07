@@ -453,6 +453,29 @@ fn tqhnsw_stats_snapshot() -> TableIterator<
 
 #[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
+fn tqhnsw_explain_counter_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(counter_name, String),
+        name!(counter_type, String),
+        name!(increments_when, String),
+        name!(scan_opaque_storage_ready, bool),
+        name!(runtime_wiring_ready, bool),
+    ),
+> {
+    TableIterator::new(am::explain_counter_snapshot().into_iter().map(|row| {
+        (
+            row.counter_name.to_owned(),
+            row.counter_type.to_owned(),
+            row.increments_when.to_owned(),
+            row.scan_opaque_storage_ready,
+            row.runtime_wiring_ready,
+        )
+    }))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
 fn tqhnsw_read_stream_snapshot() -> TableIterator<
     'static,
     (
@@ -1431,6 +1454,50 @@ mod tests {
         )
         .expect("catalog query should succeed")
         .expect("exists should be non-null"));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_explain_counter_snapshot_contract() {
+        assert_eq!(
+            Spi::get_one::<i64>("SELECT COUNT(*) FROM tqhnsw_explain_counter_snapshot()",)
+                .expect("snapshot query should succeed")
+                .expect("row count should be non-null"),
+            7
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT counter_type FROM tqhnsw_explain_counter_snapshot() \
+                 WHERE counter_name = 'stats_bootstrap_expansions'",
+            )
+            .expect("snapshot query should succeed")
+            .expect("bootstrap counter type should be non-null"),
+            "u32"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT increments_when FROM tqhnsw_explain_counter_snapshot() \
+                 WHERE counter_name = 'stats_quantizer_cache_hit'",
+            )
+            .expect("snapshot query should succeed")
+            .expect("quantizer cache description should be non-null"),
+            "ProdQuantizer was reused from cache"
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT bool_and(NOT scan_opaque_storage_ready) FROM tqhnsw_explain_counter_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("scan-opaque storage readiness aggregate should be non-null"),
+            "counter snapshot should keep scan-opaque storage explicitly unavailable for now"
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT bool_and(NOT runtime_wiring_ready) FROM tqhnsw_explain_counter_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime wiring readiness aggregate should be non-null"),
+            "counter snapshot should keep runtime wiring explicitly unavailable for now"
+        );
     }
 
     #[pg_test]
