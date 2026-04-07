@@ -28,18 +28,30 @@ pub(crate) struct PlannerCostEstimate {
     pub index_pages: f64,
 }
 
+pub(crate) fn gated_planner_cost_estimate(index_pages: f64) -> PlannerCostEstimate {
+    PlannerCostEstimate {
+        startup_cost: f64::MAX,
+        total_cost: f64::MAX,
+        selectivity: 0.0,
+        correlation: 0.0,
+        index_pages,
+    }
+}
+
+pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
+    PlannerCostConstants {
+        random_page_cost: unsafe { pg_sys::random_page_cost },
+        seq_page_cost: unsafe { pg_sys::seq_page_cost },
+        cpu_operator_cost: unsafe { pg_sys::cpu_operator_cost },
+    }
+}
+
 pub(crate) fn estimate_planner_cost(
     inputs: PlannerCostInputs,
     constants: PlannerCostConstants,
 ) -> PlannerCostEstimate {
     if inputs.index_pages <= 0.0 {
-        return PlannerCostEstimate {
-            startup_cost: f64::MAX,
-            total_cost: f64::MAX,
-            selectivity: 1.0,
-            correlation: 0.0,
-            index_pages: inputs.index_pages,
-        };
+        return gated_planner_cost_estimate(inputs.index_pages);
     }
 
     let tuple_estimate = if inputs.reltuples > 0.0 {
@@ -96,11 +108,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
             if TQHNSW_PLANNER_SCAN_ENABLED {
                 pgrx::error!("tqhnsw planner costing is not implemented for enabled planner scans");
             }
-            *index_startup_cost = f64::MAX;
-            *index_total_cost = f64::MAX;
-            *index_selectivity = 0.0;
-            *index_correlation = 0.0;
-            *index_pages = 0.0;
+            let gated = gated_planner_cost_estimate(0.0);
+            *index_startup_cost = gated.startup_cost;
+            *index_total_cost = gated.total_cost;
+            *index_selectivity = gated.selectivity;
+            *index_correlation = gated.correlation;
+            *index_pages = gated.index_pages;
         })
     }
 }
@@ -195,7 +208,7 @@ mod tests {
             PlannerCostEstimate {
                 startup_cost: f64::MAX,
                 total_cost: f64::MAX,
-                selectivity: 1.0,
+                selectivity: 0.0,
                 correlation: 0.0,
                 index_pages: 0.0,
             }

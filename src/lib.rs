@@ -352,6 +352,67 @@ fn tqhnsw_index_explain_snapshot(
     ))
 }
 
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_cost_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(planner_gate_reason, String),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(m, i32),
+        name!(dimensions, i32),
+        name!(max_level, i32),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(random_page_cost, f64),
+        name!(seq_page_cost, f64),
+        name!(cpu_operator_cost, f64),
+        name!(modeled_startup_cost, f64),
+        name!(modeled_total_cost, f64),
+        name!(modeled_selectivity, f64),
+        name!(modeled_correlation, f64),
+        name!(gated_startup_cost, f64),
+        name!(gated_total_cost, f64),
+        name!(gated_selectivity, f64),
+        name!(gated_correlation, f64),
+    ),
+> {
+    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_cost_snapshot") };
+    let snapshot = unsafe { am::index_cost_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.planner_gate_reason.to_owned(),
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.m,
+        i32::from(snapshot.dimensions),
+        i32::from(snapshot.max_level),
+        snapshot.index_pages,
+        snapshot.reltuples,
+        snapshot.random_page_cost,
+        snapshot.seq_page_cost,
+        snapshot.cpu_operator_cost,
+        snapshot.modeled_startup_cost,
+        snapshot.modeled_total_cost,
+        snapshot.modeled_selectivity,
+        snapshot.modeled_correlation,
+        snapshot.gated_startup_cost,
+        snapshot.gated_total_cost,
+        snapshot.gated_selectivity,
+        snapshot.gated_correlation,
+    ))
+}
+
 fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
@@ -920,6 +981,190 @@ mod tests {
 
         let _ = Spi::get_one::<i64>(
             "SELECT total_live_nodes FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_cost_snapshot_reports_modeled_and_gated_costs() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_cost_snapshot (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_cost_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_cost_snapshot_idx ON tqhnsw_cost_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 12, ef_search = 77)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
+        Spi::run("ANALYZE tqhnsw_cost_snapshot").expect("analyze should succeed");
+
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT planner_scan_enabled FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner flag should be non-null"),
+            "planner gate should still be off"
+        );
+        assert!(
+            Spi::get_one::<String>(
+                "SELECT planner_gate_reason FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gate reason should be non-null")
+                .contains("disabled"),
+            "cost snapshot should explain why live planner costing is still gated"
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation ef_search should be non-null"),
+            77
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed"),
+            Some(19)
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT effective_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective ef_search should be non-null"),
+            19
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective source should be non-null"),
+            "session"
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT m FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("m should be non-null"),
+            12
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT dimensions FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("dimensions should be non-null"),
+            4
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT index_pages FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("index pages should be non-null")
+                >= 1.0
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT reltuples FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reltuples should be non-null")
+                >= 3.0
+        );
+        let modeled_startup = Spi::get_one::<f64>(
+            "SELECT modeled_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled startup should be non-null");
+        let modeled_total = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled total should be non-null");
+        assert!(modeled_startup.is_finite(), "modeled startup should be finite");
+        assert!(modeled_total.is_finite(), "modeled total should be finite");
+        assert!(
+            modeled_total >= modeled_startup,
+            "modeled total cost should include startup cost"
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled selectivity should be non-null"),
+            1.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled correlation should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated startup should be non-null"),
+            f64::MAX
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated total should be non-null"),
+            f64::MAX
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated selectivity should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated correlation should be non-null"),
+            0.0
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_cost_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_cost_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run("CREATE TABLE tqhnsw_cost_snapshot_wrong_am (id bigint primary key, value bigint)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_cost_snapshot_wrong_am_idx ON tqhnsw_cost_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_wrong_am_idx'::regclass)",
         );
     }
 

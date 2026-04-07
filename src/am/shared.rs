@@ -283,6 +283,32 @@ pub(crate) struct IndexExplainSnapshot {
     pub total_live_nodes: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct IndexCostSnapshot {
+    pub planner_scan_enabled: bool,
+    pub planner_gate_reason: &'static str,
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub m: i32,
+    pub dimensions: u16,
+    pub max_level: u8,
+    pub index_pages: f64,
+    pub reltuples: f64,
+    pub random_page_cost: f64,
+    pub seq_page_cost: f64,
+    pub cpu_operator_cost: f64,
+    pub modeled_startup_cost: f64,
+    pub modeled_total_cost: f64,
+    pub modeled_selectivity: f64,
+    pub modeled_correlation: f64,
+    pub gated_startup_cost: f64,
+    pub gated_total_cost: f64,
+    pub gated_selectivity: f64,
+    pub gated_correlation: f64,
+}
+
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
@@ -318,6 +344,61 @@ pub(crate) unsafe fn index_explain_snapshot(
         effective_ef_search: admin.effective_ef_search,
         effective_source: admin.effective_source,
         total_live_nodes: admin.total_live_nodes,
+    }
+}
+
+pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let index_pages = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    } as f64;
+    let reltuples = unsafe {
+        (*(*index_relation).rd_rel)
+            .reltuples
+    } as f64;
+    let constants = unsafe { super::cost::current_planner_cost_constants() };
+    let modeled = super::cost::estimate_planner_cost(
+        super::cost::PlannerCostInputs {
+            index_pages,
+            reltuples,
+            m: relation_options.m,
+            ef_search: tuning.effective_ef_search,
+            dimensions: metadata.dimensions,
+            max_level: metadata.max_level,
+        },
+        constants,
+    );
+    let gated = super::cost::gated_planner_cost_estimate(index_pages);
+
+    IndexCostSnapshot {
+        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+        planner_gate_reason:
+            "planner cost activation is disabled until ordered tqhnsw execution is credible",
+        relation_ef_search: tuning.relation_ef_search,
+        session_ef_search: tuning.session_ef_search,
+        effective_ef_search: tuning.effective_ef_search,
+        effective_source: match tuning.source {
+            options::EfSearchSource::Relation => "relation",
+            options::EfSearchSource::Session => "session",
+        },
+        m: relation_options.m,
+        dimensions: metadata.dimensions,
+        max_level: metadata.max_level,
+        index_pages,
+        reltuples,
+        random_page_cost: constants.random_page_cost,
+        seq_page_cost: constants.seq_page_cost,
+        cpu_operator_cost: constants.cpu_operator_cost,
+        modeled_startup_cost: modeled.startup_cost,
+        modeled_total_cost: modeled.total_cost,
+        modeled_selectivity: modeled.selectivity,
+        modeled_correlation: modeled.correlation,
+        gated_startup_cost: gated.startup_cost,
+        gated_total_cost: gated.total_cost,
+        gated_selectivity: gated.selectivity,
+        gated_correlation: gated.correlation,
     }
 }
 

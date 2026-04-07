@@ -7,6 +7,8 @@ Progress notes:
 - A pure FR-020 cost-model helper now exists in `src/am/cost.rs` with unit coverage for the large-
   table crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
   heuristic behavior.
+- A read-only `tqhnsw_index_cost_snapshot(...)` SQL surface now exposes modeled FR-020 costs and
+  the still-gated live callback contract side by side for planner/admin inspection.
 
 ## Scope
 

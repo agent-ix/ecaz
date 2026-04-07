@@ -90,6 +90,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-135 | Admin snapshot exposes planner tuning and current stats scaffolding | FR-009, FR-016 | Read `tqhnsw_index_admin_snapshot(...)`, assert effective tuning fields, planner gate state, live node count, and explicit unavailable drift field |
 | TC-136 | Explain snapshot exposes planner gate reason | FR-009, FR-006 | Read `tqhnsw_index_explain_snapshot(...)`, assert planner gate remains off, ordered scan is not ready, and the reason text is explicit |
 | TC-137 | Pure planner cost model stays gated behind ADR-011 | FR-020, FR-009 | Unit-test `estimate_planner_cost(...)` crossover and edge cases while `amcostestimate` still returns prohibitive costs |
+| TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `tqhnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, and tuning/metadata inputs are explicit |
 
 ## Property Tests (`proptest`)
 

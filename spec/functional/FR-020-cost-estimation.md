@@ -19,6 +19,8 @@ Current staged behavior:
 - A pure cost-model helper MAY exist and be unit-tested behind ADR-011 while the live
   `amcostestimate` callback still returns prohibitive costs to keep planner-visible `tqhnsw` scans
   disabled.
+- Read-only planner-cost snapshot helpers MAY expose both the modeled FR-020 estimate and the
+  still-gated live callback contract for inspection, without changing planner behavior.
 
 ### Cost Model
 

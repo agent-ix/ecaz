@@ -41,6 +41,8 @@ Planner/integration groundwork may still land behind this gate, including:
 - session-level `tqhnsw.ef_search` override registration
 - relation-versus-session precedence resolution
 - planner/explain/statistics-facing snapshot helpers
+- planner-facing cost snapshot helpers that show modeled FR-020 outputs alongside the still-gated
+  live callback contract
 - planner-facing explain snapshot helpers that report the gate state explicitly without claiming
   that EXPLAIN can yet show a tqhnsw index scan
 
