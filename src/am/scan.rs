@@ -794,22 +794,6 @@ pub(super) unsafe fn materialize_scan_candidate_result(
     true
 }
 
-fn materialize_scored_scan_result(
-    opaque: &mut TqScanOpaque,
-    element_tid: page::ItemPointer,
-    score: f32,
-    heap_tids: &[page::ItemPointer],
-) {
-    materialize_selected_scan_result(
-        opaque,
-        SelectedScanResult {
-            element_tid,
-            score,
-            heap_tids: heap_tids.to_vec(),
-        },
-    );
-}
-
 fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
     set_current_scan_result(opaque, selected.element_tid, selected.score);
     store_pending_scan_heaptids(opaque, &selected.heap_tids);
@@ -835,68 +819,60 @@ fn refill_bootstrap_frontier_after_consume<F>(
     );
 }
 
-fn materialize_next_bootstrap_candidate<CandidateFn, MaterializeFn>(
+fn select_next_bootstrap_candidate<CandidateFn, SelectFn>(
     mut next_candidate: CandidateFn,
-    mut materialize: MaterializeFn,
-) -> bool
+    mut select: SelectFn,
+) -> Option<SelectedScanResult>
 where
     CandidateFn: FnMut() -> Option<search::BeamCandidate<page::ItemPointer>>,
-    MaterializeFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> bool,
+    SelectFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> Option<SelectedScanResult>,
 {
     while let Some(candidate) = next_candidate() {
-        if materialize(candidate) {
-            return true;
+        if let Some(selected) = select(candidate) {
+            return Some(selected);
         }
     }
 
-    false
+    None
 }
 
-fn materialize_next_bootstrap_candidate_with_refill<CandidateFn, MaterializeFn, RefillFn>(
+fn select_next_bootstrap_candidate_with_refill<CandidateFn, SelectFn, RefillFn>(
     mut next_candidate: CandidateFn,
-    mut materialize: MaterializeFn,
+    mut select: SelectFn,
     mut refill_after_success: RefillFn,
-) -> bool
+) -> Option<SelectedScanResult>
 where
     CandidateFn: FnMut() -> Option<search::BeamCandidate<page::ItemPointer>>,
-    MaterializeFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> bool,
+    SelectFn: FnMut(search::BeamCandidate<page::ItemPointer>) -> Option<SelectedScanResult>,
     RefillFn: FnMut(search::BeamCandidate<page::ItemPointer>),
 {
     while let Some(candidate) = next_candidate() {
-        if materialize(candidate) {
+        if let Some(selected) = select(candidate) {
             refill_after_success(candidate);
-            return true;
+            return Some(selected);
         }
     }
 
-    false
+    None
 }
 
-pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
+unsafe fn select_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
-) -> bool {
+) -> Option<SelectedScanResult> {
     if opaque.result_state.pending_count() != 0
         || !opaque.execution_phase.is_bootstrap()
         || opaque.scan_dimensions == 0
     {
-        return false;
+        return None;
     }
 
     let opaque_ptr = opaque as *mut TqScanOpaque;
     // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
     // temporary mutable borrows of `opaque` do not alias.
-    let materialized = materialize_next_bootstrap_candidate_with_refill(
+    let selected = select_next_bootstrap_candidate_with_refill(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
-        |candidate| unsafe {
-            let Some(selected) =
-                select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
-            else {
-                return false;
-            };
-            materialize_selected_scan_result(&mut *opaque_ptr, selected);
-            true
-        },
+        |candidate| unsafe { select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate) },
         |candidate| {
             refill_bootstrap_frontier_after_consume(
                 unsafe { &mut *opaque_ptr },
@@ -907,83 +883,53 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
             );
         },
     );
-    if !materialized {
+    if selected.is_none() {
         complete_bootstrap_phase(opaque);
     }
-    materialized
+    selected
 }
 
-unsafe fn materialize_next_scan_result(
+pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
-    heap_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    let Some(selected) = (unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) })
+    else {
+        return false;
+    };
+
+    materialize_selected_scan_result(opaque, selected);
+    true
+}
+
+unsafe fn select_next_scan_result(
+    index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
-) -> bool {
-    if opaque.execution_phase.is_bootstrap()
-        && unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
-    {
-        return true;
+) -> Option<SelectedScanResult> {
+    if opaque.execution_phase.is_bootstrap() {
+        if let Some(selected) = unsafe { select_next_bootstrap_frontier_result(index_relation, opaque) } {
+            return Some(selected);
+        }
     }
 
     if opaque.execution_phase.is_exhausted() {
-        return false;
+        return None;
     }
 
-    unsafe { materialize_next_linear_scan_result(index_relation, heap_relation, opaque, code_len) }
+    unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
 }
 
-fn collect_successor_candidates<F>(
-    neighbor_tids: &[page::ItemPointer],
-    max_candidates: usize,
-    mut candidate_for_tid: F,
-) -> Vec<search::BeamCandidate<page::ItemPointer>>
-where
-    F: FnMut(page::ItemPointer) -> Option<search::BeamCandidate<page::ItemPointer>>,
-{
-    let mut candidates = Vec::new();
-    if max_candidates == 0 {
-        return candidates;
-    }
-
-    for neighbor_tid in neighbor_tids.iter().copied() {
-        if neighbor_tid == page::ItemPointer::INVALID {
-            continue;
-        }
-
-        if let Some(candidate) = candidate_for_tid(neighbor_tid) {
-            candidates.push(candidate);
-            if candidates.len() >= max_candidates {
-                break;
-            }
-        }
-    }
-
-    candidates
-}
-
-unsafe fn materialize_next_linear_scan_result(
+unsafe fn materialize_next_scan_result(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if opaque.execution_phase.is_exhausted() {
-        return false;
-    }
-
-    if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
-        mark_scan_exhausted(opaque);
-        clear_scan_result_state(opaque);
-        return false;
-    }
-
-    if let Some(selected) = unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) } {
+    if let Some(selected) = unsafe { select_next_scan_result(index_relation, opaque, code_len) } {
         materialize_selected_scan_result(opaque, selected);
         return true;
     }
-
-    mark_scan_exhausted(opaque);
-    clear_scan_result_state(opaque);
     false
 }
 
@@ -992,6 +938,12 @@ unsafe fn select_next_linear_scan_result(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> Option<SelectedScanResult> {
+    if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        mark_scan_exhausted(opaque);
+        clear_scan_result_state(opaque);
+        return None;
+    }
+
     for block_number in opaque.next_block_number..opaque.scan_block_count {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
@@ -1065,7 +1017,38 @@ unsafe fn select_next_linear_scan_result(
         opaque.next_offset_number = 1;
     }
 
+    mark_scan_exhausted(opaque);
+    clear_scan_result_state(opaque);
     None
+}
+
+fn collect_successor_candidates<F>(
+    neighbor_tids: &[page::ItemPointer],
+    max_candidates: usize,
+    mut candidate_for_tid: F,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    F: FnMut(page::ItemPointer) -> Option<search::BeamCandidate<page::ItemPointer>>,
+{
+    let mut candidates = Vec::new();
+    if max_candidates == 0 {
+        return candidates;
+    }
+
+    for neighbor_tid in neighbor_tids.iter().copied() {
+        if neighbor_tid == page::ItemPointer::INVALID {
+            continue;
+        }
+
+        if let Some(candidate) = candidate_for_tid(neighbor_tid) {
+            candidates.push(candidate);
+            if candidates.len() >= max_candidates {
+                break;
+            }
+        }
+    }
+
+    candidates
 }
 
 unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
@@ -1370,72 +1353,80 @@ mod tests {
     }
 
     #[test]
-    fn materialize_next_bootstrap_candidate_skips_unmaterializable_candidates() {
+    fn select_next_bootstrap_candidate_skips_unselectable_candidates() {
         let mut queued = vec![beam_candidate(21, 1, -3.0), beam_candidate(21, 2, -2.0)].into_iter();
         let mut attempted = Vec::new();
 
-        let materialized = materialize_next_bootstrap_candidate(
+        let selected = select_next_bootstrap_candidate(
             || queued.next(),
             |candidate| {
                 attempted.push((candidate.node.block_number, candidate.node.offset_number));
-                candidate.node.offset_number == 2
+                (candidate.node.offset_number == 2).then(|| SelectedScanResult {
+                    element_tid: candidate.node,
+                    score: candidate.score,
+                    heap_tids: vec![tid(41, 1)],
+                })
             },
         );
 
         assert!(
-            materialized,
-            "bootstrap materialization should keep trying later candidates after one fails"
+            selected.is_some(),
+            "bootstrap selection should keep trying later candidates after one fails"
         );
         assert_eq!(
             attempted,
             vec![(21, 1), (21, 2)],
-            "candidate materialization should proceed in consumption order until one succeeds"
+            "candidate selection should proceed in consumption order until one succeeds"
         );
     }
 
     #[test]
-    fn materialize_next_bootstrap_candidate_returns_false_when_frontier_never_materializes() {
+    fn select_next_bootstrap_candidate_returns_none_when_frontier_never_selects() {
         let mut queued = vec![beam_candidate(22, 1, -3.0), beam_candidate(22, 2, -2.0)].into_iter();
         let mut attempts = 0;
 
-        let materialized = materialize_next_bootstrap_candidate(
+        let selected = select_next_bootstrap_candidate(
             || queued.next(),
             |_candidate| {
                 attempts += 1;
-                false
+                None
             },
         );
 
         assert!(
-            !materialized,
-            "bootstrap materialization should return false only after every candidate fails"
+            selected.is_none(),
+            "bootstrap selection should return none only after every candidate fails"
         );
         assert_eq!(
             attempts, 2,
-            "bootstrap materialization should exhaust the queued frontier before giving up"
+            "bootstrap selection should exhaust the queued frontier before giving up"
         );
     }
 
     #[test]
-    fn materialize_next_bootstrap_candidate_refills_only_after_successful_adjudication() {
+    fn select_next_bootstrap_candidate_refills_only_after_successful_adjudication() {
         let candidate_a = beam_candidate(23, 1, -3.0);
         let candidate_b = beam_candidate(23, 2, -2.0);
         let mut queued = vec![candidate_a, candidate_b].into_iter();
         let mut attempted = Vec::new();
         let mut refilled_after = Vec::new();
 
-        let materialized = materialize_next_bootstrap_candidate_with_refill(
+        let selected = select_next_bootstrap_candidate_with_refill(
             || queued.next(),
             |candidate| {
                 attempted.push(candidate.node);
-                candidate == candidate_b
+                (candidate == candidate_b).then(|| SelectedScanResult {
+                    element_tid: candidate.node,
+                    score: candidate.score,
+                    heap_tids: vec![tid(42, 1)],
+                })
             },
             |candidate| refilled_after.push(candidate.node),
         );
 
         assert!(
-            materialized,
-            "bootstrap materialization should still succeed once a later visible candidate materializes"
+            selected.is_some(),
+            "bootstrap selection should still succeed once a later visible candidate selects"
         );
         assert_eq!(
             attempted,
@@ -1565,7 +1556,7 @@ mod tests {
     }
 
     #[test]
-    fn materialize_scored_scan_result_seeds_current_result_and_pending_drain() {
+    fn materialize_selected_scan_result_seeds_current_result_and_pending_drain() {
         let mut opaque = TqScanOpaque::default();
 
         materialize_selected_scan_result(
