@@ -691,42 +691,36 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     visible_frontier: &mut VisibleCandidateFrontierState,
     expansion: &mut search::BeamSearch<page::ItemPointer>,
 ) {
-    let max_successor_candidates =
-        bootstrap_frontier_limit(opaque).saturating_sub(visible_frontier.len());
-    if max_successor_candidates == 0 {
-        return;
-    }
-
-    let seed_candidates = visible_frontier
-        .iter()
-        .filter(|candidate| !expanded_contains_source(opaque, candidate.node))
-        .collect::<Vec<_>>();
-    if seed_candidates.is_empty() {
-        return;
-    }
-
-    let expansion_trace = unsafe {
-        graph::expand_layer0_visible_seeds(
-            index_relation,
-            opaque.scan_code_len,
-            max_successor_candidates,
-            seed_candidates.iter().copied(),
-            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| {
-                Some(score_scan_element_result(
-                    opaque,
-                    neighbor.gamma,
-                    &neighbor.code,
-                ))
-            },
-        )
-    };
-    for expanded_source_tid in expansion_trace.expanded_source_tids {
-        mark_expanded_source(opaque, expanded_source_tid);
-    }
-    visible_frontier.seed_discovered(expansion, expansion_trace.discovered_candidates, |node| {
-        mark_visited_element(opaque, node)
-    });
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    visible_frontier.top_up_from_visible_seeds(
+        expansion,
+        bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
+        |node| expanded_contains_source(unsafe { &*opaque_ptr }, node),
+        |seed_candidates, max_successor_candidates| {
+            let expansion_trace = unsafe {
+                graph::expand_layer0_visible_seeds(
+                    index_relation,
+                    (&*opaque_ptr).scan_code_len,
+                    max_successor_candidates,
+                    seed_candidates.iter().copied(),
+                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                    |neighbor| {
+                        Some(score_scan_element_result(
+                            &*opaque_ptr,
+                            neighbor.gamma,
+                            &neighbor.code,
+                        ))
+                    },
+                )
+            };
+            (
+                expansion_trace.expanded_source_tids,
+                expansion_trace.discovered_candidates,
+            )
+        },
+        |node| mark_expanded_source(unsafe { &mut *opaque_ptr }, node),
+        |node| mark_visited_element(unsafe { &mut *opaque_ptr }, node),
+    );
 }
 
 unsafe fn refill_bootstrap_frontier_after_success(

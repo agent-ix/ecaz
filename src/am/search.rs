@@ -193,6 +193,50 @@ where
         }
     }
 
+    pub fn top_up_from_visible_seeds<
+        ExpandedFn,
+        ExpandFn,
+        ExpandedIter,
+        DiscoveredIter,
+        MarkExpandedFn,
+        MarkVisitedFn,
+    >(
+        &mut self,
+        expansion: &mut BeamSearch<NodeId>,
+        max_candidates: usize,
+        mut source_is_expanded: ExpandedFn,
+        mut expand_visible_seeds: ExpandFn,
+        mut mark_expanded_source: MarkExpandedFn,
+        mark_visited: MarkVisitedFn,
+    ) where
+        ExpandedFn: FnMut(NodeId) -> bool,
+        ExpandFn: FnMut(Vec<BeamCandidate<NodeId>>, usize) -> (ExpandedIter, DiscoveredIter),
+        ExpandedIter: IntoIterator<Item = NodeId>,
+        DiscoveredIter: IntoIterator<Item = BeamCandidate<NodeId>>,
+        MarkExpandedFn: FnMut(NodeId),
+        MarkVisitedFn: FnMut(NodeId),
+    {
+        let max_successor_candidates = max_candidates.saturating_sub(self.len());
+        if max_successor_candidates == 0 {
+            return;
+        }
+
+        let seed_candidates = self
+            .iter()
+            .filter(|candidate| !source_is_expanded(candidate.node))
+            .collect::<Vec<_>>();
+        if seed_candidates.is_empty() {
+            return;
+        }
+
+        let (expanded_sources, discovered_candidates) =
+            expand_visible_seeds(seed_candidates, max_successor_candidates);
+        for expanded_source in expanded_sources {
+            mark_expanded_source(expanded_source);
+        }
+        self.seed_discovered(expansion, discovered_candidates, mark_visited);
+    }
+
     pub fn select_next_with_refill<
         Selection,
         SelectFn,
@@ -1188,6 +1232,72 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2],
             "seed_bootstrap_trace should seed the retained bootstrap candidates into the scheduler"
+        );
+    }
+
+    #[test]
+    fn visible_frontier_top_up_from_visible_seeds_filters_marks_and_seeds() {
+        let mut visible = VisibleFrontier::default();
+        visible.extend([
+            BeamCandidate::new(1_u64, 0.1),
+            BeamCandidate::new(2_u64, 0.2),
+            BeamCandidate::new(3_u64, 0.3),
+        ]);
+
+        let mut expansion = BeamSearch::new(4);
+        let expanded = RefCell::new(Vec::new());
+        let visited = RefCell::new(Vec::new());
+        let callback_inputs = RefCell::new(Vec::new());
+
+        visible.top_up_from_visible_seeds(
+            &mut expansion,
+            4,
+            |node| node == 2,
+            |seeds, max_successor_candidates| {
+                callback_inputs.borrow_mut().push((
+                    seeds
+                        .iter()
+                        .map(|candidate| candidate.node)
+                        .collect::<Vec<_>>(),
+                    max_successor_candidates,
+                ));
+                (
+                    vec![1_u64, 3_u64],
+                    vec![BeamCandidate::with_source(4_u64, 0.15, 1_u64)],
+                )
+            },
+            |node| expanded.borrow_mut().push(node),
+            |node| visited.borrow_mut().push(node),
+        );
+
+        assert_eq!(
+            callback_inputs.into_inner(),
+            vec![(vec![1, 3], 1)],
+            "top_up_from_visible_seeds should pass only unexpanded visible seeds and the remaining frontier capacity to the expansion callback"
+        );
+        assert_eq!(
+            expanded.into_inner(),
+            vec![1, 3],
+            "top_up_from_visible_seeds should mark every source the expansion callback reports as expanded"
+        );
+        assert_eq!(
+            visited.into_inner(),
+            vec![4],
+            "top_up_from_visible_seeds should mark discovered successors as visited before later traversals"
+        );
+        assert_eq!(
+            visible.iter().map(|candidate| candidate.node).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4],
+            "top_up_from_visible_seeds should append newly discovered successors onto the visible frontier"
+        );
+        assert_eq!(
+            expansion
+                .snapshot_frontier()
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![4],
+            "top_up_from_visible_seeds should seed newly discovered successors into the scheduler"
         );
     }
 
