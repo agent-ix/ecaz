@@ -249,8 +249,6 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::Bootstrap;
-    opaque.pending_heaptid_count = 0;
-    opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
     clear_scan_result_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
@@ -259,13 +257,18 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     reset_scan_emitted_state(opaque);
 }
 
+fn clear_pending_scan_heaptids(opaque: &mut TqScanOpaque) {
+    opaque.pending_heaptids.fill(page::ItemPointer::INVALID);
+    opaque.pending_heaptid_count = 0;
+    opaque.pending_heaptid_index = 0;
+}
+
 fn store_pending_scan_heaptids(opaque: &mut TqScanOpaque, heaptids: &[page::ItemPointer]) {
     debug_assert!(heaptids.len() <= page::HEAPTID_INLINE_CAPACITY);
 
-    opaque.pending_heaptids.fill(page::ItemPointer::INVALID);
+    clear_pending_scan_heaptids(opaque);
     opaque.pending_heaptid_count =
         u8::try_from(heaptids.len()).expect("heap tid count should fit in u8");
-    opaque.pending_heaptid_index = 0;
 
     for (index, tid) in heaptids.iter().copied().enumerate() {
         opaque.pending_heaptids[index] = tid;
@@ -280,8 +283,7 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
     let tid = opaque.pending_heaptids[opaque.pending_heaptid_index as usize];
     opaque.pending_heaptid_index += 1;
     if opaque.pending_heaptid_index >= opaque.pending_heaptid_count {
-        opaque.pending_heaptid_count = 0;
-        opaque.pending_heaptid_index = 0;
+        clear_pending_scan_heaptids(opaque);
     }
     update_current_scan_result_heap_tid(opaque, tid);
     Some(tid)
@@ -321,6 +323,7 @@ unsafe fn produce_next_scan_heap_tid(
 }
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
+    clear_pending_scan_heaptids(opaque);
     opaque.current_result = CurrentScanResult::default();
 }
 
@@ -1423,6 +1426,33 @@ mod tests {
         assert_eq!(
             opaque.pending_heaptid_index, 0,
             "draining all queued heap tids should reset the pending index too"
+        );
+    }
+
+    #[test]
+    fn clear_scan_result_state_clears_pending_heap_tid_drain() {
+        let mut opaque = TqScanOpaque::default();
+        set_current_scan_result(&mut opaque, tid(26, 1), -4.0);
+        store_pending_scan_heaptids(&mut opaque, &[tid(31, 1), tid(31, 2)]);
+
+        clear_scan_result_state(&mut opaque);
+
+        assert!(
+            !opaque.current_result.has_element(),
+            "clearing scan result state should also clear the current result slot"
+        );
+        assert_eq!(
+            opaque.pending_heaptid_count, 0,
+            "clearing scan result state should clear any pending duplicate drain state"
+        );
+        assert_eq!(
+            opaque.pending_heaptid_index, 0,
+            "clearing scan result state should reset duplicate drain progress"
+        );
+        assert_eq!(
+            opaque.pending_heaptids[0],
+            page::ItemPointer::INVALID,
+            "clearing scan result state should wipe the pending heap-tid buffer too"
         );
     }
 
