@@ -1,7 +1,7 @@
 ---
 id: ADR-015
 title: "Bootstrap frontier to ordered traversal transition plan"
-status: PROPOSED
+status: DECIDED
 impact: HIGH for FR-009, FR-006
 date: 2026-04-05
 ---
@@ -34,17 +34,20 @@ The following infrastructure is now in place:
 - **Gamma in element tuples**: Scoring reads gamma from the index, not from heap fetches
 - **`score_ip_from_parts`**: Zero-allocation scoring from element tuple parts
 - **Direct frontier materialization**: Frontier consumption flows directly to result emission
+- **Resolved search-breadth control surface**: the session GUC/reloption precedence model can now
+  be implemented independently of planner enablement
 
 ## Decision
 
 The transition from bootstrap to ordered traversal SHALL proceed in the following stages:
 
-### Stage 1: Widen frontier to `ef_search`-bounded traversal (next)
+### Stage 1: Widen frontier to resolved-`ef_search` traversal
 
-Replace `MAX_BOOTSTRAP_FRONTIER_CANDIDATES` with `ef_search` from the index reloptions. Replace
-the bootstrap `fill_bootstrap_frontier` / `top_up_bootstrap_frontier` loop with a proper
-greedy-descent expansion loop that runs until the frontier is full or all reachable candidates
-within the search horizon have been expanded.
+Replace `MAX_BOOTSTRAP_FRONTIER_CANDIDATES` with the resolved `ef_search` value (session GUC
+override when non-default, otherwise index reloption). Replace the bootstrap
+`fill_bootstrap_frontier` / `top_up_bootstrap_frontier` loop with a proper greedy-descent
+expansion loop that runs until the frontier is full or all reachable candidates within the search
+horizon have been expanded.
 
 The frontier container may remain a `Vec` with `recompute_candidate_frontier_head` until
 profiling shows the linear scan matters, or switch to `BinaryHeap` if the code is cleaner.
@@ -96,14 +99,14 @@ implementation should:
 - **Full multi-layer**: More complex, requires layer-aware neighbor slicing per FR-007's
   `2M` / `M` slot formula. Better asymptotic behavior on large indexes.
 
-Layer-0-only is recommended for the initial implementation, with multi-layer support as a
-follow-on optimization when recall benchmarks on larger indexes show it matters.
+The initial ordered traversal SHALL be layer-0-only, with multi-layer greedy descent deferred to a
+follow-on optimization when recall or latency data on larger indexes shows it is necessary.
 
 ### ef_search default and bounds
 
-ADR-014 proposes a memory budget per scan. The `ef_search` parameter controls frontier size
-and thus memory consumption. The default value and maximum need to be set based on the
-memory budget and expected concurrent scan count.
+ADR-014 budgets traversal memory using the existing `ef_search` default (`40`) and maximum
+(`1000`). The remaining work is to wire the resolved control surface into ordered traversal, not to
+pick new bounds.
 
 ### Scan block count staleness
 

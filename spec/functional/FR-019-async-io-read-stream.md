@@ -16,6 +16,19 @@ traces:
 
 On PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` calls in scan and vacuum hot paths with the PG18 `read_stream` API, enabling transparent async I/O via the configured `io_method` (sync, worker, or io_uring). On PostgreSQL 17 and earlier, the extension SHALL fall back to the existing synchronous path.
 
+Current staged behavior:
+- Before PostgreSQL 18 support exists in this repository, pure ReadStream-scaffolding helpers MAY
+  expose the intended graph-stream mode (`READ_STREAM_DEFAULT`), linear-stream mode
+  (`READ_STREAM_SEQUENTIAL`), their random-versus-sequential access patterns, the intended
+  callback names and state types, and the `InvalidBlockNumber` end-of-stream sentinel.
+- Those helpers MAY also define pure callback functions that consume planner-owned callback state
+  and return either the next block number or an explicit end-of-stream result, leaving the actual
+  PostgreSQL `InvalidBlockNumber` conversion to the eventual PG18 binding layer.
+- Read-only snapshot helpers MAY also report that PG18 ReadStream callback surfaces, scan wiring,
+  and vacuum wiring all remain unavailable.
+- Those helpers SHALL stay descriptive only; they do not imply that any scan or vacuum path
+  currently uses `read_stream_next_buffer()` on PG17.
+
 ### Architecture
 
 The scan maintains **two independent ReadStream instances** with different I/O profiles:

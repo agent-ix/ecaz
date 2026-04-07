@@ -48,6 +48,16 @@ Bidirectional traceability between requirements and test cases.
 | TC-034 | TqElementTuple write/read round-trip preserves all fields | FR-007-AC-2 | Construct a TqElementTuple with known values, write to a page buffer, read back, assert all fields match |
 | TC-035 | Fuzz tqvector_in with random byte sequences | NFR-004 | Feed 10,000 random byte slices (lengths 0–2048) to the text input parser; assert no panic, no crash — only Ok or Err |
 | TC-036 | All unsafe blocks have SAFETY comments | NFR-004 | grep for `unsafe` blocks in src/; assert every one is preceded by a `// SAFETY:` comment within 3 lines |
+| TC-037 | ReadStream callback signatures and state carriers match FR-019 | FR-019 | Unit-test graph and linear callback signatures plus `GraphPrefetchState` / `LinearPrefetchState` exhaustion behavior |
+| TC-043 | ReadStream callbacks return blocks then end-of-stream | FR-019 | Unit-test pure graph and linear callback helpers so PG18 bindings only need to translate `EndOfStream` into `InvalidBlockNumber` |
+| TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
+| TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires the `tqvector` option, `IndexScan` node kind, and `tqhnsw` access method |
+| TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
+| TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
+| TC-046 | Cumulative statistics summary computes derived rates | FR-025 | Unit-test pure FR-025 summary logic for `bootstrap_hit_rate` and `quantizer_cache_rate`, including zero-denominator handling |
+| TC-039 | Metadata tree-height callback value matches max_level | FR-020 | Unit-test `metadata_tree_height_callback_value(max_level)` across edge cases, including `u8::MAX` |
+| TC-044 | PG18 callback-named planner helpers preserve pure contracts | FR-020, FR-023 | Unit-test `amgettreeheight_callback_value`, `amtranslatestrategy_callback`, and `amtranslatecmptype_callback` so the PG18 callback seam matches the existing pure behavior |
+| TC-040 | Strategy reverse mapping rejects non-LT CompareTypes | FR-023 | Unit-test `compare_type_to_strategy(...)` across `COMPARE_INVALID`, `COMPARE_EQ`, `COMPARE_LE`, `COMPARE_GE`, `COMPARE_GT`, `COMPARE_NE`, `COMPARE_OVERLAP`, and `COMPARE_CONTAINED_BY` |
 
 ## Integration Tests (`cargo pgrx test`)
 
@@ -87,6 +97,16 @@ Bidirectional traceability between requirements and test cases.
 | TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
 | TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read exposed metadata or stats view, assert total_live_nodes and inserted_since_rebuild are present and consistent after inserts |
+| TC-135 | Admin snapshot exposes planner tuning and current stats scaffolding | FR-009, FR-016 | Read `tqhnsw_index_admin_snapshot(...)`, assert effective tuning fields, planner gate state, live node count, and explicit unavailable drift field |
+| TC-136 | Explain snapshot exposes planner gate reason | FR-009, FR-006, FR-023, FR-024 | Read `tqhnsw_index_explain_snapshot(...)`, assert planner gate remains off, ordered scan is not ready, the reason text is explicit, intended ordering semantics are exposed, and custom EXPLAIN option / hook readiness remain false |
+| TC-139 | Stats snapshot exposes PG18 statistics boundary | FR-025, FR-027 | Read `tqhnsw_stats_snapshot()`, assert intended function name is `tqvector_stats`, PG18 readiness flags remain false, and `tqvector_stats()` is absent on PG17 |
+| TC-140 | PG18 upgrade snapshot exposes module identity boundary | FR-026, FR-027 | Read `tqhnsw_pg18_upgrade_snapshot()`, assert extension identity stays `tqvector` / `$libdir/tqvector`, default feature remains `pg17`, and PG18 feature/default/module-magic readiness remain false |
+| TC-141 | PG18 diagnostics snapshot exposes consolidated readiness boundary | FR-024, FR-025, FR-027 | Read `tqhnsw_pg18_diagnostics_snapshot()`, assert intended EXPLAIN option and stats function names are exposed together and all PG18 readiness flags remain false |
+| TC-142 | Planner integration snapshot exposes cross-lane blockers | FR-009, FR-020 | Read `tqhnsw_planner_integration_snapshot(regclass)`, assert modeled planner-cost readiness is true while planner activation, ordered scan readiness, and PG18 readiness remain false with explicit blocker strings |
+| TC-143 | ReadStream snapshot exposes PG18 async-I/O boundary | FR-019, FR-027 | Read `tqhnsw_read_stream_snapshot()`, assert graph and linear stream modes plus access patterns are exposed while callback, scan, and vacuum readiness remain false |
+| TC-144 | EXPLAIN counter snapshot exposes staged counter contract | FR-024 | Read `tqhnsw_explain_counter_snapshot()`, assert all seven intended counters are exposed with their declared types and increment conditions while scan-opaque storage and runtime wiring remain false |
+| TC-137 | Pure planner cost model stays gated behind ADR-011 | FR-020, FR-009 | Unit-test `estimate_planner_cost(...)` crossover and edge cases while `amcostestimate` still returns prohibitive costs |
+| TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `tqhnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, tuning/metadata inputs are explicit, and tree-height sourcing is reported as metadata fallback until PG18 callback wiring exists |
 
 ## Property Tests (`proptest`)
 

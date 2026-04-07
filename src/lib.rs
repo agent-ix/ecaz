@@ -11,6 +11,11 @@ mod quant;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
+#[pg_guard]
+pub extern "C-unwind" fn _PG_init() {
+    am::register_gucs();
+}
+
 /// Public API surface for benchmarks and integration tests.
 /// This stays narrow and explicit so benchmark and integration code can reuse
 /// storage/quantizer helpers without reaching through internal modules directly.
@@ -63,6 +68,34 @@ fn validate_bits(bits: u8) -> Result<(), String> {
 
 fn code_len(dim: usize, bits: u8) -> usize {
     payload_len(dim, bits) - 4
+}
+
+fn tqhnsw_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'tqhnsw'")
+        .expect("SPI query should succeed")
+        .expect("tqhnsw access method should exist")
+}
+
+unsafe fn open_valid_tqhnsw_index(
+    index_oid: pg_sys::Oid,
+    caller_name: &'static str,
+) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires an index relation");
+    }
+    if rd_rel.relam != tqhnsw_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("{caller_name} requires a tqhnsw index, got relation \"{relation_name}\"");
+    }
+    index_relation
 }
 
 pub fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
@@ -252,6 +285,315 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
     // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current receive call.
     unsafe { recv_tqvector_message(msg) }
         .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_admin_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(total_live_nodes, i64),
+        name!(inserted_since_rebuild, Option<i64>),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(planner_scan_enabled, bool),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_admin_snapshot") };
+    let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
+        snapshot
+            .inserted_since_rebuild
+            .map(|count| i64::try_from(count).expect("insert drift count should fit into i64")),
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.planner_scan_enabled,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_explain_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(ordered_scan_ready, bool),
+        name!(planner_gate_reason, String),
+        name!(ordering_strategy, i32),
+        name!(ordering_compare_type, String),
+        name!(pg18_strategy_translation_ready, bool),
+        name!(explain_option_name, String),
+        name!(pg18_custom_explain_option_ready, bool),
+        name!(pg18_explain_per_node_hook_ready, bool),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(total_live_nodes, i64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_explain_snapshot") };
+    let snapshot = unsafe { am::index_explain_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.ordered_scan_ready,
+        snapshot.planner_gate_reason.to_owned(),
+        snapshot.ordering_strategy,
+        snapshot.ordering_compare_type.to_owned(),
+        snapshot.pg18_strategy_translation_ready,
+        snapshot.explain_option_name.to_owned(),
+        snapshot.pg18_custom_explain_option_ready,
+        snapshot.pg18_explain_per_node_hook_ready,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_cost_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(planner_gate_reason, String),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(m, i32),
+        name!(dimensions, i32),
+        name!(max_level, i32),
+        name!(resolved_tree_height, f64),
+        name!(tree_height_source, String),
+        name!(pg18_tree_height_callback_ready, bool),
+        name!(index_pages, f64),
+        name!(reltuples, f64),
+        name!(random_page_cost, f64),
+        name!(seq_page_cost, f64),
+        name!(cpu_operator_cost, f64),
+        name!(modeled_startup_cost, f64),
+        name!(modeled_total_cost, f64),
+        name!(modeled_selectivity, f64),
+        name!(modeled_correlation, f64),
+        name!(gated_startup_cost, f64),
+        name!(gated_total_cost, f64),
+        name!(gated_selectivity, f64),
+        name!(gated_correlation, f64),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_cost_snapshot") };
+    let snapshot = unsafe { am::index_cost_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.planner_gate_reason.to_owned(),
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.m,
+        i32::from(snapshot.dimensions),
+        i32::from(snapshot.max_level),
+        snapshot.resolved_tree_height,
+        snapshot.tree_height_source.to_owned(),
+        snapshot.pg18_tree_height_callback_ready,
+        snapshot.index_pages,
+        snapshot.reltuples,
+        snapshot.random_page_cost,
+        snapshot.seq_page_cost,
+        snapshot.cpu_operator_cost,
+        snapshot.modeled_startup_cost,
+        snapshot.modeled_total_cost,
+        snapshot.modeled_selectivity,
+        snapshot.modeled_correlation,
+        snapshot.gated_startup_cost,
+        snapshot.gated_total_cost,
+        snapshot.gated_selectivity,
+        snapshot.gated_correlation,
+    ))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_stats_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(stats_function_name, String),
+        name!(pg18_pgstat_kind_ready, bool),
+        name!(pg18_sql_function_ready, bool),
+    ),
+> {
+    let snapshot = am::stats_snapshot();
+    TableIterator::once((
+        snapshot.function_name.to_owned(),
+        snapshot.pg18_pgstat_kind_ready,
+        snapshot.pg18_sql_function_ready,
+    ))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_explain_counter_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(counter_name, String),
+        name!(counter_type, String),
+        name!(increments_when, String),
+        name!(scan_opaque_storage_ready, bool),
+        name!(runtime_wiring_ready, bool),
+    ),
+> {
+    TableIterator::new(am::explain_counter_snapshot().into_iter().map(|row| {
+        (
+            row.counter_name.to_owned(),
+            row.counter_type.to_owned(),
+            row.increments_when.to_owned(),
+            row.scan_opaque_storage_ready,
+            row.runtime_wiring_ready,
+        )
+    }))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_read_stream_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(graph_stream_mode, String),
+        name!(linear_stream_mode, String),
+        name!(graph_stream_access_pattern, String),
+        name!(linear_stream_access_pattern, String),
+        name!(pg18_callback_surface_ready, bool),
+        name!(pg18_scan_wiring_ready, bool),
+        name!(pg18_vacuum_wiring_ready, bool),
+    ),
+> {
+    let snapshot = am::stream_snapshot();
+    TableIterator::once((
+        snapshot.graph_stream_mode.to_owned(),
+        snapshot.linear_stream_mode.to_owned(),
+        snapshot.graph_stream_access_pattern.to_owned(),
+        snapshot.linear_stream_access_pattern.to_owned(),
+        snapshot.pg18_callback_surface_ready,
+        snapshot.pg18_scan_wiring_ready,
+        snapshot.pg18_vacuum_wiring_ready,
+    ))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_pg18_upgrade_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(extension_name, String),
+        name!(cargo_package_version, String),
+        name!(module_pathname, String),
+        name!(cargo_default_feature, String),
+        name!(cargo_pg18_feature_defined, bool),
+        name!(pg18_default_build_ready, bool),
+        name!(pg18_module_magic_ext_ready, bool),
+        name!(single_extension_identity, bool),
+    ),
+> {
+    let snapshot = am::pg18_upgrade_snapshot();
+    TableIterator::once((
+        snapshot.extension_name.to_owned(),
+        snapshot.cargo_package_version.to_owned(),
+        snapshot.module_pathname.to_owned(),
+        snapshot.cargo_default_feature.to_owned(),
+        snapshot.cargo_pg18_feature_defined,
+        snapshot.pg18_default_build_ready,
+        snapshot.pg18_module_magic_ext_ready,
+        snapshot.single_extension_identity,
+    ))
+}
+
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_pg18_diagnostics_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(explain_option_name, String),
+        name!(stats_function_name, String),
+        name!(pg18_custom_explain_option_ready, bool),
+        name!(pg18_explain_per_node_hook_ready, bool),
+        name!(pg18_pgstat_kind_ready, bool),
+        name!(pg18_stats_sql_function_ready, bool),
+    ),
+> {
+    let snapshot = am::pg18_diagnostics_snapshot();
+    TableIterator::once((
+        snapshot.explain_option_name.to_owned(),
+        snapshot.stats_function_name.to_owned(),
+        snapshot.pg18_custom_explain_option_ready,
+        snapshot.pg18_explain_per_node_hook_ready,
+        snapshot.pg18_pgstat_kind_ready,
+        snapshot.pg18_stats_sql_function_ready,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_planner_integration_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(planner_scan_enabled, bool),
+        name!(ordered_scan_ready, bool),
+        name!(runtime_ordered_scan_ready, bool),
+        name!(planner_cost_model_ready, bool),
+        name!(planner_cost_callback_live, bool),
+        name!(pg18_callback_surface_ready, bool),
+        name!(pg18_diagnostics_surface_ready, bool),
+        name!(pg18_read_stream_surface_ready, bool),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(planner_gate_reason, String),
+        name!(next_runtime_blocker, String),
+        name!(next_pg18_blocker, String),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_planner_integration_snapshot") };
+    let snapshot = unsafe { am::planner_integration_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        snapshot.planner_scan_enabled,
+        snapshot.ordered_scan_ready,
+        snapshot.runtime_ordered_scan_ready,
+        snapshot.planner_cost_model_ready,
+        snapshot.planner_cost_callback_live,
+        snapshot.pg18_callback_surface_ready,
+        snapshot.pg18_diagnostics_surface_ready,
+        snapshot.pg18_read_stream_surface_ready,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.planner_gate_reason.to_owned(),
+        snapshot.next_runtime_blocker.to_owned(),
+        snapshot.next_pg18_blocker.to_owned(),
+    ))
 }
 
 fn encode_embedding_to_tqvector(
@@ -642,6 +984,784 @@ mod tests {
         assert!(
             !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
             "planner should not use tqhnsw for scans before scan callbacks exist: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_reports_tuning_and_counts() {
+        Spi::run("CREATE TABLE tqhnsw_admin_snapshot (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_idx ON tqhnsw_admin_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 7").expect("session override should succeed");
+
+        let block_count = Spi::get_one::<i64>(
+            "SELECT block_count FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let total_live_nodes = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let inserted_since_rebuild = Spi::get_one::<i64>(
+            "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed");
+        let relation_ef_search = Spi::get_one::<i32>(
+            "SELECT relation_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let session_ef_search = Spi::get_one::<i32>(
+            "SELECT session_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_ef_search = Spi::get_one::<i32>(
+            "SELECT effective_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_source = Spi::get_one::<String>(
+            "SELECT effective_source FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let planner_scan_enabled = Spi::get_one::<bool>(
+            "SELECT planner_scan_enabled FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+
+        assert!(
+            block_count >= 1,
+            "snapshot should report at least the metadata block"
+        );
+        assert_eq!(
+            total_live_nodes, 3,
+            "snapshot should report live element count"
+        );
+        assert_eq!(
+            inserted_since_rebuild, None,
+            "insert-drift stats should remain explicitly unavailable until tracked"
+        );
+        assert_eq!(relation_ef_search, 111);
+        assert_eq!(session_ef_search, 7);
+        assert_eq!(effective_ef_search, 7);
+        assert_eq!(effective_source, "session");
+        assert!(
+            !planner_scan_enabled,
+            "admin snapshot should report the current planner gate state"
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_admin_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_wrong_am_idx ON tqhnsw_admin_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_explain_snapshot_reports_planner_gate_state() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_explain_snapshot (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_explain_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_explain_snapshot_idx ON tqhnsw_explain_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 91)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+
+        let planner_scan_enabled = Spi::get_one::<bool>(
+            "SELECT planner_scan_enabled FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let ordered_scan_ready = Spi::get_one::<bool>(
+            "SELECT ordered_scan_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let planner_gate_reason = Spi::get_one::<String>(
+            "SELECT planner_gate_reason FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let ordering_strategy = Spi::get_one::<i32>(
+            "SELECT ordering_strategy FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let ordering_compare_type = Spi::get_one::<String>(
+            "SELECT ordering_compare_type FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_strategy_translation_ready = Spi::get_one::<bool>(
+            "SELECT pg18_strategy_translation_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let explain_option_name = Spi::get_one::<String>(
+            "SELECT explain_option_name FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_custom_explain_option_ready = Spi::get_one::<bool>(
+            "SELECT pg18_custom_explain_option_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let pg18_explain_per_node_hook_ready = Spi::get_one::<bool>(
+            "SELECT pg18_explain_per_node_hook_ready FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_ef_search = Spi::get_one::<i32>(
+            "SELECT effective_ef_search FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_source = Spi::get_one::<String>(
+            "SELECT effective_source FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let total_live_nodes = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+
+        assert!(!planner_scan_enabled, "planner gate should still be off");
+        assert!(
+            !ordered_scan_ready,
+            "ordered traversal should not be reported as ready yet"
+        );
+        assert!(
+            planner_gate_reason.contains("disabled"),
+            "planner snapshot should explain why tqhnsw scans stay gated"
+        );
+        assert_eq!(
+            ordering_strategy, 1,
+            "explain snapshot should expose the operator ordering strategy number"
+        );
+        assert_eq!(
+            ordering_compare_type, "COMPARE_LT",
+            "explain snapshot should expose the intended PG18 ordering semantics"
+        );
+        assert!(
+            !pg18_strategy_translation_ready,
+            "explain snapshot should keep PG18 strategy translation explicitly unavailable for now"
+        );
+        assert_eq!(
+            explain_option_name, "tqvector",
+            "explain snapshot should expose the intended custom EXPLAIN option name"
+        );
+        assert!(
+            !pg18_custom_explain_option_ready,
+            "explain snapshot should keep PG18 custom EXPLAIN option registration explicitly unavailable for now"
+        );
+        assert!(
+            !pg18_explain_per_node_hook_ready,
+            "explain snapshot should keep PG18 explain hook wiring explicitly unavailable for now"
+        );
+        assert_eq!(effective_ef_search, 91);
+        assert_eq!(effective_source, "relation");
+        assert_eq!(total_live_nodes, 2);
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_explain_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_explain_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_explain_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_explain_snapshot_wrong_am_idx ON tqhnsw_explain_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_explain_snapshot('tqhnsw_explain_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_cost_snapshot_reports_modeled_and_gated_costs() {
+        Spi::run("CREATE TABLE tqhnsw_cost_snapshot (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_cost_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_cost_snapshot_idx ON tqhnsw_cost_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 12, ef_search = 77)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
+        Spi::run("ANALYZE tqhnsw_cost_snapshot").expect("analyze should succeed");
+
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT planner_scan_enabled FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner flag should be non-null"),
+            "planner gate should still be off"
+        );
+        assert!(
+            Spi::get_one::<String>(
+                "SELECT planner_gate_reason FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gate reason should be non-null")
+                .contains("disabled"),
+            "cost snapshot should explain why live planner costing is still gated"
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation ef_search should be non-null"),
+            77
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed"),
+            Some(19)
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT effective_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective ef_search should be non-null"),
+            19
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective source should be non-null"),
+            "session"
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT m FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("m should be non-null"),
+            12
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT dimensions FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("dimensions should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT resolved_tree_height FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("resolved tree height should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT tree_height_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("tree height source should be non-null"),
+            "metadata_fallback"
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_tree_height_callback_ready FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 tree-height callback flag should be non-null")
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT index_pages FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("index pages should be non-null")
+                >= 1.0
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT reltuples FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("reltuples should be non-null")
+                >= 3.0
+        );
+        let modeled_startup = Spi::get_one::<f64>(
+            "SELECT modeled_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled startup should be non-null");
+        let modeled_total = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled total should be non-null");
+        assert!(
+            modeled_startup.is_finite(),
+            "modeled startup should be finite"
+        );
+        assert!(modeled_total.is_finite(), "modeled total should be finite");
+        assert!(
+            modeled_total >= modeled_startup,
+            "modeled total cost should include startup cost"
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled selectivity should be non-null"),
+            1.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT modeled_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("modeled correlation should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated startup should be non-null"),
+            f64::MAX
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated total should be non-null"),
+            f64::MAX
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated selectivity should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT gated_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("gated correlation should be non-null"),
+            0.0
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_cost_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_cost_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_cost_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_cost_snapshot_wrong_am_idx ON tqhnsw_cost_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_wrong_am_idx'::regclass)",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_stats_snapshot_reports_pg18_stats_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>("SELECT stats_function_name FROM tqhnsw_stats_snapshot()",)
+                .expect("snapshot query should succeed")
+                .expect("stats function name should be non-null"),
+            "tqvector_stats"
+        );
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_pgstat_kind_ready FROM tqhnsw_stats_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pg18 pgstat kind readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_sql_function_ready FROM tqhnsw_stats_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pg18 stats sql readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'tqvector_stats')",
+        )
+        .expect("catalog query should succeed")
+        .expect("exists should be non-null"));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_explain_counter_snapshot_contract() {
+        assert_eq!(
+            Spi::get_one::<i64>("SELECT COUNT(*) FROM tqhnsw_explain_counter_snapshot()",)
+                .expect("snapshot query should succeed")
+                .expect("row count should be non-null"),
+            7
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT counter_type FROM tqhnsw_explain_counter_snapshot() \
+                 WHERE counter_name = 'stats_bootstrap_expansions'",
+            )
+            .expect("snapshot query should succeed")
+            .expect("bootstrap counter type should be non-null"),
+            "u32"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT increments_when FROM tqhnsw_explain_counter_snapshot() \
+                 WHERE counter_name = 'stats_quantizer_cache_hit'",
+            )
+            .expect("snapshot query should succeed")
+            .expect("quantizer cache description should be non-null"),
+            "ProdQuantizer was reused from cache"
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT bool_and(NOT scan_opaque_storage_ready) FROM tqhnsw_explain_counter_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("scan-opaque storage readiness aggregate should be non-null"),
+            "counter snapshot should keep scan-opaque storage explicitly unavailable for now"
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT bool_and(NOT runtime_wiring_ready) FROM tqhnsw_explain_counter_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime wiring readiness aggregate should be non-null"),
+            "counter snapshot should keep runtime wiring explicitly unavailable for now"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_read_stream_snapshot_reports_pg18_stream_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>("SELECT graph_stream_mode FROM tqhnsw_read_stream_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("graph stream mode should be non-null"),
+            "READ_STREAM_DEFAULT"
+        );
+        assert_eq!(
+            Spi::get_one::<String>("SELECT linear_stream_mode FROM tqhnsw_read_stream_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("linear stream mode should be non-null"),
+            "READ_STREAM_SEQUENTIAL"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT graph_stream_access_pattern FROM tqhnsw_read_stream_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("graph stream access pattern should be non-null"),
+            "random"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT linear_stream_access_pattern FROM tqhnsw_read_stream_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("linear stream access pattern should be non-null"),
+            "sequential"
+        );
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_callback_surface_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream callback readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_scan_wiring_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream scan wiring readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_vacuum_wiring_ready FROM tqhnsw_read_stream_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stream vacuum wiring readiness should be non-null"));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pg18_upgrade_snapshot_reports_current_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>("SELECT extension_name FROM tqhnsw_pg18_upgrade_snapshot()",)
+                .expect("snapshot query should succeed")
+                .expect("extension name should be non-null"),
+            "tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT cargo_package_version FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("package version should be non-null"),
+            env!("CARGO_PKG_VERSION")
+        );
+        assert_eq!(
+            Spi::get_one::<String>("SELECT module_pathname FROM tqhnsw_pg18_upgrade_snapshot()",)
+                .expect("snapshot query should succeed")
+                .expect("module pathname should be non-null"),
+            "$libdir/tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT cargo_default_feature FROM tqhnsw_pg18_upgrade_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("default feature should be non-null"),
+            "pg17"
+        );
+        assert!(!Spi::get_one::<bool>(
+            "SELECT cargo_pg18_feature_defined FROM tqhnsw_pg18_upgrade_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pg18 feature flag should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_default_build_ready FROM tqhnsw_pg18_upgrade_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pg18 default build readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_module_magic_ext_ready FROM tqhnsw_pg18_upgrade_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pg18 module magic readiness should be non-null"));
+        assert!(Spi::get_one::<bool>(
+            "SELECT single_extension_identity FROM tqhnsw_pg18_upgrade_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("single identity flag should be non-null"));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pg18_diagnostics_snapshot_reports_current_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT explain_option_name FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("explain option name should be non-null"),
+            "tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT stats_function_name FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("stats function name should be non-null"),
+            "tqvector_stats"
+        );
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_custom_explain_option_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("custom explain readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_explain_per_node_hook_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("explain hook readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_pgstat_kind_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("pgstat readiness should be non-null"));
+        assert!(!Spi::get_one::<bool>(
+            "SELECT pg18_stats_sql_function_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+        )
+        .expect("snapshot query should succeed")
+        .expect("stats sql readiness should be non-null"));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_planner_integration_snapshot_reports_blockers() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_planner_integration_snapshot (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_planner_integration_snapshot_idx ON tqhnsw_planner_integration_snapshot USING tqhnsw (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT planner_scan_enabled FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner scan flag should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("ordered scan readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT runtime_ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime ordered scan readiness should be non-null")
+        );
+        assert!(
+            Spi::get_one::<bool>(
+                "SELECT planner_cost_model_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner cost model readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT planner_cost_callback_live FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner cost callback live flag should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_callback_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 callback readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_diagnostics_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 diagnostics readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_read_stream_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 read stream readiness should be non-null")
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT effective_ef_search FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective ef_search should be non-null"),
+            40
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_source FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective source should be non-null"),
+            "relation"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT planner_gate_reason FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("planner gate reason should be non-null"),
+            "planner scan selection is disabled until ordered tqhnsw execution is credible"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT next_runtime_blocker FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime blocker should be non-null"),
+            "ordered tqhnsw scan semantics and recall validation are not yet credible"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT next_pg18_blocker FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pg18 blocker should be non-null"),
+            "pgrx pg18 feature support and callback bindings are not yet implemented"
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_planner_integration_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_planner_integration_snapshot_rejects_wrong_am() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_planner_integration_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_planner_integration_snapshot_wrong_am_idx ON tqhnsw_planner_integration_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<bool>(
+            "SELECT planner_scan_enabled FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_wrong_am_idx'::regclass)",
         );
     }
 
@@ -2968,6 +4088,80 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_session_ef_search_defaults_to_relation_setting() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_session_ef_search_reloption (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_session_ef_search_reloption VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_session_ef_search_reloption_idx ON tqhnsw_session_ef_search_reloption USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_session_ef_search_reloption_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
+
+        assert_eq!(snapshot.relation_ef_search, 111);
+        assert_eq!(snapshot.session_ef_search, None);
+        assert_eq!(
+            snapshot.effective_ef_search, 111,
+            "default session setting should fall back to the index reloption"
+        );
+        assert_eq!(snapshot.effective_source, "relation");
+        assert!(
+            !snapshot.planner_scan_enabled,
+            "planner-facing scan selection should remain explicitly disabled"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_session_ef_search_overrides_reloption() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_session_ef_search_override (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_session_ef_search_override VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_session_ef_search_override_idx ON tqhnsw_session_ef_search_override USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 7").expect("session override should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_session_ef_search_override_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let snapshot = unsafe { am::debug_planner_tuning_snapshot(index_oid) };
+
+        assert_eq!(snapshot.relation_ef_search, 111);
+        assert_eq!(snapshot.session_ef_search, Some(7));
+        assert_eq!(
+            snapshot.effective_ef_search, 7,
+            "non-default session setting should override the index reloption"
+        );
+        assert_eq!(snapshot.effective_source, "session");
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_frontier_head_persists_until_exhaustion() {
         Spi::run(
             "CREATE TABLE tqhnsw_frontier_head_lifecycle (id bigint primary key, embedding tqvector)",
@@ -3382,9 +4576,7 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let (before_complete, after_complete, after_head, after_frontier, rescanned_complete) =
-            unsafe {
-                am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0])
-            };
+            unsafe { am::debug_bootstrap_phase_transition(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert!(
             !before_complete,

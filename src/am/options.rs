@@ -1,13 +1,15 @@
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
-use pgrx::pg_sys;
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
-    TQHNSW_DEFAULT_EF_CONSTRUCTION, TQHNSW_DEFAULT_M, TQHNSW_MAX_EF_CONSTRUCTION, TQHNSW_MAX_M,
-    TQHNSW_MIN_EF_CONSTRUCTION, TQHNSW_MIN_M, TQHNSW_DEFAULT_EF_SEARCH,
-    TQHNSW_MAX_EF_SEARCH, TQHNSW_MIN_EF_SEARCH,
+    TQHNSW_DEFAULT_EF_CONSTRUCTION, TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_DEFAULT_M,
+    TQHNSW_MAX_EF_CONSTRUCTION, TQHNSW_MAX_EF_SEARCH, TQHNSW_MAX_M, TQHNSW_MIN_EF_CONSTRUCTION,
+    TQHNSW_MIN_EF_SEARCH, TQHNSW_MIN_M,
 };
+
+static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(TQHNSW_DEFAULT_EF_SEARCH);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -34,6 +36,59 @@ impl TqHnswOptions {
         ef_search: TQHNSW_DEFAULT_EF_SEARCH,
         build_source_column: None,
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EfSearchSource {
+    Relation,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ScanTuning {
+    pub(super) relation_ef_search: i32,
+    pub(super) session_ef_search: Option<i32>,
+    pub(super) effective_ef_search: i32,
+    pub(super) source: EfSearchSource,
+}
+
+pub(super) fn register_gucs() {
+    GucRegistry::define_int_guc(
+        c"tqhnsw.ef_search",
+        c"Session override for tqhnsw search breadth.",
+        c"Overrides tqhnsw index ef_search reloptions when set away from the default value.",
+        &TQHNSW_EF_SEARCH_GUC,
+        TQHNSW_MIN_EF_SEARCH,
+        TQHNSW_MAX_EF_SEARCH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
+
+pub(super) fn current_session_ef_search() -> i32 {
+    TQHNSW_EF_SEARCH_GUC.get()
+}
+
+pub(super) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
+    resolve_scan_tuning_values(options.ef_search, current_session_ef_search())
+}
+
+fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -> ScanTuning {
+    if session_ef_search == TQHNSW_DEFAULT_EF_SEARCH {
+        ScanTuning {
+            relation_ef_search,
+            session_ef_search: None,
+            effective_ef_search: relation_ef_search,
+            source: EfSearchSource::Relation,
+        }
+    } else {
+        ScanTuning {
+            relation_ef_search,
+            session_ef_search: Some(session_ef_search),
+            effective_ef_search: session_ef_search,
+            source: EfSearchSource::Session,
+        }
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
@@ -122,5 +177,49 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
         ef_construction: reloptions.ef_construction,
         ef_search: reloptions.ef_search,
         build_source_column,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_scan_tuning_values, EfSearchSource, ScanTuning, TQHNSW_DEFAULT_EF_SEARCH};
+
+    #[test]
+    fn resolve_scan_tuning_uses_relation_value_when_session_is_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(128, TQHNSW_DEFAULT_EF_SEARCH),
+            ScanTuning {
+                relation_ef_search: 128,
+                session_ef_search: None,
+                effective_ef_search: 128,
+                source: EfSearchSource::Relation,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_uses_session_value_when_non_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(128, 7),
+            ScanTuning {
+                relation_ef_search: 128,
+                session_ef_search: Some(7),
+                effective_ef_search: 7,
+                source: EfSearchSource::Session,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_keeps_default_relation_when_both_are_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_DEFAULT_EF_SEARCH),
+            ScanTuning {
+                relation_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                session_ef_search: None,
+                effective_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                source: EfSearchSource::Relation,
+            }
+        );
     }
 }

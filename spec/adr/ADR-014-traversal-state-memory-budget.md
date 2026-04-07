@@ -1,7 +1,7 @@
 ---
 id: ADR-014
 title: "Define traversal state memory budget per scan descriptor"
-status: PROPOSED
+status: DECIDED
 impact: HIGH for FR-009
 date: 2026-04-05
 ---
@@ -103,7 +103,8 @@ and `query_values`). PostgreSQL memory contexts are not used for traversal state
 ## Follow-Up
 
 1. Implement candidate heap and visited set as part of the first ordered-traversal slice.
-2. Add `ef_search` GUC parameter (FR-009) to control beam width.
+2. Wire the resolved `ef_search` control surface (reloption plus session override) into ordered
+   traversal.
 3. Profile visited-set size distribution on real workloads to determine whether the bitset
    optimization is worthwhile.
 4. Consider whether parallel scan workers should share or independently allocate traversal state

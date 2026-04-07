@@ -5,8 +5,11 @@ Status: in progress
 Progress notes:
 - Build path is complete.
 - Scan lifecycle, query validation, metadata/prepared-query caching, and bootstrap linear scan are implemented.
-- AM module split in progress: cost, vacuum, options, routine, build extracted; insert and scan extraction pending.
-- Graph traversal, ef_search, distance ordering, and planner enablement remain pending.
+- AM module split is complete: scan, insert, build, options, cost, vacuum, routine, shared, and
+  search all have dedicated modules.
+- Planner-facing `ef_search` control-surface groundwork can land independently of ordered scan
+  enablement.
+- Graph traversal, ordered result buffering, and planner enablement remain pending.
 
 ## Scope
 
@@ -14,9 +17,14 @@ Complete the HNSW scan path from module split through validated recall measureme
 
 ## Subtasks
 
-- [ ] **A1: Finish am split.** Extract insert and scan into `am/insert.rs` and `am/scan.rs`. Mechanical refactor, no logic changes.
-- [ ] **A2: Graph traversal helpers.** Implement shared greedy descent + beam search over Postgres buffer pages. Parameterize by scoring function so scan (LUT) and insert (code-to-code) can both use it. Key concerns: buffer pin discipline, visited set, BinaryHeap ordering, layer traversal.
-- [ ] **A3: Wire scan.** Replace `next_linear_scan_heap_tid` with graph-based search. `amrescan` calls traversal helper and stores scored results. `amgettuple` pops from BinaryHeap in distance order. Add `tqhnsw.ef_search` GUC. ADR-011 cost gate remains active — planner cost activation is in Task 11 (Track D).
+- [x] **A1: Finish am split.** Extract insert and scan into `am/insert.rs` and `am/scan.rs`. Mechanical refactor, no logic changes.
+- [ ] **A2: Graph traversal helpers.** Finish the shared traversal seam that remains after the module split:
+  layer-0 neighbor slicing, the page-level traversal driver, and the ownership/borrow boundary
+  between traversal state and scan scoring inputs.
+- [ ] **A3: Wire scan.** Replace `next_linear_scan_heap_tid` with graph-based search. `amrescan`
+  calls traversal helper and stores scored results. `amgettuple` pops from BinaryHeap in distance
+  order. Consume the resolved `ef_search` setting (session override over reloption). Replace MAX
+  cost estimates with realistic planner costs only after ADR-011 can be retired.
 - [ ] **A4: Recall gate.** Measure Recall@10 on synthetic data (10K+ vectors, 1536-dim, 4-bit). Brute-force fp32 ground truth. Test at (m=8,ef=40), (m=8,ef=128), (m=8,ef=200), (m=16,ef=200). Gate: Recall@10 >= 89% at m=8 ef=128. If not met, investigate before proceeding.
 
 ## Owns
@@ -55,3 +63,5 @@ Complete the HNSW scan path from module split through validated recall measureme
 - A2 is the hardest subtask. Reference pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines) but expect more complexity due to raw page tuple decoding.
 - The traversal helper should be generic over scoring function signature to support both scan (LUT `score_ip_encoded`) and insert (code-to-code `score_ip_codes_lite`).
 - A4 is a gate: if recall fails, all downstream work (insert, vacuum, benchmarks) is premature.
+- Ordered result buffering and removal of the linear fallback are prerequisites for meaningful
+  recall measurement and for planner enablement.

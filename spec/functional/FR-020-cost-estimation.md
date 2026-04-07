@@ -15,6 +15,21 @@ traces:
 
 The extension SHALL implement a production-ready `amcostestimate` callback that provides realistic cost estimates to the PostgreSQL query planner, replacing the current `f64::MAX` override (ADR-011). On PG18, the extension SHALL additionally implement `amgettreeheight` to report the HNSW graph height for planner refinement.
 
+Current staged behavior:
+- A pure cost-model helper MAY exist and be unit-tested behind ADR-011 while the live
+  `amcostestimate` callback still returns prohibitive costs to keep planner-visible `tqhnsw` scans
+  disabled.
+- Read-only planner-cost snapshot helpers MAY expose both the modeled FR-020 estimate and the
+  still-gated live callback contract for inspection, without changing planner behavior.
+- Read-only planner-integration snapshot helpers MAY also expose that the modeled cost surface is
+  ready before the live callback is activated, alongside the remaining runtime and PG18 blockers.
+- Until PostgreSQL 18 support exists in the build/toolchain surface, staged planner-cost helpers
+  MAY source `tree_height` from metadata-page `max_level` explicitly and report that this is a
+  metadata fallback rather than a live `amgettreeheight` callback result.
+- The staged implementation MAY also define a pure `amgettreeheight`-named helper that returns the
+  exact integer callback value (`max_level`) from metadata without wiring the PG18 callback into
+  `IndexAmRoutine` yet.
+
 ### Cost Model
 
 ```

@@ -15,7 +15,7 @@ query state, and a bootstrap linear non-empty scan.
 It does not yet have:
 
 - HNSW graph traversal
-- `ef_search`
+- ordered-traversal consumption of the resolved `ef_search` tuning surface
 - distance-ordered result production
 - planner-visible ordered scan semantics that match the operator class contract
 
@@ -34,6 +34,23 @@ Specifically:
 - the planner therefore avoids choosing `tqhnsw` scans in normal execution
 
 This is an intentional temporary gate, not the final costing model.
+
+Planner/integration groundwork may still land behind this gate, including:
+
+- pure cost-model helpers and unit tests that are not yet wired into `amcostestimate`
+- session-level `tqhnsw.ef_search` override registration
+- relation-versus-session precedence resolution
+- planner/explain/statistics-facing snapshot helpers
+- planner-facing cost snapshot helpers that show modeled FR-020 outputs alongside the still-gated
+  live callback contract
+- planner-facing cost snapshot helpers that make current tree-height sourcing explicit, including a
+  metadata-fallback seam until PG18 `amgettreeheight` wiring actually exists
+- planner-facing explain snapshot helpers that report the gate state explicitly without claiming
+  that EXPLAIN can yet show a tqhnsw index scan
+- planner-facing integration snapshot helpers that make the remaining runtime ordered-scan blocker
+  and PG18 callback/toolchain blocker explicit without enabling planner selection
+
+Those surfaces do not by themselves make planner-visible scans safe.
 
 ## Consequences
 

@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use super::{page, wal, P_NEW};
+use super::{options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
 
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
@@ -261,8 +261,348 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     metadata
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IndexAdminSnapshot {
+    pub block_count: u32,
+    pub total_live_nodes: usize,
+    pub inserted_since_rebuild: Option<usize>,
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_scan_enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IndexExplainSnapshot {
+    pub planner_scan_enabled: bool,
+    pub ordered_scan_ready: bool,
+    pub planner_gate_reason: &'static str,
+    pub ordering_strategy: i32,
+    pub ordering_compare_type: &'static str,
+    pub pg18_strategy_translation_ready: bool,
+    pub explain_option_name: &'static str,
+    pub pg18_custom_explain_option_ready: bool,
+    pub pg18_explain_per_node_hook_ready: bool,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub total_live_nodes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct IndexCostSnapshot {
+    pub planner_scan_enabled: bool,
+    pub planner_gate_reason: &'static str,
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub m: i32,
+    pub dimensions: u16,
+    pub max_level: u8,
+    pub resolved_tree_height: f64,
+    pub tree_height_source: &'static str,
+    pub pg18_tree_height_callback_ready: bool,
+    pub index_pages: f64,
+    pub reltuples: f64,
+    pub random_page_cost: f64,
+    pub seq_page_cost: f64,
+    pub cpu_operator_cost: f64,
+    pub modeled_startup_cost: f64,
+    pub modeled_total_cost: f64,
+    pub modeled_selectivity: f64,
+    pub modeled_correlation: f64,
+    pub gated_startup_cost: f64,
+    pub gated_total_cost: f64,
+    pub gated_selectivity: f64,
+    pub gated_correlation: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pg18UpgradeSnapshot {
+    pub extension_name: &'static str,
+    pub cargo_package_version: &'static str,
+    pub module_pathname: &'static str,
+    pub cargo_default_feature: &'static str,
+    pub cargo_pg18_feature_defined: bool,
+    pub pg18_default_build_ready: bool,
+    pub pg18_module_magic_ext_ready: bool,
+    pub single_extension_identity: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pg18DiagnosticsSnapshot {
+    pub explain_option_name: &'static str,
+    pub stats_function_name: &'static str,
+    pub pg18_custom_explain_option_ready: bool,
+    pub pg18_explain_per_node_hook_ready: bool,
+    pub pg18_pgstat_kind_ready: bool,
+    pub pg18_stats_sql_function_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExplainCounterSnapshotRow {
+    pub counter_name: &'static str,
+    pub counter_type: &'static str,
+    pub increments_when: &'static str,
+    pub scan_opaque_storage_ready: bool,
+    pub runtime_wiring_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadStreamSnapshot {
+    pub graph_stream_mode: &'static str,
+    pub linear_stream_mode: &'static str,
+    pub graph_stream_access_pattern: &'static str,
+    pub linear_stream_access_pattern: &'static str,
+    pub pg18_callback_surface_ready: bool,
+    pub pg18_scan_wiring_ready: bool,
+    pub pg18_vacuum_wiring_ready: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannerIntegrationSnapshot {
+    pub planner_scan_enabled: bool,
+    pub ordered_scan_ready: bool,
+    pub runtime_ordered_scan_ready: bool,
+    pub planner_cost_model_ready: bool,
+    pub planner_cost_callback_live: bool,
+    pub pg18_callback_surface_ready: bool,
+    pub pg18_diagnostics_surface_ready: bool,
+    pub pg18_read_stream_surface_ready: bool,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_gate_reason: &'static str,
+    pub next_runtime_blocker: &'static str,
+    pub next_pg18_blocker: &'static str,
+}
+
+pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
+    IndexAdminSnapshot {
+        block_count: unsafe {
+            pg_sys::RelationGetNumberOfBlocksInFork(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            )
+        },
+        total_live_nodes: unsafe { count_element_tuples(index_relation) },
+        inserted_since_rebuild: None,
+        relation_ef_search: tuning.relation_ef_search,
+        session_ef_search: tuning.session_ef_search,
+        effective_ef_search: tuning.effective_ef_search,
+        effective_source: match tuning.source {
+            options::EfSearchSource::Relation => "relation",
+            options::EfSearchSource::Session => "session",
+        },
+        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+    }
+}
+
+pub(crate) unsafe fn index_explain_snapshot(
+    index_relation: pg_sys::Relation,
+) -> IndexExplainSnapshot {
+    let admin = unsafe { index_admin_snapshot(index_relation) };
+    let translation = super::cost::strategy_translation_snapshot();
+    let explain = super::explain::explain_option_snapshot();
+    IndexExplainSnapshot {
+        planner_scan_enabled: admin.planner_scan_enabled,
+        ordered_scan_ready: false,
+        planner_gate_reason:
+            "planner scan selection is disabled until ordered tqhnsw execution is credible",
+        ordering_strategy: translation.ordering_strategy,
+        ordering_compare_type: translation.ordering_compare_type.as_str(),
+        pg18_strategy_translation_ready: translation.pg18_callback_ready,
+        explain_option_name: explain.option_name,
+        pg18_custom_explain_option_ready: explain.pg18_custom_explain_option_ready,
+        pg18_explain_per_node_hook_ready: explain.pg18_explain_per_node_hook_ready,
+        effective_ef_search: admin.effective_ef_search,
+        effective_source: admin.effective_source,
+        total_live_nodes: admin.total_live_nodes,
+    }
+}
+
+pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let index_pages = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    } as f64;
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let tree_height = super::cost::metadata_fallback_tree_height(metadata.max_level);
+    let constants = unsafe { super::cost::current_planner_cost_constants() };
+    let modeled = super::cost::estimate_planner_cost(
+        super::cost::PlannerCostInputs {
+            index_pages,
+            reltuples,
+            m: relation_options.m,
+            ef_search: tuning.effective_ef_search,
+            dimensions: metadata.dimensions,
+            tree_height: tree_height.tree_height,
+        },
+        constants,
+    );
+    let gated = super::cost::gated_planner_cost_estimate(index_pages);
+
+    IndexCostSnapshot {
+        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+        planner_gate_reason:
+            "planner cost activation is disabled until ordered tqhnsw execution is credible",
+        relation_ef_search: tuning.relation_ef_search,
+        session_ef_search: tuning.session_ef_search,
+        effective_ef_search: tuning.effective_ef_search,
+        effective_source: match tuning.source {
+            options::EfSearchSource::Relation => "relation",
+            options::EfSearchSource::Session => "session",
+        },
+        m: relation_options.m,
+        dimensions: metadata.dimensions,
+        max_level: metadata.max_level,
+        resolved_tree_height: tree_height.tree_height,
+        tree_height_source: tree_height.source,
+        pg18_tree_height_callback_ready: tree_height.pg18_callback_ready,
+        index_pages,
+        reltuples,
+        random_page_cost: constants.random_page_cost,
+        seq_page_cost: constants.seq_page_cost,
+        cpu_operator_cost: constants.cpu_operator_cost,
+        modeled_startup_cost: modeled.startup_cost,
+        modeled_total_cost: modeled.total_cost,
+        modeled_selectivity: modeled.selectivity,
+        modeled_correlation: modeled.correlation,
+        gated_startup_cost: gated.startup_cost,
+        gated_total_cost: gated.total_cost,
+        gated_selectivity: gated.selectivity,
+        gated_correlation: gated.correlation,
+    }
+}
+
+pub(crate) fn pg18_upgrade_snapshot() -> Pg18UpgradeSnapshot {
+    Pg18UpgradeSnapshot {
+        extension_name: "tqvector",
+        cargo_package_version: env!("CARGO_PKG_VERSION"),
+        module_pathname: "$libdir/tqvector",
+        cargo_default_feature: "pg17",
+        cargo_pg18_feature_defined: false,
+        pg18_default_build_ready: false,
+        pg18_module_magic_ext_ready: false,
+        single_extension_identity: true,
+    }
+}
+
+pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
+    let explain = super::explain::explain_option_snapshot();
+    let stats = super::stats::stats_snapshot();
+    Pg18DiagnosticsSnapshot {
+        explain_option_name: explain.option_name,
+        stats_function_name: stats.function_name,
+        pg18_custom_explain_option_ready: explain.pg18_custom_explain_option_ready,
+        pg18_explain_per_node_hook_ready: explain.pg18_explain_per_node_hook_ready,
+        pg18_pgstat_kind_ready: stats.pg18_pgstat_kind_ready,
+        pg18_stats_sql_function_ready: stats.pg18_sql_function_ready,
+    }
+}
+
+pub(crate) fn explain_counter_snapshot() -> Vec<ExplainCounterSnapshotRow> {
+    super::explain::explain_counter_definitions()
+        .iter()
+        .map(|definition| ExplainCounterSnapshotRow {
+            counter_name: definition.counter_name,
+            counter_type: definition.counter_type,
+            increments_when: definition.increments_when,
+            scan_opaque_storage_ready: false,
+            runtime_wiring_ready: false,
+        })
+        .collect()
+}
+
+pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
+    let stream = super::stream::stream_snapshot();
+    ReadStreamSnapshot {
+        graph_stream_mode: stream.graph_stream_mode,
+        linear_stream_mode: stream.linear_stream_mode,
+        graph_stream_access_pattern: stream.graph_stream_access_pattern,
+        linear_stream_access_pattern: stream.linear_stream_access_pattern,
+        pg18_callback_surface_ready: stream.pg18_callback_surface_ready,
+        pg18_scan_wiring_ready: stream.pg18_scan_wiring_ready,
+        pg18_vacuum_wiring_ready: stream.pg18_vacuum_wiring_ready,
+    }
+}
+
+pub(crate) unsafe fn planner_integration_snapshot(
+    index_relation: pg_sys::Relation,
+) -> PlannerIntegrationSnapshot {
+    let admin = unsafe { index_admin_snapshot(index_relation) };
+    let explain = unsafe { index_explain_snapshot(index_relation) };
+    let cost = unsafe { index_cost_snapshot(index_relation) };
+    let diagnostics = pg18_diagnostics_snapshot();
+    let stream = read_stream_snapshot();
+
+    PlannerIntegrationSnapshot {
+        planner_scan_enabled: explain.planner_scan_enabled,
+        ordered_scan_ready: explain.ordered_scan_ready,
+        runtime_ordered_scan_ready: false,
+        planner_cost_model_ready: true,
+        planner_cost_callback_live: false,
+        pg18_callback_surface_ready: cost.pg18_tree_height_callback_ready
+            && explain.pg18_strategy_translation_ready,
+        pg18_diagnostics_surface_ready: diagnostics.pg18_custom_explain_option_ready
+            && diagnostics.pg18_explain_per_node_hook_ready
+            && diagnostics.pg18_pgstat_kind_ready
+            && diagnostics.pg18_stats_sql_function_ready,
+        pg18_read_stream_surface_ready: stream.pg18_callback_surface_ready
+            && stream.pg18_scan_wiring_ready
+            && stream.pg18_vacuum_wiring_ready,
+        effective_ef_search: admin.effective_ef_search,
+        effective_source: admin.effective_source,
+        planner_gate_reason: explain.planner_gate_reason,
+        next_runtime_blocker:
+            "ordered tqhnsw scan semantics and recall validation are not yet credible",
+        next_pg18_blocker:
+            "pgrx pg18 feature support and callback bindings are not yet implemented",
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn read_data_page(index_relation: pg_sys::Relation, block_number: u32) -> DebugIndexDataPage {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DebugPlannerTuningSnapshot {
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_scan_enabled: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuningSnapshot {
+    let snapshot = unsafe { index_admin_snapshot(index_relation) };
+    DebugPlannerTuningSnapshot {
+        relation_ef_search: snapshot.relation_ef_search,
+        session_ef_search: snapshot.session_ef_search,
+        effective_ef_search: snapshot.effective_ef_search,
+        effective_source: snapshot.effective_source,
+        planner_scan_enabled: snapshot.planner_scan_enabled,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_planner_tuning_snapshot(
+    index_oid: pg_sys::Oid,
+) -> DebugPlannerTuningSnapshot {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let snapshot = planner_tuning_snapshot(index_relation);
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    snapshot
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn read_data_page(
+    index_relation: pg_sys::Relation,
+    block_number: u32,
+) -> DebugIndexDataPage {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -305,7 +645,10 @@ unsafe fn read_data_page(index_relation: pg_sys::Relation, block_number: u32) ->
     }
 
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    DebugIndexDataPage { block_number, tuples }
+    DebugIndexDataPage {
+        block_number,
+        tuples,
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -332,10 +675,9 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     info.index = index_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
-    let stats =
-        unsafe {
-            super::vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
-        };
+    let stats = unsafe {
+        super::vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
+    };
     let stats = unsafe { super::vacuum::tqhnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 

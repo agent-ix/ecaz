@@ -23,6 +23,16 @@ Implementation stages:
 - Bootstrap stage: scan lifecycle, query validation, and a forward linear non-empty scan MAY exist as an intermediate implementation state for validating page decoding and tuple production.
 - Target stage: planner-visible ordered search requires greedy descent, layer-0 traversal, `ef_search`, and distance-ordered result emission.
 - Until the target stage is credible, the planner MAY be deliberately steered away from `tqhnsw` scans via `amcostestimate`.
+- Current planner groundwork MAY resolve scan tuning (`ef_search`, source-of-truth, planner gate)
+  before ordered execution is enabled, as long as the access method still returns prohibitive
+  planner costs per ADR-011.
+- Current planner groundwork MAY also expose read-only SQL/admin snapshot state for effective
+  tuning and planner gate status before EXPLAIN or planner-visible scan selection are enabled.
+- Current planner groundwork MAY also expose explain-oriented snapshot state that says ordered scan
+  is not yet ready and explains why the planner gate remains in place.
+- Current planner groundwork MAY also expose a consolidated planner-integration snapshot that keeps
+  the runtime ordered-scan blocker and the PG18 callback/toolchain blocker explicit in one
+  read-only surface for cross-lane integration work.
 
 ### `ambeginscan`
 
@@ -162,9 +172,14 @@ Current staged behavior:
 - Before ordered traversal is complete, the implementation MAY return deliberately prohibitive costs so the planner does not select `tqhnsw`.
 - This temporary planner gate is documented in `ADR-011`.
 
-### GUC: `tqhnsw.ef_search`
+### Search-breadth control surface
 
-The extension SHALL register a GUC (Grand Unified Configuration) parameter:
+The extension SHALL expose both:
+
+- an index reloption `ef_search` as the per-index default
+- a session GUC `tqhnsw.ef_search` as the planner/runtime override surface
+
+The GUC is registered as:
 
 | Property | Value |
 |---|---|
@@ -176,11 +191,27 @@ The extension SHALL register a GUC (Grand Unified Configuration) parameter:
 
 Registration via pgrx `GucRegistry::define_int_guc()` in `_PG_init`.
 
+Precedence rules:
+
+1. When `tqhnsw.ef_search` is set to a non-default value in the current session, it SHALL override
+   the index reloption for planner/runtime tuning.
+2. When the session GUC remains at its default value (`40`), the index reloption SHALL remain
+   authoritative. This preserves per-index defaults without requiring a separate "unset" sentinel.
+3. Ordered traversal and planner costing SHALL consume the same resolved `ef_search` value once
+   planner-visible scans are enabled.
+
 Usage:
 ```sql
 SET tqhnsw.ef_search = 200;  -- higher recall, more distance calculations
 SELECT * FROM memories ORDER BY tq_code <#> $query LIMIT 10;
 ```
+
+Current staged behavior:
+
+- The session GUC and reloption precedence model may be implemented before ordered traversal is
+  wired through scan execution.
+- Until that wiring lands, session overrides are planner/integration groundwork rather than a
+  promise that the current planner-disabled bootstrap scan will change query behavior.
 
 ### Buffer Access Pattern
 

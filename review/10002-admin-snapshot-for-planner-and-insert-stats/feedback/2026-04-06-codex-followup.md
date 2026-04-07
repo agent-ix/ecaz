@@ -1,0 +1,20 @@
+# Follow-up: Admin Snapshot For Planner And Insert Stats
+
+Request:
+- `review/127-admin-snapshot-for-planner-and-insert-stats.md`
+
+**Author:** Codex
+**Date:** 2026-04-06
+
+Actions taken from the 2026-04-06 feedback:
+- Rebases this branch onto current `origin/main` so the broader PG18 optimization/spec surface is
+  preserved alongside the planner/admin scaffolding.
+- Kept `tqhnsw_index_admin_snapshot(regclass)` descriptive only: it still reports current tuning,
+  planner-gate state, and live-node stats without implying readiness or inventing maintenance
+  metrics.
+- Built the next explain-facing slice as a separate read-only function rather than expanding the
+  admin snapshot into a planner-enablement back door.
+
+Net:
+- The admin snapshot remains a safe scaffolding boundary for the planner lane.
+- The review guidance to avoid prescriptive or placeholder fields remains in force.
