@@ -302,6 +302,7 @@ fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     complete_bootstrap_phase(opaque);
+    opaque.result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
 }
 
@@ -900,7 +901,6 @@ unsafe fn select_next_linear_scan_result(
 ) -> Option<SelectedScanResult> {
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         mark_scan_exhausted(opaque);
-        opaque.result_state.clear();
         return None;
     }
 
@@ -978,7 +978,6 @@ unsafe fn select_next_linear_scan_result(
     }
 
     mark_scan_exhausted(opaque);
-    opaque.result_state.clear();
     None
 }
 
@@ -1427,6 +1426,28 @@ mod tests {
         assert!(
             !expanded_contains_source(&opaque, tid(24, 1)),
             "completing bootstrap should reset expanded-source bookkeeping for the next rescan"
+        );
+    }
+
+    #[test]
+    fn mark_scan_exhausted_clears_result_state() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(25, 1), -3.0);
+        opaque.result_state.store_pending(&[tid(30, 1), tid(30, 2)]);
+
+        mark_scan_exhausted(&mut opaque);
+
+        assert!(
+            opaque.execution_phase == ScanExecutionPhase::Exhausted,
+            "exhausting the scan should transition into the explicit exhausted phase"
+        );
+        assert!(
+            !opaque.result_state.current().has_element(),
+            "exhausting the scan should clear the current result slot"
+        );
+        assert_eq!(
+            opaque.result_state.pending_count(), 0,
+            "exhausting the scan should also clear pending duplicate-drain state"
         );
     }
 
