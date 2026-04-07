@@ -153,12 +153,18 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
+            if emit_pending_scan_heap_tid(scan, opaque) {
+                return true;
+            }
             if !opaque.bootstrap_phase_complete
                 && materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque)
             {
-                if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
-                    set_scan_heap_tid(scan, heap_tid);
-                    set_scan_orderby_score(scan, opaque.current_result.score());
+                let emitted = emit_pending_scan_heap_tid(scan, opaque);
+                debug_assert!(
+                    emitted,
+                    "bootstrap materialization should seed pending heap tids before returning true"
+                );
+                if emitted {
                     return true;
                 }
             }
@@ -296,6 +302,16 @@ fn take_pending_scan_heap_tid(opaque: &mut TqScanOpaque) -> Option<page::ItemPoi
     }
     update_current_scan_result_heap_tid(opaque, tid);
     Some(tid)
+}
+
+fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
+    if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
+        set_scan_heap_tid(scan, heap_tid);
+        set_scan_orderby_score(scan, opaque.current_result.score());
+        return true;
+    }
+
+    false
 }
 
 fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
@@ -1316,6 +1332,45 @@ mod tests {
         assert!(
             !opaque.bootstrap_phase_complete,
             "amrescan/reset should allow bootstrap traversal to run again after prior bootstrap completion"
+        );
+    }
+
+    #[test]
+    fn take_pending_scan_heap_tid_advances_current_result_progress() {
+        let mut opaque = TqScanOpaque::default();
+        set_current_scan_result(&mut opaque, tid(25, 1), -3.0);
+        store_pending_scan_heaptids(&mut opaque, &[tid(30, 1), tid(30, 2)]);
+
+        let first = take_pending_scan_heap_tid(&mut opaque);
+        let second = take_pending_scan_heap_tid(&mut opaque);
+        let exhausted = take_pending_scan_heap_tid(&mut opaque);
+
+        assert_eq!(
+            first,
+            Some(tid(30, 1)),
+            "pending result drain should return the first queued heap tid first"
+        );
+        assert_eq!(
+            second,
+            Some(tid(30, 2)),
+            "pending result drain should continue through later heap tids in order"
+        );
+        assert_eq!(
+            exhausted, None,
+            "pending result drain should stop once the queued heap tids are exhausted"
+        );
+        assert_eq!(
+            opaque.current_result.heap_tid(),
+            tid(30, 2),
+            "draining pending heap tids should keep the current-result heap tid aligned with the last emitted duplicate"
+        );
+        assert_eq!(
+            opaque.pending_heaptid_count, 0,
+            "draining all queued heap tids should reset the pending count"
+        );
+        assert_eq!(
+            opaque.pending_heaptid_index, 0,
+            "draining all queued heap tids should reset the pending index too"
         );
     }
 
