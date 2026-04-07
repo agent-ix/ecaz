@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `5de9a4b`
+Current head: `9c9d074`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -86,6 +86,7 @@ Current tqhnsw state summary:
 - Scan result bookkeeping in `src/am/scan.rs` now lives more directly on `ScanResultState`: materialization, pending duplicate drain, and clearing no longer bounce through separate free-function wrappers around the owned result-state container.
 - Top-level tuple production in `src/am/scan.rs` now consumes staged result selection directly, instead of routing that step through an extra boolean-valued `materialize_next_scan_result` helper between selection and visible tuple emission.
 - `src/am/scan.rs` no longer exposes the unused `materialize_scan_candidate_result` wrapper in production code, and the remaining `materialize_next_bootstrap_frontier_result` helper is now explicitly fenced to test/pg-test builds because runtime tuple production no longer depends on it.
+- Staged result selection in `src/am/scan.rs` now dispatches explicitly on `ScanExecutionPhase` instead of relying on bootstrap/linear/exhausted fallthrough checks, making the bootstrap-to-linear behavior more visible at the selection seam itself.
 - Duplicate matching now uses persisted `gamma` plus code bytes instead of code bytes alone, so same-code tqvectors with distinct gamma terms no longer collapse into one element during build or live insert.
 - Live duplicate coalescing now recovers representative `gamma` from the heap row when a same-code element candidate is found, preserving the current page layout while keeping duplicate semantics query-score-correct.
 - ADR for the duplicate-drain decision: `spec/adr/ADR-009-linear-scan-duplicate-heaptids.md`
@@ -273,6 +274,7 @@ Open requests:
 - `141-result-state-owned-bookkeeping.md`
 - `142-direct-staged-selection-in-tuple-production.md`
 - `143-trim-legacy-bootstrap-materialization-surface.md`
+- `144-explicit-phase-dispatch-for-staged-selection.md`
 - Historical request files `01` through `119` are closed for bookkeeping.
 - Reopen an older request only when new outside feedback lands against it.
 
