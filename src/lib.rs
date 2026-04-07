@@ -70,6 +70,33 @@ fn code_len(dim: usize, bits: u8) -> usize {
     payload_len(dim, bits) - 4
 }
 
+fn tqhnsw_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'tqhnsw'")
+        .expect("SPI query should succeed")
+        .expect("tqhnsw access method should exist")
+}
+
+unsafe fn open_valid_tqhnsw_index(index_oid: pg_sys::Oid) -> pg_sys::Relation {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let rd_rel = unsafe { (*index_relation).rd_rel.as_ref() }
+        .expect("opened index relation should expose pg_class metadata");
+    if rd_rel.relkind != pg_sys::RELKIND_INDEX as i8 as std::ffi::c_char {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!("tqhnsw_index_admin_snapshot requires an index relation");
+    }
+    if rd_rel.relam != tqhnsw_access_method_oid() {
+        let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        pgrx::error!(
+            "tqhnsw_index_admin_snapshot requires a tqhnsw index, got relation \"{relation_name}\""
+        );
+    }
+    index_relation
+}
+
 pub fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
     let s = s.trim();
     if !s.starts_with('[') {
@@ -257,6 +284,41 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
     // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current receive call.
     unsafe { recv_tqvector_message(msg) }
         .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_admin_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(total_live_nodes, i64),
+        name!(inserted_since_rebuild, Option<i64>),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(planner_scan_enabled, bool),
+    ),
+> {
+    let index_relation = unsafe { open_valid_tqhnsw_index(index_oid) };
+    let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        i64::try_from(snapshot.total_live_nodes).expect("live node count should fit into i64"),
+        snapshot
+            .inserted_since_rebuild
+            .map(|count| i64::try_from(count).expect("insert drift count should fit into i64")),
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.planner_scan_enabled,
+    ))
 }
 
 fn encode_embedding_to_tqvector(
@@ -647,6 +709,105 @@ mod tests {
         assert!(
             !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
             "planner should not use tqhnsw for scans before scan callbacks exist: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_reports_tuning_and_counts() {
+        Spi::run("CREATE TABLE tqhnsw_admin_snapshot (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_idx ON tqhnsw_admin_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 111)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 7").expect("session override should succeed");
+
+        let block_count = Spi::get_one::<i64>(
+            "SELECT block_count FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let total_live_nodes = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let inserted_since_rebuild = Spi::get_one::<i64>(
+            "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed");
+        let relation_ef_search = Spi::get_one::<i32>(
+            "SELECT relation_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let session_ef_search = Spi::get_one::<i32>(
+            "SELECT session_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_ef_search = Spi::get_one::<i32>(
+            "SELECT effective_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let effective_source = Spi::get_one::<String>(
+            "SELECT effective_source FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+        let planner_scan_enabled = Spi::get_one::<bool>(
+            "SELECT planner_scan_enabled FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("snapshot should return one row");
+
+        assert!(
+            block_count >= 1,
+            "snapshot should report at least the metadata block"
+        );
+        assert_eq!(
+            total_live_nodes, 3,
+            "snapshot should report live element count"
+        );
+        assert_eq!(
+            inserted_since_rebuild, None,
+            "insert-drift stats should remain explicitly unavailable until tracked"
+        );
+        assert_eq!(relation_ef_search, 111);
+        assert_eq!(session_ef_search, 7);
+        assert_eq!(effective_ef_search, 7);
+        assert_eq!(effective_source, "session");
+        assert!(
+            !planner_scan_enabled,
+            "admin snapshot should report the current planner gate state"
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_admin_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_wrong_am_idx ON tqhnsw_admin_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
         );
     }
 

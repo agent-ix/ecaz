@@ -26,6 +26,8 @@ Implementation stages:
 - Current planner groundwork MAY resolve scan tuning (`ef_search`, source-of-truth, planner gate)
   before ordered execution is enabled, as long as the access method still returns prohibitive
   planner costs per ADR-011.
+- Current planner groundwork MAY also expose read-only SQL/admin snapshot state for effective
+  tuning and planner gate status before EXPLAIN or planner-visible scan selection are enabled.
 
 ### `ambeginscan`
 

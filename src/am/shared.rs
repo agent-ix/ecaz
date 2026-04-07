@@ -2,10 +2,7 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use super::{page, wal, P_NEW};
-
-#[cfg(any(test, feature = "pg_test"))]
-use super::{options, TQHNSW_PLANNER_SCAN_ENABLED};
+use super::{options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
 
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
@@ -264,6 +261,41 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     metadata
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IndexAdminSnapshot {
+    pub block_count: u32,
+    pub total_live_nodes: usize,
+    pub inserted_since_rebuild: Option<usize>,
+    pub relation_ef_search: i32,
+    pub session_ef_search: Option<i32>,
+    pub effective_ef_search: i32,
+    pub effective_source: &'static str,
+    pub planner_scan_enabled: bool,
+}
+
+pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
+    IndexAdminSnapshot {
+        block_count: unsafe {
+            pg_sys::RelationGetNumberOfBlocksInFork(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            )
+        },
+        total_live_nodes: unsafe { count_element_tuples(index_relation) },
+        inserted_since_rebuild: None,
+        relation_ef_search: tuning.relation_ef_search,
+        session_ef_search: tuning.session_ef_search,
+        effective_ef_search: tuning.effective_ef_search,
+        effective_source: match tuning.source {
+            options::EfSearchSource::Relation => "relation",
+            options::EfSearchSource::Session => "session",
+        },
+        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DebugPlannerTuningSnapshot {
@@ -276,17 +308,13 @@ pub(crate) struct DebugPlannerTuningSnapshot {
 
 #[cfg(any(test, feature = "pg_test"))]
 fn planner_tuning_snapshot(index_relation: pg_sys::Relation) -> DebugPlannerTuningSnapshot {
-    let relation_options = unsafe { options::relation_options(index_relation) };
-    let tuning = options::resolve_scan_tuning(&relation_options);
+    let snapshot = unsafe { index_admin_snapshot(index_relation) };
     DebugPlannerTuningSnapshot {
-        relation_ef_search: tuning.relation_ef_search,
-        session_ef_search: tuning.session_ef_search,
-        effective_ef_search: tuning.effective_ef_search,
-        effective_source: match tuning.source {
-            options::EfSearchSource::Relation => "relation",
-            options::EfSearchSource::Session => "session",
-        },
-        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+        relation_ef_search: snapshot.relation_ef_search,
+        session_ef_search: snapshot.session_ef_search,
+        effective_ef_search: snapshot.effective_ef_search,
+        effective_source: snapshot.effective_source,
+        planner_scan_enabled: snapshot.planner_scan_enabled,
     }
 }
 
