@@ -153,7 +153,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
-            if materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque) {
+            if !opaque.bootstrap_phase_complete
+                && materialize_next_bootstrap_frontier_result((*scan).indexRelation, opaque)
+            {
                 if let Some(heap_tid) = take_pending_scan_heap_tid(opaque) {
                     set_scan_heap_tid(scan, heap_tid);
                     set_scan_orderby_score(scan, opaque.current_result.score());
@@ -257,6 +259,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.scan_exhausted = false;
+    opaque.bootstrap_phase_complete = false;
     opaque.pending_heaptid_count = 0;
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
@@ -301,6 +304,13 @@ fn clear_scan_result_state(opaque: &mut TqScanOpaque) {
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     visible_frontier_mut(opaque).clear();
+}
+
+fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
+    opaque.bootstrap_phase_complete = true;
+    clear_scan_candidate_state(opaque);
+    reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
+    reset_scan_expanded_state(opaque);
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -827,7 +837,7 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     // SAFETY: the helper invokes these closures sequentially, never concurrently, so the
     // temporary mutable borrows of `opaque` do not alias.
-    materialize_next_bootstrap_candidate_with_refill(
+    let materialized = materialize_next_bootstrap_candidate_with_refill(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
         |candidate| unsafe {
             materialize_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
@@ -841,7 +851,11 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
                 },
             );
         },
-    )
+    );
+    if !materialized {
+        complete_bootstrap_phase(opaque);
+    }
+    materialized
 }
 
 fn collect_successor_candidates<F>(
@@ -889,7 +903,7 @@ unsafe fn next_linear_scan_heap_tid(
 
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         opaque.scan_exhausted = true;
-        clear_scan_candidate_state(opaque);
+        complete_bootstrap_phase(opaque);
         clear_scan_result_state(opaque);
         return None;
     }
@@ -971,7 +985,7 @@ unsafe fn next_linear_scan_heap_tid(
     }
 
     opaque.scan_exhausted = true;
-    clear_scan_candidate_state(opaque);
+    complete_bootstrap_phase(opaque);
     clear_scan_result_state(opaque);
     None
 }
@@ -1115,6 +1129,7 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) scan_exhausted: bool,
+    pub(super) bootstrap_phase_complete: bool,
     pub(super) pending_heaptids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
     pub(super) pending_heaptid_count: u8,
     pub(super) pending_heaptid_index: u8,
@@ -1143,6 +1158,7 @@ impl Default for TqScanOpaque {
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             scan_exhausted: false,
+            bootstrap_phase_complete: false,
             pending_heaptids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
             pending_heaptid_count: 0,
             pending_heaptid_index: 0,
@@ -1255,6 +1271,51 @@ mod tests {
             refilled_after,
             vec![candidate_b.node],
             "bootstrap refill should only run for the candidate that actually materialized"
+        );
+    }
+
+    #[test]
+    fn complete_bootstrap_phase_clears_frontier_scheduler_and_expanded_state() {
+        let mut opaque = TqScanOpaque::default();
+        visible_frontier_mut(&mut opaque).push(beam_candidate(24, 1, -3.0));
+        visible_frontier_mut(&mut opaque).push(beam_candidate(24, 2, -2.0));
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        reset_scan_expanded_state(&mut opaque);
+        seed_existing_frontier_into_expansion(&mut opaque);
+        mark_expanded_source(&mut opaque, tid(24, 1));
+
+        complete_bootstrap_phase(&mut opaque);
+
+        assert!(
+            opaque.bootstrap_phase_complete,
+            "bootstrap completion should be recorded explicitly in scan-owned state"
+        );
+        assert!(
+            visible_frontier_candidates(&opaque).is_empty(),
+            "completing bootstrap should clear any leftover visible frontier candidates"
+        );
+        assert!(
+            bootstrap_expansion_mut(&mut opaque).peek_best().is_none(),
+            "completing bootstrap should clear the scan-owned scheduler too"
+        );
+        assert!(
+            !expanded_contains_source(&opaque, tid(24, 1)),
+            "completing bootstrap should reset expanded-source bookkeeping for the next rescan"
+        );
+    }
+
+    #[test]
+    fn reset_scan_position_clears_bootstrap_phase_complete_flag() {
+        let mut opaque = TqScanOpaque {
+            bootstrap_phase_complete: true,
+            ..TqScanOpaque::default()
+        };
+
+        reset_scan_position(&mut opaque);
+
+        assert!(
+            !opaque.bootstrap_phase_complete,
+            "amrescan/reset should allow bootstrap traversal to run again after prior bootstrap completion"
         );
     }
 
