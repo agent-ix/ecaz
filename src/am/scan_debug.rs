@@ -799,18 +799,18 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let before_complete = opaque.bootstrap_phase_complete;
+    let before_complete = !opaque.execution_phase.is_bootstrap();
 
-    while !opaque.bootstrap_phase_complete
+    while opaque.execution_phase.is_bootstrap()
         && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
     {}
 
-    if !opaque.bootstrap_phase_complete {
+    if opaque.execution_phase.is_bootstrap() {
         let _ = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     }
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let after_complete = opaque.bootstrap_phase_complete;
+    let after_complete = !opaque.execution_phase.is_bootstrap();
     let after_head = current_candidate_frontier_head_tid(opaque).map(debug_item_pointer_coords);
     let after_frontier = debug_candidate_frontier_slots(opaque);
 
@@ -821,7 +821,7 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let rescanned_complete = opaque.bootstrap_phase_complete;
+    let rescanned_complete = !opaque.execution_phase.is_bootstrap();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };

@@ -257,8 +257,7 @@ fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
-    opaque.scan_exhausted = false;
-    opaque.bootstrap_phase_complete = false;
+    opaque.execution_phase = ScanExecutionPhase::Bootstrap;
     opaque.pending_heaptid_count = 0;
     opaque.pending_heaptid_index = 0;
     clear_scan_candidate_state(opaque);
@@ -316,10 +315,15 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
 }
 
 fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
-    opaque.bootstrap_phase_complete = true;
+    opaque.execution_phase = ScanExecutionPhase::Linear;
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
+}
+
+fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
+    complete_bootstrap_phase(opaque);
+    opaque.execution_phase = ScanExecutionPhase::Exhausted;
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -848,7 +852,10 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if opaque.pending_heaptid_count != 0 || opaque.scan_exhausted || opaque.scan_dimensions == 0 {
+    if opaque.pending_heaptid_count != 0
+        || !opaque.execution_phase.is_bootstrap()
+        || opaque.scan_dimensions == 0
+    {
         return false;
     }
 
@@ -882,10 +889,14 @@ unsafe fn materialize_next_scan_result(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if !opaque.bootstrap_phase_complete
+    if opaque.execution_phase.is_bootstrap()
         && unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
     {
         return true;
+    }
+
+    if opaque.execution_phase.is_exhausted() {
+        return false;
     }
 
     unsafe { materialize_next_linear_scan_result(index_relation, heap_relation, opaque, code_len) }
@@ -926,13 +937,12 @@ unsafe fn materialize_next_linear_scan_result(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if opaque.scan_exhausted {
+    if opaque.execution_phase.is_exhausted() {
         return false;
     }
 
     if opaque.scan_block_count <= page::FIRST_DATA_BLOCK_NUMBER {
-        opaque.scan_exhausted = true;
-        complete_bootstrap_phase(opaque);
+        mark_scan_exhausted(opaque);
         clear_scan_result_state(opaque);
         return false;
     }
@@ -1012,8 +1022,7 @@ unsafe fn materialize_next_linear_scan_result(
         opaque.next_offset_number = 1;
     }
 
-    opaque.scan_exhausted = true;
-    complete_bootstrap_phase(opaque);
+    mark_scan_exhausted(opaque);
     clear_scan_result_state(opaque);
     false
 }
@@ -1135,6 +1144,25 @@ impl Default for CurrentScanResult {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) enum ScanExecutionPhase {
+    #[default]
+    Bootstrap,
+    Linear,
+    Exhausted,
+}
+
+impl ScanExecutionPhase {
+    pub(super) fn is_bootstrap(self) -> bool {
+        matches!(self, Self::Bootstrap)
+    }
+
+    pub(super) fn is_exhausted(self) -> bool {
+        matches!(self, Self::Exhausted)
+    }
+}
+
+#[repr(C)]
 #[derive(Debug)]
 pub(super) struct TqScanOpaque {
     pub(super) rescan_called: bool,
@@ -1156,8 +1184,7 @@ pub(super) struct TqScanOpaque {
     pub(super) current_result: CurrentScanResult,
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
-    pub(super) scan_exhausted: bool,
-    pub(super) bootstrap_phase_complete: bool,
+    pub(super) execution_phase: ScanExecutionPhase,
     pub(super) pending_heaptids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
     pub(super) pending_heaptid_count: u8,
     pub(super) pending_heaptid_index: u8,
@@ -1185,8 +1212,7 @@ impl Default for TqScanOpaque {
             current_result: CurrentScanResult::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
-            scan_exhausted: false,
-            bootstrap_phase_complete: false,
+            execution_phase: ScanExecutionPhase::Bootstrap,
             pending_heaptids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
             pending_heaptid_count: 0,
             pending_heaptid_index: 0,
@@ -1315,8 +1341,8 @@ mod tests {
         complete_bootstrap_phase(&mut opaque);
 
         assert!(
-            opaque.bootstrap_phase_complete,
-            "bootstrap completion should be recorded explicitly in scan-owned state"
+            opaque.execution_phase == ScanExecutionPhase::Linear,
+            "bootstrap completion should transition the scan into its linear phase explicitly"
         );
         assert!(
             visible_frontier_candidates(&opaque).is_empty(),
@@ -1333,17 +1359,17 @@ mod tests {
     }
 
     #[test]
-    fn reset_scan_position_clears_bootstrap_phase_complete_flag() {
+    fn reset_scan_position_restores_bootstrap_execution_phase() {
         let mut opaque = TqScanOpaque {
-            bootstrap_phase_complete: true,
+            execution_phase: ScanExecutionPhase::Linear,
             ..TqScanOpaque::default()
         };
 
         reset_scan_position(&mut opaque);
 
         assert!(
-            !opaque.bootstrap_phase_complete,
-            "amrescan/reset should allow bootstrap traversal to run again after prior bootstrap completion"
+            opaque.execution_phase == ScanExecutionPhase::Bootstrap,
+            "amrescan/reset should allow bootstrap traversal to run again after prior linear-phase scans"
         );
     }
 
