@@ -26,9 +26,9 @@ Current staged behavior:
 - Until PostgreSQL 18 support exists in the build/toolchain surface, staged planner-cost helpers
   MAY source `tree_height` from metadata-page `max_level` explicitly and report that this is a
   metadata fallback rather than a live `amgettreeheight` callback result.
-- The staged implementation MAY also define a pure helper that returns the exact integer
-  `amgettreeheight` callback value (`max_level`) from metadata without wiring the PG18 callback
-  into `IndexAmRoutine` yet.
+- The staged implementation MAY also define a pure `amgettreeheight`-named helper that returns the
+  exact integer callback value (`max_level`) from metadata without wiring the PG18 callback into
+  `IndexAmRoutine` yet.
 
 ### Cost Model
 

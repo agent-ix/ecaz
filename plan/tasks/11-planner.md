@@ -12,14 +12,17 @@ Progress notes:
 - The cost snapshot now also reports that its current tree-height input comes from a
   `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
   activation boundary explicit without pretending PG18 support already exists.
-- `src/am/cost.rs` now also defines a pure `metadata_tree_height_callback_value(...)` helper so
-  the eventual PG18 `amgettreeheight` callback contract is explicit without wiring the callback
-  into `IndexAmRoutine` yet.
+- `src/am/cost.rs` now also defines a pure `amgettreeheight_callback_value(...)` helper so the
+  eventual PG18 `amgettreeheight` callback contract is explicit under PG callback-aligned naming
+  without wiring the callback into `IndexAmRoutine` yet.
 - The explain snapshot now also exposes the intended PG18 strategy-translation target
   (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
   actually grows PG18 toolchain support.
 - `src/am/cost.rs` now also models the broader `CompareType` domain explicitly so the reverse
   mapping back to strategy 1 is pure code, unit-tested, and only accepts `COMPARE_LT`.
+- The pure strategy-translation helpers in `src/am/cost.rs` now also use PG callback-aligned names
+  (`amtranslatestrategy_callback(...)`, `amtranslatecmptype_callback(...)`) so the D1 seam already
+  matches the eventual binding vocabulary.
 - The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
   keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
   actually exists in the repository.

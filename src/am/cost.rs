@@ -97,18 +97,18 @@ pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightI
     }
 }
 
-pub(crate) fn metadata_tree_height_callback_value(max_level: u8) -> i32 {
+pub(crate) fn amgettreeheight_callback_value(max_level: u8) -> i32 {
     i32::from(max_level)
 }
 
-pub(crate) fn strategy_to_compare_type(strategy: i32) -> PlannerCompareType {
+pub(crate) fn amtranslatestrategy_callback(strategy: i32) -> PlannerCompareType {
     match strategy {
         1 => PlannerCompareType::Lt,
         _ => PlannerCompareType::Invalid,
     }
 }
 
-pub(crate) fn compare_type_to_strategy(compare_type: PlannerCompareType) -> i32 {
+pub(crate) fn amtranslatecmptype_callback(compare_type: PlannerCompareType) -> i32 {
     match compare_type {
         PlannerCompareType::Lt => 1,
         PlannerCompareType::Invalid
@@ -125,7 +125,7 @@ pub(crate) fn compare_type_to_strategy(compare_type: PlannerCompareType) -> i32 
 pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
     StrategyTranslationSnapshot {
         ordering_strategy: 1,
-        ordering_compare_type: strategy_to_compare_type(1),
+        ordering_compare_type: amtranslatestrategy_callback(1),
         pg18_callback_ready: false,
     }
 }
@@ -202,11 +202,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 #[cfg(test)]
 mod tests {
     use super::{
-        compare_type_to_strategy, estimate_planner_cost, metadata_fallback_tree_height,
-        metadata_tree_height_callback_value, strategy_to_compare_type,
-        strategy_translation_snapshot, PlannerCompareType, PlannerCostConstants,
-        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
-        StrategyTranslationSnapshot,
+        amgettreeheight_callback_value, amtranslatecmptype_callback, amtranslatestrategy_callback,
+        estimate_planner_cost, metadata_fallback_tree_height, strategy_translation_snapshot,
+        PlannerCompareType, PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs,
+        PlannerTreeHeightInput, StrategyTranslationSnapshot,
     };
 
     fn default_constants() -> PlannerCostConstants {
@@ -350,30 +349,33 @@ mod tests {
 
     #[test]
     fn tree_height_callback_value_returns_metadata_max_level() {
-        assert_eq!(metadata_tree_height_callback_value(0), 0);
-        assert_eq!(metadata_tree_height_callback_value(4), 4);
-        assert_eq!(metadata_tree_height_callback_value(u8::MAX), i32::from(u8::MAX));
+        assert_eq!(amgettreeheight_callback_value(0), 0);
+        assert_eq!(amgettreeheight_callback_value(4), 4);
+        assert_eq!(amgettreeheight_callback_value(u8::MAX), i32::from(u8::MAX));
     }
 
     #[test]
     fn strategy_translation_maps_ordering_strategy_to_compare_lt() {
-        assert_eq!(strategy_to_compare_type(1), PlannerCompareType::Lt);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Lt), 1);
+        assert_eq!(amtranslatestrategy_callback(1), PlannerCompareType::Lt);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Lt), 1);
     }
 
     #[test]
     fn strategy_translation_rejects_invalid_inputs() {
-        assert_eq!(strategy_to_compare_type(0), PlannerCompareType::Invalid);
-        assert_eq!(strategy_to_compare_type(99), PlannerCompareType::Invalid);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Invalid), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Le), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Eq), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Ge), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Gt), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Ne), 0);
-        assert_eq!(compare_type_to_strategy(PlannerCompareType::Overlap), 0);
+        assert_eq!(amtranslatestrategy_callback(0), PlannerCompareType::Invalid);
         assert_eq!(
-            compare_type_to_strategy(PlannerCompareType::ContainedBy),
+            amtranslatestrategy_callback(99),
+            PlannerCompareType::Invalid
+        );
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Invalid), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Le), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Eq), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Ge), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Gt), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Ne), 0);
+        assert_eq!(amtranslatecmptype_callback(PlannerCompareType::Overlap), 0);
+        assert_eq!(
+            amtranslatecmptype_callback(PlannerCompareType::ContainedBy),
             0
         );
     }
