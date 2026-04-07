@@ -762,18 +762,35 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     Some(consumed)
 }
 
+unsafe fn select_scan_candidate_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) -> Option<SelectedScanResult> {
+    let element =
+        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
+    if element.deleted || element.heaptids.is_empty() {
+        return None;
+    }
+
+    Some(SelectedScanResult {
+        element_tid: candidate.node,
+        score: candidate.score,
+        heap_tids: element.heaptids,
+    })
+}
+
 pub(super) unsafe fn materialize_scan_candidate_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     candidate: search::BeamCandidate<page::ItemPointer>,
 ) -> bool {
-    let element =
-        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
-    if element.deleted || element.heaptids.is_empty() {
+    let Some(selected) = (unsafe { select_scan_candidate_result(index_relation, opaque, candidate) })
+    else {
         return false;
-    }
+    };
 
-    materialize_scored_scan_result(opaque, candidate.node, candidate.score, &element.heaptids);
+    materialize_selected_scan_result(opaque, selected);
     true
 }
 
@@ -872,7 +889,13 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     let materialized = materialize_next_bootstrap_candidate_with_refill(
         || consume_candidate_frontier_head(unsafe { &mut *opaque_ptr }),
         |candidate| unsafe {
-            materialize_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+            let Some(selected) =
+                select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
+            else {
+                return false;
+            };
+            materialize_selected_scan_result(&mut *opaque_ptr, selected);
+            true
         },
         |candidate| {
             refill_bootstrap_frontier_after_consume(
