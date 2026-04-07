@@ -24,6 +24,10 @@ Current staged behavior:
 - The staged implementation MAY also define a reusable counter struct in planner-owned code so the
   scan lane can embed it in `TqScanOpaque` later without requiring the planner lane to edit
   `scan.rs` directly.
+- The staged implementation MAY also define pure ExplainProperty-emission helpers that map the
+  reusable counter struct into the eventual `ExplainPropertyInteger` / `ExplainPropertyBool`
+  payloads and a pure gating helper that requires both the `tqvector` option and the `tqhnsw`
+  access method before any emission occurs.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
@@ -136,7 +140,8 @@ When `tqvector` is not specified in the EXPLAIN options, the hook SHALL return i
 On PG17, the custom EXPLAIN API does not exist. During the current staged implementation, the
 counter contract may be exposed through read-only scaffolding helpers, but the actual counter
 fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
-embedding by the scan lane, and no EXPLAIN hook is registered.
+embedding by the scan lane, pure ExplainProperty-emission helpers may exist in `am/explain.rs`,
+and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 

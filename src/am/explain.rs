@@ -12,6 +12,18 @@ pub(crate) struct ExplainCounterDefinition {
     pub increments_when: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExplainPropertyValue {
+    Integer(u32),
+    Bool(bool),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ExplainProperty {
+    pub property_name: &'static str,
+    pub value: ExplainPropertyValue,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TqExplainCounters {
     pub stats_bootstrap_expansions: u32,
@@ -73,6 +85,13 @@ pub(crate) fn explain_counter_definitions() -> &'static [ExplainCounterDefinitio
     &EXPLAIN_COUNTER_DEFINITIONS
 }
 
+pub(crate) fn should_emit_explain_properties(
+    explain_option_enabled: bool,
+    access_method_name: &str,
+) -> bool {
+    explain_option_enabled && access_method_name == "tqhnsw"
+}
+
 impl TqExplainCounters {
     pub(crate) fn record_bootstrap_expansion(&mut self) {
         self.stats_bootstrap_expansions += 1;
@@ -105,13 +124,47 @@ impl TqExplainCounters {
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
+
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 7] {
+        [
+            ExplainProperty {
+                property_name: "Bootstrap Expansions",
+                value: ExplainPropertyValue::Integer(self.stats_bootstrap_expansions),
+            },
+            ExplainProperty {
+                property_name: "Bootstrap Pages Read",
+                value: ExplainPropertyValue::Integer(self.stats_bootstrap_pages_read),
+            },
+            ExplainProperty {
+                property_name: "Linear Pages Read",
+                value: ExplainPropertyValue::Integer(self.stats_linear_pages_read),
+            },
+            ExplainProperty {
+                property_name: "Elements Scored",
+                value: ExplainPropertyValue::Integer(self.stats_elements_scored),
+            },
+            ExplainProperty {
+                property_name: "Elements Skipped",
+                value: ExplainPropertyValue::Integer(self.stats_elements_skipped),
+            },
+            ExplainProperty {
+                property_name: "Heap TIDs Returned",
+                value: ExplainPropertyValue::Integer(self.stats_heap_tids_returned),
+            },
+            ExplainProperty {
+                property_name: "Quantizer Cache Hit",
+                value: ExplainPropertyValue::Bool(self.stats_quantizer_cache_hit),
+            },
+        ]
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        explain_counter_definitions, explain_option_snapshot, ExplainCounterDefinition,
-        ExplainOptionSnapshot, TqExplainCounters,
+        explain_counter_definitions, explain_option_snapshot, should_emit_explain_properties,
+        ExplainCounterDefinition, ExplainOptionSnapshot, ExplainProperty, ExplainPropertyValue,
+        TqExplainCounters,
     };
 
     #[test]
@@ -211,5 +264,59 @@ mod tests {
         counters.reset();
 
         assert_eq!(counters, TqExplainCounters::default());
+    }
+
+    #[test]
+    fn explain_properties_render_the_current_counter_values() {
+        let counters = TqExplainCounters {
+            stats_bootstrap_expansions: 2,
+            stats_bootstrap_pages_read: 3,
+            stats_linear_pages_read: 5,
+            stats_elements_scored: 7,
+            stats_elements_skipped: 11,
+            stats_heap_tids_returned: 13,
+            stats_quantizer_cache_hit: true,
+        };
+
+        assert_eq!(
+            counters.explain_properties(),
+            [
+                ExplainProperty {
+                    property_name: "Bootstrap Expansions",
+                    value: ExplainPropertyValue::Integer(2),
+                },
+                ExplainProperty {
+                    property_name: "Bootstrap Pages Read",
+                    value: ExplainPropertyValue::Integer(3),
+                },
+                ExplainProperty {
+                    property_name: "Linear Pages Read",
+                    value: ExplainPropertyValue::Integer(5),
+                },
+                ExplainProperty {
+                    property_name: "Elements Scored",
+                    value: ExplainPropertyValue::Integer(7),
+                },
+                ExplainProperty {
+                    property_name: "Elements Skipped",
+                    value: ExplainPropertyValue::Integer(11),
+                },
+                ExplainProperty {
+                    property_name: "Heap TIDs Returned",
+                    value: ExplainPropertyValue::Integer(13),
+                },
+                ExplainProperty {
+                    property_name: "Quantizer Cache Hit",
+                    value: ExplainPropertyValue::Bool(true),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn explain_property_emission_requires_both_option_and_tqhnsw_access_method() {
+        assert!(should_emit_explain_properties(true, "tqhnsw"));
+        assert!(!should_emit_explain_properties(false, "tqhnsw"));
+        assert!(!should_emit_explain_properties(true, "btree"));
     }
 }

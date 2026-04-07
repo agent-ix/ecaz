@@ -29,6 +29,9 @@ Progress notes:
 - `src/am/explain.rs` now also defines a reusable `TqExplainCounters` struct with pure
   record/reset helpers so the scan lane can embed it in `TqScanOpaque` later without planner-lane
   edits to `scan.rs`.
+- `src/am/explain.rs` now also defines pure ExplainProperty-emission helpers plus a pure emission
+  gate that only allows output when both the `tqvector` option and the `tqhnsw` access method are
+  present, giving the future PG18 hook a concrete D1 contract without adding more SQL surfaces.
 - A read-only `tqhnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
   function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
   PostgreSQL 18 support actually exists in the repository.
@@ -61,7 +64,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 - [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. A pure callback-value helper now exists in `am/cost.rs`; the PG18 `IndexAmRoutine` binding is still pending.
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. The pure mapping now models non-`LT` compare types explicitly in `am/cost.rs`; the PG18 callback binding is still pending.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
-- [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
+- [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`. The pure property-emission and gating helpers now exist; only the actual PG18 hook registration/binding is still pending.
 - [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. Pure callback-signature helpers and state-carrier types now exist in `am/stream.rs`; actual PG18 callback bindings are still pending.
 - [x] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.
 
