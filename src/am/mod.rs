@@ -58,6 +58,10 @@ pub(crate) fn pg18_upgrade_snapshot() -> shared::Pg18UpgradeSnapshot {
     shared::pg18_upgrade_snapshot()
 }
 
+pub(crate) fn pg18_diagnostics_snapshot() -> shared::Pg18DiagnosticsSnapshot {
+    shared::pg18_diagnostics_snapshot()
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{

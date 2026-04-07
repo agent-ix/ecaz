@@ -18,6 +18,8 @@ Current staged behavior:
 - Before PostgreSQL 18 support exists in this repository, pure statistics-scaffolding helpers MAY
   expose the intended SQL function name and report that both pgstat-kind registration and SQL
   function wiring remain unavailable.
+- Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
+  state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `tqvector_stats()` exists on
   PG17 or that any counters are being accumulated through PostgreSQL's statistics system.
 

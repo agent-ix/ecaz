@@ -18,6 +18,8 @@ Current staged behavior:
 - Before the pgrx/toolchain upgrade lands, read-only upgrade snapshot helpers MAY report the
   current default feature, whether a `pg18` Cargo feature exists, and whether PG18 default-build
   readiness is still pending.
+- Read-only diagnostics snapshot helpers MAY also report consolidated EXPLAIN/pgstat readiness so
+  the broader PG18 productization boundary is queryable before toolchain work lands.
 - Those helpers SHALL stay descriptive only; they do not imply that PG18 builds, tests, or default
   feature selection already work.
 

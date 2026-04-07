@@ -330,6 +330,16 @@ pub(crate) struct Pg18UpgradeSnapshot {
     pub single_extension_identity: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pg18DiagnosticsSnapshot {
+    pub explain_option_name: &'static str,
+    pub stats_function_name: &'static str,
+    pub pg18_custom_explain_option_ready: bool,
+    pub pg18_explain_per_node_hook_ready: bool,
+    pub pg18_pgstat_kind_ready: bool,
+    pub pg18_stats_sql_function_ready: bool,
+}
+
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
@@ -445,6 +455,19 @@ pub(crate) fn pg18_upgrade_snapshot() -> Pg18UpgradeSnapshot {
         pg18_default_build_ready: false,
         pg18_module_magic_ext_ready: false,
         single_extension_identity: true,
+    }
+}
+
+pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
+    let explain = super::explain::explain_option_snapshot();
+    let stats = super::stats::stats_snapshot();
+    Pg18DiagnosticsSnapshot {
+        explain_option_name: explain.option_name,
+        stats_function_name: stats.function_name,
+        pg18_custom_explain_option_ready: explain.pg18_custom_explain_option_ready,
+        pg18_explain_per_node_hook_ready: explain.pg18_explain_per_node_hook_ready,
+        pg18_pgstat_kind_ready: stats.pg18_pgstat_kind_ready,
+        pg18_stats_sql_function_ready: stats.pg18_sql_function_ready,
     }
 }
 

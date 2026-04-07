@@ -477,6 +477,30 @@ fn tqhnsw_pg18_upgrade_snapshot() -> TableIterator<
     ))
 }
 
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_pg18_diagnostics_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(explain_option_name, String),
+        name!(stats_function_name, String),
+        name!(pg18_custom_explain_option_ready, bool),
+        name!(pg18_explain_per_node_hook_ready, bool),
+        name!(pg18_pgstat_kind_ready, bool),
+        name!(pg18_stats_sql_function_ready, bool),
+    ),
+> {
+    let snapshot = am::pg18_diagnostics_snapshot();
+    TableIterator::once((
+        snapshot.explain_option_name.to_owned(),
+        snapshot.stats_function_name.to_owned(),
+        snapshot.pg18_custom_explain_option_ready,
+        snapshot.pg18_explain_per_node_hook_ready,
+        snapshot.pg18_pgstat_kind_ready,
+        snapshot.pg18_stats_sql_function_ready,
+    ))
+}
+
 fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
@@ -1403,6 +1427,54 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("single identity flag should be non-null")
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pg18_diagnostics_snapshot_reports_current_boundary() {
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT explain_option_name FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("explain option name should be non-null"),
+            "tqvector"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT stats_function_name FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("stats function name should be non-null"),
+            "tqvector_stats"
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_custom_explain_option_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("custom explain readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_explain_per_node_hook_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("explain hook readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_pgstat_kind_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("pgstat readiness should be non-null")
+        );
+        assert!(
+            !Spi::get_one::<bool>(
+                "SELECT pg18_stats_sql_function_ready FROM tqhnsw_pg18_diagnostics_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("stats sql readiness should be non-null")
         );
     }
 

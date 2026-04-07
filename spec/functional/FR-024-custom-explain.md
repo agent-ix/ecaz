@@ -19,6 +19,8 @@ Current staged behavior:
 - Before PostgreSQL 18 support exists in this repository, pure explain-scaffolding helpers MAY
   expose the intended EXPLAIN option name and report that both option registration and
   `explain_per_node_hook` wiring remain unavailable.
+- Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
+  state together so productization work can inspect one consolidated PG18 diagnostics boundary.
 - Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
   that any PostgreSQL EXPLAIN hook is registered on PG17.
 
