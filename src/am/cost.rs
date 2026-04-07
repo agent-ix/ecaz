@@ -83,6 +83,10 @@ pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightI
     }
 }
 
+pub(crate) fn metadata_tree_height_callback_value(max_level: u8) -> i32 {
+    i32::from(max_level)
+}
+
 pub(crate) fn strategy_to_compare_type(strategy: i32) -> PlannerCompareType {
     match strategy {
         1 => PlannerCompareType::Lt,
@@ -178,8 +182,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 mod tests {
     use super::{
         compare_type_to_strategy, estimate_planner_cost, metadata_fallback_tree_height,
-        strategy_to_compare_type, strategy_translation_snapshot, PlannerCompareType,
-        PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
+        metadata_tree_height_callback_value, strategy_to_compare_type,
+        strategy_translation_snapshot, PlannerCompareType, PlannerCostConstants,
+        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
         StrategyTranslationSnapshot,
     };
 
@@ -320,6 +325,13 @@ mod tests {
                 pg18_callback_ready: false,
             }
         );
+    }
+
+    #[test]
+    fn tree_height_callback_value_returns_metadata_max_level() {
+        assert_eq!(metadata_tree_height_callback_value(0), 0);
+        assert_eq!(metadata_tree_height_callback_value(4), 4);
+        assert_eq!(metadata_tree_height_callback_value(u8::MAX), i32::from(u8::MAX));
     }
 
     #[test]

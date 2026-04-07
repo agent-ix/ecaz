@@ -12,6 +12,9 @@ Progress notes:
 - The cost snapshot now also reports that its current tree-height input comes from a
   `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
   activation boundary explicit without pretending PG18 support already exists.
+- `src/am/cost.rs` now also defines a pure `metadata_tree_height_callback_value(...)` helper so
+  the eventual PG18 `amgettreeheight` callback contract is explicit without wiring the callback
+  into `IndexAmRoutine` yet.
 - The explain snapshot now also exposes the intended PG18 strategy-translation target
   (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
   actually grows PG18 toolchain support.
@@ -53,7 +56,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 ### D1: Planner Scaffolding (parallel-ready, no gate dependency)
 
 - [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
-- [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. PG18 feature-gated. Place in `am/cost.rs`.
+- [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. A pure callback-value helper now exists in `am/cost.rs`; the PG18 `IndexAmRoutine` binding is still pending.
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. PG18 feature-gated. Place in `am/cost.rs`.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
 - [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`.
