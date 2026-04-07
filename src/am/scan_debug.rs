@@ -78,6 +78,17 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
+    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
+        return Vec::new();
+    }
+
+    let query =
+        unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
+    query.to_vec()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_candidate_frontier_slots(opaque: &TqScanOpaque) -> DebugCandidateFrontierSlots {
     visible_frontier_candidates(opaque)
         .into_iter()
@@ -223,7 +234,7 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
-        read_scan_query(opaque),
+        debug_scan_query(opaque),
         opaque.scan_dimensions,
         opaque.scan_bits,
         opaque.scan_code_len,
@@ -275,7 +286,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
     let result = (
         opaque.rescan_called,
         opaque.query_dimensions,
-        read_scan_query(opaque),
+        debug_scan_query(opaque),
         opaque.scan_dimensions,
         opaque.scan_bits,
         opaque.scan_code_len,

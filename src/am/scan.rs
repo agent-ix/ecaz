@@ -1063,18 +1063,6 @@ fn clear_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
     }
 }
 
-#[cfg(any(test, feature = "pg_test"))]
-pub(super) unsafe fn read_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
-    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        return Vec::new();
-    }
-
-    let query = unsafe {
-        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
-    };
-    query.to_vec()
-}
-
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CurrentScanResult {
