@@ -112,12 +112,50 @@ where
     )
 }
 
+pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> search::BeamTrace<page::ItemPointer>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    run_layer0_beam_search_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates(
+            index_relation,
+            source_tid,
+            code_len,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
 fn valid_layer0_neighbor_tids(neighbor_tids: &[page::ItemPointer]) -> Vec<page::ItemPointer> {
     neighbor_tids
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .collect()
+}
+
+fn run_layer0_beam_search_with_successors<SeedIter, SuccessorFn>(
+    ef_search: usize,
+    seeds: SeedIter,
+    mut successors: SuccessorFn,
+) -> search::BeamTrace<page::ItemPointer>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    SuccessorFn: FnMut(page::ItemPointer) -> Vec<search::BeamCandidate<page::ItemPointer>>,
+{
+    let mut search = search::BeamSearch::new(ef_search);
+    search.seed_many(seeds);
+    search.run(|candidate| successors(candidate.node))
 }
 
 fn layer0_successor_candidates_from_elements<I, F>(
@@ -261,6 +299,53 @@ mod tests {
             candidates,
             vec![search::BeamCandidate::with_source(keep_tid, 0.25, source_tid)],
             "layer-0 successor loading should keep only live neighbors with heap tids",
+        );
+    }
+
+    #[test]
+    fn run_layer0_beam_search_with_successors_expands_best_first() {
+        let seed_tid = tid(1, 1);
+        let left_tid = tid(1, 2);
+        let right_tid = tid(1, 3);
+        let left_best_tid = tid(1, 4);
+        let right_best_tid = tid(1, 5);
+
+        let trace = run_layer0_beam_search_with_successors(
+            4,
+            [search::BeamCandidate::new(seed_tid, 0.9)],
+            |source_tid| {
+                if source_tid == seed_tid {
+                    vec![
+                        search::BeamCandidate::with_source(left_tid, 0.3, seed_tid),
+                        search::BeamCandidate::with_source(right_tid, 0.1, seed_tid),
+                    ]
+                } else if source_tid == right_tid {
+                    vec![search::BeamCandidate::with_source(right_best_tid, 0.05, right_tid)]
+                } else if source_tid == left_tid {
+                    vec![search::BeamCandidate::with_source(left_best_tid, 0.2, left_tid)]
+                } else {
+                    Vec::new()
+                }
+            },
+        );
+
+        assert_eq!(
+            trace
+                .expanded
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![seed_tid, right_tid, right_best_tid, left_tid],
+            "layer-0 beam traversal should expand the best discovered successor first",
+        );
+        assert_eq!(
+            trace
+                .frontier
+                .iter()
+                .map(|candidate| candidate.node)
+                .collect::<Vec<_>>(),
+            vec![left_best_tid],
+            "remaining frontier should preserve best-first order after the expansion budget",
         );
     }
 }
