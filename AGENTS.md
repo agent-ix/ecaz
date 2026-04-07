@@ -4,13 +4,37 @@ This repository uses a review-packet workflow in addition to normal code changes
 
 ## Review Packet Rules
 
-- Treat `review/README.md` as the source of truth for which review requests are open.
-- At the start of a turn, read `review/README.md` first, then read only the currently open review request files named there.
-- If new outside-review feedback is present for an open request, process that feedback before starting new implementation work.
-- Store back-and-forth feedback files under `review/feedback/<request-slug>/`, with each response as its own dated reviewer document.
-- Do not close review requests yourself. You may add self-review notes or follow-up comments, but leave requests open until an outside reviewer has responded.
-- Do not re-triage closed review files unless an outside reviewer reopens them.
-- Keep external review bundles under `review/external/`.
+See `review/README.md` for full structure and conventions.
+
+### Structure
+
+Each review topic is a directory under `review/`:
+
+    review/{NN}-{topic}/
+      request.md
+      feedback/
+        {YYYY-MM-DD}-{seq}-{agent}.md
+
+### Agents and Number Ranges
+
+| Name     | Role     | Range       | Area                |
+|----------|----------|-------------|---------------------|
+| coder1   | coder    | 1–9999      | core scan/build/index |
+| coder2   | coder    | 10000–19999 | planner integration |
+| reviewer | reviewer | —           | reviews any topic   |
+
+### Feedback Files
+
+- Filename: `{YYYY-MM-DD}-{seq}-{agent}.md`
+- Every feedback file must include frontmatter with `agent`, `role`, `model`, `date`, and `seq` fields.
+- Any agent can leave feedback on any topic.
+
+### Workflow
+
+- At the start of a turn, scan `review/` for topics with new feedback files you haven't processed.
+- If new feedback is present for a topic you own, process it before starting new implementation work.
+- Do not close review requests yourself. Leave requests open until an outside reviewer has responded.
+- Do not re-triage closed review topics unless an outside reviewer reopens them.
 
 ## Checkpoint Rules
 
