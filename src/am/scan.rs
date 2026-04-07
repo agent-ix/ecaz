@@ -773,9 +773,18 @@ pub(super) unsafe fn materialize_scan_candidate_result(
         return false;
     }
 
-    set_current_scan_result(opaque, candidate.node, candidate.score);
-    store_pending_scan_heaptids(opaque, &element.heaptids);
+    materialize_scored_scan_result(opaque, candidate.node, candidate.score, &element.heaptids);
     true
+}
+
+fn materialize_scored_scan_result(
+    opaque: &mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    score: f32,
+    heap_tids: &[page::ItemPointer],
+) {
+    set_current_scan_result(opaque, element_tid, score);
+    store_pending_scan_heaptids(opaque, heap_tids);
 }
 
 fn refill_bootstrap_frontier_after_consume<F>(
@@ -988,13 +997,12 @@ unsafe fn materialize_next_linear_scan_result(
             if emitted_contains_element(opaque, element_tid) {
                 continue;
             }
-            set_current_scan_result(
+            materialize_scored_scan_result(
                 opaque,
                 element_tid,
                 score_scan_element_result(opaque, element.gamma, &element.code),
+                &element.heaptids,
             );
-
-            store_pending_scan_heaptids(opaque, &element.heaptids);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return true;
         }
@@ -1375,6 +1383,43 @@ mod tests {
         assert_eq!(
             opaque.pending_heaptid_index, 0,
             "draining all queued heap tids should reset the pending index too"
+        );
+    }
+
+    #[test]
+    fn materialize_scored_scan_result_seeds_current_result_and_pending_drain() {
+        let mut opaque = TqScanOpaque::default();
+
+        materialize_scored_scan_result(
+            &mut opaque,
+            tid(26, 1),
+            -4.5,
+            &[tid(31, 1), tid(31, 2)],
+        );
+
+        assert_eq!(
+            opaque.current_result.element_tid(),
+            tid(26, 1),
+            "shared result materialization should record the element tid on current-result state"
+        );
+        assert_eq!(
+            opaque.current_result.score(),
+            -4.5,
+            "shared result materialization should preserve the supplied score"
+        );
+        assert_eq!(
+            opaque.pending_heaptid_count, 2,
+            "shared result materialization should seed pending duplicate drain"
+        );
+        assert_eq!(
+            opaque.pending_heaptids[0],
+            tid(31, 1),
+            "shared result materialization should preserve heap-tid order for later drain"
+        );
+        assert_eq!(
+            opaque.pending_heaptids[1],
+            tid(31, 2),
+            "shared result materialization should retain all supplied heap tids"
         );
     }
 
