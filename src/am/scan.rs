@@ -594,16 +594,68 @@ unsafe fn initialize_scan_entry_candidate(
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
-    seed_discovered_candidates(opaque, [search::BeamCandidate::new(entry.tid, entry_score)]);
+    let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
+    let bootstrap_limit = bootstrap_frontier_limit(opaque);
 
+    if bootstrap_limit > 1 {
+        let trace = unsafe {
+            graph::run_layer0_beam_search(
+                index_relation,
+                opaque.scan_code_len,
+                1,
+                [entry_candidate],
+                |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
+                |neighbor| Some(score_scan_element_result(opaque, neighbor.gamma, &neighbor.code)),
+            )
+        };
+        seed_bootstrap_trace(opaque, bootstrap_limit, trace);
+        top_up_bootstrap_frontier(
+            opaque,
+            bootstrap_limit,
+            BootstrapExpandPolicy::ScoreOrder,
+            |source_tid, opaque| unsafe {
+                refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
+            },
+        );
+        return;
+    }
+
+    seed_discovered_candidates(opaque, [entry_candidate]);
     fill_bootstrap_frontier(
         opaque,
-        bootstrap_frontier_limit(opaque),
+        bootstrap_limit,
         BootstrapExpandPolicy::ScoreOrder,
         |source_tid, opaque| unsafe {
             refill_candidate_frontier_from_source(index_relation, opaque, source_tid);
         },
     );
+}
+
+fn seed_bootstrap_trace(
+    opaque: &mut TqScanOpaque,
+    max_candidates: usize,
+    trace: search::BeamTrace<page::ItemPointer>,
+) {
+    reset_bootstrap_expansion_state(opaque, max_candidates);
+    reset_scan_expanded_state(opaque);
+
+    let visible_candidates = trace
+        .discovered
+        .into_iter()
+        .take(max_candidates)
+        .collect::<Vec<_>>();
+    seed_discovered_candidates(opaque, visible_candidates.iter().copied());
+
+    let visible_nodes = visible_candidates
+        .iter()
+        .map(|candidate| candidate.node)
+        .collect::<HashSet<_>>();
+    for expanded in trace.expanded {
+        if visible_nodes.contains(&expanded.node) {
+            mark_expanded_source(opaque, expanded.node);
+            bootstrap_expansion_mut(opaque).forget_queued(expanded.node);
+        }
+    }
 }
 
 fn seed_discovered_candidates(
