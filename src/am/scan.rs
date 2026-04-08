@@ -370,6 +370,106 @@ fn linear_fallback_cursor(opaque: &mut TqScanOpaque) -> LinearFallbackCursor<'_>
     LinearFallbackCursor::new(&mut opaque.fallback_result_state)
 }
 
+struct GraphTraversalPrefetchContext {
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+}
+
+impl GraphTraversalPrefetchContext {
+    fn new(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) -> Self {
+        Self {
+            index_relation,
+            opaque: opaque as *mut TqScanOpaque,
+        }
+    }
+
+    unsafe fn run(
+        &mut self,
+        visible_frontier: &mut VisibleCandidateFrontierState,
+        expansion: &mut search::BeamSearch<page::ItemPointer>,
+    ) -> bool {
+        let context_ptr = self as *mut Self;
+        visible_frontier
+            .select_next_with_refill(
+                expansion,
+                |candidate| unsafe { (*context_ptr).materialize_candidate(candidate) },
+                |node| unsafe { (*context_ptr).source_is_expanded(node) },
+                |node| unsafe { (*context_ptr).mark_source_expanded(node) },
+                |source_tid, visible_frontier, expansion| unsafe {
+                    (*context_ptr).refill_from_source(
+                        visible_frontier,
+                        expansion,
+                        source_tid,
+                    );
+                },
+                |visible_frontier, expansion| unsafe {
+                    (*context_ptr).top_up_from_visible(visible_frontier, expansion);
+                },
+            )
+            .is_some()
+    }
+
+    unsafe fn materialize_candidate(
+        &mut self,
+        candidate: search::BeamCandidate<page::ItemPointer>,
+    ) -> Option<()> {
+        let opaque = unsafe { &mut *self.opaque };
+        let element =
+            unsafe { graph::load_graph_element(self.index_relation, candidate.node, opaque.scan_code_len) };
+        if element.deleted || element.heaptids.is_empty() {
+            return None;
+        }
+
+        mark_emitted_element(opaque, candidate.node);
+        graph_traversal_cursor(opaque).materialize(SelectedScanResult {
+            element_tid: candidate.node,
+            score: candidate.score,
+            heap_tids: element.heaptids,
+        });
+        Some(())
+    }
+
+    unsafe fn source_is_expanded(&self, node: page::ItemPointer) -> bool {
+        unsafe { expanded_contains_source(&*self.opaque, node) }
+    }
+
+    unsafe fn mark_source_expanded(&mut self, node: page::ItemPointer) {
+        unsafe { mark_expanded_source(&mut *self.opaque, node) };
+    }
+
+    unsafe fn refill_from_source(
+        &mut self,
+        visible_frontier: &mut VisibleCandidateFrontierState,
+        expansion: &mut search::BeamSearch<page::ItemPointer>,
+        source_tid: page::ItemPointer,
+    ) {
+        unsafe {
+            refill_candidate_frontier_from_source_into(
+                self.index_relation,
+                &mut *self.opaque,
+                visible_frontier,
+                expansion,
+                source_tid,
+            )
+        };
+    }
+
+    unsafe fn top_up_from_visible(
+        &mut self,
+        visible_frontier: &mut VisibleCandidateFrontierState,
+        expansion: &mut search::BeamSearch<page::ItemPointer>,
+    ) {
+        unsafe {
+            top_up_bootstrap_frontier_from_visible_seeds_into(
+                self.index_relation,
+                &mut *self.opaque,
+                visible_frontier,
+                expansion,
+            )
+        };
+    }
+}
+
 pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState {
     if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
         &opaque.fallback_result_state
@@ -971,56 +1071,12 @@ pub(super) unsafe fn prefetch_next_graph_traversal_result(
         return false;
     }
 
-    let opaque_ptr = opaque as *mut TqScanOpaque;
-    // SAFETY: `candidate_frontier` and `bootstrap_expansion` remain separate Box-backed heap
-    // allocations, and graph result materialization only mutates `result_state`, which is a
-    // disjoint field from those heap-backed traversal structures.
+    let mut context = GraphTraversalPrefetchContext::new(index_relation, opaque);
+    // SAFETY: the context only reaches `TqScanOpaque` through a raw pointer, and the packaged
+    // operations mutate disjoint scan fields from the Box-backed frontier/scheduler pair.
     let materialized = with_visible_frontier_mut_and_bootstrap_expansion(
-        unsafe { &mut *opaque_ptr },
-        |visible_frontier, expansion| unsafe {
-            visible_frontier
-                .select_next_with_refill(
-                    expansion,
-                    |candidate| {
-                        let element = graph::load_graph_element(
-                            index_relation,
-                            candidate.node,
-                            (&*opaque_ptr).scan_code_len,
-                        );
-                        if element.deleted || element.heaptids.is_empty() {
-                            return None;
-                        }
-
-                        mark_emitted_element(&mut *opaque_ptr, candidate.node);
-                        graph_traversal_cursor(&mut *opaque_ptr).materialize(SelectedScanResult {
-                            element_tid: candidate.node,
-                            score: candidate.score,
-                            heap_tids: element.heaptids,
-                        });
-                        Some(())
-                    },
-                    |node| expanded_contains_source(&*opaque_ptr, node),
-                    |node| mark_expanded_source(&mut *opaque_ptr, node),
-                    |source_tid, visible_frontier, expansion| {
-                        refill_candidate_frontier_from_source_into(
-                            index_relation,
-                            &mut *opaque_ptr,
-                            visible_frontier,
-                            expansion,
-                            source_tid,
-                        );
-                    },
-                    |visible_frontier, expansion| {
-                        top_up_bootstrap_frontier_from_visible_seeds_into(
-                            index_relation,
-                            &mut *opaque_ptr,
-                            visible_frontier,
-                            expansion,
-                        );
-                    },
-                )
-                .is_some()
-        },
+        opaque,
+        |visible_frontier, expansion| unsafe { context.run(visible_frontier, expansion) },
     );
 
     if !materialized {
