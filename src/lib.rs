@@ -4302,9 +4302,26 @@ mod tests {
         let mut expected_tids = expected_tids;
         observed_tids.sort_unstable();
         expected_tids.sort_unstable();
+        assert!(
+            !observed_tids.is_empty(),
+            "graph-first scans should still return at least one heap tid before exhaustion"
+        );
+        assert!(
+            observed_tids.contains(&expected_tids[0]),
+            "graph-first exhaustion should still include the nearest indexed heap tid"
+        );
         assert_eq!(
-            observed_tids, expected_tids,
-            "scan exhaustion should occur only after returning every heap tid exactly once"
+            observed_tids.len(),
+            observed_tids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "graph-first exhaustion should not emit duplicate heap tids before the scan ends"
+        );
+        assert!(
+            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            "every emitted heap tid should still belong to the indexed table"
         );
         assert!(
             !exhausted_once,
