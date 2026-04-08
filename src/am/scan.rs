@@ -265,18 +265,6 @@ struct PendingScanOutput {
     score: f32,
 }
 
-fn emit_pending_linear_fallback_heap_tid(
-    scan: pg_sys::IndexScanDesc,
-    opaque: &mut TqScanOpaque,
-) -> bool {
-    if let Some(output) = linear_fallback_cursor(opaque).take_pending_output() {
-        emit_scan_output(scan, output);
-        return true;
-    }
-
-    false
-}
-
 struct GraphTraversalCursor<'a> {
     result_state: &'a mut ScanResultState,
 }
@@ -309,6 +297,15 @@ impl<'a> GraphTraversalCursor<'a> {
     fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
         self.result_state.take_pending_output()
     }
+
+    fn emit_prefetched_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+        self.take_pending_output()
+            .map(|output| {
+                emit_scan_output(scan, output);
+                true
+            })
+            .unwrap_or(false)
+    }
 }
 
 fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_> {
@@ -332,10 +329,36 @@ impl<'a> LinearFallbackCursor<'a> {
         self.result_state.take_pending_output()
     }
 
+    fn emit_pending_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+        self.take_pending_output()
+            .map(|output| {
+                emit_scan_output(scan, output);
+                true
+            })
+            .unwrap_or(false)
+    }
+
     fn advance_after_emit(&mut self) {
         if self.result_state.pending_count() == 0 {
             self.result_state.clear_current();
         }
+    }
+
+    fn emit_materialized_output(
+        &mut self,
+        scan: pg_sys::IndexScanDesc,
+        selected: SelectedScanResult,
+    ) -> bool {
+        self.materialize(selected);
+        let emitted = self.emit_pending_output(scan);
+        debug_assert!(
+            emitted,
+            "linear fallback result materialization should seed pending heap tids before returning true"
+        );
+        if emitted {
+            self.advance_after_emit();
+        }
+        emitted
     }
 }
 
@@ -1047,21 +1070,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
-    emit_prefetched_graph_traversal_result(scan, index_relation, opaque)
-}
-
-fn emit_prefetched_graph_traversal_result(
-    scan: pg_sys::IndexScanDesc,
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) -> bool {
-    let emitted = graph_traversal_cursor(opaque)
-        .take_pending_output()
-        .map(|output| {
-            emit_scan_output(scan, output);
-            true
-        })
-        .unwrap_or(false);
+    let emitted = graph_traversal_cursor(opaque).emit_prefetched_output(scan);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
@@ -1078,7 +1087,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if emit_pending_linear_fallback_heap_tid(scan, opaque) {
+    if linear_fallback_cursor(opaque).emit_pending_output(scan) {
         linear_fallback_cursor(opaque).advance_after_emit();
         return true;
     }
@@ -1088,25 +1097,8 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return false;
     };
 
-    emit_materialized_linear_fallback_result(scan, opaque, selected)
-}
-
-fn emit_materialized_linear_fallback_result(
-    scan: pg_sys::IndexScanDesc,
-    opaque: &mut TqScanOpaque,
-    selected: SelectedScanResult,
-) -> bool {
     mark_emitted_element(opaque, selected.element_tid);
-    linear_fallback_cursor(opaque).materialize(selected);
-    let emitted = emit_pending_linear_fallback_heap_tid(scan, opaque);
-    debug_assert!(
-        emitted,
-        "linear fallback result materialization should seed pending heap tids before returning true"
-    );
-    if emitted {
-        linear_fallback_cursor(opaque).advance_after_emit();
-    }
-    emitted
+    linear_fallback_cursor(opaque).emit_materialized_output(scan, selected)
 }
 
 unsafe fn select_next_linear_scan_result(
