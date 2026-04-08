@@ -77,6 +77,11 @@ pub fn orthonormal_fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
+    if values.len() == 1024 {
+        unsafe { fwht_in_place_avx2_two_level(values, 512, 256) };
+        return;
+    }
+
     if values.len() == 2048 {
         unsafe { fwht_in_place_avx2_two_level(values, 1024, 256) };
         return;
