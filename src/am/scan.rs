@@ -315,6 +315,16 @@ fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: 
     prefill_graph_traversal_result(index_relation, opaque);
 }
 
+fn advance_linear_fallback_after_emit(opaque: &mut TqScanOpaque) {
+    if opaque.execution_phase != ScanExecutionPhase::LinearFallback
+        || opaque.result_state.pending_count() != 0
+    {
+        return;
+    }
+
+    opaque.result_state.clear_current();
+}
+
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     visible_frontier_mut(opaque).clear();
 }
@@ -969,6 +979,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     code_len: usize,
 ) -> bool {
     if emit_pending_scan_heap_tid(scan, opaque) {
+        advance_linear_fallback_after_emit(opaque);
         return true;
     }
 
@@ -983,6 +994,9 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         emitted,
         "linear fallback result materialization should seed pending heap tids before returning true"
     );
+    if emitted {
+        advance_linear_fallback_after_emit(opaque);
+    }
     emitted
 }
 
@@ -1656,6 +1670,68 @@ mod tests {
             exhausted,
             None,
             "pending output should report exhaustion once the duplicate drain is complete"
+        );
+    }
+
+    #[test]
+    fn advance_linear_fallback_after_emit_keeps_current_result_until_last_duplicate() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current(tid(26, 1), -4.0);
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let first = opaque.result_state.take_pending_output();
+        advance_linear_fallback_after_emit(&mut opaque);
+
+        assert_eq!(
+            first,
+            Some(PendingScanOutput {
+                heap_tid: tid(31, 1),
+                score: -4.0,
+            }),
+            "linear fallback duplicate drain should still emit the first queued heap tid"
+        );
+        assert!(
+            opaque.result_state.current().has_element(),
+            "linear fallback should keep the current result populated while duplicate drain still remains"
+        );
+        assert_eq!(
+            opaque.result_state.current().heap_tid(),
+            tid(31, 1),
+            "linear fallback should keep heap progress aligned with the last emitted duplicate"
+        );
+    }
+
+    #[test]
+    fn advance_linear_fallback_after_emit_clears_current_result_after_last_duplicate() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current(tid(27, 1), -5.0);
+        opaque.result_state.store_pending(&[tid(32, 1)]);
+
+        let emitted = opaque.result_state.take_pending_output();
+        advance_linear_fallback_after_emit(&mut opaque);
+
+        assert_eq!(
+            emitted,
+            Some(PendingScanOutput {
+                heap_tid: tid(32, 1),
+                score: -5.0,
+            }),
+            "linear fallback should still emit the final queued heap tid before teardown"
+        );
+        assert!(
+            !opaque.result_state.current().has_element(),
+            "linear fallback should clear stale current-result state after the last duplicate drains"
+        );
+        assert_eq!(
+            opaque.result_state.pending_count(),
+            0,
+            "linear fallback teardown should only happen once duplicate drain is exhausted"
         );
     }
 
