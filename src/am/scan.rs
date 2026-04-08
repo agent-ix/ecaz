@@ -12,6 +12,7 @@ use super::search;
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 
+#[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BootstrapExpandPolicy {
     ScoreOrder,
@@ -591,6 +592,7 @@ fn seed_discovered_candidates(
     );
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     let candidates = visible_frontier_ref(opaque)
         .iter()
@@ -599,6 +601,7 @@ fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     bootstrap_expansion_mut(opaque).seed_many(candidates);
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn fill_bootstrap_frontier<F>(
     opaque: &mut TqScanOpaque,
     max_candidates: usize,
@@ -613,6 +616,7 @@ fn fill_bootstrap_frontier<F>(
     top_up_bootstrap_frontier(opaque, max_candidates, policy, refill);
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn top_up_bootstrap_frontier<F>(
     opaque: &mut TqScanOpaque,
     max_candidates: usize,
@@ -786,6 +790,7 @@ fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: Selecte
     opaque.result_state.materialize(selected);
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn refill_bootstrap_frontier_after_consume<F>(
     opaque: &mut TqScanOpaque,
     consumed: search::BeamCandidate<page::ItemPointer>,

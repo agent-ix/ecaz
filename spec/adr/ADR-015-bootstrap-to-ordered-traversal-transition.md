@@ -85,7 +85,7 @@ Update `amcostestimate` to return realistic costs based on `ef_search`, estimate
 fan-out, and index size. This enables the planner to choose tqhnsw when it's the most
 efficient path for ORDER BY ... LIMIT queries.
 
-## Open questions
+## Resolved questions
 
 ### Layer-aware traversal vs. layer-0-only
 
@@ -100,7 +100,10 @@ implementation should:
   `2M` / `M` slot formula. Better asymptotic behavior on large indexes.
 
 The initial ordered traversal SHALL be layer-0-only, with multi-layer greedy descent deferred to a
-follow-on optimization when recall or latency data on larger indexes shows it is necessary.
+follow-on optimization when recall or latency data on larger indexes shows it is necessary. The
+current merged graph-search scaffolding now follows that boundary: traversal helpers and bootstrap
+refill work operate only on layer-0 neighbor access, with no planner or scan code assuming
+multi-layer descent yet.
 
 ### ef_search default and bounds
 

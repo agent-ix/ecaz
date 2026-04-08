@@ -3,6 +3,11 @@
 Status: in progress
 
 Progress notes:
+- `planner-integration-lane` and `planner-part2` are now merged into `main`; D1 is substantially
+  complete while D2 remains correctly blocked on Task 05 / A4 (recall gate).
+- The `ef_search` control surface is fully wired for the current scaffolded runtime: reloption plus
+  session GUC precedence now resolves through `resolve_scan_tuning(...)`, including explicit
+  `SET tqhnsw.ef_search = 40` overrides.
 - ADR-011 still keeps live planner costing disabled in `amcostestimate`.
 - A pure FR-020 cost-model helper now exists in `src/am/cost.rs` with unit coverage for the large-
   table crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
@@ -80,6 +85,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 ### D1: Planner Scaffolding (parallel-ready, no gate dependency)
 
 - [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
+- [x] **Pure callback scaffolding.** `src/am/cost.rs`, `src/am/explain.rs`, and `src/am/stream.rs` now provide the pure callback/value helpers, signatures, counter structs, and gating contracts for the future PG18 bindings without wiring them into runtime execution yet.
 - [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. A pure callback-value helper now exists in `am/cost.rs`; the PG18 `IndexAmRoutine` binding is still pending.
 - [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. The pure mapping now models non-`LT` compare types explicitly in `am/cost.rs`; the PG18 callback binding is still pending.
 - [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
@@ -120,7 +126,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 - `am/explain.rs` — EXPLAIN hook and counter struct
 - `am/stats.rs` — custom statistics scaffolding
 - `am/stream.rs` — ReadStream callbacks
-- ADR-011 marked superseded
+- ADR-011 marked superseded (D2)
 
 ## Primary Tests
 
@@ -134,10 +140,11 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 ## File Ownership
 
 These files do NOT overlap with the graph search agent's `am/scan.rs` and `am/search.rs`:
-- `am/cost.rs` — planner agent owns
-- `am/explain.rs` — planner agent owns
-- `am/stats.rs` — planner agent owns
-- `am/stream.rs` — planner agent owns
+- `am/cost.rs` — planner agent owned, merged to `main`
+- `am/explain.rs` — planner agent owned, merged to `main`
+- `am/stats.rs` — planner agent owned, merged to `main`
+- `am/stream.rs` — planner agent owned, merged to `main`
+- `lib.rs` planner snapshot entry points — merged to `main` and later consolidated post-merge
 
 Coordination point: D2 wiring touches `am/scan.rs` (counter increments, ReadStream creation). This should happen AFTER the graph search agent completes A3/A4 and is no longer actively modifying scan.
 

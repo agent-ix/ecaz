@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-05 (benchmark infrastructure complete at `9f80e28`).
+Last updated: 2026-04-07 (planner scaffolding substantially complete; `planner-integration-lane` and `planner-part2` merged to `main`).
 
 ## Requirements Summary
 
@@ -130,9 +130,10 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 
 The extension is ~70% complete. All quantizer, type, scoring, page layout, and build code is done.
 The critical gap is FR-009 ordered graph traversal scan — without it, index queries don't work.
-Planner/config groundwork can progress in parallel, but planner-visible scans remain intentionally
-disabled behind ADR-011. Insert and vacuum also need graph traversal for neighbor selection and
-graph repair, making scan the single gating dependency.
+Planner/config groundwork is now substantially complete on `main`: the pure cost model, callback
+scaffolding, and `ef_search` control-surface wiring are merged, while planner-visible scans remain
+intentionally disabled behind ADR-011 and D2 remains blocked on A4. Insert and vacuum also need
+graph traversal for neighbor selection and graph repair, making scan the single gating dependency.
 
 ### Remaining Dependency Graph
 
@@ -304,11 +305,12 @@ Planner integration spans two phases: scaffolding that can start now, and wiring
   1. Cost model function computing startup/total cost from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples) — unit-testable without a running index
   2. `amgettreeheight` callback reading max_level from metadata page (PG18, feature-gated)
   3. `amtranslatestrategy` / `amtranslatecmptype` stubs returning `COMPARE_LT` for strategy 1 (PG18, feature-gated)
-  4. `TqScanOpaque` counter fields for custom EXPLAIN (stats_bootstrap_expansions, stats_pages_read, etc.)
+  4. `TqScanOpaque` counter struct contract for custom EXPLAIN (`TqExplainCounters`) plus pure output/gating helpers
   5. EXPLAIN hook skeleton that reads counters and emits ExplainProperty calls (PG18, feature-gated)
   6. ReadStream callback signatures for graph and linear streams (PG18, feature-gated, not yet wired into scan loop)
   7. Unit tests for cost model: planner selects index at 10K rows, prefers seqscan at 50 rows, handles edge cases (empty index, zero reltuples)
 - **File ownership:** `am/cost.rs` (cost model + amgettreeheight), `am/explain.rs` (EXPLAIN hook), `am/stream.rs` (async I/O). These files do not overlap with graph search agent's `am/scan.rs` and `am/search.rs`.
+- **Status:** substantially complete on `main` after merging `planner-integration-lane` and `planner-part2`; only D2 wiring remains blocked on A4.
 - **Exit criteria:** All scaffolding compiles, tests pass, but `amcostestimate` still returns `f64::MAX`. No functional change to query behavior.
 
 #### D2: Wire Planner (gated on A4 recall gate)
@@ -382,7 +384,7 @@ Agent 3 (SIMD / CI):
 | `08-simd.md` | B1 (SIMD acceleration) | not started, **can start now** |
 | `09-ci-and-safety.md` | B2 (CI pipeline, fuzz, audit) | mostly complete (unsafe audit remaining) |
 | `10-benchmarks.md` | C1 (full benchmark suite) | **infrastructure complete**, NFR runs blocked on 05 |
-| `11-planner.md` | D1 + D2 (planner integration) | not started, **D1 can start now**, D2 blocked on A4 |
+| `11-planner.md` | D1 + D2 (planner integration) | D1 substantially complete on `main`; D2 blocked on A4 |
 
 ---
 
