@@ -33,42 +33,10 @@ pub(crate) fn register_gucs() {
     options::register_gucs();
 }
 
-pub(crate) unsafe fn index_admin_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> shared::IndexAdminSnapshot {
-    unsafe { shared::index_admin_snapshot(index_relation) }
-}
-
-pub(crate) unsafe fn index_explain_snapshot(
-    index_relation: pgrx::pg_sys::Relation,
-) -> shared::IndexExplainSnapshot {
-    unsafe { shared::index_explain_snapshot(index_relation) }
-}
-
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::IndexCostSnapshot {
     unsafe { shared::index_cost_snapshot(index_relation) }
-}
-
-pub(crate) fn stats_snapshot() -> stats::StatsSnapshot {
-    stats::stats_snapshot()
-}
-
-pub(crate) fn explain_counter_snapshot() -> Vec<shared::ExplainCounterSnapshotRow> {
-    shared::explain_counter_snapshot()
-}
-
-pub(crate) fn stream_snapshot() -> shared::ReadStreamSnapshot {
-    shared::read_stream_snapshot()
-}
-
-pub(crate) fn pg18_upgrade_snapshot() -> shared::Pg18UpgradeSnapshot {
-    shared::pg18_upgrade_snapshot()
-}
-
-pub(crate) fn pg18_diagnostics_snapshot() -> shared::Pg18DiagnosticsSnapshot {
-    shared::pg18_diagnostics_snapshot()
 }
 
 pub(crate) unsafe fn planner_integration_snapshot(

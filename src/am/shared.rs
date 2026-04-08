@@ -319,18 +319,6 @@ pub(crate) struct IndexCostSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Pg18UpgradeSnapshot {
-    pub extension_name: &'static str,
-    pub cargo_package_version: &'static str,
-    pub module_pathname: &'static str,
-    pub cargo_default_feature: &'static str,
-    pub cargo_pg18_feature_defined: bool,
-    pub pg18_default_build_ready: bool,
-    pub pg18_module_magic_ext_ready: bool,
-    pub single_extension_identity: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Pg18DiagnosticsSnapshot {
     pub explain_option_name: &'static str,
     pub stats_function_name: &'static str,
@@ -338,15 +326,6 @@ pub(crate) struct Pg18DiagnosticsSnapshot {
     pub pg18_explain_per_node_hook_ready: bool,
     pub pg18_pgstat_kind_ready: bool,
     pub pg18_stats_sql_function_ready: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExplainCounterSnapshotRow {
-    pub counter_name: &'static str,
-    pub counter_type: &'static str,
-    pub increments_when: &'static str,
-    pub scan_opaque_storage_ready: bool,
-    pub runtime_wiring_ready: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -479,19 +458,6 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     }
 }
 
-pub(crate) fn pg18_upgrade_snapshot() -> Pg18UpgradeSnapshot {
-    Pg18UpgradeSnapshot {
-        extension_name: "tqvector",
-        cargo_package_version: env!("CARGO_PKG_VERSION"),
-        module_pathname: "$libdir/tqvector",
-        cargo_default_feature: "pg17",
-        cargo_pg18_feature_defined: false,
-        pg18_default_build_ready: false,
-        pg18_module_magic_ext_ready: false,
-        single_extension_identity: true,
-    }
-}
-
 pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
     let explain = super::explain::explain_option_snapshot();
     let stats = super::stats::stats_snapshot();
@@ -503,19 +469,6 @@ pub(crate) fn pg18_diagnostics_snapshot() -> Pg18DiagnosticsSnapshot {
         pg18_pgstat_kind_ready: stats.pg18_pgstat_kind_ready,
         pg18_stats_sql_function_ready: stats.pg18_sql_function_ready,
     }
-}
-
-pub(crate) fn explain_counter_snapshot() -> Vec<ExplainCounterSnapshotRow> {
-    super::explain::explain_counter_definitions()
-        .iter()
-        .map(|definition| ExplainCounterSnapshotRow {
-            counter_name: definition.counter_name,
-            counter_type: definition.counter_type,
-            increments_when: definition.increments_when,
-            scan_opaque_storage_ready: false,
-            runtime_wiring_ready: false,
-        })
-        .collect()
 }
 
 pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
