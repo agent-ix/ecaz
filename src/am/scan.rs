@@ -125,6 +125,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             );
             if !opaque.graph_traversal_seeded {
                 enter_linear_fallback_phase(opaque);
+            } else {
+                prefill_graph_traversal_result((*scan).indexRelation, opaque);
             }
         })
     }
@@ -292,6 +294,19 @@ unsafe fn produce_next_scan_heap_tid(
             produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
         },
         ScanExecutionPhase::Exhausted => false,
+    }
+}
+
+fn prefill_graph_traversal_result(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
+    if !opaque.execution_phase.is_graph_traversal()
+        || opaque.result_state.current().has_element()
+        || opaque.result_state.pending_count() != 0
+    {
+        return;
+    }
+
+    unsafe {
+        let _ = materialize_next_bootstrap_frontier_result(index_relation, opaque);
     }
 }
 

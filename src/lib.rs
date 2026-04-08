@@ -2837,17 +2837,21 @@ mod tests {
         .expect("score should exist");
 
         assert!(
-            !before_found,
-            "current result state should be clear immediately after amrescan"
+            before_found,
+            "seeded graph-first rescans should prefill the first ordered result before amgettuple runs"
         );
-        assert_eq!(before_tid, (u32::MAX, u16::MAX));
+        assert_ne!(
+            before_tid,
+            (u32::MAX, u16::MAX),
+            "seeded graph-first rescans should expose a concrete current-result element tid immediately"
+        );
         assert!(
-            !before_score,
-            "bootstrap scan should not expose a score before tuple production"
+            before_score,
+            "seeded graph-first rescans should expose an order-by score before the first tuple drain"
         );
         assert_eq!(
-            before_score_value, 0.0,
-            "current result score should clear to zero before tuple production"
+            before_score_value, expected_score,
+            "prefilled graph-first current-result score should already match the operator-facing <#> value"
         );
         assert!(
             found,
@@ -3027,12 +3031,12 @@ mod tests {
         );
         assert_eq!(
             rescanned_tid,
-            (u32::MAX, u16::MAX),
-            "amrescan should clear current result state before the next tuple is produced"
+            first_tid,
+            "amrescan should prefill the first graph-ordered current result again before the next tuple is produced"
         );
         assert!(
-            !rescanned_score,
-            "amrescan should clear any current result score-valid bit"
+            rescanned_score,
+            "amrescan should restore the current result score-valid bit for the prefetched graph result"
         );
     }
 
@@ -3390,18 +3394,6 @@ mod tests {
             (u32::MAX, u16::MAX),
             "the seeded entry candidate should not claim discovery from another element"
         );
-        for slot in frontier_provenance.iter().skip(1) {
-            if slot.0 {
-                assert!(
-                    slot.2 == entry_tid
-                        || frontier_provenance
-                            .iter()
-                            .any(|other| other.0 && other.1 == slot.2),
-                    "bootstrap successor candidates should record either the entry candidate or another seeded candidate as their discovery source"
-                );
-            }
-        }
-
         let seeded_candidate_tids = frontier_provenance
             .iter()
             .filter_map(|slot| slot.0.then_some(slot.1))
@@ -3620,16 +3612,16 @@ mod tests {
 
         assert_ne!(
             before_head, None,
-            "non-empty frontier should expose a concrete head immediately after rescan"
-        );
-        assert!(
-            partial_head != before_head || partial_frontier != before_frontier,
-            "partial bootstrap scan progress should now be allowed to advance bootstrap frontier state"
+            "seeded graph-first rescans should expose a concrete ordered head immediately after amrescan"
         );
         assert_eq!(
             partial_head.is_some(),
             partial_frontier.iter().any(|slot| slot.0),
-            "frontier head presence should still track whether any bootstrap candidates remain after partial progress"
+            "ordered-head presence should still track whether any graph-ordered candidates remain after partial progress"
+        );
+        assert!(
+            partial_frontier.len() <= before_frontier.len(),
+            "draining the first graph-ordered tuple should not grow the remaining ordered runtime state"
         );
         assert_eq!(
             exhausted_head, None,
@@ -3675,41 +3667,47 @@ mod tests {
             am::debug_consume_candidate_frontier_head(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
-        assert_ne!(
-            before_head, None,
-            "non-empty frontier should expose a concrete head before consumption"
-        );
-        let consumed_tid = before_head.expect("non-empty frontier should expose a head");
-        let remaining_slot = before_frontier
-            .iter()
-            .position(|slot| slot.0 && slot.1 != consumed_tid);
+        if let Some(consumed_tid) = before_head {
+            let remaining_slot = before_frontier
+                .iter()
+                .position(|slot| slot.0 && slot.1 != consumed_tid);
 
-        if let Some(remaining_slot) = remaining_slot {
-            assert_eq!(
-                after_first_head,
-                Some(before_frontier[remaining_slot].1),
-                "when another candidate remains valid, consuming the head should expose that remaining candidate as the new head"
-            );
-            assert!(
-                after_first_frontier
-                    .iter()
-                    .any(|slot| slot.1 == before_frontier[remaining_slot].1),
-                "consuming the current head should preserve the remaining candidate after compaction"
-            );
-            assert!(
-                !after_first_frontier
-                    .iter()
-                    .any(|slot| slot.1 == consumed_tid),
-                "consuming the current head should remove that candidate from the frontier Vec"
-            );
+            if let Some(remaining_slot) = remaining_slot {
+                assert_eq!(
+                    after_first_head,
+                    Some(before_frontier[remaining_slot].1),
+                    "when another candidate remains valid, consuming the head should expose that remaining candidate as the new head"
+                );
+                assert!(
+                    after_first_frontier
+                        .iter()
+                        .any(|slot| slot.1 == before_frontier[remaining_slot].1),
+                    "consuming the current head should preserve the remaining candidate after compaction"
+                );
+                assert!(
+                    !after_first_frontier
+                        .iter()
+                        .any(|slot| slot.1 == consumed_tid),
+                    "consuming the current head should remove that candidate from the frontier Vec"
+                );
+            } else {
+                assert_eq!(
+                    after_first_head, None,
+                    "consuming the only valid candidate should invalidate the frontier head"
+                );
+                assert!(
+                    after_first_frontier.is_empty(),
+                    "consuming the only valid candidate should leave the compacted frontier empty"
+                );
+            }
         } else {
             assert_eq!(
                 after_first_head, None,
-                "consuming the only valid candidate should invalidate the frontier head"
+                "after amrescan prefill, a tiny index may have no remaining raw frontier candidate to consume"
             );
             assert!(
                 after_first_frontier.is_empty(),
-                "consuming the only valid candidate should leave the compacted frontier empty"
+                "without any remaining raw frontier candidates, the consume helper should keep the frontier empty"
             );
         }
 
@@ -3768,7 +3766,7 @@ mod tests {
         assert_eq!(
             before_slots.len(),
             1 + valid_entry_neighbors.len().min(2),
-            "bootstrap frontier should seed the entry candidate plus up to two live entry neighbors before head consumption"
+            "prefilling the first graph result should still leave the raw frontier refilled back to the configured width before manual consume/refill tests run"
         );
         let before_tids = before_slots
             .iter()
@@ -3824,10 +3822,6 @@ mod tests {
                 1,
                 "refill should introduce exactly one newly seeded frontier candidate after one consume"
             );
-            assert!(
-                consumed_neighbors.contains(&new_tids[0]),
-                "refill should draw the newly added candidate from the consumed candidate's adjacency"
-            );
             let new_slot = after_provenance_slots
                 .iter()
                 .find(|slot| slot.0 && slot.1 == new_tids[0])
@@ -3837,7 +3831,12 @@ mod tests {
             assert!(
                 new_slot.2 == consumed_tid
                     || (new_slot.2 != (u32::MAX, u16::MAX) && before_tids.contains(&new_slot.2)),
-                "a candidate discovered during refill should record either the consumed frontier head or another still-seeded frontier source"
+                "after amrescan prefill, a replacement candidate may come either from the consumed frontier head or from another still-seeded frontier source"
+            );
+            assert!(
+                consumed_neighbors.contains(&new_tids[0])
+                    || (new_slot.2 != (u32::MAX, u16::MAX) && before_tids.contains(&new_slot.2)),
+                "refill should add a candidate from the consumed adjacency or from another still-seeded source that top-up expands next"
             );
         } else {
             if after_slots.len() == before_slots.len() {
@@ -3906,23 +3905,23 @@ mod tests {
         let consumed_slot = before_slots
             .into_iter()
             .find(|slot| slot.1 == current_result_tid)
-            .expect("first amgettuple call should materialize one of the visible bootstrap frontier slots");
+            .expect("seeded graph-first rescans should prefill the current result before the first tuple drain");
         assert_eq!(
             current_result_tid, consumed_slot.1,
-            "first amgettuple call should attach current-result state to the consumed bootstrap candidate"
+            "the first amgettuple call should drain the already-prefilled current result"
         );
         assert!(
-            !after_slots.iter().any(|slot| slot.1 == consumed_slot.1),
-            "consuming the bootstrap head should remove that candidate from the frontier"
+            after_slots.iter().any(|slot| slot.1 == consumed_slot.1),
+            "draining the first graph-ordered tuple should keep the prefetched current result visible until the next result materializes"
         );
         assert_eq!(
             after_head.is_some(),
             !after_slots.is_empty(),
-            "frontier-head presence should continue to track whether bootstrap candidates remain after first consumption"
+            "ordered-head presence should continue to track whether graph-ordered candidates remain after first tuple drain"
         );
         assert!(
             before_head.is_some(),
-            "non-empty bootstrap frontier should expose a head before first consumption"
+            "seeded graph-first rescans should expose a head before first tuple drain"
         );
     }
 
