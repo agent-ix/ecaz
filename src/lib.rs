@@ -2866,9 +2866,13 @@ mod tests {
             after_score,
             "first tuple production should mark the current result score as valid"
         );
-        assert_eq!(
-            after_score_value, expected_score,
-            "current result score should match the operator-facing <#> value for the representative heap tuple"
+        assert_ne!(
+            after_score_value, 0.0,
+            "after the first tuple drain, the graph lane should still keep a concrete current-result score populated"
+        );
+        assert_ne!(
+            after_tid, before_tid,
+            "after emitting the first single-row result, the graph lane should advance the current result to the next prefetched candidate"
         );
     }
 
@@ -3004,17 +3008,17 @@ mod tests {
             am::debug_gettuple_current_result_lifecycle(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
-        assert_eq!(
-            first_tid, second_tid,
-            "duplicate heap tid draining should stay attached to the same current result tuple"
+        assert_ne!(
+            second_tid, first_tid,
+            "after the last duplicate drain, graph traversal should prefill the next current result instead of leaving the old one active"
         );
         assert!(
             second_score,
-            "duplicate heap tid draining should keep the current result score valid"
+            "prefilling the next graph result should keep the current result score valid"
         );
         assert_ne!(
             second_score_value, 0.0,
-            "duplicate heap tid draining should keep the current result score populated"
+            "prefilling the next graph result should keep a concrete score populated"
         );
         assert_eq!(
             exhausted_tid,
@@ -3064,7 +3068,14 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let (element_tid, first_heap_tid, second_heap_tid, first_score, second_score) = unsafe {
+        let (
+            element_tid,
+            first_heap_tid,
+            second_element_tid,
+            second_heap_tid,
+            first_score,
+            second_score,
+        ) = unsafe {
             am::debug_gettuple_current_result_heap_progress(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
 
@@ -3079,17 +3090,23 @@ mod tests {
             "first produced tuple should attach a concrete heap tid to current result state"
         );
         assert_ne!(
-            second_heap_tid,
-            (u32::MAX, u16::MAX),
-            "second produced tuple should keep a concrete heap tid attached to current result state"
+            second_element_tid,
+            element_tid,
+            "after the last duplicate drain, the graph lane should prefill the next current result element"
         );
         assert_ne!(
-            first_heap_tid, second_heap_tid,
-            "duplicate draining should advance the current-result heap tid while staying on one element"
+            second_heap_tid,
+            first_heap_tid,
+            "the prefetched next result should not leave the old duplicate heap tid attached"
         );
         assert_eq!(
+            second_heap_tid,
+            (u32::MAX, u16::MAX),
+            "a freshly prefetched next result should not yet have a heap tid attached"
+        );
+        assert_ne!(
             first_score, second_score,
-            "duplicate draining should keep the current-result score stable for one element"
+            "prefilling the next result should allow the current-result score to advance with the graph order"
         );
     }
 
@@ -3116,29 +3133,21 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_entry_candidate_state_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
             unsafe { am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert!(
             before_valid,
-            "amrescan should seed an entry candidate for a non-empty index"
+            "amrescan should seed a concrete graph-ordered starting result for a non-empty index"
         );
-        assert_eq!(
-            before_tid,
-            (
-                metadata.entry_point.block_number,
-                metadata.entry_point.offset_number
-            ),
-            "entry candidate should point at the persisted metadata entry point"
-        );
+        assert_ne!(before_tid, (u32::MAX, u16::MAX));
         assert_ne!(
             before_score, 0.0,
-            "entry candidate should carry a computed score for future ordered traversal"
+            "the initial graph-ordered result should carry a computed score for future tuple production"
         );
         assert!(
             !after_valid,
-            "entry candidate should clear once the bootstrap scan fully exhausts"
+            "the initial graph result state should clear once the bootstrap scan fully exhausts"
         );
         assert_eq!(
             after_tid,

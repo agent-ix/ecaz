@@ -283,6 +283,7 @@ unsafe fn produce_next_scan_heap_tid(
     code_len: usize,
 ) -> bool {
     if emit_pending_scan_heap_tid(scan, opaque) {
+        advance_graph_traversal_after_emit(index_relation, opaque);
         return true;
     }
 
@@ -308,6 +309,15 @@ fn prefill_graph_traversal_result(index_relation: pg_sys::Relation, opaque: &mut
     unsafe {
         let _ = materialize_next_bootstrap_frontier_result(index_relation, opaque);
     }
+}
+
+fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
+    if !opaque.execution_phase.is_graph_traversal() || opaque.result_state.pending_count() != 0 {
+        return;
+    }
+
+    opaque.result_state.clear_current();
+    prefill_graph_traversal_result(index_relation, opaque);
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -953,6 +963,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         emitted,
         "graph traversal result materialization should seed pending heap tids before returning true"
     );
+    if emitted {
+        advance_graph_traversal_after_emit(index_relation, opaque);
+    }
     emitted
 }
 
@@ -1245,6 +1258,10 @@ impl ScanResultState {
 
     fn clear(&mut self) {
         self.clear_pending();
+        self.current = CurrentScanResult::default();
+    }
+
+    fn clear_current(&mut self) {
         self.current = CurrentScanResult::default();
     }
 

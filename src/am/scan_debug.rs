@@ -658,8 +658,16 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let (before_valid, before_tid, before_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+    let current = opaque.result_state.current();
+    let (before_valid, before_tid, before_score) = if current.has_element() {
+        (
+            true,
+            debug_item_pointer_coords(current.element_tid()),
+            current.score(),
+        )
+    } else {
+        debug_candidate_slot(visible_frontier_slot(opaque, 0))
+    };
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
@@ -1261,7 +1269,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (HeapTidCoords, HeapTidCoords, HeapTidCoords, f32, f32) {
+) -> (HeapTidCoords, HeapTidCoords, HeapTidCoords, HeapTidCoords, f32, f32) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1287,6 +1295,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let second_heap_tid = debug_item_pointer_coords(opaque.result_state.current().heap_tid());
+    let second_element_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
     let second_score = opaque.result_state.current().score();
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1295,6 +1304,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     (
         element_tid,
         first_heap_tid,
+        second_element_tid,
         second_heap_tid,
         first_score,
         second_score,
