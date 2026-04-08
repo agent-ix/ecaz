@@ -68,7 +68,7 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
 #[inline]
 fn avx2_fwht_tile_width(len: usize) -> usize {
     if len == 2048 {
-        1024
+        256
     } else if len >= 512 {
         512
     } else if len >= 256 {

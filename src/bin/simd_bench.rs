@@ -19,6 +19,7 @@ fn main() {
     println!("iterations={iterations}");
     println!("warmup_iterations={}", iterations.clamp(1, WARMUP_ITERATIONS));
 
+    run_fwht_bench(1_024, iterations);
     run_fwht_bench(2_048, iterations);
     run_fwht_bench(4_096, iterations / 2);
     run_score_ip_encoded_bench(1_536, 4, iterations);
