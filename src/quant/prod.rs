@@ -236,13 +236,7 @@ impl ProdQuantizer {
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
-        match backend() {
-            #[cfg(target_arch = "x86_64")]
-            SimdBackend::Avx2Fma => unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) },
-            #[cfg(target_arch = "aarch64")]
-            SimdBackend::Neon => unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) },
-            SimdBackend::Scalar => self.score_ip_mse_codes_scalar(mse_a, mse_b),
-        }
+        self.score_ip_mse_codes_scalar(mse_a, mse_b)
     }
 
     fn score_ip_mse_codes_scalar(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
@@ -326,16 +320,10 @@ impl ProdQuantizer {
 
         while dim_index + 8 <= self.original_dim {
             let mut mse_values = [0.0_f32; 8];
-            let mut sign_values = [-1.0_f32; 8];
-            for lane in 0..8 {
+            for (lane, mse_value) in mse_values.iter_mut().enumerate() {
                 let absolute = dim_index + lane;
                 let centroid_index = mse_index_at(mse_packed, absolute, bits_per_index) as usize;
-                mse_values[lane] = prepared.lut[absolute * num_centroids + centroid_index];
-                sign_values[lane] = if qjl_sign_at(qjl_packed, absolute) {
-                    1.0
-                } else {
-                    -1.0
-                };
+                *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
             }
 
             let mut qjl_terms = [0.0_f32; 8];
@@ -343,7 +331,7 @@ impl ProdQuantizer {
                 qjl_terms.as_mut_ptr(),
                 _mm256_mul_ps(
                     _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
-                    _mm256_loadu_ps(sign_values.as_ptr()),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
                 ),
             );
 
@@ -366,46 +354,6 @@ impl ProdQuantizer {
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx2,fma")]
-    unsafe fn score_ip_mse_codes_avx2(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
-        use std::arch::x86_64::{_mm256_loadu_ps, _mm256_mul_ps, _mm256_storeu_ps};
-
-        let bits_per_index = self.bits - 1;
-        let mut sum = 0.0_f32;
-        let mut dim_index = 0usize;
-
-        while dim_index + 8 <= self.original_dim {
-            let mut lhs = [0.0_f32; 8];
-            let mut rhs = [0.0_f32; 8];
-            for lane in 0..8 {
-                let absolute = dim_index + lane;
-                let idx_a = mse_index_at(mse_a, absolute, bits_per_index) as usize;
-                let idx_b = mse_index_at(mse_b, absolute, bits_per_index) as usize;
-                lhs[lane] = self.codebook[idx_a];
-                rhs[lane] = self.codebook[idx_b];
-            }
-
-            let mut products = [0.0_f32; 8];
-            _mm256_storeu_ps(
-                products.as_mut_ptr(),
-                _mm256_mul_ps(_mm256_loadu_ps(lhs.as_ptr()), _mm256_loadu_ps(rhs.as_ptr())),
-            );
-            for product in products {
-                sum += product;
-            }
-            dim_index += 8;
-        }
-
-        while dim_index < self.original_dim {
-            let idx_a = mse_index_at(mse_a, dim_index, bits_per_index) as usize;
-            let idx_b = mse_index_at(mse_b, dim_index, bits_per_index) as usize;
-            sum += self.codebook[idx_a] * self.codebook[idx_b];
-            dim_index += 1;
-        }
-        sum
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -427,24 +375,19 @@ impl ProdQuantizer {
 
         while dim_index + 4 <= self.original_dim {
             let mut mse_values = [0.0_f32; 4];
-            let mut signs = [0.0_f32; 4];
-            for lane in 0..4 {
+            for (lane, mse_value) in mse_values.iter_mut().enumerate() {
                 let absolute = dim_index + lane;
                 let centroid_index = mse_index_at(mse_packed, absolute, bits_per_index) as usize;
-                mse_values[lane] = prepared.lut[absolute * num_centroids + centroid_index];
-                signs[lane] = if qjl_sign_at(qjl_packed, absolute) {
-                    1.0
-                } else {
-                    -1.0
-                };
+                *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
             }
 
             let mut qjl_terms = [0.0_f32; 4];
+            let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
             vst1q_f32(
                 qjl_terms.as_mut_ptr(),
                 vmulq_f32(
                     vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
-                    vld1q_f32(signs.as_ptr()),
+                    vld1q_f32(sign_lanes.as_ptr()),
                 ),
             );
             for lane in 0..4 {
@@ -466,46 +409,6 @@ impl ProdQuantizer {
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
-    }
-
-    #[cfg(target_arch = "aarch64")]
-    #[target_feature(enable = "neon")]
-    unsafe fn score_ip_mse_codes_neon(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
-        use std::arch::aarch64::{vld1q_f32, vmulq_f32, vst1q_f32};
-
-        let bits_per_index = self.bits - 1;
-        let mut sum = 0.0_f32;
-        let mut dim_index = 0usize;
-
-        while dim_index + 4 <= self.original_dim {
-            let mut lhs = [0.0_f32; 4];
-            let mut rhs = [0.0_f32; 4];
-            for lane in 0..4 {
-                let absolute = dim_index + lane;
-                let idx_a = mse_index_at(mse_a, absolute, bits_per_index) as usize;
-                let idx_b = mse_index_at(mse_b, absolute, bits_per_index) as usize;
-                lhs[lane] = self.codebook[idx_a];
-                rhs[lane] = self.codebook[idx_b];
-            }
-
-            let mut products = [0.0_f32; 4];
-            vst1q_f32(
-                products.as_mut_ptr(),
-                vmulq_f32(vld1q_f32(lhs.as_ptr()), vld1q_f32(rhs.as_ptr())),
-            );
-            for product in products {
-                sum += product;
-            }
-            dim_index += 4;
-        }
-
-        while dim_index < self.original_dim {
-            let idx_a = mse_index_at(mse_a, dim_index, bits_per_index) as usize;
-            let idx_b = mse_index_at(mse_b, dim_index, bits_per_index) as usize;
-            sum += self.codebook[idx_a] * self.codebook[idx_b];
-            dim_index += 1;
-        }
-        sum
     }
 }
 
@@ -568,6 +471,25 @@ fn mse_index_at(packed: &[u8], dim_index: usize, bits_per_index: u8) -> CodeInde
 
 fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
     (packed[dim_index / 8] >> (dim_index % 8)) & 1 == 1
+}
+
+fn qjl_sign_lanes(byte: u8) -> &'static [f32; 8] {
+    static LUT: [[f32; 8]; 256] = build_qjl_sign_lut();
+    &LUT[byte as usize]
+}
+
+const fn build_qjl_sign_lut() -> [[f32; 8]; 256] {
+    let mut lut = [[0.0; 8]; 256];
+    let mut byte = 0usize;
+    while byte < 256 {
+        let mut lane = 0usize;
+        while lane < 8 {
+            lut[byte][lane] = if ((byte >> lane) & 1) == 1 { 1.0 } else { -1.0 };
+            lane += 1;
+        }
+        byte += 1;
+    }
+    lut
 }
 
 fn write_bits_le(buffer: &mut [u8], start_bit: usize, width: usize, value: u16) {

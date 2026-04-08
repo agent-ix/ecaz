@@ -32,5 +32,9 @@ pub mod qjl;
 pub mod rotation;
 mod simd;
 
+pub(crate) fn simd_backend_name() -> &'static str {
+    simd::backend_name()
+}
+
 /// Index into the MSE codebook. Max 2^16 = 65536 centroids (bits <= 16).
 pub type CodeIndex = u16;
