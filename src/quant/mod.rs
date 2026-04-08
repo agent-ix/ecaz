@@ -31,6 +31,7 @@ pub mod mse;
 pub mod prod;
 pub mod qjl;
 pub mod rotation;
+mod simd;
 
 /// Index into the MSE codebook. Max 2^16 = 65536 centroids (bits <= 16).
 pub type CodeIndex = u16;
