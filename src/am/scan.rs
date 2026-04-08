@@ -265,8 +265,11 @@ struct PendingScanOutput {
     score: f32,
 }
 
-fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
-    if let Some(output) = active_result_state_mut(opaque).take_pending_output() {
+fn emit_pending_linear_fallback_heap_tid(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if let Some(output) = linear_fallback_cursor(opaque).take_pending_output() {
         emit_scan_output(scan, output);
         return true;
     }
@@ -312,19 +315,39 @@ fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_>
     GraphTraversalCursor::new(&mut opaque.result_state)
 }
 
+struct LinearFallbackCursor<'a> {
+    result_state: &'a mut ScanResultState,
+}
+
+impl<'a> LinearFallbackCursor<'a> {
+    fn new(result_state: &'a mut ScanResultState) -> Self {
+        Self { result_state }
+    }
+
+    fn materialize(&mut self, selected: SelectedScanResult) {
+        self.result_state.materialize(selected);
+    }
+
+    fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
+        self.result_state.take_pending_output()
+    }
+
+    fn advance_after_emit(&mut self) {
+        if self.result_state.pending_count() == 0 {
+            self.result_state.clear_current();
+        }
+    }
+}
+
+fn linear_fallback_cursor(opaque: &mut TqScanOpaque) -> LinearFallbackCursor<'_> {
+    LinearFallbackCursor::new(&mut opaque.fallback_result_state)
+}
+
 pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState {
     if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
         &opaque.fallback_result_state
     } else {
         &opaque.result_state
-    }
-}
-
-fn active_result_state_mut(opaque: &mut TqScanOpaque) -> &mut ScanResultState {
-    if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
-        &mut opaque.fallback_result_state
-    } else {
-        &mut opaque.result_state
     }
 }
 
@@ -374,16 +397,6 @@ fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: 
     }
 
     refresh_graph_traversal_prefetch(index_relation, opaque);
-}
-
-fn advance_linear_fallback_after_emit(opaque: &mut TqScanOpaque) {
-    if opaque.execution_phase != ScanExecutionPhase::LinearFallback
-        || opaque.fallback_result_state.pending_count() != 0
-    {
-        return;
-    }
-
-    opaque.fallback_result_state.clear_current();
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -899,11 +912,6 @@ fn materialize_graph_traversal_result(opaque: &mut TqScanOpaque, selected: Selec
     graph_traversal_cursor(opaque).materialize(selected);
 }
 
-fn materialize_linear_fallback_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    mark_emitted_element(opaque, selected.element_tid);
-    opaque.fallback_result_state.materialize(selected);
-}
-
 #[cfg(any(test, feature = "pg_test"))]
 fn refill_bootstrap_frontier_after_consume<F>(
     opaque: &mut TqScanOpaque,
@@ -1070,8 +1078,8 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if emit_pending_scan_heap_tid(scan, opaque) {
-        advance_linear_fallback_after_emit(opaque);
+    if emit_pending_linear_fallback_heap_tid(scan, opaque) {
+        linear_fallback_cursor(opaque).advance_after_emit();
         return true;
     }
 
@@ -1088,14 +1096,15 @@ fn emit_materialized_linear_fallback_result(
     opaque: &mut TqScanOpaque,
     selected: SelectedScanResult,
 ) -> bool {
-    materialize_linear_fallback_result(opaque, selected);
-    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    mark_emitted_element(opaque, selected.element_tid);
+    linear_fallback_cursor(opaque).materialize(selected);
+    let emitted = emit_pending_linear_fallback_heap_tid(scan, opaque);
     debug_assert!(
         emitted,
         "linear fallback result materialization should seed pending heap tids before returning true"
     );
     if emitted {
-        advance_linear_fallback_after_emit(opaque);
+        linear_fallback_cursor(opaque).advance_after_emit();
     }
     emitted
 }
@@ -1773,7 +1782,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_linear_fallback_after_emit_keeps_current_result_until_last_duplicate() {
+    fn linear_fallback_cursor_advance_after_emit_keeps_current_result_until_last_duplicate() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
@@ -1782,8 +1791,8 @@ mod tests {
         opaque.fallback_result_state
             .store_pending(&[tid(31, 1), tid(31, 2)]);
 
-        let first = opaque.fallback_result_state.take_pending_output();
-        advance_linear_fallback_after_emit(&mut opaque);
+        let first = linear_fallback_cursor(&mut opaque).take_pending_output();
+        linear_fallback_cursor(&mut opaque).advance_after_emit();
 
         assert_eq!(
             first,
@@ -1805,7 +1814,7 @@ mod tests {
     }
 
     #[test]
-    fn advance_linear_fallback_after_emit_clears_current_result_after_last_duplicate() {
+    fn linear_fallback_cursor_advance_after_emit_clears_current_result_after_last_duplicate() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
@@ -1813,8 +1822,8 @@ mod tests {
         opaque.fallback_result_state.set_current(tid(27, 1), -5.0);
         opaque.fallback_result_state.store_pending(&[tid(32, 1)]);
 
-        let emitted = opaque.fallback_result_state.take_pending_output();
-        advance_linear_fallback_after_emit(&mut opaque);
+        let emitted = linear_fallback_cursor(&mut opaque).take_pending_output();
+        linear_fallback_cursor(&mut opaque).advance_after_emit();
 
         assert_eq!(
             emitted,
@@ -1906,38 +1915,43 @@ mod tests {
     }
 
     #[test]
-    fn active_result_state_mut_uses_fallback_storage_in_linear_phase() {
+    fn linear_fallback_cursor_uses_fallback_storage_in_linear_phase() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
         opaque.result_state.set_current(tid(36, 1), -9.0);
-        opaque.fallback_result_state.set_current(tid(37, 1), -10.0);
 
-        let active = active_result_state_mut(&mut opaque).current();
+        linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
+            element_tid: tid(37, 1),
+            score: -10.0,
+            heap_tids: vec![tid(38, 1)],
+        });
 
         assert_eq!(
-            active.element_tid(),
+            opaque.fallback_result_state.current().element_tid(),
             tid(37, 1),
             "linear fallback should read and write through its dedicated fallback result-state storage"
+        );
+        assert_eq!(
+            opaque.result_state.current().element_tid(),
+            tid(36, 1),
+            "linear fallback cursor should not backfill graph cursor result-state storage"
         );
     }
 
     #[test]
-    fn materialize_linear_fallback_result_uses_fallback_storage() {
+    fn linear_fallback_cursor_materialize_uses_fallback_storage() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
 
-        materialize_linear_fallback_result(
-            &mut opaque,
-            SelectedScanResult {
-                element_tid: tid(38, 1),
-                score: -11.0,
-                heap_tids: vec![tid(39, 1)],
-            },
-        );
+        linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
+            element_tid: tid(38, 1),
+            score: -11.0,
+            heap_tids: vec![tid(39, 1)],
+        });
 
         assert_eq!(
             opaque.fallback_result_state.current().element_tid(),
