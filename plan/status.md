@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-08
-Basis: `main` at `d2351e8` (cursor extraction + direct materialization arc); SIMD branch at `d38e625`
+Basis: `main` at `ab4b396` (A3 closed — frontier ownership + debug gating); SIMD branch at `d38e625`
 
 ## Reading Guide
 
@@ -14,12 +14,12 @@ Basis: `main` at `d2351e8` (cursor extraction + direct materialization arc); SIM
 
 | Rollup | % Done | Meaning |
 | --- | ---: | --- |
-| Correctness-complete | 72% | Foundation/build is solid; graph-first scan, graph-aware insert, and vacuum repair still block full correctness |
+| Correctness-complete | 78% | Foundation/build solid; graph-first scan complete; graph-aware insert and vacuum repair remain |
 | Test/validation-complete | 76% | Broad unit/integration/CI coverage exists, but graph-first scan validation and final unsafe hardening remain |
 | Benchmark/profile-complete | 36% | Benchmark harnesses exist, but end-to-end HNSW latency, storage, and recall evidence is still mostly blocked |
 | Optimization-complete | 18% | SIMD runtime dispatch and AVX2+NEON scoring landed on feature branch; merge and throughput proof pending A3 |
 | Release-ready | 56% | Build packaging and quality infrastructure are in decent shape; cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
-| Total project completion | 68% | Weighted overall estimate to final intended scope |
+| Total project completion | 72% | Weighted overall estimate to final intended scope |
 
 ## Execution Task Map
 
@@ -27,8 +27,8 @@ Basis: `main` at `d2351e8` (cursor extraction + direct materialization arc); SIM
 | --- | --- | --- | --- | ---: | --- |
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Substantially complete | 85% | Core seam extraction done; cleanup and convergence for A3 may remain |
-| `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **In progress (coder-1)** | 65% | Cursor extraction and direct materialization done (reviews 182-190); frontier ownership transfer remains |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | Not started | 0% | Blocked on `A3` |
+| `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Ready to start** | 0% | A3 complete — unblocked |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
@@ -53,12 +53,12 @@ Foundation / build rollup: 100%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Substantially complete | 85% | Core seam done; unclear if A3 wiring will surface remaining A2 gaps |
-| Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | In progress | 65% | Cursor extraction and direct materialization done; frontier ownership transfer remains |
+| Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | Cursor-owned runtime complete; bootstrap helpers gated to test/debug |
 | Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | In progress | 70% | Fallback exists; final runtime contract is still being defined |
 | `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
-| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Blocked | 10% | Waiting on graph-first ordered execution |
+| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Ready | 10% | A3 complete — measurement can proceed |
 
-Scan runtime rollup: 65%
+Scan runtime rollup: 72%
 
 ## 3. Insert Path
 
@@ -152,9 +152,9 @@ Release / quality-gate rollup: 58%
 
 ## Current Critical Sequence
 
-1. **Coder-1:** A3 in progress — wire graph beam search as primary scan path. Linear fallback for empty/tiny indexes.
-2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Do not merge until A3 confirms scalar correctness.
-3. After A3 lands: A4 recall gate (go/no-go).
+1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
+2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
+3. **Next:** A4 recall gate (Recall@10 measurement, go/no-go).
 4. After A4 passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
 5. Full SQL benchmark result generation after A5/A6.
 
@@ -162,7 +162,7 @@ Release / quality-gate rollup: 58%
 
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
-| Graph-first ordered scan runtime is not yet primary | `A3`, `A4`, `A5`, `A6`, `C1`, `D2` | Runtime lane |
+| ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
 | HNSW recall numbers are not yet measured on the real scan path | `A4`, `C1`, `D2` | Runtime lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |

@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-07 (coder-1 on A3 graph-first scan wiring; coder-2 on B1 SIMD).
+Last updated: 2026-04-08 (A3 closed; A4 recall gate is next).
 
 ## Current Task Board
 
@@ -10,24 +10,24 @@ Last updated: 2026-04-07 (coder-1 on A3 graph-first scan wiring; coder-2 on B1 S
 
 - `A1` AM split: **done**
 - `A2` graph/search traversal seam: **done** (search seam extraction complete)
-- `A3` wire graph-first scan runtime: **in progress** ← current focus
-- `A4` recall gate: blocked on A3
-- `A5` graph-aware insert: blocked on A3/A4
-- `A6` vacuum repair: blocked on A3/A4
+- `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
+- `A4` recall gate: **ready to start** ← current focus
+- `A5` graph-aware insert: blocked on A4
+- `A6` vacuum repair: blocked on A4
 
 ### Parallel lanes
 
-- `B1` SIMD: **in progress** (coder-2, feature branch; do not merge until A3 confirms scalar correctness)
+- `B1` SIMD: **in progress** (coder-2, feature branch; merge after A4 confirms scalar correctness)
 - `B2` CI / fuzz / quality gates: mostly complete (TC-036 unsafe audit remaining)
 - `D1` planner scaffold: **done** (merged to main from planner-integration-lane + planner-part2)
 - `D2` planner activation: blocked on A4 and ADR-011 retirement
 
 ### Current sequencing
 
-1. **Coder-1:** A3 — wire graph beam search as primary scan execution path. Linear path becomes fallback for empty/tiny indexes.
-2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, merge after A3.
-3. After A3 lands: A4 recall gate (go/no-go before insert/vacuum/planner).
-4. After A4 passes: D2 planner activation, A5 insert, A6 vacuum can proceed.
+1. **Coder-1:** A4 — Recall@10 measurement over built indexes with graph-first scan. Go/no-go threshold (NFR-003).
+2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, merge after A4.
+3. After A4 passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
+4. Full SQL benchmark result generation after A5/A6.
 
 ## Requirements Summary
 
