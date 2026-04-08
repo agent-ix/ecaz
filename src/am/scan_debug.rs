@@ -1115,6 +1115,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     f32,
     HeapTidCoords,
     bool,
+    bool,
     HeapTidCoords,
     f32,
 ) {
@@ -1149,6 +1150,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     let (partial_valid, partial_tid, partial_score) =
         debug_candidate_slot(visible_frontier_slot(opaque, 0));
     let partial_result_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
+    let partial_exhausted = opaque.execution_phase.is_exhausted();
 
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
@@ -1167,6 +1169,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         partial_tid,
         partial_score,
         partial_result_tid,
+        partial_exhausted,
         exhausted_valid,
         exhausted_tid,
         exhausted_score,

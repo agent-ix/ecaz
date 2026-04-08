@@ -985,13 +985,22 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
+    emit_prefetched_graph_traversal_result(scan, index_relation, opaque)
+}
+
+fn emit_prefetched_graph_traversal_result(
+    scan: pg_sys::IndexScanDesc,
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
     let emitted = emit_pending_scan_heap_tid(scan, opaque);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
     );
-
-    advance_graph_traversal_after_emit(index_relation, opaque);
+    if emitted {
+        advance_graph_traversal_after_emit(index_relation, opaque);
+    }
     emitted
 }
 

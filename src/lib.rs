@@ -3209,6 +3209,7 @@ mod tests {
             partial_tid,
             partial_score,
             partial_result_tid,
+            partial_exhausted,
             exhausted_valid,
             exhausted_tid,
             exhausted_score,
@@ -3219,8 +3220,8 @@ mod tests {
             "entry candidate should be seeded before tuple production"
         );
         assert!(
-            partial_valid || partial_result_tid != (u32::MAX, u16::MAX),
-            "partial scan progress should keep either a remaining frontier candidate or a concrete current result"
+            partial_valid || partial_result_tid != (u32::MAX, u16::MAX) || partial_exhausted,
+            "partial scan progress should keep either a remaining frontier candidate, a concrete current result, or an explicit exhausted state"
         );
         if partial_valid {
             assert_ne!(
@@ -3233,11 +3234,18 @@ mod tests {
                 "partial scan progress should keep a concrete frontier candidate score when one remains"
             );
         } else {
-            assert_ne!(
-                partial_result_tid,
-                (u32::MAX, u16::MAX),
-                "when the frontier head materializes immediately, partial scan progress should keep a concrete current-result tid"
-            );
+            if partial_result_tid == (u32::MAX, u16::MAX) {
+                assert!(
+                    partial_exhausted,
+                    "if partial scan progress no longer exposes a frontier head or current result, the graph lane should already be exhausted"
+                );
+            } else {
+                assert_ne!(
+                    partial_result_tid,
+                    (u32::MAX, u16::MAX),
+                    "when the frontier head materializes immediately, partial scan progress should keep a concrete current-result tid"
+                );
+            }
         }
         assert!(
             !exhausted_valid,
