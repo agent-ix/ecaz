@@ -26,7 +26,7 @@ Basis: `main` at `ab4b396` (A3 closed — frontier ownership + debug gating); SI
 | ID | Task | Includes | Status | % Done | Notes |
 | --- | --- | --- | --- | ---: | --- |
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
-| `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Substantially complete | 85% | Core seam extraction done; cleanup and convergence for A3 may remain |
+| `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done | 100% | Landed as part of the A3 close arc |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
 | `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Ready to start** | 0% | A3 complete — unblocked |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
@@ -52,11 +52,11 @@ Foundation / build rollup: 100%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Substantially complete | 85% | Core seam done; unclear if A3 wiring will surface remaining A2 gaps |
+| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Done | 100% | Closed through the A3 cursor and frontier-ownership arc |
 | Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | Cursor-owned runtime complete; bootstrap helpers gated to test/debug |
-| Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | In progress | 70% | Fallback exists; final runtime contract is still being defined |
+| Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | Done | 100% | Fallback is now explicit and only entered when graph traversal cannot produce an initial ordered result |
 | `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
-| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Ready | 10% | A3 complete — measurement can proceed |
+| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Ready | 100% | A3 complete — A4 measurement can proceed immediately |
 
 Scan runtime rollup: 72%
 
@@ -98,7 +98,7 @@ Planner / PG18 rollup: 42%
 | Unit / property / layout tests | Scalar, page, codec, search protocol, size/layout checks | Strong | 92% | Broad low-level coverage exists |
 | `cargo test` / `pgrx test` integration | Extension-level build and runtime integration | Strong | 82% | Good staged-behavior coverage exists |
 | CI / safety tooling | Clippy, deny, fuzz, miri, benchmark-action, nightly checks | Strong | 75% | Base infrastructure is present |
-| Graph-first runtime validation | Ordered scan behavior under A3 | Not started | 15% | Needs graph-first runtime path |
+| Graph-first runtime validation | Ordered scan behavior under A3 | Ready to execute | 40% | Runtime path is live; A4 should turn this into recall evidence plus a persistent ordered-result regression test |
 | Unsafe/stability audit | Final unsafe review and hardening pass | Partial | 50% | Tooling exists; final audit remains |
 
 Testing / validation rollup: 76%
@@ -110,8 +110,8 @@ Testing / validation rollup: 76%
 | Microbenchmark infrastructure | Criterion, iai-callgrind, dhat, Makefile targets, shared generators | Done | 100% | Harnesses are built and validated |
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
-| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A3 |
-| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Not started | 0% | Blocked on A3, A5, A6 |
+| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
+| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Ready to start | 5% | Initial A4 gate is unblocked; fuller post-insert/vacuum evidence still waits on A5/A6 |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
 Benchmarking / profiling rollup: 36%
@@ -123,7 +123,7 @@ Benchmarking / profiling rollup: 36%
 | Scalar baseline | Working scalar quantizer and scan code paths | Partial | 55% | Correct baseline exists, but this is not the same as an optimization pass |
 | Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Not started | 10% | Benchmark harnesses exist, but no serious optimization campaign has been run yet |
 | SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **In progress** | 25% | Runtime dispatch + AVX2/NEON scoring paths on feature branch; equivalence tests and throughput proof pending |
-| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 0% | Wait until A3 lands |
+| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 0% | Wait until A4 confirms scalar recall/correctness on the live graph path |
 | Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | Not started | 5% | Some design notes exist, not a real tuning pass yet |
 
 Optimization / SIMD rollup: 18%

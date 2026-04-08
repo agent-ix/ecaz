@@ -410,7 +410,7 @@ Coder-2 (planner → SIMD):
 | `02-datum-and-io.md` | Phase 2 (type/I/O) | complete |
 | `03-sql-surface.md` | Phase 2 (functions/operators) | complete |
 | `04-page-layout-and-wal.md` | Phase 3 | complete |
-| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | **A1/A2 done, A3 in progress (coder-1)** |
+| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | **A1/A2/A3 done, A4 ready to start** |
 | `06-graph-insert.md` | A5 (graph-aware insert) | blocked on 05 |
 | `07-vacuum.md` | A6 (vacuum three-pass) | blocked on 05, 06 |
 | `08-simd.md` | B1 (SIMD acceleration) | **in progress (coder-2, feature branch)** |

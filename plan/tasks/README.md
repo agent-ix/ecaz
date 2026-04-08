@@ -13,7 +13,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 
 ### Agent 1: Graph Search (critical path)
 
-5. `05-graph-scan.md` — A1-A4 (in progress)
+5. `05-graph-scan.md` — A1-A4 (A3 done, A4 current)
 6. `06-graph-insert.md` — A5 (blocked on 05)
 7. `07-vacuum.md` — A6 (blocked on 05, 06)
 
