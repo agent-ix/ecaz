@@ -123,6 +123,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque,
                 &metadata,
             );
+            if !opaque.graph_traversal_seeded {
+                enter_linear_fallback_phase(opaque);
+            }
         })
     }
 }
@@ -246,7 +249,7 @@ fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
-    opaque.execution_phase = ScanExecutionPhase::Bootstrap;
+    opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
     opaque.graph_traversal_seeded = false;
     clear_scan_candidate_state(opaque);
     opaque.result_state.clear();
@@ -293,19 +296,19 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
     visible_frontier_mut(opaque).clear();
 }
 
-fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
-    opaque.execution_phase = ScanExecutionPhase::Linear;
+fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
 }
 
-fn should_enter_linear_fallback_after_graph_exhaustion(opaque: &TqScanOpaque) -> bool {
-    !opaque.graph_traversal_seeded
+fn enter_linear_fallback_phase(opaque: &mut TqScanOpaque) {
+    clear_graph_traversal_state(opaque);
+    opaque.execution_phase = ScanExecutionPhase::LinearFallback;
 }
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
-    complete_bootstrap_phase(opaque);
+    clear_graph_traversal_state(opaque);
     opaque.result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
 }
@@ -861,7 +864,7 @@ unsafe fn try_select_next_bootstrap_frontier_result(
     opaque: &mut TqScanOpaque,
 ) -> Option<SelectedScanResult> {
     if opaque.result_state.pending_count() != 0
-        || !opaque.execution_phase.is_bootstrap()
+        || !opaque.execution_phase.is_graph_traversal()
         || opaque.scan_dimensions == 0
     {
         return None;
@@ -911,7 +914,7 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     let Some(selected) =
         (unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) })
     else {
-        complete_bootstrap_phase(opaque);
+        mark_scan_exhausted(opaque);
         return false;
     };
 
@@ -925,22 +928,15 @@ unsafe fn select_next_scan_result(
     code_len: usize,
 ) -> Option<SelectedScanResult> {
     match opaque.execution_phase {
-        ScanExecutionPhase::Bootstrap => {
-            if let Some(selected) =
-                unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) }
-            {
-                return Some(selected);
-            }
-
-            if !should_enter_linear_fallback_after_graph_exhaustion(opaque) {
+        ScanExecutionPhase::GraphTraversal => {
+            let selected =
+                unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) };
+            if selected.is_none() {
                 mark_scan_exhausted(opaque);
-                return None;
             }
-
-            complete_bootstrap_phase(opaque);
-            unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
+            selected
         }
-        ScanExecutionPhase::Linear => unsafe {
+        ScanExecutionPhase::LinearFallback => unsafe {
             select_next_linear_scan_result(index_relation, opaque, code_len)
         },
         ScanExecutionPhase::Exhausted => None,
@@ -1258,14 +1254,14 @@ impl Default for ScanResultState {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) enum ScanExecutionPhase {
     #[default]
-    Bootstrap,
-    Linear,
+    GraphTraversal,
+    LinearFallback,
     Exhausted,
 }
 
 impl ScanExecutionPhase {
-    pub(super) fn is_bootstrap(self) -> bool {
-        matches!(self, Self::Bootstrap)
+    pub(super) fn is_graph_traversal(self) -> bool {
+        matches!(self, Self::GraphTraversal)
     }
 
     pub(super) fn is_exhausted(self) -> bool {
@@ -1322,7 +1318,7 @@ impl Default for TqScanOpaque {
             result_state: ScanResultState::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
-            execution_phase: ScanExecutionPhase::Bootstrap,
+            execution_phase: ScanExecutionPhase::GraphTraversal,
         }
     }
 }
@@ -1444,7 +1440,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_bootstrap_phase_clears_frontier_scheduler_and_expanded_state() {
+    fn enter_linear_fallback_phase_clears_frontier_scheduler_and_expanded_state() {
         let mut opaque = TqScanOpaque::default();
         visible_frontier_mut(&mut opaque).push(beam_candidate(24, 1, -3.0));
         visible_frontier_mut(&mut opaque).push(beam_candidate(24, 2, -2.0));
@@ -1453,23 +1449,23 @@ mod tests {
         seed_existing_frontier_into_expansion(&mut opaque);
         mark_expanded_source(&mut opaque, tid(24, 1));
 
-        complete_bootstrap_phase(&mut opaque);
+        enter_linear_fallback_phase(&mut opaque);
 
         assert!(
-            opaque.execution_phase == ScanExecutionPhase::Linear,
-            "bootstrap completion should transition the scan into its linear phase explicitly"
+            opaque.execution_phase == ScanExecutionPhase::LinearFallback,
+            "entering linear fallback should transition the scan into its explicit fallback phase"
         );
         assert!(
             visible_frontier_candidates(&opaque).is_empty(),
-            "completing bootstrap should clear any leftover visible frontier candidates"
+            "entering linear fallback should clear any leftover visible frontier candidates"
         );
         assert!(
             bootstrap_expansion_mut(&mut opaque).peek_best().is_none(),
-            "completing bootstrap should clear the scan-owned scheduler too"
+            "entering linear fallback should clear the scan-owned scheduler too"
         );
         assert!(
             !expanded_contains_source(&opaque, tid(24, 1)),
-            "completing bootstrap should reset expanded-source bookkeeping for the next rescan"
+            "entering linear fallback should reset expanded-source bookkeeping for the next rescan"
         );
     }
 
@@ -1499,7 +1495,7 @@ mod tests {
     #[test]
     fn reset_scan_position_restores_bootstrap_execution_phase() {
         let mut opaque = TqScanOpaque {
-            execution_phase: ScanExecutionPhase::Linear,
+            execution_phase: ScanExecutionPhase::LinearFallback,
             graph_traversal_seeded: true,
             ..TqScanOpaque::default()
         };
@@ -1507,8 +1503,8 @@ mod tests {
         reset_scan_position(&mut opaque);
 
         assert!(
-            opaque.execution_phase == ScanExecutionPhase::Bootstrap,
-            "amrescan/reset should allow bootstrap traversal to run again after prior linear-phase scans"
+            opaque.execution_phase == ScanExecutionPhase::GraphTraversal,
+            "amrescan/reset should allow graph traversal to run again after prior fallback-phase scans"
         );
         assert!(
             !opaque.graph_traversal_seeded,
@@ -1517,19 +1513,15 @@ mod tests {
     }
 
     #[test]
-    fn linear_fallback_only_remains_available_before_graph_traversal_seeds_candidates() {
+    fn unseeded_scans_enter_linear_fallback_explicitly() {
         let mut opaque = TqScanOpaque::default();
 
-        assert!(
-            should_enter_linear_fallback_after_graph_exhaustion(&opaque),
-            "the linear shell should remain available before graph traversal seeds any candidates"
-        );
+        enter_linear_fallback_phase(&mut opaque);
 
-        opaque.graph_traversal_seeded = true;
-
-        assert!(
-            !should_enter_linear_fallback_after_graph_exhaustion(&opaque),
-            "once graph traversal seeds candidates, exhausting that frontier should end the graph phase instead of defaulting back to linear scan"
+        assert_eq!(
+            opaque.execution_phase,
+            ScanExecutionPhase::LinearFallback,
+            "unseeded scans should enter the explicit linear fallback phase"
         );
     }
 
