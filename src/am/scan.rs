@@ -252,6 +252,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
     clear_scan_candidate_state(opaque);
     opaque.result_state.clear();
+    opaque.fallback_result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
@@ -265,7 +266,7 @@ struct PendingScanOutput {
 }
 
 fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
-    if let Some(output) = opaque.result_state.take_pending_output() {
+    if let Some(output) = active_result_state_mut(opaque).take_pending_output() {
         emit_scan_output(scan, output);
         return true;
     }
@@ -309,6 +310,14 @@ impl<'a> GraphTraversalCursor<'a> {
 
 fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_> {
     GraphTraversalCursor::new(&mut opaque.result_state)
+}
+
+fn active_result_state_mut(opaque: &mut TqScanOpaque) -> &mut ScanResultState {
+    if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
+        &mut opaque.fallback_result_state
+    } else {
+        &mut opaque.result_state
+    }
 }
 
 unsafe fn produce_next_scan_heap_tid(
@@ -361,12 +370,12 @@ fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: 
 
 fn advance_linear_fallback_after_emit(opaque: &mut TqScanOpaque) {
     if opaque.execution_phase != ScanExecutionPhase::LinearFallback
-        || opaque.result_state.pending_count() != 0
+        || opaque.fallback_result_state.pending_count() != 0
     {
         return;
     }
 
-    opaque.result_state.clear_current();
+    opaque.fallback_result_state.clear_current();
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -381,12 +390,14 @@ fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
 
 fn enter_linear_fallback_phase(opaque: &mut TqScanOpaque) {
     clear_graph_traversal_state(opaque);
+    opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::LinearFallback;
 }
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     clear_graph_traversal_state(opaque);
     opaque.result_state.clear();
+    opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
 }
 
@@ -881,7 +892,8 @@ fn materialize_graph_traversal_result(opaque: &mut TqScanOpaque, selected: Selec
 }
 
 fn materialize_linear_fallback_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    seed_scan_result_state(opaque, selected);
+    mark_emitted_element(opaque, selected.element_tid);
+    opaque.fallback_result_state.materialize(selected);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1443,6 +1455,7 @@ pub(super) struct TqScanOpaque {
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) result_state: ScanResultState,
+    pub(super) fallback_result_state: ScanResultState,
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
@@ -1468,6 +1481,7 @@ impl Default for TqScanOpaque {
             candidate_frontier: ptr::null_mut(),
             bootstrap_expansion: ptr::null_mut(),
             result_state: ScanResultState::default(),
+            fallback_result_state: ScanResultState::default(),
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
@@ -1756,10 +1770,11 @@ mod tests {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
-        opaque.result_state.set_current(tid(26, 1), -4.0);
-        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+        opaque.fallback_result_state.set_current(tid(26, 1), -4.0);
+        opaque.fallback_result_state
+            .store_pending(&[tid(31, 1), tid(31, 2)]);
 
-        let first = opaque.result_state.take_pending_output();
+        let first = opaque.fallback_result_state.take_pending_output();
         advance_linear_fallback_after_emit(&mut opaque);
 
         assert_eq!(
@@ -1771,11 +1786,11 @@ mod tests {
             "linear fallback duplicate drain should still emit the first queued heap tid"
         );
         assert!(
-            opaque.result_state.current().has_element(),
+            opaque.fallback_result_state.current().has_element(),
             "linear fallback should keep the current result populated while duplicate drain still remains"
         );
         assert_eq!(
-            opaque.result_state.current().heap_tid(),
+            opaque.fallback_result_state.current().heap_tid(),
             tid(31, 1),
             "linear fallback should keep heap progress aligned with the last emitted duplicate"
         );
@@ -1787,10 +1802,10 @@ mod tests {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
-        opaque.result_state.set_current(tid(27, 1), -5.0);
-        opaque.result_state.store_pending(&[tid(32, 1)]);
+        opaque.fallback_result_state.set_current(tid(27, 1), -5.0);
+        opaque.fallback_result_state.store_pending(&[tid(32, 1)]);
 
-        let emitted = opaque.result_state.take_pending_output();
+        let emitted = opaque.fallback_result_state.take_pending_output();
         advance_linear_fallback_after_emit(&mut opaque);
 
         assert_eq!(
@@ -1802,11 +1817,11 @@ mod tests {
             "linear fallback should still emit the final queued heap tid before teardown"
         );
         assert!(
-            !opaque.result_state.current().has_element(),
+            !opaque.fallback_result_state.current().has_element(),
             "linear fallback should clear stale current-result state after the last duplicate drains"
         );
         assert_eq!(
-            opaque.result_state.pending_count(),
+            opaque.fallback_result_state.pending_count(),
             0,
             "linear fallback teardown should only happen once duplicate drain is exhausted"
         );
@@ -1879,6 +1894,52 @@ mod tests {
             opaque.result_state.pending_count(),
             0,
             "graph cursor pending-output drain should consume the prefetched heap tid from pending state"
+        );
+    }
+
+    #[test]
+    fn active_result_state_mut_uses_fallback_storage_in_linear_phase() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current(tid(36, 1), -9.0);
+        opaque.fallback_result_state.set_current(tid(37, 1), -10.0);
+
+        let active = active_result_state_mut(&mut opaque).current();
+
+        assert_eq!(
+            active.element_tid(),
+            tid(37, 1),
+            "linear fallback should read and write through its dedicated fallback result-state storage"
+        );
+    }
+
+    #[test]
+    fn materialize_linear_fallback_result_uses_fallback_storage() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+
+        materialize_linear_fallback_result(
+            &mut opaque,
+            SelectedScanResult {
+                element_tid: tid(38, 1),
+                score: -11.0,
+                heap_tids: vec![tid(39, 1)],
+            },
+        );
+
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            tid(38, 1),
+            "linear fallback materialization should populate fallback-only result-state storage"
+        );
+        assert_eq!(
+            opaque.result_state.current().element_tid(),
+            page::ItemPointer::INVALID,
+            "linear fallback materialization should not backfill graph cursor result-state storage"
         );
     }
 
