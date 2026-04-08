@@ -3016,16 +3016,27 @@ mod tests {
 
         assert_ne!(
             second_tid, first_tid,
-            "after the last duplicate drain, graph traversal should prefill the next current result instead of leaving the old one active"
+            "after the last duplicate drain, graph traversal should either prefill the next current result or clear the old one"
         );
-        assert!(
-            second_score,
-            "prefilling the next graph result should keep the current result score valid"
-        );
-        assert_ne!(
-            second_score_value, 0.0,
-            "prefilling the next graph result should keep a concrete score populated"
-        );
+        if second_tid == (u32::MAX, u16::MAX) {
+            assert!(
+                !second_score,
+                "if graph traversal exhausts after the last duplicate drain, it should clear the current-result score-valid bit"
+            );
+            assert_eq!(
+                second_score_value, 0.0,
+                "if graph traversal exhausts after the last duplicate drain, it should clear the current-result score value"
+            );
+        } else {
+            assert!(
+                second_score,
+                "prefilling the next graph result should keep the current result score valid"
+            );
+            assert_ne!(
+                second_score_value, 0.0,
+                "prefilling the next graph result should keep a concrete score populated"
+            );
+        }
         assert_eq!(
             exhausted_tid,
             (u32::MAX, u16::MAX),

@@ -827,9 +827,17 @@ unsafe fn select_scan_candidate_result(
     })
 }
 
-fn materialize_selected_scan_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
+fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
     mark_emitted_element(opaque, selected.element_tid);
     opaque.result_state.materialize(selected);
+}
+
+fn materialize_graph_traversal_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
+    seed_scan_result_state(opaque, selected);
+}
+
+fn materialize_linear_fallback_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
+    seed_scan_result_state(opaque, selected);
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -950,7 +958,7 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
         return false;
     };
 
-    materialize_selected_scan_result(opaque, selected);
+    materialize_graph_traversal_result(opaque, selected);
     true
 }
 
@@ -988,7 +996,15 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return false;
     };
 
-    materialize_selected_scan_result(opaque, selected);
+    emit_materialized_linear_fallback_result(scan, opaque, selected)
+}
+
+fn emit_materialized_linear_fallback_result(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+    selected: SelectedScanResult,
+) -> bool {
+    materialize_linear_fallback_result(opaque, selected);
     let emitted = emit_pending_scan_heap_tid(scan, opaque);
     debug_assert!(
         emitted,
@@ -1774,10 +1790,10 @@ mod tests {
     }
 
     #[test]
-    fn materialize_selected_scan_result_seeds_current_result_and_pending_drain() {
+    fn seed_scan_result_state_seeds_current_result_and_pending_drain() {
         let mut opaque = TqScanOpaque::default();
 
-        materialize_selected_scan_result(
+        seed_scan_result_state(
             &mut opaque,
             SelectedScanResult {
                 element_tid: tid(26, 1),
