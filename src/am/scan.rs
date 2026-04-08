@@ -259,10 +259,15 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     reset_scan_emitted_state(opaque);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PendingScanOutput {
+    heap_tid: page::ItemPointer,
+    score: f32,
+}
+
 fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) -> bool {
-    if let Some(heap_tid) = opaque.result_state.take_pending() {
-        set_scan_heap_tid(scan, heap_tid);
-        set_scan_orderby_score(scan, opaque.result_state.current().score());
+    if let Some(output) = opaque.result_state.take_pending_output() {
+        emit_scan_output(scan, output);
         return true;
     }
 
@@ -1096,6 +1101,11 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
+fn emit_scan_output(scan: pg_sys::IndexScanDesc, output: PendingScanOutput) {
+    set_scan_heap_tid(scan, output.heap_tid);
+    set_scan_orderby_score(scan, output.score);
+}
+
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
     unsafe {
         if (*scan).xs_orderbyvals.is_null() {
@@ -1208,6 +1218,14 @@ impl ScanResultState {
         }
         self.update_current_heap_tid(tid);
         Some(tid)
+    }
+
+    fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
+        let heap_tid = self.take_pending()?;
+        Some(PendingScanOutput {
+            heap_tid,
+            score: self.current.score(),
+        })
     }
 
     fn clear(&mut self) {
@@ -1576,6 +1594,39 @@ mod tests {
             opaque.result_state.pending_index(),
             0,
             "draining all queued heap tids should reset the pending index too"
+        );
+    }
+
+    #[test]
+    fn scan_result_state_take_pending_output_preserves_score_and_heap_progress() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(26, 1), -4.0);
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let first = opaque.result_state.take_pending_output();
+        let second = opaque.result_state.take_pending_output();
+        let exhausted = opaque.result_state.take_pending_output();
+
+        assert_eq!(
+            first,
+            Some(PendingScanOutput {
+                heap_tid: tid(31, 1),
+                score: -4.0,
+            }),
+            "pending output should expose the first heap tid together with the current result score"
+        );
+        assert_eq!(
+            second,
+            Some(PendingScanOutput {
+                heap_tid: tid(31, 2),
+                score: -4.0,
+            }),
+            "pending output should preserve score while draining later heap tids from the same result"
+        );
+        assert_eq!(
+            exhausted,
+            None,
+            "pending output should report exhaustion once the duplicate drain is complete"
         );
     }
 
