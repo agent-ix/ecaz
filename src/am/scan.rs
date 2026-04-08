@@ -123,7 +123,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque,
                 &metadata,
             );
-            if !refresh_graph_traversal_prefetch((*scan).indexRelation, opaque) {
+            let opaque_ptr = opaque as *mut TqScanOpaque;
+            if !graph_traversal_cursor(opaque)
+                .ensure_prefetched_output((*scan).indexRelation, opaque_ptr)
+            {
                 enter_linear_fallback_phase(opaque);
             }
         })
@@ -310,6 +313,41 @@ impl<'a> GraphTraversalCursor<'a> {
             })
             .unwrap_or(false)
     }
+
+    unsafe fn prefetch_next(
+        &mut self,
+        index_relation: pg_sys::Relation,
+        opaque: *mut TqScanOpaque,
+    ) -> bool {
+        let mut context = GraphTraversalPrefetchContext::new(
+            index_relation,
+            opaque,
+            self.result_state as *mut ScanResultState,
+        );
+        unsafe { context.prefetch_next() }
+    }
+
+    unsafe fn ensure_prefetched_output(
+        &mut self,
+        index_relation: pg_sys::Relation,
+        opaque: *mut TqScanOpaque,
+    ) -> bool {
+        let opaque = unsafe { &mut *opaque };
+        if !opaque.execution_phase.is_graph_traversal() {
+            return false;
+        }
+
+        if self.prefetch_ready() {
+            return true;
+        }
+
+        if !unsafe { self.prefetch_next(index_relation, opaque as *mut TqScanOpaque) } {
+            mark_scan_exhausted(opaque);
+            return false;
+        }
+
+        true
+    }
 }
 
 fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_> {
@@ -373,14 +411,37 @@ fn linear_fallback_cursor(opaque: &mut TqScanOpaque) -> LinearFallbackCursor<'_>
 struct GraphTraversalPrefetchContext {
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
+    result_state: *mut ScanResultState,
 }
 
 impl GraphTraversalPrefetchContext {
-    fn new(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) -> Self {
+    fn new(
+        index_relation: pg_sys::Relation,
+        opaque: *mut TqScanOpaque,
+        result_state: *mut ScanResultState,
+    ) -> Self {
         Self {
             index_relation,
-            opaque: opaque as *mut TqScanOpaque,
+            opaque,
+            result_state,
         }
+    }
+
+    unsafe fn prefetch_next(&mut self) -> bool {
+        let opaque = unsafe { &mut *self.opaque };
+        if !opaque.execution_phase.is_graph_traversal()
+            || opaque.scan_dimensions == 0
+            || unsafe { (&*self.result_state).pending_count() != 0 }
+        {
+            return false;
+        }
+
+        // SAFETY: the context only reaches `TqScanOpaque` through a raw pointer, and the packaged
+        // operations mutate disjoint scan fields from the Box-backed frontier/scheduler pair.
+        with_visible_frontier_mut_and_bootstrap_expansion(
+            opaque,
+            |visible_frontier, expansion| unsafe { self.run(visible_frontier, expansion) },
+        )
     }
 
     unsafe fn run(
@@ -414,6 +475,7 @@ impl GraphTraversalPrefetchContext {
         candidate: search::BeamCandidate<page::ItemPointer>,
     ) -> Option<()> {
         let opaque = unsafe { &mut *self.opaque };
+        let result_state = unsafe { &mut *self.result_state };
         let element =
             unsafe { graph::load_graph_element(self.index_relation, candidate.node, opaque.scan_code_len) };
         if element.deleted || element.heaptids.is_empty() {
@@ -421,7 +483,7 @@ impl GraphTraversalPrefetchContext {
         }
 
         mark_emitted_element(opaque, candidate.node);
-        graph_traversal_cursor(opaque).materialize(SelectedScanResult {
+        result_state.materialize(SelectedScanResult {
             element_tid: candidate.node,
             score: candidate.score,
             heap_tids: element.heaptids,
@@ -493,21 +555,6 @@ unsafe fn produce_next_scan_heap_tid(
         },
         ScanExecutionPhase::Exhausted => false,
     }
-}
-
-fn refresh_graph_traversal_prefetch(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) -> bool {
-    if !opaque.execution_phase.is_graph_traversal() {
-        return false;
-    }
-
-    if graph_traversal_cursor(opaque).prefetch_ready() {
-        return true;
-    }
-
-    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -1064,26 +1111,12 @@ pub(super) unsafe fn prefetch_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if !opaque.execution_phase.is_graph_traversal()
-        || opaque.scan_dimensions == 0
-        || graph_traversal_cursor(opaque).has_prefetched_output()
-    {
+    if !opaque.execution_phase.is_graph_traversal() || opaque.scan_dimensions == 0 {
         return false;
     }
 
-    let mut context = GraphTraversalPrefetchContext::new(index_relation, opaque);
-    // SAFETY: the context only reaches `TqScanOpaque` through a raw pointer, and the packaged
-    // operations mutate disjoint scan fields from the Box-backed frontier/scheduler pair.
-    let materialized = with_visible_frontier_mut_and_bootstrap_expansion(
-        opaque,
-        |visible_frontier, expansion| unsafe { context.run(visible_frontier, expansion) },
-    );
-
-    if !materialized {
-        mark_scan_exhausted(opaque);
-        return false;
-    }
-    true
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    unsafe { graph_traversal_cursor(opaque).prefetch_next(index_relation, opaque_ptr) }
 }
 
 unsafe fn produce_next_graph_traversal_heap_tid(
@@ -1107,7 +1140,10 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
     );
     if emitted && graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-        refresh_graph_traversal_prefetch(index_relation, opaque);
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        unsafe {
+            graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+        }
     }
     emitted
 }
