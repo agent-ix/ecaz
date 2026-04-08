@@ -84,13 +84,25 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
         return;
     }
 
-    for chunk in values.chunks_exact_mut(8) {
-        let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
-        let transformed = unsafe { fwht8_avx2_block(block) };
-        unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
+    if values.len() < 16 {
+        for chunk in values.chunks_exact_mut(8) {
+            let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
+            let transformed = unsafe { fwht8_avx2_block(block) };
+            unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
+        }
+    } else {
+        for chunk in values.chunks_exact_mut(16) {
+            let left = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
+            let right = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
+            let (sum, diff) = unsafe { fwht16_avx2_block(left, right) };
+            unsafe {
+                _mm256_storeu_ps(chunk.as_mut_ptr(), sum);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(8), diff);
+            }
+        }
     }
 
-    let mut width = 8;
+    let mut width = if values.len() < 16 { 8 } else { 16 };
     while width < values.len() {
         let step = width * 2;
         for chunk in values.chunks_exact_mut(step) {
@@ -147,6 +159,19 @@ unsafe fn fwht8_avx2_block(block: std::arch::x86_64::__m256) -> std::arch::x86_6
     let half_sum = _mm256_add_ps(value, halves);
     let half_diff = _mm256_permutevar8x32_ps(_mm256_sub_ps(value, halves), swap3);
     _mm256_blend_ps(half_sum, half_diff, 0b1111_0000)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht16_avx2_block(
+    left: std::arch::x86_64::__m256,
+    right: std::arch::x86_64::__m256,
+) -> (std::arch::x86_64::__m256, std::arch::x86_64::__m256) {
+    use std::arch::x86_64::{_mm256_add_ps, _mm256_sub_ps};
+
+    let left = unsafe { fwht8_avx2_block(left) };
+    let right = unsafe { fwht8_avx2_block(right) };
+    (_mm256_add_ps(left, right), _mm256_sub_ps(left, right))
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -264,11 +289,11 @@ mod tests {
         assert!(rel_err < 1e-5, "relative error = {rel_err}");
     }
 
-     #[cfg(target_arch = "x86_64")]
-     #[test]
-     fn fwht8_avx2_block_matches_scalar_when_available() {
-         if !std::arch::is_x86_feature_detected!("avx2") {
-             return;
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn fwht8_avx2_block_matches_scalar_when_available() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            return;
         }
 
         let mut scalar = vec![1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25];
@@ -280,8 +305,35 @@ mod tests {
 
             let transformed = fwht8_avx2_block(_mm256_loadu_ps(avx.as_ptr()));
             _mm256_storeu_ps(avx.as_mut_ptr(), transformed);
-         }
- 
-         assert_eq!(scalar, avx);
-     }
- }
+        }
+
+        assert_eq!(scalar, avx);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn fwht16_avx2_block_matches_scalar_when_available() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            return;
+        }
+
+        let mut scalar = vec![
+            1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25, 0.75, -3.5, 1.25, 2.5, -4.5, 5.0,
+            -0.75, 1.5,
+        ];
+        let mut avx = scalar.clone();
+        fwht_in_place_scalar(&mut scalar);
+
+        unsafe {
+            use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+            let left = _mm256_loadu_ps(avx.as_ptr());
+            let right = _mm256_loadu_ps(avx.as_ptr().add(8));
+            let (sum, diff) = fwht16_avx2_block(left, right);
+            _mm256_storeu_ps(avx.as_mut_ptr(), sum);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(8), diff);
+        }
+
+        assert_eq!(scalar, avx);
+    }
+}
