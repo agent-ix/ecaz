@@ -123,7 +123,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque,
                 &metadata,
             );
-            if !opaque.graph_traversal_seeded {
+            if !graph_traversal_has_seeded_candidates(opaque) {
                 enter_linear_fallback_phase(opaque);
             } else {
                 prefill_graph_traversal_result((*scan).indexRelation, opaque);
@@ -252,7 +252,6 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
-    opaque.graph_traversal_seeded = false;
     clear_scan_candidate_state(opaque);
     opaque.result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
@@ -306,6 +305,10 @@ fn prefill_graph_traversal_result(
     }
 
     unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
+}
+
+fn graph_traversal_has_seeded_candidates(opaque: &mut TqScanOpaque) -> bool {
+    candidate_frontier_head(opaque).is_some()
 }
 
 fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
@@ -614,7 +617,6 @@ fn seed_bootstrap_trace(
     max_candidates: usize,
     trace: search::BeamTrace<page::ItemPointer>,
 ) {
-    opaque.graph_traversal_seeded = !trace.discovered.is_empty();
     reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
     let opaque_ptr = opaque as *mut TqScanOpaque;
@@ -1392,7 +1394,6 @@ pub(super) struct TqScanOpaque {
     pub(super) scan_code_len: usize,
     pub(super) scan_block_count: u32,
     pub(super) bootstrap_frontier_limit: usize,
-    pub(super) graph_traversal_seeded: bool,
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
@@ -1418,7 +1419,6 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
-            graph_traversal_seeded: false,
             visited_tids: ptr::null_mut(),
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
@@ -1605,7 +1605,6 @@ mod tests {
     fn reset_scan_position_restores_bootstrap_execution_phase() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
-            graph_traversal_seeded: true,
             ..TqScanOpaque::default()
         };
 
@@ -1616,8 +1615,8 @@ mod tests {
             "amrescan/reset should allow graph traversal to run again after prior fallback-phase scans"
         );
         assert!(
-            !opaque.graph_traversal_seeded,
-            "amrescan/reset should clear prior graph traversal seeding before rebuilding the frontier"
+            candidate_frontier_head(&mut opaque).is_none(),
+            "amrescan/reset should clear prior graph traversal frontier state before rebuilding it"
         );
     }
 
@@ -1792,6 +1791,19 @@ mod tests {
             opaque.result_state.pending_count(),
             0,
             "graph traversal stale-current cleanup should not invent pending duplicate-drain state"
+        );
+    }
+
+    #[test]
+    fn graph_traversal_has_seeded_candidates_uses_frontier_state() {
+        let mut opaque = TqScanOpaque::default();
+        visible_frontier_mut(&mut opaque).push(beam_candidate(29, 1, -2.5));
+        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
+        seed_existing_frontier_into_expansion(&mut opaque);
+
+        assert!(
+            graph_traversal_has_seeded_candidates(&mut opaque),
+            "graph traversal fallback gating should derive from the live frontier state instead of a separate seeded flag"
         );
     }
 
