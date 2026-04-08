@@ -2,7 +2,33 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-05 (benchmark infrastructure complete at `9f80e28`).
+Last updated: 2026-04-07 (search/bootstrap seam extraction substantially complete at `15cc242`).
+
+## Current Task Board
+
+### Runtime lane
+
+- `A1` AM split: done
+- `A2` graph/search traversal seam: substantially complete
+- `A3` wire graph-first scan runtime: next
+- `A4` recall gate: blocked on A3
+- `A5` graph-aware insert: blocked on A3/A4
+- `A6` vacuum repair: blocked on A3/A4
+
+### Parallel lanes
+
+- `B1` SIMD: available in parallel
+- `B2` CI / fuzz / quality gates: available in parallel
+- `D1` planner scaffold: in progress on separate lane
+- `D2` planner activation: blocked on A4 and ADR-011 retirement
+
+### Current sequencing
+
+1. Finish review-driven cleanup around the runtime lane.
+2. Stop extracting additional bootstrap seams unless they directly unblock A3.
+3. Start A3: make graph/search traversal the primary scan execution path.
+4. Keep the linear path as the explicit fallback shell during A3.
+5. Run the recall gate before planner activation, graph-aware insert, or vacuum repair.
 
 ## Requirements Summary
 
@@ -143,9 +169,9 @@ graph repair, making scan the single gating dependency.
                     └───────────┬──────────────┘
                                 │
                     ┌───────────▼──────────────┐
-                    │  A2: Graph traversal     │
-                    │  helpers (greedy descent  │
-                    │  + beam search on pages)  │
+                    │  A2: Graph/search        │
+                    │  traversal seam          │
+                    │  (substantially complete)│
                     └───────────┬──────────────┘
                                 │
               ┌─────────────────┼─────────────────┐
@@ -195,9 +221,9 @@ All items are serial because each depends on the previous.
 - **Status:** Complete
 
 #### A2: Graph Traversal Helpers
-- **Scope:** Finish the remaining shared page-level traversal seam: layer-0 neighbor slicing,
-  page-level greedy/beam traversal, and the ownership boundary between traversal state and scan
-  scoring inputs. Both scan (FR-009) and insert (FR-016) need this same algorithm — scan uses LUT
+- **Scope:** Finish the shared page-level traversal seam: layer-0 neighbor slicing, page-level
+  greedy/beam traversal, and the ownership boundary between traversal state and scan scoring
+  inputs. Both scan (FR-009) and insert (FR-016) need this same algorithm — scan uses LUT
   scoring (`score_ip_encoded`), insert uses code-to-code scoring (`score_ip_codes_lite`).
 - **Owns:** Shared foundation for FR-009, FR-016, FR-010
 - **Estimated new code:** ~250-350 lines
@@ -207,22 +233,27 @@ All items are serial because each depends on the previous.
   - Visited set: HashSet of ItemPointer, potentially large for big indexes
   - BinaryHeap ordering: min-heap for candidates (closest first), correct handling of negative inner product direction
   - Layer traversal: read neighbor TIDs at correct layer offset within TqNeighborTuple
-- **Exit criteria:** A function like `hnsw_search(relation, entry_point, scorer, ef, max_layer) -> Vec<(f32, ItemPointer)>` that works on built indexes.
+- **Exit criteria:** Graph owns layer-0 traversal helpers and search owns the bootstrap
+  visible-frontier protocol around them, leaving `scan.rs` with only the runtime shell, scan-owned
+  sets, and result adjudication.
+- **Status:** Substantially complete. Remaining work belongs to A3, not additional seam extraction.
 - **Reference:** pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines), but tqvector needs raw page decode which adds complexity.
 
 #### A3: Wire Graph Traversal into Scan
-- **Scope:** Replace `next_linear_scan_heap_tid` with graph-based search. Consume the resolved
-  `ef_search` control surface (session override over reloption). Replace MAX cost estimates with
-  realistic planner costs only after the ordered execution contract is credible. Handle result
-  ordering via BinaryHeap in amgettuple.
+- **Scope:** Make graph/search traversal the primary scan execution path. Consume the resolved
+  `ef_search` control surface (session override over reloption). Keep the current linear path as
+  the fallback shell for empty/tiny indexes and bootstrap exhaustion. Replace MAX cost estimates
+  with realistic planner costs only after the ordered execution contract is credible.
 - **Owns:** FR-009 completion
 - **Estimated new code:** ~200-300 lines
 - **Difficulty:** Medium — wiring + GUC registration + planner integration
 - **Key deliverables:**
-  1. `amrescan` calls `hnsw_search` (from A2) and stores scored results in BinaryHeap
-  2. `amgettuple` pops from BinaryHeap, returns heap TIDs in distance order
-  3. `tqhnsw.ef_search` GUC (default 40, range 1-1000, PGC_USERSET)
-  4. Duplicate heap TID handling for coalesced element tuples
+  1. `amgettuple` consumes the graph/search-owned bootstrap traversal path as the primary ordered
+     runtime source.
+  2. The linear path remains the explicit fallback shell rather than the default execution lane.
+  3. `tqhnsw.ef_search` runtime wiring stays authoritative for bootstrap frontier sizing.
+  4. Duplicate heap TID handling for coalesced element tuples remains correct under graph-first
+     execution.
 - **Exit criteria:** `SET enable_seqscan = off; SELECT ... ORDER BY col <#> $query LIMIT 10` returns distance-ordered results via index scan. ADR-011 cost gate remains active.
 
 #### A4: Recall Benchmark Gate
