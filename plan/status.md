@@ -26,7 +26,7 @@ Basis: `main` at `547d7ef` (cleanup sprint merged); SIMD branch at `d38e625`
 | ID | Task | Includes | Status | % Done | Notes |
 | --- | --- | --- | --- | ---: | --- |
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
-| `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done (cleanup may remain) | 95% | Seam extraction complete; minor cleanup possible |
+| `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Substantially complete | 85% | Core seam extraction done; cleanup and convergence for A3 may remain |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **In progress (coder-1)** | 20% | Main runtime blocker; local WIP exists |
 | `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | Not started | 0% | Blocked on `A3` |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
@@ -52,7 +52,7 @@ Foundation / build rollup: 100%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Substantially complete | 95% | A2 is effectively complete |
+| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Substantially complete | 85% | Core seam done; unclear if A3 wiring will surface remaining A2 gaps |
 | Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Next | 20% | This is A3 and the main runtime blocker |
 | Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | In progress | 70% | Fallback exists; final runtime contract is still being defined |
 | `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
