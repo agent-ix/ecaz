@@ -312,6 +312,14 @@ fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_>
     GraphTraversalCursor::new(&mut opaque.result_state)
 }
 
+pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState {
+    if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
+        &opaque.fallback_result_state
+    } else {
+        &opaque.result_state
+    }
+}
+
 fn active_result_state_mut(opaque: &mut TqScanOpaque) -> &mut ScanResultState {
     if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
         &mut opaque.fallback_result_state
