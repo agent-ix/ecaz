@@ -73,7 +73,7 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), diff);
             }
         }
-    } else {
+    } else if values.len() < 64 {
         for chunk in values.chunks_exact_mut(32) {
             let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
             let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
@@ -87,14 +87,39 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(24), diff1);
             }
         }
+    } else {
+        for chunk in values.chunks_exact_mut(64) {
+            let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
+            let a1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(8)) };
+            let a2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(16)) };
+            let a3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(24)) };
+            let b0 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(32)) };
+            let b1 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(40)) };
+            let b2 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(48)) };
+            let b3 = unsafe { _mm256_loadu_ps(chunk.as_ptr().add(56)) };
+            let (sum0, sum1, sum2, sum3, diff0, diff1, diff2, diff3) =
+                unsafe { fwht64_avx2_block(a0, a1, a2, a3, b0, b1, b2, b3) };
+            unsafe {
+                _mm256_storeu_ps(chunk.as_mut_ptr(), sum0);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(8), sum1);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(16), sum2);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(24), sum3);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(32), diff0);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(40), diff1);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(48), diff2);
+                _mm256_storeu_ps(chunk.as_mut_ptr().add(56), diff3);
+            }
+        }
     }
 
     let mut width = if values.len() < 16 {
         8
     } else if values.len() < 32 {
         16
-    } else {
+    } else if values.len() < 64 {
         32
+    } else {
+        64
     };
     while width < values.len() {
         let step = width * 2;
@@ -128,8 +153,7 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
 #[target_feature(enable = "avx2")]
 unsafe fn fwht8_avx2_block(block: std::arch::x86_64::__m256) -> std::arch::x86_64::__m256 {
     use std::arch::x86_64::{
-        _mm256_add_ps, _mm256_blend_ps, _mm256_permutevar8x32_ps, _mm256_setr_epi32,
-        _mm256_sub_ps,
+        _mm256_add_ps, _mm256_blend_ps, _mm256_permutevar8x32_ps, _mm256_setr_epi32, _mm256_sub_ps,
     };
 
     let swap1 = _mm256_setr_epi32(1, 0, 3, 2, 5, 4, 7, 6);
@@ -189,6 +213,43 @@ unsafe fn fwht32_avx2_block(
         _mm256_add_ps(a1, b1),
         _mm256_sub_ps(a0, b0),
         _mm256_sub_ps(a1, b1),
+    )
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht64_avx2_block(
+    a0: std::arch::x86_64::__m256,
+    a1: std::arch::x86_64::__m256,
+    a2: std::arch::x86_64::__m256,
+    a3: std::arch::x86_64::__m256,
+    b0: std::arch::x86_64::__m256,
+    b1: std::arch::x86_64::__m256,
+    b2: std::arch::x86_64::__m256,
+    b3: std::arch::x86_64::__m256,
+) -> (
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+    std::arch::x86_64::__m256,
+) {
+    use std::arch::x86_64::{_mm256_add_ps, _mm256_sub_ps};
+
+    let (a0, a1, a2, a3) = unsafe { fwht32_avx2_block(a0, a1, a2, a3) };
+    let (b0, b1, b2, b3) = unsafe { fwht32_avx2_block(b0, b1, b2, b3) };
+    (
+        _mm256_add_ps(a0, b0),
+        _mm256_add_ps(a1, b1),
+        _mm256_add_ps(a2, b2),
+        _mm256_add_ps(a3, b3),
+        _mm256_sub_ps(a0, b0),
+        _mm256_sub_ps(a1, b1),
+        _mm256_sub_ps(a2, b2),
+        _mm256_sub_ps(a3, b3),
     )
 }
 
@@ -309,8 +370,8 @@ mod tests {
         }
 
         let mut scalar = vec![
-            1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25, 0.75, -3.5, 1.25, 2.5, -4.5, 5.0,
-            -0.75, 1.5,
+            1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25, 0.75, -3.5, 1.25, 2.5, -4.5, 5.0, -0.75,
+            1.5,
         ];
         let mut avx = scalar.clone();
         fwht_in_place_scalar(&mut scalar);
@@ -353,6 +414,45 @@ mod tests {
             _mm256_storeu_ps(avx.as_mut_ptr().add(8), sum1);
             _mm256_storeu_ps(avx.as_mut_ptr().add(16), diff0);
             _mm256_storeu_ps(avx.as_mut_ptr().add(24), diff1);
+        }
+
+        assert_eq!(scalar, avx);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn fwht64_avx2_block_matches_scalar_when_available() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            return;
+        }
+
+        let mut scalar = (0..64)
+            .map(|index| (index as f32 * 0.125) - 4.0)
+            .collect::<Vec<_>>();
+        let mut avx = scalar.clone();
+        fwht_in_place_scalar(&mut scalar);
+
+        unsafe {
+            use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+            let a0 = _mm256_loadu_ps(avx.as_ptr());
+            let a1 = _mm256_loadu_ps(avx.as_ptr().add(8));
+            let a2 = _mm256_loadu_ps(avx.as_ptr().add(16));
+            let a3 = _mm256_loadu_ps(avx.as_ptr().add(24));
+            let b0 = _mm256_loadu_ps(avx.as_ptr().add(32));
+            let b1 = _mm256_loadu_ps(avx.as_ptr().add(40));
+            let b2 = _mm256_loadu_ps(avx.as_ptr().add(48));
+            let b3 = _mm256_loadu_ps(avx.as_ptr().add(56));
+            let (sum0, sum1, sum2, sum3, diff0, diff1, diff2, diff3) =
+                fwht64_avx2_block(a0, a1, a2, a3, b0, b1, b2, b3);
+            _mm256_storeu_ps(avx.as_mut_ptr(), sum0);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(8), sum1);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(16), sum2);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(24), sum3);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(32), diff0);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(40), diff1);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(48), diff2);
+            _mm256_storeu_ps(avx.as_mut_ptr().add(56), diff3);
         }
 
         assert_eq!(scalar, avx);
