@@ -201,22 +201,35 @@ impl ProdQuantizer {
         mse_packed: &[u8],
         qjl_packed: &[u8],
     ) -> f32 {
-        let num_centroids = 1usize << (self.bits - 1);
+        let bits_per_index = self.bits - 1;
+        let num_centroids = 1usize << bits_per_index;
 
         let mut mse_sum = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let centroid_index = mse_index_at(mse_packed, dim_index, self.bits - 1) as usize;
-            mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
+        let mut qjl_sum = 0.0_f32;
+        let mut dim_index = 0usize;
+
+        if bits_per_index == 3 {
+            while dim_index + 8 <= self.original_dim {
+                let indices = decode_eight_3bit_aligned(mse_packed, dim_index);
+                let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
+                for lane in 0..8 {
+                    let absolute = dim_index + lane;
+                    mse_sum += prepared.lut[absolute * num_centroids + indices[lane]];
+                    qjl_sum += prepared.sq[absolute] * sign_lanes[lane];
+                }
+                dim_index += 8;
+            }
         }
 
-        let mut qjl_sum = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let sign = if qjl_sign_at(qjl_packed, dim_index) {
-                1.0
+        while dim_index < self.original_dim {
+            let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+            mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
+            qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                prepared.sq[dim_index]
             } else {
-                -1.0
+                -prepared.sq[dim_index]
             };
-            qjl_sum += prepared.sq[dim_index] * sign;
+            dim_index += 1;
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
@@ -240,11 +253,26 @@ impl ProdQuantizer {
     }
 
     fn score_ip_mse_codes_scalar(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+        let bits_per_index = self.bits - 1;
         let mut mse_sum = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let idx_a = mse_index_at(mse_a, dim_index, self.bits - 1) as usize;
-            let idx_b = mse_index_at(mse_b, dim_index, self.bits - 1) as usize;
+        let mut dim_index = 0usize;
+
+        if bits_per_index == 3 {
+            while dim_index + 8 <= self.original_dim {
+                let indices_a = decode_eight_3bit_aligned(mse_a, dim_index);
+                let indices_b = decode_eight_3bit_aligned(mse_b, dim_index);
+                for lane in 0..8 {
+                    mse_sum += self.codebook[indices_a[lane]] * self.codebook[indices_b[lane]];
+                }
+                dim_index += 8;
+            }
+        }
+
+        while dim_index < self.original_dim {
+            let idx_a = mse_index_at(mse_a, dim_index, bits_per_index) as usize;
+            let idx_b = mse_index_at(mse_b, dim_index, bits_per_index) as usize;
             mse_sum += self.codebook[idx_a] * self.codebook[idx_b];
+            dim_index += 1;
         }
         mse_sum
     }
@@ -318,28 +346,55 @@ impl ProdQuantizer {
         let mut qjl_sum = 0.0_f32;
         let mut dim_index = 0usize;
 
-        while dim_index + 8 <= self.original_dim {
-            let mut mse_values = [0.0_f32; 8];
-            for (lane, mse_value) in mse_values.iter_mut().enumerate() {
-                let absolute = dim_index + lane;
-                let centroid_index = mse_index_at(mse_packed, absolute, bits_per_index) as usize;
-                *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
-            }
+        if bits_per_index == 3 {
+            while dim_index + 8 <= self.original_dim {
+                let indices = decode_eight_3bit_aligned(mse_packed, dim_index);
+                let mut mse_values = [0.0_f32; 8];
+                for (lane, mse_value) in mse_values.iter_mut().enumerate() {
+                    let absolute = dim_index + lane;
+                    *mse_value = prepared.lut[absolute * num_centroids + indices[lane]];
+                }
 
-            let mut qjl_terms = [0.0_f32; 8];
-            _mm256_storeu_ps(
-                qjl_terms.as_mut_ptr(),
-                _mm256_mul_ps(
-                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
-                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
-                ),
-            );
+                let mut qjl_terms = [0.0_f32; 8];
+                _mm256_storeu_ps(
+                    qjl_terms.as_mut_ptr(),
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                        _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                    ),
+                );
 
-            for lane in 0..8 {
-                mse_sum += mse_values[lane];
-                qjl_sum += qjl_terms[lane];
+                for lane in 0..8 {
+                    mse_sum += mse_values[lane];
+                    qjl_sum += qjl_terms[lane];
+                }
+                dim_index += 8;
             }
-            dim_index += 8;
+        } else {
+            while dim_index + 8 <= self.original_dim {
+                let mut mse_values = [0.0_f32; 8];
+                for (lane, mse_value) in mse_values.iter_mut().enumerate() {
+                    let absolute = dim_index + lane;
+                    let centroid_index =
+                        mse_index_at(mse_packed, absolute, bits_per_index) as usize;
+                    *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
+                }
+
+                let mut qjl_terms = [0.0_f32; 8];
+                _mm256_storeu_ps(
+                    qjl_terms.as_mut_ptr(),
+                    _mm256_mul_ps(
+                        _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                        _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
+                    ),
+                );
+
+                for lane in 0..8 {
+                    mse_sum += mse_values[lane];
+                    qjl_sum += qjl_terms[lane];
+                }
+                dim_index += 8;
+            }
         }
 
         while dim_index < self.original_dim {
@@ -469,6 +524,27 @@ fn mse_index_at(packed: &[u8], dim_index: usize, bits_per_index: u8) -> CodeInde
     )
 }
 
+fn decode_eight_3bit_aligned(packed: &[u8], dim_index: usize) -> [usize; 8] {
+    debug_assert_eq!(dim_index % 8, 0);
+    let byte_index = (dim_index / 8) * 3;
+    let word = u32::from_le_bytes([
+        packed[byte_index],
+        packed[byte_index + 1],
+        packed[byte_index + 2],
+        0,
+    ]);
+    [
+        (word & 0x7) as usize,
+        ((word >> 3) & 0x7) as usize,
+        ((word >> 6) & 0x7) as usize,
+        ((word >> 9) & 0x7) as usize,
+        ((word >> 12) & 0x7) as usize,
+        ((word >> 15) & 0x7) as usize,
+        ((word >> 18) & 0x7) as usize,
+        ((word >> 21) & 0x7) as usize,
+    ]
+}
+
 fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
     (packed[dim_index / 8] >> (dim_index % 8)) & 1 == 1
 }
@@ -553,6 +629,14 @@ mod tests {
             let unpacked = unpack_mse_indices(&packed, indices.len(), bits);
             assert_eq!(unpacked, indices, "failed at bits={bits}");
         }
+    }
+
+    #[test]
+    fn decode_eight_3bit_aligned_matches_packer() {
+        let indices = vec![0u16, 7, 3, 5, 1, 6, 2, 4];
+        let packed = pack_mse_indices(&indices, 3);
+        let decoded = decode_eight_3bit_aligned(&packed, 0);
+        assert_eq!(decoded, [0usize, 7, 3, 5, 1, 6, 2, 4]);
     }
 
     #[test]
