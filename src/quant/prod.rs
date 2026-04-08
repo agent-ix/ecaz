@@ -268,7 +268,7 @@ impl ProdQuantizer {
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
-        if qjl_enabled(self.original_dim, self.bits) {
+        if mse_bits(self.original_dim, self.bits) == 3 {
             match backend() {
                 #[cfg(target_arch = "x86_64")]
                 SimdBackend::Avx2Fma => unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) },
@@ -303,6 +303,71 @@ impl ProdQuantizer {
             mse_sum += self.codebook[idx_a] * self.codebook[idx_b];
             dim_index += 1;
         }
+        mse_sum
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn score_ip_mse_codes_avx2(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+        use std::arch::x86_64::{
+            _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_permutevar8x32_ps,
+            _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
+        };
+
+        let bits_per_index = self.bits - 1;
+        if bits_per_index != 3 {
+            return self.score_ip_mse_codes_scalar(mse_a, mse_b);
+        }
+
+        debug_assert_eq!(self.codebook.len(), 8);
+        let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
+        let mut mse_acc = _mm256_setzero_ps();
+        let mut dim_index = 0usize;
+
+        while dim_index + 8 <= self.original_dim {
+            let indices_a = decode_eight_3bit_aligned(mse_a, dim_index);
+            let indices_b = decode_eight_3bit_aligned(mse_b, dim_index);
+            let lanes_a = _mm256_setr_epi32(
+                indices_a[0] as i32,
+                indices_a[1] as i32,
+                indices_a[2] as i32,
+                indices_a[3] as i32,
+                indices_a[4] as i32,
+                indices_a[5] as i32,
+                indices_a[6] as i32,
+                indices_a[7] as i32,
+            );
+            let lanes_b = _mm256_setr_epi32(
+                indices_b[0] as i32,
+                indices_b[1] as i32,
+                indices_b[2] as i32,
+                indices_b[3] as i32,
+                indices_b[4] as i32,
+                indices_b[5] as i32,
+                indices_b[6] as i32,
+                indices_b[7] as i32,
+            );
+            mse_acc = _mm256_add_ps(
+                mse_acc,
+                _mm256_mul_ps(
+                    _mm256_permutevar8x32_ps(codebook, lanes_a),
+                    _mm256_permutevar8x32_ps(codebook, lanes_b),
+                ),
+            );
+            dim_index += 8;
+        }
+
+        let mut mse_lanes = [0.0_f32; 8];
+        _mm256_storeu_ps(mse_lanes.as_mut_ptr(), mse_acc);
+        let mut mse_sum = mse_lanes.into_iter().sum::<f32>();
+
+        while dim_index < self.original_dim {
+            let idx_a = mse_index_at(mse_a, dim_index, bits_per_index) as usize;
+            let idx_b = mse_index_at(mse_b, dim_index, bits_per_index) as usize;
+            mse_sum += self.codebook[idx_a] * self.codebook[idx_b];
+            dim_index += 1;
+        }
+
         mse_sum
     }
 
