@@ -845,8 +845,8 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
             candidate.map(|candidate| candidate.score).unwrap_or(0.0),
         )
     };
-    let materialized = current.has_element()
-        || unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) };
+    let materialized =
+        current.has_element() || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
     let current_result_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let pending_heap_tids = active_result_state_ref(opaque)

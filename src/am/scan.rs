@@ -1022,7 +1022,7 @@ unsafe fn try_select_next_graph_traversal_result(
     )
 }
 
-unsafe fn prefetch_next_graph_traversal_result(
+pub(super) unsafe fn prefetch_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
@@ -1042,13 +1042,6 @@ unsafe fn prefetch_next_graph_traversal_result(
     mark_emitted_element(opaque, selected.element_tid);
     graph_traversal_cursor(opaque).materialize(selected);
     true
-}
-
-pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) -> bool {
-    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
 }
 
 unsafe fn produce_next_graph_traversal_heap_tid(
