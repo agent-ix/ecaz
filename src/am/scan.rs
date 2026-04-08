@@ -247,6 +247,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::Bootstrap;
+    opaque.graph_traversal_seeded = false;
     clear_scan_candidate_state(opaque);
     opaque.result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
@@ -300,7 +301,7 @@ fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
 }
 
 fn should_enter_linear_fallback_after_graph_exhaustion(opaque: &TqScanOpaque) -> bool {
-    !opaque.result_state.current().has_element()
+    !opaque.graph_traversal_seeded
 }
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
@@ -559,6 +560,7 @@ fn seed_bootstrap_trace(
     max_candidates: usize,
     trace: search::BeamTrace<page::ItemPointer>,
 ) {
+    opaque.graph_traversal_seeded = !trace.discovered.is_empty();
     reset_bootstrap_expansion_state(opaque, max_candidates);
     reset_scan_expanded_state(opaque);
     let opaque_ptr = opaque as *mut TqScanOpaque;
@@ -1285,6 +1287,7 @@ pub(super) struct TqScanOpaque {
     pub(super) scan_code_len: usize,
     pub(super) scan_block_count: u32,
     pub(super) bootstrap_frontier_limit: usize,
+    pub(super) graph_traversal_seeded: bool,
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
@@ -1310,6 +1313,7 @@ impl Default for TqScanOpaque {
             scan_code_len: 0,
             scan_block_count: 0,
             bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
+            graph_traversal_seeded: false,
             visited_tids: ptr::null_mut(),
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
@@ -1496,6 +1500,7 @@ mod tests {
     fn reset_scan_position_restores_bootstrap_execution_phase() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::Linear,
+            graph_traversal_seeded: true,
             ..TqScanOpaque::default()
         };
 
@@ -1505,22 +1510,26 @@ mod tests {
             opaque.execution_phase == ScanExecutionPhase::Bootstrap,
             "amrescan/reset should allow bootstrap traversal to run again after prior linear-phase scans"
         );
+        assert!(
+            !opaque.graph_traversal_seeded,
+            "amrescan/reset should clear prior graph traversal seeding before rebuilding the frontier"
+        );
     }
 
     #[test]
-    fn linear_fallback_only_remains_available_before_graph_materializes_a_result() {
+    fn linear_fallback_only_remains_available_before_graph_traversal_seeds_candidates() {
         let mut opaque = TqScanOpaque::default();
 
         assert!(
             should_enter_linear_fallback_after_graph_exhaustion(&opaque),
-            "the linear shell should remain available before any graph-ordered result materializes"
+            "the linear shell should remain available before graph traversal seeds any candidates"
         );
 
-        opaque.result_state.set_current(tid(26, 1), -2.5);
+        opaque.graph_traversal_seeded = true;
 
         assert!(
             !should_enter_linear_fallback_after_graph_exhaustion(&opaque),
-            "once graph traversal materializes an ordered result, exhausting that frontier should end the graph phase instead of defaulting back to linear scan"
+            "once graph traversal seeds candidates, exhausting that frontier should end the graph phase instead of defaulting back to linear scan"
         );
     }
 
