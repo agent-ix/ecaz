@@ -290,6 +290,10 @@ impl<'a> GraphTraversalCursor<'a> {
         false
     }
 
+    fn needs_prefetch_refresh(&self) -> bool {
+        self.result_state.pending_count() == 0
+    }
+
     fn materialize(&mut self, selected: SelectedScanResult) {
         self.result_state.materialize(selected);
     }
@@ -395,31 +399,15 @@ fn refresh_graph_traversal_prefetch(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if graph_traversal_prefetch_ready(opaque) {
-        return true;
-    }
-
     if !opaque.execution_phase.is_graph_traversal() {
         return false;
     }
 
-    unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
-}
-
-fn graph_traversal_has_prefetched_output(opaque: &TqScanOpaque) -> bool {
-    opaque.execution_phase.is_graph_traversal() && opaque.result_state.pending_count() != 0
-}
-
-fn graph_traversal_prefetch_ready(opaque: &mut TqScanOpaque) -> bool {
-    opaque.execution_phase.is_graph_traversal() && graph_traversal_cursor(opaque).prefetch_ready()
-}
-
-fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
-    if !opaque.execution_phase.is_graph_traversal() || opaque.result_state.pending_count() != 0 {
-        return;
+    if graph_traversal_cursor(opaque).prefetch_ready() {
+        return true;
     }
 
-    refresh_graph_traversal_prefetch(index_relation, opaque);
+    unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -1062,7 +1050,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if !graph_traversal_has_prefetched_output(opaque) {
+    if !opaque.execution_phase.is_graph_traversal()
+        || !graph_traversal_cursor(opaque).has_prefetched_output()
+    {
         debug_assert!(
             opaque.execution_phase.is_exhausted(),
             "graph traversal tuple production should only run with prefetched output or an exhausted graph phase"
@@ -1075,8 +1065,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
     );
-    if emitted {
-        advance_graph_traversal_after_emit(index_relation, opaque);
+    if emitted && graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+        refresh_graph_traversal_prefetch(index_relation, opaque);
     }
     emitted
 }
@@ -1844,7 +1834,7 @@ mod tests {
         };
         opaque.result_state.set_current(tid(28, 1), -6.0);
 
-        let ready = graph_traversal_prefetch_ready(&mut opaque);
+        let ready = graph_traversal_cursor(&mut opaque).prefetch_ready();
 
         assert!(
             !ready,
@@ -1862,7 +1852,7 @@ mod tests {
     }
 
     #[test]
-    fn graph_traversal_has_prefetched_output_requires_pending_duplicate_drain() {
+    fn graph_traversal_cursor_has_prefetched_output_requires_pending_duplicate_drain() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::GraphTraversal,
             ..TqScanOpaque::default()
@@ -1870,14 +1860,14 @@ mod tests {
         opaque.result_state.set_current(tid(29, 1), -7.0);
 
         assert!(
-            !graph_traversal_has_prefetched_output(&opaque),
+            !graph_traversal_cursor(&mut opaque).has_prefetched_output(),
             "graph traversal should only report prefetched output when duplicate drain is actually queued"
         );
 
         opaque.result_state.store_pending(&[tid(33, 1)]);
 
         assert!(
-            graph_traversal_has_prefetched_output(&opaque),
+            graph_traversal_cursor(&mut opaque).has_prefetched_output(),
             "graph traversal should report prefetched output once a current result has pending heap tids ready to emit"
         );
     }
