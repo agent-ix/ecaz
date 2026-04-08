@@ -71,9 +71,8 @@ Complete the HNSW scan path from module split through validated recall measureme
 - A2 is the hardest subtask. Reference pgvector `hnsw_search_layer` in `hnswscan.c` (~150 lines) but expect more complexity due to raw page tuple decoding.
 - The traversal helper should be generic over scoring function signature to support both scan (LUT `score_ip_encoded`) and insert (code-to-code `score_ip_codes_lite`).
 - A4 is a gate: if recall fails, all downstream work (insert, vacuum, benchmarks) is premature.
-- Ordered result buffering / graph-first execution are now in place on `main`; A4 should both
-  measure recall and leave behind an integration-level ordered-result regression test.
-- Post-v0.1 follow-up notes from the A3 close review:
+- Ordered result buffering / graph-first execution are now in place on `main`.
+- Post-v0.1 follow-up notes for the A3 runtime arc:
   1. The raw `self as *mut Self` aliasing pattern in `GraphTraversalPrefetchContext::run` is
      contained and approved, but a future search API that takes a visitor/trait object would be
      cleaner.
@@ -83,3 +82,12 @@ Complete the HNSW scan path from module split through validated recall measureme
      could disappear if graph-phase state is later separated from `TqScanOpaque`.
   4. `GraphTraversalCursor` is reconstructed several times per call site; likely inlined away, but
      could be held for readability in a future optimization pass.
+  5. A4 should leave behind a persistent integration-level ordered-result regression test, not just
+     one-off recall numbers, so graph-first scan ordering stays protected after planner/insert work
+     starts touching adjacent code.
+  6. If A5/A6 increase graph-phase state further, split the graph runtime state inside
+     `TqScanOpaque` into its own sub-struct so cursor/frontier code can borrow directly without the
+     current helper-based field splitting.
+  7. After A4 fixes the recall/exhaustion behavior in practice, write down the chosen
+     graph-exhaustion policy explicitly in the spec/ADR surface so planner and insert work do not
+     have to infer it from scan implementation details.
