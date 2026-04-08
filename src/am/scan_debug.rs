@@ -692,7 +692,14 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (HeapTidCoords, Vec<HeapTidCoords>, bool, HeapTidCoords, f32) {
+) -> (
+    HeapTidCoords,
+    Vec<HeapTidCoords>,
+    bool,
+    HeapTidCoords,
+    HeapTidCoords,
+    f32,
+) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -711,8 +718,10 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     let entry_neighbors = unsafe { super::debug_entry_point_neighbor_tids(index_oid) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let (successor_valid, successor_tid, successor_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 1));
+    let successor_slot = debug_runtime_ordered_provenance_slots(opaque)
+        .get(1)
+        .copied()
+        .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0));
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -720,9 +729,10 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
     (
         entry_tid,
         entry_neighbors,
-        successor_valid,
-        successor_tid,
-        successor_score,
+        successor_slot.0,
+        successor_slot.1,
+        successor_slot.2,
+        successor_slot.3,
     )
 }
 
@@ -778,6 +788,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = debug_runtime_ordered_head(opaque);
     let before_slots = debug_runtime_ordered_slots(opaque);
+    let current_result_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
@@ -785,7 +796,6 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     );
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
-    let current_result_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
     let after_head = debug_runtime_ordered_head(opaque);
     let after_slots = debug_runtime_ordered_slots(opaque);
 
@@ -1120,8 +1130,16 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let (before_valid, before_tid, before_score) =
-        debug_candidate_slot(visible_frontier_slot(opaque, 0));
+    let current = opaque.result_state.current();
+    let (before_valid, before_tid, before_score) = if current.has_element() {
+        (
+            true,
+            debug_item_pointer_coords(current.element_tid()),
+            current.score(),
+        )
+    } else {
+        debug_candidate_slot(visible_frontier_slot(opaque, 0))
+    };
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
@@ -1244,17 +1262,23 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         ..Default::default()
     };
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let prefetched_tid = opaque.result_state.current().element_tid();
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "neighbor debug helper requires a non-empty scan result"
     );
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let current_result_tid = debug_item_pointer_coords(opaque.result_state.current().element_tid());
+    let current_result_tid = if opaque.result_state.current().has_element() {
+        opaque.result_state.current().element_tid()
+    } else {
+        prefetched_tid
+    };
     let (_element, neighbors) = unsafe {
         graph::load_graph_adjacency(
             index_relation,
-            opaque.result_state.current().element_tid(),
+            current_result_tid,
             opaque.scan_code_len,
         )
     };
@@ -1262,7 +1286,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (current_result_tid, neighbors.tids.len())
+    (debug_item_pointer_coords(current_result_tid), neighbors.tids.len())
 }
 
 #[cfg(any(test, feature = "pg_test"))]

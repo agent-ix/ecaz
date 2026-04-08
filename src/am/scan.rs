@@ -282,11 +282,6 @@ unsafe fn produce_next_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if emit_pending_scan_heap_tid(scan, opaque) {
-        advance_graph_traversal_after_emit(index_relation, opaque);
-        return true;
-    }
-
     match opaque.execution_phase {
         ScanExecutionPhase::GraphTraversal => unsafe {
             produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
@@ -954,19 +949,17 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if !unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) } {
+    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    if !emitted {
+        debug_assert!(
+            opaque.execution_phase.is_exhausted(),
+            "seeded graph traversal should prefill pending output before amgettuple re-enters graph result production"
+        );
         return false;
     }
 
-    let emitted = emit_pending_scan_heap_tid(scan, opaque);
-    debug_assert!(
-        emitted,
-        "graph traversal result materialization should seed pending heap tids before returning true"
-    );
-    if emitted {
-        advance_graph_traversal_after_emit(index_relation, opaque);
-    }
-    emitted
+    advance_graph_traversal_after_emit(index_relation, opaque);
+    true
 }
 
 unsafe fn produce_next_linear_fallback_heap_tid(
@@ -975,6 +968,10 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    if emit_pending_scan_heap_tid(scan, opaque) {
+        return true;
+    }
+
     let Some(selected) = (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
     else {
         return false;
