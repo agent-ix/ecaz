@@ -3827,6 +3827,23 @@ mod tests {
             .iter()
             .any(|neighbor_tid| !before_tids.contains(neighbor_tid));
 
+        if before_slots.is_empty() {
+            assert!(
+                before_head.is_none(),
+                "without any remaining raw frontier slots, the raw frontier head should already be empty"
+            );
+            assert_eq!(
+                consumed_tid,
+                (u32::MAX, u16::MAX),
+                "when amrescan has already materialized the ordered head into current-result state, the raw frontier helper may have nothing left to consume"
+            );
+            assert!(
+                after_head.is_none() && after_slots.is_empty(),
+                "without any remaining raw frontier slots, manual frontier consume/refill should leave the raw frontier empty"
+            );
+            return;
+        }
+
         assert_ne!(
             consumed_tid,
             (u32::MAX, u16::MAX),

@@ -294,7 +294,7 @@ fn prefill_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if graph_traversal_output_ready(opaque) {
+    if graph_traversal_has_prefetched_output(opaque) {
         return true;
     }
 
@@ -305,12 +305,12 @@ fn prefill_graph_traversal_result(
     unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
 }
 
-fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
-    if !opaque.execution_phase.is_graph_traversal() {
-        return false;
-    }
+fn graph_traversal_has_prefetched_output(opaque: &TqScanOpaque) -> bool {
+    opaque.execution_phase.is_graph_traversal() && opaque.result_state.pending_count() != 0
+}
 
-    if opaque.result_state.pending_count() != 0 {
+fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
+    if graph_traversal_has_prefetched_output(opaque) {
         return true;
     }
 
@@ -981,7 +981,11 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if !prefill_graph_traversal_result(index_relation, opaque) {
+    if !graph_traversal_has_prefetched_output(opaque) {
+        debug_assert!(
+            opaque.execution_phase.is_exhausted(),
+            "graph traversal tuple production should only run with prefetched output or an exhausted graph phase"
+        );
         return false;
     }
 
@@ -1794,6 +1798,27 @@ mod tests {
             opaque.result_state.pending_count(),
             0,
             "graph traversal stale-current cleanup should not invent pending duplicate-drain state"
+        );
+    }
+
+    #[test]
+    fn graph_traversal_has_prefetched_output_requires_pending_duplicate_drain() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::GraphTraversal,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current(tid(29, 1), -7.0);
+
+        assert!(
+            !graph_traversal_has_prefetched_output(&opaque),
+            "graph traversal should only report prefetched output when duplicate drain is actually queued"
+        );
+
+        opaque.result_state.store_pending(&[tid(33, 1)]);
+
+        assert!(
+            graph_traversal_has_prefetched_output(&opaque),
+            "graph traversal should report prefetched output once a current result has pending heap tids ready to emit"
         );
     }
 
