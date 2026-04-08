@@ -407,7 +407,7 @@ fn refresh_graph_traversal_prefetch(
         return true;
     }
 
-    unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
+    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -918,11 +918,6 @@ fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResul
     opaque.result_state.materialize(selected);
 }
 
-fn materialize_graph_traversal_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    mark_emitted_element(opaque, selected.element_tid);
-    graph_traversal_cursor(opaque).materialize(selected);
-}
-
 #[cfg(any(test, feature = "pg_test"))]
 fn refill_bootstrap_frontier_after_consume<F>(
     opaque: &mut TqScanOpaque,
@@ -983,14 +978,11 @@ where
     None
 }
 
-unsafe fn try_select_next_bootstrap_frontier_result(
+unsafe fn try_select_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> Option<SelectedScanResult> {
-    if opaque.result_state.pending_count() != 0
-        || !opaque.execution_phase.is_graph_traversal()
-        || opaque.scan_dimensions == 0
-    {
+    if !opaque.execution_phase.is_graph_traversal() || opaque.scan_dimensions == 0 {
         return None;
     }
 
@@ -1030,19 +1022,33 @@ unsafe fn try_select_next_bootstrap_frontier_result(
     )
 }
 
-pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
+unsafe fn prefetch_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let Some(selected) =
-        (unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) })
+    if !opaque.execution_phase.is_graph_traversal()
+        || opaque.scan_dimensions == 0
+        || graph_traversal_cursor(opaque).has_prefetched_output()
+    {
+        return false;
+    }
+
+    let Some(selected) = (unsafe { try_select_next_graph_traversal_result(index_relation, opaque) })
     else {
         mark_scan_exhausted(opaque);
         return false;
     };
 
-    materialize_graph_traversal_result(opaque, selected);
+    mark_emitted_element(opaque, selected.element_tid);
+    graph_traversal_cursor(opaque).materialize(selected);
     true
+}
+
+pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) }
 }
 
 unsafe fn produce_next_graph_traversal_heap_tid(
