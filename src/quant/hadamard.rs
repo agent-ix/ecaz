@@ -50,6 +50,16 @@ pub fn orthonormal_fwht_in_place(values: &mut [f32]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
+    if values.len() == 2048 {
+        unsafe { fwht_in_place_avx2_two_level(values, 1024, 256) };
+        return;
+    }
+
+    if values.len() == 4096 {
+        unsafe { fwht_in_place_avx2_two_level(values, 2048, 256) };
+        return;
+    }
+
     let tile_width = avx2_fwht_tile_width(values.len());
     if tile_width > 0 {
         for chunk in values.chunks_exact_mut(tile_width) {
@@ -62,6 +72,31 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
 
     let bootstrap_width = unsafe { fwht_in_place_avx2_bootstrap(values) };
     unsafe { fwht_in_place_avx2_stages(values, bootstrap_width) };
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht_in_place_avx2_two_level(
+    values: &mut [f32],
+    outer_tile_width: usize,
+    inner_tile_width: usize,
+) {
+    debug_assert!(outer_tile_width.is_power_of_two());
+    debug_assert!(inner_tile_width.is_power_of_two());
+    debug_assert!(inner_tile_width >= 64);
+    debug_assert!(outer_tile_width > inner_tile_width);
+    debug_assert_eq!(values.len() % outer_tile_width, 0);
+    debug_assert_eq!(outer_tile_width % inner_tile_width, 0);
+
+    for outer_chunk in values.chunks_exact_mut(outer_tile_width) {
+        for inner_chunk in outer_chunk.chunks_exact_mut(inner_tile_width) {
+            unsafe { fwht_in_place_avx2_bootstrap(inner_chunk) };
+            unsafe { fwht_in_place_avx2_stages(inner_chunk, 64) };
+        }
+        unsafe { fwht_in_place_avx2_stages(outer_chunk, inner_tile_width) };
+    }
+
+    unsafe { fwht_in_place_avx2_stages(values, outer_tile_width) };
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -499,7 +534,7 @@ mod tests {
             return;
         }
 
-        for size in [128usize, 256, 512, 1024] {
+        for size in [128usize, 256, 512, 1024, 2048, 4096] {
             let mut scalar = (0..size)
                 .map(|index| ((index as f32 * 0.125) - 8.0).cos())
                 .collect::<Vec<_>>();
