@@ -52,7 +52,18 @@ pub fn orthonormal_fwht_in_place(values: &mut [f32]) {
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
     use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps, _mm256_sub_ps};
 
-    let mut width = 1;
+    if values.len() < 8 {
+        fwht_in_place_scalar(values);
+        return;
+    }
+
+    for chunk in values.chunks_exact_mut(8) {
+        let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
+        let transformed = unsafe { fwht8_avx2_block(block) };
+        unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
+    }
+
+    let mut width = 8;
     while width < values.len() {
         let step = width * 2;
         for chunk in values.chunks_exact_mut(step) {
@@ -79,6 +90,36 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
         }
         width = step;
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht8_avx2_block(block: std::arch::x86_64::__m256) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::{
+        _mm256_add_ps, _mm256_blend_ps, _mm256_permutevar8x32_ps, _mm256_setr_epi32,
+        _mm256_sub_ps,
+    };
+
+    let swap1 = _mm256_setr_epi32(1, 0, 3, 2, 5, 4, 7, 6);
+    let swap2 = _mm256_setr_epi32(2, 3, 0, 1, 6, 7, 4, 5);
+    let swap3 = _mm256_setr_epi32(4, 5, 6, 7, 0, 1, 2, 3);
+
+    let mut value = block;
+
+    let paired = _mm256_permutevar8x32_ps(value, swap1);
+    let paired_sum = _mm256_add_ps(value, paired);
+    let paired_diff = _mm256_permutevar8x32_ps(_mm256_sub_ps(value, paired), swap1);
+    value = _mm256_blend_ps(paired_sum, paired_diff, 0b1010_1010);
+
+    let quads = _mm256_permutevar8x32_ps(value, swap2);
+    let quad_sum = _mm256_add_ps(value, quads);
+    let quad_diff = _mm256_permutevar8x32_ps(_mm256_sub_ps(value, quads), swap2);
+    value = _mm256_blend_ps(quad_sum, quad_diff, 0b1100_1100);
+
+    let halves = _mm256_permutevar8x32_ps(value, swap3);
+    let half_sum = _mm256_add_ps(value, halves);
+    let half_diff = _mm256_permutevar8x32_ps(_mm256_sub_ps(value, halves), swap3);
+    _mm256_blend_ps(half_sum, half_diff, 0b1111_0000)
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -167,5 +208,26 @@ mod tests {
     fn miri_orthonormal_fwht_small() {
         let mut data = vec![1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25];
         orthonormal_fwht_in_place(&mut data);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn fwht8_avx2_block_matches_scalar_when_available() {
+        if !std::arch::is_x86_feature_detected!("avx2") {
+            return;
+        }
+
+        let mut scalar = vec![1.0f32, -2.0, 0.5, 3.0, -1.5, 4.0, 2.0, -0.25];
+        let mut avx = scalar.clone();
+        fwht_in_place_scalar(&mut scalar);
+
+        unsafe {
+            use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+            let transformed = fwht8_avx2_block(_mm256_loadu_ps(avx.as_ptr()));
+            _mm256_storeu_ps(avx.as_mut_ptr(), transformed);
+        }
+
+        assert_eq!(scalar, avx);
     }
 }
