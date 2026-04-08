@@ -50,19 +50,51 @@ pub fn orthonormal_fwht_in_place(values: &mut [f32]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
-    use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps, _mm256_sub_ps};
-
-    if values.len() < 8 {
-        fwht_in_place_scalar(values);
+    let tile_width = avx2_fwht_tile_width(values.len());
+    if tile_width > 0 {
+        for chunk in values.chunks_exact_mut(tile_width) {
+            unsafe { fwht_in_place_avx2_bootstrap(chunk) };
+            unsafe { fwht_in_place_avx2_stages(chunk, 64) };
+        }
+        unsafe { fwht_in_place_avx2_stages(values, tile_width) };
         return;
     }
 
-    if values.len() < 16 {
+    let bootstrap_width = unsafe { fwht_in_place_avx2_bootstrap(values) };
+    unsafe { fwht_in_place_avx2_stages(values, bootstrap_width) };
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn avx2_fwht_tile_width(len: usize) -> usize {
+    if len == 2048 {
+        1024
+    } else if len >= 512 {
+        512
+    } else if len >= 256 {
+        256
+    } else if len >= 128 {
+        128
+    } else {
+        0
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
+    use std::arch::x86_64::{_mm256_loadu_ps, _mm256_storeu_ps};
+
+    if values.len() < 8 {
+        fwht_in_place_scalar(values);
+        4
+    } else if values.len() < 16 {
         for chunk in values.chunks_exact_mut(8) {
             let block = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
             let transformed = unsafe { fwht8_avx2_block(block) };
             unsafe { _mm256_storeu_ps(chunk.as_mut_ptr(), transformed) };
         }
+        8
     } else if values.len() < 32 {
         for chunk in values.chunks_exact_mut(16) {
             let left = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
@@ -73,6 +105,7 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(8), diff);
             }
         }
+        16
     } else if values.len() < 64 {
         for chunk in values.chunks_exact_mut(32) {
             let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
@@ -87,6 +120,7 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(24), diff1);
             }
         }
+        32
     } else {
         for chunk in values.chunks_exact_mut(64) {
             let a0 = unsafe { _mm256_loadu_ps(chunk.as_ptr()) };
@@ -110,17 +144,15 @@ unsafe fn fwht_in_place_avx2(values: &mut [f32]) {
                 _mm256_storeu_ps(chunk.as_mut_ptr().add(56), diff3);
             }
         }
-    }
-
-    let mut width = if values.len() < 16 {
-        8
-    } else if values.len() < 32 {
-        16
-    } else if values.len() < 64 {
-        32
-    } else {
         64
-    };
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht_in_place_avx2_stages(values: &mut [f32], mut width: usize) {
+    use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps, _mm256_sub_ps};
+
     while width < values.len() {
         let step = width * 2;
         for chunk in values.chunks_exact_mut(step) {
@@ -456,5 +488,27 @@ mod tests {
         }
 
         assert_eq!(scalar, avx);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn fwht_tiled_avx2_exact_sizes_match_scalar_when_available() {
+        if !(std::arch::is_x86_feature_detected!("avx2")
+            && std::arch::is_x86_feature_detected!("fma"))
+        {
+            return;
+        }
+
+        for size in [128usize, 256, 512, 1024] {
+            let mut scalar = (0..size)
+                .map(|index| ((index as f32 * 0.125) - 8.0).cos())
+                .collect::<Vec<_>>();
+            let mut avx = scalar.clone();
+            fwht_in_place_scalar(&mut scalar);
+
+            unsafe { fwht_in_place_avx2(&mut avx) };
+
+            assert_eq!(scalar, avx, "size={size}");
+        }
     }
 }
