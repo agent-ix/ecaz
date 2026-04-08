@@ -123,7 +123,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque,
                 &metadata,
             );
-            if !prefill_graph_traversal_result((*scan).indexRelation, opaque) {
+            if !refresh_graph_traversal_prefetch((*scan).indexRelation, opaque) {
                 enter_linear_fallback_phase(opaque);
             }
         })
@@ -290,11 +290,11 @@ unsafe fn produce_next_scan_heap_tid(
     }
 }
 
-fn prefill_graph_traversal_result(
+fn refresh_graph_traversal_prefetch(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    if graph_traversal_has_prefetched_output(opaque) {
+    if graph_traversal_prefetch_ready(opaque) {
         return true;
     }
 
@@ -309,12 +309,12 @@ fn graph_traversal_has_prefetched_output(opaque: &TqScanOpaque) -> bool {
     opaque.execution_phase.is_graph_traversal() && opaque.result_state.pending_count() != 0
 }
 
-fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
+fn graph_traversal_prefetch_ready(opaque: &mut TqScanOpaque) -> bool {
     if graph_traversal_has_prefetched_output(opaque) {
         return true;
     }
 
-    if opaque.result_state.current().has_element() {
+    if opaque.execution_phase.is_graph_traversal() && opaque.result_state.current().has_element() {
         opaque.result_state.clear_current();
     }
 
@@ -326,8 +326,7 @@ fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: 
         return;
     }
 
-    opaque.result_state.clear_current();
-    prefill_graph_traversal_result(index_relation, opaque);
+    refresh_graph_traversal_prefetch(index_relation, opaque);
 }
 
 fn advance_linear_fallback_after_emit(opaque: &mut TqScanOpaque) {
@@ -1777,14 +1776,14 @@ mod tests {
     }
 
     #[test]
-    fn graph_traversal_output_ready_clears_stale_current_without_pending_output() {
+    fn graph_traversal_prefetch_ready_clears_stale_current_without_pending_output() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::GraphTraversal,
             ..TqScanOpaque::default()
         };
         opaque.result_state.set_current(tid(28, 1), -6.0);
 
-        let ready = graph_traversal_output_ready(&mut opaque);
+        let ready = graph_traversal_prefetch_ready(&mut opaque);
 
         assert!(
             !ready,
