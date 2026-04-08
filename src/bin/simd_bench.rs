@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 
 use tqvector::bench_api::{fwht_in_place, simd_backend, ProdQuantizer};
 
+const WARMUP_ITERATIONS: usize = 256;
+
 fn main() {
     let iterations = std::env::args()
         .nth(1)
@@ -15,6 +17,7 @@ fn main() {
 
     println!("backend={}", simd_backend());
     println!("iterations={iterations}");
+    println!("warmup_iterations={}", iterations.clamp(1, WARMUP_ITERATIONS));
 
     run_fwht_bench(2_048, iterations);
     run_fwht_bench(4_096, iterations / 2);
@@ -80,6 +83,10 @@ fn run_score_ip_codes_lite_bench(dim: usize, bits: u8, iterations: usize) {
 }
 
 fn time_loop(iterations: usize, mut f: impl FnMut()) -> Duration {
+    for _ in 0..iterations.min(WARMUP_ITERATIONS) {
+        f();
+    }
+
     let start = Instant::now();
     for _ in 0..iterations {
         f();
