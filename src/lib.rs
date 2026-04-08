@@ -28,6 +28,9 @@ pub mod bench_api {
 
     // Hadamard
     pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};
+    pub fn simd_backend() -> &'static str {
+        crate::quant::simd_backend_name()
+    }
 
     // Rotation
     pub use crate::quant::rotation::{inverse_srht, pad_input, sign_vector, srht, transform_dim};
