@@ -338,13 +338,17 @@ impl ProdQuantizer {
         mse_packed: &[u8],
         qjl_packed: &[u8],
     ) -> f32 {
-        use std::arch::x86_64::{_mm256_loadu_ps, _mm256_mul_ps, _mm256_storeu_ps};
+        use std::arch::x86_64::{
+            _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+        };
 
         let bits_per_index = self.bits - 1;
         let num_centroids = 1usize << bits_per_index;
         let mut mse_sum = 0.0_f32;
         let mut qjl_sum = 0.0_f32;
         let mut dim_index = 0usize;
+        let mut mse_acc = _mm256_setzero_ps();
+        let mut qjl_acc = _mm256_setzero_ps();
 
         if bits_per_index == 3 {
             while dim_index + 8 <= self.original_dim {
@@ -355,19 +359,14 @@ impl ProdQuantizer {
                     *mse_value = prepared.lut[absolute * num_centroids + indices[lane]];
                 }
 
-                let mut qjl_terms = [0.0_f32; 8];
-                _mm256_storeu_ps(
-                    qjl_terms.as_mut_ptr(),
+                mse_acc = _mm256_add_ps(mse_acc, _mm256_loadu_ps(mse_values.as_ptr()));
+                qjl_acc = _mm256_add_ps(
+                    qjl_acc,
                     _mm256_mul_ps(
                         _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
                         _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
                     ),
                 );
-
-                for lane in 0..8 {
-                    mse_sum += mse_values[lane];
-                    qjl_sum += qjl_terms[lane];
-                }
                 dim_index += 8;
             }
         } else {
@@ -380,22 +379,24 @@ impl ProdQuantizer {
                     *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
                 }
 
-                let mut qjl_terms = [0.0_f32; 8];
-                _mm256_storeu_ps(
-                    qjl_terms.as_mut_ptr(),
+                mse_acc = _mm256_add_ps(mse_acc, _mm256_loadu_ps(mse_values.as_ptr()));
+                qjl_acc = _mm256_add_ps(
+                    qjl_acc,
                     _mm256_mul_ps(
                         _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
                         _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
                     ),
                 );
-
-                for lane in 0..8 {
-                    mse_sum += mse_values[lane];
-                    qjl_sum += qjl_terms[lane];
-                }
                 dim_index += 8;
             }
         }
+
+        let mut mse_lanes = [0.0_f32; 8];
+        let mut qjl_lanes = [0.0_f32; 8];
+        _mm256_storeu_ps(mse_lanes.as_mut_ptr(), mse_acc);
+        _mm256_storeu_ps(qjl_lanes.as_mut_ptr(), qjl_acc);
+        mse_sum += mse_lanes.into_iter().sum::<f32>();
+        qjl_sum += qjl_lanes.into_iter().sum::<f32>();
 
         while dim_index < self.original_dim {
             let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
