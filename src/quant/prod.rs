@@ -368,7 +368,8 @@ impl ProdQuantizer {
         qjl_packed: &[u8],
     ) -> f32 {
         use std::arch::x86_64::{
-            _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_setzero_ps, _mm256_storeu_ps,
+            _mm256_add_ps, _mm256_i32gather_ps, _mm256_loadu_ps, _mm256_mul_ps,
+            _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
         let bits_per_index = self.bits - 1;
@@ -382,13 +383,23 @@ impl ProdQuantizer {
         if bits_per_index == 3 {
             while dim_index + 8 <= self.original_dim {
                 let indices = decode_eight_3bit_aligned(mse_packed, dim_index);
-                let mut mse_values = [0.0_f32; 8];
-                for (lane, mse_value) in mse_values.iter_mut().enumerate() {
-                    let absolute = dim_index + lane;
-                    *mse_value = prepared.lut[absolute * num_centroids + indices[lane]];
-                }
+                let base = (dim_index * num_centroids) as i32;
+                let stride = num_centroids as i32;
+                let lut_offsets = _mm256_setr_epi32(
+                    base + indices[0] as i32,
+                    base + stride + indices[1] as i32,
+                    base + (2 * stride) + indices[2] as i32,
+                    base + (3 * stride) + indices[3] as i32,
+                    base + (4 * stride) + indices[4] as i32,
+                    base + (5 * stride) + indices[5] as i32,
+                    base + (6 * stride) + indices[6] as i32,
+                    base + (7 * stride) + indices[7] as i32,
+                );
 
-                mse_acc = _mm256_add_ps(mse_acc, _mm256_loadu_ps(mse_values.as_ptr()));
+                mse_acc = _mm256_add_ps(
+                    mse_acc,
+                    _mm256_i32gather_ps(prepared.lut.as_ptr(), lut_offsets, 4),
+                );
                 qjl_acc = _mm256_add_ps(
                     qjl_acc,
                     _mm256_mul_ps(
