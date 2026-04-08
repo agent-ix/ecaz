@@ -255,6 +255,13 @@ All items are serial because each depends on the previous.
   4. Duplicate heap TID handling for coalesced element tuples remains correct under graph-first
      execution.
 - **Exit criteria:** `SET enable_seqscan = off; SELECT ... ORDER BY col <#> $query LIMIT 10` returns distance-ordered results via index scan. ADR-011 cost gate remains active.
+- **Status: CLOSED** (2026-04-08, reviews 161-193). Graph-first scan runtime is cursor-owned end-to-end. Bootstrap helpers gated to test/debug.
+- **Post-v0.1 follow-up items:**
+  1. **Raw pointer aliasing in `GraphTraversalPrefetchContext::run`** — The `self as *mut Self` pattern is sound but fragile. Consider replacing the closure bundle in `select_next_with_refill` with a single trait object or visitor to eliminate self-aliasing.
+  2. **Graph exhaustion → fallback transition policy** — Currently graph exhaustion always marks `Exhausted`. Partial-graph indexes (sparse connectivity, live-write connectivity gaps after A5) may benefit from a graceful transition to `LinearFallback` instead. Evaluate after A5 introduces indexes with connectivity gaps.
+  3. **`with_visible_frontier_mut_and_bootstrap_expansion` borrow splitting** — Exists to work around disjoint field access through `TqScanOpaque`. If graph-phase state is refactored into its own struct (cursor extraction laid the groundwork), this helper can be replaced with direct field borrows.
+  4. **`GraphTraversalCursor` reconstruction per call** — Cursor is rebuilt via `graph_traversal_cursor(opaque)` multiple times per `amgettuple` call. Likely inlined away by the compiler, but holding the cursor across the full `produce_next_graph_traversal_heap_tid` body would read more naturally.
+  5. **Integration-level ordered-result regression test** — Cursor mechanics have strong unit coverage, but no integration test confirms graph-first heap TIDs arrive in distance-sorted order across a non-trivial built index. Should come naturally from A4 recall measurement — persist as a regression test afterward.
 
 #### A4: Recall Benchmark Gate
 - **Scope:** Measure Recall@10 on synthetic data after ordered result buffering is in place. This
