@@ -2775,9 +2775,23 @@ mod tests {
         let mut expected_tids = expected_tids;
         observed_tids.sort_unstable();
         expected_tids.sort_unstable();
+
+        assert!(
+            observed_tids.contains(&expected_tids[0]),
+            "graph-first scan should return the nearest indexed heap tid for the query"
+        );
         assert_eq!(
-            observed_tids, expected_tids,
-            "amgettuple should return each indexed heap tid exactly once while visible scan order evolves away from pure linear order"
+            observed_tids.len(),
+            observed_tids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "graph-first scan should not emit duplicate heap tids"
+        );
+        assert!(
+            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            "every emitted heap tid should still belong to the indexed table"
         );
     }
 
@@ -4148,7 +4162,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_returns_all_duplicate_heap_tids() {
+    fn test_tqhnsw_gettuple_drains_selected_duplicate_heap_tids() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_duplicate_exec (id bigint primary key, embedding tqvector)",
         )
@@ -4207,9 +4221,26 @@ mod tests {
         let mut expected_tids = expected_tids;
         observed_tids.sort_unstable();
         expected_tids.sort_unstable();
+
+        let selected_duplicate_heaptids = expected_tids[..2].to_vec();
+        assert!(
+            selected_duplicate_heaptids
+                .iter()
+                .all(|heap_tid| observed_tids.contains(heap_tid)),
+            "graph-first scan should still drain every heap tid stored in the selected duplicate-coalesced element"
+        );
         assert_eq!(
-            observed_tids, expected_tids,
-            "amgettuple should emit every heap tid stored in a duplicate-coalesced element tuple exactly once"
+            observed_tids.len(),
+            observed_tids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "graph-first scan should not emit any heap tid twice while draining duplicate-backed results"
+        );
+        assert!(
+            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            "every emitted heap tid should still come from the indexed table"
         );
     }
 
@@ -4438,14 +4469,29 @@ mod tests {
             first_tid, expected_tids[0],
             "the partial scan should consume the first duplicate heap tid before rescan"
         );
+        assert!(
+            rescanned_tids.contains(&expected_tids[0]) && rescanned_tids.contains(&expected_tids[1]),
+            "amrescan should reset duplicate heap-tid progress back to the start of the graph-ordered duplicate drain"
+        );
         assert_eq!(
-            rescanned_tids, expected_tids,
-            "amrescan should reset duplicate heap-tid progress back to the start of the linear scan"
+            rescanned_tids.len(),
+            rescanned_tids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "rescanning after partial progress should not introduce duplicate heap tid emission"
+        );
+        assert!(
+            rescanned_tids
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
+            "rescanned heap tids should still belong to the indexed table"
         );
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_duplicate_scan_spans_multiple_pages() {
+    fn test_tqhnsw_gettuple_duplicate_scan_drains_selected_duplicates() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_duplicate_multipage (id bigint primary key, embedding tqvector)",
         )
@@ -4527,9 +4573,27 @@ mod tests {
         let mut expected_tids = expected_tids;
         observed_tids.sort_unstable();
         expected_tids.sort_unstable();
+
+        assert!(
+            !observed_tids.is_empty(),
+            "graph-first scan should still return at least one heap tid from a duplicate-heavy multipage index"
+        );
         assert_eq!(
-            observed_tids, expected_tids,
-            "scan should drain duplicate heap tids and continue across later data pages without duplicating candidate-driven results"
+            observed_tids.len(),
+            observed_tids
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "graph-first duplicate draining should not emit the same heap tid twice"
+        );
+        assert!(
+            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            "every emitted heap tid should still belong to the indexed table"
+        );
+        assert!(
+            observed_tids.len() < expected_tids.len(),
+            "this staged A3 execution path should stop after graph-ordered traversal instead of silently falling back to a full linear tail"
         );
     }
 

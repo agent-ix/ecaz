@@ -299,6 +299,10 @@ fn complete_bootstrap_phase(opaque: &mut TqScanOpaque) {
     reset_scan_expanded_state(opaque);
 }
 
+fn should_enter_linear_fallback_after_graph_exhaustion(opaque: &TqScanOpaque) -> bool {
+    !opaque.result_state.current().has_element()
+}
+
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     complete_bootstrap_phase(opaque);
     opaque.result_state.clear();
@@ -926,6 +930,11 @@ unsafe fn select_next_scan_result(
                 return Some(selected);
             }
 
+            if !should_enter_linear_fallback_after_graph_exhaustion(opaque) {
+                mark_scan_exhausted(opaque);
+                return None;
+            }
+
             complete_bootstrap_phase(opaque);
             unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) }
         }
@@ -1495,6 +1504,23 @@ mod tests {
         assert!(
             opaque.execution_phase == ScanExecutionPhase::Bootstrap,
             "amrescan/reset should allow bootstrap traversal to run again after prior linear-phase scans"
+        );
+    }
+
+    #[test]
+    fn linear_fallback_only_remains_available_before_graph_materializes_a_result() {
+        let mut opaque = TqScanOpaque::default();
+
+        assert!(
+            should_enter_linear_fallback_after_graph_exhaustion(&opaque),
+            "the linear shell should remain available before any graph-ordered result materializes"
+        );
+
+        opaque.result_state.set_current(tid(26, 1), -2.5);
+
+        assert!(
+            !should_enter_linear_fallback_after_graph_exhaustion(&opaque),
+            "once graph traversal materializes an ordered result, exhausting that frontier should end the graph phase instead of defaulting back to linear scan"
         );
     }
 
