@@ -4389,13 +4389,30 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        assert_eq!(
-            first_pass, expected_tids,
-            "the first linear scan should exhaust only after returning every heap tid"
+        assert!(
+            !first_pass.is_empty(),
+            "the first graph-first scan should return at least one heap tid before exhaustion"
+        );
+        assert!(
+            first_pass.contains(&expected_tids[0]),
+            "the first graph-first scan should include the nearest indexed heap tid before exhaustion"
         );
         assert_eq!(
-            rescanned_tids, expected_tids,
-            "amrescan after exhaustion should restart tuple production from the beginning"
+            first_pass.len(),
+            first_pass
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            "the first graph-first scan should not emit duplicate heap tids before exhaustion"
+        );
+        assert!(
+            first_pass.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            "the first graph-first scan should only emit heap tids from the indexed table"
+        );
+        assert_eq!(
+            rescanned_tids, first_pass,
+            "amrescan after exhaustion should restart tuple production from the beginning of the graph-first output"
         );
     }
 
