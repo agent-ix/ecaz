@@ -692,6 +692,18 @@ pub mod pg_test {
 #[pg_schema]
 mod tests {
     use super::*;
+    use rand::Rng;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+    use std::collections::{HashMap, HashSet};
+
+    const RECALL_BITS: i32 = 4;
+    const RECALL_SEED: i64 = 42;
+    const RECALL_DIM: usize = 1536;
+    const RECALL_CORPUS_SIZE: usize = 10_000;
+    const RECALL_QUERY_COUNT: usize = 100;
+    const RECALL_K: usize = 10;
+    const RECALL_EF_CONSTRUCTION: i32 = 128;
 
     fn setup_rescan_scaffold_index(name: &str) -> pg_sys::Oid {
         Spi::run(&format!(
@@ -711,6 +723,157 @@ mod tests {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{name}_idx'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn random_unit_vectors(n: usize, dim: usize, seed: u64) -> Vec<Vec<f32>> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut vectors = Vec::with_capacity(n);
+
+        for _ in 0..n {
+            let mut values: Vec<f32> = (0..dim).map(|_| rng.gen_range(-1.0f32..1.0f32)).collect();
+            let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+            for value in &mut values {
+                *value /= norm.max(f32::EPSILON);
+            }
+            vectors.push(values);
+        }
+
+        vectors
+    }
+
+    fn dot_product(a: &[f32], b: &[f32]) -> f32 {
+        a.iter().zip(b).map(|(x, y)| x * y).sum()
+    }
+
+    fn brute_force_top_k(corpus: &[Vec<f32>], query: &[f32], k: usize) -> Vec<usize> {
+        let mut scores: Vec<(usize, f32)> = corpus
+            .iter()
+            .enumerate()
+            .map(|(i, vector)| (i, dot_product(query, vector)))
+            .collect();
+        scores.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        scores.truncate(k);
+        scores.into_iter().map(|(i, _)| i).collect()
+    }
+
+    fn create_recall_table(table_name: &str) {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (id bigint primary key, embedding tqvector)"
+        ))
+        .expect("recall benchmark table creation should succeed");
+    }
+
+    fn insert_recall_corpus(table_name: &str, corpus: &[Vec<f32>]) {
+        let insert_sql = format!(
+            "INSERT INTO {table_name} (id, embedding) VALUES ($1, encode_to_tqvector($2, {RECALL_BITS}, {RECALL_SEED}))"
+        );
+
+        for (id, embedding) in corpus.iter().enumerate() {
+            Spi::run_with_args(
+                &insert_sql,
+                &[
+                    i64::try_from(id)
+                        .expect("corpus id should fit into bigint")
+                        .into(),
+                    embedding.clone().into(),
+                ],
+            )
+            .expect("recall benchmark row insert should succeed");
+        }
+    }
+
+    fn ctid_id_map(table_name: &str) -> HashMap<(u32, u16), usize> {
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                            split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number,
+                            id
+                         FROM {table_name}"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("ctid/id map query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    let id = row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null");
+                    (
+                        (
+                            u32::try_from(block_number)
+                                .expect("block number should be non-negative"),
+                            u16::try_from(offset_number)
+                                .expect("offset number should be positive"),
+                        ),
+                        usize::try_from(id).expect("id should fit into usize"),
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        })
+    }
+
+    fn create_recall_index(table_name: &str, index_name: &str, m: i32) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION})"
+        ))
+        .expect("recall benchmark index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("recall benchmark index oid query should succeed")
+            .expect("recall benchmark index oid should exist")
+    }
+
+    fn measure_graph_scan_recall(
+        index_oid: pg_sys::Oid,
+        ctid_to_id: &HashMap<(u32, u16), usize>,
+        queries: &[Vec<f32>],
+        ground_truth: &[Vec<usize>],
+        ef_search: i32,
+    ) -> f32 {
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let hits = queries
+            .iter()
+            .zip(ground_truth.iter())
+            .map(|(query, true_top_k)| {
+                let predicted =
+                    unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) };
+                let predicted_top_k: HashSet<usize> = predicted
+                    .iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        *ctid_to_id
+                            .get(heap_tid)
+                            .expect("emitted heap tid should map back to a benchmark row id")
+                    })
+                    .collect();
+
+                true_top_k
+                    .iter()
+                    .filter(|id| predicted_top_k.contains(id))
+                    .count()
+            })
+            .sum::<usize>();
+
+        hits as f32 / (queries.len() * RECALL_K) as f32
     }
 
     #[pg_test]
@@ -2796,6 +2959,67 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_graph_first_scan_emits_distance_sorted_scores() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_graph_first_ordered_scores (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_graph_first_ordered_scores VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.92, 0.08, 0.0, 0.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.75, 0.25, 0.0, 0.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.55, 0.45, 0.0, 0.0], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[0.35, 0.65, 0.0, 0.0], 4, 42)),
+             (6, encode_to_tqvector(ARRAY[0.15, 0.85, 0.0, 0.0], 4, 42)),
+             (7, encode_to_tqvector(ARRAY[-0.2, 0.98, 0.0, 0.0], 4, 42)),
+             (8, encode_to_tqvector(ARRAY[-0.7, 0.3, 0.0, 0.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_graph_first_ordered_scores_idx ON tqhnsw_graph_first_ordered_scores USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_graph_first_ordered_scores_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let ctid_to_id = ctid_id_map("tqhnsw_graph_first_ordered_scores");
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0])
+        };
+
+        assert!(
+            observed.len() >= 3,
+            "non-trivial built indexes should emit multiple graph-first ordered results"
+        );
+        assert_eq!(
+            observed.len(),
+            observed
+                .iter()
+                .map(|(heap_tid, _)| *heap_tid)
+                .collect::<HashSet<_>>()
+                .len(),
+            "graph-first ordered scans should not emit the same heap tid twice"
+        );
+        assert!(
+            observed
+                .windows(2)
+                .all(|pair| pair[0].1 <= pair[1].1 + f32::EPSILON),
+            "graph-first scan should emit tuples in nondecreasing operator-facing <#> score order"
+        );
+        assert!(
+            observed
+                .iter()
+                .all(|(heap_tid, _)| ctid_to_id.contains_key(heap_tid)),
+            "every emitted heap tid should map back to a row in the built index table"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_gettuple_tracks_current_result_state() {
         Spi::run(
             "CREATE TABLE tqhnsw_gettuple_result_state (id bigint primary key, embedding tqvector)",
@@ -4781,6 +5005,214 @@ mod tests {
         assert!(
             rescanned_tids.is_empty(),
             "amrescan on an empty index should continue to return no tuples"
+        );
+    }
+
+    fn run_graph_scan_recall_gate() -> Vec<(i32, i32, f32, Option<f32>, bool)> {
+        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
+        let queries = random_unit_vectors(
+            RECALL_QUERY_COUNT,
+            RECALL_DIM,
+            (RECALL_SEED as u64) + 1_000_000,
+        );
+        let ground_truth = queries
+            .iter()
+            .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
+            .collect::<Vec<_>>();
+
+        create_recall_table("tqhnsw_graph_scan_recall_gate");
+        insert_recall_corpus("tqhnsw_graph_scan_recall_gate", &corpus);
+        let ctid_to_id = ctid_id_map("tqhnsw_graph_scan_recall_gate");
+
+        let configs = [
+            (8, 40, None),
+            (8, 128, Some(0.89_f32)),
+            (8, 200, None),
+            (16, 200, None),
+        ];
+        let mut results = Vec::new();
+
+        for m in [8, 16] {
+            let index_name = format!("tqhnsw_graph_scan_recall_gate_m{m}_idx");
+            let index_oid = create_recall_index("tqhnsw_graph_scan_recall_gate", &index_name, m);
+
+            for (config_m, ef_search, target) in
+                configs.iter().copied().filter(|(cfg_m, _, _)| *cfg_m == m)
+            {
+                let recall = measure_graph_scan_recall(
+                    index_oid,
+                    &ctid_to_id,
+                    &queries,
+                    &ground_truth,
+                    ef_search,
+                );
+                let passed = target.map(|gate| recall >= gate).unwrap_or(true);
+                results.push((config_m, ef_search, recall, target, passed));
+            }
+
+            Spi::run(&format!("DROP INDEX {index_name}"))
+                .expect("recall benchmark index cleanup should succeed");
+        }
+
+        Spi::run("DROP TABLE tqhnsw_graph_scan_recall_gate")
+            .expect("recall benchmark table cleanup should succeed");
+
+        results
+    }
+
+    type GraphScanRecallProbeRow = (i32, i32, i32, i32, bool, Vec<i64>, Vec<i64>, Vec<i64>);
+
+    fn build_graph_scan_recall_probe(
+        m: i32,
+        ef_search: i32,
+        query_index: usize,
+    ) -> GraphScanRecallProbeRow {
+        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
+        let queries = random_unit_vectors(
+            RECALL_QUERY_COUNT,
+            RECALL_DIM,
+            (RECALL_SEED as u64) + 1_000_000,
+        );
+        let query = queries
+            .get(query_index)
+            .expect("query index should be within the generated query set");
+        let truth = brute_force_top_k(&corpus, query, RECALL_K)
+            .into_iter()
+            .map(|id| i64::try_from(id).expect("truth id should fit into bigint"))
+            .collect::<Vec<_>>();
+
+        create_recall_table("tqhnsw_graph_scan_recall_probe");
+        insert_recall_corpus("tqhnsw_graph_scan_recall_probe", &corpus);
+        let ctid_to_id = ctid_id_map("tqhnsw_graph_scan_recall_probe");
+        let index_oid = create_recall_index(
+            "tqhnsw_graph_scan_recall_probe",
+            "tqhnsw_graph_scan_recall_probe_idx",
+            m,
+        );
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_graph_scan_recall_probe") };
+        let index_block_count = unsafe {
+            i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+            ))
+            .expect("block count should fit into int")
+        };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+        let (prefill_found, _, _, _, _, _, _, _) =
+            unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
+        let predicted_heap_tids =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) };
+        let predicted_ids = predicted_heap_tids
+            .iter()
+            .take(RECALL_K)
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(heap_tid)
+                        .expect("probe heap tid should map back to a benchmark row id"),
+                )
+                .expect("predicted id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+        let exact_quantized_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id
+                     FROM tqhnsw_graph_scan_recall_probe
+                     ORDER BY embedding <#> $1
+                     LIMIT 10",
+                    None,
+                    &[query.clone().into()],
+                )
+                .expect("exact quantized probe query should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        Spi::run("DROP INDEX tqhnsw_graph_scan_recall_probe_idx")
+            .expect("probe index cleanup should succeed");
+        Spi::run("DROP TABLE tqhnsw_graph_scan_recall_probe")
+            .expect("probe table cleanup should succeed");
+
+        (
+            m,
+            ef_search,
+            index_block_count,
+            i32::try_from(predicted_heap_tids.len()).expect("row count should fit into int"),
+            prefill_found,
+            truth,
+            predicted_ids,
+            exact_quantized_ids,
+        )
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_gate_report() -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(gate_recall_at_10, Option<f32>),
+            name!(passes_gate, bool),
+        ),
+    > {
+        TableIterator::new(run_graph_scan_recall_gate())
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_probe(
+        m: i32,
+        ef_search: i32,
+        query_index: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(index_block_count, i32),
+            name!(predicted_count, i32),
+            name!(prefill_found, bool),
+            name!(truth_top10_ids, Vec<i64>),
+            name!(predicted_top10_ids, Vec<i64>),
+            name!(exact_quantized_top10_ids, Vec<i64>),
+        ),
+    > {
+        TableIterator::once(build_graph_scan_recall_probe(
+            m,
+            ef_search,
+            usize::try_from(query_index).expect("query index should be non-negative"),
+        ))
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_graph_scan_recall_gate() {
+        if std::env::var_os("TQVECTOR_RUN_RECALL_GATE").is_none() {
+            return;
+        }
+
+        let results = run_graph_scan_recall_gate();
+        let gate_recall = results
+            .iter()
+            .find(|(m, ef_search, _, _, _)| *m == 8 && *ef_search == 128)
+            .map(|(_, _, recall, _, _)| *recall)
+            .expect("A4 gate config should have been measured");
+
+        assert!(
+            gate_recall >= 0.89,
+            "A4 recall gate failed: Recall@10 at m=8 ef=128 was {:.2}% (required >= 89%)",
+            gate_recall * 100.0
         );
     }
 

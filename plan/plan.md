@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-08 (A3 closed; A4 recall gate is next).
+Last updated: 2026-04-08 (A3 closed; A4 investigated and failing on live graph recall).
 
 ## Current Task Board
 
@@ -11,7 +11,7 @@ Last updated: 2026-04-08 (A3 closed; A4 recall gate is next).
 - `A1` AM split: **done**
 - `A2` graph/search traversal seam: **done** (search seam extraction complete)
 - `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
-- `A4` recall gate: **ready to start** ← current focus
+- `A4` recall gate: **in progress — failing** ← current focus
 - `A5` graph-aware insert: blocked on A4
 - `A6` vacuum repair: blocked on A4
 
@@ -24,9 +24,9 @@ Last updated: 2026-04-08 (A3 closed; A4 recall gate is next).
 
 ### Current sequencing
 
-1. **Coder-1:** A4 — Recall@10 measurement over built indexes with graph-first scan. Go/no-go threshold (NFR-003).
-2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, merge after A4.
-3. After A4 passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
+1. **Coder-1:** A4 — live graph-first Recall@10 gate measured and currently failing. Corrected regular-table harness reports `1.7%` Recall@10 at `m=8, ef=128`; next work is graph traversal/runtime debugging, not planner/insert/vacuum.
+2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4.
+3. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
 4. Full SQL benchmark result generation after A5/A6.
 
 ## Requirements Summary
@@ -66,7 +66,7 @@ Last updated: 2026-04-08 (A3 closed; A4 recall gate is next).
 
 - [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
 - [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
-- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done (uniform + clustered + near-dup); HNSW-level blocked on scan._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; HNSW-level live graph harness now exists, but the initial A4 gate is failing badly on traversal/runtime behavior._
 - [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
 - [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 
@@ -275,7 +275,7 @@ All items are serial because each depends on the previous.
   2. Recall@10 measurement (set intersection)
   3. Test at multiple configurations: (m=8, ef=40), (m=8, ef=128), (m=8, ef=200), (m=16, ef=200)
   4. Report recall numbers — these anchor all downstream quality claims
-- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. If not met, investigate root cause before proceeding.
+- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Current 2026-04-08 evidence on `main` is `1.7%`, so A4 remains open and downstream work stays blocked pending graph traversal/runtime fixes.
 
 #### A5: Graph-Aware Insert (FR-016)
 - **Scope:** Replace disconnected-append insert with graph-connected insert. Layer assignment, greedy descent via A2 helpers, beam search for neighbors, back-link updates, entry point promotion, drift statistics.
