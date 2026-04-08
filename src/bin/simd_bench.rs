@@ -1,7 +1,10 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::{fwht_in_place, simd_backend, ProdQuantizer};
+use tqvector::bench_api::{
+    fwht_in_place, orthonormal_fwht_in_place, pad_input, sign_vector, simd_backend, srht,
+    ProdQuantizer,
+};
 
 const WARMUP_ITERATIONS: usize = 256;
 
@@ -22,6 +25,12 @@ fn main() {
     run_fwht_bench(1_024, iterations);
     run_fwht_bench(2_048, iterations);
     run_fwht_bench(4_096, iterations / 2);
+    run_orthonormal_fwht_bench(1_024, iterations);
+    run_orthonormal_fwht_bench(2_048, iterations);
+    run_orthonormal_fwht_bench(4_096, iterations / 2);
+    run_srht_bench(1_024, 1_024, iterations);
+    run_srht_bench(1_536, 2_048, iterations);
+    run_srht_bench(2_048, 2_048, iterations);
     run_score_ip_encoded_bench(1_536, 4, iterations);
     run_score_ip_codes_lite_bench(1_536, 4, iterations);
 }
@@ -35,6 +44,36 @@ fn run_fwht_bench(size: usize, iterations: usize) {
         black_box(data[0]);
     });
     print_result(&format!("fwht/{size}"), iterations.max(1), elapsed);
+}
+
+fn run_orthonormal_fwht_bench(size: usize, iterations: usize) {
+    let template: Vec<f32> = (0..size).map(|i| (i as f32) * 0.001).collect();
+    let mut data = template.clone();
+    let elapsed = time_loop(iterations.max(1), || {
+        data.copy_from_slice(&template);
+        orthonormal_fwht_in_place(black_box(&mut data));
+        black_box(data[0]);
+    });
+    print_result(
+        &format!("orthonormal_fwht/{size}"),
+        iterations.max(1),
+        elapsed,
+    );
+}
+
+fn run_srht_bench(dim: usize, transform_dim: usize, iterations: usize) {
+    let input: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.001).collect();
+    let padded = pad_input(&input, transform_dim);
+    let signs = sign_vector(transform_dim, 42);
+    let elapsed = time_loop(iterations.max(1), || {
+        let rotated = srht(black_box(&padded), black_box(&signs));
+        black_box(rotated[0]);
+    });
+    print_result(
+        &format!("srht/d{dim}_td{transform_dim}"),
+        iterations.max(1),
+        elapsed,
+    );
 }
 
 fn run_score_ip_encoded_bench(dim: usize, bits: u8, iterations: usize) {

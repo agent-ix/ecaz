@@ -35,9 +35,7 @@ pub fn sign_vector(len: usize, seed: u64) -> Vec<f32> {
 pub fn srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
     assert_eq!(input.len(), signs.len(), "srht input/sign length mismatch");
     let mut workspace = input.to_vec();
-    for (value, sign) in workspace.iter_mut().zip(signs) {
-        *value *= *sign;
-    }
+    apply_signs_in_place_scalar(&mut workspace, signs);
     if let Some(tile_size) = tile_dim(workspace.len()) {
         orthonormal_fwht_tiled_in_place(&mut workspace, tile_size);
     } else {
@@ -58,9 +56,7 @@ pub fn inverse_srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
     } else {
         orthonormal_fwht_in_place(&mut workspace);
     }
-    for (value, sign) in workspace.iter_mut().zip(signs) {
-        *value *= *sign;
-    }
+    apply_signs_in_place_scalar(&mut workspace, signs);
     workspace
 }
 
@@ -70,9 +66,19 @@ pub fn pad_input(input: &[f32], padded_len: usize) -> Vec<f32> {
     padded
 }
 
+fn apply_signs_in_place_scalar(values: &mut [f32], signs: &[f32]) {
+    for (value, sign) in values.iter_mut().zip(signs) {
+        *value *= *sign;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::quant::hadamard::fwht_in_place_scalar;
+    use rand::Rng;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn srht_preserves_norm() {
@@ -100,6 +106,36 @@ mod tests {
                 (*expected - *actual).abs() < 1e-4,
                 "mismatch: expected {expected}, got {actual}"
             );
+        }
+    }
+
+    #[test]
+    fn srht_runtime_path_matches_scalar_on_random_inputs() {
+        let mut rng = ChaCha8Rng::seed_from_u64(44);
+        for _ in 0..1_000 {
+            let size = 1usize << rng.gen_range(1..=9);
+            let input = (0..size)
+                .map(|_| rng.gen_range(-10.0_f32..10.0_f32))
+                .collect::<Vec<_>>();
+            let signs = sign_vector(size, rng.gen());
+
+            let mut scalar = input.clone();
+            apply_signs_in_place_scalar(&mut scalar, &signs);
+            fwht_in_place_scalar(&mut scalar);
+            let scale = (size as f32).sqrt().recip();
+            for value in &mut scalar {
+                *value *= scale;
+            }
+
+            let dispatched = srht(&input, &signs);
+
+            for (lhs, rhs) in scalar.iter().zip(dispatched.iter()) {
+                let scale = lhs.abs().max(rhs.abs()).max(1.0);
+                assert!(
+                    ((lhs - rhs) / scale).abs() < 1e-6,
+                    "lhs={lhs} rhs={rhs} size={size}"
+                );
+            }
         }
     }
 }

@@ -60,6 +60,10 @@ pub fn fwht_tiled_in_place(values: &mut [f32], tile_size: usize) {
 pub fn orthonormal_fwht_in_place(values: &mut [f32]) {
     fwht_in_place(values);
     let scale = (values.len() as f32).sqrt().recip();
+    scale_in_place_scalar(values, scale);
+}
+
+fn scale_in_place_scalar(values: &mut [f32], scale: f32) {
     for value in values {
         *value *= scale;
     }
@@ -447,6 +451,30 @@ mod tests {
 
             fwht_in_place_scalar(&mut scalar);
             fwht_in_place(&mut dispatched);
+
+            for (lhs, rhs) in scalar.iter().zip(dispatched.iter()) {
+                let scale = lhs.abs().max(rhs.abs()).max(1.0);
+                assert!(
+                    ((lhs - rhs) / scale).abs() < 1e-6,
+                    "lhs={lhs} rhs={rhs} size={size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn orthonormal_fwht_runtime_path_matches_scalar_on_random_inputs() {
+        let mut rng = ChaCha8Rng::seed_from_u64(43);
+        for _ in 0..1_000 {
+            let size = 1usize << rng.gen_range(1..=9);
+            let mut scalar = (0..size)
+                .map(|_| rng.gen_range(-10.0_f32..10.0_f32))
+                .collect::<Vec<_>>();
+            let mut dispatched = scalar.clone();
+
+            fwht_in_place_scalar(&mut scalar);
+            scale_in_place_scalar(&mut scalar, (size as f32).sqrt().recip());
+            orthonormal_fwht_in_place(&mut dispatched);
 
             for (lhs, rhs) in scalar.iter().zip(dispatched.iter()) {
                 let scale = lhs.abs().max(rhs.abs()).max(1.0);
