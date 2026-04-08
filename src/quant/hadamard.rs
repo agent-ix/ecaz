@@ -213,33 +213,63 @@ unsafe fn fwht_in_place_avx2_bootstrap(values: &mut [f32]) -> usize {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn fwht_in_place_avx2_stages(values: &mut [f32], mut width: usize) {
+    while width < values.len() {
+        unsafe { fwht_in_place_avx2_stage_width(values, width) };
+        width *= 2;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn fwht_in_place_avx2_stage_width(values: &mut [f32], width: usize) {
     use std::arch::x86_64::{_mm256_add_ps, _mm256_loadu_ps, _mm256_storeu_ps, _mm256_sub_ps};
 
-    while width < values.len() {
-        let step = width * 2;
-        for chunk in values.chunks_exact_mut(step) {
-            let (left, right) = chunk.split_at_mut(width);
+    let step = width * 2;
+    let len = values.len();
+    let ptr = values.as_mut_ptr();
+    debug_assert_eq!(len % step, 0);
+
+    if width >= 8 {
+        debug_assert_eq!(width % 8, 0);
+
+        let mut offset = 0;
+        while offset < len {
+            let left = unsafe { ptr.add(offset) };
+            let right = unsafe { left.add(width) };
             let mut i = 0;
-            while i + 8 <= width {
-                let a = unsafe { _mm256_loadu_ps(left.as_ptr().add(i)) };
-                let b = unsafe { _mm256_loadu_ps(right.as_ptr().add(i)) };
+            while i < width {
+                let a = unsafe { _mm256_loadu_ps(left.add(i)) };
+                let b = unsafe { _mm256_loadu_ps(right.add(i)) };
                 let sum = _mm256_add_ps(a, b);
                 let diff = _mm256_sub_ps(a, b);
                 unsafe {
-                    _mm256_storeu_ps(left.as_mut_ptr().add(i), sum);
-                    _mm256_storeu_ps(right.as_mut_ptr().add(i), diff);
+                    _mm256_storeu_ps(left.add(i), sum);
+                    _mm256_storeu_ps(right.add(i), diff);
                 }
                 i += 8;
             }
-            while i < width {
-                let a = left[i];
-                let b = right[i];
-                left[i] = a + b;
-                right[i] = a - b;
-                i += 1;
-            }
+
+            offset += step;
         }
-        width = step;
+        return;
+    }
+
+    let mut offset = 0;
+    while offset < len {
+        let left = unsafe { ptr.add(offset) };
+        let right = unsafe { left.add(width) };
+        let mut i = 0;
+        while i < width {
+            unsafe {
+                let a = *left.add(i);
+                let b = *right.add(i);
+                *left.add(i) = a + b;
+                *right.add(i) = a - b;
+            }
+            i += 1;
+        }
+
+        offset += step;
     }
 }
 
