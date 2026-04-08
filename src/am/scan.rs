@@ -123,10 +123,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque,
                 &metadata,
             );
-            if !graph_traversal_has_seeded_candidates(opaque) {
+            if !prefill_graph_traversal_result((*scan).indexRelation, opaque) {
                 enter_linear_fallback_phase(opaque);
-            } else {
-                prefill_graph_traversal_result((*scan).indexRelation, opaque);
             }
         })
     }
@@ -305,10 +303,6 @@ fn prefill_graph_traversal_result(
     }
 
     unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
-}
-
-fn graph_traversal_has_seeded_candidates(opaque: &mut TqScanOpaque) -> bool {
-    candidate_frontier_head(opaque).is_some()
 }
 
 fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
@@ -1791,19 +1785,6 @@ mod tests {
             opaque.result_state.pending_count(),
             0,
             "graph traversal stale-current cleanup should not invent pending duplicate-drain state"
-        );
-    }
-
-    #[test]
-    fn graph_traversal_has_seeded_candidates_uses_frontier_state() {
-        let mut opaque = TqScanOpaque::default();
-        visible_frontier_mut(&mut opaque).push(beam_candidate(29, 1, -2.5));
-        reset_bootstrap_expansion_state(&mut opaque, MAX_BOOTSTRAP_FRONTIER_CANDIDATES);
-        seed_existing_frontier_into_expansion(&mut opaque);
-
-        assert!(
-            graph_traversal_has_seeded_candidates(&mut opaque),
-            "graph traversal fallback gating should derive from the live frontier state instead of a separate seeded flag"
         );
     }
 
