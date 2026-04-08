@@ -273,6 +273,44 @@ fn emit_pending_scan_heap_tid(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOp
     false
 }
 
+struct GraphTraversalCursor<'a> {
+    result_state: &'a mut ScanResultState,
+}
+
+impl<'a> GraphTraversalCursor<'a> {
+    fn new(result_state: &'a mut ScanResultState) -> Self {
+        Self { result_state }
+    }
+
+    fn has_prefetched_output(&self) -> bool {
+        self.result_state.pending_count() != 0
+    }
+
+    fn prefetch_ready(&mut self) -> bool {
+        if self.has_prefetched_output() {
+            return true;
+        }
+
+        if self.result_state.current().has_element() {
+            self.result_state.clear_current();
+        }
+
+        false
+    }
+
+    fn materialize(&mut self, selected: SelectedScanResult) {
+        self.result_state.materialize(selected);
+    }
+
+    fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
+        self.result_state.take_pending_output()
+    }
+}
+
+fn graph_traversal_cursor(opaque: &mut TqScanOpaque) -> GraphTraversalCursor<'_> {
+    GraphTraversalCursor::new(&mut opaque.result_state)
+}
+
 unsafe fn produce_next_scan_heap_tid(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
@@ -310,15 +348,7 @@ fn graph_traversal_has_prefetched_output(opaque: &TqScanOpaque) -> bool {
 }
 
 fn graph_traversal_prefetch_ready(opaque: &mut TqScanOpaque) -> bool {
-    if graph_traversal_has_prefetched_output(opaque) {
-        return true;
-    }
-
-    if opaque.execution_phase.is_graph_traversal() && opaque.result_state.current().has_element() {
-        opaque.result_state.clear_current();
-    }
-
-    false
+    opaque.execution_phase.is_graph_traversal() && graph_traversal_cursor(opaque).prefetch_ready()
 }
 
 fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
@@ -846,7 +876,8 @@ fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResul
 }
 
 fn materialize_graph_traversal_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    seed_scan_result_state(opaque, selected);
+    mark_emitted_element(opaque, selected.element_tid);
+    graph_traversal_cursor(opaque).materialize(selected);
 }
 
 fn materialize_linear_fallback_result(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
@@ -996,7 +1027,13 @@ fn emit_prefetched_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    let emitted = graph_traversal_cursor(opaque)
+        .take_pending_output()
+        .map(|output| {
+            emit_scan_output(scan, output);
+            true
+        })
+        .unwrap_or(false);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
@@ -1818,6 +1855,30 @@ mod tests {
         assert!(
             graph_traversal_has_prefetched_output(&opaque),
             "graph traversal should report prefetched output once a current result has pending heap tids ready to emit"
+        );
+    }
+
+    #[test]
+    fn graph_traversal_cursor_take_pending_output_drains_prefetched_heap_tid() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(34, 1), -8.0);
+        opaque.result_state.store_pending(&[tid(35, 1)]);
+
+        let emitted = graph_traversal_cursor(&mut opaque).take_pending_output();
+
+        assert!(
+            emitted.is_some(),
+            "graph cursor should surface pending output when prefetched duplicate drain is queued"
+        );
+        assert_eq!(
+            opaque.result_state.current().heap_tid(),
+            tid(35, 1),
+            "graph cursor pending-output drain should keep current-result heap progress aligned with the drained heap tid"
+        );
+        assert_eq!(
+            opaque.result_state.pending_count(),
+            0,
+            "graph cursor pending-output drain should consume the prefetched heap tid from pending state"
         );
     }
 
