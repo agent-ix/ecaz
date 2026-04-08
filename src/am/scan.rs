@@ -293,17 +293,35 @@ unsafe fn produce_next_scan_heap_tid(
     }
 }
 
-fn prefill_graph_traversal_result(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
-    if !opaque.execution_phase.is_graph_traversal()
-        || opaque.result_state.current().has_element()
-        || opaque.result_state.pending_count() != 0
-    {
-        return;
+fn prefill_graph_traversal_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if graph_traversal_output_ready(opaque) {
+        return true;
     }
 
-    unsafe {
-        let _ = materialize_next_bootstrap_frontier_result(index_relation, opaque);
+    if !opaque.execution_phase.is_graph_traversal() {
+        return false;
     }
+
+    unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) }
+}
+
+fn graph_traversal_output_ready(opaque: &mut TqScanOpaque) -> bool {
+    if !opaque.execution_phase.is_graph_traversal() {
+        return false;
+    }
+
+    if opaque.result_state.pending_count() != 0 {
+        return true;
+    }
+
+    if opaque.result_state.current().has_element() {
+        opaque.result_state.clear_current();
+    }
+
+    false
 }
 
 fn advance_graph_traversal_after_emit(index_relation: pg_sys::Relation, opaque: &mut TqScanOpaque) {
@@ -967,17 +985,18 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let emitted = emit_pending_scan_heap_tid(scan, opaque);
-    if !emitted {
-        debug_assert!(
-            opaque.execution_phase.is_exhausted(),
-            "seeded graph traversal should prefill pending output before amgettuple re-enters graph result production"
-        );
+    if !prefill_graph_traversal_result(index_relation, opaque) {
         return false;
     }
 
+    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    debug_assert!(
+        emitted,
+        "graph traversal should materialize pending output before returning true from graph-phase tuple production"
+    );
+
     advance_graph_traversal_after_emit(index_relation, opaque);
-    true
+    emitted
 }
 
 unsafe fn produce_next_linear_fallback_heap_tid(
@@ -1283,7 +1302,7 @@ impl ScanResultState {
         })
     }
 
-    fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.clear_pending();
         self.current = CurrentScanResult::default();
     }
@@ -1748,6 +1767,31 @@ mod tests {
             opaque.result_state.pending_count(),
             0,
             "linear fallback teardown should only happen once duplicate drain is exhausted"
+        );
+    }
+
+    #[test]
+    fn graph_traversal_output_ready_clears_stale_current_without_pending_output() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::GraphTraversal,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current(tid(28, 1), -6.0);
+
+        let ready = graph_traversal_output_ready(&mut opaque);
+
+        assert!(
+            !ready,
+            "graph traversal should request a fresh materialization when only stale current-result state remains"
+        );
+        assert!(
+            !opaque.result_state.current().has_element(),
+            "graph traversal should clear stale current-result state before trying to prefill a fresh ordered result"
+        );
+        assert_eq!(
+            opaque.result_state.pending_count(),
+            0,
+            "graph traversal stale-current cleanup should not invent pending duplicate-drain state"
         );
     }
 
