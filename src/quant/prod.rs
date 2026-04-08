@@ -435,7 +435,8 @@ impl ProdQuantizer {
         qjl_packed: &[u8],
     ) -> f32 {
         use std::arch::x86_64::{
-            _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_permutevar8x32_ps,
+            _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
+            _mm256_permutevar8x32_ps,
             _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
@@ -464,19 +465,15 @@ impl ProdQuantizer {
                     indices[7] as i32,
                 );
 
-                mse_acc = _mm256_add_ps(
+                mse_acc = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, lanes),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
                     mse_acc,
-                    _mm256_mul_ps(
-                        _mm256_permutevar8x32_ps(codebook, lanes),
-                        _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
-                    ),
                 );
-                qjl_acc = _mm256_add_ps(
+                qjl_acc = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
                     qjl_acc,
-                    _mm256_mul_ps(
-                        _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index)),
-                        _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[dim_index / 8]).as_ptr()),
-                    ),
                 );
                 dim_index += 8;
             }
