@@ -895,24 +895,6 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     Some(consumed)
 }
 
-unsafe fn select_scan_candidate_result(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-    candidate: search::BeamCandidate<page::ItemPointer>,
-) -> Option<SelectedScanResult> {
-    let element =
-        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
-    if element.deleted || element.heaptids.is_empty() {
-        return None;
-    }
-
-    Some(SelectedScanResult {
-        element_tid: candidate.node,
-        score: candidate.score,
-        heap_tids: element.heaptids,
-    })
-}
-
 fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
     mark_emitted_element(opaque, selected.element_tid);
     opaque.result_state.materialize(selected);
@@ -978,50 +960,6 @@ where
     None
 }
 
-unsafe fn try_select_next_graph_traversal_result(
-    index_relation: pg_sys::Relation,
-    opaque: &mut TqScanOpaque,
-) -> Option<SelectedScanResult> {
-    if !opaque.execution_phase.is_graph_traversal() || opaque.scan_dimensions == 0 {
-        return None;
-    }
-
-    let opaque_ptr = opaque as *mut TqScanOpaque;
-    // SAFETY: `candidate_frontier` and `bootstrap_expansion` remain separate Box-backed heap
-    // allocations, and the traversal callbacks execute sequentially inside the search-owned
-    // helper, so these temporary mutable borrows of `opaque` do not alias.
-    with_visible_frontier_mut_and_bootstrap_expansion(
-        unsafe { &mut *opaque_ptr },
-        |visible_frontier, expansion| unsafe {
-            visible_frontier.select_next_with_refill(
-                expansion,
-                |candidate| {
-                    select_scan_candidate_result(index_relation, &mut *opaque_ptr, candidate)
-                },
-                |node| expanded_contains_source(&*opaque_ptr, node),
-                |node| mark_expanded_source(&mut *opaque_ptr, node),
-                |source_tid, visible_frontier, expansion| {
-                    refill_candidate_frontier_from_source_into(
-                        index_relation,
-                        &mut *opaque_ptr,
-                        visible_frontier,
-                        expansion,
-                        source_tid,
-                    );
-                },
-                |visible_frontier, expansion| {
-                    top_up_bootstrap_frontier_from_visible_seeds_into(
-                        index_relation,
-                        &mut *opaque_ptr,
-                        visible_frontier,
-                        expansion,
-                    );
-                },
-            )
-        },
-    )
-}
-
 pub(super) unsafe fn prefetch_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -1033,14 +971,62 @@ pub(super) unsafe fn prefetch_next_graph_traversal_result(
         return false;
     }
 
-    let Some(selected) = (unsafe { try_select_next_graph_traversal_result(index_relation, opaque) })
-    else {
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    // SAFETY: `candidate_frontier` and `bootstrap_expansion` remain separate Box-backed heap
+    // allocations, and graph result materialization only mutates `result_state`, which is a
+    // disjoint field from those heap-backed traversal structures.
+    let materialized = with_visible_frontier_mut_and_bootstrap_expansion(
+        unsafe { &mut *opaque_ptr },
+        |visible_frontier, expansion| unsafe {
+            visible_frontier
+                .select_next_with_refill(
+                    expansion,
+                    |candidate| {
+                        let element = graph::load_graph_element(
+                            index_relation,
+                            candidate.node,
+                            (&*opaque_ptr).scan_code_len,
+                        );
+                        if element.deleted || element.heaptids.is_empty() {
+                            return None;
+                        }
+
+                        mark_emitted_element(&mut *opaque_ptr, candidate.node);
+                        graph_traversal_cursor(&mut *opaque_ptr).materialize(SelectedScanResult {
+                            element_tid: candidate.node,
+                            score: candidate.score,
+                            heap_tids: element.heaptids,
+                        });
+                        Some(())
+                    },
+                    |node| expanded_contains_source(&*opaque_ptr, node),
+                    |node| mark_expanded_source(&mut *opaque_ptr, node),
+                    |source_tid, visible_frontier, expansion| {
+                        refill_candidate_frontier_from_source_into(
+                            index_relation,
+                            &mut *opaque_ptr,
+                            visible_frontier,
+                            expansion,
+                            source_tid,
+                        );
+                    },
+                    |visible_frontier, expansion| {
+                        top_up_bootstrap_frontier_from_visible_seeds_into(
+                            index_relation,
+                            &mut *opaque_ptr,
+                            visible_frontier,
+                            expansion,
+                        );
+                    },
+                )
+                .is_some()
+        },
+    );
+
+    if !materialized {
         mark_scan_exhausted(opaque);
         return false;
-    };
-
-    mark_emitted_element(opaque, selected.element_tid);
-    graph_traversal_cursor(opaque).materialize(selected);
+    }
     true
 }
 
