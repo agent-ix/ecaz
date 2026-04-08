@@ -2,33 +2,32 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-07 (search/bootstrap seam extraction and planner scaffolding are both substantially complete on `main`).
+Last updated: 2026-04-07 (coder-1 on A3 graph-first scan wiring; coder-2 on B1 SIMD).
 
 ## Current Task Board
 
-### Runtime lane
+### Runtime lane (coder-1)
 
-- `A1` AM split: done
-- `A2` graph/search traversal seam: substantially complete
-- `A3` wire graph-first scan runtime: next
+- `A1` AM split: **done**
+- `A2` graph/search traversal seam: **done** (search seam extraction complete)
+- `A3` wire graph-first scan runtime: **in progress** ← current focus
 - `A4` recall gate: blocked on A3
 - `A5` graph-aware insert: blocked on A3/A4
 - `A6` vacuum repair: blocked on A3/A4
 
 ### Parallel lanes
 
-- `B1` SIMD: available in parallel
-- `B2` CI / fuzz / quality gates: available in parallel
-- `D1` planner scaffold: in progress on separate lane
+- `B1` SIMD: **in progress** (coder-2, feature branch; do not merge until A3 confirms scalar correctness)
+- `B2` CI / fuzz / quality gates: mostly complete (TC-036 unsafe audit remaining)
+- `D1` planner scaffold: **done** (merged to main from planner-integration-lane + planner-part2)
 - `D2` planner activation: blocked on A4 and ADR-011 retirement
 
 ### Current sequencing
 
-1. Finish review-driven cleanup around the runtime lane.
-2. Stop extracting additional bootstrap seams unless they directly unblock A3.
-3. Start A3: make graph/search traversal the primary scan execution path.
-4. Keep the linear path as the explicit fallback shell during A3.
-5. Run the recall gate before planner activation, graph-aware insert, or vacuum repair.
+1. **Coder-1:** A3 — wire graph beam search as primary scan execution path. Linear path becomes fallback for empty/tiny indexes.
+2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, merge after A3.
+3. After A3 lands: A4 recall gate (go/no-go before insert/vacuum/planner).
+4. After A4 passes: D2 planner activation, A5 insert, A6 vacuum can proceed.
 
 ## Requirements Summary
 
@@ -378,22 +377,17 @@ These items only make sense after graph scan is validated and recall is confirme
 
 ```
 Time ──────────────────────────────────────────────────────────────────────────────────►
+                                    ▼ NOW
 
-Agent 1 (graph search — critical path):
-  [A1: split] → [A2: traversal] → [A3: scan] → [A4: recall gate] → [A5: insert] → [A6: vacuum] → [C1: benchmarks]
-   ~1 sess       ~2-3 sess         ~1-2 sess     ~1 sess             ~2-3 sess      ~2-3 sess      ~1-2 sess
+Coder-1 (graph search — critical path):
+  [A1: split] → [A2: traversal] → [A3: scan ~~~~~~~~] → [A4: recall gate] → [A5: insert] → [A6: vacuum] → [C1: benchmarks]
+   DONE          DONE               IN PROGRESS          ~1 sess             ~2-3 sess      ~2-3 sess      ~1-2 sess
 
-Agent 2 (planner):
-  [D1: scaffold ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]  →  [D2: wire planner] → done
-   ~2-3 sessions (parallel, no gate dependency)     │    ~1 session
-                                                    │
-                                              BLOCKED until A4 passes
-
-Agent 3 (SIMD / CI):
-  [B1: SIMD ~~~~~~~~~~~~~~~~~~~~~~~~~~~] [B2: CI ~~~~~~]
-   ~2-3 sessions                          ~1 session
-
-                                                         ← merge SIMD after A3 confirms scalar correctness
+Coder-2 (planner → SIMD):
+  [D1: scaffold ~~~~~~~~] → [B1: SIMD ~~~~~~~~~~~~~~] → [D2: wire planner] → done
+   DONE (merged to main)    IN PROGRESS (feature branch)  ~1 session
+                                        │                       │
+                                        ← merge after A3   BLOCKED until A4
 ```
 
 **Minimum viable extension** (index queries work): A1 + A2 + A3 + A4 = **5-7 sessions**
@@ -409,13 +403,13 @@ Agent 3 (SIMD / CI):
 | `02-datum-and-io.md` | Phase 2 (type/I/O) | complete |
 | `03-sql-surface.md` | Phase 2 (functions/operators) | complete |
 | `04-page-layout-and-wal.md` | Phase 3 | complete |
-| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | in progress |
+| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | **A1/A2 done, A3 in progress (coder-1)** |
 | `06-graph-insert.md` | A5 (graph-aware insert) | blocked on 05 |
 | `07-vacuum.md` | A6 (vacuum three-pass) | blocked on 05, 06 |
-| `08-simd.md` | B1 (SIMD acceleration) | not started, **can start now** |
+| `08-simd.md` | B1 (SIMD acceleration) | **in progress (coder-2, feature branch)** |
 | `09-ci-and-safety.md` | B2 (CI pipeline, fuzz, audit) | mostly complete (unsafe audit remaining) |
 | `10-benchmarks.md` | C1 (full benchmark suite) | **infrastructure complete**, NFR runs blocked on 05 |
-| `11-planner.md` | D1 + D2 (planner integration) | D1 substantially complete on `main`; D2 blocked on A4 |
+| `11-planner.md` | D1 + D2 (planner integration) | **D1 done on main; D2 blocked on A4** |
 
 ---
 
