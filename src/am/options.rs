@@ -9,7 +9,9 @@ use super::{
     TQHNSW_MIN_EF_SEARCH, TQHNSW_MIN_M,
 };
 
-static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(TQHNSW_DEFAULT_EF_SEARCH);
+const TQHNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
+
+static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(TQHNSW_SESSION_EF_SEARCH_UNSET);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -56,9 +58,9 @@ pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"tqhnsw.ef_search",
         c"Session override for tqhnsw search breadth.",
-        c"Overrides tqhnsw index ef_search reloptions when set away from the default value.",
+        c"Overrides tqhnsw index ef_search reloptions when set to 1-1000; -1 uses the relation value.",
         &TQHNSW_EF_SEARCH_GUC,
-        TQHNSW_MIN_EF_SEARCH,
+        TQHNSW_SESSION_EF_SEARCH_UNSET,
         TQHNSW_MAX_EF_SEARCH,
         GucContext::Userset,
         GucFlags::default(),
@@ -74,7 +76,7 @@ pub(super) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
 }
 
 fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -> ScanTuning {
-    if session_ef_search == TQHNSW_DEFAULT_EF_SEARCH {
+    if session_ef_search == TQHNSW_SESSION_EF_SEARCH_UNSET {
         ScanTuning {
             relation_ef_search,
             session_ef_search: None,
@@ -182,12 +184,15 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_scan_tuning_values, EfSearchSource, ScanTuning, TQHNSW_DEFAULT_EF_SEARCH};
+    use super::{
+        resolve_scan_tuning_values, EfSearchSource, ScanTuning, TQHNSW_DEFAULT_EF_SEARCH,
+        TQHNSW_SESSION_EF_SEARCH_UNSET,
+    };
 
     #[test]
     fn resolve_scan_tuning_uses_relation_value_when_session_is_default() {
         assert_eq!(
-            resolve_scan_tuning_values(128, TQHNSW_DEFAULT_EF_SEARCH),
+            resolve_scan_tuning_values(128, TQHNSW_SESSION_EF_SEARCH_UNSET),
             ScanTuning {
                 relation_ef_search: 128,
                 session_ef_search: None,
@@ -213,12 +218,25 @@ mod tests {
     #[test]
     fn resolve_scan_tuning_keeps_default_relation_when_both_are_default() {
         assert_eq!(
-            resolve_scan_tuning_values(TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_DEFAULT_EF_SEARCH),
+            resolve_scan_tuning_values(TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_SESSION_EF_SEARCH_UNSET),
             ScanTuning {
                 relation_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
                 session_ef_search: None,
                 effective_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
                 source: EfSearchSource::Relation,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_uses_explicit_default_session_override() {
+        assert_eq!(
+            resolve_scan_tuning_values(128, TQHNSW_DEFAULT_EF_SEARCH),
+            ScanTuning {
+                relation_ef_search: 128,
+                session_ef_search: Some(TQHNSW_DEFAULT_EF_SEARCH),
+                effective_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                source: EfSearchSource::Session,
             }
         );
     }
