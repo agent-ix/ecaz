@@ -279,17 +279,15 @@ unsafe fn produce_next_scan_heap_tid(
         return true;
     }
 
-    if let Some(selected) = unsafe { select_next_scan_result(index_relation, opaque, code_len) } {
-        materialize_selected_scan_result(opaque, selected);
-        let emitted = emit_pending_scan_heap_tid(scan, opaque);
-        debug_assert!(
-            emitted,
-            "scan result materialization should seed pending heap tids before returning true"
-        );
-        return emitted;
+    match opaque.execution_phase {
+        ScanExecutionPhase::GraphTraversal => unsafe {
+            produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+        },
+        ScanExecutionPhase::LinearFallback => unsafe {
+            produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
+        },
+        ScanExecutionPhase::Exhausted => false,
     }
-
-    false
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -906,7 +904,6 @@ unsafe fn try_select_next_bootstrap_frontier_result(
     )
 }
 
-#[cfg(any(test, feature = "pg_test"))]
 pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -922,25 +919,41 @@ pub(super) unsafe fn materialize_next_bootstrap_frontier_result(
     true
 }
 
-unsafe fn select_next_scan_result(
+unsafe fn produce_next_graph_traversal_heap_tid(
+    scan: pg_sys::IndexScanDesc,
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if !unsafe { materialize_next_bootstrap_frontier_result(index_relation, opaque) } {
+        return false;
+    }
+
+    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    debug_assert!(
+        emitted,
+        "graph traversal result materialization should seed pending heap tids before returning true"
+    );
+    emitted
+}
+
+unsafe fn produce_next_linear_fallback_heap_tid(
+    scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
-) -> Option<SelectedScanResult> {
-    match opaque.execution_phase {
-        ScanExecutionPhase::GraphTraversal => {
-            let selected =
-                unsafe { try_select_next_bootstrap_frontier_result(index_relation, opaque) };
-            if selected.is_none() {
-                mark_scan_exhausted(opaque);
-            }
-            selected
-        }
-        ScanExecutionPhase::LinearFallback => unsafe {
-            select_next_linear_scan_result(index_relation, opaque, code_len)
-        },
-        ScanExecutionPhase::Exhausted => None,
-    }
+) -> bool {
+    let Some(selected) = (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
+    else {
+        return false;
+    };
+
+    materialize_selected_scan_result(opaque, selected);
+    let emitted = emit_pending_scan_heap_tid(scan, opaque);
+    debug_assert!(
+        emitted,
+        "linear fallback result materialization should seed pending heap tids before returning true"
+    );
+    emitted
 }
 
 unsafe fn select_next_linear_scan_result(
