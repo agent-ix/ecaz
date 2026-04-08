@@ -918,6 +918,7 @@ fn top_up_bootstrap_frontier<F>(
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn consume_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
@@ -996,6 +997,7 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     );
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn refill_bootstrap_frontier_after_success(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -1042,6 +1044,7 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
     Some(consumed)
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
     mark_emitted_element(opaque, selected.element_tid);
     opaque.result_state.materialize(selected);
@@ -1107,6 +1110,7 @@ where
     None
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 pub(super) unsafe fn prefetch_next_graph_traversal_result(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
