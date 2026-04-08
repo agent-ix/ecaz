@@ -21,6 +21,7 @@ pub struct EncodedTq {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedQuery {
     pub lut: Vec<f32>,
+    pub rotated: Vec<f32>,
     pub sq: Vec<f32>,
     pub qjl_scale: f32,
 }
@@ -159,6 +160,7 @@ impl ProdQuantizer {
 
         PreparedQuery {
             lut,
+            rotated: rotated[..self.original_dim].to_vec(),
             sq: if qjl_enabled(self.original_dim, self.bits) {
                 qjl::qjl_project(query, &self.qjl_signs)[..self.original_dim].to_vec()
             } else {
@@ -433,7 +435,7 @@ impl ProdQuantizer {
         qjl_packed: &[u8],
     ) -> f32 {
         use std::arch::x86_64::{
-            _mm256_add_ps, _mm256_i32gather_ps, _mm256_loadu_ps, _mm256_mul_ps,
+            _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_permutevar8x32_ps,
             _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
@@ -446,24 +448,28 @@ impl ProdQuantizer {
         let mut qjl_acc = _mm256_setzero_ps();
 
         if bits_per_index == 3 {
+            debug_assert_eq!(self.codebook.len(), 8);
+            let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
+
             while dim_index + 8 <= self.original_dim {
                 let indices = decode_eight_3bit_aligned(mse_packed, dim_index);
-                let base = (dim_index * num_centroids) as i32;
-                let stride = num_centroids as i32;
-                let lut_offsets = _mm256_setr_epi32(
-                    base + indices[0] as i32,
-                    base + stride + indices[1] as i32,
-                    base + (2 * stride) + indices[2] as i32,
-                    base + (3 * stride) + indices[3] as i32,
-                    base + (4 * stride) + indices[4] as i32,
-                    base + (5 * stride) + indices[5] as i32,
-                    base + (6 * stride) + indices[6] as i32,
-                    base + (7 * stride) + indices[7] as i32,
+                let lanes = _mm256_setr_epi32(
+                    indices[0] as i32,
+                    indices[1] as i32,
+                    indices[2] as i32,
+                    indices[3] as i32,
+                    indices[4] as i32,
+                    indices[5] as i32,
+                    indices[6] as i32,
+                    indices[7] as i32,
                 );
 
                 mse_acc = _mm256_add_ps(
                     mse_acc,
-                    _mm256_i32gather_ps(prepared.lut.as_ptr(), lut_offsets, 4),
+                    _mm256_mul_ps(
+                        _mm256_permutevar8x32_ps(codebook, lanes),
+                        _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
+                    ),
                 );
                 qjl_acc = _mm256_add_ps(
                     qjl_acc,
