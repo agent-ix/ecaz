@@ -458,7 +458,7 @@ src/
 - ADR-017: HNSW over IVF — topology-agnostic indexing for heterogeneous data shapes
 - ADR-018: HNSW graph quality with TurboQuant-compressed distances
 - ADR-019: WAL write amplification mitigation strategy
-- ADR-020: TurboQuant competitive positioning in the PostgreSQL vector quantization landscape
+- ADR-020: Embedding dimension operating points: 1024 vs 1536 vs 2048
 - Weaviate Rotational Quantization: https://weaviate.io/blog/8-bit-rotational-quantization
 - VectorChord RaBitQ: https://blog.vectorchord.ai/vectorchord-store-400k-vectors-for-1-in-postgresql
 - DiskANN paper: https://suhasjs.github.io/files/diskann_neurips19.pdf
