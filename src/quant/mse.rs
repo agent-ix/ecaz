@@ -28,3 +28,14 @@ pub fn decode_indices(codebook: &[f32], indices: &[CodeIndex]) -> Vec<f32> {
         .map(|index| codebook[*index as usize])
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nearest_centroid_index_prefers_lower_index_on_tie() {
+        let codebook = [-1.0_f32, 0.0, 1.0];
+        assert_eq!(nearest_centroid_index(&codebook, 0.5), 1);
+    }
+}

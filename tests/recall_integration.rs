@@ -346,6 +346,20 @@ fn run_recall_benchmark_with_quantizer(
     }
 }
 
+fn prod_quantizer_with_codebook_dim(
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    codebook_dim: usize,
+) -> ProdQuantizer {
+    let mut quantizer = ProdQuantizer::new(dim, bits, seed);
+    quantizer.codebook = lloyd_max((bits - 1) as usize, codebook_dim, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+    quantizer
+}
+
 fn run_recall_benchmark_with_corpus_variant(
     corpus: &[Vec<f32>],
     queries: &[Vec<f32>],
@@ -1124,6 +1138,118 @@ fn quantizer_recall_1536_padding_ablations_1k_clustered() {
 
 #[test]
 #[ignore]
+fn quantizer_recall_1536_tiled_codebook_dim_sweep_1k_uniform() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let tile_dim = 512usize;
+    let transform = transform_dim(dim);
+    let corpus: Vec<Vec<f32>> = (0..1_000)
+        .map(|i| random_unit_vector(dim, seed + i as u64))
+        .collect();
+    let queries: Vec<Vec<f32>> = (0..20)
+        .map(|i| random_unit_vector(dim, seed + 1_000_000 + i as u64))
+        .collect();
+
+    println!("\n=== 1536 Tiled Production Codebook Sweep — Uniform (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "prod_cb512",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, tile_dim),
+            ),
+        ),
+        (
+            "prod_cb1536",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, dim),
+            ),
+        ),
+        (
+            "prod_cb2048",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, transform),
+            ),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_tiled_codebook_dim_sweep_1k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let tile_dim = 512usize;
+    let transform = transform_dim(dim);
+    let corpus = random_clustered_corpus(dim, 1_000, 20, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 20, 20, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Tiled Production Codebook Sweep — Clustered (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "prod_cb512",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, tile_dim),
+            ),
+        ),
+        (
+            "prod_cb1536",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, dim),
+            ),
+        ),
+        (
+            "prod_cb2048",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, transform),
+            ),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
 fn quantizer_recall_1536_full_tail_exact_1k_uniform() {
     let dim = 1536;
     let seed = 42u64;
@@ -1137,6 +1263,51 @@ fn quantizer_recall_1536_full_tail_exact_1k_uniform() {
         .collect();
 
     println!("\n=== 1536 Full-Tail Exact Reference — Uniform (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &ProdQuantizer::new(dim, bits, seed),
+            ),
+        ),
+        (
+            "tail_full_cb1536",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, dim),
+        ),
+        (
+            "tail_full_cb2048",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_full_tail_exact_1k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let transform = transform_dim(dim);
+    let corpus = random_clustered_corpus(dim, 1_000, 20, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 20, 20, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Full-Tail Exact Reference — Clustered (1K x 1536, 4-bit) ===");
     println!(
         "{:>24} {:>10} {:>10} {:>10} {:>8}",
         "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
