@@ -11,7 +11,7 @@ use tqvector::bench_api::{
 
 #[test]
 fn payload_len_1536_dim_4bit() {
-    // 4 gamma + 576 MSE + 192 QJL = 772
+    // 4 gamma + 768 MSE + 0 QJL = 772
     assert_eq!(payload_len(1536, 4), 772);
 }
 
@@ -45,8 +45,8 @@ fn payload_len_1536_dim_8bit() {
 
 #[test]
 fn mse_code_len_1536_4bit() {
-    // 1536 * 3 bits / 8 = 576
-    assert_eq!(mse_code_len(1536, 4), 576);
+    // 1536 * 4 bits / 8 = 768 (QJL omitted at tiled 1536 @ 4-bit)
+    assert_eq!(mse_code_len(1536, 4), 768);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn heaptid_inline_capacity() {
 
 #[test]
 fn element_tuple_encoded_len_1536_4bit() {
-    let code_len = mse_code_len(1536, 4) + qjl_code_len(1536); // 576 + 192 = 768
+    let code_len = payload_len(1536, 4) - 4; // 768 packed code bytes
     assert_eq!(code_len, 768);
 
     // tag(1) + level(1) + deleted(1) + 10*ItemPointer(60) + count(1) + gamma(4) + neighbortid(6) + code(768)

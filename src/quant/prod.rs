@@ -49,7 +49,7 @@ impl ProdQuantizer {
         assert!((2..=8).contains(&bits), "bits must be within 2..=8");
 
         let transform_dim = rotation::effective_transform_dim(dim);
-        let codebook = codebook::lloyd_max((bits - 1) as usize, dim, 20_000)
+        let codebook = codebook::lloyd_max(mse_bits(dim, bits) as usize, dim, 20_000)
             .into_iter()
             .map(|value| value as f32)
             .collect();
@@ -104,24 +104,32 @@ impl ProdQuantizer {
             .map(|value| value * value)
             .sum::<f32>()
             .sqrt();
-
-        let qjl_projection = qjl::qjl_project(&residual, &self.qjl_signs);
-        let qjl_signs = qjl_projection[..self.original_dim]
-            .iter()
-            .map(|value| *value >= 0.0)
-            .collect::<Vec<_>>();
+        let qjl_packed = if qjl_enabled(self.original_dim, self.bits) {
+            let qjl_projection = qjl::qjl_project(&residual, &self.qjl_signs);
+            let qjl_signs = qjl_projection[..self.original_dim]
+                .iter()
+                .map(|value| *value >= 0.0)
+                .collect::<Vec<_>>();
+            pack_qjl_signs(&qjl_signs)
+        } else {
+            Vec::new()
+        };
 
         EncodedTq {
             gamma,
-            mse_packed: pack_mse_indices(&mse_indices, self.bits - 1),
-            qjl_packed: pack_qjl_signs(&qjl_signs),
+            mse_packed: pack_mse_indices(&mse_indices, mse_bits(self.original_dim, self.bits)),
+            qjl_packed,
         }
     }
 
     #[allow(dead_code)]
     pub fn decode_approximate(&self, payload: &[u8]) -> Vec<f32> {
         let (_, mse_packed, _) = self.split_payload(payload);
-        let mse_indices = unpack_mse_indices(mse_packed, self.original_dim, self.bits - 1);
+        let mse_indices = unpack_mse_indices(
+            mse_packed,
+            self.original_dim,
+            mse_bits(self.original_dim, self.bits),
+        );
         let mse_values = mse::decode_indices(&self.codebook, &mse_indices);
 
         let mut rotated_domain = vec![0.0_f32; self.transform_dim];
@@ -139,8 +147,7 @@ impl ProdQuantizer {
         );
 
         let rotated = rotation::srht(&rotation::pad_input(query, self.transform_dim), &self.signs);
-        let qjl_projection = qjl::qjl_project(query, &self.qjl_signs);
-        let num_centroids = 1usize << (self.bits - 1);
+        let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
 
         let mut lut = Vec::with_capacity(self.original_dim * num_centroids);
         for value in &rotated[..self.original_dim] {
@@ -151,8 +158,16 @@ impl ProdQuantizer {
 
         PreparedQuery {
             lut,
-            sq: qjl_projection[..self.original_dim].to_vec(),
-            qjl_scale: (PI / 2.0).sqrt() / self.original_dim as f32,
+            sq: if qjl_enabled(self.original_dim, self.bits) {
+                qjl::qjl_project(query, &self.qjl_signs)[..self.original_dim].to_vec()
+            } else {
+                Vec::new()
+            },
+            qjl_scale: if qjl_enabled(self.original_dim, self.bits) {
+                (PI / 2.0).sqrt() / self.original_dim as f32
+            } else {
+                0.0
+            },
         }
     }
 
@@ -178,22 +193,25 @@ impl ProdQuantizer {
         mse_packed: &[u8],
         qjl_packed: &[u8],
     ) -> f32 {
-        let num_centroids = 1usize << (self.bits - 1);
+        let mse_bits = mse_bits(self.original_dim, self.bits);
+        let num_centroids = 1usize << mse_bits;
 
         let mut mse_sum = 0.0_f32;
         for dim_index in 0..self.original_dim {
-            let centroid_index = mse_index_at(mse_packed, dim_index, self.bits - 1) as usize;
+            let centroid_index = mse_index_at(mse_packed, dim_index, mse_bits) as usize;
             mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
         }
 
         let mut qjl_sum = 0.0_f32;
-        for dim_index in 0..self.original_dim {
-            let sign = if qjl_sign_at(qjl_packed, dim_index) {
-                1.0
-            } else {
-                -1.0
-            };
-            qjl_sum += prepared.sq[dim_index] * sign;
+        if qjl_enabled(self.original_dim, self.bits) {
+            for dim_index in 0..self.original_dim {
+                let sign = if qjl_sign_at(qjl_packed, dim_index) {
+                    1.0
+                } else {
+                    -1.0
+                };
+                qjl_sum += prepared.sq[dim_index] * sign;
+            }
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
@@ -213,10 +231,11 @@ impl ProdQuantizer {
     }
 
     fn score_ip_mse_codes(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+        let mse_bits = mse_bits(self.original_dim, self.bits);
         let mut mse_sum = 0.0_f32;
         for dim_index in 0..self.original_dim {
-            let idx_a = mse_index_at(mse_a, dim_index, self.bits - 1) as usize;
-            let idx_b = mse_index_at(mse_b, dim_index, self.bits - 1) as usize;
+            let idx_a = mse_index_at(mse_a, dim_index, mse_bits) as usize;
+            let idx_b = mse_index_at(mse_b, dim_index, mse_bits) as usize;
             mse_sum += self.codebook[idx_a] * self.codebook[idx_b];
         }
         mse_sum
@@ -234,7 +253,7 @@ impl ProdQuantizer {
 
     fn split_code_bytes<'a>(&self, code_bytes: &'a [u8]) -> (&'a [u8], &'a [u8]) {
         let mse_len = mse_code_len(self.original_dim, self.bits);
-        let qjl_len = qjl_code_len(self.original_dim);
+        let qjl_len = qjl_code_len_for_bits(self.original_dim, self.bits);
         assert_eq!(
             code_bytes.len(),
             mse_len + qjl_len,
@@ -257,7 +276,7 @@ impl ProdQuantizer {
         );
         let gamma = f32::from_le_bytes(payload[..4].try_into().expect("gamma slice"));
         let mse_len = mse_code_len(self.original_dim, self.bits);
-        let qjl_len = qjl_code_len(self.original_dim);
+        let qjl_len = qjl_code_len_for_bits(self.original_dim, self.bits);
         assert_eq!(
             payload.len(),
             4 + mse_len + qjl_len,
@@ -275,8 +294,28 @@ impl ProdQuantizer {
     }
 }
 
+fn qjl_enabled(dim: usize, bits: u8) -> bool {
+    !(bits == 4 && rotation::tile_dim(dim).is_some())
+}
+
+fn mse_bits(dim: usize, bits: u8) -> u8 {
+    if qjl_enabled(dim, bits) {
+        bits.saturating_sub(1)
+    } else {
+        bits
+    }
+}
+
+fn qjl_code_len_for_bits(dim: usize, bits: u8) -> usize {
+    if qjl_enabled(dim, bits) {
+        qjl_code_len(dim)
+    } else {
+        0
+    }
+}
+
 pub fn mse_code_len(dim: usize, bits: u8) -> usize {
-    let bits_per_index = (bits as usize).saturating_sub(1);
+    let bits_per_index = mse_bits(dim, bits) as usize;
     (dim * bits_per_index).div_ceil(8)
 }
 
@@ -285,7 +324,7 @@ pub fn qjl_code_len(dim: usize) -> usize {
 }
 
 pub fn payload_len(dim: usize, bits: u8) -> usize {
-    4 + mse_code_len(dim, bits) + qjl_code_len(dim)
+    4 + mse_code_len(dim, bits) + qjl_code_len_for_bits(dim, bits)
 }
 
 pub fn pack_mse_indices(indices: &[CodeIndex], bits_per_index: u8) -> Vec<u8> {
@@ -415,6 +454,17 @@ mod tests {
         let encoded = quantizer.encode(&vector);
         let payload = quantizer.pack_payload(&encoded);
         assert_eq!(payload.len(), 772);
+    }
+
+    #[test]
+    fn quantizer_1536_4bit_reallocates_qjl_budget_to_mse() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let vector = random_unit_vector(1536, 7);
+        let encoded = quantizer.encode(&vector);
+
+        assert_eq!(encoded.mse_packed.len(), 768);
+        assert!(encoded.qjl_packed.is_empty());
+        assert_eq!(quantizer.pack_payload(&encoded).len(), 772);
     }
 
     #[test]

@@ -7,16 +7,17 @@
 //!
 //! ## Pipeline
 //!
-//! 1. [`rotation`] + [`mse`] — SRHT rotation + Lloyd-Max scalar codebook (b-1 bits/dim)
-//! 2. [`qjl`] — residual projection, 1-bit quantized and bit-packed
+//! 1. [`rotation`] + [`mse`] — SRHT rotation + Lloyd-Max scalar codebook
+//! 2. [`qjl`] — residual projection, 1-bit quantized and bit-packed where enabled
 //! 3. [`prod::ProdQuantizer`] — orchestrates both stages and exposes encode/decode/score APIs
 //!
 //! ## Storage format
 //!
 //! Packed code = `[mse_packed][qjl_packed]`
-//! - MSE: `ceil(dim * (bits-1) / 8)` bytes
-//! - QJL: `ceil(dim / 8)` bytes
-//! - Total at 1536-dim, 4-bit: 576 + 192 = 768 bytes
+//! - Default MSE budget: `bits-1` bits/dim
+//! - Default QJL budget: `1` bit/dim
+//! - Special case at tiled `1536 @ 4-bit`: all `4` bits go to MSE and QJL is omitted
+//! - Total packed code at 1536-dim, 4-bit stays `768` bytes
 //!
 //! ## Scoring
 //!
