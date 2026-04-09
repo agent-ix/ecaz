@@ -213,22 +213,35 @@ impl ProdQuantizer {
                 let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
                 for lane in 0..8 {
                     let absolute = dim_index + lane;
-                    mse_sum += prepared.lut[absolute * num_centroids + indices[lane]];
+                    mse_sum +=
+                        self.codebook[indices[lane]] * prepared.rotated[absolute];
                     qjl_sum += prepared.sq[absolute] * sign_lanes[lane];
                 }
                 dim_index += 8;
             }
-        }
 
-        while dim_index < self.original_dim {
-            let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
-            mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
-            qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
-                prepared.sq[dim_index]
-            } else {
-                -prepared.sq[dim_index]
-            };
-            dim_index += 1;
+            while dim_index < self.original_dim {
+                let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+                mse_sum +=
+                    self.codebook[centroid_index] * prepared.rotated[dim_index];
+                qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                    prepared.sq[dim_index]
+                } else {
+                    -prepared.sq[dim_index]
+                };
+                dim_index += 1;
+            }
+        } else {
+            while dim_index < self.original_dim {
+                let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+                mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
+                qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
+                    prepared.sq[dim_index]
+                } else {
+                    -prepared.sq[dim_index]
+                };
+                dim_index += 1;
+            }
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
@@ -630,7 +643,11 @@ impl ProdQuantizer {
 
         while dim_index < self.original_dim {
             let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
-            mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
+            mse_sum += if bits_per_index == 3 {
+                self.codebook[centroid_index] * prepared.rotated[dim_index]
+            } else {
+                prepared.lut[dim_index * num_centroids + centroid_index]
+            };
             qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
                 prepared.sq[dim_index]
             } else {
@@ -664,7 +681,11 @@ impl ProdQuantizer {
             for (lane, mse_value) in mse_values.iter_mut().enumerate() {
                 let absolute = dim_index + lane;
                 let centroid_index = mse_index_at(mse_packed, absolute, bits_per_index) as usize;
-                *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
+                *mse_value = if bits_per_index == 3 {
+                    self.codebook[centroid_index] * prepared.rotated[absolute]
+                } else {
+                    prepared.lut[absolute * num_centroids + centroid_index]
+                };
             }
 
             let mut qjl_terms = [0.0_f32; 4];
@@ -685,7 +706,11 @@ impl ProdQuantizer {
 
         while dim_index < self.original_dim {
             let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
-            mse_sum += prepared.lut[dim_index * num_centroids + centroid_index];
+            mse_sum += if bits_per_index == 3 {
+                self.codebook[centroid_index] * prepared.rotated[dim_index]
+            } else {
+                prepared.lut[dim_index * num_centroids + centroid_index]
+            };
             qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
                 prepared.sq[dim_index]
             } else {
