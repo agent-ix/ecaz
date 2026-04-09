@@ -573,7 +573,7 @@ impl ProdQuantizer {
                 qjl_terms.as_mut_ptr(),
                 vmulq_f32(
                     vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
-                    vld1q_f32(sign_lanes.as_ptr()),
+                    vld1q_f32(sign_lanes.as_ptr().add(dim_index % 8)),
                 ),
             );
             for lane in 0..4 {
