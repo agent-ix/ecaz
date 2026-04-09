@@ -1507,6 +1507,59 @@ fn quantizer_recall_1536_same_payload_qjl_vs_mse_10k_clustered() {
 
 #[test]
 #[ignore]
+fn quantizer_recall_1536_qjl_increment_after_4mse_10k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Thin-QJL Increment After 4 MSE Bits — Clustered (10K x 1536) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_4mse_no_qjl",
+            run_recall_benchmark_with_corpus(&corpus, &queries, dim, 4, seed),
+        ),
+        (
+            "4mse_plus_qjl_g0",
+            run_recall_benchmark_with_corpus_variant(
+                &corpus,
+                &queries,
+                dim,
+                5,
+                seed,
+                ScoringVariant::GammaZero,
+            ),
+        ),
+        (
+            "4mse_plus_qjl",
+            run_recall_benchmark_with_corpus_variant(
+                &corpus,
+                &queries,
+                dim,
+                5,
+                seed,
+                ScoringVariant::Exact,
+            ),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
 fn quantizer_recall_1536_tiled_fwht_reference_1k_clustered() {
     let dim = 1536;
     let seed = 42u64;
