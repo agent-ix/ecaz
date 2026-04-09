@@ -268,6 +268,8 @@ impl ProdQuantizer {
         match backend() {
             #[cfg(target_arch = "x86_64")]
             SimdBackend::Avx2Fma => unsafe { self.score_ip_mse_codes_avx2(mse_a, mse_b) },
+            #[cfg(target_arch = "aarch64")]
+            SimdBackend::Neon => unsafe { self.score_ip_mse_codes_neon(mse_a, mse_b) },
             _ => self.score_ip_mse_codes_scalar(mse_a, mse_b),
         }
     }
@@ -672,7 +674,10 @@ impl ProdQuantizer {
         mse_packed: &[u8],
         qjl_packed: &[u8],
     ) -> f32 {
-        use std::arch::aarch64::{vld1q_f32, vmulq_f32, vst1q_f32};
+        use std::arch::aarch64::{
+            vaddq_f32, vandq_u32, vdupq_n_f32, vdupq_n_u32, vfmaq_f32, vld1q_f32, vld1q_s32,
+            vmulq_f32, vshlq_u32, vst1q_f32, vst1q_u32,
+        };
 
         let bits_per_index = self.bits - 1;
         let num_centroids = 1usize << bits_per_index;
@@ -680,32 +685,94 @@ impl ProdQuantizer {
         let mut qjl_sum = 0.0_f32;
         let mut dim_index = 0usize;
 
-        while dim_index + 4 <= self.original_dim {
-            let mut mse_values = [0.0_f32; 4];
-            for (lane, mse_value) in mse_values.iter_mut().enumerate() {
-                let absolute = dim_index + lane;
-                let centroid_index = mse_index_at(mse_packed, absolute, bits_per_index) as usize;
-                *mse_value = if bits_per_index == 3 {
-                    self.codebook[centroid_index] * prepared.rotated[absolute]
-                } else {
-                    prepared.lut[absolute * num_centroids + centroid_index]
-                };
+        if bits_per_index == 3 {
+            let shifts_lo = vld1q_s32([0_i32, -3, -6, -9].as_ptr());
+            let shifts_hi = vld1q_s32([-12_i32, -15, -18, -21].as_ptr());
+            let mask = vdupq_n_u32(0x7);
+            let mut mse_acc0 = vdupq_n_f32(0.0);
+            let mut mse_acc1 = vdupq_n_f32(0.0);
+            let mut qjl_acc0 = vdupq_n_f32(0.0);
+            let mut qjl_acc1 = vdupq_n_f32(0.0);
+
+            while dim_index + 8 <= self.original_dim {
+                let word = decode_eight_3bit_aligned_word(mse_packed, dim_index);
+                let broadcast = vdupq_n_u32(word);
+                let idx_lo = vandq_u32(vshlq_u32(broadcast, shifts_lo), mask);
+                let idx_hi = vandq_u32(vshlq_u32(broadcast, shifts_hi), mask);
+
+                let mut idx_buf = [0_u32; 4];
+                let mut cb_lo = [0.0_f32; 4];
+                let mut cb_hi = [0.0_f32; 4];
+                vst1q_u32(idx_buf.as_mut_ptr(), idx_lo);
+                cb_lo[0] = self.codebook[idx_buf[0] as usize];
+                cb_lo[1] = self.codebook[idx_buf[1] as usize];
+                cb_lo[2] = self.codebook[idx_buf[2] as usize];
+                cb_lo[3] = self.codebook[idx_buf[3] as usize];
+                vst1q_u32(idx_buf.as_mut_ptr(), idx_hi);
+                cb_hi[0] = self.codebook[idx_buf[0] as usize];
+                cb_hi[1] = self.codebook[idx_buf[1] as usize];
+                cb_hi[2] = self.codebook[idx_buf[2] as usize];
+                cb_hi[3] = self.codebook[idx_buf[3] as usize];
+
+                mse_acc0 = vfmaq_f32(
+                    mse_acc0,
+                    vld1q_f32(cb_lo.as_ptr()),
+                    vld1q_f32(prepared.rotated.as_ptr().add(dim_index)),
+                );
+                mse_acc1 = vfmaq_f32(
+                    mse_acc1,
+                    vld1q_f32(cb_hi.as_ptr()),
+                    vld1q_f32(prepared.rotated.as_ptr().add(dim_index + 4)),
+                );
+
+                let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
+                qjl_acc0 = vfmaq_f32(
+                    qjl_acc0,
+                    vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
+                    vld1q_f32(sign_lanes.as_ptr()),
+                );
+                qjl_acc1 = vfmaq_f32(
+                    qjl_acc1,
+                    vld1q_f32(prepared.sq.as_ptr().add(dim_index + 4)),
+                    vld1q_f32(sign_lanes.as_ptr().add(4)),
+                );
+
+                dim_index += 8;
             }
 
-            let mut qjl_terms = [0.0_f32; 4];
-            let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
-            vst1q_f32(
-                qjl_terms.as_mut_ptr(),
-                vmulq_f32(
-                    vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
-                    vld1q_f32(sign_lanes.as_ptr().add(dim_index % 8)),
-                ),
-            );
-            for lane in 0..4 {
-                mse_sum += mse_values[lane];
-                qjl_sum += qjl_terms[lane];
+            let mse_total = vaddq_f32(mse_acc0, mse_acc1);
+            let qjl_total = vaddq_f32(qjl_acc0, qjl_acc1);
+            let mut mse_lanes = [0.0_f32; 4];
+            let mut qjl_lanes = [0.0_f32; 4];
+            vst1q_f32(mse_lanes.as_mut_ptr(), mse_total);
+            vst1q_f32(qjl_lanes.as_mut_ptr(), qjl_total);
+            mse_sum += mse_lanes.iter().sum::<f32>();
+            qjl_sum += qjl_lanes.iter().sum::<f32>();
+        } else {
+            while dim_index + 4 <= self.original_dim {
+                let mut mse_values = [0.0_f32; 4];
+                for (lane, mse_value) in mse_values.iter_mut().enumerate() {
+                    let absolute = dim_index + lane;
+                    let centroid_index =
+                        mse_index_at(mse_packed, absolute, bits_per_index) as usize;
+                    *mse_value = prepared.lut[absolute * num_centroids + centroid_index];
+                }
+
+                let mut qjl_terms = [0.0_f32; 4];
+                let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
+                vst1q_f32(
+                    qjl_terms.as_mut_ptr(),
+                    vmulq_f32(
+                        vld1q_f32(prepared.sq.as_ptr().add(dim_index)),
+                        vld1q_f32(sign_lanes.as_ptr().add(dim_index % 8)),
+                    ),
+                );
+                for lane in 0..4 {
+                    mse_sum += mse_values[lane];
+                    qjl_sum += qjl_terms[lane];
+                }
+                dim_index += 4;
             }
-            dim_index += 4;
         }
 
         while dim_index < self.original_dim {
@@ -724,6 +791,91 @@ impl ProdQuantizer {
         }
 
         mse_sum + gamma * prepared.qjl_scale * qjl_sum
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "neon")]
+    unsafe fn score_ip_mse_codes_neon(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
+        use std::arch::aarch64::{
+            vaddq_f32, vandq_u32, vdupq_n_f32, vdupq_n_u32, vfmaq_f32, vld1q_f32, vld1q_s32,
+            vshlq_u32, vst1q_f32, vst1q_u32,
+        };
+
+        let bits_per_index = self.bits - 1;
+        if bits_per_index != 3 {
+            return self.score_ip_mse_codes_scalar(mse_a, mse_b);
+        }
+
+        let shifts_lo = vld1q_s32([0_i32, -3, -6, -9].as_ptr());
+        let shifts_hi = vld1q_s32([-12_i32, -15, -18, -21].as_ptr());
+        let mask = vdupq_n_u32(0x7);
+        let mut mse_acc0 = vdupq_n_f32(0.0);
+        let mut mse_acc1 = vdupq_n_f32(0.0);
+        let mut dim_index = 0usize;
+
+        while dim_index + 8 <= self.original_dim {
+            let word_a = decode_eight_3bit_aligned_word(mse_a, dim_index);
+            let word_b = decode_eight_3bit_aligned_word(mse_b, dim_index);
+            let broadcast_a = vdupq_n_u32(word_a);
+            let broadcast_b = vdupq_n_u32(word_b);
+            let idx_a_lo = vandq_u32(vshlq_u32(broadcast_a, shifts_lo), mask);
+            let idx_a_hi = vandq_u32(vshlq_u32(broadcast_a, shifts_hi), mask);
+            let idx_b_lo = vandq_u32(vshlq_u32(broadcast_b, shifts_lo), mask);
+            let idx_b_hi = vandq_u32(vshlq_u32(broadcast_b, shifts_hi), mask);
+
+            let mut idx_buf = [0_u32; 4];
+            let mut cb_a_lo = [0.0_f32; 4];
+            let mut cb_a_hi = [0.0_f32; 4];
+            let mut cb_b_lo = [0.0_f32; 4];
+            let mut cb_b_hi = [0.0_f32; 4];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_a_lo);
+            cb_a_lo[0] = self.codebook[idx_buf[0] as usize];
+            cb_a_lo[1] = self.codebook[idx_buf[1] as usize];
+            cb_a_lo[2] = self.codebook[idx_buf[2] as usize];
+            cb_a_lo[3] = self.codebook[idx_buf[3] as usize];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_a_hi);
+            cb_a_hi[0] = self.codebook[idx_buf[0] as usize];
+            cb_a_hi[1] = self.codebook[idx_buf[1] as usize];
+            cb_a_hi[2] = self.codebook[idx_buf[2] as usize];
+            cb_a_hi[3] = self.codebook[idx_buf[3] as usize];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_b_lo);
+            cb_b_lo[0] = self.codebook[idx_buf[0] as usize];
+            cb_b_lo[1] = self.codebook[idx_buf[1] as usize];
+            cb_b_lo[2] = self.codebook[idx_buf[2] as usize];
+            cb_b_lo[3] = self.codebook[idx_buf[3] as usize];
+            vst1q_u32(idx_buf.as_mut_ptr(), idx_b_hi);
+            cb_b_hi[0] = self.codebook[idx_buf[0] as usize];
+            cb_b_hi[1] = self.codebook[idx_buf[1] as usize];
+            cb_b_hi[2] = self.codebook[idx_buf[2] as usize];
+            cb_b_hi[3] = self.codebook[idx_buf[3] as usize];
+
+            mse_acc0 = vfmaq_f32(
+                mse_acc0,
+                vld1q_f32(cb_a_lo.as_ptr()),
+                vld1q_f32(cb_b_lo.as_ptr()),
+            );
+            mse_acc1 = vfmaq_f32(
+                mse_acc1,
+                vld1q_f32(cb_a_hi.as_ptr()),
+                vld1q_f32(cb_b_hi.as_ptr()),
+            );
+
+            dim_index += 8;
+        }
+
+        let mse_total = vaddq_f32(mse_acc0, mse_acc1);
+        let mut mse_lanes = [0.0_f32; 4];
+        vst1q_f32(mse_lanes.as_mut_ptr(), mse_total);
+        let mut mse_sum = mse_lanes.iter().sum::<f32>();
+
+        while dim_index < self.original_dim {
+            let idx_a = mse_index_at(mse_a, dim_index, bits_per_index) as usize;
+            let idx_b = mse_index_at(mse_b, dim_index, bits_per_index) as usize;
+            mse_sum += self.codebook[idx_a] * self.codebook[idx_b];
+            dim_index += 1;
+        }
+
+        mse_sum
     }
 }
 
