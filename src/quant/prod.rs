@@ -147,9 +147,9 @@ impl ProdQuantizer {
             self.original_dim
         );
 
-        let rotated = rotation::srht_padded(query, &self.signs);
-        let qjl_projection = qjl_enabled(self.original_dim, self.bits)
-            .then(|| qjl::qjl_project(query, &self.qjl_signs));
+        let mut rotated = rotation::srht_padded(query, &self.signs);
+        let mut qjl_projection =
+            qjl_enabled(self.original_dim, self.bits).then(|| qjl::qjl_project(query, &self.qjl_signs));
         let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
 
         let mut lut = Vec::with_capacity(self.original_dim * num_centroids);
@@ -158,15 +158,15 @@ impl ProdQuantizer {
                 lut.push(*centroid * *value);
             }
         }
+        rotated.truncate(self.original_dim);
+        if let Some(projection) = qjl_projection.as_mut() {
+            projection.truncate(self.original_dim);
+        }
 
         PreparedQuery {
             lut,
-            rotated: rotated[..self.original_dim].to_vec(),
-            sq: if let Some(projection) = &qjl_projection {
-                projection[..self.original_dim].to_vec()
-            } else {
-                Vec::new()
-            },
+            rotated,
+            sq: qjl_projection.unwrap_or_default(),
             qjl_scale: if qjl_enabled(self.original_dim, self.bits) {
                 (PI / 2.0).sqrt() / self.original_dim as f32
             } else {
