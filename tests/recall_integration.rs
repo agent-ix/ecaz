@@ -360,6 +360,25 @@ fn prod_quantizer_with_codebook_dim(
     quantizer
 }
 
+fn current_prod_quantizer_with_codebook_dim(
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    codebook_dim: usize,
+) -> ProdQuantizer {
+    let mut quantizer = ProdQuantizer::new(dim, bits, seed);
+    let mse_bits = if dim == 1536 && bits == 4 {
+        bits
+    } else {
+        bits.saturating_sub(1)
+    };
+    quantizer.codebook = lloyd_max(mse_bits as usize, codebook_dim, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+    quantizer
+}
+
 fn run_recall_benchmark_with_corpus_variant(
     corpus: &[Vec<f32>],
     queries: &[Vec<f32>],
@@ -1549,6 +1568,62 @@ fn quantizer_recall_1536_qjl_increment_after_4mse_10k_clustered() {
     ] {
         println!(
             "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_4mse_codebook_dim_sweep_10k_clustered() {
+    let dim = 1536;
+    let bits = 4u8;
+    let seed = 42u64;
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 4-MSE Codebook Sweep — Clustered (10K x 1536) ===");
+    println!(
+        "{:>20} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_cb1536",
+            run_recall_benchmark_with_corpus(&corpus, &queries, dim, bits, seed),
+        ),
+        (
+            "4mse_cb512",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &current_prod_quantizer_with_codebook_dim(dim, bits, seed, 512),
+            ),
+        ),
+        (
+            "4mse_cb1536",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &current_prod_quantizer_with_codebook_dim(dim, bits, seed, dim),
+            ),
+        ),
+        (
+            "4mse_cb2048",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &current_prod_quantizer_with_codebook_dim(dim, bits, seed, transform_dim(dim)),
+            ),
+        ),
+    ] {
+        println!(
+            "{:>20} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
             label,
             report.recall_at_1 * 100.0,
             report.recall_at_10 * 100.0,
