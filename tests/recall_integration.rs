@@ -923,6 +923,32 @@ fn quantizer_recall_clustered_10k() {
 
 #[test]
 #[ignore]
+fn quantizer_recall_clustered_10k_bitwidth_spot_check() {
+    let dim = 1536;
+    let seed = 42u64;
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    println!("\n=== Bit-Width Spot Check — Clustered (10K x 1536, 50 clusters) ===");
+    println!(
+        "{:>5} {:>9} {:>10} {:>10} {:>8}",
+        "bits", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+    for bits in [3u8, 4, 6, 8] {
+        let report = run_recall_benchmark_with_corpus(&corpus, &queries, dim, bits, seed);
+        println!(
+            "{:>5} {:>8.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            bits,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
 fn quantizer_recall_clustered_bitwidth_sweep() {
     let dim = 1536;
     let seed = 42u64;
@@ -1329,6 +1355,99 @@ fn quantizer_recall_1536_full_tail_exact_1k_clustered() {
         (
             "tail_full_cb2048",
             run_tail_full_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_upstream_gap_10k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let transform = transform_dim(dim);
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Upstream Gap Check — Clustered (10K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &ProdQuantizer::new(dim, bits, seed),
+            ),
+        ),
+        (
+            "prod_cb2048",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &prod_quantizer_with_codebook_dim(dim, bits, seed, transform),
+            ),
+        ),
+        (
+            "tail_full_cb1536",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, dim),
+        ),
+        (
+            "tail_full_cb2048",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_payload_equivalent_operating_points_10k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let transform = transform_dim(dim);
+    let corpus = random_clustered_corpus(dim, 10_000, 50, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 50, 50, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Payload-Equivalent Operating Points — Clustered (10K x 1536) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_1536_4bit",
+            run_recall_benchmark_with_corpus(&corpus, &queries, dim, 4, seed),
+        ),
+        (
+            "fulln_2048_3bit",
+            run_tail_full_reference(&corpus, &queries, dim, 3, seed, transform),
+        ),
+        (
+            "current_1536_6bit",
+            run_recall_benchmark_with_corpus(&corpus, &queries, dim, 6, seed),
         ),
     ] {
         println!(
