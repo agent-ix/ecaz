@@ -143,12 +143,8 @@ impl ProdQuantizer {
         let mut qjl_projection = qjl::qjl_project(query, &self.qjl_signs);
         let num_centroids = 1usize << (self.bits - 1);
 
-        let mut lut = Vec::with_capacity(self.original_dim * num_centroids);
-        for value in &rotated[..self.original_dim] {
-            for centroid in &self.codebook {
-                lut.push(*centroid * *value);
-            }
-        }
+        let lut =
+            build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, num_centroids);
         rotated.truncate(self.original_dim);
         qjl_projection.truncate(self.original_dim);
 
@@ -709,6 +705,33 @@ pub fn mse_code_len(dim: usize, bits: u8) -> usize {
 
 pub fn qjl_code_len(dim: usize) -> usize {
     dim.div_ceil(8)
+}
+
+fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: usize) -> Vec<f32> {
+    debug_assert_eq!(codebook.len(), num_centroids);
+    let mut lut = vec![0.0_f32; rotated.len() * num_centroids];
+
+    if let [c0, c1, c2, c3, c4, c5, c6, c7] = codebook {
+        for (row, &value) in lut.chunks_exact_mut(8).zip(rotated.iter()) {
+            row[0] = c0 * value;
+            row[1] = c1 * value;
+            row[2] = c2 * value;
+            row[3] = c3 * value;
+            row[4] = c4 * value;
+            row[5] = c5 * value;
+            row[6] = c6 * value;
+            row[7] = c7 * value;
+        }
+        return lut;
+    }
+
+    for (row, &value) in lut.chunks_exact_mut(num_centroids).zip(rotated.iter()) {
+        for (slot, &centroid) in row.iter_mut().zip(codebook.iter()) {
+            *slot = centroid * value;
+        }
+    }
+
+    lut
 }
 
 pub fn payload_len(dim: usize, bits: u8) -> usize {
