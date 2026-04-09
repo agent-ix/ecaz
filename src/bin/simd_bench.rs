@@ -84,7 +84,7 @@ fn run_prepare_ip_query_bench(dim: usize, bits: u8, iterations: usize) {
     let query = random_unit_vector(dim, 7);
     let elapsed = time_loop(iterations.max(1), || {
         let prepared = quantizer.prepare_ip_query(black_box(&query));
-        black_box(prepared.lut[0]);
+        black_box(prepared.rotated[0]);
     });
     print_result(
         &format!("prepare_ip_query/d{dim}_b{bits}"),

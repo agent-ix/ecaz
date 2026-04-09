@@ -152,8 +152,12 @@ impl ProdQuantizer {
             qjl_enabled(self.original_dim, self.bits).then(|| qjl::qjl_project(query, &self.qjl_signs));
         let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
 
-        let lut =
-            build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, num_centroids);
+        let bits_per_index = self.bits - 1;
+        let lut = if bits_per_index == 3 {
+            Vec::new()
+        } else {
+            build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, num_centroids)
+        };
         rotated.truncate(self.original_dim);
         if let Some(projection) = qjl_projection.as_mut() {
             projection.truncate(self.original_dim);
@@ -1001,10 +1005,10 @@ mod tests {
 
         let mse_indices = unpack_mse_indices(&encoded.mse_packed, 32, 3);
         let qjl_signs = unpack_qjl_signs(&encoded.qjl_packed, 32);
-        let num_centroids = 1usize << (quantizer.bits - 1);
         let mut mse_sum = 0.0_f32;
         for (dim_index, mse_index) in mse_indices.iter().enumerate().take(32) {
-            mse_sum += prepared.lut[dim_index * num_centroids + *mse_index as usize];
+            mse_sum +=
+                quantizer.codebook[*mse_index as usize] * prepared.rotated[dim_index];
         }
         let qjl_sum = prepared
             .sq
