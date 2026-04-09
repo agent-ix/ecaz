@@ -696,6 +696,7 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
     use std::collections::{HashMap, HashSet};
+    use std::time::Instant;
 
     const RECALL_BITS: i32 = 4;
     const RECALL_SEED: i64 = 42;
@@ -705,6 +706,12 @@ mod tests {
     const RECALL_K: usize = 10;
     const RECALL_EF_CONSTRUCTION: i32 = 128;
     const RECALL_INSERT_BATCH_SIZE: usize = 32;
+    const RECALL_GATE_CONFIGS: [(i32, i32, Option<f32>); 4] = [
+        (8, 40, None),
+        (8, 128, Some(0.89_f32)),
+        (8, 200, None),
+        (16, 200, None),
+    ];
 
     fn setup_rescan_scaffold_index(name: &str) -> pg_sys::Oid {
         Spi::run(&format!(
@@ -953,6 +960,31 @@ mod tests {
         insert_recall_corpus(&fixture_name, &corpus);
         let index_oid = create_recall_index(&fixture_name, &index_name, m);
         recall_index_block_count(index_oid, "reset_graph_scan_recall_fixture")
+    }
+
+    fn reset_graph_scan_recall_gate_fixtures(
+        fixture_prefix: &str,
+        corpus_size: usize,
+    ) -> Vec<(i32, i32)> {
+        let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        let table_name = format!("{fixture_prefix}_corpus");
+        let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
+
+        Spi::run(&format!("DROP TABLE IF EXISTS {table_name} CASCADE"))
+            .expect("recall gate fixture cleanup should succeed");
+        create_recall_table(&table_name);
+        insert_recall_corpus(&table_name, &corpus);
+
+        [8, 16]
+            .into_iter()
+            .map(|m| {
+                let index_name = format!("{fixture_prefix}_m{m}_idx");
+                let index_oid = create_recall_index(&table_name, &index_name, m);
+                let index_block_count =
+                    recall_index_block_count(index_oid, "reset_graph_scan_recall_gate_fixtures");
+                (m, index_block_count)
+            })
+            .collect()
     }
 
     fn measure_graph_scan_recall(
@@ -5102,20 +5134,16 @@ mod tests {
         insert_recall_corpus("tqhnsw_graph_scan_recall_gate", &corpus);
         let ctid_to_id = ctid_id_map("tqhnsw_graph_scan_recall_gate");
 
-        let configs = [
-            (8, 40, None),
-            (8, 128, Some(0.89_f32)),
-            (8, 200, None),
-            (16, 200, None),
-        ];
         let mut results = Vec::new();
 
         for m in [8, 16] {
             let index_name = format!("tqhnsw_graph_scan_recall_gate_m{m}_idx");
             let index_oid = create_recall_index("tqhnsw_graph_scan_recall_gate", &index_name, m);
 
-            for (config_m, ef_search, target) in
-                configs.iter().copied().filter(|(cfg_m, _, _)| *cfg_m == m)
+            for (config_m, ef_search, target) in RECALL_GATE_CONFIGS
+                .iter()
+                .copied()
+                .filter(|(cfg_m, _, _)| *cfg_m == m)
             {
                 let recall = measure_graph_scan_recall(
                     index_oid,
@@ -5136,6 +5164,33 @@ mod tests {
             .expect("recall benchmark table cleanup should succeed");
 
         results
+    }
+
+    fn run_graph_scan_recall_gate_from_fixtures(
+        fixture_prefix: &str,
+        query_count: usize,
+    ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
+        assert!(query_count > 0, "query_count must be positive");
+
+        let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        let table_name = format!("{fixture_prefix}_corpus");
+        RECALL_GATE_CONFIGS
+            .iter()
+            .copied()
+            .map(|(m, ef_search, target)| {
+                let index_name = format!("{fixture_prefix}_m{m}_idx");
+                let (_, _, _, graph_recall_at_10, _, _, _, _, _, _, _) =
+                    probe_graph_scan_recall_fixture_summary_for_relation(
+                        &table_name,
+                        &index_name,
+                        m,
+                        ef_search,
+                        query_count,
+                    );
+                let passed = target.map(|gate| graph_recall_at_10 >= gate).unwrap_or(true);
+                (m, ef_search, graph_recall_at_10, target, passed)
+            })
+            .collect()
     }
 
     type GraphScanRecallProbeRow = (i32, i32, i32, i32, bool, Vec<i64>, Vec<i64>, Vec<i64>);
@@ -5589,20 +5644,21 @@ mod tests {
         (m, ef_search, exact_ids, exact_scores, emitted_ranks, emitted_scores)
     }
 
-    fn collect_graph_scan_recall_fixture_query_overlaps(
-        fixture_name: &str,
+    fn collect_graph_scan_recall_fixture_query_overlaps_for_relation(
+        table_name: &str,
+        index_name: &str,
         m: i32,
         ef_search: i32,
         query_count: usize,
     ) -> Vec<GraphScanRecallFixtureQueryOverlapRow> {
         assert!(query_count > 0);
 
-        let fixture_name = recall_fixture_ident(fixture_name);
-        let index_name = format!("{fixture_name}_idx");
+        let table_name = recall_fixture_ident(table_name);
+        let index_name = recall_fixture_ident(index_name);
         let corpus_size = Spi::connect(|client| {
             client
                 .select(
-                    &format!("SELECT count(*) AS count FROM {fixture_name}"),
+                    &format!("SELECT count(*) AS count FROM {table_name}"),
                     None,
                     &[],
                 )
@@ -5628,7 +5684,7 @@ mod tests {
             .iter()
             .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
             .collect::<Vec<_>>();
-        let ctid_to_id = ctid_id_map(&fixture_name);
+        let ctid_to_id = ctid_id_map(&table_name);
         let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("recall fixture index oid query should succeed")
             .expect("recall fixture index oid should exist");
@@ -5659,7 +5715,7 @@ mod tests {
                     .select(
                         &format!(
                             "SELECT id
-                             FROM {fixture_name}
+                             FROM {table_name}
                              ORDER BY embedding <#> $1
                              LIMIT 10"
                         ),
@@ -5702,6 +5758,23 @@ mod tests {
         rows
     }
 
+    fn collect_graph_scan_recall_fixture_query_overlaps(
+        fixture_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+    ) -> Vec<GraphScanRecallFixtureQueryOverlapRow> {
+        let fixture_name = recall_fixture_ident(fixture_name);
+        let index_name = format!("{fixture_name}_idx");
+        collect_graph_scan_recall_fixture_query_overlaps_for_relation(
+            &fixture_name,
+            &index_name,
+            m,
+            ef_search,
+            query_count,
+        )
+    }
+
     fn probe_graph_scan_recall_fixture_summary(
         fixture_name: &str,
         m: i32,
@@ -5710,6 +5783,32 @@ mod tests {
     ) -> GraphScanRecallFixtureSummaryRow {
         let rows =
             collect_graph_scan_recall_fixture_query_overlaps(fixture_name, m, ef_search, query_count);
+        summarize_graph_scan_recall_fixture_query_overlaps(rows, m, ef_search, query_count)
+    }
+
+    fn probe_graph_scan_recall_fixture_summary_for_relation(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+    ) -> GraphScanRecallFixtureSummaryRow {
+        let rows = collect_graph_scan_recall_fixture_query_overlaps_for_relation(
+            table_name,
+            index_name,
+            m,
+            ef_search,
+            query_count,
+        );
+        summarize_graph_scan_recall_fixture_query_overlaps(rows, m, ef_search, query_count)
+    }
+
+    fn summarize_graph_scan_recall_fixture_query_overlaps(
+        rows: Vec<GraphScanRecallFixtureQueryOverlapRow>,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+    ) -> GraphScanRecallFixtureSummaryRow {
         let mut graph_hits = 0_i32;
         let mut exact_hits = 0_i32;
         let mut build_code_hits = 0_i32;
@@ -5878,6 +5977,39 @@ mod tests {
         ),
     > {
         TableIterator::new(run_graph_scan_recall_gate())
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_fixture_gate_reset(
+        fixture_prefix: String,
+        corpus_size: i32,
+    ) -> TableIterator<'static, (name!(m, i32), name!(index_block_count, i32))> {
+        TableIterator::new(reset_graph_scan_recall_gate_fixtures(
+            &fixture_prefix,
+            usize::try_from(corpus_size).expect("corpus size should be non-negative"),
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_fixture_gate_report(
+        fixture_prefix: String,
+        query_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(gate_recall_at_10, Option<f32>),
+            name!(passes_gate, bool),
+        ),
+    > {
+        TableIterator::new(run_graph_scan_recall_gate_from_fixtures(
+            &fixture_prefix,
+            usize::try_from(query_count).expect("query count should be non-negative"),
+        ))
     }
 
     #[pg_extern]
@@ -6187,6 +6319,30 @@ mod tests {
             exact_quantized_recall_at_10 * 100.0,
             build_code_recall_at_10 * 100.0
         );
+    }
+
+    #[pg_test]
+    #[ignore]
+    fn test_tqhnsw_graph_scan_recall_fixture_gate_10k_tiled_fwht() {
+        let fixture_prefix = "tqhnsw_graph_scan_recall_gate_tiled_10k";
+
+        let reset_started = Instant::now();
+        let reset_rows = reset_graph_scan_recall_gate_fixtures(fixture_prefix, 10_000);
+        let reset_elapsed = reset_started.elapsed();
+
+        let first_started = Instant::now();
+        let first = run_graph_scan_recall_gate_from_fixtures(fixture_prefix, 100);
+        let first_elapsed = first_started.elapsed();
+
+        let second_started = Instant::now();
+        let second = run_graph_scan_recall_gate_from_fixtures(fixture_prefix, 100);
+        let second_elapsed = second_started.elapsed();
+
+        println!(
+            "10k fixture gate reuse: reset={reset_elapsed:?} fixtures={reset_rows:?} first={first_elapsed:?} second={second_elapsed:?} results={first:?}"
+        );
+
+        assert_eq!(first, second, "fixture-backed gate report should be stable across reruns");
     }
 
     #[pg_test]
