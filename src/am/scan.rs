@@ -97,6 +97,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
+            opaque.scan_m = metadata.m;
             opaque.scan_bits = metadata.bits;
             opaque.scan_seed = metadata.seed;
             opaque.scan_code_len = if metadata.dimensions == 0 {
@@ -297,10 +298,6 @@ impl<'a> GraphTraversalCursor<'a> {
         self.result_state.pending_count() == 0
     }
 
-    fn materialize(&mut self, selected: SelectedScanResult) {
-        self.result_state.materialize(selected);
-    }
-
     fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
         self.result_state.take_pending_output()
     }
@@ -319,12 +316,8 @@ impl<'a> GraphTraversalCursor<'a> {
         index_relation: pg_sys::Relation,
         opaque: *mut TqScanOpaque,
     ) -> bool {
-        let mut context = GraphTraversalPrefetchContext::new(
-            index_relation,
-            opaque,
-            self.result_state as *mut ScanResultState,
-        );
-        unsafe { context.prefetch_next() }
+        let result_state = self.result_state as *mut ScanResultState;
+        unsafe { prefetch_next_graph_result_from_frontier(index_relation, &mut *opaque, result_state) }
     }
 
     unsafe fn ensure_prefetched_output(
@@ -408,130 +401,6 @@ fn linear_fallback_cursor(opaque: &mut TqScanOpaque) -> LinearFallbackCursor<'_>
     LinearFallbackCursor::new(&mut opaque.fallback_result_state)
 }
 
-struct GraphTraversalPrefetchContext {
-    index_relation: pg_sys::Relation,
-    opaque: *mut TqScanOpaque,
-    result_state: *mut ScanResultState,
-}
-
-impl GraphTraversalPrefetchContext {
-    fn new(
-        index_relation: pg_sys::Relation,
-        opaque: *mut TqScanOpaque,
-        result_state: *mut ScanResultState,
-    ) -> Self {
-        Self {
-            index_relation,
-            opaque,
-            result_state,
-        }
-    }
-
-    unsafe fn prefetch_next(&mut self) -> bool {
-        let opaque = unsafe { &mut *self.opaque };
-        if !opaque.execution_phase.is_graph_traversal()
-            || opaque.scan_dimensions == 0
-            || unsafe { (&*self.result_state).pending_count() != 0 }
-        {
-            return false;
-        }
-
-        // SAFETY: the context only reaches `TqScanOpaque` through a raw pointer, and the packaged
-        // operations mutate disjoint scan fields from the Box-backed frontier/scheduler pair.
-        with_visible_frontier_mut_and_bootstrap_expansion(
-            opaque,
-            |visible_frontier, expansion| unsafe { self.run(visible_frontier, expansion) },
-        )
-    }
-
-    unsafe fn run(
-        &mut self,
-        visible_frontier: &mut VisibleCandidateFrontierState,
-        expansion: &mut search::BeamSearch<page::ItemPointer>,
-    ) -> bool {
-        let context_ptr = self as *mut Self;
-        visible_frontier
-            .select_next_with_refill(
-                expansion,
-                |candidate| unsafe { (*context_ptr).materialize_candidate(candidate) },
-                |node| unsafe { (*context_ptr).source_is_expanded(node) },
-                |node| unsafe { (*context_ptr).mark_source_expanded(node) },
-                |source_tid, visible_frontier, expansion| unsafe {
-                    (*context_ptr).refill_from_source(
-                        visible_frontier,
-                        expansion,
-                        source_tid,
-                    );
-                },
-                |visible_frontier, expansion| unsafe {
-                    (*context_ptr).top_up_from_visible(visible_frontier, expansion);
-                },
-            )
-            .is_some()
-    }
-
-    unsafe fn materialize_candidate(
-        &mut self,
-        candidate: search::BeamCandidate<page::ItemPointer>,
-    ) -> Option<()> {
-        let opaque = unsafe { &mut *self.opaque };
-        let result_state = unsafe { &mut *self.result_state };
-        let element =
-            unsafe { graph::load_graph_element(self.index_relation, candidate.node, opaque.scan_code_len) };
-        if element.deleted || element.heaptids.is_empty() {
-            return None;
-        }
-
-        mark_emitted_element(opaque, candidate.node);
-        result_state.materialize(SelectedScanResult {
-            element_tid: candidate.node,
-            score: candidate.score,
-            heap_tids: element.heaptids,
-        });
-        Some(())
-    }
-
-    unsafe fn source_is_expanded(&self, node: page::ItemPointer) -> bool {
-        unsafe { expanded_contains_source(&*self.opaque, node) }
-    }
-
-    unsafe fn mark_source_expanded(&mut self, node: page::ItemPointer) {
-        unsafe { mark_expanded_source(&mut *self.opaque, node) };
-    }
-
-    unsafe fn refill_from_source(
-        &mut self,
-        visible_frontier: &mut VisibleCandidateFrontierState,
-        expansion: &mut search::BeamSearch<page::ItemPointer>,
-        source_tid: page::ItemPointer,
-    ) {
-        unsafe {
-            refill_candidate_frontier_from_source_into(
-                self.index_relation,
-                &mut *self.opaque,
-                visible_frontier,
-                expansion,
-                source_tid,
-            )
-        };
-    }
-
-    unsafe fn top_up_from_visible(
-        &mut self,
-        visible_frontier: &mut VisibleCandidateFrontierState,
-        expansion: &mut search::BeamSearch<page::ItemPointer>,
-    ) {
-        unsafe {
-            top_up_bootstrap_frontier_from_visible_seeds_into(
-                self.index_relation,
-                &mut *self.opaque,
-                visible_frontier,
-                expansion,
-            )
-        };
-    }
-}
-
 pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState {
     if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
         &opaque.fallback_result_state
@@ -565,6 +434,57 @@ fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
+}
+
+unsafe fn prefetch_next_graph_result_from_frontier(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    result_state: *mut ScanResultState,
+) -> bool {
+    if !opaque.execution_phase.is_graph_traversal()
+        || opaque.scan_dimensions == 0
+        || unsafe { (&*result_state).pending_count() != 0 }
+    {
+        return false;
+    }
+
+    while let Some(candidate) = consume_candidate_frontier_head(opaque) {
+        mark_expanded_source(opaque, candidate.node);
+        if unsafe {
+            materialize_graph_result_candidate(index_relation, opaque, result_state, candidate)
+        }
+        .is_some()
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+unsafe fn materialize_graph_result_candidate(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    result_state: *mut ScanResultState,
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) -> Option<()> {
+    if emitted_contains_element(opaque, candidate.node) {
+        return None;
+    }
+
+    let element =
+        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
+    if element.deleted || element.heaptids.is_empty() {
+        return None;
+    }
+
+    mark_emitted_element(opaque, candidate.node);
+    unsafe { &mut *result_state }.materialize(SelectedScanResult {
+        element_tid: candidate.node,
+        score: candidate.score,
+        heap_tids: element.heaptids,
+    });
+    Some(())
 }
 
 fn enter_linear_fallback_phase(opaque: &mut TqScanOpaque) {
@@ -612,6 +532,7 @@ type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
 static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState =
     VisibleCandidateFrontierState::empty();
 
+#[cfg(any(test, feature = "pg_test"))]
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
@@ -643,6 +564,7 @@ pub(super) fn visible_frontier_slot(
     visible_frontier_ref(opaque).slot(index)
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn with_visible_frontier_and_bootstrap_expansion<R>(
     opaque: &mut TqScanOpaque,
     f: impl FnOnce(&VisibleCandidateFrontierState, &mut search::BeamSearch<page::ItemPointer>) -> R,
@@ -667,6 +589,7 @@ fn with_visible_frontier_mut_and_bootstrap_expansion<R>(
     unsafe { f(&mut *visible_frontier, &mut *expansion) }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 fn candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
@@ -804,14 +727,29 @@ unsafe fn initialize_scan_entry_candidate(
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
-    let bootstrap_limit = bootstrap_frontier_limit(opaque);
-
-    let trace = unsafe {
-        graph::run_layer0_beam_search(
+    let descended_candidate = unsafe {
+        graph::greedy_descend_from_entry(
             index_relation,
             opaque.scan_code_len,
+            usize::from(opaque.scan_m),
+            entry_candidate,
+            |neighbor| {
+                Some(score_scan_element_result(
+                    opaque,
+                    neighbor.gamma,
+                    &neighbor.code,
+                ))
+            },
+        )
+    };
+    let bootstrap_limit = bootstrap_frontier_limit(opaque);
+    let ordered_candidates = unsafe {
+        graph::search_layer0_result_candidates(
+            index_relation,
+            opaque.scan_code_len,
+            usize::from(opaque.scan_m),
             bootstrap_limit,
-            [entry_candidate],
+            [descended_candidate],
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
             |neighbor| {
                 Some(score_scan_element_result(
@@ -822,9 +760,20 @@ unsafe fn initialize_scan_entry_candidate(
             },
         )
     };
-    seed_bootstrap_trace(opaque, bootstrap_limit, trace);
+    stage_ordered_graph_results(opaque, ordered_candidates);
 }
 
+fn stage_ordered_graph_results(
+    opaque: &mut TqScanOpaque,
+    candidates: impl IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+) {
+    clear_scan_candidate_state(opaque);
+    reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
+    reset_scan_expanded_state(opaque);
+    seed_discovered_candidates(opaque, candidates);
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn seed_bootstrap_trace(
     opaque: &mut TqScanOpaque,
     max_candidates: usize,
@@ -918,7 +867,6 @@ fn top_up_bootstrap_frontier<F>(
     }
 }
 
-#[cfg(any(test, feature = "pg_test"))]
 fn consume_candidate_frontier_head(
     opaque: &mut TqScanOpaque,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
@@ -927,6 +875,7 @@ fn consume_candidate_frontier_head(
     })
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn refill_candidate_frontier_from_source_into(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -940,12 +889,13 @@ unsafe fn refill_candidate_frontier_from_source_into(
         bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
         source_tid,
         |source_tid, max_successor_candidates| unsafe {
-            graph::load_layer0_refill_successors(
-                index_relation,
-                (&*opaque_ptr).scan_code_len,
-                source_tid,
-                max_successor_candidates,
-                |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+                graph::load_layer0_refill_successors(
+                    index_relation,
+                    (&*opaque_ptr).scan_code_len,
+                    usize::from((&*opaque_ptr).scan_m),
+                    source_tid,
+                    max_successor_candidates,
+                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
                 |neighbor| {
                     Some(score_scan_element_result(
                         &*opaque_ptr,
@@ -959,6 +909,7 @@ unsafe fn refill_candidate_frontier_from_source_into(
     );
 }
 
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -975,6 +926,7 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
                 graph::expand_layer0_visible_seeds(
                     index_relation,
                     (&*opaque_ptr).scan_code_len,
+                    usize::from((&*opaque_ptr).scan_m),
                     max_successor_candidates,
                     seed_candidates.iter().copied(),
                     |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
@@ -1524,6 +1476,7 @@ pub(super) struct TqScanOpaque {
     pub(super) prepared_query: *mut PreparedQuery,
     pub(super) cached_quantizer: *const ProdQuantizer,
     pub(super) scan_dimensions: u16,
+    pub(super) scan_m: u16,
     pub(super) scan_bits: u8,
     pub(super) scan_seed: u64,
     pub(super) scan_code_len: usize,
@@ -1550,6 +1503,7 @@ impl Default for TqScanOpaque {
             prepared_query: ptr::null_mut(),
             cached_quantizer: ptr::null(),
             scan_dimensions: 0,
+            scan_m: 0,
             scan_bits: 0,
             scan_seed: 0,
             scan_code_len: 0,

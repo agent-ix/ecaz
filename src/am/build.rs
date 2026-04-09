@@ -474,7 +474,8 @@ unsafe fn required_slot_datum(
 #[derive(Debug, Clone)]
 pub(super) struct HnswBuildNode {
     pub(super) level: u8,
-    pub(super) neighbors: Vec<usize>,
+    pub(super) neighbor_slots: Vec<Option<usize>>,
+    pub(super) score_neighbors: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -546,9 +547,13 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
 
     for (idx, element_tid) in element_tids.iter().copied().enumerate() {
         let neighbor_refs = graph_nodes[idx]
-            .neighbors
+            .neighbor_slots
             .iter()
-            .map(|neighbor_idx| element_tids[*neighbor_idx])
+            .map(|neighbor_idx| {
+                neighbor_idx
+                    .map(|neighbor_idx| element_tids[neighbor_idx])
+                    .unwrap_or(page::ItemPointer::INVALID)
+            })
             .collect::<Vec<_>>();
 
         let neighbor_tid = data_pages
@@ -589,11 +594,13 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
 }
 
 pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
+    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
     if state.heap_tuples.len() <= 1 {
         return vec![
             HnswBuildNode {
                 level: 0,
-                neighbors: Vec::new(),
+                neighbor_slots: empty_neighbor_slots(0, m),
+                score_neighbors: Vec::new(),
             };
             state.heap_tuples.len()
         ];
@@ -612,7 +619,6 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         .expect("non-empty build should record dimensions") as usize;
     let bits = state.bits.expect("non-empty build should record bits");
     let seed = state.seed.expect("non-empty build should record seed");
-    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
     let max_level_cap = page::max_level_that_fits(
         u16::try_from(state.options.m).expect("validated m should fit into u16"),
         state.page_size,
@@ -634,15 +640,22 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
     let mut nodes = vec![
         HnswBuildNode {
             level: 0,
-            neighbors: Vec::new(),
+            neighbor_slots: empty_neighbor_slots(0, m),
+            score_neighbors: Vec::new(),
         };
         state.heap_tuples.len()
     ];
     for point in hnsw.get_point_indexation().get_layer_iterator(0) {
         let origin_id = point.get_origin_id();
         let level = point.get_point_id().0.min(max_level_cap);
-        let neighbors = flatten_point_neighbors(origin_id, level, &point.get_neighborhood_id());
-        nodes[origin_id] = HnswBuildNode { level, neighbors };
+        let neighborhoods = point.get_neighborhood_id();
+        let neighbor_slots = pack_point_neighbor_slots(origin_id, level, m, &neighborhoods);
+        let score_neighbors = flatten_point_neighbors(origin_id, level, &neighborhoods);
+        nodes[origin_id] = HnswBuildNode {
+            level,
+            neighbor_slots,
+            score_neighbors,
+        };
     }
 
     nodes
@@ -688,18 +701,29 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
     let mut nodes = vec![
         HnswBuildNode {
             level: 0,
-            neighbors: Vec::new(),
+            neighbor_slots: empty_neighbor_slots(0, m),
+            score_neighbors: Vec::new(),
         };
         state.heap_tuples.len()
     ];
     for point in hnsw.get_point_indexation().get_layer_iterator(0) {
         let origin_id = point.get_origin_id();
         let level = point.get_point_id().0.min(max_level_cap);
-        let neighbors = flatten_point_neighbors(origin_id, level, &point.get_neighborhood_id());
-        nodes[origin_id] = HnswBuildNode { level, neighbors };
+        let neighborhoods = point.get_neighborhood_id();
+        let neighbor_slots = pack_point_neighbor_slots(origin_id, level, m, &neighborhoods);
+        let score_neighbors = flatten_point_neighbors(origin_id, level, &neighborhoods);
+        nodes[origin_id] = HnswBuildNode {
+            level,
+            neighbor_slots,
+            score_neighbors,
+        };
     }
 
     nodes
+}
+
+fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
+    vec![None; page::neighbor_slots(level, m as u16)]
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -775,6 +799,61 @@ fn flatten_point_neighbors(
     flattened
 }
 
+fn pack_point_neighbor_slots(
+    origin_id: usize,
+    level: u8,
+    m: usize,
+    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
+) -> Vec<Option<usize>> {
+    let mut slots = vec![None; page::neighbor_slots(level, m as u16)];
+    fill_point_neighbor_layer_slots(
+        &mut slots,
+        origin_id,
+        0,
+        0,
+        m.saturating_mul(2),
+        neighbors_per_layer,
+    );
+
+    for layer in 1..=usize::from(level) {
+        let start = m.saturating_mul(2) + ((layer - 1) * m);
+        fill_point_neighbor_layer_slots(&mut slots, origin_id, layer, start, m, neighbors_per_layer);
+    }
+
+    slots
+}
+
+fn fill_point_neighbor_layer_slots(
+    slots: &mut [Option<usize>],
+    origin_id: usize,
+    layer: usize,
+    start: usize,
+    width: usize,
+    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
+) {
+    if width == 0 || start >= slots.len() {
+        return;
+    }
+
+    let Some(layer_neighbors) = neighbors_per_layer.get(layer) else {
+        return;
+    };
+
+    let end = start.saturating_add(width).min(slots.len());
+    let mut next_slot = start;
+    for neighbor in layer_neighbors {
+        if neighbor.d_id == origin_id {
+            continue;
+        }
+        if next_slot >= end {
+            break;
+        }
+
+        slots[next_slot] = Some(neighbor.d_id);
+        next_slot += 1;
+    }
+}
+
 fn score_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
     left.iter().zip(right.iter()).map(|(l, r)| l * r).sum()
 }
@@ -840,7 +919,7 @@ fn entry_point_score(
         .iter()
         .all(|tuple| tuple.source_vector.is_some());
     graph_nodes[idx]
-        .neighbors
+        .score_neighbors
         .iter()
         .map(|neighbor_idx| {
             if source_vectors {
@@ -1056,7 +1135,12 @@ mod tests {
         let nodes = build_hnsw_graph(&state);
 
         assert_eq!(nodes.len(), 3);
-        assert!(nodes.iter().any(|node| !node.neighbors.is_empty()));
+        assert!(nodes.iter().any(|node| {
+            !node
+                .neighbor_slots
+                .iter()
+                .all(|neighbor_slot| neighbor_slot.is_none())
+        }));
     }
 
     #[test]
@@ -1121,15 +1205,18 @@ mod tests {
         let graph_nodes = vec![
             HnswBuildNode {
                 level: 0,
-                neighbors: vec![1],
+                neighbor_slots: vec![Some(1)],
+                score_neighbors: vec![1],
             },
             HnswBuildNode {
                 level: 0,
-                neighbors: vec![2],
+                neighbor_slots: vec![Some(2)],
+                score_neighbors: vec![2],
             },
             HnswBuildNode {
                 level: 0,
-                neighbors: vec![1],
+                neighbor_slots: vec![Some(1)],
+                score_neighbors: vec![1],
             },
         ];
         let element_tids = vec![
@@ -1150,6 +1237,37 @@ mod tests {
         let entry_point = choose_entry_point(&element_tids, &graph_nodes, &state)
             .expect("entry point should exist");
         assert_eq!(entry_point, element_tids[0]);
+    }
+
+    #[test]
+    fn pack_point_neighbor_slots_preserves_layer_boundaries_with_padding() {
+        let slots = pack_point_neighbor_slots(
+            10,
+            2,
+            2,
+            &[
+                vec![
+                    hnsw_rs::hnsw::Neighbour::new(11, 0.1, hnsw_rs::hnsw::PointId(0, 11)),
+                    hnsw_rs::hnsw::Neighbour::new(12, 0.2, hnsw_rs::hnsw::PointId(0, 12)),
+                ],
+                vec![hnsw_rs::hnsw::Neighbour::new(
+                    13,
+                    0.3,
+                    hnsw_rs::hnsw::PointId(1, 13),
+                )],
+                vec![hnsw_rs::hnsw::Neighbour::new(
+                    14,
+                    0.4,
+                    hnsw_rs::hnsw::PointId(2, 14),
+                )],
+            ],
+        );
+
+        assert_eq!(
+            slots,
+            vec![Some(11), Some(12), None, None, Some(13), None, Some(14), None],
+            "persisted neighbor slots should keep fixed 2M / M layer boundaries instead of compacting upper-layer tids into layer-0 space",
+        );
     }
 
     #[test]

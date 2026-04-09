@@ -1494,6 +1494,7 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
     neighbors
         .tids
         .into_iter()
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect()
 }

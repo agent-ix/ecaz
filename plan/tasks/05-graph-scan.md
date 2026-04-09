@@ -1,6 +1,6 @@
 # Task 05: Graph Scan
 
-Status: A3 complete, A4 investigated and failing
+Status: A3 complete, A4 rerun on repaired 10K harness and failing
 
 Progress notes:
 - Build path is complete.
@@ -34,15 +34,18 @@ Complete the HNSW scan path from module split through validated recall measureme
      initial ordered result.
   4. Retired bootstrap helpers are gated to test/debug surfaces.
 - [ ] **A4: Recall gate.** Measure Recall@10 on synthetic data (10K+ vectors, 1536-dim, 4-bit). Brute-force fp32 ground truth. Test at (m=8,ef=40), (m=8,ef=128), (m=8,ef=200), (m=16,ef=200). Gate: Recall@10 >= 89% at m=8 ef=128. If not met, investigate before proceeding.
-  - 2026-04-08 evidence on `main` via direct scan-callback harness over a built 10K x 1536 x 4-bit synthetic corpus:
-    - `(m=8, ef=40)`: Recall@10 = `1.1%`
-    - `(m=8, ef=128)`: Recall@10 = `1.7%` (`FAIL`, required `>= 89%`)
-    - `(m=8, ef=200)`: Recall@10 = `2.4%`
-    - `(m=16, ef=200)`: Recall@10 = `3.5%`
+  - 2026-04-08 evidence on the repaired regular-table 10K x 1536 x 4-bit synthetic fixture harness:
+    - `(m=8, ef=40)`: Recall@10 = `8.4%`
+    - `(m=8, ef=128)`: Recall@10 = `21.8%` (`FAIL`, required `>= 89%`)
+    - `(m=8, ef=200)`: Recall@10 = `26.8%`
+    - `(m=16, ef=200)`: Recall@10 = `35.3%`
   - Investigation notes:
-    - The first SQL harness draft used `UNLOGGED` tables and produced zero emitted tuples; that was a harness/config mismatch and was corrected.
-    - The corrected regular-table harness returns thousands of emitted tuples and successfully prefills the first graph result on sample queries, so the measured failure is not an empty-index artifact.
-    - Single-query probe evidence shows the exact `tqvector` scorer on the same table still overlaps meaningfully with brute-force fp32 truth, while graph-first top-10 diverges sharply from both. Current failure is therefore in graph traversal / runtime behavior, not primarily in the scorer-vs-fp32 gap.
+    - The original row-at-a-time SPI fixture loader made 10K reruns impractical; batched inserts reduced `1k` fixture reset time from roughly `92s` to roughly `6-7s` and made repaired 10K reruns tractable.
+    - An `UNLOGGED`-table optimization attempt produced zero emitted tuples because the resulting 10K index surfaced `dimensions=0` / `tree_height=0` in metadata snapshots. That harness regression was corrected before accepting any recall result.
+    - On the repaired regular-table 10K fixture, the exact `tqvector` scorer itself overlaps only `43.1%` with brute-force fp32 truth, and a build-code proxy overlaps `39.4%`. The live graph path at the required budgets remains materially below both (`21.8%` at `ef=128`, `26.8%` at `ef=200`), but rises to `39.1%` by `ef=800`.
+    - That means the current A4 failure has two parts:
+      1. a real graph traversal / runtime budget gap at the required `ef_search` settings
+      2. a larger dataset/config mismatch against the `89%` gate, because the exact quantized path on this corpus is far below the gate even without graph approximation
 
 ## Owns
 
@@ -81,7 +84,7 @@ Complete the HNSW scan path from module split through validated recall measureme
 - The traversal helper should be generic over scoring function signature to support both scan (LUT `score_ip_encoded`) and insert (code-to-code `score_ip_codes_lite`).
 - A4 is a gate: if recall fails, all downstream work (insert, vacuum, benchmarks) is premature.
 - Ordered result buffering / graph-first execution are now in place on `main`.
-- A4 currently remains a stop-ship gate. Planner activation, insert, vacuum, and SIMD merge should stay blocked until graph traversal recall is debugged on the live scan path.
+- A4 currently remains a stop-ship gate. Planner activation, insert, vacuum, and SIMD merge should stay blocked until the project decides whether to change the measurement path / dataset assumptions or to raise recall on the current quantized path.
 - Post-v0.1 follow-up notes for the A3 runtime arc:
   1. The raw `self as *mut Self` aliasing pattern in `GraphTraversalPrefetchContext::run` is
      contained and approved, but a future search API that takes a visitor/trait object would be

@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashSet};
 use std::ptr;
 
 use pgrx::pg_sys;
@@ -68,7 +69,7 @@ pub(crate) unsafe fn load_graph_neighbors(
     GraphNeighbors {
         tid: neighbor_tid,
         count,
-        tids: neighbor.tids[..count].to_vec(),
+        tids: neighbor.tids,
     }
 }
 
@@ -86,15 +87,28 @@ pub(crate) unsafe fn load_layer0_neighbor_tids(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
     code_len: usize,
+    m: usize,
 ) -> Vec<page::ItemPointer> {
-    let (_, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
-    valid_layer0_neighbor_tids(&neighbors.tids)
+    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
+    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, 0)
+}
+
+pub(crate) unsafe fn load_neighbor_tids_for_layer(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    code_len: usize,
+    m: usize,
+    layer: u8,
+) -> Vec<page::ItemPointer> {
+    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
+    valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
 }
 
 pub(crate) unsafe fn load_layer0_successor_candidates<KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     source_tid: page::ItemPointer,
     code_len: usize,
+    m: usize,
     mut keep_neighbor_tid: KeepFn,
     mut score_candidate: ScoreFn,
 ) -> Vec<search::BeamCandidate<page::ItemPointer>>
@@ -102,7 +116,8 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    let neighbor_tids = unsafe { load_layer0_neighbor_tids(index_relation, source_tid, code_len) };
+    let neighbor_tids =
+        unsafe { load_layer0_neighbor_tids(index_relation, source_tid, code_len, m) };
     layer0_successor_candidates_from_elements(
         source_tid,
         neighbor_tids
@@ -115,9 +130,34 @@ where
     )
 }
 
+pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    mut score_candidate: ScoreFn,
+) -> search::BeamCandidate<page::ItemPointer>
+where
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let entry_element = unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };
+    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| unsafe {
+        let neighbor_tids =
+            load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
+        layer0_successor_candidates_from_elements(
+            source_tid,
+            neighbor_tids.into_iter().map(|neighbor_tid| {
+                load_graph_element(index_relation, neighbor_tid, code_len)
+            }),
+            |neighbor| score_candidate(neighbor),
+        )
+    })
+}
+
 pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
+    m: usize,
     ef_search: usize,
     seeds: SeedIter,
     mut keep_neighbor_tid: KeepFn,
@@ -133,6 +173,33 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
+pub(crate) unsafe fn search_layer0_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    m: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates(
+            index_relation,
+            source_tid,
+            code_len,
+            m,
             &mut keep_neighbor_tid,
             &mut score_candidate,
         )
@@ -148,6 +215,7 @@ pub(crate) struct Layer0VisibleSeedExpansion {
 pub(crate) unsafe fn load_layer0_refill_successors<KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
+    m: usize,
     source_tid: page::ItemPointer,
     max_successor_candidates: usize,
     mut keep_neighbor_tid: KeepFn,
@@ -166,6 +234,7 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
             &mut keep_neighbor_tid,
             &mut score_candidate,
         )
@@ -175,6 +244,7 @@ where
 pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
+    m: usize,
     max_successor_candidates: usize,
     seeds: SeedIter,
     mut keep_neighbor_tid: KeepFn,
@@ -190,18 +260,174 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
             &mut keep_neighbor_tid,
             &mut score_candidate,
         )
     })
 }
 
-fn valid_layer0_neighbor_tids(neighbor_tids: &[page::ItemPointer]) -> Vec<page::ItemPointer> {
+fn valid_neighbor_tids_for_layer(
+    neighbor_tids: &[page::ItemPointer],
+    element_level: u8,
+    m: usize,
+    layer: u8,
+) -> Vec<page::ItemPointer> {
+    let Some((start, end)) = layer_slot_bounds(element_level, m, layer) else {
+        return Vec::new();
+    };
+
     neighbor_tids
         .iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .collect()
+}
+
+fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
+    if layer > element_level {
+        return None;
+    }
+
+    if layer == 0 {
+        let end = m.saturating_mul(2);
+        return Some((0, end));
+    }
+
+    let start = m.saturating_mul(2) + (usize::from(layer).saturating_sub(1) * m);
+    Some((start, start.saturating_add(m)))
+}
+
+fn greedy_descend_with_successors<NodeId, SuccessorFn>(
+    mut current: search::BeamCandidate<NodeId>,
+    entry_level: u8,
+    mut load_successors: SuccessorFn,
+) -> search::BeamCandidate<NodeId>
+where
+    NodeId: Copy + Eq,
+    SuccessorFn: FnMut(NodeId, u8) -> Vec<search::BeamCandidate<NodeId>>,
+{
+    for layer in (1..=entry_level).rev() {
+        loop {
+            let next = load_successors(current.node, layer)
+                .into_iter()
+                .min_by(|left, right| left.score.total_cmp(&right.score));
+            let Some(next) = next else {
+                break;
+            };
+
+            if next.score >= current.score || next.node == current.node {
+                break;
+            }
+
+            current = search::BeamCandidate::new(next.node, next.score);
+        }
+    }
+
+    current
+}
+
+fn search_layer0_result_candidates_with_successors<NodeId, SeedIter, SuccessorFn>(
+    ef_search: usize,
+    seeds: SeedIter,
+    mut successors: SuccessorFn,
+) -> Vec<search::BeamCandidate<NodeId>>
+where
+    NodeId: Copy + Eq + std::hash::Hash,
+    SeedIter: IntoIterator<Item = search::BeamCandidate<NodeId>>,
+    SuccessorFn: FnMut(NodeId) -> Vec<search::BeamCandidate<NodeId>>,
+{
+    if ef_search == 0 {
+        return Vec::new();
+    }
+
+    let mut visited = HashSet::new();
+    let mut candidate_points = BinaryHeap::new();
+    let mut result_points = BinaryHeap::new();
+    let mut sequence = 0_u64;
+
+    for seed in seeds {
+        if !visited.insert(seed.node) {
+            continue;
+        }
+
+        candidate_points.push(Reverse(LayerSearchCandidate::new(seed, sequence)));
+        result_points.push(LayerSearchCandidate::new(seed, sequence));
+        sequence += 1;
+    }
+
+    while let Some(Reverse(candidate)) = candidate_points.pop() {
+        let Some(worst_result) = result_points.peek() else {
+            break;
+        };
+
+        if result_points.len() >= ef_search && candidate.candidate.score > worst_result.candidate.score
+        {
+            break;
+        }
+
+        for neighbor in successors(candidate.candidate.node) {
+            if !visited.insert(neighbor.node) {
+                continue;
+            }
+
+            let should_enqueue = result_points.len() < ef_search
+                || result_points
+                    .peek()
+                    .map(|worst| neighbor.score < worst.candidate.score)
+                    .unwrap_or(true);
+            if !should_enqueue {
+                continue;
+            }
+
+            let queued = LayerSearchCandidate::new(neighbor, sequence);
+            sequence += 1;
+            candidate_points.push(Reverse(queued));
+            result_points.push(queued);
+            if result_points.len() > ef_search {
+                result_points.pop();
+            }
+        }
+    }
+
+    let mut results = result_points
+        .into_vec()
+        .into_iter()
+        .map(|queued| queued.candidate)
+        .collect::<Vec<_>>();
+    results.sort_by(|left, right| left.score.total_cmp(&right.score));
+    results
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LayerSearchCandidate<NodeId> {
+    candidate: search::BeamCandidate<NodeId>,
+    sequence: u64,
+}
+
+impl<NodeId> LayerSearchCandidate<NodeId> {
+    fn new(candidate: search::BeamCandidate<NodeId>, sequence: u64) -> Self {
+        Self { candidate, sequence }
+    }
+}
+
+impl<NodeId: PartialEq> Eq for LayerSearchCandidate<NodeId> {}
+
+impl<NodeId: PartialEq> Ord for LayerSearchCandidate<NodeId> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.candidate
+            .score
+            .total_cmp(&other.candidate.score)
+            .then_with(|| self.sequence.cmp(&other.sequence))
+    }
+}
+
+impl<NodeId: PartialEq> PartialOrd for LayerSearchCandidate<NodeId> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 fn refill_successors_with_successors<SuccessorFn>(
@@ -259,6 +485,7 @@ where
             .expanded
             .into_iter()
             .map(|candidate| candidate.node)
+            .filter(|node| seed_nodes.contains(node))
             .collect(),
         discovered_candidates: trace
             .discovered
@@ -370,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_layer0_neighbor_tids_skips_invalid() {
+    fn valid_neighbor_tids_for_layer_skips_invalid() {
         let neighbors = vec![
             page::ItemPointer::INVALID,
             tid(7, 1),
@@ -380,9 +607,95 @@ mod tests {
         ];
 
         assert_eq!(
-            valid_layer0_neighbor_tids(&neighbors),
+            valid_neighbor_tids_for_layer(&neighbors, 0, 3, 0),
             vec![tid(7, 1), tid(7, 2), tid(7, 3)],
             "layer-0 neighbor loading should skip INVALID slots while preserving neighbor order",
+        );
+    }
+
+    #[test]
+    fn valid_neighbor_tids_for_layer_limits_to_requested_layer_slice() {
+        let neighbors = vec![
+            tid(8, 1),
+            tid(8, 2),
+            page::ItemPointer::INVALID,
+            tid(8, 3),
+            tid(8, 4),
+            tid(8, 5),
+            tid(8, 6),
+        ];
+
+        assert_eq!(
+            valid_neighbor_tids_for_layer(&neighbors, 2, 2, 0),
+            vec![tid(8, 1), tid(8, 2), tid(8, 3)],
+            "layer-0 neighbor loading should ignore flattened upper-layer neighbors beyond the first 2*M slots",
+        );
+        assert_eq!(
+            valid_neighbor_tids_for_layer(&neighbors, 2, 2, 1),
+            vec![tid(8, 4), tid(8, 5)],
+            "layer-aware loading should recover the first upper-layer slice independently of layer 0",
+        );
+        assert_eq!(
+            valid_neighbor_tids_for_layer(&neighbors, 2, 2, 2),
+            vec![tid(8, 6)],
+            "layer-aware loading should recover the second upper-layer slice independently of lower layers",
+        );
+        assert_eq!(
+            valid_neighbor_tids_for_layer(&neighbors, 1, 2, 2),
+            Vec::<page::ItemPointer>::new(),
+            "requests above the element level should return no neighbors",
+        );
+    }
+
+    #[test]
+    fn greedy_descend_with_successors_walks_down_to_best_upper_layer_local_optimum() {
+        let descended = greedy_descend_with_successors(
+            search::BeamCandidate::new(1_u64, 0.9),
+            2,
+            |source, layer| match (source, layer) {
+                (1, 2) => vec![
+                    search::BeamCandidate::new(2_u64, 0.7),
+                    search::BeamCandidate::new(3_u64, 0.8),
+                ],
+                (2, 2) => vec![search::BeamCandidate::new(4_u64, 0.5)],
+                (4, 2) => vec![search::BeamCandidate::new(5_u64, 0.55)],
+                (4, 1) => vec![search::BeamCandidate::new(6_u64, 0.3)],
+                (6, 1) => vec![search::BeamCandidate::new(7_u64, 0.35)],
+                _ => Vec::new(),
+            },
+        );
+
+        assert_eq!(
+            descended,
+            search::BeamCandidate::new(6_u64, 0.3),
+            "greedy descent should keep taking strictly better neighbors within each upper layer before descending",
+        );
+    }
+
+    #[test]
+    fn search_layer0_result_candidates_with_successors_keeps_best_result_window() {
+        let results = search_layer0_result_candidates_with_successors(
+            3,
+            [search::BeamCandidate::new(1_u64, 0.9)],
+            |source| match source {
+                1 => vec![
+                    search::BeamCandidate::with_source(2_u64, 0.7, 1),
+                    search::BeamCandidate::with_source(3_u64, 0.2, 1),
+                ],
+                2 => vec![search::BeamCandidate::with_source(4_u64, 0.1, 2)],
+                3 => vec![search::BeamCandidate::with_source(5_u64, 0.05, 3)],
+                _ => Vec::new(),
+            },
+        );
+
+        assert_eq!(
+            results,
+            vec![
+                search::BeamCandidate::with_source(5_u64, 0.05, 3),
+                search::BeamCandidate::with_source(4_u64, 0.1, 2),
+                search::BeamCandidate::with_source(3_u64, 0.2, 1),
+            ],
+            "layer-0 result search should keep the best ef-scored candidates rather than stopping after a fixed number of expansions",
         );
     }
 
@@ -519,7 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn expand_visible_seeds_with_successors_reports_expanded_sources_and_non_seed_discoveries() {
+    fn expand_visible_seeds_with_successors_reports_only_seed_sources_and_non_seed_discoveries() {
         let seed_a_tid = tid(3, 1);
         let seed_b_tid = tid(3, 2);
         let child_tid = tid(3, 3);
@@ -550,8 +863,8 @@ mod tests {
 
         assert_eq!(
             expansion.expanded_source_tids,
-            vec![seed_b_tid, child_tid],
-            "visible-seed expansion should report the actual best-first seed/source nodes it expanded under the traversal budget",
+            vec![seed_b_tid],
+            "visible-seed expansion should report only the original visible seed nodes it consumed for expansion, leaving deeper discoveries eligible for refill when they surface later",
         );
         assert_eq!(
             expansion.discovered_candidates,
