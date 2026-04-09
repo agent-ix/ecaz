@@ -327,7 +327,7 @@ impl ProdQuantizer {
     unsafe fn score_ip_mse_codes_avx2(&self, mse_a: &[u8], mse_b: &[u8]) -> f32 {
         use std::arch::x86_64::{
             _mm256_add_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_permutevar8x32_ps,
-            _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
+            _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
         let bits_per_index = self.bits - 1;
@@ -337,31 +337,21 @@ impl ProdQuantizer {
 
         debug_assert_eq!(self.codebook.len(), 8);
         let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
+        let shifts = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
+        let mask = _mm256_set1_epi32(0x7);
         let mut mse_acc = _mm256_setzero_ps();
         let mut dim_index = 0usize;
 
         while dim_index + 8 <= self.original_dim {
-            let indices_a = decode_eight_3bit_aligned(mse_a, dim_index);
-            let indices_b = decode_eight_3bit_aligned(mse_b, dim_index);
-            let lanes_a = _mm256_setr_epi32(
-                indices_a[0] as i32,
-                indices_a[1] as i32,
-                indices_a[2] as i32,
-                indices_a[3] as i32,
-                indices_a[4] as i32,
-                indices_a[5] as i32,
-                indices_a[6] as i32,
-                indices_a[7] as i32,
+            let lanes_a = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_a, dim_index),
+                shifts,
+                mask,
             );
-            let lanes_b = _mm256_setr_epi32(
-                indices_b[0] as i32,
-                indices_b[1] as i32,
-                indices_b[2] as i32,
-                indices_b[3] as i32,
-                indices_b[4] as i32,
-                indices_b[5] as i32,
-                indices_b[6] as i32,
-                indices_b[7] as i32,
+            let lanes_b = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_b, dim_index),
+                shifts,
+                mask,
             );
             mse_acc = _mm256_add_ps(
                 mse_acc,
@@ -451,7 +441,7 @@ impl ProdQuantizer {
         use std::arch::x86_64::{
             _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
             _mm256_permutevar8x32_ps,
-            _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
+            _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
         };
 
         let bits_per_index = mse_bits(self.original_dim, self.bits);
@@ -465,18 +455,14 @@ impl ProdQuantizer {
         if bits_per_index == 3 {
             debug_assert_eq!(self.codebook.len(), 8);
             let codebook = _mm256_loadu_ps(self.codebook.as_ptr());
+            let shifts = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
+            let mask = _mm256_set1_epi32(0x7);
 
             while dim_index + 8 <= self.original_dim {
-                let indices = decode_eight_3bit_aligned(mse_packed, dim_index);
-                let lanes = _mm256_setr_epi32(
-                    indices[0] as i32,
-                    indices[1] as i32,
-                    indices[2] as i32,
-                    indices[3] as i32,
-                    indices[4] as i32,
-                    indices[5] as i32,
-                    indices[6] as i32,
-                    indices[7] as i32,
+                let lanes = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index),
+                    shifts,
+                    mask,
                 );
 
                 mse_acc = _mm256_fmadd_ps(
@@ -937,15 +923,19 @@ fn mse_index_at(packed: &[u8], dim_index: usize, bits_per_index: u8) -> CodeInde
     )
 }
 
-fn decode_eight_3bit_aligned(packed: &[u8], dim_index: usize) -> [usize; 8] {
+fn decode_eight_3bit_aligned_word(packed: &[u8], dim_index: usize) -> u32 {
     debug_assert_eq!(dim_index % 8, 0);
     let byte_index = (dim_index / 8) * 3;
-    let word = u32::from_le_bytes([
+    u32::from_le_bytes([
         packed[byte_index],
         packed[byte_index + 1],
         packed[byte_index + 2],
         0,
-    ]);
+    ])
+}
+
+fn decode_eight_3bit_aligned(packed: &[u8], dim_index: usize) -> [usize; 8] {
+    let word = decode_eight_3bit_aligned_word(packed, dim_index);
     [
         (word & 0x7) as usize,
         ((word >> 3) & 0x7) as usize,
@@ -956,6 +946,18 @@ fn decode_eight_3bit_aligned(packed: &[u8], dim_index: usize) -> [usize; 8] {
         ((word >> 18) & 0x7) as usize,
         ((word >> 21) & 0x7) as usize,
     ]
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn decode_eight_3bit_lanes_avx2(
+    word: u32,
+    shifts: std::arch::x86_64::__m256i,
+    mask: std::arch::x86_64::__m256i,
+) -> std::arch::x86_64::__m256i {
+    use std::arch::x86_64::{_mm256_and_si256, _mm256_set1_epi32, _mm256_srlv_epi32};
+
+    _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(word as i32), shifts), mask)
 }
 
 fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
@@ -1050,6 +1052,35 @@ mod tests {
         let packed = pack_mse_indices(&indices, 3);
         let decoded = decode_eight_3bit_aligned(&packed, 0);
         assert_eq!(decoded, [0usize, 7, 3, 5, 1, 6, 2, 4]);
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn decode_eight_3bit_lanes_avx2_matches_scalar_when_available() {
+        use std::arch::x86_64::{
+            _mm256_set1_epi32, _mm256_setr_epi32, _mm256_storeu_si256,
+        };
+
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+
+        let mut rng = ChaCha8Rng::seed_from_u64(8);
+        for _ in 0..1_000 {
+            let indices = (0..8)
+                .map(|_| rng.gen_range(0u16..8))
+                .collect::<Vec<_>>();
+            let packed = pack_mse_indices(&indices, 3);
+            let scalar = decode_eight_3bit_aligned(&packed, 0);
+            let shifts = unsafe { _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21) };
+            let mask = unsafe { _mm256_set1_epi32(0x7) };
+            let lanes = unsafe {
+                decode_eight_3bit_lanes_avx2(decode_eight_3bit_aligned_word(&packed, 0), shifts, mask)
+            };
+            let mut avx = [0_i32; 8];
+            unsafe { _mm256_storeu_si256(avx.as_mut_ptr().cast(), lanes) };
+            assert_eq!(avx.map(|lane| lane as usize), scalar);
+        }
     }
 
     #[test]
