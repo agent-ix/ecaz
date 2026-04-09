@@ -1,10 +1,9 @@
 //! QJL-stage helpers.
 
-use crate::quant::rotation::{inverse_srht, pad_input, srht};
+use crate::quant::rotation::{inverse_srht, srht_padded};
 
 pub fn qjl_project(input: &[f32], signs: &[f32]) -> Vec<f32> {
-    let padded = pad_input(input, signs.len());
-    srht(&padded, signs)
+    srht_padded(input, signs)
 }
 
 pub fn decode_mse_only(rotated_domain: &[f32], signs: &[f32], dim: usize) -> Vec<f32> {
