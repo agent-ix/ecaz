@@ -482,15 +482,13 @@ impl DataPageChain {
     }
 
     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
-        self.pages
-            .iter()
-            .find(|page| page.block_number == block_number)
+        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+        self.pages.get(index)
     }
 
     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
-        self.pages
-            .iter_mut()
-            .find(|page| page.block_number == block_number)
+        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+        self.pages.get_mut(index)
     }
 
     pub fn insert_raw_tuple(&mut self, payload: Vec<u8>) -> Result<ItemPointer, String> {
@@ -518,6 +516,12 @@ impl DataPageChain {
             .block_number
             + 1;
         self.pages.push(DataPage::new(next_block, self.page_size));
+        debug_assert!(
+            self.pages.iter().enumerate().all(|(i, page)| {
+                page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32
+            }),
+            "DataPageChain pages are not contiguous"
+        );
         self.pages
             .last_mut()
             .expect("new page was pushed")
