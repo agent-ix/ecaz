@@ -588,6 +588,30 @@ mod tests {
         assert_eq!(scalar, avx);
     }
 
+    #[test]
+    fn fwht_runtime_path_matches_scalar_at_large_sizes() {
+        let mut rng = ChaCha8Rng::seed_from_u64(46);
+        for size in [1024usize, 2048, 4096] {
+            for _ in 0..100 {
+                let mut scalar = (0..size)
+                    .map(|_| rng.gen_range(-10.0_f32..10.0_f32))
+                    .collect::<Vec<_>>();
+                let mut dispatched = scalar.clone();
+
+                fwht_in_place_scalar(&mut scalar);
+                fwht_in_place(&mut dispatched);
+
+                for (lhs, rhs) in scalar.iter().zip(dispatched.iter()) {
+                    let scale = lhs.abs().max(rhs.abs()).max(1.0);
+                    assert!(
+                        ((lhs - rhs) / scale).abs() < 1e-6,
+                        "lhs={lhs} rhs={rhs} size={size}"
+                    );
+                }
+            }
+        }
+    }
+
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn fwht_tiled_avx2_exact_sizes_match_scalar_when_available() {
