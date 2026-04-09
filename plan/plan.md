@@ -2,33 +2,34 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-07 (search/bootstrap seam extraction substantially complete at `15cc242`).
+Last updated: 2026-04-08.
 
 ## Current Task Board
 
 ### Runtime lane
 
 - `A1` AM split: done
-- `A2` graph/search traversal seam: substantially complete
-- `A3` wire graph-first scan runtime: next
-- `A4` recall gate: blocked on A3
-- `A5` graph-aware insert: blocked on A3/A4
-- `A6` vacuum repair: blocked on A3/A4
+- `A2` graph/search traversal seam: done
+- `A3` wire graph-first scan runtime: done (coder-1)
+- `A4` recall gate: **in progress** (coder-1)
+- `A5` graph-aware insert: blocked on A4
+- `A6` vacuum repair: blocked on A4
 
 ### Parallel lanes
 
-- `B1` SIMD: available in parallel
+- `B1` SIMD: **done** (on `coder2-b1-simd-accel`, merge after A4)
 - `B2` CI / fuzz / quality gates: available in parallel
-- `D1` planner scaffold: in progress on separate lane
+- `D1` planner scaffold: in progress on separate lane (70%)
 - `D2` planner activation: blocked on A4 and ADR-011 retirement
 
 ### Current sequencing
 
-1. Finish review-driven cleanup around the runtime lane.
-2. Stop extracting additional bootstrap seams unless they directly unblock A3.
-3. Start A3: make graph/search traversal the primary scan execution path.
-4. Keep the linear path as the explicit fallback shell during A3.
-5. Run the recall gate before planner activation, graph-aware insert, or vacuum repair.
+1. ~~A3: graph-first scan runtime.~~ Done.
+2. **A4: recall gate** — coder-1 in progress.
+3. Merge B1 SIMD branch after A4 confirms scoring paths are adequate.
+4. D2: planner activation (coder-2, after A4).
+5. A5/A6: graph-aware insert and vacuum repair.
+6. C1: full end-to-end benchmark suite.
 
 ## Requirements Summary
 
@@ -53,7 +54,7 @@ Last updated: 2026-04-07 (search/bootstrap seam extraction substantially complet
 - [x] **FR-011**: WAL safety via GenericXLog.
 - [x] **FR-012**: SQL bootstrap and extension packaging.
 - [x] **FR-013**: Two-stage quantization pipeline.
-- [ ] **FR-014**: SIMD acceleration with scalar fallback.
+- [x] **FR-014**: SIMD acceleration with scalar fallback. (on `coder2-b1-simd-accel`, merge pending A4)
 - [x] **FR-015**: `ProdQuantizer` orchestrator and core encode/decode/score APIs.
 - [ ] **FR-016**: HNSW online insert callbacks and insert-drift statistics.
 - [x] **FR-017**: Prepared-query inner product function.

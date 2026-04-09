@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-07
-Basis: current `main` at `15cc242` plus local planning updates in progress
+Last updated: 2026-04-08
+Basis: current `main` at `15cc242` plus `coder2-b1-simd-accel` at `bd43937`
 
 ## Reading Guide
 
@@ -14,12 +14,12 @@ Basis: current `main` at `15cc242` plus local planning updates in progress
 
 | Rollup | % Done | Meaning |
 | --- | ---: | --- |
-| Correctness-complete | 72% | Foundation/build is solid; graph-first scan, graph-aware insert, and vacuum repair still block full correctness |
-| Test/validation-complete | 76% | Broad unit/integration/CI coverage exists, but graph-first scan validation and final unsafe hardening remain |
+| Correctness-complete | 78% | Foundation/build solid, graph-first scan done (A3); graph-aware insert and vacuum repair still block full correctness |
+| Test/validation-complete | 80% | Broad coverage exists including SIMD equivalence suite; recall gate validation and final unsafe hardening remain |
 | Benchmark/profile-complete | 36% | Benchmark harnesses exist, but end-to-end HNSW latency, storage, and recall evidence is still mostly blocked |
-| Optimization-complete | 12% | Scalar implementations exist, but there has not been a real optimization pass yet and SIMD is still unstarted |
-| Release-ready | 54% | Build packaging and quality infrastructure are in decent shape, but runtime proof, recall signoff, and planner activation remain |
-| Total project completion | 67% | Weighted overall estimate to final intended scope |
+| Optimization-complete | 55% | B1 SIMD complete on feature branch (AVX2+FMA, NEON, equivalence tests, throughput proof). Runtime scan optimization still blocked on A3 |
+| Release-ready | 58% | Build packaging and quality infrastructure in decent shape; recall signoff (A4) and planner activation (D2) remain |
+| Total project completion | 72% | Weighted overall estimate to final intended scope |
 
 ## Execution Task Map
 
@@ -27,11 +27,11 @@ Basis: current `main` at `15cc242` plus local planning updates in progress
 | --- | --- | --- | --- | ---: | --- |
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Substantially complete | 95% | Runtime seam extraction is effectively done |
-| `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | Next | 20% | Main runtime blocker |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | Not started | 0% | Blocked on `A3` |
+| `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | Done | 100% | Completed by coder-1 |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | In progress | 10% | Coder-1 working on this now |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
-| `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | Not started | 0% | FR-014 still open |
+| `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | Done | 100% | On `coder2-b1-simd-accel`. prepare_ip_query 83% faster, scoring 34-52% faster, FWHT 4.4x scalar |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 75% | Strong base is landed; final hardening remains |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | In progress | 70% | Separate lane |
@@ -52,13 +52,13 @@ Foundation / build rollup: 100%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Substantially complete | 95% | A2 is effectively complete |
-| Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Next | 20% | This is A3 and the main runtime blocker |
-| Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | In progress | 70% | Fallback exists; final runtime contract is still being defined |
-| `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
-| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Blocked | 10% | Waiting on graph-first ordered execution |
+| Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Done | 100% | A2 complete |
+| Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | A3 complete — coder-1 |
+| Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | Done | 85% | Fallback exists as part of A3 |
+| `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Done | 90% | Main runtime wiring landed |
+| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | In progress | 30% | A4 in progress — coder-1 |
 
-Scan runtime rollup: 58%
+Scan runtime rollup: 82%
 
 ## 3. Insert Path
 
@@ -120,13 +120,13 @@ Benchmarking / profiling rollup: 36%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Scalar baseline | Working scalar quantizer and scan code paths | Partial | 55% | Correct baseline exists, but this is not the same as an optimization pass |
-| Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Not started | 10% | Benchmark harnesses exist, but no serious optimization campaign has been run yet |
-| SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | Not started | 0% | FR-014 remains open |
-| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 0% | Wait until A3 lands |
+| Scalar baseline | Working scalar quantizer and scan code paths | Done | 100% | Correct baseline exists and is benchmarked |
+| Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Done | 90% | LUT removal for 3-bit (83% prepare_ip_query speedup), 4-accumulator unroll, split accumulators |
+| SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | Done | 100% | On `coder2-b1-simd-accel`. FWHT 4.4x scalar, scoring 34-52% faster. NEON cross-compiled, needs aarch64 runtime validation |
+| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 0% | A3 is done; can begin after A4 recall gate confirms scoring paths are adequate |
 | Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | Not started | 5% | Some design notes exist, not a real tuning pass yet |
 
-Optimization / SIMD rollup: 12%
+Optimization / SIMD rollup: 55%
 
 ## 9. Docs / Specs / Coordination
 
@@ -152,19 +152,17 @@ Release / quality-gate rollup: 58%
 
 ## Current Critical Sequence
 
-1. Finish small review-driven runtime cleanup that directly supports A3.
-2. Start A3: make graph/search traversal the primary scan execution path.
-3. Keep the linear path as the explicit fallback shell during A3.
-4. Run the A4 recall gate.
-5. Only then proceed to planner activation, graph-aware insert, vacuum repair, and full SQL benchmark result generation.
+1. ~~Finish A3: graph-first scan runtime.~~ Done.
+2. **Run the A4 recall gate** — coder-1 in progress.
+3. Merge B1 SIMD branch after A4 confirms scoring paths are adequate.
+4. Proceed to planner activation (D2), graph-aware insert (A5), vacuum repair (A6).
+5. Full SQL benchmark result generation (C1).
 
 ## Current Major Blockers
 
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
-| Graph-first ordered scan runtime is not yet primary | `A3`, `A4`, `A5`, `A6`, `C1`, `D2` | Runtime lane |
-| HNSW recall numbers are not yet measured on the real scan path | `A4`, `C1`, `D2` | Runtime lane |
+| HNSW recall numbers are not yet measured on the real scan path | `A4`, `C1`, `D2` | Runtime lane (coder-1) |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
 | ADR-011 planner gate is still active | `D2` | Planner lane after `A4` |
-| SIMD and hot-path optimization would be premature before A3 stabilizes | `B1`, optimization work | Optimization lane |
