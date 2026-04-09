@@ -8,8 +8,12 @@
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use std::f32::consts::PI;
 
-use tqvector::bench_api::ProdQuantizer;
+use tqvector::bench_api::{
+    decode_indices, decode_mse_only, lloyd_max, orthonormal_fwht_in_place, pad_input, qjl_project,
+    quantize_to_indices, sign_vector, srht, transform_dim, EncodedTq, ProdQuantizer,
+};
 
 fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -197,6 +201,20 @@ struct RecallReport {
     top_k_overlap: f32,
 }
 
+#[derive(Clone, Copy)]
+enum ScoringVariant {
+    Exact,
+    GammaZero,
+    CodeProxy,
+    DecodedApprox,
+}
+
+fn encoded_code_bytes(encoded: &EncodedTq) -> Vec<u8> {
+    let mut code_bytes = encoded.mse_packed.clone();
+    code_bytes.extend_from_slice(&encoded.qjl_packed);
+    code_bytes
+}
+
 fn run_recall_benchmark_with_corpus(
     corpus: &[Vec<f32>],
     queries: &[Vec<f32>],
@@ -230,6 +248,536 @@ fn run_recall_benchmark_with_corpus(
             .iter()
             .enumerate()
             .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
+}
+
+fn run_recall_benchmark_with_quantizer(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    quantizer: &ProdQuantizer,
+) -> RecallReport {
+    let payloads: Vec<Vec<u8>> = corpus
+        .iter()
+        .map(|v| quantizer.pack_payload(&quantizer.encode(v)))
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+
+        let prepared = quantizer.prepare_ip_query(query);
+        let mut scored: Vec<(usize, f32)> = payloads
+            .iter()
+            .enumerate()
+            .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
+}
+
+fn run_recall_benchmark_with_corpus_variant(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    variant: ScoringVariant,
+) -> RecallReport {
+    let quantizer = ProdQuantizer::new(dim, bits, seed);
+    let encoded_corpus: Vec<EncodedTq> = corpus.iter().map(|v| quantizer.encode(v)).collect();
+    let payloads: Vec<Vec<u8>> = encoded_corpus
+        .iter()
+        .map(|encoded| quantizer.pack_payload(encoded))
+        .collect();
+    let code_bytes: Vec<Vec<u8>> = encoded_corpus.iter().map(encoded_code_bytes).collect();
+    let decoded_approx: Vec<Vec<f32>> = payloads
+        .iter()
+        .map(|payload| quantizer.decode_approximate(payload))
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+        let prepared = quantizer.prepare_ip_query(query);
+        let query_payload = match variant {
+            ScoringVariant::CodeProxy => Some(quantizer.pack_payload(&quantizer.encode(query))),
+            _ => None,
+        };
+
+        let mut scored: Vec<(usize, f32)> = match variant {
+            ScoringVariant::Exact => payloads
+                .iter()
+                .enumerate()
+                .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
+                .collect(),
+            ScoringVariant::GammaZero => code_bytes
+                .iter()
+                .enumerate()
+                .map(|(i, code)| (i, quantizer.score_ip_from_parts(&prepared, 0.0, code)))
+                .collect(),
+            ScoringVariant::CodeProxy => payloads
+                .iter()
+                .enumerate()
+                .map(|(i, payload)| {
+                    (
+                        i,
+                        quantizer.score_ip_encoded_lite(
+                            query_payload
+                                .as_ref()
+                                .expect("code-proxy query payload should exist"),
+                            payload,
+                        ),
+                    )
+                })
+                .collect(),
+            ScoringVariant::DecodedApprox => decoded_approx
+                .iter()
+                .enumerate()
+                .map(|(i, approx)| (i, dot_product(query, approx)))
+                .collect(),
+        };
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
+}
+
+fn run_tail_mse_reference(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    codebook_dim: usize,
+) -> RecallReport {
+    let transform = transform_dim(dim);
+    let codebook: Vec<f32> = lloyd_max((bits - 1) as usize, codebook_dim, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+    let signs = sign_vector(transform, seed);
+
+    let corpus_codes: Vec<Vec<u8>> = corpus
+        .iter()
+        .map(|vector| {
+            let padded = pad_input(vector, transform);
+            let rotated = srht(&padded, &signs);
+            let indices = quantize_to_indices(&codebook, &rotated, transform);
+            tqvector::bench_api::pack_mse_indices(&indices, bits - 1)
+        })
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+
+        let rotated_query = srht(&pad_input(query, transform), &signs);
+        let mut scored: Vec<(usize, f32)> = corpus_codes
+            .iter()
+            .enumerate()
+            .map(|(i, packed)| {
+                let indices = tqvector::bench_api::unpack_mse_indices(packed, transform, bits - 1);
+                let mse_values = decode_indices(&codebook, &indices);
+                let score = mse_values
+                    .iter()
+                    .zip(rotated_query.iter())
+                    .map(|(approx, rotated)| approx * rotated)
+                    .sum();
+                (i, score)
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
+}
+
+fn run_tail_full_reference(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    codebook_dim: usize,
+) -> RecallReport {
+    const QJL_SIGN_SEED_XOR: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    let transform = transform_dim(dim);
+    let codebook: Vec<f32> = lloyd_max((bits - 1) as usize, codebook_dim, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+    let signs = sign_vector(transform, seed);
+    let qjl_signs = sign_vector(transform, seed ^ QJL_SIGN_SEED_XOR);
+
+    let encoded_corpus: Vec<(Vec<u8>, f32, Vec<bool>)> = corpus
+        .iter()
+        .map(|vector| {
+            let padded = pad_input(vector, transform);
+            let rotated = srht(&padded, &signs);
+            let indices = quantize_to_indices(&codebook, &rotated, transform);
+            let mse_values = decode_indices(&codebook, &indices);
+            let decoded_mse = decode_mse_only(&mse_values, &signs, dim);
+            let residual: Vec<f32> = vector
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect();
+            let gamma = residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            let qjl_bits = qjl_project(&residual, &qjl_signs)
+                .into_iter()
+                .map(|value| value >= 0.0)
+                .collect();
+            (
+                tqvector::bench_api::pack_mse_indices(&indices, bits - 1),
+                gamma,
+                qjl_bits,
+            )
+        })
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+    let qjl_scale = (PI / 2.0).sqrt() / transform as f32;
+
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+        let rotated_query = srht(&pad_input(query, transform), &signs);
+        let query_qjl = qjl_project(query, &qjl_signs);
+
+        let mut scored: Vec<(usize, f32)> = encoded_corpus
+            .iter()
+            .enumerate()
+            .map(|(i, (packed, gamma, qjl_bits))| {
+                let indices = tqvector::bench_api::unpack_mse_indices(packed, transform, bits - 1);
+                let mse_values = decode_indices(&codebook, &indices);
+                let mse_sum: f32 = mse_values
+                    .iter()
+                    .zip(rotated_query.iter())
+                    .map(|(approx, rotated)| approx * rotated)
+                    .sum();
+                let qjl_sum: f32 = query_qjl
+                    .iter()
+                    .zip(qjl_bits.iter())
+                    .map(|(query_value, bit)| query_value * if *bit { 1.0 } else { -1.0 })
+                    .sum();
+                (i, mse_sum + (*gamma * qjl_scale * qjl_sum))
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        scored.truncate(k_max);
+
+        total_recall_1 += recall_at_k(&true_top, &scored, 1.min(k_max));
+        total_recall_10 += recall_at_k(&true_top, &scored, 10.min(k_max));
+        total_recall_100 += recall_at_k(&true_top, &scored, k_max);
+        total_ndcg_10 += ndcg_at_k(&true_top, &scored, 10.min(k_max));
+
+        let true_scores: Vec<f32> = true_top.iter().take(10).map(|(_, s)| *s).collect();
+        let pred_scores: Vec<f32> = scored.iter().take(10).map(|(_, s)| *s).collect();
+        total_mae += mean_absolute_score_error(&true_scores, &pred_scores);
+        total_spearman += spearman_rank_correlation(&true_top, &scored);
+
+        let true_set: std::collections::HashSet<usize> =
+            true_top.iter().take(10).map(|(i, _)| *i).collect();
+        let pred_set: std::collections::HashSet<usize> =
+            scored.iter().take(10).map(|(i, _)| *i).collect();
+        total_overlap +=
+            true_set.intersection(&pred_set).count() as f32 / 10.0f32.min(k_max as f32);
+    }
+
+    let n = n_queries as f32;
+    RecallReport {
+        recall_at_1: total_recall_1 / n,
+        recall_at_10: total_recall_10 / n,
+        recall_at_100: total_recall_100 / n,
+        ndcg_at_10: total_ndcg_10 / n,
+        mean_abs_error: total_mae / n,
+        spearman_rho: total_spearman / n,
+        top_k_overlap: total_overlap / n,
+    }
+}
+
+fn tiled_srht(input: &[f32], signs: &[f32], tile_dim: usize) -> Vec<f32> {
+    assert_eq!(input.len(), signs.len(), "tiled srht input/sign length mismatch");
+    assert_eq!(
+        input.len() % tile_dim,
+        0,
+        "tile_dim must divide input length"
+    );
+    let mut workspace = input.to_vec();
+    for (value, sign) in workspace.iter_mut().zip(signs.iter()) {
+        *value *= *sign;
+    }
+    for chunk in workspace.chunks_mut(tile_dim) {
+        orthonormal_fwht_in_place(chunk);
+    }
+    workspace
+}
+
+fn tiled_inverse_srht(input: &[f32], signs: &[f32], tile_dim: usize) -> Vec<f32> {
+    assert_eq!(
+        input.len(),
+        signs.len(),
+        "tiled inverse input/sign length mismatch"
+    );
+    assert_eq!(
+        input.len() % tile_dim,
+        0,
+        "tile_dim must divide input length"
+    );
+    let mut workspace = input.to_vec();
+    for chunk in workspace.chunks_mut(tile_dim) {
+        orthonormal_fwht_in_place(chunk);
+    }
+    for (value, sign) in workspace.iter_mut().zip(signs.iter()) {
+        *value *= *sign;
+    }
+    workspace
+}
+
+fn run_tiled_full_reference(
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    dim: usize,
+    bits: u8,
+    seed: u64,
+    tile_dim: usize,
+    codebook_dim: usize,
+) -> RecallReport {
+    const QJL_SIGN_SEED_XOR: u64 = 0x9E37_79B9_7F4A_7C15;
+
+    assert_eq!(dim % tile_dim, 0, "tile_dim must divide dim");
+    let codebook: Vec<f32> = lloyd_max((bits - 1) as usize, codebook_dim, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+    let signs = sign_vector(dim, seed);
+    let qjl_signs = sign_vector(dim, seed ^ QJL_SIGN_SEED_XOR);
+
+    let encoded_corpus: Vec<(Vec<u8>, f32, Vec<bool>)> = corpus
+        .iter()
+        .map(|vector| {
+            let rotated = tiled_srht(vector, &signs, tile_dim);
+            let indices = quantize_to_indices(&codebook, &rotated, dim);
+            let mse_values = decode_indices(&codebook, &indices);
+            let decoded_mse = tiled_inverse_srht(&mse_values, &signs, tile_dim);
+            let residual: Vec<f32> = vector
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect();
+            let gamma = residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            let qjl_bits = tiled_srht(&residual, &qjl_signs, tile_dim)
+                .into_iter()
+                .map(|value| value >= 0.0)
+                .collect();
+            (
+                tqvector::bench_api::pack_mse_indices(&indices, bits - 1),
+                gamma,
+                qjl_bits,
+            )
+        })
+        .collect();
+
+    let n_corpus = corpus.len();
+    let n_queries = queries.len();
+    let mut total_recall_1 = 0.0f32;
+    let mut total_recall_10 = 0.0f32;
+    let mut total_recall_100 = 0.0f32;
+    let mut total_ndcg_10 = 0.0f32;
+    let mut total_mae = 0.0f32;
+    let mut total_spearman = 0.0f32;
+    let mut total_overlap = 0.0f32;
+
+    let k_max = 100.min(n_corpus);
+    let qjl_scale = (PI / 2.0).sqrt() / dim as f32;
+
+    for query in queries {
+        let true_top = brute_force_top_k(corpus, query, k_max);
+        let rotated_query = tiled_srht(query, &signs, tile_dim);
+        let query_qjl = tiled_srht(query, &qjl_signs, tile_dim);
+
+        let mut scored: Vec<(usize, f32)> = encoded_corpus
+            .iter()
+            .enumerate()
+            .map(|(i, (packed, gamma, qjl_bits))| {
+                let indices = tqvector::bench_api::unpack_mse_indices(packed, dim, bits - 1);
+                let mse_values = decode_indices(&codebook, &indices);
+                let mse_sum: f32 = mse_values
+                    .iter()
+                    .zip(rotated_query.iter())
+                    .map(|(approx, rotated)| approx * rotated)
+                    .sum();
+                let qjl_sum: f32 = query_qjl
+                    .iter()
+                    .zip(qjl_bits.iter())
+                    .map(|(query_value, bit)| query_value * if *bit { 1.0 } else { -1.0 })
+                    .sum();
+                (i, mse_sum + (*gamma * qjl_scale * qjl_sum))
+            })
             .collect();
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         scored.truncate(k_max);
@@ -425,6 +973,245 @@ fn quantizer_recall_near_duplicates() {
             preserved,
             200,
             preserved as f32 / 200.0 * 100.0
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_scoring_ablation_1k_uniform() {
+    let dim = 1536;
+    let seed = 42u64;
+    let corpus: Vec<Vec<f32>> = (0..1_000)
+        .map(|i| random_unit_vector(dim, seed + i as u64))
+        .collect();
+    let queries: Vec<Vec<f32>> = (0..20)
+        .map(|i| random_unit_vector(dim, seed + 1_000_000 + i as u64))
+        .collect();
+
+    println!("\n=== Scoring Ablation — Uniform (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>12} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, variant) in [
+        ("exact", ScoringVariant::Exact),
+        ("gamma_zero", ScoringVariant::GammaZero),
+        ("code_proxy", ScoringVariant::CodeProxy),
+        ("decoded", ScoringVariant::DecodedApprox),
+    ] {
+        let report =
+            run_recall_benchmark_with_corpus_variant(&corpus, &queries, dim, 4, seed, variant);
+        println!(
+            "{:>12} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_padding_ablations_1k_uniform() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let transform = transform_dim(dim);
+    let corpus: Vec<Vec<f32>> = (0..1_000)
+        .map(|i| random_unit_vector(dim, seed + i as u64))
+        .collect();
+    let queries: Vec<Vec<f32>> = (0..20)
+        .map(|i| random_unit_vector(dim, seed + 1_000_000 + i as u64))
+        .collect();
+
+    let baseline = ProdQuantizer::new(dim, bits, seed);
+    let mut transform_codebook = ProdQuantizer::new(dim, bits, seed);
+    transform_codebook.codebook = lloyd_max((bits - 1) as usize, transform, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+
+    println!("\n=== 1536 Padding Ablations — Uniform (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(&corpus, &queries, &baseline),
+        ),
+        (
+            "transform_cb_exact",
+            run_recall_benchmark_with_quantizer(&corpus, &queries, &transform_codebook),
+        ),
+        (
+            "tail_ref_cb1536",
+            run_tail_mse_reference(&corpus, &queries, dim, bits, seed, dim),
+        ),
+        (
+            "tail_ref_cb2048",
+            run_tail_mse_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_padding_ablations_1k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let transform = transform_dim(dim);
+    let corpus = random_clustered_corpus(dim, 1_000, 20, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 20, 20, 0.3, seed + 500_000);
+
+    let baseline = ProdQuantizer::new(dim, bits, seed);
+    let mut transform_codebook = ProdQuantizer::new(dim, bits, seed);
+    transform_codebook.codebook = lloyd_max((bits - 1) as usize, transform, 20_000)
+        .into_iter()
+        .map(|value| value as f32)
+        .collect();
+
+    println!("\n=== 1536 Padding Ablations — Clustered (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(&corpus, &queries, &baseline),
+        ),
+        (
+            "transform_cb_exact",
+            run_recall_benchmark_with_quantizer(&corpus, &queries, &transform_codebook),
+        ),
+        (
+            "tail_ref_cb1536",
+            run_tail_mse_reference(&corpus, &queries, dim, bits, seed, dim),
+        ),
+        (
+            "tail_ref_cb2048",
+            run_tail_mse_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_full_tail_exact_1k_uniform() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let transform = transform_dim(dim);
+    let corpus: Vec<Vec<f32>> = (0..1_000)
+        .map(|i| random_unit_vector(dim, seed + i as u64))
+        .collect();
+    let queries: Vec<Vec<f32>> = (0..20)
+        .map(|i| random_unit_vector(dim, seed + 1_000_000 + i as u64))
+        .collect();
+
+    println!("\n=== 1536 Full-Tail Exact Reference — Uniform (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &ProdQuantizer::new(dim, bits, seed),
+            ),
+        ),
+        (
+            "tail_full_cb1536",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, dim),
+        ),
+        (
+            "tail_full_cb2048",
+            run_tail_full_reference(&corpus, &queries, dim, bits, seed, transform),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
+        );
+    }
+}
+
+#[test]
+#[ignore]
+fn quantizer_recall_1536_tiled_fwht_reference_1k_clustered() {
+    let dim = 1536;
+    let seed = 42u64;
+    let bits = 4u8;
+    let tile_dim = 512usize;
+    let corpus = random_clustered_corpus(dim, 1_000, 20, 0.3, seed);
+    let queries = random_clustered_corpus(dim, 20, 20, 0.3, seed + 500_000);
+
+    println!("\n=== 1536 Tiled FWHT Reference — Clustered (1K x 1536, 4-bit) ===");
+    println!(
+        "{:>24} {:>10} {:>10} {:>10} {:>8}",
+        "variant", "Recall@1", "Recall@10", "NDCG@10", "MAE"
+    );
+
+    for (label, report) in [
+        (
+            "current_exact",
+            run_recall_benchmark_with_quantizer(
+                &corpus,
+                &queries,
+                &ProdQuantizer::new(dim, bits, seed),
+            ),
+        ),
+        (
+            "tiled_full_cb512",
+            run_tiled_full_reference(&corpus, &queries, dim, bits, seed, tile_dim, tile_dim),
+        ),
+        (
+            "tiled_full_cb1536",
+            run_tiled_full_reference(&corpus, &queries, dim, bits, seed, tile_dim, dim),
+        ),
+    ] {
+        println!(
+            "{:>24} {:>9.2}% {:>9.2}% {:>10.4} {:>8.6}",
+            label,
+            report.recall_at_1 * 100.0,
+            report.recall_at_10 * 100.0,
+            report.ndcg_at_10,
+            report.mean_abs_error
         );
     }
 }

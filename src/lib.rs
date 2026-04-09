@@ -6153,6 +6153,43 @@ mod tests {
     }
 
     #[pg_test]
+    #[ignore]
+    fn test_tqhnsw_graph_scan_recall_fixture_summary_1k_tiled_fwht() {
+        let fixture_name = "tqhnsw_graph_scan_recall_tiled_1k";
+        let index_blocks = reset_graph_scan_recall_fixture(fixture_name, 8, 1_000);
+        let (
+            _m,
+            _ef_search,
+            query_count,
+            graph_recall_at_10,
+            exact_quantized_recall_at_10,
+            build_code_recall_at_10,
+            graph_below_exact_queries,
+            graph_below_build_code_queries,
+            build_code_below_exact_queries,
+            worst_exact_gap,
+            worst_build_code_gap,
+        ) = probe_graph_scan_recall_fixture_summary(fixture_name, 8, 128, 50);
+
+        println!(
+            "1k tiled fixture: blocks={index_blocks} queries={query_count} graph={graph_recall_at_10:.4} exact={exact_quantized_recall_at_10:.4} build_code={build_code_recall_at_10:.4} graph_below_exact={graph_below_exact_queries} graph_below_build_code={graph_below_build_code_queries} build_code_below_exact={build_code_below_exact_queries} worst_exact_gap={worst_exact_gap} worst_build_code_gap={worst_build_code_gap}"
+        );
+
+        assert!(
+            exact_quantized_recall_at_10 >= 0.70,
+            "expected tiled 1536 quantizer path to keep exact Recall@10 above 70% on the 1k fixture, got {:.2}%",
+            exact_quantized_recall_at_10 * 100.0
+        );
+        assert!(
+            graph_recall_at_10 >= 0.70,
+            "expected live graph-first Recall@10 above 70% on the 1k tiled fixture, got {:.2}% (exact {:.2}%, build-code {:.2}%)",
+            graph_recall_at_10 * 100.0,
+            exact_quantized_recall_at_10 * 100.0,
+            build_code_recall_at_10 * 100.0
+        );
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(

@@ -4,10 +4,25 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::quant::hadamard::orthonormal_fwht_in_place;
+use crate::quant::hadamard::{orthonormal_fwht_in_place, orthonormal_fwht_tiled_in_place};
+
+pub const TILED_FWHT_COMPAT_DIM: usize = 1536;
+pub const TILED_FWHT_COMPAT_TILE_DIM: usize = 512;
 
 pub fn transform_dim(dim: usize) -> usize {
     dim.max(1).next_power_of_two()
+}
+
+pub fn tile_dim(dim: usize) -> Option<usize> {
+    if dim == TILED_FWHT_COMPAT_DIM {
+        Some(TILED_FWHT_COMPAT_TILE_DIM)
+    } else {
+        None
+    }
+}
+
+pub fn effective_transform_dim(dim: usize) -> usize {
+    tile_dim(dim).map_or_else(|| transform_dim(dim), |_| dim)
 }
 
 pub fn sign_vector(len: usize, seed: u64) -> Vec<f32> {
@@ -23,7 +38,11 @@ pub fn srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
     for (value, sign) in workspace.iter_mut().zip(signs) {
         *value *= *sign;
     }
-    orthonormal_fwht_in_place(&mut workspace);
+    if let Some(tile_size) = tile_dim(workspace.len()) {
+        orthonormal_fwht_tiled_in_place(&mut workspace, tile_size);
+    } else {
+        orthonormal_fwht_in_place(&mut workspace);
+    }
     workspace
 }
 
@@ -34,7 +53,11 @@ pub fn inverse_srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
         "inverse srht input/sign length mismatch"
     );
     let mut workspace = input.to_vec();
-    orthonormal_fwht_in_place(&mut workspace);
+    if let Some(tile_size) = tile_dim(workspace.len()) {
+        orthonormal_fwht_tiled_in_place(&mut workspace, tile_size);
+    } else {
+        orthonormal_fwht_in_place(&mut workspace);
+    }
     for (value, sign) in workspace.iter_mut().zip(signs) {
         *value *= *sign;
     }
@@ -61,5 +84,22 @@ mod tests {
         let output_norm = rotated.iter().map(|v| v * v).sum::<f32>().sqrt();
         let rel_err = ((input_norm - output_norm) / input_norm.max(1.0)).abs();
         assert!(rel_err < 1e-5, "relative error = {rel_err}");
+    }
+
+    #[test]
+    fn tiled_srht_roundtrip_1536() {
+        let input = (0..1536)
+            .map(|i| ((i as f32) * 0.013).cos())
+            .collect::<Vec<_>>();
+        let signs = sign_vector(input.len(), 42);
+        let rotated = srht(&input, &signs);
+        let recovered = inverse_srht(&rotated, &signs);
+
+        for (expected, actual) in input.iter().zip(recovered.iter()) {
+            assert!(
+                (*expected - *actual).abs() < 1e-4,
+                "mismatch: expected {expected}, got {actual}"
+            );
+        }
     }
 }

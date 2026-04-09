@@ -48,7 +48,7 @@ impl ProdQuantizer {
         assert!(dim > 0, "dimension must be positive");
         assert!((2..=8).contains(&bits), "bits must be within 2..=8");
 
-        let transform_dim = rotation::transform_dim(dim);
+        let transform_dim = rotation::effective_transform_dim(dim);
         let codebook = codebook::lloyd_max((bits - 1) as usize, dim, 20_000)
             .into_iter()
             .map(|value| value as f32)
@@ -415,6 +415,13 @@ mod tests {
         let encoded = quantizer.encode(&vector);
         let payload = quantizer.pack_payload(&encoded);
         assert_eq!(payload.len(), 772);
+    }
+
+    #[test]
+    fn quantizer_1536_uses_tiled_working_dimension() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        assert_eq!(quantizer.transform_dim, 1536);
+        assert_eq!(quantizer.signs.len(), 1536);
     }
 
     #[test]
