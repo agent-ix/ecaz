@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-08
-Basis: post-A3 worktree rerunning A4 on repaired 10K regular-table fixtures; SIMD branch at `d38e625`
+Last updated: 2026-04-09
+Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path; SIMD branch at `d38e625`
 
 ## Reading Guide
 
@@ -28,7 +28,7 @@ Basis: post-A3 worktree rerunning A4 on repaired 10K regular-table fixtures; SIM
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done | 100% | Landed as part of the A3 close arc |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — failing** | 55% | Repaired 10K harness measured `8.4% / 21.8% / 26.8% / 35.3%` for `(8,40) / (8,128) / (8,200) / (16,200)`; exact `tqvector` ceiling on the same corpus is only `43.1%`, so the gate remains hard-failing and likely mismatched to the current path |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — failing** | 68% | Repaired 10K harness still hard-fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts exact-only `1k` Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), and a live `1k` graph-fixture probe passes `exact >= 70%`, `graph >= 70%`; next step is a larger rerun |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
@@ -98,7 +98,7 @@ Planner / PG18 rollup: 42%
 | Unit / property / layout tests | Scalar, page, codec, search protocol, size/layout checks | Strong | 92% | Broad low-level coverage exists |
 | `cargo test` / `pgrx test` integration | Extension-level build and runtime integration | Strong | 82% | Good staged-behavior coverage exists |
 | CI / safety tooling | Clippy, deny, fuzz, miri, benchmark-action, nightly checks | Strong | 75% | Base infrastructure is present |
-| Graph-first runtime validation | Ordered scan behavior under A3 | In progress | 68% | Ordered-result regression is in place and repaired 10K recall evidence exists; the live graph path remains below exact at required budgets but reaches `39.1%` at `ef=800`, close to the build-code ceiling |
+| Graph-first runtime validation | Ordered scan behavior under A3 | In progress | 78% | Ordered-result regression is in place; repaired 10K evidence still fails, but the new live `1k` tiled-FWHT probe clears a `70%` graph Recall@10 floor at `(m=8, ef=128)` |
 | Unsafe/stability audit | Final unsafe review and hardening pass | Partial | 50% | Tooling exists; final audit remains |
 
 Testing / validation rollup: 76%
@@ -111,7 +111,7 @@ Testing / validation rollup: 76%
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
-| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — failing | 35% | Repaired 10K synthetic graph-first run on 2026-04-08 measured Recall@10 of `8.4% / 21.8% / 26.8% / 35.3%` for `(8,40) / (8,128) / (8,200) / (16,200)`; exact `tqvector` overlap on the same corpus is only `43.1%` |
+| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — failing | 45% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, but the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe; the real 10K rerun is still outstanding |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
 Benchmarking / profiling rollup: 36%
@@ -154,7 +154,7 @@ Release / quality-gate rollup: 58%
 
 1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
 2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
-3. **Now:** A4 recall gate is failing on repaired 10K regular-table fixtures; the live graph path is still weak at required budgets, but the exact `tqvector` ceiling is also only `43.1%` against fp32 truth on this corpus.
+3. **Now:** A4 remains open, but the production `1536` quantizer path now uses tiled FWHT. Cheap `1k` evidence improved sharply (`77.0%` exact on uniform, `81.5%` exact on clustered, live graph probe `>= 70%`), so the next decision point is a larger rerun rather than more score-path speculation.
 4. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
 5. Full SQL benchmark result generation after A5/A6.
 
@@ -163,7 +163,7 @@ Release / quality-gate rollup: 58%
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
-| Live graph-first recall gate is failing badly (`21.8%` Recall@10 at `m=8, ef=128`) and the exact quantized ceiling is only `43.1%` on the same 10K corpus | `A4`, `C1`, `D2` | Runtime / benchmark lane |
+| Live graph-first recall gate still fails on the repaired 10K corpus (`21.8%` Recall@10 at `m=8, ef=128`) even though the `1536` tiled-FWHT path materially improves cheap `1k` recall evidence | `A4`, `C1`, `D2` | Runtime / benchmark lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
 | ADR-011 planner gate is still active | `D2` | Planner lane after `A4` |

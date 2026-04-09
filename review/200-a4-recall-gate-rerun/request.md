@@ -77,6 +77,28 @@ Commit: `52974ab`
   against the remaining gap between graph and exact on the repaired `10k` fixture, not against the
   original `89%` target directly
 
+## Three A4 Hypotheses
+
+These are the three high-level hypotheses to reference in follow-up work:
+
+1. `H1: graph-runtime gap`
+   - The live graph path is still leaving recall on the table relative to exact quantized search at
+     the required `ef_search` budgets.
+   - Current evidence: graph reaches `21.8%` at `(m=8, ef=128)` while exact quantized is `43.1%`
+     on the same repaired `10k` corpus.
+
+2. `H2: quantized-objective mismatch`
+   - The exact `tqvector` scorer may simply not match the fp32 Recall@10 gate closely enough on the
+     current `10k x 1536 x 4-bit` synthetic corpus.
+   - Current evidence: even exact quantized search is only `43.1%` against fp32 truth.
+
+3. `H3: quantized-path implementation defect`
+   - The exact quantized ceiling may be low because of a real implementation bug or mismatch in the
+     quantized path itself, rather than because `4-bit` quantization on this corpus is inherently
+     limited.
+   - Existing sub-hypotheses to test under this bucket are the review probes in `195-198`
+     (score-function divergence, neighbor-slot packing, gamma/build mismatch, visited/refill state).
+
 ## Validation
 
 - `cargo test`

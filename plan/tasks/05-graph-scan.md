@@ -1,6 +1,6 @@
 # Task 05: Graph Scan
 
-Status: A3 complete, A4 rerun on repaired 10K harness and failing
+Status: A3 complete, A4 in progress; 1536 tiled-FWHT quantizer path landed, 10K rerun still pending
 
 Progress notes:
 - Build path is complete.
@@ -46,6 +46,10 @@ Complete the HNSW scan path from module split through validated recall measureme
     - That means the current A4 failure has two parts:
       1. a real graph traversal / runtime budget gap at the required `ef_search` settings
       2. a larger dataset/config mismatch against the `89%` gate, because the exact quantized path on this corpus is far below the gate even without graph approximation
+  - 2026-04-09 evidence after switching the production `1536` quantizer path to tiled FWHT:
+    - Exact-only `1k` Recall@10 moved to `77.0%` on the uniform fixture and `81.5%` on the clustered fixture without changing payload layout.
+    - A new ignored live `1k` graph-fixture pg-test now passes with `exact Recall@10 >= 70%` and `graph Recall@10 >= 70%` at `(m=8, ef=128)`.
+    - The next required A4 step is still a larger rerun on the real gate path; the tiled quantizer change is strong evidence, but it does not by itself clear the `10K` gate.
 
 ## Owns
 

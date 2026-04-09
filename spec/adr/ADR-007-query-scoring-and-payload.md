@@ -172,3 +172,12 @@ If any of those gates fail, the team SHALL revisit the storage format and consid
 - a full-`n` persisted layout
 - an alternate packed tail representation
 - a dual-mode storage option
+
+### Gate Status (2026-04-08)
+
+**The Recall@10 gate has been triggered.** Reviews 202 and 203 measured ~26pp degradation from
+transform-tail truncation at 1536-dim (55.5% → 81.5% on clustered 1k), far exceeding the 1.5pp
+threshold. The truncation strategy (§3 above) is retired in favor of tiled FWHT (review 203).
+
+**ADR-024** now governs the FWHT transform strategy decision (full vs tiled) as the follow-up
+ADR anticipated in §Follow-Up above.
