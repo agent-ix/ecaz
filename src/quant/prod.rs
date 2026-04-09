@@ -303,44 +303,80 @@ impl ProdQuantizer {
         let mask = _mm256_set1_epi32(0x7);
         let mut mse_acc0 = _mm256_setzero_ps();
         let mut mse_acc1 = _mm256_setzero_ps();
+        let mut mse_acc2 = _mm256_setzero_ps();
+        let mut mse_acc3 = _mm256_setzero_ps();
         let mut dim_index = 0usize;
 
-        while dim_index + 16 <= self.original_dim {
-            let lanes_a = decode_eight_3bit_lanes_avx2(
+        while dim_index + 32 <= self.original_dim {
+            let la0 = decode_eight_3bit_lanes_avx2(
                 decode_eight_3bit_aligned_word(mse_a, dim_index),
                 shifts,
                 mask,
             );
-            let lanes_b = decode_eight_3bit_lanes_avx2(
+            let lb0 = decode_eight_3bit_lanes_avx2(
                 decode_eight_3bit_aligned_word(mse_b, dim_index),
                 shifts,
                 mask,
             );
-            let lanes_a_next = decode_eight_3bit_lanes_avx2(
+            let la1 = decode_eight_3bit_lanes_avx2(
                 decode_eight_3bit_aligned_word(mse_a, dim_index + 8),
                 shifts,
                 mask,
             );
-            let lanes_b_next = decode_eight_3bit_lanes_avx2(
+            let lb1 = decode_eight_3bit_lanes_avx2(
                 decode_eight_3bit_aligned_word(mse_b, dim_index + 8),
+                shifts,
+                mask,
+            );
+            let la2 = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_a, dim_index + 16),
+                shifts,
+                mask,
+            );
+            let lb2 = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_b, dim_index + 16),
+                shifts,
+                mask,
+            );
+            let la3 = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_a, dim_index + 24),
+                shifts,
+                mask,
+            );
+            let lb3 = decode_eight_3bit_lanes_avx2(
+                decode_eight_3bit_aligned_word(mse_b, dim_index + 24),
                 shifts,
                 mask,
             );
             mse_acc0 = _mm256_add_ps(
                 mse_acc0,
                 _mm256_mul_ps(
-                    _mm256_permutevar8x32_ps(codebook, lanes_a),
-                    _mm256_permutevar8x32_ps(codebook, lanes_b),
+                    _mm256_permutevar8x32_ps(codebook, la0),
+                    _mm256_permutevar8x32_ps(codebook, lb0),
                 ),
             );
             mse_acc1 = _mm256_add_ps(
                 mse_acc1,
                 _mm256_mul_ps(
-                    _mm256_permutevar8x32_ps(codebook, lanes_a_next),
-                    _mm256_permutevar8x32_ps(codebook, lanes_b_next),
+                    _mm256_permutevar8x32_ps(codebook, la1),
+                    _mm256_permutevar8x32_ps(codebook, lb1),
                 ),
             );
-            dim_index += 16;
+            mse_acc2 = _mm256_add_ps(
+                mse_acc2,
+                _mm256_mul_ps(
+                    _mm256_permutevar8x32_ps(codebook, la2),
+                    _mm256_permutevar8x32_ps(codebook, lb2),
+                ),
+            );
+            mse_acc3 = _mm256_add_ps(
+                mse_acc3,
+                _mm256_mul_ps(
+                    _mm256_permutevar8x32_ps(codebook, la3),
+                    _mm256_permutevar8x32_ps(codebook, lb3),
+                ),
+            );
+            dim_index += 32;
         }
 
         while dim_index + 8 <= self.original_dim {
@@ -365,7 +401,13 @@ impl ProdQuantizer {
         }
 
         let mut mse_lanes = [0.0_f32; 8];
-        _mm256_storeu_ps(mse_lanes.as_mut_ptr(), _mm256_add_ps(mse_acc0, mse_acc1));
+        _mm256_storeu_ps(
+            mse_lanes.as_mut_ptr(),
+            _mm256_add_ps(
+                _mm256_add_ps(mse_acc0, mse_acc1),
+                _mm256_add_ps(mse_acc2, mse_acc3),
+            ),
+        );
         let mut mse_sum = mse_lanes.into_iter().sum::<f32>();
 
         while dim_index < self.original_dim {
@@ -452,8 +494,12 @@ impl ProdQuantizer {
         let mut dim_index = 0usize;
         let mut mse_acc0 = _mm256_setzero_ps();
         let mut mse_acc1 = _mm256_setzero_ps();
+        let mut mse_acc2 = _mm256_setzero_ps();
+        let mut mse_acc3 = _mm256_setzero_ps();
         let mut qjl_acc0 = _mm256_setzero_ps();
         let mut qjl_acc1 = _mm256_setzero_ps();
+        let mut qjl_acc2 = _mm256_setzero_ps();
+        let mut qjl_acc3 = _mm256_setzero_ps();
 
         if bits_per_index == 3 {
             debug_assert_eq!(self.codebook.len(), 8);
@@ -461,20 +507,30 @@ impl ProdQuantizer {
             let shifts = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
             let mask = _mm256_set1_epi32(0x7);
 
-            while dim_index + 16 <= self.original_dim {
-                let lanes = decode_eight_3bit_lanes_avx2(
+            while dim_index + 32 <= self.original_dim {
+                let l0 = decode_eight_3bit_lanes_avx2(
                     decode_eight_3bit_aligned_word(mse_packed, dim_index),
                     shifts,
                     mask,
                 );
-                let lanes_next = decode_eight_3bit_lanes_avx2(
+                let l1 = decode_eight_3bit_lanes_avx2(
                     decode_eight_3bit_aligned_word(mse_packed, dim_index + 8),
+                    shifts,
+                    mask,
+                );
+                let l2 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 16),
+                    shifts,
+                    mask,
+                );
+                let l3 = decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(mse_packed, dim_index + 24),
                     shifts,
                     mask,
                 );
 
                 mse_acc0 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, lanes),
+                    _mm256_permutevar8x32_ps(codebook, l0),
                     _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index)),
                     mse_acc0,
                 );
@@ -484,7 +540,7 @@ impl ProdQuantizer {
                     qjl_acc0,
                 );
                 mse_acc1 = _mm256_fmadd_ps(
-                    _mm256_permutevar8x32_ps(codebook, lanes_next),
+                    _mm256_permutevar8x32_ps(codebook, l1),
                     _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 8)),
                     mse_acc1,
                 );
@@ -493,7 +549,27 @@ impl ProdQuantizer {
                     _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 8) / 8]).as_ptr()),
                     qjl_acc1,
                 );
-                dim_index += 16;
+                mse_acc2 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l2),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 16)),
+                    mse_acc2,
+                );
+                qjl_acc2 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 16)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 16) / 8]).as_ptr()),
+                    qjl_acc2,
+                );
+                mse_acc3 = _mm256_fmadd_ps(
+                    _mm256_permutevar8x32_ps(codebook, l3),
+                    _mm256_loadu_ps(prepared.rotated.as_ptr().add(dim_index + 24)),
+                    mse_acc3,
+                );
+                qjl_acc3 = _mm256_fmadd_ps(
+                    _mm256_loadu_ps(prepared.sq.as_ptr().add(dim_index + 24)),
+                    _mm256_loadu_ps(qjl_sign_lanes(qjl_packed[(dim_index + 24) / 8]).as_ptr()),
+                    qjl_acc3,
+                );
+                dim_index += 32;
             }
 
             while dim_index + 8 <= self.original_dim {
@@ -539,8 +615,20 @@ impl ProdQuantizer {
 
         let mut mse_lanes = [0.0_f32; 8];
         let mut qjl_lanes = [0.0_f32; 8];
-        _mm256_storeu_ps(mse_lanes.as_mut_ptr(), _mm256_add_ps(mse_acc0, mse_acc1));
-        _mm256_storeu_ps(qjl_lanes.as_mut_ptr(), _mm256_add_ps(qjl_acc0, qjl_acc1));
+        _mm256_storeu_ps(
+            mse_lanes.as_mut_ptr(),
+            _mm256_add_ps(
+                _mm256_add_ps(mse_acc0, mse_acc1),
+                _mm256_add_ps(mse_acc2, mse_acc3),
+            ),
+        );
+        _mm256_storeu_ps(
+            qjl_lanes.as_mut_ptr(),
+            _mm256_add_ps(
+                _mm256_add_ps(qjl_acc0, qjl_acc1),
+                _mm256_add_ps(qjl_acc2, qjl_acc3),
+            ),
+        );
         mse_sum += mse_lanes.into_iter().sum::<f32>();
         qjl_sum += qjl_lanes.into_iter().sum::<f32>();
 
