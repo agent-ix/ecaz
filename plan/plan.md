@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; A4 still open pending larger rerun).
+Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; fixture-backed 10K gate helpers landed; A4 still open pending larger rerun).
 
 ## Current Task Board
 
@@ -24,7 +24,7 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; A
 
 ### Current sequencing
 
-1. **Coder-1:** A4 — repaired 10K gate rerun still fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts cheap `1k` exact Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), and a live `1k` graph probe clears `>= 70%`. The next decision is a larger rerun, not planner/insert/vacuum.
+1. **Coder-1:** A4 — repaired 10K gate rerun still fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts cheap `1k` exact Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), a live `1k` graph probe clears `>= 70%`, and fixture-backed 10K gate helpers now separate reset from reusable reports. The next bottleneck is one-time 10K index build cost, not planner/insert/vacuum.
 2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4.
 3. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
 4. Full SQL benchmark result generation after A5/A6.
@@ -66,7 +66,7 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; A
 
 - [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
 - [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
-- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; the production `1536` tiled-FWHT path now materially improves cheap `1k` exact/live evidence, but A4 is still failing on the repaired 10K gate path and needs a larger rerun._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; the production `1536` tiled-FWHT path now materially improves cheap `1k` exact/live evidence, and fixture-backed 10K report helpers landed, but A4 is still failing on the repaired 10K gate path and larger reruns remain bottlenecked on one-time index build._
 - [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
 - [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 
@@ -275,7 +275,7 @@ All items are serial because each depends on the previous.
   2. Recall@10 measurement (set intersection)
   3. Test at multiple configurations: (m=8, ef=40), (m=8, ef=128), (m=8, ef=200), (m=16, ef=200)
   4. Report recall numbers — these anchor all downstream quality claims
-- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Current 2026-04-08 evidence on repaired 10K regular-table fixtures is `8.4% / 21.8% / 26.8% / 35.3%` for `(8,40) / (8,128) / (8,200) / (16,200)`, so A4 remains open. The 2026-04-09 tiled-FWHT quantizer slice materially improves cheap `1k` exact/live recall evidence, but the larger rerun has not happened yet, so the real gate is still unresolved.
+- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Current 2026-04-08 evidence on repaired 10K regular-table fixtures is `8.4% / 21.8% / 26.8% / 35.3%` for `(8,40) / (8,128) / (8,200) / (16,200)`, so A4 remains open. The 2026-04-09 tiled-FWHT quantizer slice materially improves cheap `1k` exact/live recall evidence, and fixture-backed 10K report helpers now exist, but the larger rerun has not happened yet because one-time 10K index build still dominates the harness.
 
 #### A5: Graph-Aware Insert (FR-016)
 - **Scope:** Replace disconnected-append insert with graph-connected insert. Layer assignment, greedy descent via A2 helpers, beam search for neighbors, back-link updates, entry point promotion, drift statistics.

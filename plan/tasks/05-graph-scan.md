@@ -1,6 +1,6 @@
 # Task 05: Graph Scan
 
-Status: A3 complete, A4 in progress; 1536 tiled-FWHT quantizer path landed, 10K rerun still pending
+Status: A3 complete, A4 in progress; 1536 tiled-FWHT quantizer path landed, fixture-backed 10K gate helpers landed, larger rerun still pending
 
 Progress notes:
 - Build path is complete.
@@ -50,6 +50,11 @@ Complete the HNSW scan path from module split through validated recall measureme
     - Exact-only `1k` Recall@10 moved to `77.0%` on the uniform fixture and `81.5%` on the clustered fixture without changing payload layout.
     - A new ignored live `1k` graph-fixture pg-test now passes with `exact Recall@10 >= 70%` and `graph Recall@10 >= 70%` at `(m=8, ef=128)`.
     - The next required A4 step is still a larger rerun on the real gate path; the tiled quantizer change is strong evidence, but it does not by itself clear the `10K` gate.
+  - 2026-04-09 harness practicality follow-up:
+    - New SQL/debug surfaces now split the `10K` gate into a one-time fixture reset and reusable gate reports: `tqhnsw_graph_scan_recall_fixture_gate_reset(...)` and `tqhnsw_graph_scan_recall_fixture_gate_report(...)`.
+    - The first implementation duplicated the `10K` corpus per `m` value; an ignored pg-test stayed in `pg_stat_progress_create_index` phase `building index` for more than `21m` and never reached the reusable report phase.
+    - The revised helper now shares one `10K` corpus table across the `m=8` and `m=16` indexes, removing duplicated load work while preserving separate gate reports.
+    - Even after the shared-corpus fix, the ignored `10K` timing probe still spent more than `10m` in `building index` and did not yet reach the first reusable report, so the next harness bottleneck is clearly one-time index build cost, not repeated report computation.
 
 ## Owns
 

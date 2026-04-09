@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-09
-Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path; SIMD branch at `d38e625`
+Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path and fixture-backed 10K gate helpers; SIMD branch at `d38e625`
 
 ## Reading Guide
 
@@ -28,7 +28,7 @@ Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path; 
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done | 100% | Landed as part of the A3 close arc |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — failing** | 68% | Repaired 10K harness still hard-fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts exact-only `1k` Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), and a live `1k` graph-fixture probe passes `exact >= 70%`, `graph >= 70%`; next step is a larger rerun |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — failing** | 70% | Repaired 10K harness still hard-fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts exact-only `1k` Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), a live `1k` graph-fixture probe passes `exact >= 70%`, `graph >= 70%`, and fixture-backed 10K gate helpers now separate reset from reusable reports; next bottleneck is still one-time 10K index build cost |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
@@ -56,7 +56,7 @@ Foundation / build rollup: 100%
 | Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | Cursor-owned runtime complete; bootstrap helpers gated to test/debug |
 | Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | Done | 100% | Fallback is now explicit and only entered when graph traversal cannot produce an initial ordered result |
 | `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
-| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Done | 100% | Repaired batched fixture harness now supports repeatable 10K A4 reruns |
+| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Done | 100% | Repaired batched fixture harness plus fixture-backed gate helpers now support reusable 10K report surfaces, but one-time 10K reset/index build is still too expensive for an interactive loop |
 
 Scan runtime rollup: 72%
 
@@ -111,7 +111,7 @@ Testing / validation rollup: 76%
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
-| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — failing | 45% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, but the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe; the real 10K rerun is still outstanding |
+| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — failing | 48% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe, and new fixture-backed 10K report helpers exist; the real 10K rerun is still outstanding because one-time index build remains the long pole |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
 Benchmarking / profiling rollup: 36%
@@ -154,7 +154,7 @@ Release / quality-gate rollup: 58%
 
 1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
 2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
-3. **Now:** A4 remains open, but the production `1536` quantizer path now uses tiled FWHT. Cheap `1k` evidence improved sharply (`77.0%` exact on uniform, `81.5%` exact on clustered, live graph probe `>= 70%`), so the next decision point is a larger rerun rather than more score-path speculation.
+3. **Now:** A4 remains open, but the production `1536` quantizer path now uses tiled FWHT and the repo has fixture-backed 10K gate helpers. Cheap `1k` evidence improved sharply (`77.0%` exact on uniform, `81.5%` exact on clustered, live graph probe `>= 70%`), yet the one-time 10K reset still spends `>10m` in `CREATE INDEX`, so the next decision point is reset/index-build practicality rather than more score-path speculation.
 4. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
 5. Full SQL benchmark result generation after A5/A6.
 
