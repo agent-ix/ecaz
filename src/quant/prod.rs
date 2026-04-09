@@ -87,8 +87,7 @@ impl ProdQuantizer {
             self.original_dim
         );
 
-        let padded = rotation::pad_input(vector, self.transform_dim);
-        let rotated = rotation::srht(&padded, &self.signs);
+        let rotated = rotation::srht_padded(vector, &self.signs);
         let mse_indices = mse::quantize_to_indices(&self.codebook, &rotated, self.original_dim);
         let mse_values = mse::decode_indices(&self.codebook, &mse_indices);
 
@@ -140,7 +139,7 @@ impl ProdQuantizer {
             self.original_dim
         );
 
-        let rotated = rotation::srht(&rotation::pad_input(query, self.transform_dim), &self.signs);
+        let rotated = rotation::srht_padded(query, &self.signs);
         let qjl_projection = qjl::qjl_project(query, &self.qjl_signs);
         let num_centroids = 1usize << (self.bits - 1);
 

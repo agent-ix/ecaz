@@ -31,6 +31,9 @@ fn main() {
     run_srht_bench(1_024, 1_024, iterations);
     run_srht_bench(1_536, 2_048, iterations);
     run_srht_bench(2_048, 2_048, iterations);
+    run_prepare_ip_query_bench(1_024, 4, iterations / 4);
+    run_prepare_ip_query_bench(1_536, 4, iterations / 4);
+    run_prepare_ip_query_bench(2_048, 4, iterations / 4);
     run_score_ip_encoded_bench(1_536, 4, iterations);
     run_score_ip_codes_lite_bench(1_536, 4, iterations);
 }
@@ -71,6 +74,20 @@ fn run_srht_bench(dim: usize, transform_dim: usize, iterations: usize) {
     });
     print_result(
         &format!("srht/d{dim}_td{transform_dim}"),
+        iterations.max(1),
+        elapsed,
+    );
+}
+
+fn run_prepare_ip_query_bench(dim: usize, bits: u8, iterations: usize) {
+    let quantizer = ProdQuantizer::new(dim, bits, 42);
+    let query = random_unit_vector(dim, 7);
+    let elapsed = time_loop(iterations.max(1), || {
+        let prepared = quantizer.prepare_ip_query(black_box(&query));
+        black_box(prepared.lut[0]);
+    });
+    print_result(
+        &format!("prepare_ip_query/d{dim}_b{bits}"),
         iterations.max(1),
         elapsed,
     );

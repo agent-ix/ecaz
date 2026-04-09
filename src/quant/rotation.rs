@@ -25,6 +25,29 @@ pub fn srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
     workspace
 }
 
+pub fn srht_padded(input: &[f32], signs: &[f32]) -> Vec<f32> {
+    assert!(
+        input.len() <= signs.len(),
+        "srht_padded input longer than signs: got {}, max {}",
+        input.len(),
+        signs.len()
+    );
+    if input.len() == signs.len() {
+        return srht(input, signs);
+    }
+
+    let mut workspace = vec![0.0_f32; signs.len()];
+    for ((value, input_value), sign) in workspace[..input.len()]
+        .iter_mut()
+        .zip(input.iter())
+        .zip(signs.iter())
+    {
+        *value = *input_value * *sign;
+    }
+    orthonormal_fwht_in_place(&mut workspace);
+    workspace
+}
+
 pub fn inverse_srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
     assert_eq!(
         input.len(),
@@ -94,6 +117,31 @@ mod tests {
                 assert!(
                     ((lhs - rhs) / scale).abs() < 1e-6,
                     "lhs={lhs} rhs={rhs} size={size}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn srht_padded_matches_pad_input_plus_srht() {
+        let mut rng = ChaCha8Rng::seed_from_u64(45);
+        for _ in 0..1_000 {
+            let dim = rng.gen_range(3..=257);
+            let input = (0..dim)
+                .map(|_| rng.gen_range(-10.0_f32..10.0_f32))
+                .collect::<Vec<_>>();
+            let padded_len = transform_dim(dim);
+            let signs = sign_vector(padded_len, rng.gen());
+
+            let padded = pad_input(&input, padded_len);
+            let expected = srht(&padded, &signs);
+            let actual = srht_padded(&input, &signs);
+
+            for (lhs, rhs) in expected.iter().zip(actual.iter()) {
+                let scale = lhs.abs().max(rhs.abs()).max(1.0);
+                assert!(
+                    ((lhs - rhs) / scale).abs() < 1e-6,
+                    "lhs={lhs} rhs={rhs} dim={dim} padded_len={padded_len}"
                 );
             }
         }
