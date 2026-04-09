@@ -1192,4 +1192,115 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn dispatched_score_matches_scalar_at_production_dims() {
+        // Tolerance scales with sqrt(dim) because the AVX2 4-accumulator tree
+        // reduction sums in a different order than the scalar sequential loop.
+        // FP non-associativity across N terms gives expected error ~sqrt(N)*eps.
+        let mut rng = ChaCha8Rng::seed_from_u64(88);
+        let quantizers = [
+            ProdQuantizer::new(1024, 4, 42),
+            ProdQuantizer::new(1536, 4, 42),
+            ProdQuantizer::new(2048, 4, 42),
+        ];
+
+        for _ in 0..100 {
+            let quantizer = &quantizers[rng.gen_range(0..quantizers.len())];
+            let dim = quantizer.original_dim;
+            let tol = (dim as f32).sqrt() * 1e-6;
+            let query = random_unit_vector(dim, rng.gen());
+            let candidate = quantizer.encode(&random_unit_vector(dim, rng.gen()));
+            let prepared = quantizer.prepare_ip_query(&query);
+            let payload = quantizer.pack_payload(&candidate);
+            let mut code_bytes = candidate.mse_packed.clone();
+            code_bytes.extend_from_slice(&candidate.qjl_packed);
+
+            let dispatched = quantizer.score_ip_encoded(&prepared, &payload);
+            let scalar = quantizer.score_ip_from_split_parts_scalar(
+                &prepared,
+                candidate.gamma,
+                &candidate.mse_packed,
+                &candidate.qjl_packed,
+            );
+            let lite_dispatched = quantizer.score_ip_codes_lite(&code_bytes, &code_bytes);
+            let lite_scalar =
+                quantizer.score_ip_mse_codes_scalar(&candidate.mse_packed, &candidate.mse_packed);
+
+            let score_scale = dispatched.abs().max(scalar.abs()).max(1.0);
+            assert!(
+                ((dispatched - scalar) / score_scale).abs() < tol,
+                "dispatched={dispatched} scalar={scalar} dim={dim} tol={tol}"
+            );
+
+            let lite_scale = lite_dispatched.abs().max(lite_scalar.abs()).max(1.0);
+            assert!(
+                ((lite_dispatched - lite_scalar) / lite_scale).abs() < tol,
+                "lite_dispatched={lite_dispatched} lite_scalar={lite_scalar} dim={dim} tol={tol}"
+            );
+        }
+    }
+
+    #[test]
+    fn dispatched_score_matches_scalar_with_tail_dims() {
+        let mut rng = ChaCha8Rng::seed_from_u64(89);
+        // dim=40: 1×32 outer + 1×8 tail, no scalar tail
+        // dim=104: 3×32 outer + 1×8 tail, no scalar tail
+        // dim=108: 3×32 outer + 1×8 tail + 4 scalar tail
+        // dim=100: 3×32 outer + 0×8 tail + 4 scalar tail
+        let quantizers = [
+            ProdQuantizer::new(40, 4, 42),
+            ProdQuantizer::new(104, 4, 42),
+            ProdQuantizer::new(108, 4, 42),
+            ProdQuantizer::new(100, 4, 42),
+        ];
+
+        for _ in 0..1_000 {
+            let quantizer = &quantizers[rng.gen_range(0..quantizers.len())];
+            let dim = quantizer.original_dim;
+            let query = random_unit_vector(dim, rng.gen());
+            let candidate = quantizer.encode(&random_unit_vector(dim, rng.gen()));
+            let prepared = quantizer.prepare_ip_query(&query);
+            let payload = quantizer.pack_payload(&candidate);
+            let mut code_bytes = candidate.mse_packed.clone();
+            code_bytes.extend_from_slice(&candidate.qjl_packed);
+
+            let dispatched = quantizer.score_ip_encoded(&prepared, &payload);
+            let scalar = quantizer.score_ip_from_split_parts_scalar(
+                &prepared,
+                candidate.gamma,
+                &candidate.mse_packed,
+                &candidate.qjl_packed,
+            );
+            let lite_dispatched = quantizer.score_ip_codes_lite(&code_bytes, &code_bytes);
+            let lite_scalar =
+                quantizer.score_ip_mse_codes_scalar(&candidate.mse_packed, &candidate.mse_packed);
+
+            let score_scale = dispatched.abs().max(scalar.abs()).max(1.0);
+            assert!(
+                ((dispatched - scalar) / score_scale).abs() < 1e-6,
+                "dispatched={dispatched} scalar={scalar} dim={dim}"
+            );
+
+            let lite_scale = lite_dispatched.abs().max(lite_scalar.abs()).max(1.0);
+            assert!(
+                ((lite_dispatched - lite_scalar) / lite_scale).abs() < 1e-6,
+                "lite_dispatched={lite_dispatched} lite_scalar={lite_scalar} dim={dim}"
+            );
+        }
+    }
+
+    #[test]
+    fn qjl_sign_lanes_exhaustive() {
+        for byte in 0u8..=255 {
+            let lanes = qjl_sign_lanes(byte);
+            for (bit, lane) in lanes.iter().enumerate() {
+                let expected = if (byte >> bit) & 1 == 1 { 1.0_f32 } else { -1.0_f32 };
+                assert_eq!(
+                    *lane, expected,
+                    "byte={byte:#04x} bit={bit}: got {lane}, expected {expected}",
+                );
+            }
+        }
+    }
 }
