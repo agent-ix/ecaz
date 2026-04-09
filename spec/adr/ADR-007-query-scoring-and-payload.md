@@ -12,8 +12,10 @@ date: 2026-04-04
 Deeper inspection of the TurboQuantDB quantizer implementation uncovered three important facts:
 
 1. The high-quality prepared-query scorer requires a **raw query vector**. It builds:
-   - an MSE LUT from the rotated raw query
+   - rotated query coordinates from the SRHT-transformed raw query
    - a QJL projection vector `sq` from the raw query
+   - (for non-3-bit paths only) an MSE LUT from the rotated raw query; the 3-bit AVX2/scalar
+     paths use direct codebook indexing at score time instead
 
 2. The candidate-side QJL correction requires a persisted **residual norm scalar** `gamma`.
    Without `gamma`, the QJL term is underspecified and cannot be implemented faithfully.
@@ -99,6 +101,10 @@ The QJL correction term is omitted in this path in v0.1.
   may introduce a full-`n` storage mode or an alternate packed layout.
 - If future benchmarks justify it, a richer compressed-query estimator may be added as a
   separate scoring mode rather than overloading the v0.1 code-to-code contract.
+- As of `cdc3881` (2026-04-08), the 3-bit scoring path (default 4-bit quantizer) no longer
+  builds the MSE LUT at query preparation time. All backends now use direct
+  `codebook[index] * rotated[dim]` for the 3-bit case, eliminating ~83% of `prepare_ip_query`
+  cost. The LUT is still built for non-3-bit quantizer configurations.
 
 ## Evaluation Criteria
 

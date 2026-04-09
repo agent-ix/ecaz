@@ -47,11 +47,15 @@ The table below uses the current tqvector implementation and layout formulas:
 
 For the current primary configuration (`bits = 4`):
 
-| Original dim | `transform_dim` | FWHT work proxy `n log2 n` | Payload bytes | Code bytes | Approx element tuple storage bytes | Approx pure-element tuples/page | Current AVX2 3-bit hot query bytes (`rotated + sq`) | Scalar/generic LUT bytes |
+| Original dim | `transform_dim` | FWHT work proxy `n log2 n` | Payload bytes | Code bytes | Approx element tuple storage bytes | Approx pure-element tuples/page | Hot query bytes (`rotated + sq`) | LUT bytes (non-3-bit only) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | `1024` | `1024` | `10,240` | `516` | `512` | `600` | `13` | `8,192` | `32,768` |
 | `1536` | `2048` | `22,528` | `772` | `768` | `856` | `9` | `12,288` | `49,152` |
 | `2048` | `2048` | `22,528` | `1,028` | `1,024` | `1,112` | `7` | `16,384` | `65,536` |
+
+Note: for the default 4-bit quantizer (`bits_per_index = 3`), the LUT is no longer built.
+All scoring backends use direct `codebook[index] * rotated[dim]` instead. The LUT column
+applies only to non-3-bit quantizer configurations.
 
 ### Interpretation
 
