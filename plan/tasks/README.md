@@ -25,6 +25,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 
 8. `08-simd.md` — B1 (**can start now**)
 9. `09-ci-and-safety.md` — B2 (mostly complete)
+12. `12-real-corpus-recall.md` — C2 (**can start now**; resolves the A4 / NFR-003 real-dataset lane)
 
 ### Post-Gate
 

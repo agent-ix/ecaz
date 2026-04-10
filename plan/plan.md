@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; fixture-backed 10K gate helpers landed; A4 still open pending larger rerun).
+Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; fixture-backed 10K gate helpers landed; A4 still open; real-corpus recall lane added as Task 12 / C2).
 
 ## Current Task Board
 
@@ -19,15 +19,17 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; f
 
 - `B1` SIMD: **in progress** (coder-2, feature branch; merge after A4 confirms scalar correctness)
 - `B2` CI / fuzz / quality gates: mostly complete (TC-036 unsafe audit remaining)
+- `C2` real-corpus recall lane: **ready** (new; resolves the A4 / NFR-003 dataset contradiction)
 - `D1` planner scaffold: **done** (merged to main from planner-integration-lane + planner-part2)
 - `D2` planner activation: blocked on A4 and ADR-011 retirement
 
 ### Current sequencing
 
-1. **Coder-1:** A4 — repaired 10K gate rerun still fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts cheap `1k` exact Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), a live `1k` graph probe clears `>= 70%`, and fixture-backed 10K gate helpers now separate reset from reusable reports. The next bottleneck is one-time 10K index build cost, not planner/insert/vacuum.
-2. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4.
-3. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
-4. Full SQL benchmark result generation after A5/A6.
+1. **Coder-1:** A4 synthetic/runtime debugging established that the current deterministic synthetic fixtures are reproducible but not a credible gate surface by themselves: raw reference `hnsw-rs` source-graph baselines only reach `29.0%` / `26.0%` at `(m=8, ef=128)` and `66.5%` at `(m=16, ef=200)`.
+2. **New immediate lane:** C2 / Task 12 — load DBpedia OpenAI embeddings or a documented equivalent and rerun the existing relation-based recall probes on a real corpus consistent with `NFR-003`.
+3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4.
+4. After A4 is fixed and passes on a credible corpus: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
+5. Full SQL benchmark result generation after A5/A6.
 
 ## Requirements Summary
 
@@ -66,7 +68,7 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; f
 
 - [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
 - [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
-- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; the production `1536` tiled-FWHT path now materially improves cheap `1k` exact/live evidence, and fixture-backed 10K report helpers landed, but A4 is still failing on the repaired 10K gate path and larger reruns remain bottlenecked on one-time index build._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; the production `1536` tiled-FWHT path now materially improves cheap `1k` exact/live evidence, fixture-backed 10K report helpers landed, and new reference baselines show the current synthetic fixtures are not a credible gate surface by themselves. Task 12 / C2 now tracks the required real-corpus lane._
 - [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
 - [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 

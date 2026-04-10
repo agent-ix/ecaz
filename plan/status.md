@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-09
-Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path and fixture-backed 10K gate helpers; SIMD branch at `d38e625`
+Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path and fixture-backed 10K gate helpers; synthetic/reference contradiction established; real-corpus recall lane added; SIMD branch at `d38e625`
 
 ## Reading Guide
 
@@ -34,6 +34,7 @@ Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path a
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
+| `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | Ready | 10% | New Task 12; needed because raw reference HNSW is also weak on the current synthetic fixtures |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 5% | Blocked on `A4` and planner gate retirement |
 
@@ -111,7 +112,7 @@ Testing / validation rollup: 76%
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
-| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — failing | 48% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe, and new fixture-backed 10K report helpers exist; the real 10K rerun is still outstanding because one-time index build remains the long pole |
+| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — blocked on dataset lane | 50% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe, but new raw-reference baselines also show the current synthetic fixtures are not a credible gate surface; Task 12 / C2 now tracks the real-corpus rerun path |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
 Benchmarking / profiling rollup: 36%
@@ -154,8 +155,8 @@ Release / quality-gate rollup: 58%
 
 1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
 2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
-3. **Now:** A4 remains open, but the production `1536` quantizer path now uses tiled FWHT and the repo has fixture-backed 10K gate helpers. Cheap `1k` evidence improved sharply (`77.0%` exact on uniform, `81.5%` exact on clustered, live graph probe `>= 70%`), yet the one-time 10K reset still spends `>10m` in `CREATE INDEX`, so the next decision point is reset/index-build practicality rather than more score-path speculation.
-4. After A4 is fixed and passes: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
+3. **Now:** A4 remains open, but the latest reference baselines show the current synthetic fixtures are not a credible gate surface by themselves: raw source-vector `hnsw-rs` reaches only `29.0%` (uniform) / `26.0%` (clustered) at `(m=8, ef=128)` and `66.5%` at `(m=16, ef=200)`. The highest-value next move is therefore C2 / Task 12: run the existing recall probes on a real `1536`-dimensional embedding corpus consistent with `NFR-003`.
+4. After A4 is fixed and passes on a credible corpus: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
 5. Full SQL benchmark result generation after A5/A6.
 
 ## Current Major Blockers
@@ -163,7 +164,8 @@ Release / quality-gate rollup: 58%
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
-| Live graph-first recall gate still fails on the repaired 10K corpus (`21.8%` Recall@10 at `m=8, ef=128`) even though the `1536` tiled-FWHT path materially improves cheap `1k` recall evidence | `A4`, `C1`, `D2` | Runtime / benchmark lane |
+| Live graph-first recall gate still fails on the repaired 10K corpus (`21.8%` Recall@10 at `m=8, ef=128`), and raw reference HNSW is also weak on the current synthetic fixtures | `A4`, `C1`, `C2`, `D2` | Runtime / benchmark methodology lane |
+| A4 still lacks a real `1536`-dimensional embedding corpus path consistent with `NFR-003` | `A4`, `C2`, `C1` | Benchmark methodology lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
 | ADR-011 planner gate is still active | `D2` | Planner lane after `A4` |

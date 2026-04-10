@@ -16,6 +16,8 @@ Progress notes:
 - A3 is closed: graph/search traversal is now the primary ordered scan path, and the linear path
   is the explicit fallback shell only when graph traversal cannot produce an initial ordered result.
 - Planner enablement remains gated by ADR-011 and is not part of this task until recall clears A4.
+- Recent A4 reference baselines now show the current synthetic fixtures are not a credible gate
+  surface by themselves; Task 12 tracks the required real-corpus lane consistent with `NFR-003`.
 
 ## Scope
 
@@ -55,6 +57,15 @@ Complete the HNSW scan path from module split through validated recall measureme
     - The first implementation duplicated the `10K` corpus per `m` value; an ignored pg-test stayed in `pg_stat_progress_create_index` phase `building index` for more than `21m` and never reached the reusable report phase.
     - The revised helper now shares one `10K` corpus table across the `m=8` and `m=16` indexes, removing duplicated load work while preserving separate gate reports.
     - Even after the shared-corpus fix, the ignored `10K` timing probe still spent more than `10m` in `building index` and did not yet reach the first reusable report, so the next harness bottleneck is clearly one-time index build cost, not repeated report computation.
+  - 2026-04-09 reference-baseline follow-up:
+    - Raw `hnsw-rs` on the current deterministic synthetic fixtures is also weak:
+      - source graph, uniform `10K`, `(m=8, ef_search=128)`: `29.0%`
+      - source graph, clustered `10K`, `(m=8, ef_search=128)`: `26.0%`
+      - source graph, uniform `10K`, `(m=16, ef_search=200)`: `66.5%`
+    - That means the current synthetic fixtures are useful for debugging, but not sufficient to
+      carry the A4 gate alone.
+    - Task 12 (`12-real-corpus-recall.md`) now tracks the real-corpus benchmark lane required by
+      `NFR-003` so A4 can be evaluated on DBpedia OpenAI embeddings or a documented equivalent.
 
 ## Owns
 
