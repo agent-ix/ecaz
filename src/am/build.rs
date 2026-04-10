@@ -535,46 +535,57 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let bits = state.bits.expect("non-empty build should record bits");
     let mut data_pages = page::DataPageChain::new(state.page_size);
     let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
     let graph_nodes = build_hnsw_graph(state);
 
+    // Phase 1: Insert placeholder neighbor then element for each node.
+    // Writing them back-to-back co-locates them on the same page.
     for (idx, tuple) in state.heap_tuples.iter().enumerate() {
+        let slot_count = graph_nodes[idx].neighbor_slots.len();
+        let placeholder_neighbor = page::TqNeighborTuple {
+            count: slot_count as u16,
+            tids: vec![page::ItemPointer::INVALID; slot_count],
+        };
+        let neighbor_tid = data_pages
+            .insert_neighbor(&placeholder_neighbor)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
+
         let element_tid = data_pages
             .insert_element(&page::TqElementTuple {
                 level: graph_nodes[idx].level,
                 deleted: false,
                 heaptids: tuple.heap_tids.clone(),
                 gamma: tuple.gamma,
-                neighbortid: page::ItemPointer::INVALID,
+                neighbortid: neighbor_tid,
                 code: tuple.code.clone(),
             })
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage element tuple: {e}"));
+
         element_tids.push(element_tid);
+        neighbor_tids.push(neighbor_tid);
     }
 
-    for (idx, element_tid) in element_tids.iter().copied().enumerate() {
+    // Phase 2: Fill in neighbor references now that all element TIDs are known.
+    for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
         let neighbor_refs = graph_nodes[idx]
             .neighbor_slots
             .iter()
             .map(|neighbor_idx| {
                 neighbor_idx
-                    .map(|neighbor_idx| element_tids[neighbor_idx])
+                    .map(|ni| element_tids[ni])
                     .unwrap_or(page::ItemPointer::INVALID)
             })
             .collect::<Vec<_>>();
 
-        let neighbor_tid = data_pages
-            .insert_neighbor(&page::TqNeighborTuple {
-                count: neighbor_refs.len() as u16,
-                tids: neighbor_refs,
-            })
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
-        let mut element = data_pages
-            .read_element(element_tid, state.heap_tuples[idx].code.len())
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to read staged element tuple: {e}"));
-        element.neighbortid = neighbor_tid;
         data_pages
-            .update_element(element_tid, &element)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to backfill element tuple: {e}"));
+            .update_neighbor(
+                neighbor_tid,
+                &page::TqNeighborTuple {
+                    count: neighbor_refs.len() as u16,
+                    tids: neighbor_refs,
+                },
+            )
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to update neighbor tuple: {e}"));
     }
 
     let entry_point = choose_entry_point(&element_tids, &graph_nodes, state)

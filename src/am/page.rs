@@ -461,6 +461,14 @@ impl DataPage {
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
+
+    pub fn update_neighbor(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqNeighborTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -560,6 +568,16 @@ impl DataPageChain {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .update_element(tid, tuple)
+    }
+
+    pub fn update_neighbor(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqNeighborTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_neighbor(tid, tuple)
     }
 }
 
