@@ -962,12 +962,73 @@ mod tests {
         recall_index_block_count(index_oid, "reset_graph_scan_recall_fixture")
     }
 
+    fn gate_fixture_already_exists(
+        table_name: &str,
+        fixture_prefix: &str,
+        corpus_size: usize,
+    ) -> Option<Vec<(i32, i32)>> {
+        let table_exists = Spi::get_one::<bool>(&format!(
+            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = '{table_name}' AND relkind = 'r')"
+        ))
+        .expect("table existence check should succeed")
+        .unwrap_or(false);
+
+        if !table_exists {
+            return None;
+        }
+
+        let row_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {table_name}"))
+            .expect("row count query should succeed")
+            .unwrap_or(0);
+
+        if row_count != i64::try_from(corpus_size).expect("corpus size should fit into i64") {
+            return None;
+        }
+
+        let mut results = Vec::new();
+        for m in [8, 16] {
+            let index_name = format!("{fixture_prefix}_m{m}_idx");
+            let expected_m = format!("m={m}");
+            let expected_ef = format!("ef_construction={RECALL_EF_CONSTRUCTION}");
+            let index_ok = Spi::get_one::<bool>(&format!(
+                "SELECT EXISTS (\
+                    SELECT 1 FROM pg_class \
+                    WHERE relname = '{index_name}' \
+                    AND relkind = 'i' \
+                    AND reloptions @> ARRAY['{expected_m}', '{expected_ef}']\
+                )"
+            ))
+            .expect("index existence check should succeed")
+            .unwrap_or(false);
+
+            if !index_ok {
+                return None;
+            }
+
+            let index_oid =
+                Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                    .expect("index oid query should succeed")
+                    .expect("index oid should exist");
+            let block_count =
+                recall_index_block_count(index_oid, "gate_fixture_already_exists");
+            results.push((m, block_count));
+        }
+
+        Some(results)
+    }
+
     fn reset_graph_scan_recall_gate_fixtures(
         fixture_prefix: &str,
         corpus_size: usize,
     ) -> Vec<(i32, i32)> {
         let fixture_prefix = recall_fixture_ident(fixture_prefix);
         let table_name = format!("{fixture_prefix}_corpus");
+
+        if let Some(existing) = gate_fixture_already_exists(&table_name, &fixture_prefix, corpus_size) {
+            pgrx::log!("fixture already exists, skipping rebuild: {table_name}");
+            return existing;
+        }
+
         let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
 
         Spi::run(&format!("DROP TABLE IF EXISTS {table_name} CASCADE"))
