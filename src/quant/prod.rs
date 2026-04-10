@@ -10,6 +10,36 @@ use crate::quant::qjl;
 use crate::quant::rotation;
 use crate::quant::CodeIndex;
 
+/// Reusable working buffers for `ProdQuantizer::encode_with_scratch`.
+///
+/// A scratch instance is shape-bound to the quantizer that produced it
+/// via `ProdQuantizer::new_scratch`. Passing it to a different
+/// quantizer will trip the asserts in `encode_with_scratch`.
+///
+/// `EncodeScratch` is `Send` but **not** `Sync` — only one encode can
+/// write into it at a time. Callers needing concurrent encodes should
+/// hold one scratch per worker thread.
+#[derive(Debug)]
+pub struct EncodeScratch {
+    /// Working buffer for the forward SRHT pass. Reused as the QJL
+    /// projection workspace on the QJL-active path after the residual
+    /// has been computed. Length == transform_dim.
+    rotated: Vec<f32>,
+    /// Working buffer for the inverse SRHT that brings
+    /// `[mse_values, 0..0]` back into the input domain. Length ==
+    /// transform_dim.
+    decoded: Vec<f32>,
+    /// MSE quantizer code indices in rotated-domain order. Length ==
+    /// original_dim.
+    mse_indices: Vec<CodeIndex>,
+    /// Decoded MSE values in rotated-domain order. Length ==
+    /// original_dim.
+    mse_values: Vec<f32>,
+    /// Residual = vector - decoded[..original_dim], in input-domain
+    /// order. Length == original_dim.
+    residual: Vec<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct EncodedTq {
     pub gamma: f32,
@@ -76,7 +106,28 @@ impl ProdQuantizer {
             .clone()
     }
 
+    /// Allocate a fresh `EncodeScratch` sized to this quantizer.
+    pub fn new_scratch(&self) -> EncodeScratch {
+        EncodeScratch {
+            rotated: vec![0.0_f32; self.transform_dim],
+            decoded: vec![0.0_f32; self.transform_dim],
+            mse_indices: vec![0_u16; self.original_dim],
+            mse_values: vec![0.0_f32; self.original_dim],
+            residual: vec![0.0_f32; self.original_dim],
+        }
+    }
+
     pub fn encode(&self, vector: &[f32]) -> EncodedTq {
+        let mut scratch = self.new_scratch();
+        self.encode_with_scratch(vector, &mut scratch)
+    }
+
+    /// Encode a vector into the quantizer's tqvector payload using
+    /// caller-owned scratch buffers. Produces byte-for-byte identical
+    /// output to `encode(vector)`; this entry point exists so hot
+    /// loops (index builds, bulk loaders) can amortize the per-call
+    /// allocations across many vectors.
+    pub fn encode_with_scratch(&self, vector: &[f32], scratch: &mut EncodeScratch) -> EncodedTq {
         assert_eq!(
             vector.len(),
             self.original_dim,
@@ -84,40 +135,106 @@ impl ProdQuantizer {
             vector.len(),
             self.original_dim
         );
+        assert_eq!(
+            scratch.rotated.len(),
+            self.transform_dim,
+            "scratch.rotated wrong size for this quantizer"
+        );
+        assert_eq!(
+            scratch.decoded.len(),
+            self.transform_dim,
+            "scratch.decoded wrong size for this quantizer"
+        );
+        assert_eq!(
+            scratch.mse_indices.len(),
+            self.original_dim,
+            "scratch.mse_indices wrong size for this quantizer"
+        );
+        assert_eq!(
+            scratch.mse_values.len(),
+            self.original_dim,
+            "scratch.mse_values wrong size for this quantizer"
+        );
+        assert_eq!(
+            scratch.residual.len(),
+            self.original_dim,
+            "scratch.residual wrong size for this quantizer"
+        );
 
-        let padded = rotation::pad_input(vector, self.transform_dim);
-        let rotated = rotation::srht(&padded, &self.signs);
-        let mse_indices = mse::quantize_to_indices(&self.codebook, &rotated, self.original_dim);
-        let mse_values = mse::decode_indices(&self.codebook, &mse_indices);
+        // Phase 1: pad input into scratch.rotated, then forward SRHT
+        // in place.
+        scratch.rotated[..self.original_dim].copy_from_slice(vector);
+        for v in &mut scratch.rotated[self.original_dim..] {
+            *v = 0.0;
+        }
+        rotation::srht_in_place(&mut scratch.rotated, &self.signs);
 
-        let mut rotated_domain = vec![0.0_f32; self.transform_dim];
-        rotated_domain[..self.original_dim].copy_from_slice(&mse_values);
-        let decoded_mse = qjl::decode_mse_only(&rotated_domain, &self.signs, self.original_dim);
+        // Phase 2: MSE quantize + decode, both in place.
+        mse::quantize_to_indices_into(
+            &self.codebook,
+            &scratch.rotated,
+            &mut scratch.mse_indices,
+        );
+        mse::decode_indices_into(
+            &self.codebook,
+            &scratch.mse_indices,
+            &mut scratch.mse_values,
+        );
 
-        let residual: Vec<f32> = vector
+        // Phase 3: inverse SRHT of [mse_values, 0..0] to get the
+        // decoded approximation in the input domain.
+        scratch.decoded[..self.original_dim].copy_from_slice(&scratch.mse_values);
+        for v in &mut scratch.decoded[self.original_dim..] {
+            *v = 0.0;
+        }
+        rotation::inverse_srht_in_place(&mut scratch.decoded, &self.signs);
+
+        // Phase 4: residual = vector - decoded[..original_dim], then
+        // gamma. The residual order matches the original encode path
+        // (vector minus inverse-SRHT result, in input domain) so the
+        // computed gamma is bit-for-bit identical.
+        for ((input, approx), out) in vector
             .iter()
-            .zip(decoded_mse.iter())
-            .map(|(input, approx)| input - approx)
-            .collect();
-        let gamma = residual
+            .zip(scratch.decoded[..self.original_dim].iter())
+            .zip(scratch.residual.iter_mut())
+        {
+            *out = *input - *approx;
+        }
+        let gamma = scratch
+            .residual
             .iter()
             .map(|value| value * value)
             .sum::<f32>()
             .sqrt();
+
+        // Phase 5: optional QJL projection. Reuses scratch.rotated as
+        // the projection workspace (its previous contents are no
+        // longer needed at this point in the pipeline).
         let qjl_packed = if qjl_enabled(self.original_dim, self.bits) {
-            let qjl_projection = qjl::qjl_project(&residual, &self.qjl_signs);
-            let qjl_signs = qjl_projection[..self.original_dim]
-                .iter()
-                .map(|value| *value >= 0.0)
-                .collect::<Vec<_>>();
-            pack_qjl_signs(&qjl_signs)
+            scratch.rotated[..self.original_dim].copy_from_slice(&scratch.residual);
+            for v in &mut scratch.rotated[self.original_dim..] {
+                *v = 0.0;
+            }
+            rotation::srht_in_place(&mut scratch.rotated, &self.qjl_signs);
+            // Pack signs directly from the rotated workspace; skips
+            // the intermediate Vec<bool> the original path allocated.
+            let mut packed = vec![0_u8; qjl_code_len(self.original_dim)];
+            for (i, value) in scratch.rotated[..self.original_dim].iter().enumerate() {
+                if *value >= 0.0 {
+                    packed[i / 8] |= 1 << (i % 8);
+                }
+            }
+            packed
         } else {
             Vec::new()
         };
 
         EncodedTq {
             gamma,
-            mse_packed: pack_mse_indices(&mse_indices, mse_bits(self.original_dim, self.bits)),
+            mse_packed: pack_mse_indices(
+                &scratch.mse_indices,
+                mse_bits(self.original_dim, self.bits),
+            ),
             qjl_packed,
         }
     }
@@ -454,6 +571,77 @@ mod tests {
         let encoded = quantizer.encode(&vector);
         let payload = quantizer.pack_payload(&encoded);
         assert_eq!(payload.len(), 772);
+    }
+
+    #[test]
+    fn encode_with_scratch_matches_encode_qjl_disabled() {
+        // (1536, 4) is the production path where qjl_enabled is false.
+        // The scratch path must produce byte-for-byte identical
+        // EncodedTq output to the convenience encode() wrapper.
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let mut scratch = quantizer.new_scratch();
+        for sample_seed in 0..16 {
+            let vector = random_unit_vector(1536, sample_seed);
+            let plain = quantizer.encode(&vector);
+            let scratched = quantizer.encode_with_scratch(&vector, &mut scratch);
+            assert_eq!(
+                plain.gamma.to_bits(),
+                scratched.gamma.to_bits(),
+                "gamma diverged at seed={sample_seed}"
+            );
+            assert_eq!(
+                plain.mse_packed, scratched.mse_packed,
+                "mse_packed diverged at seed={sample_seed}"
+            );
+            assert_eq!(
+                plain.qjl_packed, scratched.qjl_packed,
+                "qjl_packed diverged at seed={sample_seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_with_scratch_matches_encode_qjl_active() {
+        // (64, 4) is a path where qjl_enabled is true: tile_dim(64) is
+        // None, so the !(bits == 4 && tile_dim.is_some()) gate fires.
+        // Cover this branch so both QJL paths of encode_with_scratch
+        // are exercised by the bit-exact test.
+        let quantizer = ProdQuantizer::new(64, 4, 42);
+        let mut scratch = quantizer.new_scratch();
+        for sample_seed in 0..16 {
+            let vector = random_unit_vector(64, sample_seed);
+            let plain = quantizer.encode(&vector);
+            let scratched = quantizer.encode_with_scratch(&vector, &mut scratch);
+            assert_eq!(
+                plain.gamma.to_bits(),
+                scratched.gamma.to_bits(),
+                "gamma diverged at seed={sample_seed}"
+            );
+            assert_eq!(
+                plain.mse_packed, scratched.mse_packed,
+                "mse_packed diverged at seed={sample_seed}"
+            );
+            assert_eq!(
+                plain.qjl_packed, scratched.qjl_packed,
+                "qjl_packed diverged at seed={sample_seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn encode_with_scratch_reuses_buffers_across_calls() {
+        // Reusing one scratch across many encodes must not corrupt
+        // any subsequent encode. Cross-check by encoding 32 vectors
+        // back-to-back through one shared scratch and comparing each
+        // to a fresh encode() call.
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let mut scratch = quantizer.new_scratch();
+        for sample_seed in 0..32 {
+            let vector = random_unit_vector(1536, sample_seed);
+            let plain = quantizer.encode(&vector);
+            let scratched = quantizer.encode_with_scratch(&vector, &mut scratch);
+            assert_eq!(plain, scratched, "scratch reuse drift at seed={sample_seed}");
+        }
     }
 
     #[test]

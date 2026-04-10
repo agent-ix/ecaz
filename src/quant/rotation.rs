@@ -32,35 +32,53 @@ pub fn sign_vector(len: usize, seed: u64) -> Vec<f32> {
         .collect()
 }
 
-pub fn srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
-    assert_eq!(input.len(), signs.len(), "srht input/sign length mismatch");
-    let mut workspace = input.to_vec();
+/// In-place forward SRHT. The caller owns the workspace buffer; this
+/// function does not allocate. Equivalent to `srht(input, signs)` when
+/// the workspace already contains a copy of `input`.
+pub fn srht_in_place(workspace: &mut [f32], signs: &[f32]) {
+    assert_eq!(
+        workspace.len(),
+        signs.len(),
+        "srht input/sign length mismatch"
+    );
     for (value, sign) in workspace.iter_mut().zip(signs) {
         *value *= *sign;
     }
     if let Some(tile_size) = tile_dim(workspace.len()) {
-        orthonormal_fwht_tiled_in_place(&mut workspace, tile_size);
+        orthonormal_fwht_tiled_in_place(workspace, tile_size);
     } else {
-        orthonormal_fwht_in_place(&mut workspace);
+        orthonormal_fwht_in_place(workspace);
     }
+}
+
+/// In-place inverse SRHT. The caller owns the workspace buffer; this
+/// function does not allocate. Equivalent to `inverse_srht(input, signs)`
+/// when the workspace already contains a copy of `input`.
+pub fn inverse_srht_in_place(workspace: &mut [f32], signs: &[f32]) {
+    assert_eq!(
+        workspace.len(),
+        signs.len(),
+        "inverse srht input/sign length mismatch"
+    );
+    if let Some(tile_size) = tile_dim(workspace.len()) {
+        orthonormal_fwht_tiled_in_place(workspace, tile_size);
+    } else {
+        orthonormal_fwht_in_place(workspace);
+    }
+    for (value, sign) in workspace.iter_mut().zip(signs) {
+        *value *= *sign;
+    }
+}
+
+pub fn srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
+    let mut workspace = input.to_vec();
+    srht_in_place(&mut workspace, signs);
     workspace
 }
 
 pub fn inverse_srht(input: &[f32], signs: &[f32]) -> Vec<f32> {
-    assert_eq!(
-        input.len(),
-        signs.len(),
-        "inverse srht input/sign length mismatch"
-    );
     let mut workspace = input.to_vec();
-    if let Some(tile_size) = tile_dim(workspace.len()) {
-        orthonormal_fwht_tiled_in_place(&mut workspace, tile_size);
-    } else {
-        orthonormal_fwht_in_place(&mut workspace);
-    }
-    for (value, sign) in workspace.iter_mut().zip(signs) {
-        *value *= *sign;
-    }
+    inverse_srht_in_place(&mut workspace, signs);
     workspace
 }
 
