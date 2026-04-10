@@ -260,6 +260,10 @@ pub(super) unsafe fn build_heap_tuple(
     let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
         .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
 
+    if !gamma.is_finite() {
+        pgrx::error!("tqhnsw does not support non-finite gamma values");
+    }
+
     BuildTuple {
         heap_tids: vec![heap_tid],
         dimensions,
@@ -293,6 +297,10 @@ unsafe fn build_heap_tuple_with_source(
 
     let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
         .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
+
+    if !gamma.is_finite() {
+        pgrx::error!("tqhnsw does not support non-finite gamma values");
+    }
 
     if source_vector.is_empty() {
         pgrx::error!("tqhnsw build_source_column arrays must not be empty");
