@@ -5,7 +5,7 @@ to level 0. Once the fix lands, coder-1 needs to validate the fixed hierarchy's
 structure. There is no diagnostic that shows the full level distribution or
 per-level connectivity of the persisted graph.
 Priority: batch 2
-Status: ready
+Status: done
 
 ## Prompt
 
@@ -75,3 +75,29 @@ cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
 ```
 
 Branch from current upstream main. Push branch for review.
+
+## Completion Notes
+
+**Branch:** `coder2/10053-per-level-graph-diagnostic`
+
+**Implementation:** Added `tqhnsw_graph_hierarchy_summary(index_oid)` as a `#[pg_extern]` function
+inside the `#[cfg(any(test, feature = "pg_test"))]` `tests` module in `src/lib.rs`.
+
+**Approach:**
+- Uses `open_valid_tqhnsw_index` for AM validation (same pattern as cost/planner snapshot functions)
+- Uses `debug_index_pages` to read all data pages (reuses existing test infrastructure)
+- Builds a neighbor TID → decoded `TqNeighborTuple` map
+- Iterates element tuples, for each layer 0..=element.level computes valid neighbor count
+  using the same slot bounds logic as `layer_slot_bounds` in `graph.rs`
+- Aggregates per-level: node_count, avg/min/max neighbor count, expected_max_neighbors
+
+**Decisions:**
+- Reimplemented `layer_slot_bounds` logic inline (3 lines) rather than making the private
+  function in `graph.rs` public, to avoid changing files outside task scope
+- Used `debug_index_pages` rather than raw page scanning to stay consistent with existing
+  test patterns and avoid duplicating buffer management code
+- Stored decoded `TqNeighborTuple` in the map rather than raw bytes to avoid lifetime issues
+
+**Validation:**
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`: clean pass
+- `cargo test`: all tests pass (2 passed, 20 ignored, 13 size_of_assertions passed)
