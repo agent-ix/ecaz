@@ -1599,13 +1599,18 @@ mod tests {
             .expect("dimensions should be non-null"),
             4
         );
+        let max_level = Spi::get_one::<i32>(
+            "SELECT max_level FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("max level should be non-null");
         assert_eq!(
             Spi::get_one::<f64>(
                 "SELECT resolved_tree_height FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("resolved tree height should be non-null"),
-            0.0
+            f64::from(max_level)
         );
         assert_eq!(
             Spi::get_one::<String>(

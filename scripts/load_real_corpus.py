@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import hashlib
 import json
 import math
 import os
@@ -79,6 +80,14 @@ class VectorNormStats:
                 "inner-product/cosine benchmark assumptions may not hold",
                 file=sys.stderr,
             )
+
+
+@dataclass
+class VectorFileStats:
+    rows: int
+    sha256: str
+    first_id: int | None
+    last_id: int | None
 
 
 def _validate_ident(name: str, label: str) -> str:
@@ -161,37 +170,136 @@ def _drop_relation_if_exists(database: str, name: str, kind: str) -> None:
     _psql(database, f"DROP {keyword} IF EXISTS {name} CASCADE")
 
 
+def _parse_vector_line(path: str, line_number: int, line: str, dim: int) -> tuple[int, List[float]]:
+    try:
+        id_str, json_str = line.split("\t", 1)
+    except ValueError as exc:
+        raise ValueError(
+            f"{path}:{line_number}: expected '<id>\\t<json_array>' line, got {line!r}"
+        ) from exc
+    try:
+        row_id = int(id_str)
+    except ValueError as exc:
+        raise ValueError(f"{path}:{line_number}: id {id_str!r} is not an integer") from exc
+    try:
+        values = json.loads(json_str)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{path}:{line_number}: embedding column is not valid JSON ({exc})"
+        ) from exc
+    if not isinstance(values, list):
+        raise ValueError(
+            f"{path}:{line_number}: embedding must be a JSON array, got {type(values).__name__}"
+        )
+    if len(values) != dim:
+        raise ValueError(f"{path}:{line_number}: expected dim {dim}, got {len(values)}")
+    return row_id, [float(v) for v in values]
+
+
 def _read_vector_file(path: str, dim: int) -> Iterable[tuple[int, List[float]]]:
     with open(path, "r", encoding="utf-8") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             line = raw_line.rstrip("\r\n")
             if not line:
                 continue
-            try:
-                id_str, json_str = line.split("\t", 1)
-            except ValueError as exc:
-                raise ValueError(
-                    f"{path}:{line_number}: expected '<id>\\t<json_array>' line, got {line!r}"
-                ) from exc
-            try:
-                row_id = int(id_str)
-            except ValueError as exc:
-                raise ValueError(f"{path}:{line_number}: id {id_str!r} is not an integer") from exc
-            try:
-                values = json.loads(json_str)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"{path}:{line_number}: embedding column is not valid JSON ({exc})"
-                ) from exc
-            if not isinstance(values, list):
-                raise ValueError(
-                    f"{path}:{line_number}: embedding must be a JSON array, got {type(values).__name__}"
-                )
-            if len(values) != dim:
-                raise ValueError(
-                    f"{path}:{line_number}: expected dim {dim}, got {len(values)}"
-                )
-            yield row_id, [float(v) for v in values]
+            yield _parse_vector_line(path, line_number, line, dim)
+
+
+def _inspect_vector_file(path: str, dim: int) -> VectorFileStats:
+    sha = hashlib.sha256()
+    rows = 0
+    first_id: int | None = None
+    last_id: int | None = None
+    with open(path, "rb") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            sha.update(raw_line)
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+            if not line:
+                continue
+            row_id, _ = _parse_vector_line(path, line_number, line, dim)
+            if first_id is None:
+                first_id = row_id
+            last_id = row_id
+            rows += 1
+    return VectorFileStats(rows=rows, sha256=sha.hexdigest(), first_id=first_id, last_id=last_id)
+
+
+def _derive_manifest_path(corpus_file: str, queries_file: str) -> str | None:
+    corpus_suffix = "_corpus.tsv"
+    queries_suffix = "_queries.tsv"
+    if not corpus_file.endswith(corpus_suffix) or not queries_file.endswith(queries_suffix):
+        return None
+    corpus_base = corpus_file[: -len(corpus_suffix)]
+    queries_base = queries_file[: -len(queries_suffix)]
+    if corpus_base != queries_base:
+        return None
+    return corpus_base + "_manifest.json"
+
+
+def _verify_manifest(
+    manifest_path: str,
+    prefix: str,
+    corpus_file: str,
+    queries_file: str,
+    dim: int,
+    *,
+    allow_mismatch: bool,
+) -> None:
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+
+    problems: list[str] = []
+    if manifest.get("manifest_version") != 1:
+        problems.append(
+            f"manifest_version={manifest.get('manifest_version')!r} (expected 1)"
+        )
+    if manifest.get("prefix") != prefix:
+        problems.append(f"prefix={manifest.get('prefix')!r} (expected {prefix!r})")
+    if manifest.get("dimension") != dim:
+        problems.append(f"dimension={manifest.get('dimension')!r} (expected {dim})")
+
+    corpus_stats = _inspect_vector_file(corpus_file, dim)
+    query_stats = _inspect_vector_file(queries_file, dim)
+    checks = [
+        ("corpus", corpus_file, corpus_stats),
+        ("queries", queries_file, query_stats),
+    ]
+    for label, path, stats in checks:
+        section = manifest.get(label, {})
+        expected_basename = section.get("file")
+        if expected_basename and expected_basename != os.path.basename(path):
+            problems.append(
+                f"{label}.file={expected_basename!r} "
+                f"(expected {os.path.basename(path)!r})"
+            )
+        if section.get("rows") != stats.rows:
+            problems.append(f"{label}.rows={section.get('rows')!r} (expected {stats.rows})")
+        if section.get("sha256") != stats.sha256:
+            problems.append(
+                f"{label}.sha256={section.get('sha256')!r} (expected {stats.sha256})"
+            )
+        if section.get("first_id") != stats.first_id:
+            problems.append(
+                f"{label}.first_id={section.get('first_id')!r} (expected {stats.first_id})"
+            )
+        if section.get("last_id") != stats.last_id:
+            problems.append(
+                f"{label}.last_id={section.get('last_id')!r} (expected {stats.last_id})"
+            )
+
+    if problems:
+        message = (
+            f"manifest verification failed for {manifest_path}: " + "; ".join(problems)
+        )
+        if allow_mismatch:
+            print(f"[loader] warning: {message}", file=sys.stderr)
+            return
+        raise ValueError(message)
+
+    print(
+        f"[loader] verified manifest {manifest_path} for prefix {prefix}",
+        file=sys.stderr,
+    )
 
 
 def _format_real_array_literal(values: Sequence[float]) -> str:
@@ -382,6 +490,19 @@ def main() -> int:
         default=os.environ.get("PGDATABASE", "tqvector_bench"),
         help="PostgreSQL database name (defaults to $PGDATABASE or 'tqvector_bench')",
     )
+    parser.add_argument(
+        "--manifest-file",
+        help=(
+            "Optional path to <basename>_manifest.json. If omitted, the loader "
+            "auto-discovers a sibling manifest when the corpus/query files follow "
+            "the canonical <basename>_{corpus,queries}.tsv naming pattern."
+        ),
+    )
+    parser.add_argument(
+        "--allow-manifest-mismatch",
+        action="store_true",
+        help="Continue after manifest verification fails, logging a warning instead of aborting.",
+    )
 
     args = parser.parse_args()
 
@@ -393,8 +514,27 @@ def main() -> int:
 
     corpus_table = f"{prefix}_corpus"
     queries_table = f"{prefix}_queries"
+    manifest_path = args.manifest_file or _derive_manifest_path(
+        args.corpus_file, args.queries_file
+    )
 
     try:
+        if manifest_path and os.path.exists(manifest_path):
+            _verify_manifest(
+                manifest_path,
+                prefix,
+                args.corpus_file,
+                args.queries_file,
+                args.dim,
+                allow_mismatch=args.allow_manifest_mismatch,
+            )
+        elif args.manifest_file:
+            raise FileNotFoundError(f"manifest file {args.manifest_file!r} does not exist")
+        elif manifest_path:
+            print(
+                f"[loader] no sibling manifest found at {manifest_path}; continuing without manifest verification",
+                file=sys.stderr,
+            )
         corpus_rows = _ensure_corpus_table(
             args.database,
             corpus_table,

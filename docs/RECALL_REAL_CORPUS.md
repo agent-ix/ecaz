@@ -40,6 +40,21 @@ subset for the recall gate is:
 Larger subsets (full 1M) are allowed but should be opt-in: A4 needs the 50k
 shape because that is the surface `NFR-003` declares its targets against.
 
+### Canonical Selection Rule
+
+The default subsets are **not** "any random 50k rows". They are pinned by a
+deterministic rule over the full parquet release:
+
+- sort the full dataset by `id` ascending
+- `tqhnsw_real_50k` corpus: rows `[0, 49_999]`
+- `tqhnsw_real_50k` queries: rows `[50_000, 50_999]`
+- `tqhnsw_real_10k` corpus: rows `[0, 9_999]`
+- `tqhnsw_real_10k` queries: rows `[10_000, 10_199]`
+
+The canonical conversion recipe is implemented in
+`scripts/qdrant_dbpedia_to_tsv.py`. Official first-run A4 numbers should be
+derived from that script, not from ad hoc parquet slicing.
+
 ## Local File Contract
 
 The loader and probe path do not download anything. The dataset is staged
@@ -69,6 +84,24 @@ inspection over compactness:
 - JSON arrays survive copy/paste and `head -1`, unlike binary formats.
 - We do not optimize for I/O throughput on the loader path. The reusable
   fixture flow loads once.
+
+### Manifest File: `<basename>_manifest.json`
+
+Canonical conversions also emit a sibling manifest:
+
+- `manifest_version`
+- `prefix`
+- dataset/source metadata
+- the exact selection rule
+- dimensionality
+- per-file row counts
+- per-file SHA-256 digests
+- first/last ids for the corpus and query files
+
+The loader auto-discovers and verifies this manifest when the staged files
+follow the canonical `<basename>_{corpus,queries}.tsv` naming pattern. If the
+hashes differ, the loader aborts unless the operator passes
+`--allow-manifest-mismatch`.
 
 ## Reusable Fixture Flow
 
@@ -128,8 +161,17 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
 
 ## How to Use
 
-1. Stage the corpus and query files at the documented paths (see
-   `scripts/load_real_corpus.py --help`).
+1. Convert the parquet release into canonical TSV + manifest files:
+   ```bash
+   python3 scripts/qdrant_dbpedia_to_tsv.py \
+       --profile tqhnsw_real_50k \
+       --parquet /path/to/dbpedia-entities-openai-1M.parquet \
+       --output-dir /path/to/staged
+   ```
+   This requires `pyarrow` to be installed locally. The converter writes:
+   - `tqhnsw_real_50k_corpus.tsv`
+   - `tqhnsw_real_50k_queries.tsv`
+   - `tqhnsw_real_50k_manifest.json`
 2. Install the `pg_test` build of the extension before running the SQL
    recall surfaces from `psql`:
    ```bash
@@ -143,10 +185,12 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    ```bash
    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
        --prefix tqhnsw_real_50k \
-       --corpus-file /path/to/dbpedia_50k_corpus.tsv \
-       --queries-file /path/to/dbpedia_1k_queries.tsv \
+       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
        --m 8 16
    ```
+   If a sibling `tqhnsw_real_50k_manifest.json` exists, the loader verifies it
+   automatically before loading. You can also pass `--manifest-file` explicitly.
    For the repo-local scratch `pg17` cluster, use
    `scripts/load_real_corpus_scratch.sh` to pin the expected socket, port,
    database, and `psql` binary. The scratch helper defaults `PGDATABASE` to
@@ -185,6 +229,10 @@ Real-corpus A4 results MUST be recorded in the same durable style as the
 synthetic gate: dataset name, row count, query count, seed, m, ef_search,
 graph Recall@10, exact-quantized Recall@10, and a clear pass/fail line against
 the published `NFR-003` gates.
+
+For the first official DBpedia run, commit the generated manifest alongside the
+benchmark/report packet so other reviewers can verify they are measuring the
+same staged subset.
 
 The first real-corpus run is documented in
 `review/218-a4-real-corpus-recall-lane`.

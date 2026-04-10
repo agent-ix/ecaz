@@ -1,6 +1,6 @@
 # Task 12: Real-Corpus Recall Validation
 
-Status: lane shipped — local-file loader, external-corpus probe surface, and gate report are merged. Real DBpedia run is staged out-of-band by the user; the lane no longer blocks on infrastructure.
+Status: lane in progress — loader/probe infrastructure is merged, and the canonical subset/manifest contract is now wired in. The first official DBpedia A4 run is still staged out-of-band by the user because it requires the actual parquet release.
 
 ## Scope
 
@@ -33,6 +33,13 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 - [x] **Dataset contract.** Documented in `docs/RECALL_REAL_CORPUS.md`. Primary: Qdrant
   `dbpedia-entities-openai-1M`; default working subset `tqhnsw_real_50k` (50k corpus, 1k queries).
   Local file format: TSV with `<id>\t<json_array>` columns, no header.
+- [x] **Canonical subset rule.** `scripts/qdrant_dbpedia_to_tsv.py` pins the default subsets by
+  sorting the full parquet release by `id` ascending, then taking rows `[0, 49_999]` / `[50_000,
+  50_999]` for `tqhnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `tqhnsw_real_10k`.
+- [x] **Manifest contract.** The converter emits `<prefix>_manifest.json` with SHA-256 digests,
+  counts, id ranges, dimensionality, and selection metadata. `scripts/load_real_corpus.py`
+  auto-discovers and verifies the sibling manifest (or takes `--manifest-file` explicitly) before
+  loading, refusing mismatches unless `--allow-manifest-mismatch` is passed.
 - [x] **Local loader path.** `scripts/load_real_corpus.py` ingests `<basename>_corpus.tsv` /
   `<basename>_queries.tsv` via `psql COPY ... FROM STDIN`, then encodes the `embedding tqvector`
   column with `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is
@@ -74,6 +81,8 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 ## Deliverables
 
 - A documented local dataset contract
+- A deterministic parquet -> TSV conversion recipe for the canonical subsets
+- A manifest/hash contract that makes the staged subset reproducible across reruns
 - A loader script / SQL path for corpus and query tables
 - Reusable relation-backed recall measurement on external data
 - A benchmark report or review packet with the first real-corpus A4 results
