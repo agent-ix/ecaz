@@ -8524,21 +8524,42 @@ mod tests {
         let queries =
             random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
 
-        for (id, vector) in corpus.iter().enumerate() {
-            let source = format_recall_vector_sql_literal(vector);
-            Spi::run(&format!(
-                "INSERT INTO {corpus_table} (id, source, embedding) VALUES \
-                 ({id}, {source}, encode_to_tqvector({source}, {RECALL_BITS}, {RECALL_SEED}))"
-            ))
-            .expect("smoke fixture corpus insert should succeed");
-        }
-        for (id, vector) in queries.iter().enumerate() {
-            let source = format_recall_vector_sql_literal(vector);
-            Spi::run(&format!(
-                "INSERT INTO {queries_table} (id, source) VALUES ({id}, {source})"
-            ))
-            .expect("smoke fixture query insert should succeed");
-        }
+        // Seed both tables with a single multi-row INSERT each instead of
+        // one statement per row. pgrx 0.17 does not expose a stable
+        // SPI-level COPY FROM STDIN API, so a batched INSERT is the fastest
+        // transport available without adding a Postgres client crate. Row
+        // order, ids, vector floats, and the encode call are preserved
+        // byte-for-byte from the previous per-row path so the recall summary
+        // remains deterministic.
+        let corpus_values = corpus
+            .iter()
+            .enumerate()
+            .map(|(id, vector)| {
+                let source = format_recall_vector_sql_literal(vector);
+                format!(
+                    "({id}, {source}, encode_to_tqvector({source}, {RECALL_BITS}, {RECALL_SEED}))"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        Spi::run(&format!(
+            "INSERT INTO {corpus_table} (id, source, embedding) VALUES {corpus_values}"
+        ))
+        .expect("smoke fixture corpus batch insert should succeed");
+
+        let query_values = queries
+            .iter()
+            .enumerate()
+            .map(|(id, vector)| {
+                let source = format_recall_vector_sql_literal(vector);
+                format!("({id}, {source})")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        Spi::run(&format!(
+            "INSERT INTO {queries_table} (id, source) VALUES {query_values}"
+        ))
+        .expect("smoke fixture query batch insert should succeed");
 
         for m in [8_i32, 16_i32] {
             let index_name = format!("{prefix}_m{m}_idx");
@@ -8553,6 +8574,11 @@ mod tests {
     }
 
     #[pg_test]
+    // Ignored because it requires the `pg_test` cargo feature and a scratch
+    // pgrx test cluster to run, not because of long seeding. Seeding is
+    // batched in `create_external_recall_smoke_fixture`; the remaining
+    // wall-clock cost lives in the probe / gate phases below, which are
+    // out of scope for the seeding fix.
     #[ignore]
     fn test_tqhnsw_graph_scan_recall_external_smoke_500() {
         // Smoke test for the external corpus / query / index probe path. The
