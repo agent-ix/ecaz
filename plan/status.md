@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-09
-Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path and fixture-backed 10K gate helpers; synthetic/reference contradiction established; real-corpus recall lane added; SIMD branch at `d38e625`
+Last updated: 2026-04-10
+Basis: real-corpus recall lane is live on `main`; canonical DBpedia-derived `10K` gate passes strongly; directional `50K` gate slices are healthy; broader `50K` reruns remain a harness-cost problem
 
 ## Reading Guide
 
@@ -28,13 +28,13 @@ Basis: post-A3 A4 debugging after landing the tiled-FWHT `1536` quantizer path a
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done | 100% | Landed as part of the A3 close arc |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — failing** | 70% | Repaired 10K harness still hard-fails (`8.4% / 21.8% / 26.8% / 35.3%`), but the production `1536` tiled-FWHT quantizer path now lifts exact-only `1k` Recall@10 to `77.0%` (uniform) / `81.5%` (clustered), a live `1k` graph-fixture probe passes `exact >= 70%`, `graph >= 70%`, and fixture-backed 10K gate helpers now separate reset from reusable reports; next bottleneck is still one-time 10K index build cost |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — real-data pass established, broader signoff pending** | 88% | Synthetic `10K` still hard-fails and is no longer treated as a credible gate surface by itself, but canonical real `10K` now passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`), and real `50K` directional slices are healthy (`10`-query gate: `87.0% / 90.0% / 91.0% / 92.0%`; `25`-query threshold summary: graph `93.6%`, exact `96.0%`); next bottleneck is broader real-corpus signoff cost |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
-| `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | Ready | 10% | New Task 12; needed because raw reference HNSW is also weak on the current synthetic fixtures |
+| `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **In progress** | 90% | Loader, canonical subset contract, manifest verification, and first real `10K` / directional `50K` results are landed; remaining work is broader rerun practicality and signoff reporting |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 5% | Blocked on `A4` and planner gate retirement |
 
@@ -155,8 +155,8 @@ Release / quality-gate rollup: 58%
 
 1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
 2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
-3. **Now:** A4 remains open, but the latest reference baselines show the current synthetic fixtures are not a credible gate surface by themselves: raw source-vector `hnsw-rs` reaches only `29.0%` (uniform) / `26.0%` (clustered) at `(m=8, ef=128)` and `66.5%` at `(m=16, ef=200)`. The highest-value next move is therefore C2 / Task 12: run the existing recall probes on a real `1536`-dimensional embedding corpus consistent with `NFR-003`.
-4. After A4 is fixed and passes on a credible corpus: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
+3. **Now:** A4 remains open, but the live real-data picture is healthy: canonical real `10K` passes strongly and directional real `50K` slices are above the gate. The highest-value next move is therefore not more synthetic debugging, but deciding and recording the broader real-corpus signoff surface while making that rerun cheaper.
+4. After A4 is signed off on the chosen real-corpus surface: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
 5. Full SQL benchmark result generation after A5/A6.
 
 ## Current Major Blockers
@@ -164,8 +164,8 @@ Release / quality-gate rollup: 58%
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
-| Live graph-first recall gate still fails on the repaired 10K corpus (`21.8%` Recall@10 at `m=8, ef=128`), and raw reference HNSW is also weak on the current synthetic fixtures | `A4`, `C1`, `C2`, `D2` | Runtime / benchmark methodology lane |
-| A4 still lacks a real `1536`-dimensional embedding corpus path consistent with `NFR-003` | `A4`, `C2`, `C1` | Benchmark methodology lane |
+| Synthetic `10K` still fails badly and remains misleading as a gate surface, even though real `10K` / directional `50K` now look healthy | `A4`, `C1`, `C2`, `D2` | Benchmark methodology lane |
+| Broader real `50K` signoff reruns are still expensive in the current external-summary / gate harness | `A4`, `C2`, `C1` | Harness lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
 | ADR-011 planner gate is still active | `D2` | Planner lane after `A4` |

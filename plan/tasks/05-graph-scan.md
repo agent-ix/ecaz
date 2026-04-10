@@ -1,6 +1,6 @@
 # Task 05: Graph Scan
 
-Status: A3 complete, A4 in progress; 1536 tiled-FWHT quantizer path landed, fixture-backed 10K gate helpers landed, larger rerun still pending
+Status: A3 complete, A4 in progress; synthetic contradiction established, real 10K gate now passes strongly, and real 50K directional gate slices are healthy while broader reruns remain expensive
 
 Progress notes:
 - Build path is complete.
@@ -66,6 +66,21 @@ Complete the HNSW scan path from module split through validated recall measureme
       carry the A4 gate alone.
     - Task 12 (`12-real-corpus-recall.md`) now tracks the real-corpus benchmark lane required by
       `NFR-003` so A4 can be evaluated on DBpedia OpenAI embeddings or a documented equivalent.
+  - 2026-04-10 real-corpus follow-up:
+    - Canonical DBpedia-derived subsets are now staged and loadable on `main`.
+    - Full real `10K` gate report on the canonical subset passes strongly:
+      - `(m=8, ef=40)`: `97.1%`
+      - `(m=8, ef=128)`: `97.3%`
+      - `(m=8, ef=200)`: `97.4%`
+      - `(m=16, ef=200)`: `97.5%`
+    - The exact-vs-graph gap on real `10K` is small at the threshold point: graph `97.2%` vs
+      exact quantized `97.6%` over a `50`-query slice.
+    - Directional real `50K` evidence is also healthy:
+      - four-config gate report over `10` real queries: `87.0% / 90.0% / 91.0% / 92.0%`
+      - threshold-point summary over `25` real queries: graph `93.6%`, exact quantized `96.0%`
+    - That moves the main uncertainty from "does the live graph path fundamentally fail recall" to
+      "what is the right broader real-corpus signoff surface, and how do we make that rerun cheap
+      enough to use interactively."
 
 ## Owns
 
@@ -104,7 +119,9 @@ Complete the HNSW scan path from module split through validated recall measureme
 - The traversal helper should be generic over scoring function signature to support both scan (LUT `score_ip_encoded`) and insert (code-to-code `score_ip_codes_lite`).
 - A4 is a gate: if recall fails, all downstream work (insert, vacuum, benchmarks) is premature.
 - Ordered result buffering / graph-first execution are now in place on `main`.
-- A4 currently remains a stop-ship gate. Planner activation, insert, vacuum, and SIMD merge should stay blocked until the project decides whether to change the measurement path / dataset assumptions or to raise recall on the current quantized path.
+- A4 currently remains a stop-ship gate. Planner activation, insert, vacuum, and SIMD merge
+  should stay blocked until the project records the broader real-corpus signoff surface it wants to
+  trust, even though current real `10K` and directional real `50K` evidence now look healthy.
 - Post-v0.1 follow-up notes for the A3 runtime arc:
   1. The raw `self as *mut Self` aliasing pattern in `GraphTraversalPrefetchContext::run` is
      contained and approved, but a future search API that takes a visitor/trait object would be

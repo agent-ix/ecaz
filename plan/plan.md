@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; fixture-backed 10K gate helpers landed; A4 still open; real-corpus recall lane added as Task 12 / C2).
+Last updated: 2026-04-10 (real-corpus lane live on `main`; canonical real `10K` gate passes strongly; directional real `50K` gate slices are healthy; broader reruns still expensive).
 
 ## Current Task Board
 
@@ -11,7 +11,7 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; f
 - `A1` AM split: **done**
 - `A2` graph/search traversal seam: **done** (search seam extraction complete)
 - `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
-- `A4` recall gate: **in progress — failing** ← current focus
+- `A4` recall gate: **in progress — real-data pass established, broader signoff pending** ← current focus
 - `A5` graph-aware insert: blocked on A4
 - `A6` vacuum repair: blocked on A4
 
@@ -19,16 +19,16 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; f
 
 - `B1` SIMD: **in progress** (coder-2, feature branch; merge after A4 confirms scalar correctness)
 - `B2` CI / fuzz / quality gates: mostly complete (TC-036 unsafe audit remaining)
-- `C2` real-corpus recall lane: **ready** (new; resolves the A4 / NFR-003 dataset contradiction)
+- `C2` real-corpus recall lane: **in progress** (loader + first real results landed; broader signoff/reporting remains)
 - `D1` planner scaffold: **done** (merged to main from planner-integration-lane + planner-part2)
 - `D2` planner activation: blocked on A4 and ADR-011 retirement
 
 ### Current sequencing
 
-1. **Coder-1:** A4 synthetic/runtime debugging established that the current deterministic synthetic fixtures are reproducible but not a credible gate surface by themselves: raw reference `hnsw-rs` source-graph baselines only reach `29.0%` / `26.0%` at `(m=8, ef=128)` and `66.5%` at `(m=16, ef=200)`.
-2. **New immediate lane:** C2 / Task 12 — load DBpedia OpenAI embeddings or a documented equivalent and rerun the existing relation-based recall probes on a real corpus consistent with `NFR-003`.
-3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4.
-4. After A4 is fixed and passes on a credible corpus: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
+1. **Coder-1:** A4 synthetic/runtime debugging established that the in-repo synthetic fixtures are reproducible but not credible gate surfaces by themselves.
+2. **Current immediate lane:** C2 / Task 12 is now live on `main`: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`), and directional real `50K` slices are also healthy (`10`-query gate: `87.0% / 90.0% / 91.0% / 92.0%`; `25`-query threshold summary: graph `93.6%`, exact `96.0%`).
+3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4 signoff.
+4. After A4 is signed off on the chosen real-corpus surface: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
 5. Full SQL benchmark result generation after A5/A6.
 
 ## Requirements Summary
@@ -68,7 +68,7 @@ Last updated: 2026-04-09 (A3 closed; production `1536` tiled-FWHT path landed; f
 
 - [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
 - [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
-- [ ] **NFR-003**: Recall quality and benchmark methodology. _Quantizer-level harness done; the production `1536` tiled-FWHT path now materially improves cheap `1k` exact/live evidence, fixture-backed 10K report helpers landed, and new reference baselines show the current synthetic fixtures are not a credible gate surface by themselves. Task 12 / C2 now tracks the required real-corpus lane._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _Real-corpus lane is now live on `main`: canonical real `10K` passes strongly and directional real `50K` slices are healthy. Remaining work is broader real-corpus signoff and cheaper reruns, not proving recall on the old synthetic gate alone._
 - [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
 - [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 
@@ -277,7 +277,7 @@ All items are serial because each depends on the previous.
   2. Recall@10 measurement (set intersection)
   3. Test at multiple configurations: (m=8, ef=40), (m=8, ef=128), (m=8, ef=200), (m=16, ef=200)
   4. Report recall numbers — these anchor all downstream quality claims
-- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Current 2026-04-08 evidence on repaired 10K regular-table fixtures is `8.4% / 21.8% / 26.8% / 35.3%` for `(8,40) / (8,128) / (8,200) / (16,200)`, so A4 remains open. The 2026-04-09 tiled-FWHT quantizer slice materially improves cheap `1k` exact/live recall evidence, and fixture-backed 10K report helpers now exist, but the larger rerun has not happened yet because one-time 10K index build still dominates the harness.
+- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Old 2026-04-08 synthetic `10K` evidence (`8.4% / 21.8% / 26.8% / 35.3%`) remains a useful contradiction, but not a credible signoff surface by itself. Current 2026-04-10 real-data evidence is materially better: canonical real `10K` passes strongly at `97.1% / 97.3% / 97.4% / 97.5%`, and directional real `50K` slices also pass (`10`-query gate: `87.0% / 90.0% / 91.0% / 92.0%`; `25`-query threshold summary: graph `93.6%`, exact `96.0%`). A4 therefore remains open only until the project records the broader real-corpus signoff surface it wants to trust.
 
 #### A5: Graph-Aware Insert (FR-016)
 - **Scope:** Replace disconnected-append insert with graph-connected insert. Layer assignment, greedy descent via A2 helpers, beam search for neighbors, back-link updates, entry point promotion, drift statistics.

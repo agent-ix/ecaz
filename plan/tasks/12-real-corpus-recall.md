@@ -1,6 +1,6 @@
 # Task 12: Real-Corpus Recall Validation
 
-Status: lane in progress — loader/probe infrastructure is merged, and the canonical subset/manifest contract is now wired in. The first official DBpedia A4 run is still staged out-of-band by the user because it requires the actual parquet release.
+Status: lane in progress — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, and real `50K` directional slices are healthy; broader reruns are still limited by harness cost.
 
 ## Scope
 
