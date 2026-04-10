@@ -908,7 +908,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
                 element
                     .heaptids
                     .into_iter()
-                .map(|heap_tid| debug_item_pointer_coords(heap_tid)),
+                    .map(debug_item_pointer_coords),
             );
         }
         heap_tids
@@ -1034,7 +1034,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
                 element
                     .heaptids
                     .into_iter()
-                    .map(|heap_tid| debug_item_pointer_coords(heap_tid)),
+                    .map(debug_item_pointer_coords),
             );
         }
         heap_tids
@@ -1237,7 +1237,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
                 element
                     .heaptids
                     .into_iter()
-                    .map(|heap_tid| debug_item_pointer_coords(heap_tid)),
+                    .map(debug_item_pointer_coords),
             );
         }
         heap_tids

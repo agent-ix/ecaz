@@ -32,6 +32,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from typing import Iterable, List, Sequence
@@ -50,8 +51,20 @@ def _validate_ident(name: str, label: str) -> str:
     return name
 
 
+def _resolve_psql_bin() -> str:
+    env_path = os.environ.get("TQV_PSQL_BIN")
+    if env_path:
+        return env_path
+    psql = shutil.which("psql")
+    if psql:
+        return psql
+    raise FileNotFoundError(
+        "psql not found on PATH; set TQV_PSQL_BIN to an explicit psql binary"
+    )
+
+
 def _psql(database: str, sql: str, *, capture: bool = False) -> str:
-    cmd = ["psql", database, "-v", "ON_ERROR_STOP=1"]
+    cmd = [_resolve_psql_bin(), database, "-v", "ON_ERROR_STOP=1"]
     if capture:
         cmd.extend(["-t", "-A", "-c", sql])
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -62,7 +75,7 @@ def _psql(database: str, sql: str, *, capture: bool = False) -> str:
 
 
 def _psql_copy(database: str, sql: str, payload: Iterable[str]) -> None:
-    cmd = ["psql", database, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql]
+    cmd = [_resolve_psql_bin(), database, "-v", "ON_ERROR_STOP=1", "-q", "-c", sql]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
     assert proc.stdin is not None
     try:

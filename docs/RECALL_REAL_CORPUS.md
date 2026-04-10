@@ -125,7 +125,16 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
 
 1. Stage the corpus and query files at the documented paths (see
    `scripts/load_real_corpus.py --help`).
-2. Run the loader:
+2. Install the `pg_test` build of the extension before running the SQL
+   recall surfaces from `psql`:
+   ```bash
+   PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx install --release --test \
+       --pg-config /home/peter/.pgrx/17.9/pgrx-install/bin/pg_config \
+       --features 'pg17 pg_test' --no-default-features
+   ```
+   If `psql` is not already on `PATH`, set `TQV_PSQL_BIN` to an explicit
+   client binary before invoking the loader.
+3. Run the loader:
    ```bash
    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
        --prefix tqhnsw_real_50k \
@@ -133,7 +142,10 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
        --queries-file /path/to/dbpedia_1k_queries.tsv \
        --m 8 16
    ```
-3. Run the A4 gate report:
+   For the repo-local scratch `pg17` cluster, use
+   `scripts/load_real_corpus_scratch.sh` to pin the expected socket, port,
+   database, and `psql` binary.
+4. Run the A4 gate report:
    ```sql
    SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report(
        'tqhnsw_real_50k_corpus',
@@ -149,7 +161,7 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    8 |       200 |        0.xx  |              0.93 | true|false
    16|       200 |        0.xx  |              0.97 | true|false
    ```
-4. For per-query detail, use:
+5. For per-query detail, use:
    ```sql
    SELECT * FROM tqhnsw_graph_scan_recall_external_summary(
        'tqhnsw_real_50k_corpus',
