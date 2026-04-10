@@ -39,6 +39,12 @@ IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'encode_to_tqvector_wrapper';
 
+CREATE FUNCTION tqvector_encode_many(real[], integer, integer, bigint)
+RETURNS tqvector[]
+IMMUTABLE STRICT PARALLEL SAFE
+LANGUAGE c
+AS 'MODULE_PATHNAME', 'tqvector_encode_many_wrapper';
+
 CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE

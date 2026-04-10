@@ -431,6 +431,78 @@ fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
     encode_embedding_to_tqvector(embedding, bits, seed).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
+/// Bulk variant of `encode_to_tqvector`. The first argument is a flat
+/// `real[]` containing `n * dim` floats laid out row-major (vector 0
+/// followed by vector 1, etc.); the second argument is the per-row
+/// dimension. Returns one `tqvector` per input row, in input order.
+///
+/// **Why a flat array instead of `real[][]`:** pgrx 0.17 does not
+/// expose multi-dimensional Postgres arrays as a clean Rust shape
+/// (`Array<T>` is one-dimensional and a 2-D `real[][]` would flatten
+/// without preserving the dim metadata at the Rust boundary). The
+/// flat-plus-dim shape is trivially supported, makes the row count
+/// derivable from `embeddings.len() / dim`, and matches every pgrx
+/// version. SQL callers can build the flat array with
+/// `unnest(...)` + `array_agg(...)` or by concatenating per-row
+/// `real[]` literals.
+///
+/// The bulk surface produces, for each row at position `i`, the
+/// **byte-for-byte identical** `tqvector` payload that
+/// `encode_to_tqvector(row, bits, seed)` would produce in a single
+/// call. The win comes from amortizing the cache lookup, the SQL
+/// parse, and the pgrx argument decoding across the whole batch.
+fn encode_embeddings_bulk(
+    embeddings: Vec<f32>,
+    dim: i32,
+    bits: i32,
+    seed: i64,
+) -> Result<Vec<Vec<u8>>, String> {
+    let dim_usize = usize::try_from(dim).map_err(|_| format!("dim must be positive, got {dim}"))?;
+    if dim_usize == 0 {
+        return Err("dim must be positive".into());
+    }
+    if embeddings.len() % dim_usize != 0 {
+        return Err(format!(
+            "embeddings length {} is not a multiple of dim {dim_usize}",
+            embeddings.len()
+        ));
+    }
+    let bits_u8 = u8::try_from(bits).map_err(|_| "bits must fit into u8".to_string())?;
+    validate_bits(bits_u8)?;
+    let dim_u16 = u16::try_from(dim_usize)
+        .map_err(|_| format!("embedding dimension {dim_usize} exceeds maximum 65535"))?;
+    let seed_u64 = seed as u64;
+
+    // One cache lookup for the entire batch — the headline win versus
+    // calling `encode_to_tqvector` per row, which takes the
+    // `ProdQuantizer::cached` Mutex on every invocation.
+    let quantizer = ProdQuantizer::cached(dim_usize, bits_u8, seed_u64);
+
+    let row_count = embeddings.len() / dim_usize;
+    let mut out = Vec::with_capacity(row_count);
+    for (row_index, chunk) in embeddings.chunks(dim_usize).enumerate() {
+        if chunk.is_empty() {
+            return Err(format!("row {row_index} is empty"));
+        }
+        let encoded = quantizer.encode(chunk);
+        let mut code_bytes = encoded.mse_packed;
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        out.push(pack(dim_u16, bits_u8, seed_u64, encoded.gamma, &code_bytes));
+    }
+    Ok(out)
+}
+
+#[pg_extern(immutable, strict, parallel_safe, sql = false)]
+fn tqvector_encode_many(
+    embeddings: Vec<f32>,
+    dim: i32,
+    bits: i32,
+    seed: i64,
+) -> Vec<Vec<u8>> {
+    encode_embeddings_bulk(embeddings, dim, bits, seed)
+        .unwrap_or_else(|e| pgrx::error!("tqvector_encode_many: {e}"))
+}
+
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn tqvector_inner_product(a: Vec<u8>, b: Vec<u8>) -> f32 {
     let (dim_a, bits_a, seed_a, _, codes_a) =
@@ -610,6 +682,106 @@ mod unit_tests {
             err.contains("exceeds maximum 65535"),
             "oversized embeddings should fail with an explicit dimension limit error"
         );
+    }
+
+    fn random_unit_vector_lib(dim: usize, seed: u64) -> Vec<f32> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut values: Vec<f32> = (0..dim)
+            .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
+            .collect();
+        let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+        for value in &mut values {
+            *value /= norm.max(f32::EPSILON);
+        }
+        values
+    }
+
+    /// Bit-exact regression test for `encode_embeddings_bulk`. Encodes
+    /// 8 random unit vectors at `(dim=1536, bits=4, seed=42)` two
+    /// ways:
+    /// - 8 separate calls to `encode_embedding_to_tqvector` (the
+    ///   single-row helper that backs the `encode_to_tqvector`
+    ///   `#[pg_extern]`).
+    /// - 1 call to `encode_embeddings_bulk` with the flat array of
+    ///   `8 * 1536` floats.
+    ///
+    /// Asserts each pair of payloads is **byte-for-byte identical**.
+    /// This is the test that catches "scratch reuse leaves stale
+    /// state" or "shared cache produces a different quantizer" bugs.
+    /// It runs without going through pgrx SPI so the feedback loop is
+    /// fast during development.
+    #[test]
+    fn bulk_encode_matches_single_encode_at_1536x4() {
+        const DIM: usize = 1536;
+        const ROWS: usize = 8;
+        const BITS: i32 = 4;
+        const SEED: i64 = 42;
+
+        let vectors: Vec<Vec<f32>> = (0..ROWS as u64)
+            .map(|sample| random_unit_vector_lib(DIM, sample))
+            .collect();
+
+        // Reference: per-row encode via the existing single-row
+        // helper.
+        let single: Vec<Vec<u8>> = vectors
+            .iter()
+            .map(|v| {
+                encode_embedding_to_tqvector(v.clone(), BITS, SEED)
+                    .expect("single-row encode should succeed")
+            })
+            .collect();
+
+        // Bulk: one call with the flat array.
+        let mut flat = Vec::with_capacity(ROWS * DIM);
+        for v in &vectors {
+            flat.extend_from_slice(v);
+        }
+        let bulk = encode_embeddings_bulk(flat, DIM as i32, BITS, SEED)
+            .expect("bulk encode should succeed");
+
+        assert_eq!(bulk.len(), ROWS, "bulk row count mismatch");
+        for (i, (s, b)) in single.iter().zip(bulk.iter()).enumerate() {
+            assert_eq!(s, b, "row {i} byte payload mismatch");
+        }
+    }
+
+    #[test]
+    fn bulk_encode_rejects_length_not_multiple_of_dim() {
+        let err = encode_embeddings_bulk(vec![1.0_f32; 5], 3, 4, 42).unwrap_err();
+        assert!(
+            err.contains("not a multiple of dim"),
+            "length-mismatch error should mention dim, got: {err}"
+        );
+    }
+
+    #[test]
+    fn bulk_encode_rejects_zero_dim() {
+        let err = encode_embeddings_bulk(vec![1.0_f32; 4], 0, 4, 42).unwrap_err();
+        assert!(
+            err.contains("dim must be positive"),
+            "zero-dim should be rejected with a dim error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn bulk_encode_rejects_invalid_bits() {
+        let err = encode_embeddings_bulk(vec![1.0_f32; 4], 4, 9, 42).unwrap_err();
+        assert!(
+            err.contains("bits must be between 2 and 8"),
+            "out-of-range bits should be rejected, got: {err}"
+        );
+    }
+
+    #[test]
+    fn bulk_encode_handles_single_row_batch() {
+        // A 1-row "batch" should still match the per-row path.
+        let vector = random_unit_vector_lib(64, 1234);
+        let single = encode_embedding_to_tqvector(vector.clone(), 4, 42)
+            .expect("single-row encode should succeed");
+        let bulk = encode_embeddings_bulk(vector.clone(), 64, 4, 42)
+            .expect("1-row bulk encode should succeed");
+        assert_eq!(bulk.len(), 1);
+        assert_eq!(bulk[0], single);
     }
 
     #[test]
@@ -1448,6 +1620,93 @@ mod tests {
         .expect("query should return one row");
 
         assert_eq!(bytes, pack(4, 4, 42, 0.5, &[0x11, 0x22, 0x33]));
+    }
+
+    /// Round-trips the bulk encode SQL surface against the single-row
+    /// surface across the SPI boundary. Generates 8 random unit
+    /// vectors at `(dim=1536, bits=4, seed=42)`, encodes each via
+    /// `encode_to_tqvector` for the reference payload, then encodes
+    /// all 8 in one `tqvector_encode_many` call and compares
+    /// `tqvector_send`-bytes element-by-element.
+    ///
+    /// This is the test that catches regressions in the SQL
+    /// argument-decoding shape (flat `real[]` + `dim`), the array
+    /// reshaping by `chunks(dim)`, and the `Vec<Vec<u8>> -> bytea[]`
+    /// (declared as `tqvector[]`) return marshaling.
+    #[pg_test]
+    fn test_tqvector_encode_many_matches_single_encode_at_1536x4() {
+        const DIM: usize = 1536;
+        const ROWS: usize = 8;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0xBADC0FFEE_u64);
+        let mut row_strings: Vec<String> = Vec::with_capacity(ROWS);
+        let mut flat_string = String::from("ARRAY[");
+        for row in 0..ROWS {
+            let mut values: Vec<f32> = (0..DIM)
+                .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
+                .collect();
+            let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+            for v in &mut values {
+                *v /= norm.max(f32::EPSILON);
+            }
+            let parts = values
+                .iter()
+                .map(|v| format!("{v}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            row_strings.push(format!("ARRAY[{parts}]::real[]"));
+            if row > 0 {
+                flat_string.push(',');
+            }
+            flat_string.push_str(&parts);
+        }
+        flat_string.push_str("]::real[]");
+
+        // Reference: per-row encode_to_tqvector + tqvector_send.
+        let mut single_payloads: Vec<Vec<u8>> = Vec::with_capacity(ROWS);
+        for row in &row_strings {
+            let bytes = Spi::get_one::<Vec<u8>>(&format!(
+                "SELECT tqvector_send(encode_to_tqvector({row}, 4, 42))"
+            ))
+            .expect("single-row SPI query should succeed")
+            .expect("single-row query should return one row");
+            single_payloads.push(bytes);
+        }
+
+        // Bulk: one call returning a tqvector[]; unnest each row and
+        // pull the bytes via tqvector_send so we get the same
+        // representation as the reference.
+        let bulk_rows = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    &format!(
+                        "SELECT tqvector_send(t) AS bytes \
+                         FROM unnest(tqvector_encode_many({flat_string}, {DIM}, 4, 42)) \
+                              WITH ORDINALITY AS u(t, ord) \
+                         ORDER BY ord"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("bulk SPI query should succeed");
+            let mut payloads: Vec<Vec<u8>> = Vec::new();
+            for row in rows {
+                payloads.push(
+                    row.get::<Vec<u8>>(1)
+                        .expect("bulk row should decode")
+                        .expect("bulk row bytes should not be NULL"),
+                );
+            }
+            payloads
+        });
+
+        assert_eq!(bulk_rows.len(), ROWS, "bulk row count mismatch");
+        for (i, (single, bulk)) in single_payloads.iter().zip(bulk_rows.iter()).enumerate() {
+            assert_eq!(
+                single, bulk,
+                "row {i} payload bytes diverged between single-row and bulk encode"
+            );
+        }
     }
 
     #[pg_test]
