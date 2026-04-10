@@ -482,8 +482,12 @@ def main() -> int:
         "--m",
         type=int,
         nargs="+",
-        default=[8, 16],
-        help="m values to build indexes for (default: 8 16)",
+        action="append",
+        default=None,
+        help=(
+            "m values to build indexes for. Accepts either '--m 8 16' or "
+            "repeated '--m 8 --m 16' forms (default: 8 16)."
+        ),
     )
     parser.add_argument(
         "--database",
@@ -505,6 +509,16 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    m_values = [8, 16]
+    if args.m:
+        m_values = []
+        seen_m_values: set[int] = set()
+        for m_group in args.m:
+            for m_value in m_group:
+                if m_value in seen_m_values:
+                    continue
+                seen_m_values.add(m_value)
+                m_values.append(m_value)
 
     try:
         prefix = _validate_ident(args.prefix, "fixture prefix")
@@ -549,7 +563,7 @@ def main() -> int:
             args.queries_file,
             args.dim,
         )
-        for m_value in args.m:
+        for m_value in m_values:
             index_name = f"{prefix}_m{m_value}_idx"
             _ensure_index(
                 args.database,
@@ -564,7 +578,7 @@ def main() -> int:
 
     print(
         f"[loader] done. corpus={corpus_table} ({corpus_rows} rows), "
-        f"queries={queries_table} ({query_rows} rows), m={args.m}",
+        f"queries={queries_table} ({query_rows} rows), m={m_values}",
         file=sys.stderr,
     )
     return 0
