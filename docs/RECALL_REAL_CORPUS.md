@@ -253,6 +253,33 @@ same staged subset.
 The first real-corpus run is documented in
 `review/218-a4-real-corpus-recall-lane`.
 
+## Reusing the Loaded Tables for NFR-001 Latency
+
+The same `<prefix>_corpus`, `<prefix>_queries`, and `<prefix>_m{N}_idx`
+artifacts produced by `scripts/load_real_corpus.py` for the A4 recall lane
+also serve the `NFR-001` query-latency lane: load and bench are decoupled,
+so once the loader has built the tables and indexes there is no second
+load step. The latency reporting surface is
+`scripts/bench_sql_latency.sh` which now accepts a canonical real-corpus
+prefix directly. A worked example against the already-loaded
+`tqhnsw_real_10k` fixture:
+
+```bash
+scripts/bench_sql_latency_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 --m 16 \
+    --ef-search 40,64,100,128,160,200 \
+    --output /tmp/nfr1_real_10k.txt
+```
+
+The wrapper pins the same socket / port / database / `psql` binary as
+`load_real_corpus_scratch.sh`, so the "load then bench" path against the
+repo-local pgrx scratch cluster needs no per-run env setup. Each
+`(m, ef_search)` cell emits one summary line with `p50`, `p95`, `p99`,
+`mean`, `min`, `max`, and observed `qps` against the same query set used
+by the recall probes. See `spec/non-functional/NFR-001-query-latency.md`
+for the gate target.
+
 ## Troubleshooting
 
 ### Scratch DB missing the new `tests.tqhnsw_graph_scan_recall_external_*` functions
