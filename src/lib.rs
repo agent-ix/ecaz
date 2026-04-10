@@ -8099,6 +8099,21 @@ mod tests {
         );
     }
 
+    #[cfg(test)]
+    #[test]
+    #[ignore]
+    fn test_hnsw_rs_source_graph_recall_uniform_10k_m16_ef200() {
+        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
+        let queries = random_unit_vectors(20, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+        let ef_search = 200_usize;
+
+        let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 16, ef_search);
+        println!(
+            "hnsw-rs source graph probe: queries={} m=16 ef_search={ef_search} hnsw={hnsw_recall_at_10:.4}",
+            queries.len()
+        );
+    }
+
     #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert requires matching tqvector shape")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
