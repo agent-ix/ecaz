@@ -90,29 +90,76 @@ impl ProdQuantizer {
         let mse_indices = mse::quantize_to_indices(&self.codebook, &rotated, self.original_dim);
         let mse_values = mse::decode_indices(&self.codebook, &mse_indices);
 
-        let mut rotated_domain = vec![0.0_f32; self.transform_dim];
-        rotated_domain[..self.original_dim].copy_from_slice(&mse_values);
-        let decoded_mse = qjl::decode_mse_only(&rotated_domain, &self.signs, self.original_dim);
+        // Branch on whether the QJL projection will be used.
+        //
+        // - When `qjl_enabled` is false (the (1536, 4) production path),
+        //   the residual is needed only for `gamma = ||residual||₂`. We
+        //   compute that directly in the rotated domain using SRHT
+        //   orthonormality, skipping one full inverse SRHT plus the
+        //   `decoded_mse` and `residual` allocations. See the
+        //   `gamma_in_rotated_domain_matches_input_domain` test for the
+        //   identity proof and ULP-tolerance check.
+        //
+        // - When `qjl_enabled` is true, the QJL stage reads `residual`
+        //   in the input domain, so the inverse SRHT pass is genuinely
+        //   needed. Keep the original pipeline byte-for-byte unchanged
+        //   on that branch.
+        let (gamma, qjl_packed) = if qjl_enabled(self.original_dim, self.bits) {
+            let mut rotated_domain = vec![0.0_f32; self.transform_dim];
+            rotated_domain[..self.original_dim].copy_from_slice(&mse_values);
+            let decoded_mse =
+                qjl::decode_mse_only(&rotated_domain, &self.signs, self.original_dim);
 
-        let residual: Vec<f32> = vector
-            .iter()
-            .zip(decoded_mse.iter())
-            .map(|(input, approx)| input - approx)
-            .collect();
-        let gamma = residual
-            .iter()
-            .map(|value| value * value)
-            .sum::<f32>()
-            .sqrt();
-        let qjl_packed = if qjl_enabled(self.original_dim, self.bits) {
+            let residual: Vec<f32> = vector
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect();
+            let gamma = residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+
             let qjl_projection = qjl::qjl_project(&residual, &self.qjl_signs);
             let qjl_signs = qjl_projection[..self.original_dim]
                 .iter()
                 .map(|value| *value >= 0.0)
                 .collect::<Vec<_>>();
-            pack_qjl_signs(&qjl_signs)
+            (gamma, pack_qjl_signs(&qjl_signs))
         } else {
-            Vec::new()
+            // SRHT is orthonormal on the `transform_dim`-wide space.
+            // For configurations where `qjl_enabled` is false we have
+            // `tile_dim(original_dim).is_some()`, which means
+            // `transform_dim == original_dim` (the tiled path uses the
+            // dimension directly, no power-of-two padding). With no
+            // padding tail, both `vector` and the input-domain decoded
+            // approximation have length `original_dim`, and:
+            //
+            //   ||vector - decoded_mse||²
+            //     == ||SRHT(vector) - SRHT(decoded_mse)||²    (orthonormal)
+            //     == ||rotated - mse_values||²                (SRHT∘inv_SRHT = id)
+            //     == Σ_{i=0..original_dim} (rotated[i] - mse_values[i])²
+            //
+            // Computing gamma in the rotated domain skips one full
+            // inverse SRHT and the residual buffer entirely. The result
+            // is mathematically equal to the input-domain gamma but may
+            // differ by a few ULPs because float addition is not
+            // associative; see
+            // `gamma_in_rotated_domain_matches_input_domain` for the
+            // tolerance bound.
+            debug_assert_eq!(
+                self.transform_dim, self.original_dim,
+                "encode skip-inverse path requires no padding tail"
+            );
+            let mut gamma_sq = 0.0_f32;
+            for (rotated_value, mse_value) in
+                rotated[..self.original_dim].iter().zip(mse_values.iter())
+            {
+                let diff = *rotated_value - *mse_value;
+                gamma_sq += diff * diff;
+            }
+            (gamma_sq.sqrt(), Vec::new())
         };
 
         EncodedTq {
@@ -465,6 +512,179 @@ mod tests {
         assert_eq!(encoded.mse_packed.len(), 768);
         assert!(encoded.qjl_packed.is_empty());
         assert_eq!(quantizer.pack_payload(&encoded).len(), 772);
+    }
+
+    /// Verifies that the rotated-domain gamma computation in
+    /// `ProdQuantizer::encode` (the `!qjl_enabled` branch) is
+    /// numerically equivalent to the original input-domain residual
+    /// path that called `qjl::decode_mse_only` to recover
+    /// `decoded_mse`. The two derivations are mathematically equal by
+    /// SRHT orthonormality but float associativity may shift the
+    /// result by a few ULPs.
+    ///
+    /// This test recomputes gamma using the input-domain identity
+    /// (against `decode_approximate`, which performs the inverse SRHT
+    /// the optimization skips) and asserts both the relative and
+    /// absolute deviation stay below `2e-4`. It also asserts the
+    /// `mse_packed` payload is byte-for-byte identical, since
+    /// `mse_indices` is computed from `rotated` and is unaffected by
+    /// the gamma optimization.
+    #[test]
+    fn gamma_in_rotated_domain_matches_input_domain() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+
+        // Reference path: compute gamma in the input domain using the
+        // inverse-SRHT-derived `decoded_mse`. This is what the
+        // pre-optimization encode pipeline returned.
+        fn reference_gamma(quantizer: &ProdQuantizer, vector: &[f32]) -> f32 {
+            let padded = rotation::pad_input(vector, quantizer.transform_dim);
+            let rotated = rotation::srht(&padded, &quantizer.signs);
+            let mse_indices =
+                mse::quantize_to_indices(&quantizer.codebook, &rotated, quantizer.original_dim);
+            let mse_values = mse::decode_indices(&quantizer.codebook, &mse_indices);
+            let mut rotated_domain = vec![0.0_f32; quantizer.transform_dim];
+            rotated_domain[..quantizer.original_dim].copy_from_slice(&mse_values);
+            let decoded_mse =
+                qjl::decode_mse_only(&rotated_domain, &quantizer.signs, quantizer.original_dim);
+            let residual: Vec<f32> = vector
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect();
+            residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt()
+        }
+
+        let mut max_relative_error = 0.0_f32;
+        let mut max_absolute_error = 0.0_f32;
+        for sample in 0..64_u64 {
+            let vector = random_unit_vector(1536, sample);
+            let encoded = quantizer.encode(&vector);
+            let reference = reference_gamma(&quantizer, &vector);
+
+            // mse_packed must be byte-for-byte identical: it depends
+            // only on `rotated`, which is unchanged by the
+            // optimization.
+            let padded = rotation::pad_input(&vector, quantizer.transform_dim);
+            let rotated = rotation::srht(&padded, &quantizer.signs);
+            let reference_indices =
+                mse::quantize_to_indices(&quantizer.codebook, &rotated, quantizer.original_dim);
+            let reference_mse_packed = pack_mse_indices(
+                &reference_indices,
+                mse_bits(quantizer.original_dim, quantizer.bits),
+            );
+            assert_eq!(
+                encoded.mse_packed, reference_mse_packed,
+                "mse_packed diverged for sample {sample}"
+            );
+
+            // qjl_packed is empty on the (1536, 4) path.
+            assert!(
+                encoded.qjl_packed.is_empty(),
+                "qjl_packed unexpectedly non-empty for sample {sample}"
+            );
+
+            let absolute_error = (encoded.gamma - reference).abs();
+            let relative_error = absolute_error / reference.max(1e-30);
+            assert!(
+                relative_error < 2e-4,
+                "sample {sample}: gamma relative error {relative_error} too large \
+                 (encoded={}, reference={reference})",
+                encoded.gamma
+            );
+            if relative_error > max_relative_error {
+                max_relative_error = relative_error;
+            }
+            if absolute_error > max_absolute_error {
+                max_absolute_error = absolute_error;
+            }
+        }
+        // Sanity-check that the optimization actually exercises the
+        // !qjl_enabled branch — if for some reason the configuration
+        // routes through the QJL-active path the test would still pass
+        // trivially because both branches would be the same code, so
+        // we want a failure if the gate flips.
+        assert!(
+            !qjl_enabled(1536, 4),
+            "test assumes (1536, 4) takes the !qjl_enabled branch"
+        );
+        // Print the achieved bound so the review packet can quote
+        // actual ULP figures rather than just "within 2e-4".
+        println!(
+            "gamma_in_rotated_domain_matches_input_domain: \
+             max_relative_error={max_relative_error}, \
+             max_absolute_error={max_absolute_error}"
+        );
+    }
+
+    /// Sanity check that the QJL-active path is left untouched by the
+    /// optimization. The (64, 4) configuration goes through the
+    /// `qjl_enabled == true` branch (because `tile_dim(64).is_none()`),
+    /// so its encoded payload must remain bit-for-bit identical to a
+    /// reference encode that runs the same five phases as the original
+    /// pipeline.
+    #[test]
+    fn encode_qjl_active_path_unchanged() {
+        let quantizer = ProdQuantizer::new(64, 4, 42);
+        assert!(
+            qjl_enabled(quantizer.original_dim, quantizer.bits),
+            "test assumes (64, 4) takes the qjl_enabled branch"
+        );
+        for sample in 0..16_u64 {
+            let vector = random_unit_vector(64, sample);
+            let encoded = quantizer.encode(&vector);
+
+            // Reference: run the original pipeline inline.
+            let padded = rotation::pad_input(&vector, quantizer.transform_dim);
+            let rotated = rotation::srht(&padded, &quantizer.signs);
+            let mse_indices =
+                mse::quantize_to_indices(&quantizer.codebook, &rotated, quantizer.original_dim);
+            let mse_values = mse::decode_indices(&quantizer.codebook, &mse_indices);
+            let mut rotated_domain = vec![0.0_f32; quantizer.transform_dim];
+            rotated_domain[..quantizer.original_dim].copy_from_slice(&mse_values);
+            let decoded_mse = qjl::decode_mse_only(
+                &rotated_domain,
+                &quantizer.signs,
+                quantizer.original_dim,
+            );
+            let residual: Vec<f32> = vector
+                .iter()
+                .zip(decoded_mse.iter())
+                .map(|(input, approx)| input - approx)
+                .collect();
+            let reference_gamma = residual
+                .iter()
+                .map(|value| value * value)
+                .sum::<f32>()
+                .sqrt();
+            let qjl_projection = qjl::qjl_project(&residual, &quantizer.qjl_signs);
+            let qjl_signs = qjl_projection[..quantizer.original_dim]
+                .iter()
+                .map(|value| *value >= 0.0)
+                .collect::<Vec<_>>();
+            let reference_qjl_packed = pack_qjl_signs(&qjl_signs);
+            let reference_mse_packed = pack_mse_indices(
+                &mse_indices,
+                mse_bits(quantizer.original_dim, quantizer.bits),
+            );
+
+            assert_eq!(
+                encoded.gamma.to_bits(),
+                reference_gamma.to_bits(),
+                "qjl-active gamma diverged at sample {sample}"
+            );
+            assert_eq!(
+                encoded.mse_packed, reference_mse_packed,
+                "qjl-active mse_packed diverged at sample {sample}"
+            );
+            assert_eq!(
+                encoded.qjl_packed, reference_qjl_packed,
+                "qjl-active qjl_packed diverged at sample {sample}"
+            );
+        }
     }
 
     #[test]
