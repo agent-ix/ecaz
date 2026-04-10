@@ -11,13 +11,12 @@ or a documented equivalent.
 
 ## Chosen Dataset
 
-**Primary:** OpenAI `text-embedding-ada-002` embeddings of DBpedia entity
-descriptions, as published by Qdrant under the "DBpedia Entities OpenAI
-Embeddings 1M" release.
+**Primary:** OpenAI `text-embedding-3-large` `1536`-dimensional embeddings of
+DBpedia entity descriptions, as published by Qdrant on Hugging Face.
 
 | Field | Value |
 | --- | --- |
-| Source | Qdrant `dbpedia-entities-openai-1M` (Hugging Face) |
+| Source | Qdrant `dbpedia-entities-openai3-text-embedding-3-large-1536-1M` (Hugging Face) |
 | License | OpenAI embeddings + DBpedia text are public; redistributable per the published terms. Confirm at fetch time. |
 | Total rows | 1,000,000 |
 | Dimensionality | 1536 |
@@ -45,11 +44,17 @@ shape because that is the surface `NFR-003` declares its targets against.
 The default subsets are **not** "any random 50k rows". They are pinned by a
 deterministic rule over the full parquet release:
 
-- sort the full dataset by `id` ascending
+- sort the full dataset by the source parquet id column ascending
+- the current Hugging Face parquet uses `_id`, so the canonical sort key is
+  `_id` ascending lexicographic
 - `tqhnsw_real_50k` corpus: rows `[0, 49_999]`
 - `tqhnsw_real_50k` queries: rows `[50_000, 50_999]`
 - `tqhnsw_real_10k` corpus: rows `[0, 9_999]`
 - `tqhnsw_real_10k` queries: rows `[10_000, 10_199]`
+
+The emitted TSV ids are deterministic global row indices from that sorted
+ordering. The original source ids remain in the manifest as
+`first_source_id` / `last_source_id`.
 
 The canonical conversion recipe is implemented in
 `scripts/qdrant_dbpedia_to_tsv.py`. Official first-run A4 numbers should be
@@ -165,13 +170,24 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    ```bash
    python3 scripts/qdrant_dbpedia_to_tsv.py \
        --profile tqhnsw_real_50k \
-       --parquet /path/to/dbpedia-entities-openai-1M.parquet \
+       --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
    ```
    This requires `pyarrow` to be installed locally. The converter writes:
    - `tqhnsw_real_50k_corpus.tsv`
    - `tqhnsw_real_50k_queries.tsv`
    - `tqhnsw_real_50k_manifest.json`
+   If you are targeting the repo-local scratch `pg17` cluster, the same flow is
+   available as a single command:
+   ```bash
+   scripts/prepare_real_corpus_scratch.sh \
+       --profile tqhnsw_real_50k \
+       --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
+       --output-dir /path/to/staged \
+       --m 8 --m 16
+   ```
+   That wrapper runs the canonical converter first, then calls
+   `scripts/load_real_corpus_scratch.sh` on the emitted TSVs.
 2. Install the `pg_test` build of the extension before running the SQL
    recall surfaces from `psql`:
    ```bash

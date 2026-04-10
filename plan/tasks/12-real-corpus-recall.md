@@ -31,15 +31,20 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 ## Subtasks
 
 - [x] **Dataset contract.** Documented in `docs/RECALL_REAL_CORPUS.md`. Primary: Qdrant
-  `dbpedia-entities-openai-1M`; default working subset `tqhnsw_real_50k` (50k corpus, 1k queries).
-  Local file format: TSV with `<id>\t<json_array>` columns, no header.
+  `dbpedia-entities-openai3-text-embedding-3-large-1536-1M`; default working subset
+  `tqhnsw_real_50k` (50k corpus, 1k queries). Local file format: TSV with
+  `<id>\t<json_array>` columns, no header.
 - [x] **Canonical subset rule.** `scripts/qdrant_dbpedia_to_tsv.py` pins the default subsets by
-  sorting the full parquet release by `id` ascending, then taking rows `[0, 49_999]` / `[50_000,
+  sorting the full parquet release by the source parquet id column ascending (currently `_id`
+  lexicographic for the Qdrant/Hugging Face release), then taking rows `[0, 49_999]` / `[50_000,
   50_999]` for `tqhnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `tqhnsw_real_10k`.
 - [x] **Manifest contract.** The converter emits `<prefix>_manifest.json` with SHA-256 digests,
   counts, id ranges, dimensionality, and selection metadata. `scripts/load_real_corpus.py`
   auto-discovers and verifies the sibling manifest (or takes `--manifest-file` explicitly) before
   loading, refusing mismatches unless `--allow-manifest-mismatch` is passed.
+- [x] **One-shot scratch helper.** `scripts/prepare_real_corpus_scratch.sh` chains canonical
+  parquet conversion into the existing scratch-cluster loader so the first local DBpedia run does
+  not depend on a manual multi-step copy/paste sequence.
 - [x] **Local loader path.** `scripts/load_real_corpus.py` ingests `<basename>_corpus.tsv` /
   `<basename>_queries.tsv` via `psql COPY ... FROM STDIN`, then encodes the `embedding tqvector`
   column with `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is

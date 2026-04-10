@@ -4933,8 +4933,8 @@ mod tests {
             "neighbor debug helper should attach to a concrete current result tuple"
         );
         assert!(
-            neighbor_count <= am::page::neighbor_slots(0, metadata.m),
-            "current-result neighbor count should decode within level-0 neighbor capacity"
+            neighbor_count <= am::page::neighbor_slots(metadata.max_level, metadata.m),
+            "current-result neighbor count should decode within persisted neighbor capacity"
         );
     }
 
