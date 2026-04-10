@@ -7,7 +7,7 @@ CREATE INDEX). Review 210 split fixture reset from gate report, but every test
 invocation still rebuilds. This is the single biggest practical blocker for
 coder-1's iteration speed.
 Priority: batch 2
-Status: ready
+Status: done
 
 ## Prompt
 
@@ -64,3 +64,31 @@ cargo pgrx test pg17
 ```
 
 Branch from current upstream main. Push branch for review.
+
+## Completion Notes
+
+### What changed
+Added a `gate_fixture_already_exists` helper function in `src/lib.rs` that checks
+whether the gate fixture tables and indexes already exist with the expected shape
+before rebuilding. Modified `reset_graph_scan_recall_gate_fixtures` to call this
+check first and return early if the fixture is already present.
+
+### Detection logic implemented
+1. Check if `{prefix}_corpus` table exists via `pg_class` lookup (relkind = 'r')
+2. Check row count matches `corpus_size`
+3. For each m in [8, 16], check if `{prefix}_m{m}_idx` exists with correct
+   `reloptions` (m and ef_construction values) via `pg_class` lookup
+4. If all checks pass, retrieve block counts from existing indexes and return
+5. Otherwise, fall through to the existing DROP + rebuild path
+
+### Decisions
+- Used `pgrx::log!` (not `eprintln!`) for the "skipping rebuild" message so it
+  goes through PostgreSQL's standard logging
+- Kept the detection conservative: any mismatch in table existence, row count,
+  or index reloptions triggers a full rebuild
+- Did not modify `reset_graph_scan_recall_fixture` (single-index variant) since
+  the task scope only covers the gate fixture functions
+
+### Validation
+- `cargo test`: all tests pass (2 passed, 20 ignored)
+- `cargo pgrx test pg17`: all tests pass (170+ passed including pg_test integration tests)
