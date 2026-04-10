@@ -5694,6 +5694,25 @@ mod tests {
         Vec<i32>,
     );
     type GraphScanRecallExactSeedSummaryRow = (i32, i32, i32, f32, f32, f32, f32, i32, i32, i32);
+    type GraphScanRecallHistogramRow = (
+        i32, // recall_bucket (0..=10)
+        i32, // query_count
+        f32, // query_fraction
+    );
+    type GraphScanRecallEfSweepRow = (
+        i32, // m
+        i32, // ef_search
+        f32, // recall_at_10
+        f32, // exact_quantized_recall_at_10
+        f32, // mean_abs_score_error
+        f32, // mean_query_latency_ms
+    );
+    type GraphScanRecallFailureBreakdownRow = (
+        i32,      // query_index
+        i32,      // graph_recall_at_10
+        i32,      // exact_quantized_recall_at_10
+        Vec<i64>, // missed_ids
+    );
 
     fn recall_top_k_overlap(left: &[i64], right: &[i64]) -> i32 {
         i32::try_from(left.iter().filter(|id| right.contains(id)).count())
@@ -6683,6 +6702,194 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// Returns one row per top-10 recall bucket (`0..=10`). Buckets with no
+    /// queries are still emitted so the output is always 11 rows. Builds the
+    /// graph scan top-10 for each query in the supplied context and bins by
+    /// the count of correct items vs the precomputed fp32 ground truth.
+    fn build_graph_scan_recall_histogram_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        ef_search: i32,
+    ) -> Vec<GraphScanRecallHistogramRow> {
+        let index_name_ident = recall_fixture_ident(index_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
+                .expect("histogram index oid query should succeed")
+                .expect("histogram index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut buckets = [0_i32; RECALL_K + 1];
+        for (query, truth) in context
+            .queries
+            .iter()
+            .zip(context.ground_truth_top_k.iter())
+        {
+            let truth_top_10_ids: Vec<i64> = truth
+                .iter()
+                .take(RECALL_K)
+                .map(|(idx, _)| *idx as i64)
+                .collect();
+            let predicted_top_10_ids: Vec<i64> =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        i64::try_from(row_index).expect("row index should fit into bigint")
+                    })
+                    .collect();
+            let overlap = recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
+            let bucket = usize::try_from(overlap)
+                .expect("overlap should be non-negative")
+                .min(RECALL_K);
+            buckets[bucket] += 1;
+        }
+
+        let total_queries = context.queries.len() as f32;
+        (0..=RECALL_K)
+            .map(|bucket| {
+                let count = buckets[bucket];
+                let fraction = if total_queries > 0.0 {
+                    count as f32 / total_queries
+                } else {
+                    0.0
+                };
+                (
+                    i32::try_from(bucket).expect("bucket index should fit into int"),
+                    count,
+                    fraction,
+                )
+            })
+            .collect()
+    }
+
+    /// Sweeps a list of `ef_search` values against a single fixture, building
+    /// the external recall context exactly once and reusing it for every probe.
+    /// Per-row latency is the wall clock spent inside
+    /// `probe_graph_scan_recall_external_summary_for_context` for that
+    /// `ef_search`, divided by the query count — it includes the small per-row
+    /// overhead of NDCG/MAE/Spearman bookkeeping but is dominated by the graph
+    /// scan itself.
+    fn run_graph_scan_recall_ef_sweep_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        m: i32,
+        ef_values: &[i32],
+    ) -> Vec<GraphScanRecallEfSweepRow> {
+        let query_count = context.queries.len();
+        ef_values
+            .iter()
+            .copied()
+            .map(|ef_search| {
+                let started = Instant::now();
+                let summary = probe_graph_scan_recall_external_summary_for_context(
+                    context,
+                    index_name,
+                    m,
+                    ef_search,
+                );
+                let elapsed = started.elapsed();
+                let mean_query_latency_ms = if query_count > 0 {
+                    (elapsed.as_secs_f64() * 1000.0 / query_count as f64) as f32
+                } else {
+                    0.0
+                };
+                (
+                    m,
+                    ef_search,
+                    summary.4, // graph_recall_at_10
+                    summary.9, // exact_quantized_recall_at_10
+                    summary.7, // mean_abs_score_error
+                    mean_query_latency_ms,
+                )
+            })
+            .collect()
+    }
+
+    /// Lists every query whose top-10 graph recall is strictly less than
+    /// `recall_threshold`, alongside the exact-quantized recall on the same
+    /// query and the corpus ids that neither retrieval surface managed to
+    /// find. Rows are emitted in `query_index` order so the output is
+    /// deterministic for diffing.
+    fn run_graph_scan_recall_failure_breakdown_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        ef_search: i32,
+        recall_threshold: i32,
+    ) -> Vec<GraphScanRecallFailureBreakdownRow> {
+        let index_name_ident = recall_fixture_ident(index_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
+                .expect("failure breakdown index oid query should succeed")
+                .expect("failure breakdown index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut rows = Vec::new();
+        for (query_index, ((query, truth), exact_quantized_row_indices)) in context
+            .queries
+            .iter()
+            .zip(context.ground_truth_top_k.iter())
+            .zip(context.exact_quantized_row_indices_top10.iter())
+            .enumerate()
+        {
+            let truth_top_10_row_indices: Vec<i64> = truth
+                .iter()
+                .take(RECALL_K)
+                .map(|(idx, _)| *idx as i64)
+                .collect();
+            let predicted_top_10_row_indices: Vec<i64> =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        i64::try_from(row_index).expect("row index should fit into bigint")
+                    })
+                    .collect();
+            let graph_recall =
+                recall_top_k_overlap(&truth_top_10_row_indices, &predicted_top_10_row_indices);
+            if graph_recall >= recall_threshold {
+                continue;
+            }
+            let exact_recall =
+                recall_top_k_overlap(&truth_top_10_row_indices, exact_quantized_row_indices);
+
+            // Missed = truth_top_10 \ (graph_top_10 ∪ exact_quantized_top_10),
+            // mapped from row indices back to corpus ids so the output is
+            // human-actionable.
+            let missed_ids: Vec<i64> = truth_top_10_row_indices
+                .iter()
+                .filter(|row_index| {
+                    !predicted_top_10_row_indices.contains(row_index)
+                        && !exact_quantized_row_indices.contains(row_index)
+                })
+                .map(|row_index| {
+                    let idx = usize::try_from(*row_index)
+                        .expect("missed row index should be non-negative");
+                    context.corpus_ids[idx]
+                })
+                .collect();
+
+            rows.push((
+                i32::try_from(query_index).expect("query index should fit into int"),
+                graph_recall,
+                exact_recall,
+                missed_ids,
+            ));
+        }
+        rows
     }
 
     fn probe_graph_scan_recall_top_level_oracle_summary_for_relation(
@@ -7987,6 +8194,93 @@ mod tests {
             &corpus_table,
             &query_table,
             &fixture_prefix,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_histogram(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(recall_bucket, i32),
+            name!(query_count, i32),
+            name!(query_fraction, f32),
+        ),
+    > {
+        // `m` is part of the SQL signature for parity with the other recall
+        // diagnostics; the histogram itself is fully determined by `index_name`
+        // and `ef_search`.
+        let _ = m;
+        let context = build_external_recall_context(&corpus_table, &query_table);
+        TableIterator::new(build_graph_scan_recall_histogram_for_context(
+            &context,
+            &index_name,
+            ef_search,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_ef_sweep(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_values: Vec<i32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(mean_abs_score_error, f32),
+            name!(mean_query_latency_ms, f32),
+        ),
+    > {
+        let context = build_external_recall_context(&corpus_table, &query_table);
+        TableIterator::new(run_graph_scan_recall_ef_sweep_for_context(
+            &context,
+            &index_name,
+            m,
+            &ef_values,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_failure_breakdown(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        recall_threshold: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(query_index, i32),
+            name!(graph_recall_at_10, i32),
+            name!(exact_quantized_recall_at_10, i32),
+            name!(missed_ids, Vec<i64>),
+        ),
+    > {
+        // `m` is part of the SQL signature for parity with the other recall
+        // diagnostics; the breakdown itself is fully determined by `index_name`
+        // and `ef_search`.
+        let _ = m;
+        let context = build_external_recall_context(&corpus_table, &query_table);
+        TableIterator::new(run_graph_scan_recall_failure_breakdown_for_context(
+            &context,
+            &index_name,
+            ef_search,
+            recall_threshold,
         ))
     }
 
