@@ -84,7 +84,8 @@ fn debug_runtime_ordered_head(opaque: &mut TqScanOpaque) -> DebugCandidateHead {
         return Some(debug_item_pointer_coords(current.element_tid()));
     }
 
-    current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node))
+    current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -126,8 +127,9 @@ fn debug_scan_query(opaque: &TqScanOpaque) -> Vec<f32> {
         return Vec::new();
     }
 
-    let query =
-        unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) };
+    let query = unsafe {
+        std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize)
+    };
     query.to_vec()
 }
 
@@ -178,7 +180,13 @@ type DebugBootstrapSeedState = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-type DebugBootstrapPhaseTransition = (bool, bool, DebugCandidateHead, DebugCandidateFrontierSlots, bool);
+type DebugBootstrapPhaseTransition = (
+    bool,
+    bool,
+    DebugCandidateHead,
+    DebugCandidateFrontierSlots,
+    bool,
+);
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugBootstrapConsumeState = (
@@ -474,6 +482,481 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_collect_element_tids_at_level(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    target_level: u8,
+) -> Vec<page::ItemPointer> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let mut tids = Vec::new();
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
+
+        for offset_number in 1..=line_pointer_count {
+            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset_number) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_len == 0 || tuple_offset + tuple_len > page_size {
+                continue;
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                continue;
+            }
+
+            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw debug failed to decode top-level element tuple: {e}")
+            });
+            if element.deleted || element.heaptids.is_empty() || element.level != target_level {
+                continue;
+            }
+
+            tids.push(page::ItemPointer {
+                block_number,
+                offset_number,
+            });
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_collect_element_tid_by_heap_tid(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let mut map = std::collections::HashMap::new();
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
+
+        for offset_number in 1..=line_pointer_count {
+            let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset_number) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_len == 0 || tuple_offset + tuple_len > page_size {
+                continue;
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                continue;
+            }
+
+            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw debug failed to decode element tuple while mapping seeds: {e}")
+            });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            let element_tid = page::ItemPointer {
+                block_number,
+                offset_number,
+            };
+            for heap_tid in element.heaptids {
+                map.insert((heap_tid.block_number, heap_tid.offset_number), element_tid);
+            }
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    map
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_top_level_oracle_scan_heap_tids(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    ef_search: usize,
+) -> Vec<HeapTidCoords> {
+    unsafe { debug_top_level_oracle_k_seed_scan_heap_tids(index_oid, query, ef_search, 1) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Vec<HeapTidCoords> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let mut heap_tids = unsafe {
+        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
+    }
+    .into_iter()
+    .filter_map(|element_tid| {
+        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
+        if element.deleted {
+            return None;
+        }
+        element.heaptids.first().copied().map(debug_item_pointer_coords)
+    })
+    .collect::<Vec<_>>();
+    heap_tids.sort_unstable();
+    heap_tids.dedup();
+
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    heap_tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
+    index_oid: pg_sys::Oid,
+) -> Vec<HeapTidCoords> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let m = usize::from(metadata.m);
+    let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
+    let mut visited = std::collections::HashSet::new();
+    let mut heap_tids = Vec::new();
+
+    while let Some(element_tid) = queue.pop_front() {
+        if !visited.insert(element_tid) {
+            continue;
+        }
+
+        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
+        if element.deleted {
+            continue;
+        }
+
+        if let Some(heap_tid) = element.heaptids.first().copied() {
+            heap_tids.push(debug_item_pointer_coords(heap_tid));
+        }
+
+        for neighbor_tid in unsafe {
+            graph::load_neighbor_tids_for_layer(
+                index_relation,
+                element_tid,
+                code_len,
+                m,
+                metadata.max_level,
+            )
+        } {
+            if !visited.contains(&neighbor_tid) {
+                queue.push_back(neighbor_tid);
+            }
+        }
+    }
+
+    heap_tids.sort_unstable();
+    heap_tids.dedup();
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    heap_tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_level_seed_count: usize,
+) -> Vec<HeapTidCoords> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID
+        || metadata.dimensions == 0
+        || top_level_seed_count == 0
+    {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let code_len = opaque.scan_code_len;
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let top_level_tids = unsafe {
+        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
+    };
+
+    let mut heap_tids = top_level_tids
+        .into_iter()
+        .filter_map(|seed_tid| {
+            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            if element.deleted || element.heaptids.is_empty() {
+                return None;
+            }
+            Some((
+                search::BeamCandidate::new(
+                    seed_tid,
+                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
+                ),
+                debug_item_pointer_coords(*element.heaptids.first().expect("heaptids non-empty")),
+            ))
+        })
+        .collect::<Vec<_>>();
+    heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
+    heap_tids.truncate(top_level_seed_count);
+    let heap_tids = heap_tids.into_iter().map(|(_, heap_tid)| heap_tid).collect();
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    heap_tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    ef_search: usize,
+    top_level_seed_count: usize,
+) -> Vec<HeapTidCoords> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID
+        || metadata.dimensions == 0
+        || top_level_seed_count == 0
+    {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let code_len = opaque.scan_code_len;
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let top_level_tids = unsafe {
+        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
+    };
+
+    let mut seeds = top_level_tids
+        .into_iter()
+        .filter_map(|seed_tid| {
+            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            if element.deleted || element.heaptids.is_empty() {
+                return None;
+            }
+            Some(search::BeamCandidate::new(
+                seed_tid,
+                -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
+            ))
+        })
+        .collect::<Vec<_>>();
+    seeds.sort_by(|left, right| left.score.total_cmp(&right.score));
+    seeds.truncate(top_level_seed_count);
+
+    let tids = if seeds.is_empty() {
+        Vec::new()
+    } else {
+        let ordered_candidates = unsafe {
+            graph::search_layer0_result_candidates(
+                index_relation,
+                code_len,
+                usize::from(opaque.scan_m),
+                ef_search.max(1),
+                seeds,
+                |_| true,
+                |neighbor| {
+                    Some(-quantizer.score_ip_from_parts(
+                        prepared_query,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            )
+        };
+        let mut emitted_elements = std::collections::HashSet::new();
+        let mut heap_tids = Vec::new();
+        for candidate in ordered_candidates {
+            if !emitted_elements.insert(candidate.node) {
+                continue;
+            }
+
+            let element =
+                unsafe { graph::load_graph_element(index_relation, candidate.node, code_len) };
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            heap_tids.extend(
+                element
+                    .heaptids
+                    .into_iter()
+                .map(|heap_tid| debug_item_pointer_coords(heap_tid)),
+            );
+        }
+        heap_tids
+    };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    seed_heap_tids: Vec<HeapTidCoords>,
+    ef_search: usize,
+) -> Vec<HeapTidCoords> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID
+        || metadata.dimensions == 0
+        || seed_heap_tids.is_empty()
+    {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let code_len = opaque.scan_code_len;
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let element_by_heap_tid =
+        unsafe { debug_collect_element_tid_by_heap_tid(index_relation, code_len) };
+    let seed_element_tids = seed_heap_tids
+        .into_iter()
+        .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
+        .collect::<Vec<_>>();
+
+    let tids = if seed_element_tids.is_empty() {
+        Vec::new()
+    } else {
+        let seeds = seed_element_tids
+            .into_iter()
+            .filter_map(|seed_tid| {
+                let element =
+                    unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+                if element.deleted || element.heaptids.is_empty() {
+                    return None;
+                }
+                Some(search::BeamCandidate::new(
+                    seed_tid,
+                    -quantizer.score_ip_from_parts(prepared_query, element.gamma, &element.code),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let ordered_candidates = unsafe {
+            graph::search_layer0_result_candidates(
+                index_relation,
+                code_len,
+                usize::from(opaque.scan_m),
+                ef_search.max(1),
+                seeds,
+                |_| true,
+                |neighbor| {
+                    Some(-quantizer.score_ip_from_parts(
+                        prepared_query,
+                        neighbor.gamma,
+                        &neighbor.code,
+                    ))
+                },
+            )
+        };
+        let mut emitted_elements = std::collections::HashSet::new();
+        let mut heap_tids = Vec::new();
+        for candidate in ordered_candidates {
+            if !emitted_elements.insert(candidate.node) {
+                continue;
+            }
+
+            let element =
+                unsafe { graph::load_graph_element(index_relation, candidate.node, code_len) };
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            heap_tids.extend(
+                element
+                    .heaptids
+                    .into_iter()
+                    .map(|heap_tid| debug_item_pointer_coords(heap_tid)),
+            );
+        }
+        heap_tids
+    };
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -561,13 +1044,15 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before_found = active_result_state_ref(opaque).current().has_element();
-    let before_tid = debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let before_tid =
+        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let before_score = active_result_state_ref(opaque).current().score_valid();
     let before_score_value = active_result_state_ref(opaque).current().score();
 
     let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let after_tid = debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let after_tid =
+        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let after_score = active_result_state_ref(opaque).current().score_valid();
     let after_score_value = active_result_state_ref(opaque).current().score();
 
@@ -874,8 +1359,8 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
             candidate.map(|candidate| candidate.score).unwrap_or(0.0),
         )
     };
-    let materialized =
-        current.has_element() || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
+    let materialized = current.has_element()
+        || unsafe { prefetch_next_graph_traversal_result(index_relation, opaque) };
     let current_result_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let pending_heap_tids = active_result_state_ref(opaque)
@@ -924,7 +1409,8 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let after_complete = !opaque.execution_phase.is_graph_traversal();
-    let after_head = current_candidate_frontier_head(opaque).map(|candidate| debug_item_pointer_coords(candidate.node));
+    let after_head = current_candidate_frontier_head(opaque)
+        .map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_frontier = debug_candidate_frontier_slots(opaque);
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
@@ -1240,7 +1726,8 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         "first tuple production should succeed for lifecycle debug helper"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let first_tid = debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
+    let first_tid =
+        debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
 
     assert!(
         unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
@@ -1315,24 +1802,30 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         prefetched_tid
     };
     let (_element, neighbors) = unsafe {
-        graph::load_graph_adjacency(
-            index_relation,
-            current_result_tid,
-            opaque.scan_code_len,
-        )
+        graph::load_graph_adjacency(index_relation, current_result_tid, opaque.scan_code_len)
     };
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    (debug_item_pointer_coords(current_result_tid), neighbors.tids.len())
+    (
+        debug_item_pointer_coords(current_result_tid),
+        neighbors.tids.len(),
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (HeapTidCoords, HeapTidCoords, HeapTidCoords, HeapTidCoords, f32, f32) {
+) -> (
+    HeapTidCoords,
+    HeapTidCoords,
+    HeapTidCoords,
+    HeapTidCoords,
+    f32,
+    f32,
+) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };

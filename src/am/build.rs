@@ -183,13 +183,9 @@ impl BuildState {
             _ => unreachable!("shape tracking must be initialized together"),
         }
 
-        if let Some(existing) = self
-            .heap_tuples
-            .iter_mut()
-            .find(|existing| {
-                existing.gamma.to_bits() == tuple.gamma.to_bits() && existing.code == tuple.code
-            })
-        {
+        if let Some(existing) = self.heap_tuples.iter_mut().find(|existing| {
+            existing.gamma.to_bits() == tuple.gamma.to_bits() && existing.code == tuple.code
+        }) {
             if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
                 pgrx::error!(
                     "tqhnsw ambuild supports at most {} duplicate heap tids per encoded vector",
@@ -249,7 +245,9 @@ pub(super) unsafe fn build_heap_tuple(
         pgrx::error!("tqhnsw ambuild received a null tqvector datum");
     }
 
-    let original = datum.cast_mut_ptr::<std::ffi::c_void>().cast::<pg_sys::varlena>();
+    let original = datum
+        .cast_mut_ptr::<std::ffi::c_void>()
+        .cast::<pg_sys::varlena>();
     let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
     let is_copy = !std::ptr::eq(varlena, original);
     let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
@@ -645,7 +643,7 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         };
         state.heap_tuples.len()
     ];
-    for point in hnsw.get_point_indexation().get_layer_iterator(0) {
+    for point in hnsw.get_point_indexation() {
         let origin_id = point.get_origin_id();
         let level = point.get_point_id().0.min(max_level_cap);
         let neighborhoods = point.get_neighborhood_id();
@@ -706,7 +704,7 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
         };
         state.heap_tuples.len()
     ];
-    for point in hnsw.get_point_indexation().get_layer_iterator(0) {
+    for point in hnsw.get_point_indexation() {
         let origin_id = point.get_origin_id();
         let level = point.get_point_id().0.min(max_level_cap);
         let neighborhoods = point.get_neighborhood_id();
@@ -817,7 +815,14 @@ fn pack_point_neighbor_slots(
 
     for layer in 1..=usize::from(level) {
         let start = m.saturating_mul(2) + ((layer - 1) * m);
-        fill_point_neighbor_layer_slots(&mut slots, origin_id, layer, start, m, neighbors_per_layer);
+        fill_point_neighbor_layer_slots(
+            &mut slots,
+            origin_id,
+            layer,
+            start,
+            m,
+            neighbors_per_layer,
+        );
     }
 
     slots

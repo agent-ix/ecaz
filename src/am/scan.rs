@@ -317,7 +317,9 @@ impl<'a> GraphTraversalCursor<'a> {
         opaque: *mut TqScanOpaque,
     ) -> bool {
         let result_state = self.result_state as *mut ScanResultState;
-        unsafe { prefetch_next_graph_result_from_frontier(index_relation, &mut *opaque, result_state) }
+        unsafe {
+            prefetch_next_graph_result_from_frontier(index_relation, &mut *opaque, result_state)
+        }
     }
 
     unsafe fn ensure_prefetched_output(
@@ -727,12 +729,15 @@ unsafe fn initialize_scan_entry_candidate(
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
-    let descended_candidate = unsafe {
-        graph::greedy_descend_from_entry(
+    let bootstrap_limit = bootstrap_frontier_limit(opaque);
+    let upper_layer_seeds = unsafe {
+        graph::search_upper_layer_seed_candidates(
             index_relation,
             opaque.scan_code_len,
             usize::from(opaque.scan_m),
             entry_candidate,
+            entry.level,
+            bootstrap_limit,
             |neighbor| {
                 Some(score_scan_element_result(
                     opaque,
@@ -742,14 +747,13 @@ unsafe fn initialize_scan_entry_candidate(
             },
         )
     };
-    let bootstrap_limit = bootstrap_frontier_limit(opaque);
     let ordered_candidates = unsafe {
         graph::search_layer0_result_candidates(
             index_relation,
             opaque.scan_code_len,
             usize::from(opaque.scan_m),
             bootstrap_limit,
-            [descended_candidate],
+            upper_layer_seeds,
             |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
             |neighbor| {
                 Some(score_scan_element_result(
@@ -889,13 +893,13 @@ unsafe fn refill_candidate_frontier_from_source_into(
         bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
         source_tid,
         |source_tid, max_successor_candidates| unsafe {
-                graph::load_layer0_refill_successors(
-                    index_relation,
-                    (&*opaque_ptr).scan_code_len,
-                    usize::from((&*opaque_ptr).scan_m),
-                    source_tid,
-                    max_successor_candidates,
-                    |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+            graph::load_layer0_refill_successors(
+                index_relation,
+                (&*opaque_ptr).scan_code_len,
+                usize::from((&*opaque_ptr).scan_m),
+                source_tid,
+                max_successor_candidates,
+                |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
                 |neighbor| {
                     Some(score_scan_element_result(
                         &*opaque_ptr,
@@ -1115,7 +1119,8 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return true;
     }
 
-    let Some(selected) = (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
+    let Some(selected) =
+        (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
     else {
         return false;
     };
@@ -1792,8 +1797,7 @@ mod tests {
             "pending output should preserve score while draining later heap tids from the same result"
         );
         assert_eq!(
-            exhausted,
-            None,
+            exhausted, None,
             "pending output should report exhaustion once the duplicate drain is complete"
         );
     }
@@ -1805,7 +1809,8 @@ mod tests {
             ..TqScanOpaque::default()
         };
         opaque.fallback_result_state.set_current(tid(26, 1), -4.0);
-        opaque.fallback_result_state
+        opaque
+            .fallback_result_state
             .store_pending(&[tid(31, 1), tid(31, 2)]);
 
         let first = linear_fallback_cursor(&mut opaque).take_pending_output();

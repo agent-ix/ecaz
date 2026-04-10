@@ -832,6 +832,17 @@ mod tests {
         .expect("recall benchmark table creation should succeed");
     }
 
+    fn create_recall_table_with_source(table_name: &str) {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[] NOT NULL,
+                embedding tqvector
+            )"
+        ))
+        .expect("recall benchmark source table creation should succeed");
+    }
+
     fn insert_recall_corpus(table_name: &str, corpus: &[Vec<f32>]) {
         for batch in corpus.chunks(RECALL_INSERT_BATCH_SIZE).enumerate() {
             let (batch_index, embeddings) = batch;
@@ -852,6 +863,31 @@ mod tests {
                 "INSERT INTO {table_name} (id, embedding) VALUES {values_sql}"
             ))
             .expect("recall benchmark batch insert should succeed");
+        }
+    }
+
+    fn insert_recall_corpus_with_source(table_name: &str, corpus: &[Vec<f32>]) {
+        for batch in corpus.chunks(RECALL_INSERT_BATCH_SIZE).enumerate() {
+            let (batch_index, embeddings) = batch;
+            let batch_offset = batch_index * RECALL_INSERT_BATCH_SIZE;
+            let values_sql = embeddings
+                .iter()
+                .enumerate()
+                .map(|(batch_row, embedding)| {
+                    let source = format_recall_vector_sql_literal(embedding);
+                    format!(
+                        "({}, {}, encode_to_tqvector({}, {RECALL_BITS}, {RECALL_SEED}))",
+                        batch_offset + batch_row,
+                        source,
+                        source,
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO {table_name} (id, source, embedding) VALUES {values_sql}"
+            ))
+            .expect("recall benchmark source batch insert should succeed");
         }
     }
 
@@ -920,6 +956,26 @@ mod tests {
             .expect("recall benchmark index oid should exist")
     }
 
+    fn create_recall_index_with_source_build(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (
+                 m = {m},
+                 ef_construction = {RECALL_EF_CONSTRUCTION},
+                 build_source_column = 'source'
+             )"
+        ))
+        .expect("recall benchmark source-build index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("recall benchmark source-build index oid query should succeed")
+            .expect("recall benchmark source-build index oid should exist")
+    }
+
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
         let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, caller_name) };
         let index_block_count = unsafe {
@@ -934,10 +990,7 @@ mod tests {
     }
 
     fn recall_fixture_ident(label: &str) -> String {
-        assert!(
-            !label.is_empty(),
-            "recall fixture names must not be empty"
-        );
+        assert!(!label.is_empty(), "recall fixture names must not be empty");
         assert!(
             label
                 .bytes()
@@ -982,6 +1035,33 @@ mod tests {
                 let index_oid = create_recall_index(&table_name, &index_name, m);
                 let index_block_count =
                     recall_index_block_count(index_oid, "reset_graph_scan_recall_gate_fixtures");
+                (m, index_block_count)
+            })
+            .collect()
+    }
+
+    fn reset_graph_scan_recall_gate_source_fixtures(
+        fixture_prefix: &str,
+        corpus_size: usize,
+    ) -> Vec<(i32, i32)> {
+        let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        let table_name = format!("{fixture_prefix}_corpus");
+        let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
+
+        Spi::run(&format!("DROP TABLE IF EXISTS {table_name} CASCADE"))
+            .expect("recall gate source fixture cleanup should succeed");
+        create_recall_table_with_source(&table_name);
+        insert_recall_corpus_with_source(&table_name, &corpus);
+
+        [8, 16]
+            .into_iter()
+            .map(|m| {
+                let index_name = format!("{fixture_prefix}_m{m}_idx");
+                let index_oid = create_recall_index_with_source_build(&table_name, &index_name, m);
+                let index_block_count = recall_index_block_count(
+                    index_oid,
+                    "reset_graph_scan_recall_gate_source_fixtures",
+                );
                 (m, index_block_count)
             })
             .collect()
@@ -3114,7 +3194,9 @@ mod tests {
             "graph-first scan should not emit duplicate heap tids"
         );
         assert!(
-            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            observed_tids
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
             "every emitted heap tid should still belong to the indexed table"
         );
     }
@@ -3497,8 +3579,7 @@ mod tests {
             "after the last duplicate drain, the graph lane should prefill the next current result element"
         );
         assert_ne!(
-            second_heap_tid,
-            first_heap_tid,
+            second_heap_tid, first_heap_tid,
             "the prefetched next result should not leave the old duplicate heap tid attached"
         );
         assert_eq!(
@@ -3678,7 +3759,9 @@ mod tests {
             successor_tid,
             _successor_source_tid,
             successor_score,
-        ) = unsafe { am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+        ) = unsafe {
+            am::debug_rescan_successor_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0])
+        };
 
         assert_ne!(
             entry_tid,
@@ -4637,7 +4720,9 @@ mod tests {
             "graph-first scan should not emit any heap tid twice while draining duplicate-backed results"
         );
         assert!(
-            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            observed_tids
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
             "every emitted heap tid should still come from the indexed table"
         );
     }
@@ -4718,7 +4803,9 @@ mod tests {
             "graph-first exhaustion should not emit duplicate heap tids before the scan ends"
         );
         assert!(
-            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            observed_tids
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
             "every emitted heap tid should still belong to the indexed table"
         );
         assert!(
@@ -4805,7 +4892,9 @@ mod tests {
             "the first graph-first scan should not emit duplicate heap tids before exhaustion"
         );
         assert!(
-            first_pass.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            first_pass
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
             "the first graph-first scan should only emit heap tids from the indexed table"
         );
         assert_eq!(
@@ -5020,7 +5109,9 @@ mod tests {
             "graph-first duplicate draining should not emit the same heap tid twice"
         );
         assert!(
-            observed_tids.iter().all(|heap_tid| expected_tids.contains(heap_tid)),
+            observed_tids
+                .iter()
+                .all(|heap_tid| expected_tids.contains(heap_tid)),
             "every emitted heap tid should still belong to the indexed table"
         );
         assert!(
@@ -5187,7 +5278,9 @@ mod tests {
                         ef_search,
                         query_count,
                     );
-                let passed = target.map(|gate| graph_recall_at_10 >= gate).unwrap_or(true);
+                let passed = target
+                    .map(|gate| graph_recall_at_10 >= gate)
+                    .unwrap_or(true);
                 (m, ef_search, graph_recall_at_10, target, passed)
             })
             .collect()
@@ -5221,17 +5314,27 @@ mod tests {
         Vec<i32>,
         Vec<i32>,
     );
-    type GraphScanRecallScoreAuditRow = (
+    type GraphScanRecallScoreAuditRow = (i32, i32, Vec<i64>, Vec<f32>, Vec<i32>, Vec<f32>);
+    type GraphScanRecallFixtureQueryOverlapRow = (i32, i32, i32, i32, i32, i32, i32);
+    type GraphScanRecallFixtureSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32, i32, i32);
+    type GraphScanRecallTopLevelOracleSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32);
+    type GraphScanRecallTopLevelOracleKSummaryRow =
+        (i32, i32, i32, i32, f32, f32, f32, i32, i32, i32);
+    type GraphScanRecallTopLevelSeedCoverageRow = (
         i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        f32,
         i32,
         Vec<i64>,
-        Vec<f32>,
         Vec<i32>,
-        Vec<f32>,
     );
-    type GraphScanRecallFixtureQueryOverlapRow = (i32, i32, i32, i32, i32, i32, i32);
-    type GraphScanRecallFixtureSummaryRow =
-        (i32, i32, i32, f32, f32, f32, i32, i32, i32, i32, i32);
+    type GraphScanRecallExactSeedSummaryRow = (i32, i32, i32, f32, f32, f32, f32, i32, i32, i32);
 
     fn recall_top_k_overlap(left: &[i64], right: &[i64]) -> i32 {
         i32::try_from(left.iter().filter(|id| right.contains(id)).count())
@@ -5272,11 +5375,8 @@ mod tests {
 
         let fixture_name = recall_fixture_ident(fixture_name);
         let index_name = format!("{fixture_name}_idx");
-        let queries = random_unit_vectors(
-            query_count,
-            RECALL_DIM,
-            (RECALL_SEED as u64) + 1_000_000,
-        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
         let corpus = Spi::connect(|client| {
             client
                 .select(
@@ -5295,9 +5395,10 @@ mod tests {
             .get(query_index)
             .expect("query index should be within the generated query set");
         let ctid_to_id = ctid_id_map(&fixture_name);
-        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("recall fixture index oid query should succeed")
-            .expect("recall fixture index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("recall fixture index oid query should succeed")
+                .expect("recall fixture index oid should exist");
         let index_block_count =
             recall_index_block_count(index_oid, "build_graph_scan_recall_probe_with_sizes");
         let truth = brute_force_top_k(
@@ -5372,12 +5473,14 @@ mod tests {
         query_index: usize,
         query_count: usize,
     ) -> GraphScanRecallFrontierTranscriptRow {
-        let probe = probe_graph_scan_recall_fixture(fixture_name, m, ef_search, query_index, query_count);
+        let probe =
+            probe_graph_scan_recall_fixture(fixture_name, m, ef_search, query_index, query_count);
         let fixture_name = recall_fixture_ident(fixture_name);
         let index_name = format!("{fixture_name}_idx");
-        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("recall fixture index oid query should succeed")
-            .expect("recall fixture index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("recall fixture index oid query should succeed")
+                .expect("recall fixture index oid should exist");
         let query = random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000)
             .into_iter()
             .nth(query_index)
@@ -5422,11 +5525,8 @@ mod tests {
 
         let fixture_name = recall_fixture_ident(fixture_name);
         let index_name = format!("{fixture_name}_idx");
-        let queries = random_unit_vectors(
-            query_count,
-            RECALL_DIM,
-            (RECALL_SEED as u64) + 1_000_000,
-        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
         let corpus = Spi::connect(|client| {
             client
                 .select(
@@ -5445,9 +5545,10 @@ mod tests {
             .get(query_index)
             .expect("query index should be within the generated query set");
         let ctid_to_id = ctid_id_map(&fixture_name);
-        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("recall fixture index oid query should succeed")
-            .expect("recall fixture index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("recall fixture index oid query should succeed")
+                .expect("recall fixture index oid should exist");
         let index_block_count =
             recall_index_block_count(index_oid, "probe_graph_scan_recall_fixture_ranks");
         let truth = brute_force_top_k(
@@ -5552,19 +5653,17 @@ mod tests {
 
         let fixture_name = recall_fixture_ident(fixture_name);
         let index_name = format!("{fixture_name}_idx");
-        let queries = random_unit_vectors(
-            query_count,
-            RECALL_DIM,
-            (RECALL_SEED as u64) + 1_000_000,
-        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
         let query = queries
             .get(query_index)
             .expect("query index should be within the generated query set")
             .clone();
         let ctid_to_id = ctid_id_map(&fixture_name);
-        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("recall fixture index oid query should succeed")
-            .expect("recall fixture index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("recall fixture index oid query should succeed")
+                .expect("recall fixture index oid should exist");
 
         Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
@@ -5641,7 +5740,14 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        (m, ef_search, exact_ids, exact_scores, emitted_ranks, emitted_scores)
+        (
+            m,
+            ef_search,
+            exact_ids,
+            exact_scores,
+            emitted_ranks,
+            emitted_scores,
+        )
     }
 
     fn collect_graph_scan_recall_fixture_query_overlaps_for_relation(
@@ -5675,19 +5781,17 @@ mod tests {
             RECALL_SEED as u64,
         );
         let corpus_codes = encode_recall_corpus_codes(&corpus);
-        let queries = random_unit_vectors(
-            query_count,
-            RECALL_DIM,
-            (RECALL_SEED as u64) + 1_000_000,
-        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
         let ground_truth = queries
             .iter()
             .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
             .collect::<Vec<_>>();
         let ctid_to_id = ctid_id_map(&table_name);
-        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("recall fixture index oid query should succeed")
-            .expect("recall fixture index oid should exist");
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("recall fixture index oid query should succeed")
+                .expect("recall fixture index oid should exist");
 
         Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
@@ -5698,18 +5802,19 @@ mod tests {
                 .iter()
                 .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
                 .collect::<Vec<_>>();
-            let predicted_ids = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
-                .into_iter()
-                .take(RECALL_K)
-                .map(|heap_tid| {
-                    i64::try_from(
-                        *ctid_to_id
-                            .get(&heap_tid)
-                            .expect("probe heap tid should map back to a benchmark row id"),
-                    )
-                    .expect("predicted id should fit into bigint")
-                })
-                .collect::<Vec<_>>();
+            let predicted_ids =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        i64::try_from(
+                            *ctid_to_id
+                                .get(&heap_tid)
+                                .expect("probe heap tid should map back to a benchmark row id"),
+                        )
+                        .expect("predicted id should fit into bigint")
+                    })
+                    .collect::<Vec<_>>();
             let exact_quantized_ids = Spi::connect(|client| {
                 client
                     .select(
@@ -5781,8 +5886,12 @@ mod tests {
         ef_search: i32,
         query_count: usize,
     ) -> GraphScanRecallFixtureSummaryRow {
-        let rows =
-            collect_graph_scan_recall_fixture_query_overlaps(fixture_name, m, ef_search, query_count);
+        let rows = collect_graph_scan_recall_fixture_query_overlaps(
+            fixture_name,
+            m,
+            ef_search,
+            query_count,
+        );
         summarize_graph_scan_recall_fixture_query_overlaps(rows, m, ef_search, query_count)
     }
 
@@ -5801,6 +5910,622 @@ mod tests {
             query_count,
         );
         summarize_graph_scan_recall_fixture_query_overlaps(rows, m, ef_search, query_count)
+    }
+
+    fn probe_graph_scan_recall_top_level_oracle_summary_for_relation(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+    ) -> GraphScanRecallTopLevelOracleSummaryRow {
+        let table_name = recall_fixture_ident(table_name);
+        let index_name = recall_fixture_ident(index_name);
+        let corpus = Spi::connect(|client| {
+            client
+                .select(
+                    &format!("SELECT count(*) AS count FROM {table_name}"),
+                    None,
+                    &[],
+                )
+                .expect("fixture row count query should succeed")
+                .next()
+                .expect("fixture row count should return one row")["count"]
+                .value::<i64>()
+                .expect("fixture row count should decode")
+                .expect("fixture row count should be non-null")
+        });
+        let corpus = random_unit_vectors(
+            usize::try_from(corpus).expect("fixture corpus size should fit usize"),
+            RECALL_DIM,
+            RECALL_SEED as u64,
+        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+        let ground_truth = queries
+            .iter()
+            .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
+            .collect::<Vec<_>>();
+        let ctid_to_id = ctid_id_map(&table_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("oracle summary fixture index oid query should succeed")
+                .expect("oracle summary fixture index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut graph_hits = 0_i32;
+        let mut oracle_hits = 0_i32;
+        let mut exact_hits = 0_i32;
+        let mut graph_below_oracle_queries = 0_i32;
+        let mut oracle_below_exact_queries = 0_i32;
+        let mut worst_oracle_gap = 0_i32;
+
+        for (query, truth) in queries.iter().zip(ground_truth.iter()) {
+            let truth_ids = truth
+                .iter()
+                .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
+                .collect::<Vec<_>>();
+            let predicted_ids =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        i64::try_from(
+                            *ctid_to_id
+                                .get(&heap_tid)
+                                .expect("graph heap tid should map back to a benchmark row id"),
+                        )
+                        .expect("graph id should fit into bigint")
+                    })
+                    .collect::<Vec<_>>();
+            let oracle_ids = unsafe {
+                am::debug_top_level_oracle_scan_heap_tids(
+                    index_oid,
+                    query.clone(),
+                    usize::try_from(ef_search).expect("ef_search should fit into usize"),
+                )
+            }
+            .into_iter()
+            .take(RECALL_K)
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("oracle heap tid should map back to a benchmark row id"),
+                )
+                .expect("oracle id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+            let exact_quantized_ids = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT id
+                             FROM {table_name}
+                             ORDER BY embedding <#> $1
+                             LIMIT 10"
+                        ),
+                        None,
+                        &[query.clone().into()],
+                    )
+                    .expect("exact quantized oracle summary query should succeed")
+                    .map(|row| {
+                        row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should be non-null")
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            let graph_overlap = recall_top_k_overlap(&truth_ids, &predicted_ids);
+            let oracle_overlap = recall_top_k_overlap(&truth_ids, &oracle_ids);
+            let exact_overlap = recall_top_k_overlap(&truth_ids, &exact_quantized_ids);
+
+            graph_hits += graph_overlap;
+            oracle_hits += oracle_overlap;
+            exact_hits += exact_overlap;
+
+            if graph_overlap < oracle_overlap {
+                graph_below_oracle_queries += 1;
+                worst_oracle_gap = worst_oracle_gap.max(oracle_overlap - graph_overlap);
+            }
+            if oracle_overlap < exact_overlap {
+                oracle_below_exact_queries += 1;
+            }
+        }
+
+        let recall_denominator = (query_count as f32) * (RECALL_K as f32);
+        (
+            m,
+            ef_search,
+            i32::try_from(query_count).expect("query count should fit into int"),
+            graph_hits as f32 / recall_denominator,
+            oracle_hits as f32 / recall_denominator,
+            exact_hits as f32 / recall_denominator,
+            graph_below_oracle_queries,
+            oracle_below_exact_queries,
+            worst_oracle_gap,
+        )
+    }
+
+    fn probe_graph_scan_recall_top_level_oracle_k_summary_for_relation(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+        seed_count: usize,
+    ) -> GraphScanRecallTopLevelOracleKSummaryRow {
+        let table_name = recall_fixture_ident(table_name);
+        let index_name = recall_fixture_ident(index_name);
+        let corpus = Spi::connect(|client| {
+            client
+                .select(
+                    &format!("SELECT count(*) AS count FROM {table_name}"),
+                    None,
+                    &[],
+                )
+                .expect("fixture row count query should succeed")
+                .next()
+                .expect("fixture row count should return one row")["count"]
+                .value::<i64>()
+                .expect("fixture row count should decode")
+                .expect("fixture row count should be non-null")
+        });
+        let corpus = random_unit_vectors(
+            usize::try_from(corpus).expect("fixture corpus size should fit usize"),
+            RECALL_DIM,
+            RECALL_SEED as u64,
+        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+        let ground_truth = queries
+            .iter()
+            .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
+            .collect::<Vec<_>>();
+        let ctid_to_id = ctid_id_map(&table_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("oracle-k summary fixture index oid query should succeed")
+                .expect("oracle-k summary fixture index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut graph_hits = 0_i32;
+        let mut oracle_hits = 0_i32;
+        let mut exact_hits = 0_i32;
+        let mut graph_below_oracle_queries = 0_i32;
+        let mut oracle_below_exact_queries = 0_i32;
+        let mut worst_oracle_gap = 0_i32;
+
+        for (query, truth) in queries.iter().zip(ground_truth.iter()) {
+            let truth_ids = truth
+                .iter()
+                .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
+                .collect::<Vec<_>>();
+            let predicted_ids =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        i64::try_from(
+                            *ctid_to_id
+                                .get(&heap_tid)
+                                .expect("graph heap tid should map back to a benchmark row id"),
+                        )
+                        .expect("graph id should fit into bigint")
+                    })
+                    .collect::<Vec<_>>();
+            let oracle_ids = unsafe {
+                am::debug_top_level_oracle_k_seed_scan_heap_tids(
+                    index_oid,
+                    query.clone(),
+                    usize::try_from(ef_search).expect("ef_search should fit into usize"),
+                    seed_count,
+                )
+            }
+            .into_iter()
+            .take(RECALL_K)
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("oracle-k heap tid should map back to a benchmark row id"),
+                )
+                .expect("oracle-k id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+            let exact_quantized_ids = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT id
+                             FROM {table_name}
+                             ORDER BY embedding <#> $1
+                             LIMIT 10"
+                        ),
+                        None,
+                        &[query.clone().into()],
+                    )
+                    .expect("exact quantized oracle-k summary query should succeed")
+                    .map(|row| {
+                        row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should be non-null")
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+            let graph_overlap = recall_top_k_overlap(&truth_ids, &predicted_ids);
+            let oracle_overlap = recall_top_k_overlap(&truth_ids, &oracle_ids);
+            let exact_overlap = recall_top_k_overlap(&truth_ids, &exact_quantized_ids);
+
+            graph_hits += graph_overlap;
+            oracle_hits += oracle_overlap;
+            exact_hits += exact_overlap;
+
+            if graph_overlap < oracle_overlap {
+                graph_below_oracle_queries += 1;
+                worst_oracle_gap = worst_oracle_gap.max(oracle_overlap - graph_overlap);
+            }
+            if oracle_overlap < exact_overlap {
+                oracle_below_exact_queries += 1;
+            }
+        }
+
+        let recall_denominator = (query_count as f32) * (RECALL_K as f32);
+        (
+            m,
+            ef_search,
+            i32::try_from(query_count).expect("query count should fit into int"),
+            i32::try_from(seed_count).expect("seed count should fit into int"),
+            graph_hits as f32 / recall_denominator,
+            oracle_hits as f32 / recall_denominator,
+            exact_hits as f32 / recall_denominator,
+            graph_below_oracle_queries,
+            oracle_below_exact_queries,
+            worst_oracle_gap,
+        )
+    }
+
+    fn probe_graph_scan_recall_top_level_seed_coverage_for_relation(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+        seed_count: usize,
+    ) -> GraphScanRecallTopLevelSeedCoverageRow {
+        let table_name = recall_fixture_ident(table_name);
+        let index_name = recall_fixture_ident(index_name);
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+        let ctid_to_id = ctid_id_map(&table_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("seed coverage fixture index oid query should succeed")
+                .expect("seed coverage fixture index oid should exist");
+
+        let all_top_level_ids = unsafe { am::debug_all_top_level_heap_tids(index_oid) }
+            .into_iter()
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("top-level heap tid should map back to a benchmark row id"),
+                )
+                .expect("top-level id should fit into bigint")
+            })
+            .collect::<std::collections::HashSet<_>>();
+        let reachable_top_level_ids = unsafe { am::debug_top_level_reachable_heap_tids(index_oid) }
+            .into_iter()
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("reachable heap tid should map back to a benchmark row id"),
+                )
+                .expect("reachable id should fit into bigint")
+            })
+            .collect::<std::collections::HashSet<_>>();
+
+        let mut oracle_seed_frequency = std::collections::HashMap::<i64, i32>::new();
+        let mut reachable_seed_slots = 0_i32;
+        let mut total_seed_slots = 0_i32;
+        let mut fully_reachable_queries = 0_i32;
+
+        for query in &queries {
+            let oracle_seed_ids = unsafe {
+                am::debug_top_level_oracle_k_seed_heap_tids(index_oid, query.clone(), seed_count)
+            }
+            .into_iter()
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("oracle seed heap tid should map back to a benchmark row id"),
+                )
+                .expect("oracle seed id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+
+            total_seed_slots +=
+                i32::try_from(oracle_seed_ids.len()).expect("oracle seed slot count should fit");
+            let reachable_for_query = oracle_seed_ids
+                .iter()
+                .filter(|id| reachable_top_level_ids.contains(id))
+                .count();
+            reachable_seed_slots +=
+                i32::try_from(reachable_for_query).expect("reachable query count should fit");
+            if reachable_for_query == oracle_seed_ids.len() {
+                fully_reachable_queries += 1;
+            }
+            for id in oracle_seed_ids {
+                *oracle_seed_frequency.entry(id).or_insert(0) += 1;
+            }
+        }
+
+        let unique_oracle_seed_ids =
+            i32::try_from(oracle_seed_frequency.len()).expect("unique oracle seed ids should fit");
+        let reachable_unique_oracle_seed_ids = i32::try_from(
+            oracle_seed_frequency
+                .keys()
+                .filter(|id| reachable_top_level_ids.contains(id))
+                .count(),
+        )
+        .expect("reachable unique oracle seed ids should fit");
+        let mut frequent_oracle_seeds = oracle_seed_frequency.into_iter().collect::<Vec<_>>();
+        frequent_oracle_seeds.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        frequent_oracle_seeds.truncate(seed_count.max(10));
+        let (top_seed_ids, top_seed_query_counts): (Vec<_>, Vec<_>) =
+            frequent_oracle_seeds.into_iter().unzip();
+
+        (
+            m,
+            ef_search,
+            i32::try_from(query_count).expect("query count should fit into int"),
+            i32::try_from(seed_count).expect("seed count should fit into int"),
+            i32::try_from(all_top_level_ids.len()).expect("top-level node count should fit"),
+            i32::try_from(reachable_top_level_ids.len())
+                .expect("reachable top-level node count should fit"),
+            unique_oracle_seed_ids,
+            reachable_unique_oracle_seed_ids,
+            if total_seed_slots == 0 {
+                0.0
+            } else {
+                reachable_seed_slots as f32 / total_seed_slots as f32
+            },
+            fully_reachable_queries,
+            top_seed_ids,
+            top_seed_query_counts,
+        )
+    }
+
+    fn id_heap_tid_map(table_name: &str) -> HashMap<i64, (u32, u16)> {
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                            split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number,
+                            id
+                         FROM {table_name}"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("id/ctid map query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    let id = row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null");
+                    (
+                        id,
+                        (
+                            u32::try_from(block_number)
+                                .expect("block number should be non-negative"),
+                            u16::try_from(offset_number)
+                                .expect("offset number should be positive"),
+                        ),
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        })
+    }
+
+    fn probe_graph_scan_recall_exact_seed_summary_for_relation(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        query_count: usize,
+    ) -> GraphScanRecallExactSeedSummaryRow {
+        let table_name = recall_fixture_ident(table_name);
+        let index_name = recall_fixture_ident(index_name);
+        let corpus = Spi::connect(|client| {
+            client
+                .select(
+                    &format!("SELECT count(*) AS count FROM {table_name}"),
+                    None,
+                    &[],
+                )
+                .expect("fixture row count query should succeed")
+                .next()
+                .expect("fixture row count should return one row")["count"]
+                .value::<i64>()
+                .expect("fixture row count should decode")
+                .expect("fixture row count should be non-null")
+        });
+        let corpus = random_unit_vectors(
+            usize::try_from(corpus).expect("fixture corpus size should fit usize"),
+            RECALL_DIM,
+            RECALL_SEED as u64,
+        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+        let ground_truth = queries
+            .iter()
+            .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
+            .collect::<Vec<_>>();
+        let ctid_to_id = ctid_id_map(&table_name);
+        let id_to_heap_tid = id_heap_tid_map(&table_name);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("exact-seed fixture index oid query should succeed")
+                .expect("exact-seed fixture index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut graph_hits = 0_i32;
+        let mut exact_seed1_hits = 0_i32;
+        let mut exact_seed10_hits = 0_i32;
+        let mut exact_hits = 0_i32;
+        let mut graph_below_exact_seed10_queries = 0_i32;
+        let mut exact_seed10_below_exact_queries = 0_i32;
+        let mut worst_exact_seed10_gap = 0_i32;
+
+        for (query, truth) in queries.iter().zip(ground_truth.iter()) {
+            let truth_ids = truth
+                .iter()
+                .map(|id| i64::try_from(*id).expect("truth id should fit into bigint"))
+                .collect::<Vec<_>>();
+            let predicted_ids =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .take(RECALL_K)
+                    .map(|heap_tid| {
+                        i64::try_from(
+                            *ctid_to_id
+                                .get(&heap_tid)
+                                .expect("graph heap tid should map back to a benchmark row id"),
+                        )
+                        .expect("graph id should fit into bigint")
+                    })
+                    .collect::<Vec<_>>();
+            let exact_quantized_ids = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT id
+                             FROM {table_name}
+                             ORDER BY embedding <#> $1
+                             LIMIT 10"
+                        ),
+                        None,
+                        &[query.to_vec().into()],
+                    )
+                    .expect("exact quantized exact-seed summary query should succeed")
+                    .map(|row| {
+                        row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should be non-null")
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let exact_seed_heap_tids = exact_quantized_ids
+                .iter()
+                .filter_map(|id| id_to_heap_tid.get(id))
+                .copied()
+                .collect::<Vec<_>>();
+            let exact_seed1_input = exact_seed_heap_tids
+                .iter()
+                .copied()
+                .take(1)
+                .collect::<Vec<_>>();
+            let exact_seed1_ids = unsafe {
+                am::debug_exact_seed_scan_heap_tids(
+                    index_oid,
+                    query.clone(),
+                    exact_seed1_input,
+                    usize::try_from(ef_search).expect("ef_search should fit into usize"),
+                )
+            }
+            .into_iter()
+            .take(RECALL_K)
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("exact-seed1 heap tid should map back to a benchmark row id"),
+                )
+                .expect("exact-seed1 id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+            let exact_seed10_ids = unsafe {
+                am::debug_exact_seed_scan_heap_tids(
+                    index_oid,
+                    query.clone(),
+                    exact_seed_heap_tids,
+                    usize::try_from(ef_search).expect("ef_search should fit into usize"),
+                )
+            }
+            .into_iter()
+            .take(RECALL_K)
+            .map(|heap_tid| {
+                i64::try_from(
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("exact-seed10 heap tid should map back to a benchmark row id"),
+                )
+                .expect("exact-seed10 id should fit into bigint")
+            })
+            .collect::<Vec<_>>();
+
+            let graph_overlap = recall_top_k_overlap(&truth_ids, &predicted_ids);
+            let exact_seed1_overlap = recall_top_k_overlap(&truth_ids, &exact_seed1_ids);
+            let exact_seed10_overlap = recall_top_k_overlap(&truth_ids, &exact_seed10_ids);
+            let exact_overlap = recall_top_k_overlap(&truth_ids, &exact_quantized_ids);
+
+            graph_hits += graph_overlap;
+            exact_seed1_hits += exact_seed1_overlap;
+            exact_seed10_hits += exact_seed10_overlap;
+            exact_hits += exact_overlap;
+
+            if graph_overlap < exact_seed10_overlap {
+                graph_below_exact_seed10_queries += 1;
+                worst_exact_seed10_gap =
+                    worst_exact_seed10_gap.max(exact_seed10_overlap - graph_overlap);
+            }
+            if exact_seed10_overlap < exact_overlap {
+                exact_seed10_below_exact_queries += 1;
+            }
+        }
+
+        let recall_denominator = (query_count as f32) * (RECALL_K as f32);
+        (
+            m,
+            ef_search,
+            i32::try_from(query_count).expect("query count should fit into int"),
+            graph_hits as f32 / recall_denominator,
+            exact_seed1_hits as f32 / recall_denominator,
+            exact_seed10_hits as f32 / recall_denominator,
+            exact_hits as f32 / recall_denominator,
+            graph_below_exact_seed10_queries,
+            exact_seed10_below_exact_queries,
+            worst_exact_seed10_gap,
+        )
     }
 
     fn summarize_graph_scan_recall_fixture_query_overlaps(
@@ -5829,7 +6554,8 @@ mod tests {
             }
             if *graph_overlap < *build_code_overlap {
                 graph_below_build_code_queries += 1;
-                worst_build_code_gap = worst_build_code_gap.max(*build_code_overlap - *graph_overlap);
+                worst_build_code_gap =
+                    worst_build_code_gap.max(*build_code_overlap - *graph_overlap);
             }
             if *build_code_overlap < *exact_overlap {
                 build_code_below_exact_queries += 1;
@@ -5863,11 +6589,8 @@ mod tests {
         assert!(query_count > query_index);
 
         let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
-        let queries = random_unit_vectors(
-            query_count,
-            RECALL_DIM,
-            (RECALL_SEED as u64) + 1_000_000,
-        );
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
         let query = queries
             .get(query_index)
             .expect("query index should be within the generated query set");
@@ -5986,6 +6709,18 @@ mod tests {
         corpus_size: i32,
     ) -> TableIterator<'static, (name!(m, i32), name!(index_block_count, i32))> {
         TableIterator::new(reset_graph_scan_recall_gate_fixtures(
+            &fixture_prefix,
+            usize::try_from(corpus_size).expect("corpus size should be non-negative"),
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_fixture_gate_source_build_reset(
+        fixture_prefix: String,
+        corpus_size: i32,
+    ) -> TableIterator<'static, (name!(m, i32), name!(index_block_count, i32))> {
+        TableIterator::new(reset_graph_scan_recall_gate_source_fixtures(
             &fixture_prefix,
             usize::try_from(corpus_size).expect("corpus size should be non-negative"),
         ))
@@ -6239,6 +6974,145 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_top_level_oracle_summary_rel(
+        table_name: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_count, i32),
+            name!(graph_recall_at_10, f32),
+            name!(oracle_top_level_recall_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(graph_below_oracle_queries, i32),
+            name!(oracle_below_exact_queries, i32),
+            name!(worst_oracle_gap, i32),
+        ),
+    > {
+        TableIterator::once(
+            probe_graph_scan_recall_top_level_oracle_summary_for_relation(
+                &table_name,
+                &index_name,
+                m,
+                ef_search,
+                usize::try_from(query_count).expect("query count should be non-negative"),
+            ),
+        )
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_top_level_oracle_k_summary_rel(
+        table_name: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_count: i32,
+        seed_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_count, i32),
+            name!(seed_count, i32),
+            name!(graph_recall_at_10, f32),
+            name!(oracle_top_level_k_recall_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(graph_below_oracle_queries, i32),
+            name!(oracle_below_exact_queries, i32),
+            name!(worst_oracle_gap, i32),
+        ),
+    > {
+        TableIterator::once(
+            probe_graph_scan_recall_top_level_oracle_k_summary_for_relation(
+                &table_name,
+                &index_name,
+                m,
+                ef_search,
+                usize::try_from(query_count).expect("query count should be non-negative"),
+                usize::try_from(seed_count).expect("seed count should be non-negative"),
+            ),
+        )
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_top_level_seed_coverage_rel(
+        table_name: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_count: i32,
+        seed_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_count, i32),
+            name!(seed_count, i32),
+            name!(top_level_node_count, i32),
+            name!(reachable_top_level_node_count, i32),
+            name!(unique_oracle_seed_id_count, i32),
+            name!(reachable_unique_oracle_seed_id_count, i32),
+            name!(reachable_oracle_seed_slot_fraction, f32),
+            name!(fully_reachable_queries, i32),
+            name!(top_oracle_seed_ids, Vec<i64>),
+            name!(top_oracle_seed_query_counts, Vec<i32>),
+        ),
+    > {
+        TableIterator::once(
+            probe_graph_scan_recall_top_level_seed_coverage_for_relation(
+                &table_name,
+                &index_name,
+                m,
+                ef_search,
+                usize::try_from(query_count).expect("query count should be non-negative"),
+                usize::try_from(seed_count).expect("seed count should be non-negative"),
+            ),
+        )
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_exact_seed_summary_rel(
+        table_name: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+        query_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(query_count, i32),
+            name!(graph_recall_at_10, f32),
+            name!(exact_seed1_recall_at_10, f32),
+            name!(exact_seed10_recall_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(graph_below_exact_seed10_queries, i32),
+            name!(exact_seed10_below_exact_queries, i32),
+            name!(worst_exact_seed10_gap, i32),
+        ),
+    > {
+        TableIterator::once(probe_graph_scan_recall_exact_seed_summary_for_relation(
+            &table_name,
+            &index_name,
+            m,
+            ef_search,
+            usize::try_from(query_count).expect("query count should be non-negative"),
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_graph_scan_recall_fixture_query_overlaps(
         fixture_name: String,
         m: i32,
@@ -6342,7 +7216,10 @@ mod tests {
             "10k fixture gate reuse: reset={reset_elapsed:?} fixtures={reset_rows:?} first={first_elapsed:?} second={second_elapsed:?} results={first:?}"
         );
 
-        assert_eq!(first, second, "fixture-backed gate report should be stable across reruns");
+        assert_eq!(
+            first, second,
+            "fixture-backed gate report should be stable across reruns"
+        );
     }
 
     #[pg_test]

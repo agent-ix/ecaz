@@ -89,7 +89,8 @@ pub(crate) unsafe fn load_layer0_neighbor_tids(
     code_len: usize,
     m: usize,
 ) -> Vec<page::ItemPointer> {
-    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
+    let (element, neighbors) =
+        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
     valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, 0)
 }
 
@@ -100,7 +101,8 @@ pub(crate) unsafe fn load_neighbor_tids_for_layer(
     m: usize,
     layer: u8,
 ) -> Vec<page::ItemPointer> {
-    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
+    let (element, neighbors) =
+        unsafe { load_graph_adjacency(index_relation, element_tid, code_len) };
     valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
 }
 
@@ -140,18 +142,23 @@ pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
 where
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    let entry_element = unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };
-    greedy_descend_with_successors(entry_candidate, entry_element.level, |source_tid, layer| unsafe {
-        let neighbor_tids =
-            load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
-        layer0_successor_candidates_from_elements(
-            source_tid,
-            neighbor_tids.into_iter().map(|neighbor_tid| {
-                load_graph_element(index_relation, neighbor_tid, code_len)
-            }),
-            |neighbor| score_candidate(neighbor),
-        )
-    })
+    let entry_element =
+        unsafe { load_graph_element(index_relation, entry_candidate.node, code_len) };
+    greedy_descend_with_successors(
+        entry_candidate,
+        entry_element.level,
+        |source_tid, layer| unsafe {
+            let neighbor_tids =
+                load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
+            layer0_successor_candidates_from_elements(
+                source_tid,
+                neighbor_tids
+                    .into_iter()
+                    .map(|neighbor_tid| load_graph_element(index_relation, neighbor_tid, code_len)),
+                |neighbor| score_candidate(neighbor),
+            )
+        },
+    )
 }
 
 pub(crate) unsafe fn run_layer0_beam_search<SeedIter, KeepFn, ScoreFn>(
@@ -204,6 +211,73 @@ where
             &mut score_candidate,
         )
     })
+}
+
+pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    m: usize,
+    layer: u8,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        let neighbor_tids =
+            load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
+        layer0_successor_candidates_from_elements(
+            source_tid,
+            neighbor_tids
+                .into_iter()
+                .filter(|neighbor_tid| keep_neighbor_tid(*neighbor_tid))
+                .map(|neighbor_tid| load_graph_element(index_relation, neighbor_tid, code_len)),
+            |neighbor| score_candidate(neighbor),
+        )
+    })
+}
+
+pub(crate) unsafe fn search_upper_layer_seed_candidates<ScoreFn>(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    entry_level: u8,
+    ef_search: usize,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    if entry_level == 0 {
+        return vec![entry_candidate];
+    }
+
+    let mut seeds = vec![entry_candidate];
+    for layer in (1..=entry_level).rev() {
+        seeds = unsafe {
+            search_layer_result_candidates(
+                index_relation,
+                code_len,
+                m,
+                layer,
+                ef_search,
+                seeds,
+                |_| true,
+                |neighbor| score_candidate(neighbor),
+            )
+        };
+        if seeds.is_empty() {
+            break;
+        }
+    }
+
+    seeds
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -363,7 +437,8 @@ where
             break;
         };
 
-        if result_points.len() >= ef_search && candidate.candidate.score > worst_result.candidate.score
+        if result_points.len() >= ef_search
+            && candidate.candidate.score > worst_result.candidate.score
         {
             break;
         }
@@ -409,7 +484,10 @@ struct LayerSearchCandidate<NodeId> {
 
 impl<NodeId> LayerSearchCandidate<NodeId> {
     fn new(candidate: search::BeamCandidate<NodeId>, sequence: u64) -> Self {
-        Self { candidate, sequence }
+        Self {
+            candidate,
+            sequence,
+        }
     }
 }
 
