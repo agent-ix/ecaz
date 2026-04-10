@@ -328,6 +328,20 @@ pub fn payload_len(dim: usize, bits: u8) -> usize {
 }
 
 pub fn pack_mse_indices(indices: &[CodeIndex], bits_per_index: u8) -> Vec<u8> {
+    // Bytewise fast paths for the production bit widths (2, 3, 4, 5).
+    // Each fast path produces output that is byte-for-byte identical to
+    // the generic per-bit loop — verified by
+    // `pack_mse_indices_fast_paths_match_generic`.
+    match bits_per_index {
+        2 => pack_mse_indices_2bit(indices),
+        3 => pack_mse_indices_3bit(indices),
+        4 => pack_mse_indices_4bit(indices),
+        5 => pack_mse_indices_5bit(indices),
+        _ => pack_mse_indices_generic(indices, bits_per_index),
+    }
+}
+
+fn pack_mse_indices_generic(indices: &[CodeIndex], bits_per_index: u8) -> Vec<u8> {
     let total_bits = indices.len() * bits_per_index as usize;
     let mut packed = vec![0_u8; total_bits.div_ceil(8)];
     for (index, value) in indices.iter().enumerate() {
@@ -337,6 +351,73 @@ pub fn pack_mse_indices(indices: &[CodeIndex], bits_per_index: u8) -> Vec<u8> {
             bits_per_index as usize,
             *value,
         );
+    }
+    packed
+}
+
+fn pack_mse_indices_2bit(indices: &[CodeIndex]) -> Vec<u8> {
+    // Four 2-bit indices per byte: byte = (d3<<6) | (d2<<4) | (d1<<2) | d0.
+    let total_bits = indices.len() * 2;
+    let mut packed = vec![0_u8; total_bits.div_ceil(8)];
+    for (out_byte, chunk) in packed.iter_mut().zip(indices.chunks(4)) {
+        let d0 = (chunk[0] & 0x03) as u8;
+        let d1 = chunk.get(1).copied().unwrap_or(0) as u8 & 0x03;
+        let d2 = chunk.get(2).copied().unwrap_or(0) as u8 & 0x03;
+        let d3 = chunk.get(3).copied().unwrap_or(0) as u8 & 0x03;
+        *out_byte = (d3 << 6) | (d2 << 4) | (d1 << 2) | d0;
+    }
+    packed
+}
+
+fn pack_mse_indices_3bit(indices: &[CodeIndex]) -> Vec<u8> {
+    // Eight 3-bit indices pack into three bytes (24 bits). Build the
+    // 24-bit accumulator low-bit-first to match write_bits_le's
+    // little-endian convention, then write the low 3 bytes.
+    let total_bits = indices.len() * 3;
+    let mut packed = vec![0_u8; total_bits.div_ceil(8)];
+    let mut out = packed.as_mut_slice();
+    for chunk in indices.chunks(8) {
+        let mut acc: u32 = 0;
+        for (offset, value) in chunk.iter().enumerate() {
+            acc |= ((*value as u32) & 0x07) << (offset * 3);
+        }
+        let total_bytes = (chunk.len() * 3).div_ceil(8);
+        let bytes = acc.to_le_bytes();
+        out[..total_bytes].copy_from_slice(&bytes[..total_bytes]);
+        out = &mut out[total_bytes..];
+    }
+    packed
+}
+
+fn pack_mse_indices_4bit(indices: &[CodeIndex]) -> Vec<u8> {
+    // Two 4-bit indices per byte: low nibble = first index, high nibble
+    // = second index. Matches write_bits_le's little-endian layout.
+    let total_bits = indices.len() * 4;
+    let mut packed = vec![0_u8; total_bits.div_ceil(8)];
+    for (out_byte, chunk) in packed.iter_mut().zip(indices.chunks(2)) {
+        let lo = (chunk[0] & 0x0F) as u8;
+        let hi = chunk.get(1).copied().unwrap_or(0) as u8 & 0x0F;
+        *out_byte = (hi << 4) | lo;
+    }
+    packed
+}
+
+fn pack_mse_indices_5bit(indices: &[CodeIndex]) -> Vec<u8> {
+    // Eight 5-bit indices pack into five bytes (40 bits). Build the
+    // 40-bit accumulator low-bit-first to match write_bits_le's
+    // little-endian convention, then write the low 5 bytes.
+    let total_bits = indices.len() * 5;
+    let mut packed = vec![0_u8; total_bits.div_ceil(8)];
+    let mut out = packed.as_mut_slice();
+    for chunk in indices.chunks(8) {
+        let mut acc: u64 = 0;
+        for (offset, value) in chunk.iter().enumerate() {
+            acc |= ((*value as u64) & 0x1F) << (offset * 5);
+        }
+        let total_bytes = (chunk.len() * 5).div_ceil(8);
+        let bytes = acc.to_le_bytes();
+        out[..total_bytes].copy_from_slice(&bytes[..total_bytes]);
+        out = &mut out[total_bytes..];
     }
     packed
 }
@@ -445,6 +526,33 @@ mod tests {
         let packed = pack_qjl_signs(&signs);
         let unpacked = unpack_qjl_signs(&packed, signs.len());
         assert_eq!(unpacked, signs);
+    }
+
+    #[test]
+    fn pack_mse_indices_fast_paths_match_generic() {
+        // Exhaustively prove the bytewise fast paths produce
+        // byte-for-byte identical output to the generic per-bit loop.
+        // Covers every bit width 2..=7, including the production
+        // (1536, 4) length and a non-multiple-of-8 boundary case.
+        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FFEE);
+        for bits in 2..=7_u8 {
+            let max_value = 1_u16 << bits;
+            for &len in &[1_usize, 2, 3, 7, 8, 9, 16, 17, 257, 1536] {
+                let indices = (0..len)
+                    .map(|_| rng.gen_range(0..max_value))
+                    .collect::<Vec<_>>();
+                let dispatched = pack_mse_indices(&indices, bits);
+                let generic = pack_mse_indices_generic(&indices, bits);
+                assert_eq!(
+                    dispatched, generic,
+                    "fast path diverged from generic at bits={bits}, len={len}"
+                );
+                // Round-trip via the existing unpacker too — guards
+                // against any accidental change to the bit ordering.
+                let unpacked = unpack_mse_indices(&dispatched, len, bits);
+                assert_eq!(unpacked, indices, "round-trip failed at bits={bits}, len={len}");
+            }
+        }
     }
 
     #[test]
