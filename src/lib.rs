@@ -715,6 +715,13 @@ mod tests {
         (16, 200, None),
     ];
 
+    // External oracle from the Qdrant `vector-db-benchmark` published results,
+    // setup `qdrant-m-16-ef-128` (m=16, ef_construct=128, hnsw_ef=128) on
+    // `dbpedia-openai-1M-1536-angular`. See `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`.
+    // Source: https://qdrant.tech/benchmarks/results-1-100-thread-2024-06-15.json
+    const ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10: f32 = 0.96082_f32;
+    const ANN_BENCHMARKS_ANCHOR_TOLERANCE: f32 = 0.02_f32;
+
     fn setup_rescan_scaffold_index(name: &str) -> pg_sys::Oid {
         Spi::run(&format!(
             "CREATE TABLE {name} (id bigint primary key, embedding tqvector)"
@@ -5672,6 +5679,14 @@ mod tests {
         i32, // graph_below_exact_queries
         i32, // worst_exact_gap
     );
+    type GraphScanRecallAnnBenchmarksReferenceRow = (
+        i32,  // m
+        i32,  // ef_search
+        f32,  // recall_at_10
+        f32,  // published_recall_at_10
+        f32,  // absolute_delta
+        bool, // within_two_percent
+    );
     type GraphScanRecallTopLevelOracleSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32);
     type GraphScanRecallTopLevelOracleKSummaryRow =
         (i32, i32, i32, i32, f32, f32, f32, i32, i32, i32);
@@ -6679,6 +6694,38 @@ mod tests {
             graph_top_10_hits as f32 / ((context.queries.len() as f32) * (RECALL_K as f32));
         let passed = target.map(|gate| recall_at_10 >= gate).unwrap_or(true);
         (m, ef_search, recall_at_10, target, passed)
+    }
+
+    // One-shot oracle: re-uses the external recall context machinery and
+    // compares the measured `recall@10` against the published anchor recorded
+    // in `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`. This is intentionally not a
+    // sweep — anchor diagnostics live in the histogram / ef_sweep surfaces.
+    fn probe_graph_scan_recall_ann_benchmarks_reference_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+    ) -> GraphScanRecallAnnBenchmarksReferenceRow {
+        let summary = probe_graph_scan_recall_external_summary_for_relation(
+            corpus_table,
+            query_table,
+            index_name,
+            m,
+            ef_search,
+        );
+        let measured_recall_at_10 = summary.4;
+        let absolute_delta =
+            measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
+        let within_two_percent = absolute_delta.abs() <= ANN_BENCHMARKS_ANCHOR_TOLERANCE;
+        (
+            m,
+            ef_search,
+            measured_recall_at_10,
+            ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10,
+            absolute_delta,
+            within_two_percent,
+        )
     }
 
     fn run_graph_scan_recall_gate_from_external(
@@ -8195,6 +8242,36 @@ mod tests {
             &query_table,
             &fixture_prefix,
         ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_ann_benchmarks_reference(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(published_recall_at_10, f32),
+            name!(absolute_delta, f32),
+            name!(within_two_percent, bool),
+        ),
+    > {
+        TableIterator::once(
+            probe_graph_scan_recall_ann_benchmarks_reference_for_relation(
+                &corpus_table,
+                &query_table,
+                &index_name,
+                m,
+                ef_search,
+            ),
+        )
     }
 
     #[pg_extern]

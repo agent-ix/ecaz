@@ -64,6 +64,16 @@ PROFILES: dict[str, SubsetProfile] = {
         corpus_rows=10_000,
         query_rows=200,
     ),
+    # One-time external oracle, see docs/RECALL_ANN_BENCHMARKS_ANCHOR.md.
+    # The full Qdrant DBpedia 1M parquet ships exactly 1,000,000 rows with no
+    # separate query split, so the anchor profile carves the last 10k rows out
+    # of the canonical sorted-id ordering as the query set and leaves the
+    # remaining 990k rows as the corpus.
+    "tqhnsw_real_ann_benchmarks_anchor": SubsetProfile(
+        prefix="tqhnsw_real_ann_benchmarks_anchor",
+        corpus_rows=990_000,
+        query_rows=10_000,
+    ),
 }
 
 

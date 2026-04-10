@@ -1695,3 +1695,156 @@ fn recall_harness_clustered_smoke_test() {
     assert!(report.recall_at_1 >= 0.0 && report.recall_at_1 <= 1.0);
     assert!(report.recall_at_10 >= 0.0 && report.recall_at_10 <= 1.0);
 }
+
+// ---------------------------------------------------------------------------
+// ann-benchmarks reference anchor (task 10055)
+// ---------------------------------------------------------------------------
+
+/// One-shot oracle: drives the canonical converter, the real-corpus loader,
+/// and the `tqhnsw_graph_scan_recall_ann_benchmarks_reference` SQL probe end
+/// to end against the Qdrant DBpedia 1M parquet, then asserts the measured
+/// `recall@10` stays within the published 2% tolerance.
+///
+/// This test is `#[ignore]`d on purpose. It is **not** a CI gate. It is a
+/// manual oracle that a reviewer can run when something feels off about the
+/// real-corpus lane. See `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`.
+///
+/// Required environment variables:
+///
+/// - `TQV_ANCHOR_PARQUET` — path to the Qdrant
+///   `dbpedia-entities-openai3-text-embedding-3-large-1536-1M` parquet file
+///   or directory.
+/// - `TQV_ANCHOR_OUTPUT_DIR` — directory the converter writes the staged TSV
+///   pair and manifest into. Must be writable.
+///
+/// Optional environment variables:
+///
+/// - `TQV_PSQL_BIN` — `psql` client binary to use (defaults to `psql` on
+///   `PATH`).
+/// - `PGDATABASE`, `PGHOST`, `PGPORT`, `PGUSER` — standard libpq
+///   connection environment.
+/// - `TQV_ANCHOR_SKIP_LOAD=1` — skip the converter and loader steps and just
+///   re-run the probe against an already-loaded corpus.
+///
+/// Run with:
+///
+/// ```bash
+/// TQV_ANCHOR_PARQUET=/path/to/dbpedia-entities-...-1M/data \
+/// TQV_ANCHOR_OUTPUT_DIR=/path/to/staged \
+/// PGDATABASE=tqvector_bench \
+/// cargo test --test recall_integration \
+///     ann_benchmarks_anchor_within_tolerance -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore]
+fn ann_benchmarks_anchor_within_tolerance() {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    // Keep this in sync with `ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10`
+    // and `ANN_BENCHMARKS_ANCHOR_TOLERANCE` in `src/lib.rs`. The constants
+    // are duplicated rather than re-exported because this test must be able
+    // to run without linking the pgrx-built crate.
+    const PUBLISHED_RECALL_AT_10: f32 = 0.96082_f32;
+    const TOLERANCE: f32 = 0.02_f32;
+    const PROFILE: &str = "tqhnsw_real_ann_benchmarks_anchor";
+
+    let parquet = env::var("TQV_ANCHOR_PARQUET").expect(
+        "TQV_ANCHOR_PARQUET must point at the Qdrant DBpedia 1M parquet (file or directory)",
+    );
+    let output_dir = env::var("TQV_ANCHOR_OUTPUT_DIR")
+        .expect("TQV_ANCHOR_OUTPUT_DIR must point at a writable directory for staged TSVs");
+    let skip_load = env::var("TQV_ANCHOR_SKIP_LOAD")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let psql_bin = env::var("TQV_PSQL_BIN").unwrap_or_else(|_| "psql".to_string());
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let converter = repo_root.join("scripts/qdrant_dbpedia_to_tsv.py");
+    let loader = repo_root.join("scripts/load_real_corpus.py");
+    let corpus_tsv = PathBuf::from(&output_dir).join(format!("{PROFILE}_corpus.tsv"));
+    let queries_tsv = PathBuf::from(&output_dir).join(format!("{PROFILE}_queries.tsv"));
+
+    if !skip_load {
+        let convert_status = Command::new("python3")
+            .arg(&converter)
+            .arg("--profile")
+            .arg(PROFILE)
+            .arg("--parquet")
+            .arg(&parquet)
+            .arg("--output-dir")
+            .arg(&output_dir)
+            .status()
+            .expect("converter should be invokable");
+        assert!(
+            convert_status.success(),
+            "converter exited with {convert_status:?}"
+        );
+
+        let load_status = Command::new("python3")
+            .arg(&loader)
+            .arg("--prefix")
+            .arg(PROFILE)
+            .arg("--corpus-file")
+            .arg(&corpus_tsv)
+            .arg("--queries-file")
+            .arg(&queries_tsv)
+            .arg("--m")
+            .arg("16")
+            .status()
+            .expect("loader should be invokable");
+        assert!(load_status.success(), "loader exited with {load_status:?}");
+    }
+
+    let probe_sql = format!(
+        "SELECT recall_at_10::text || '|' || absolute_delta::text || '|' || within_two_percent::text \
+         FROM tqhnsw_graph_scan_recall_ann_benchmarks_reference(\
+             '{PROFILE}_corpus', '{PROFILE}_queries', '{PROFILE}_m16_idx', 16, 128);"
+    );
+    let psql_output = Command::new(&psql_bin)
+        .args(["-X", "-A", "-t", "-q", "-c"])
+        .arg(&probe_sql)
+        .output()
+        .expect("psql should be invokable");
+    assert!(
+        psql_output.status.success(),
+        "psql exited with {:?}\nstdout: {}\nstderr: {}",
+        psql_output.status,
+        String::from_utf8_lossy(&psql_output.stdout),
+        String::from_utf8_lossy(&psql_output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&psql_output.stdout);
+    let line = stdout
+        .lines()
+        .find(|l| l.contains('|'))
+        .unwrap_or_else(|| panic!("anchor probe returned no rows: {stdout:?}"));
+    let parts: Vec<&str> = line.split('|').collect();
+    assert_eq!(
+        parts.len(),
+        3,
+        "expected 3 fields, got {parts:?} from {line:?}"
+    );
+    let recall_at_10: f32 = parts[0]
+        .parse()
+        .unwrap_or_else(|e| panic!("could not parse recall_at_10 from {:?}: {e}", parts[0]));
+    let absolute_delta: f32 = parts[1]
+        .parse()
+        .unwrap_or_else(|e| panic!("could not parse absolute_delta from {:?}: {e}", parts[1]));
+    let within_two_percent: bool = parts[2].trim() == "t" || parts[2].trim() == "true";
+
+    println!(
+        "ann_benchmarks anchor: recall_at_10={recall_at_10:.5} \
+         published={PUBLISHED_RECALL_AT_10:.5} \
+         absolute_delta={absolute_delta:+.5} within_two_percent={within_two_percent}"
+    );
+
+    assert!(
+        within_two_percent && absolute_delta.abs() <= TOLERANCE,
+        "ann-benchmarks anchor drifted: measured recall@10={recall_at_10:.5}, \
+         published recall@10={PUBLISHED_RECALL_AT_10:.5}, |delta|={:.5} > {TOLERANCE:.5}. \
+         Do not adjust the published constant — investigate the converter, loader, \
+         build path, or scan path. See docs/RECALL_ANN_BENCHMARKS_ANCHOR.md.",
+        absolute_delta.abs()
+    );
+}

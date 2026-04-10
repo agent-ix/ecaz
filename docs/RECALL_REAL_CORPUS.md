@@ -405,3 +405,6 @@ prepared to reload the fixture afterward.
   different reporting surface (`scripts/bench_sql_latency.sh`).
 - Insert drift / vacuum recall. Both follow `A5` / `A6` and re-use the loaded
   tables once they exist.
+- The published external reference anchor. That is a one-time oracle on a
+  separate larger profile and is documented in
+  `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`. The anchor reuses this loader.
