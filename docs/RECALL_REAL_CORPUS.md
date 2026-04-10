@@ -239,6 +239,105 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    );
    ```
 
+## Diagnostics
+
+When the gate report from step 4 lands below target, three additional surfaces
+turn the yes/no result into a diagnosable result. All three reuse the canonical
+`<prefix>_corpus` / `<prefix>_queries` tables and the same per-`m` indexes built
+in step 1 — they do not load anything new and they build the external recall
+context exactly once per call. Each is gated behind the `pg_test` build of the
+extension, the same as the existing `tqhnsw_graph_scan_recall_external_*`
+surfaces.
+
+### Per-query recall histogram
+
+```sql
+SELECT * FROM tqhnsw_graph_scan_recall_histogram(
+    'tqhnsw_real_10k_corpus',
+    'tqhnsw_real_10k_queries',
+    'tqhnsw_real_10k_m8_idx',
+    8,
+    128
+);
+```
+
+Returns 11 rows, one per top-10 recall bucket `0..=10`:
+
+```
+ recall_bucket | query_count | query_fraction
+---------------+-------------+----------------
+             0 |           0 |        0.00000
+             1 |           0 |        0.00000
+             ...
+             9 |          14 |        0.07000
+            10 |         186 |        0.93000
+```
+
+A healthy run concentrates almost everything in buckets 9 and 10. A run that
+spreads across mid buckets means recall is mediocre everywhere; a run that
+concentrates a small tail in low buckets means a few queries are catastrophic
+and the rest are fine. The two failure modes have completely different fixes.
+
+### `ef_search` sweep on a single fixture
+
+```sql
+SELECT * FROM tqhnsw_graph_scan_recall_ef_sweep(
+    'tqhnsw_real_10k_corpus',
+    'tqhnsw_real_10k_queries',
+    'tqhnsw_real_10k_m8_idx',
+    8,
+    ARRAY[40, 64, 100, 128, 160, 200, 300, 500]
+);
+```
+
+Returns one row per `ef_search` value:
+
+```
+ m | ef_search | recall_at_10 | exact_quantized_recall_at_10 | mean_abs_score_error | mean_query_latency_ms
+---+-----------+--------------+------------------------------+----------------------+-----------------------
+ 8 |        40 |        0.xx  |                        0.xx  |               0.xxxx |                  x.xx
+ 8 |        64 |        0.xx  |                        0.xx  |               0.xxxx |                  x.xx
+ ...
+```
+
+The recall context is built once and reused for every `ef_search`, so the
+sweep is the cheapest way to walk the recall/latency Pareto frontier on a
+fixed fixture. `mean_query_latency_ms` is the wall-clock spent inside the
+graph scan loop divided by the query count — it includes a small constant
+NDCG/MAE/Spearman bookkeeping cost but is dominated by the graph traversal.
+
+### Exact-vs-approximate diff for failing queries
+
+```sql
+SELECT * FROM tqhnsw_graph_scan_recall_failure_breakdown(
+    'tqhnsw_real_10k_corpus',
+    'tqhnsw_real_10k_queries',
+    'tqhnsw_real_10k_m8_idx',
+    8,
+    128,
+    8  -- list every query whose top-10 recall is < 8 (i.e. missed >= 3 of 10)
+);
+```
+
+Returns one row per query whose graph top-10 recall is strictly less than the
+threshold:
+
+```
+ query_index | graph_recall_at_10 | exact_quantized_recall_at_10 | missed_ids
+-------------+--------------------+------------------------------+-----------------
+          17 |                  6 |                          10  | {1234,5678,...}
+         142 |                  4 |                           4  | {314,159,...}
+```
+
+This is the single diagnostic that distinguishes "the graph is the
+bottleneck" from "the quantizer is the bottleneck". If a query misses several
+items for the graph but zero for exact-quantized, the graph is the problem and
+raising `ef_search` will help. If both surfaces miss the same items, the
+quantizer is the problem and no amount of `ef_search` will fix it. The
+`missed_ids` column lists corpus ids that neither the graph top-10 nor the
+exact-quantized top-10 found, which is the smallest reproducible target for a
+hand inspection.
+
 ## Reporting
 
 Real-corpus A4 results MUST be recorded in the same durable style as the
