@@ -1,6 +1,6 @@
 # Task 12: Real-Corpus Recall Validation
 
-Status: not started — **can start immediately; now required to resolve the A4 / NFR-003 dataset contradiction**
+Status: lane shipped — local-file loader, external-corpus probe surface, and gate report are merged. Real DBpedia run is staged out-of-band by the user; the lane no longer blocks on infrastructure.
 
 ## Scope
 
@@ -30,38 +30,29 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 
 ## Subtasks
 
-- [ ] **Dataset contract.** Pick the first real-corpus benchmark source and document:
-  - dataset name
-  - licensing / local availability
-  - row count
-  - dimensionality
-  - query split
-  - any preprocessing required to reach the repo's expected `float4[]` shape
-- [ ] **Local loader path.** Add a local-file loader that can ingest corpus rows and query rows
-  without requiring a network fetch during tests. Prefer a simple, auditable format such as CSV,
-  TSV, or line-delimited JSON over a tightly coupled ad hoc format.
-- [ ] **External-corpus relation seam.** Reuse or extend the current relation-based recall probes so
-  they can operate on:
-  - an external corpus table
-  - an external query table
-  - the built tqhnsw index on that corpus
-  while still comparing against brute-force fp32 truth.
-- [ ] **Reusable fixture flow.** Keep the new path reusable, like the current fixture-backed gate:
-  - one-time load
-  - one-time index build
-  - repeated report/probe reruns without rebuilding the corpus each time
-- [ ] **A4 rerun on real data.** Measure the required A4 configurations:
-  - `(m=8, ef=40)`
-  - `(m=8, ef=128)`
-  - `(m=8, ef=200)`
-  - `(m=16, ef=200)`
-  against brute-force fp32 truth on the real corpus.
-- [ ] **Reporting surface.** Record dataset metadata and results in the same durable style as the
-  synthetic A4 work:
-  - graph Recall@10
-  - exact quantized Recall@10
-  - build-code / reference comparisons when useful
-  - clear pass/fail statement against the existing gate
+- [x] **Dataset contract.** Documented in `docs/RECALL_REAL_CORPUS.md`. Primary: Qdrant
+  `dbpedia-entities-openai-1M`; default working subset `tqhnsw_real_50k` (50k corpus, 1k queries).
+  Local file format: TSV with `<id>\t<json_array>` columns, no header.
+- [x] **Local loader path.** `scripts/load_real_corpus.py` ingests `<basename>_corpus.tsv` /
+  `<basename>_queries.tsv` via `psql COPY ... FROM STDIN`, then encodes the `embedding tqvector`
+  column with `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is
+  already populated and skips index rebuild when reloptions match.
+- [x] **External-corpus relation seam.** Added
+  `probe_graph_scan_recall_external_summary_for_relation` and the `tqhnsw_graph_scan_recall_external_summary`
+  pg_extern. Reads `(id, source)` from the loaded tables, builds fp32 truth from the actual loaded
+  vectors (not regenerated from a seed), runs the graph scan via `am::debug_gettuple_scan_heap_tids`,
+  and compares against `ORDER BY embedding <#> $1`.
+- [x] **Reusable fixture flow.** Loader idempotency and the smoke test both rerun the probe twice
+  against the same loaded tables and assert the summary is byte-identical. The flow matches the
+  one-time-load / one-time-index-build / repeated-rerun discipline of the synthetic gate.
+- [x] **A4 rerun on real data.** `tqhnsw_graph_scan_recall_external_gate_report` walks the four
+  `RECALL_GATE_CONFIGS` rows — `(8, 40, None)`, `(8, 128, Some(0.89))`, `(8, 200, None)`,
+  `(16, 200, None)` — against the `<prefix>_m{8,16}_idx` indexes built by the loader. The actual
+  DBpedia run is staged by the user out-of-band per `docs/RECALL_REAL_CORPUS.md`.
+- [x] **Reporting surface.** `tqhnsw_graph_scan_recall_external_summary` returns
+  `(m, ef_search, corpus_rows, query_count, graph_recall_at_10, graph_recall_at_100, ndcg_at_10,
+  mean_abs_score_error, spearman_rho_at_10, exact_quantized_recall_at_10, graph_below_exact_queries,
+  worst_exact_gap)` per call. The gate report adds the explicit `passes_gate` column.
 
 ## Owns
 

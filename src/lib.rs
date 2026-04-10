@@ -5653,6 +5653,20 @@ mod tests {
     type GraphScanRecallScoreAuditRow = (i32, i32, Vec<i64>, Vec<f32>, Vec<i32>, Vec<f32>);
     type GraphScanRecallFixtureQueryOverlapRow = (i32, i32, i32, i32, i32, i32, i32);
     type GraphScanRecallFixtureSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32, i32, i32);
+    type GraphScanRecallExternalSummaryRow = (
+        i32, // m
+        i32, // ef_search
+        i32, // corpus_rows
+        i32, // query_count
+        f32, // graph_recall_at_10
+        f32, // graph_recall_at_100
+        f32, // ndcg_at_10
+        f32, // mean_abs_score_error
+        f32, // spearman_rho_at_10
+        f32, // exact_quantized_recall_at_10
+        i32, // graph_below_exact_queries
+        i32, // worst_exact_gap
+    );
     type GraphScanRecallTopLevelOracleSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32);
     type GraphScanRecallTopLevelOracleKSummaryRow =
         (i32, i32, i32, i32, f32, f32, f32, i32, i32, i32);
@@ -6250,6 +6264,342 @@ mod tests {
             query_count,
         );
         summarize_graph_scan_recall_fixture_query_overlaps(rows, m, ef_search, query_count)
+    }
+
+    /// Read `(id, source)` rows from a corpus / query table loaded by
+    /// `scripts/load_real_corpus.py`. The returned vectors preserve the row
+    /// order returned by Postgres so that ground-truth indices stay stable
+    /// across reruns.
+    fn load_external_recall_relation(table_name: &str) -> (Vec<i64>, Vec<Vec<f32>>) {
+        let table_name = recall_fixture_ident(table_name);
+        Spi::connect(|client| {
+            let mut ids: Vec<i64> = Vec::new();
+            let mut vectors: Vec<Vec<f32>> = Vec::new();
+            let rows = client
+                .select(
+                    &format!("SELECT id, source FROM {table_name} ORDER BY id"),
+                    None,
+                    &[],
+                )
+                .expect("external recall relation query should succeed");
+            for row in rows {
+                let id = row["id"]
+                    .value::<i64>()
+                    .expect("id should decode")
+                    .expect("id should be non-null");
+                let source = row["source"]
+                    .value::<Vec<f32>>()
+                    .expect("source real[] should decode")
+                    .expect("source real[] should be non-null");
+                ids.push(id);
+                vectors.push(source);
+            }
+            (ids, vectors)
+        })
+    }
+
+    fn ndcg_at_k_external(true_top_k: &[(usize, f32)], pred_ids: &[i64], k: usize) -> f32 {
+        let relevance: HashMap<usize, f32> =
+            true_top_k.iter().take(k).map(|(i, s)| (*i, *s)).collect();
+
+        let dcg: f32 = pred_ids
+            .iter()
+            .take(k)
+            .enumerate()
+            .map(|(rank, idx)| {
+                let rel = *idx as usize;
+                let score = relevance.get(&rel).copied().unwrap_or(0.0).max(0.0);
+                score / ((rank as f32 + 2.0).ln() / 2.0_f32.ln())
+            })
+            .sum();
+
+        let idcg: f32 = true_top_k
+            .iter()
+            .take(k)
+            .enumerate()
+            .map(|(rank, (_, score))| {
+                let rel = score.max(0.0);
+                rel / ((rank as f32 + 2.0).ln() / 2.0_f32.ln())
+            })
+            .sum();
+
+        if idcg == 0.0 {
+            0.0
+        } else {
+            dcg / idcg
+        }
+    }
+
+    fn spearman_rank_correlation_external(
+        true_top_k: &[(usize, f32)],
+        pred_ids: &[i64],
+    ) -> f32 {
+        let n = true_top_k.len().min(pred_ids.len());
+        if n < 2 {
+            return 0.0;
+        }
+
+        let pred_rank: HashMap<usize, usize> = pred_ids
+            .iter()
+            .enumerate()
+            .take(n)
+            .map(|(rank, idx)| (*idx as usize, rank))
+            .collect();
+
+        let mut d_squared_sum = 0.0_f64;
+        for (true_rank, (idx, _)) in true_top_k.iter().enumerate().take(n) {
+            let pred_r = pred_rank.get(idx).copied().unwrap_or(n);
+            let d = true_rank as f64 - pred_r as f64;
+            d_squared_sum += d * d;
+        }
+
+        let n = n as f64;
+        1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0))) as f32
+    }
+
+    fn probe_graph_scan_recall_external_summary_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+    ) -> GraphScanRecallExternalSummaryRow {
+        let corpus_table_ident = recall_fixture_ident(corpus_table);
+        let index_name_ident = recall_fixture_ident(index_name);
+
+        let (corpus_ids, corpus) = load_external_recall_relation(corpus_table);
+        let (_query_ids, queries) = load_external_recall_relation(query_table);
+
+        assert!(
+            !corpus.is_empty(),
+            "external recall corpus {corpus_table_ident} must contain at least one row"
+        );
+        assert!(
+            !queries.is_empty(),
+            "external recall query table must contain at least one row"
+        );
+
+        // Map corpus row index (Vec position) -> id stored in the corpus table.
+        // We work in row-index space for ground truth and translate back to
+        // bigint ids when comparing against graph / exact-quantized output.
+        let row_index_to_id: Vec<i64> = corpus_ids.clone();
+
+        // Brute-force fp32 ground truth: top-k by inner product with full
+        // RECALL_K and a wider RECALL_K * 10 = 100 ranking for Recall@100.
+        // Returns (row_index, score) tuples sorted desc.
+        let recall_k_wide = RECALL_K * 10;
+        let ground_truth_top_k: Vec<Vec<(usize, f32)>> = queries
+            .iter()
+            .map(|query| {
+                let mut scores: Vec<(usize, f32)> = corpus
+                    .iter()
+                    .enumerate()
+                    .map(|(i, vector)| (i, dot_product(query, vector)))
+                    .collect();
+                scores.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
+                scores.truncate(recall_k_wide);
+                scores
+            })
+            .collect();
+
+        let ctid_to_row_index: HashMap<(u32, u16), usize> = {
+            // The corpus loader inserts rows by id; the ctid order may differ
+            // from id order, so build a map from id -> row index first.
+            let id_to_row_index: HashMap<i64, usize> = corpus_ids
+                .iter()
+                .enumerate()
+                .map(|(idx, id)| (*id, idx))
+                .collect();
+            ctid_id_map(&corpus_table_ident)
+                .into_iter()
+                .map(|(ctid, id)| {
+                    let id_i64 =
+                        i64::try_from(id).expect("ctid id should fit into bigint");
+                    let row_index = *id_to_row_index
+                        .get(&id_i64)
+                        .expect("ctid id should map back to a corpus row index");
+                    (ctid, row_index)
+                })
+                .collect()
+        };
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
+                .expect("external recall index oid query should succeed")
+                .expect("external recall index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let query_count = queries.len();
+        let mut graph_top_10_hits = 0_i32;
+        let mut graph_top_100_hits = 0_i32;
+        let mut exact_top_10_hits = 0_i32;
+        let mut graph_below_exact_queries = 0_i32;
+        let mut worst_exact_gap = 0_i32;
+        let mut ndcg_sum = 0.0_f32;
+        let mut mae_sum = 0.0_f32;
+        let mut spearman_sum = 0.0_f32;
+
+        for (query, truth) in queries.iter().zip(ground_truth_top_k.iter()) {
+            // Graph scan: returns heap tids in score order.
+            let predicted_row_indices: Vec<i64> =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .map(|heap_tid| {
+                        let row_index = *ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        i64::try_from(row_index).expect("row index should fit into bigint")
+                    })
+                    .collect();
+
+            // Top-10 graph recall vs fp32 truth (row-index space).
+            let truth_top_10_ids: Vec<i64> = truth
+                .iter()
+                .take(RECALL_K)
+                .map(|(idx, _)| *idx as i64)
+                .collect();
+            let predicted_top_10_ids: Vec<i64> =
+                predicted_row_indices.iter().take(RECALL_K).copied().collect();
+            let graph_overlap_10 =
+                recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
+            graph_top_10_hits += graph_overlap_10;
+
+            // Top-100 graph recall vs the wider truth band.
+            let truth_top_100_ids: Vec<i64> = truth
+                .iter()
+                .take(recall_k_wide)
+                .map(|(idx, _)| *idx as i64)
+                .collect();
+            let predicted_top_100_ids: Vec<i64> = predicted_row_indices
+                .iter()
+                .take(recall_k_wide)
+                .copied()
+                .collect();
+            graph_top_100_hits += recall_top_k_overlap(&truth_top_100_ids, &predicted_top_100_ids);
+
+            // Exact-quantized recall: ORDER BY embedding <#> query.
+            let exact_quantized_id_ints = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT id
+                             FROM {corpus_table_ident}
+                             ORDER BY embedding <#> $1
+                             LIMIT 10"
+                        ),
+                        None,
+                        &[query.clone().into()],
+                    )
+                    .expect("exact quantized external recall query should succeed")
+                    .map(|row| {
+                        row["id"]
+                            .value::<i64>()
+                            .expect("id should decode")
+                            .expect("id should be non-null")
+                    })
+                    .collect::<Vec<_>>()
+            });
+            // Translate exact-quantized ids back into row-index space using
+            // the same row_index_to_id mapping the truth set lives in.
+            let id_to_row_index_lookup: HashMap<i64, i64> = row_index_to_id
+                .iter()
+                .enumerate()
+                .map(|(idx, id)| (*id, idx as i64))
+                .collect();
+            let exact_quantized_row_indices: Vec<i64> = exact_quantized_id_ints
+                .into_iter()
+                .map(|id| {
+                    *id_to_row_index_lookup
+                        .get(&id)
+                        .expect("exact quantized id should map back to a corpus row index")
+                })
+                .collect();
+            let exact_overlap_10 =
+                recall_top_k_overlap(&truth_top_10_ids, &exact_quantized_row_indices);
+            exact_top_10_hits += exact_overlap_10;
+
+            if graph_overlap_10 < exact_overlap_10 {
+                graph_below_exact_queries += 1;
+                worst_exact_gap = worst_exact_gap.max(exact_overlap_10 - graph_overlap_10);
+            }
+
+            // NFR-003 metrics: NDCG@10, MAE, Spearman.
+            ndcg_sum += ndcg_at_k_external(truth, &predicted_top_10_ids, RECALL_K);
+            spearman_sum += spearman_rank_correlation_external(
+                &truth.iter().take(RECALL_K).copied().collect::<Vec<_>>(),
+                &predicted_top_10_ids,
+            );
+
+            // MAE: compare fp32 truth scores to fp32 scores of the predicted
+            // ids' source vectors. We compute scores for the predicted top-10
+            // by re-dot-producting against the loaded source vectors.
+            let predicted_top_10_scores: Vec<f32> = predicted_top_10_ids
+                .iter()
+                .map(|idx| dot_product(query, &corpus[*idx as usize]))
+                .collect();
+            let truth_top_10_scores: Vec<f32> =
+                truth.iter().take(RECALL_K).map(|(_, s)| *s).collect();
+            if !truth_top_10_scores.is_empty() && !predicted_top_10_scores.is_empty() {
+                let pairs = truth_top_10_scores
+                    .len()
+                    .min(predicted_top_10_scores.len());
+                let mae: f32 = (0..pairs)
+                    .map(|i| (truth_top_10_scores[i] - predicted_top_10_scores[i]).abs())
+                    .sum::<f32>()
+                    / pairs as f32;
+                mae_sum += mae;
+            }
+        }
+
+        let recall_10_denom = (query_count as f32) * (RECALL_K as f32);
+        let recall_100_denom = (query_count as f32) * (recall_k_wide as f32);
+        (
+            m,
+            ef_search,
+            i32::try_from(corpus.len()).expect("corpus row count should fit into int"),
+            i32::try_from(query_count).expect("query count should fit into int"),
+            graph_top_10_hits as f32 / recall_10_denom,
+            graph_top_100_hits as f32 / recall_100_denom,
+            ndcg_sum / query_count as f32,
+            mae_sum / query_count as f32,
+            spearman_sum / query_count as f32,
+            exact_top_10_hits as f32 / recall_10_denom,
+            graph_below_exact_queries,
+            worst_exact_gap,
+        )
+    }
+
+    fn run_graph_scan_recall_gate_from_external(
+        corpus_table: &str,
+        query_table: &str,
+        fixture_prefix: &str,
+    ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
+        let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        RECALL_GATE_CONFIGS
+            .iter()
+            .copied()
+            .map(|(m, ef_search, target)| {
+                let index_name = format!("{fixture_prefix}_m{m}_idx");
+                let summary = probe_graph_scan_recall_external_summary_for_relation(
+                    corpus_table,
+                    query_table,
+                    &index_name,
+                    m,
+                    ef_search,
+                );
+                let graph_recall_at_10 = summary.4;
+                let passed = target
+                    .map(|gate| graph_recall_at_10 >= gate)
+                    .unwrap_or(true);
+                (m, ef_search, graph_recall_at_10, target, passed)
+            })
+            .collect()
     }
 
     fn probe_graph_scan_recall_top_level_oracle_summary_for_relation(
@@ -7502,6 +7852,63 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_external_summary(
+        corpus_table: String,
+        query_table: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(corpus_rows, i32),
+            name!(query_count, i32),
+            name!(graph_recall_at_10, f32),
+            name!(graph_recall_at_100, f32),
+            name!(ndcg_at_10, f32),
+            name!(mean_abs_score_error, f32),
+            name!(spearman_rho_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(graph_below_exact_queries, i32),
+            name!(worst_exact_gap, i32),
+        ),
+    > {
+        TableIterator::once(probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &query_table,
+            &index_name,
+            m,
+            ef_search,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_external_gate_report(
+        corpus_table: String,
+        query_table: String,
+        fixture_prefix: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(gate_recall_at_10, Option<f32>),
+            name!(passes_gate, bool),
+        ),
+    > {
+        TableIterator::new(run_graph_scan_recall_gate_from_external(
+            &corpus_table,
+            &query_table,
+            &fixture_prefix,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_graph_scan_recall_probe(
         m: i32,
         ef_search: i32,
@@ -8051,6 +8458,169 @@ mod tests {
             first, second,
             "fixture-backed gate report should be stable across reruns"
         );
+    }
+
+    /// Helper that materializes the external corpus / query / index layout
+    /// described in `docs/RECALL_REAL_CORPUS.md` for a small synthetic dataset.
+    /// Used by the external-probe smoke test below.
+    fn create_external_recall_smoke_fixture(prefix: &str, corpus_size: usize, query_count: usize) {
+        let corpus_table = format!("{prefix}_corpus");
+        let queries_table = format!("{prefix}_queries");
+
+        Spi::run(&format!("DROP TABLE IF EXISTS {corpus_table} CASCADE"))
+            .expect("smoke fixture corpus drop should succeed");
+        Spi::run(&format!("DROP TABLE IF EXISTS {queries_table} CASCADE"))
+            .expect("smoke fixture queries drop should succeed");
+
+        Spi::run(&format!(
+            "CREATE TABLE {corpus_table} (
+                id bigint primary key,
+                source real[] NOT NULL,
+                embedding tqvector
+            )"
+        ))
+        .expect("smoke fixture corpus create should succeed");
+        Spi::run(&format!(
+            "CREATE TABLE {queries_table} (
+                id bigint primary key,
+                source real[] NOT NULL
+            )"
+        ))
+        .expect("smoke fixture queries create should succeed");
+
+        let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
+        let queries =
+            random_unit_vectors(query_count, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
+
+        for (id, vector) in corpus.iter().enumerate() {
+            let source = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!(
+                "INSERT INTO {corpus_table} (id, source, embedding) VALUES \
+                 ({id}, {source}, encode_to_tqvector({source}, {RECALL_BITS}, {RECALL_SEED}))"
+            ))
+            .expect("smoke fixture corpus insert should succeed");
+        }
+        for (id, vector) in queries.iter().enumerate() {
+            let source = format_recall_vector_sql_literal(vector);
+            Spi::run(&format!(
+                "INSERT INTO {queries_table} (id, source) VALUES ({id}, {source})"
+            ))
+            .expect("smoke fixture query insert should succeed");
+        }
+
+        for m in [8_i32, 16_i32] {
+            let index_name = format!("{prefix}_m{m}_idx");
+            Spi::run(&format!(
+                "CREATE INDEX {index_name} ON {corpus_table} \
+                 USING tqhnsw (embedding tqvector_ip_ops) \
+                 WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION}, \
+                       build_source_column = 'source')"
+            ))
+            .expect("smoke fixture index create should succeed");
+        }
+    }
+
+    #[pg_test]
+    #[ignore]
+    fn test_tqhnsw_graph_scan_recall_external_smoke_500() {
+        // Smoke test for the external corpus / query / index probe path. The
+        // real DBpedia corpus is staged out-of-band by
+        // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
+        // dataset that the loader's schema accepts so we can exercise the
+        // Rust probe surface end-to-end.
+        let prefix = "tqhnsw_recall_external_smoke";
+        create_external_recall_smoke_fixture(prefix, 500, 25);
+
+        let corpus_table = format!("{prefix}_corpus");
+        let queries_table = format!("{prefix}_queries");
+        let m8_index = format!("{prefix}_m8_idx");
+
+        let summary = probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &queries_table,
+            &m8_index,
+            8,
+            128,
+        );
+        let (
+            m,
+            ef_search,
+            corpus_rows,
+            query_count,
+            graph_recall_at_10,
+            graph_recall_at_100,
+            ndcg_at_10,
+            mean_abs_score_error,
+            spearman_rho_at_10,
+            exact_quantized_recall_at_10,
+            graph_below_exact_queries,
+            worst_exact_gap,
+        ) = summary;
+
+        println!(
+            "external smoke 500: m={m} ef={ef_search} corpus={corpus_rows} queries={query_count} \
+             graph@10={graph_recall_at_10:.4} graph@100={graph_recall_at_100:.4} \
+             ndcg@10={ndcg_at_10:.4} mae={mean_abs_score_error:.6} \
+             spearman={spearman_rho_at_10:.4} exact@10={exact_quantized_recall_at_10:.4} \
+             graph_below_exact={graph_below_exact_queries} worst_gap={worst_exact_gap}"
+        );
+
+        assert_eq!(m, 8);
+        assert_eq!(ef_search, 128);
+        assert_eq!(corpus_rows, 500);
+        assert_eq!(query_count, 25);
+        // The smoke fixture is uniformly random in 1536 dimensions; tqvector
+        // recall is dominated by the quantizer noise floor in this regime.
+        // We don't assert a specific recall — just that the path returns a
+        // sane fraction in [0, 1] and doesn't blow up. The real recall gate
+        // is `tqhnsw_graph_scan_recall_external_gate_report` against the
+        // staged DBpedia corpus.
+        assert!((0.0..=1.0).contains(&graph_recall_at_10));
+        assert!((0.0..=1.0).contains(&graph_recall_at_100));
+        assert!((0.0..=1.0).contains(&exact_quantized_recall_at_10));
+        assert!((-1.0..=1.0).contains(&spearman_rho_at_10));
+        assert!(ndcg_at_10 >= 0.0);
+        assert!(mean_abs_score_error >= 0.0);
+
+        // Reusability: rerunning against the same loaded tables and index
+        // produces an identical row.
+        let summary_two = probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &queries_table,
+            &m8_index,
+            8,
+            128,
+        );
+        assert_eq!(
+            summary, summary_two,
+            "external recall summary should be deterministic across reruns"
+        );
+
+        // Gate report wrapper: covers all four NFR-003 A4 configurations
+        // against the m=8 and m=16 indexes built by the smoke fixture.
+        let gate = run_graph_scan_recall_gate_from_external(
+            &corpus_table,
+            &queries_table,
+            prefix,
+        );
+        assert_eq!(
+            gate.len(),
+            RECALL_GATE_CONFIGS.len(),
+            "gate report should emit one row per A4 config"
+        );
+        for ((m, ef_search, recall, target, passed), expected) in
+            gate.iter().zip(RECALL_GATE_CONFIGS.iter())
+        {
+            assert_eq!(*m, expected.0);
+            assert_eq!(*ef_search, expected.1);
+            assert_eq!(*target, expected.2);
+            assert!((0.0..=1.0).contains(recall));
+            // Targetless rows always pass; gated rows are only asserted to
+            // be deterministic, not to clear the gate on synthetic data.
+            if expected.2.is_none() {
+                assert!(*passed);
+            }
+        }
     }
 
     #[cfg(test)]
