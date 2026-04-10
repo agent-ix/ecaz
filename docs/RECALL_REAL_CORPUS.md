@@ -86,6 +86,11 @@ the loader skips the corresponding step and logs `skipped: already present`.
 This is the same one-time-load / repeated-rerun discipline used by the synthetic
 fixture-backed gate (`tqhnsw_graph_scan_recall_fixture_gate_*`).
 
+The loader also logs mean/min/max L2 norm statistics for the staged corpus and
+query files. If the vectors are not close to unit norm, it emits a warning so
+the operator can catch a metric-contract mismatch before recording recall
+numbers.
+
 ## Schema
 
 The loader creates these tables in the target database:
@@ -144,7 +149,9 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    ```
    For the repo-local scratch `pg17` cluster, use
    `scripts/load_real_corpus_scratch.sh` to pin the expected socket, port,
-   database, and `psql` binary.
+   database, and `psql` binary. The scratch helper defaults `PGDATABASE` to
+   `postgres` because the pgrx scratch cluster does not provision a separate
+   `tqvector_bench` database.
 4. Run the A4 gate report:
    ```sql
    SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report(
@@ -181,6 +188,24 @@ the published `NFR-003` gates.
 
 The first real-corpus run is documented in
 `review/218-a4-real-corpus-recall-lane`.
+
+## Troubleshooting
+
+### Scratch DB missing the new `tests.tqhnsw_graph_scan_recall_external_*` functions
+
+If the scratch cluster already has `tqvector` installed from an older
+same-version `pg_test` build, rerunning `cargo pgrx install` updates the SQL on
+disk but does not refresh the already-created SQL objects in the database.
+
+For the scratch cluster, the fix is:
+
+```sql
+DROP EXTENSION IF EXISTS tqvector CASCADE;
+CREATE EXTENSION tqvector CASCADE;
+```
+
+This will drop dependent scratch relations. Use a clean scratch database or be
+prepared to reload the fixture afterward.
 
 ## What This Document Does Not Cover
 

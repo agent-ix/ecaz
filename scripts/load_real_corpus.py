@@ -29,7 +29,9 @@ binaries. The user is expected to stage the files out-of-band.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
+import math
 import os
 import re
 import shutil
@@ -40,7 +42,43 @@ from typing import Iterable, List, Sequence
 DEFAULT_BITS = 4
 DEFAULT_SEED = 42
 DEFAULT_EF_CONSTRUCTION = 128
+UNIT_NORM_TOLERANCE = 0.05
 SQL_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+@dataclass
+class VectorNormStats:
+    label: str
+    count: int = 0
+    mean_norm: float = 0.0
+    min_norm: float = float("inf")
+    max_norm: float = 0.0
+
+    def observe(self, values: Sequence[float]) -> None:
+        norm = math.sqrt(sum(float(v) * float(v) for v in values))
+        self.count += 1
+        self.mean_norm += (norm - self.mean_norm) / self.count
+        self.min_norm = min(self.min_norm, norm)
+        self.max_norm = max(self.max_norm, norm)
+
+    def log(self) -> None:
+        if self.count == 0:
+            return
+        print(
+            f"[loader] {self.label} norms: count={self.count} "
+            f"mean={self.mean_norm:.6f} min={self.min_norm:.6f} max={self.max_norm:.6f}",
+            file=sys.stderr,
+        )
+        if (
+            abs(self.mean_norm - 1.0) > UNIT_NORM_TOLERANCE
+            or self.min_norm < 1.0 - UNIT_NORM_TOLERANCE
+            or self.max_norm > 1.0 + UNIT_NORM_TOLERANCE
+        ):
+            print(
+                f"[loader] warning: {self.label} vectors do not appear unit-normalized; "
+                "inner-product/cosine benchmark assumptions may not hold",
+                file=sys.stderr,
+            )
 
 
 def _validate_ident(name: str, label: str) -> str:
@@ -174,16 +212,21 @@ def _load_corpus(
     # COPY ... FROM STDIN as text. Each row: id\tsource_real_array
     # Then materialize embedding via UPDATE in one shot to avoid per-row SPI
     # overhead.
+    norm_stats = VectorNormStats(label=f"{table} corpus")
+
+    def corpus_payload() -> Iterable[str]:
+        for row_id, values in _read_vector_file(path, dim):
+            norm_stats.observe(values)
+            yield f"{row_id}\t{_format_real_array_literal(values)}"
+
     print(f"[loader] inserting corpus rows into {table} ...", file=sys.stderr)
     _psql_copy(
         database,
         f"COPY {table} (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t')",
-        (
-            f"{row_id}\t{_format_real_array_literal(values)}"
-            for row_id, values in _read_vector_file(path, dim)
-        ),
+        corpus_payload(),
     )
     inserted = _table_row_count(database, table)
+    norm_stats.log()
     print(
         f"[loader] encoding tqvector embedding column for {inserted} rows in {table} ...",
         file=sys.stderr,
@@ -196,15 +239,20 @@ def _load_corpus(
 
 
 def _load_queries(database: str, table: str, path: str, dim: int) -> int:
+    norm_stats = VectorNormStats(label=f"{table} queries")
+
+    def query_payload() -> Iterable[str]:
+        for row_id, values in _read_vector_file(path, dim):
+            norm_stats.observe(values)
+            yield f"{row_id}\t{_format_real_array_literal(values)}"
+
     print(f"[loader] inserting query rows into {table} ...", file=sys.stderr)
     _psql_copy(
         database,
         f"COPY {table} (id, source) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t')",
-        (
-            f"{row_id}\t{_format_real_array_literal(values)}"
-            for row_id, values in _read_vector_file(path, dim)
-        ),
+        query_payload(),
     )
+    norm_stats.log()
     return _table_row_count(database, table)
 
 

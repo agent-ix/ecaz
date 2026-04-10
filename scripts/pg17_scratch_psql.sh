@@ -25,7 +25,8 @@ EOF
 socket_dir="${TQV_PG_SOCKET_DIR:-/tmp/tqvector_pgrx_home}"
 port="${TQV_PG_PORT:-28817}"
 database="${TQV_PG_DATABASE:-postgres}"
-psql_bin="${TQV_PSQL_BIN:-/home/peter/.pgrx/17.9/pgrx-install/bin/psql}"
+pgrx_home="${PGRX_HOME:-${HOME}/.pgrx}"
+psql_bin="${TQV_PSQL_BIN:-${pgrx_home}/17.9/pgrx-install/bin/psql}"
 raw_mode=0
 sql=""
 sql_file=""

@@ -6298,6 +6298,109 @@ mod tests {
         })
     }
 
+    struct ExternalRecallContext {
+        corpus_ids: Vec<i64>,
+        corpus: Vec<Vec<f32>>,
+        queries: Vec<Vec<f32>>,
+        ground_truth_top_k: Vec<Vec<(usize, f32)>>,
+        exact_quantized_row_indices_top10: Vec<Vec<i64>>,
+        ctid_to_row_index: HashMap<(u32, u16), usize>,
+    }
+
+    fn build_external_recall_context(
+        corpus_table: &str,
+        query_table: &str,
+    ) -> ExternalRecallContext {
+        let corpus_table_ident = recall_fixture_ident(corpus_table);
+        let (corpus_ids, corpus) = load_external_recall_relation(corpus_table);
+        let (_query_ids, queries) = load_external_recall_relation(query_table);
+
+        assert!(
+            !corpus.is_empty(),
+            "external recall corpus {corpus_table_ident} must contain at least one row"
+        );
+        assert!(
+            !queries.is_empty(),
+            "external recall query table must contain at least one row"
+        );
+
+        let recall_k_wide = RECALL_K * 10;
+        let ground_truth_top_k: Vec<Vec<(usize, f32)>> = queries
+            .iter()
+            .map(|query| {
+                let mut scores: Vec<(usize, f32)> = corpus
+                    .iter()
+                    .enumerate()
+                    .map(|(i, vector)| (i, dot_product(query, vector)))
+                    .collect();
+                scores.sort_by(|a, b| {
+                    b.1.partial_cmp(&a.1)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.0.cmp(&b.0))
+                });
+                scores.truncate(recall_k_wide);
+                scores
+            })
+            .collect();
+
+        let id_to_row_index: HashMap<i64, usize> = corpus_ids
+            .iter()
+            .enumerate()
+            .map(|(idx, id)| (*id, idx))
+            .collect();
+        let ctid_to_row_index: HashMap<(u32, u16), usize> = ctid_id_map(&corpus_table_ident)
+            .into_iter()
+            .map(|(ctid, id)| {
+                let id_i64 = i64::try_from(id).expect("ctid id should fit into bigint");
+                let row_index = *id_to_row_index
+                    .get(&id_i64)
+                    .expect("ctid id should map back to a corpus row index");
+                (ctid, row_index)
+            })
+            .collect();
+        let exact_quantized_row_indices_top10: Vec<Vec<i64>> = Spi::connect(|client| {
+            queries
+                .iter()
+                .map(|query| {
+                    client
+                        .select(
+                            &format!(
+                                "SELECT id
+                                 FROM {corpus_table_ident}
+                                 ORDER BY embedding <#> $1
+                                 LIMIT 10"
+                            ),
+                            None,
+                            &[query.clone().into()],
+                        )
+                        .expect("exact quantized external recall query should succeed")
+                        .map(|row| {
+                            let id = row["id"]
+                                .value::<i64>()
+                                .expect("id should decode")
+                                .expect("id should be non-null");
+                            i64::try_from(
+                                *id_to_row_index
+                                    .get(&id)
+                                    .expect("exact quantized id should map back to a corpus row index"),
+                            )
+                            .expect("row index should fit into bigint")
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        });
+
+        ExternalRecallContext {
+            corpus_ids,
+            corpus,
+            queries,
+            ground_truth_top_k,
+            exact_quantized_row_indices_top10,
+            ctid_to_row_index,
+        }
+    }
+
     fn ndcg_at_k_external(true_top_k: &[(usize, f32)], pred_ids: &[i64], k: usize) -> f32 {
         let relevance: HashMap<usize, f32> =
             true_top_k.iter().take(k).map(|(i, s)| (*i, *s)).collect();
@@ -6357,75 +6460,14 @@ mod tests {
         1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0))) as f32
     }
 
-    fn probe_graph_scan_recall_external_summary_for_relation(
-        corpus_table: &str,
-        query_table: &str,
+    fn probe_graph_scan_recall_external_summary_for_context(
+        context: &ExternalRecallContext,
         index_name: &str,
         m: i32,
         ef_search: i32,
     ) -> GraphScanRecallExternalSummaryRow {
-        let corpus_table_ident = recall_fixture_ident(corpus_table);
         let index_name_ident = recall_fixture_ident(index_name);
-
-        let (corpus_ids, corpus) = load_external_recall_relation(corpus_table);
-        let (_query_ids, queries) = load_external_recall_relation(query_table);
-
-        assert!(
-            !corpus.is_empty(),
-            "external recall corpus {corpus_table_ident} must contain at least one row"
-        );
-        assert!(
-            !queries.is_empty(),
-            "external recall query table must contain at least one row"
-        );
-
-        // Map corpus row index (Vec position) -> id stored in the corpus table.
-        // We work in row-index space for ground truth and translate back to
-        // bigint ids when comparing against graph / exact-quantized output.
-        let row_index_to_id: Vec<i64> = corpus_ids.clone();
-
-        // Brute-force fp32 ground truth: top-k by inner product with full
-        // RECALL_K and a wider RECALL_K * 10 = 100 ranking for Recall@100.
-        // Returns (row_index, score) tuples sorted desc.
         let recall_k_wide = RECALL_K * 10;
-        let ground_truth_top_k: Vec<Vec<(usize, f32)>> = queries
-            .iter()
-            .map(|query| {
-                let mut scores: Vec<(usize, f32)> = corpus
-                    .iter()
-                    .enumerate()
-                    .map(|(i, vector)| (i, dot_product(query, vector)))
-                    .collect();
-                scores.sort_by(|a, b| {
-                    b.1.partial_cmp(&a.1)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| a.0.cmp(&b.0))
-                });
-                scores.truncate(recall_k_wide);
-                scores
-            })
-            .collect();
-
-        let ctid_to_row_index: HashMap<(u32, u16), usize> = {
-            // The corpus loader inserts rows by id; the ctid order may differ
-            // from id order, so build a map from id -> row index first.
-            let id_to_row_index: HashMap<i64, usize> = corpus_ids
-                .iter()
-                .enumerate()
-                .map(|(idx, id)| (*id, idx))
-                .collect();
-            ctid_id_map(&corpus_table_ident)
-                .into_iter()
-                .map(|(ctid, id)| {
-                    let id_i64 =
-                        i64::try_from(id).expect("ctid id should fit into bigint");
-                    let row_index = *id_to_row_index
-                        .get(&id_i64)
-                        .expect("ctid id should map back to a corpus row index");
-                    (ctid, row_index)
-                })
-                .collect()
-        };
 
         let index_oid =
             Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
@@ -6435,7 +6477,7 @@ mod tests {
         Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
-        let query_count = queries.len();
+        let query_count = context.queries.len();
         let mut graph_top_10_hits = 0_i32;
         let mut graph_top_100_hits = 0_i32;
         let mut exact_top_10_hits = 0_i32;
@@ -6445,18 +6487,31 @@ mod tests {
         let mut mae_sum = 0.0_f32;
         let mut spearman_sum = 0.0_f32;
 
-        for (query, truth) in queries.iter().zip(ground_truth_top_k.iter()) {
-            // Graph scan: returns heap tids in score order.
-            let predicted_row_indices: Vec<i64> =
-                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
-                    .into_iter()
-                    .map(|heap_tid| {
-                        let row_index = *ctid_to_row_index
-                            .get(&heap_tid)
-                            .expect("graph heap tid should map back to a corpus row index");
-                        i64::try_from(row_index).expect("row index should fit into bigint")
-                    })
-                    .collect();
+        for ((query, truth), exact_quantized_row_indices) in context
+            .queries
+            .iter()
+            .zip(context.ground_truth_top_k.iter())
+            .zip(context.exact_quantized_row_indices_top10.iter())
+        {
+            // Graph scan: returns heap tids plus operator-facing `<#>` scores.
+            let predicted_row_indices_with_scores: Vec<(usize, f32)> = unsafe {
+                am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
+            }
+            .into_iter()
+            .map(|(heap_tid, operator_score)| {
+                let row_index = *context
+                    .ctid_to_row_index
+                    .get(&heap_tid)
+                    .expect("graph heap tid should map back to a corpus row index");
+                (row_index, operator_score)
+            })
+            .collect();
+            let predicted_row_indices: Vec<i64> = predicted_row_indices_with_scores
+                .iter()
+                .map(|(row_index, _)| {
+                    i64::try_from(*row_index).expect("row index should fit into bigint")
+                })
+                .collect();
 
             // Top-10 graph recall vs fp32 truth (row-index space).
             let truth_top_10_ids: Vec<i64> = truth
@@ -6483,45 +6538,8 @@ mod tests {
                 .collect();
             graph_top_100_hits += recall_top_k_overlap(&truth_top_100_ids, &predicted_top_100_ids);
 
-            // Exact-quantized recall: ORDER BY embedding <#> query.
-            let exact_quantized_id_ints = Spi::connect(|client| {
-                client
-                    .select(
-                        &format!(
-                            "SELECT id
-                             FROM {corpus_table_ident}
-                             ORDER BY embedding <#> $1
-                             LIMIT 10"
-                        ),
-                        None,
-                        &[query.clone().into()],
-                    )
-                    .expect("exact quantized external recall query should succeed")
-                    .map(|row| {
-                        row["id"]
-                            .value::<i64>()
-                            .expect("id should decode")
-                            .expect("id should be non-null")
-                    })
-                    .collect::<Vec<_>>()
-            });
-            // Translate exact-quantized ids back into row-index space using
-            // the same row_index_to_id mapping the truth set lives in.
-            let id_to_row_index_lookup: HashMap<i64, i64> = row_index_to_id
-                .iter()
-                .enumerate()
-                .map(|(idx, id)| (*id, idx as i64))
-                .collect();
-            let exact_quantized_row_indices: Vec<i64> = exact_quantized_id_ints
-                .into_iter()
-                .map(|id| {
-                    *id_to_row_index_lookup
-                        .get(&id)
-                        .expect("exact quantized id should map back to a corpus row index")
-                })
-                .collect();
             let exact_overlap_10 =
-                recall_top_k_overlap(&truth_top_10_ids, &exact_quantized_row_indices);
+                recall_top_k_overlap(&truth_top_10_ids, exact_quantized_row_indices);
             exact_top_10_hits += exact_overlap_10;
 
             if graph_overlap_10 < exact_overlap_10 {
@@ -6529,31 +6547,29 @@ mod tests {
                 worst_exact_gap = worst_exact_gap.max(exact_overlap_10 - graph_overlap_10);
             }
 
-            // NFR-003 metrics: NDCG@10, MAE, Spearman.
             ndcg_sum += ndcg_at_k_external(truth, &predicted_top_10_ids, RECALL_K);
             spearman_sum += spearman_rank_correlation_external(
                 &truth.iter().take(RECALL_K).copied().collect::<Vec<_>>(),
                 &predicted_top_10_ids,
             );
 
-            // MAE: compare fp32 truth scores to fp32 scores of the predicted
-            // ids' source vectors. We compute scores for the predicted top-10
-            // by re-dot-producting against the loaded source vectors.
-            let predicted_top_10_scores: Vec<f32> = predicted_top_10_ids
+            // NFR-003 MAE: per predicted item, compare the graph's approximate
+            // inner product estimate against the true fp32 inner product for
+            // that same item. The operator-facing `<#>` score is ascending
+            // negative inner product, so negate it back into similarity space.
+            let predicted_top_10_score_errors: Vec<f32> = predicted_row_indices_with_scores
                 .iter()
-                .map(|idx| dot_product(query, &corpus[*idx as usize]))
+                .take(RECALL_K)
+                .map(|(row_index, operator_score)| {
+                    let approx_inner_product = -*operator_score;
+                    let true_inner_product =
+                        dot_product(query, &context.corpus[*row_index]);
+                    (approx_inner_product - true_inner_product).abs()
+                })
                 .collect();
-            let truth_top_10_scores: Vec<f32> =
-                truth.iter().take(RECALL_K).map(|(_, s)| *s).collect();
-            if !truth_top_10_scores.is_empty() && !predicted_top_10_scores.is_empty() {
-                let pairs = truth_top_10_scores
-                    .len()
-                    .min(predicted_top_10_scores.len());
-                let mae: f32 = (0..pairs)
-                    .map(|i| (truth_top_10_scores[i] - predicted_top_10_scores[i]).abs())
-                    .sum::<f32>()
-                    / pairs as f32;
-                mae_sum += mae;
+            if !predicted_top_10_score_errors.is_empty() {
+                mae_sum += predicted_top_10_score_errors.iter().sum::<f32>()
+                    / predicted_top_10_score_errors.len() as f32;
             }
         }
 
@@ -6562,7 +6578,7 @@ mod tests {
         (
             m,
             ef_search,
-            i32::try_from(corpus.len()).expect("corpus row count should fit into int"),
+            i32::try_from(context.corpus_ids.len()).expect("corpus row count should fit into int"),
             i32::try_from(query_count).expect("query count should fit into int"),
             graph_top_10_hits as f32 / recall_10_denom,
             graph_top_100_hits as f32 / recall_100_denom,
@@ -6575,20 +6591,31 @@ mod tests {
         )
     }
 
+    fn probe_graph_scan_recall_external_summary_for_relation(
+        corpus_table: &str,
+        query_table: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+    ) -> GraphScanRecallExternalSummaryRow {
+        let context = build_external_recall_context(corpus_table, query_table);
+        probe_graph_scan_recall_external_summary_for_context(&context, index_name, m, ef_search)
+    }
+
     fn run_graph_scan_recall_gate_from_external(
         corpus_table: &str,
         query_table: &str,
         fixture_prefix: &str,
     ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
         let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        let context = build_external_recall_context(corpus_table, query_table);
         RECALL_GATE_CONFIGS
             .iter()
             .copied()
             .map(|(m, ef_search, target)| {
                 let index_name = format!("{fixture_prefix}_m{m}_idx");
-                let summary = probe_graph_scan_recall_external_summary_for_relation(
-                    corpus_table,
-                    query_table,
+                let summary = probe_graph_scan_recall_external_summary_for_context(
+                    &context,
                     &index_name,
                     m,
                     ef_search,
