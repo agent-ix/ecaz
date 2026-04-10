@@ -1,9 +1,272 @@
 #!/usr/bin/env bash
 # SQL-level latency benchmarks for tqvector HNSW scan.
 # Requires: running PostgreSQL with tqvector extension installed.
-# Usage: PGDATABASE=tqvector_bench bash scripts/bench_sql_latency.sh
+#
+# Two invocation modes:
+#
+# 1. Synthetic-fixture mode (legacy default). Generates a synthetic corpus,
+#    encodes it, builds an index, then runs a single (m, ef_search) sweep.
+#    Tunable via the N/DIM/BITS/M/EF_*/RUNS env vars.
+#
+#       PGDATABASE=tqvector_bench bash scripts/bench_sql_latency.sh
+#
+# 2. Real-corpus mode (NFR-001 lane). Reuses already-loaded canonical
+#    real-corpus tables and indexes produced by scripts/load_real_corpus.py
+#    and sweeps (m, ef_search) over an explicit list. Does NOT load any
+#    data — load and bench are decoupled, see docs/RECALL_REAL_CORPUS.md.
+#
+#       scripts/bench_sql_latency.sh --prefix tqhnsw_real_10k \
+#           --m 8 --m 16 --ef-search 40,64,100,128,160,200
 set -euo pipefail
 
+PSQL_BIN="${TQV_PSQL_BIN:-psql}"
+
+print_help() {
+  cat <<'USAGE'
+Usage:
+  Synthetic-fixture mode (legacy default; tunables via env vars):
+    bash scripts/bench_sql_latency.sh
+
+  Real-corpus mode (reuses preloaded tables and indexes):
+    bash scripts/bench_sql_latency.sh --prefix <prefix> [--m N]... \
+        [--ef-search csv] [--query-limit N] [--output FILE]
+
+Options (real-corpus mode):
+  --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
+                 (e.g. tqhnsw_real_10k, tqhnsw_real_50k). The script reads
+                 <prefix>_corpus, <prefix>_queries, and <prefix>_m{N}_idx.
+  --m            HNSW m value to bench. May be repeated. Default: 8.
+                 Each value must already have been built by load_real_corpus.py
+                 as <prefix>_m{N}_idx.
+  --ef-search    Comma-separated ef_search list. Default: 40,64,100,128,160,200.
+  --query-limit  Cap the number of queries per (m, ef_search) cell. Default:
+                 all rows in <prefix>_queries.
+  --output       Append the per-cell summary to FILE in addition to stdout.
+  -h, --help     Show this message and exit.
+
+Environment:
+  PGDATABASE / PGHOST / PGPORT / PGUSER  standard libpq variables.
+  TQV_PSQL_BIN                           psql client binary (default: psql).
+USAGE
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+PREFIX=""
+PREFIX_M_LIST=()
+EF_SEARCH_CSV=""
+QUERY_LIMIT=""
+OUTPUT_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prefix)
+      PREFIX="$2"; shift 2 ;;
+    --m)
+      PREFIX_M_LIST+=("$2"); shift 2 ;;
+    --ef-search)
+      EF_SEARCH_CSV="$2"; shift 2 ;;
+    --query-limit)
+      QUERY_LIMIT="$2"; shift 2 ;;
+    --output)
+      OUTPUT_FILE="$2"; shift 2 ;;
+    -h|--help)
+      print_help; exit 0 ;;
+    *)
+      echo "unknown argument: $1" >&2
+      print_help >&2
+      exit 2 ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Real-corpus mode
+# ---------------------------------------------------------------------------
+run_real_corpus_bench() {
+  local prefix="$1"
+  if [[ ! "$prefix" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "invalid prefix: $prefix" >&2
+    exit 2
+  fi
+  if [[ ${#PREFIX_M_LIST[@]} -eq 0 ]]; then
+    PREFIX_M_LIST=(8)
+  fi
+  if [[ -z "$EF_SEARCH_CSV" ]]; then
+    EF_SEARCH_CSV="40,64,100,128,160,200"
+  fi
+  IFS=',' read -r -a ef_list <<< "$EF_SEARCH_CSV"
+  for ef in "${ef_list[@]}"; do
+    if [[ ! "$ef" =~ ^[0-9]+$ ]]; then
+      echo "invalid ef_search value: $ef" >&2
+      exit 2
+    fi
+  done
+  for m in "${PREFIX_M_LIST[@]}"; do
+    if [[ ! "$m" =~ ^[0-9]+$ ]]; then
+      echo "invalid m value: $m" >&2
+      exit 2
+    fi
+  done
+
+  local corpus_table="${prefix}_corpus"
+  local query_table="${prefix}_queries"
+  local k="${K:-10}"
+
+  echo "=== tqvector SQL latency (real corpus) ==="
+  echo "Database:     ${PGDATABASE:-(libpq default)}"
+  echo "Corpus table: $corpus_table"
+  echo "Query table:  $query_table"
+  echo "m values:     ${PREFIX_M_LIST[*]}"
+  echo "ef_search:    $EF_SEARCH_CSV"
+  echo "top-k:        $k"
+  if [[ -n "$QUERY_LIMIT" ]]; then
+    echo "query limit:  $QUERY_LIMIT"
+  fi
+  echo
+
+  local query_count
+  query_count=$("$PSQL_BIN" -X -A -t -q -c "SELECT count(*) FROM ${query_table};")
+  if [[ -z "$query_count" || "$query_count" == "0" ]]; then
+    echo "no queries found in ${query_table}; did the loader run?" >&2
+    exit 1
+  fi
+  if [[ -n "$QUERY_LIMIT" ]]; then
+    if (( QUERY_LIMIT < query_count )); then
+      query_count="$QUERY_LIMIT"
+    fi
+  fi
+  echo "queries available: $query_count"
+
+  local queries_tsv
+  queries_tsv="$(mktemp -t tqv_queries.XXXXXX.tsv)"
+  trap 'rm -f "$queries_tsv" "$results_file"' EXIT
+
+  local query_select="SELECT source FROM ${query_table} ORDER BY id"
+  if [[ -n "$QUERY_LIMIT" ]]; then
+    query_select="${query_select} LIMIT ${QUERY_LIMIT}"
+  fi
+  "$PSQL_BIN" -X -A -t -q -c "${query_select};" > "$queries_tsv"
+
+  local results_file
+  results_file="$(mktemp -t tqv_latency_real.XXXXXX.txt)"
+
+  for m in "${PREFIX_M_LIST[@]}"; do
+    local index_name="${prefix}_m${m}_idx"
+    local exists
+    exists=$("$PSQL_BIN" -X -A -t -q -c "SELECT to_regclass('${index_name}') IS NOT NULL;")
+    if [[ "$exists" != "t" ]]; then
+      echo "index ${index_name} not found; build it with scripts/load_real_corpus.py --m ${m}" >&2
+      exit 1
+    fi
+    for ef in "${ef_list[@]}"; do
+      echo "--- m=${m} ef_search=${ef} ---"
+      : > "$results_file"
+      local wall_start
+      wall_start="$(date +%s.%N)"
+      while IFS= read -r query_line; do
+        [[ -z "$query_line" ]] && continue
+        "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
+SET LOCAL tqhnsw.ef_search = ${ef};
+EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
+SELECT id FROM ${corpus_table}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${k};
+SQL
+      done < "$queries_tsv"
+      local wall_end
+      wall_end="$(date +%s.%N)"
+
+      python3 - "$results_file" "$m" "$ef" "$wall_start" "$wall_end" "$OUTPUT_FILE" <<'PY'
+import json
+import statistics
+import sys
+
+results_path, m_str, ef_str, wall_start_str, wall_end_str, output_path = sys.argv[1:]
+
+times_ms = []
+with open(results_path, "r", encoding="utf-8") as fh:
+    content = fh.read()
+depth = 0
+start = None
+for i, c in enumerate(content):
+    if c == "[" and depth == 0:
+        start = i
+    if c == "[":
+        depth += 1
+    if c == "]":
+        depth -= 1
+        if depth == 0 and start is not None:
+            try:
+                plan = json.loads(content[start : i + 1])
+                times_ms.append(float(plan[0]["Execution Time"]))
+            except (json.JSONDecodeError, KeyError, IndexError, ValueError):
+                pass
+            start = None
+
+if not times_ms:
+    print(f"  no per-query timings parsed", file=sys.stderr)
+    sys.exit(2)
+
+times_ms.sort()
+n = len(times_ms)
+
+
+def pct(p: float) -> float:
+    if n == 0:
+        return float("nan")
+    rank = max(0, min(n - 1, int(round(p * (n - 1)))))
+    return times_ms[rank]
+
+
+wall_seconds = max(1e-9, float(wall_end_str) - float(wall_start_str))
+qps = n / wall_seconds
+
+summary = {
+    "m": int(m_str),
+    "ef_search": int(ef_str),
+    "queries": n,
+    "p50_ms": pct(0.50),
+    "p95_ms": pct(0.95),
+    "p99_ms": pct(0.99),
+    "mean_ms": statistics.fmean(times_ms),
+    "min_ms": times_ms[0],
+    "max_ms": times_ms[-1],
+    "wall_seconds": wall_seconds,
+    "qps": qps,
+}
+
+line = (
+    f"m={summary['m']:<3} ef_search={summary['ef_search']:<4} "
+    f"n={summary['queries']:<5} "
+    f"p50={summary['p50_ms']:.3f}ms "
+    f"p95={summary['p95_ms']:.3f}ms "
+    f"p99={summary['p99_ms']:.3f}ms "
+    f"mean={summary['mean_ms']:.3f}ms "
+    f"min={summary['min_ms']:.3f}ms "
+    f"max={summary['max_ms']:.3f}ms "
+    f"qps={summary['qps']:.2f}"
+)
+print(line)
+if output_path:
+    with open(output_path, "a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+PY
+    done
+  done
+
+  rm -f "$queries_tsv" "$results_file"
+  trap - EXIT
+}
+
+if [[ -n "$PREFIX" ]]; then
+  run_real_corpus_bench "$PREFIX"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Synthetic-fixture mode (unchanged legacy path)
+# ---------------------------------------------------------------------------
 PGDATABASE="${PGDATABASE:-tqvector_bench}"
 N="${N:-50000}"
 DIM="${DIM:-1536}"

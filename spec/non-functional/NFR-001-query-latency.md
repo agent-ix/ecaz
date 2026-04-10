@@ -29,6 +29,12 @@ traces:
 
 Benchmarks SHALL be run on representative hardware and reported in `BENCHMARKS.md`.
 
+The real-corpus latency lane reuses the canonical loader path documented in
+`docs/RECALL_REAL_CORPUS.md` (see "Reusing the Loaded Tables for NFR-001
+Latency"). The reporting surface is `scripts/bench_sql_latency.sh --prefix
+<canonical-prefix>`, which sweeps `(m, ef_search)` against the same indexes
+the recall lane builds and emits per-cell `p50` / `p95` / `p99` summaries.
+
 ### Required Methodology
 
 - Use a fixed dataset, fixed query set, and fixed random seeds for all compared runs.
