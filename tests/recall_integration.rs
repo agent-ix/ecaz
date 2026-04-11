@@ -1703,7 +1703,7 @@ fn recall_harness_clustered_smoke_test() {
 /// One-shot oracle: drives the canonical converter, the real-corpus loader,
 /// and the `tqhnsw_graph_scan_recall_ann_benchmarks_reference` SQL probe end
 /// to end against the Qdrant DBpedia 1M parquet, then asserts the measured
-/// `recall@10` stays within the published 2% tolerance.
+/// `recall@10` stays within the published absolute tolerance.
 ///
 /// This test is `#[ignore]`d on purpose. It is **not** a CI gate. It is a
 /// manual oracle that a reviewer can run when something feels off about the
@@ -1798,7 +1798,7 @@ fn ann_benchmarks_anchor_within_tolerance() {
     }
 
     let probe_sql = format!(
-        "SELECT recall_at_10::text || '|' || absolute_delta::text || '|' || within_two_percent::text \
+        "SELECT recall_at_10::text || '|' || absolute_delta::text || '|' || within_tolerance::text \
          FROM tqhnsw_graph_scan_recall_ann_benchmarks_reference(\
              '{PROFILE}_corpus', '{PROFILE}_queries', '{PROFILE}_m16_idx', 16, 128);"
     );
@@ -1831,16 +1831,16 @@ fn ann_benchmarks_anchor_within_tolerance() {
     let absolute_delta: f32 = parts[1]
         .parse()
         .unwrap_or_else(|e| panic!("could not parse absolute_delta from {:?}: {e}", parts[1]));
-    let within_two_percent: bool = parts[2].trim() == "t" || parts[2].trim() == "true";
+    let within_tolerance: bool = parts[2].trim() == "t" || parts[2].trim() == "true";
 
     println!(
         "ann_benchmarks anchor: recall_at_10={recall_at_10:.5} \
          published={PUBLISHED_RECALL_AT_10:.5} \
-         absolute_delta={absolute_delta:+.5} within_two_percent={within_two_percent}"
+         absolute_delta={absolute_delta:+.5} within_tolerance={within_tolerance}"
     );
 
     assert!(
-        within_two_percent && absolute_delta.abs() <= TOLERANCE,
+        within_tolerance && absolute_delta.abs() <= TOLERANCE,
         "ann-benchmarks anchor drifted: measured recall@10={recall_at_10:.5}, \
          published recall@10={PUBLISHED_RECALL_AT_10:.5}, |delta|={:.5} > {TOLERANCE:.5}. \
          Do not adjust the published constant — investigate the converter, loader, \

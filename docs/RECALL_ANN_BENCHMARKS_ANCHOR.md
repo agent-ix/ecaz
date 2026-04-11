@@ -8,7 +8,7 @@ can spot-check.
 
 The anchor is **not a gate**. It is an oracle: a single number, on a real public
 corpus, with a published source we can cite. If the local measurement drifts
-more than `0.02` (2%) absolute from the published number, that is a signal that
+more than `0.02` absolute from the published number, that is a signal that
 the loader, the converter, the build path, or the scan path is broken — not a
 signal to "tune" the local number.
 
@@ -80,7 +80,9 @@ permalink.
   `docs/RECALL_REAL_CORPUS.md` and treats the last 10,000 rows of the parquet
   as the query set, leaving 990,000 rows for the corpus. This is an
   architectural reproduction, not a bit-for-bit one. The 0.02 tolerance below
-  exists primarily to absorb this gap.
+  exists primarily to absorb this gap. If a first measured run misses the
+  tolerance by only a small margin, rule out query-distribution drift before
+  blaming the converter, loader, build path, or scan path.
 - **Build path.** The anchor must use the same `build_source_column = 'source'`
   hnsw build path as the primary gate
   (`docs/RECALL_REAL_CORPUS.md`). Building from the quantized column would
@@ -129,10 +131,10 @@ real-corpus lane already loads.
    ```
    The probe returns one row:
    ```
-   m | ef_search | recall_at_10 | published_recall_at_10 | absolute_delta | within_two_percent
+   m | ef_search | recall_at_10 | published_recall_at_10 | absolute_delta | within_tolerance
    16|       128 |        0.xxx |               0.96082  |          0.xxx | true|false
    ```
-   `within_two_percent` is the only field a reviewer needs to look at. If it
+   `within_tolerance` is the only field a reviewer needs to look at. If it
    is `false`, do not "fix" it by adjusting the published constant. Land the
    probe red, capture the row in the review packet, and file a follow-up to
    investigate the loader, the converter, the build path, or the scan path.

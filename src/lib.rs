@@ -719,6 +719,7 @@ mod tests {
     // setup `qdrant-m-16-ef-128` (m=16, ef_construct=128, hnsw_ef=128) on
     // `dbpedia-openai-1M-1536-angular`. See `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`.
     // Source: https://qdrant.tech/benchmarks/results-1-100-thread-2024-06-15.json
+    const ANN_BENCHMARKS_ANCHOR_EF_SEARCH: i32 = 128;
     const ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10: f32 = 0.96082_f32;
     const ANN_BENCHMARKS_ANCHOR_TOLERANCE: f32 = 0.02_f32;
 
@@ -5685,7 +5686,7 @@ mod tests {
         f32,  // recall_at_10
         f32,  // published_recall_at_10
         f32,  // absolute_delta
-        bool, // within_two_percent
+        bool, // within_tolerance
     );
     type GraphScanRecallTopLevelOracleSummaryRow = (i32, i32, i32, f32, f32, f32, i32, i32, i32);
     type GraphScanRecallTopLevelOracleKSummaryRow =
@@ -6626,6 +6627,15 @@ mod tests {
     // compares the measured `recall@10` against the published anchor recorded
     // in `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`. This is intentionally not a
     // sweep — anchor diagnostics live in the histogram / ef_sweep surfaces.
+    fn validate_ann_benchmarks_anchor_ef_search(ef_search: i32) {
+        if ef_search != ANN_BENCHMARKS_ANCHOR_EF_SEARCH {
+            pgrx::error!(
+                "ann-benchmarks anchor requires ef_search = {} to match the published qdrant row; got {ef_search}",
+                ANN_BENCHMARKS_ANCHOR_EF_SEARCH
+            );
+        }
+    }
+
     fn probe_graph_scan_recall_ann_benchmarks_reference_for_relation(
         corpus_table: &str,
         query_table: &str,
@@ -6633,6 +6643,7 @@ mod tests {
         m: i32,
         ef_search: i32,
     ) -> GraphScanRecallAnnBenchmarksReferenceRow {
+        validate_ann_benchmarks_anchor_ef_search(ef_search);
         let summary = probe_graph_scan_recall_external_summary_for_relation(
             corpus_table,
             query_table,
@@ -6643,14 +6654,14 @@ mod tests {
         let measured_recall_at_10 = summary.4;
         let absolute_delta =
             measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
-        let within_two_percent = absolute_delta.abs() <= ANN_BENCHMARKS_ANCHOR_TOLERANCE;
+        let within_tolerance = absolute_delta.abs() <= ANN_BENCHMARKS_ANCHOR_TOLERANCE;
         (
             m,
             ef_search,
             measured_recall_at_10,
             ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10,
             absolute_delta,
-            within_two_percent,
+            within_tolerance,
         )
     }
 
@@ -8002,7 +8013,7 @@ mod tests {
             name!(recall_at_10, f32),
             name!(published_recall_at_10, f32),
             name!(absolute_delta, f32),
-            name!(within_two_percent, bool),
+            name!(within_tolerance, bool),
         ),
     > {
         TableIterator::once(
@@ -8502,6 +8513,18 @@ mod tests {
             gate_recall >= 0.89,
             "A4 recall gate failed: Recall@10 at m=8 ef=128 was {:.2}% (required >= 89%)",
             gate_recall * 100.0
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ann-benchmarks anchor requires ef_search = 128")]
+    fn test_ann_bench_anchor_rejects_noncanonical_ef_search() {
+        let _ = probe_graph_scan_recall_ann_benchmarks_reference_for_relation(
+            "missing_corpus",
+            "missing_queries",
+            "missing_idx",
+            16,
+            64,
         );
     }
 
