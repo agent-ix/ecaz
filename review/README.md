@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `121e342`
+Current head: `8a3e13a`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -28,10 +28,11 @@ Current tqhnsw state summary:
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
   - rejects `build_source_column` indexes for live insert in v0.1
-- Vacuum now lands mark + dead-edge unlink + finalize behavior short of replacement search: dead
-  heap TIDs are stripped, persisted neighbor tuples clear references to fully-dead element TIDs
-  one page at a time, fully-dead elements are finalized to `deleted = true`, and duplicate
-  discovery skips dead / empty-heaptid elements.
+- Vacuum now implements the full A6 shape on `main`: pass 1 strips dead heap TIDs, pass 2 clears
+  stale dead-node refs and fills currently free replacement slots across persisted layers, pass 3
+  finalizes fully-dead elements to `deleted = true`, duplicate discovery skips dead /
+  empty-heaptid elements, and `scripts/vacuum_concurrency_scratch.sh` now proves 60-second
+  concurrent INSERT + tqhnsw scan + VACUUM safety against a scratch cluster.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.

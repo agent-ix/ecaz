@@ -55,3 +55,8 @@ After vacuuming 10% of rows, the remaining rows SHALL still be reachable. Recall
 
 ### FR-010-AC-3: No corruption under concurrent load
 Running VACUUM concurrently with INSERT and SELECT for 60 seconds SHALL NOT produce errors, panics, or corrupted results.
+
+Current validation note:
+- `main` now carries `scripts/vacuum_concurrency_scratch.sh`, a scratch-cluster harness that runs
+  concurrent INSERT, tqhnsw graph scan, and VACUUM for 60 seconds using the live
+  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper.

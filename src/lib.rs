@@ -4907,6 +4907,52 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_scan_result_count_matches_scan_helper() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_result_count_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_result_count_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_result_count_fixture_idx \
+             ON tqhnsw_debug_scan_result_count_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        let rust_count = i32::try_from(unsafe {
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()
+        })
+        .expect("scan result count should fit in i32");
+        let sql_count = Spi::get_one::<i32>(
+            "SELECT tests.tqhnsw_debug_scan_result_count(
+                 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+             )",
+        )
+        .expect("debug scan SQL wrapper should succeed")
+        .expect("debug scan SQL wrapper should return a row");
+
+        assert_eq!(
+            sql_count, rust_count,
+            "the SQL-visible debug scan wrapper should exercise the same live tqhnsw scan path",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
         Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -10504,6 +10550,18 @@ mod tests {
         rows.sort_by_key(|(level, _, _, _, _, _)| *level);
 
         TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    fn tqhnsw_debug_scan_result_count(index_oid: pg_sys::Oid, query: Vec<f32>) -> i32 {
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_result_count") };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        i32::try_from(unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }.len())
+            .expect("debug scan result count should fit in i32")
     }
 
     #[pg_test]

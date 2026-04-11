@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is complete, and A6 now lands vacuum mark/unlink/layer-aware-replacement/finalize behavior).
+Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is complete, and A6 vacuum repair is complete with concurrency validation on `main`).
 
 ## Current Task Board
 
@@ -13,7 +13,7 @@ Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is compl
 - `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
 - `A4` recall gate: **done**
 - `A5` graph-aware insert: **done**
-- `A6` vacuum repair: current runtime focus
+- `A6` vacuum repair: **done**
 
 ### Parallel lanes
 
@@ -26,7 +26,7 @@ Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is compl
 ### Current sequencing
 
 1. **Coder-1:** A4 is closed. The real-corpus lane on `main` now carries the trusted signoff surface: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
-2. **Current immediate runtime lane:** A6 vacuum repair, starting from the landed layer-aware replacement checkpoint and continuing into concurrency validation.
+2. **Current immediate runtime lane:** A6 is closed on `main`. The runtime lane can now move to post-vacuum benchmark/reporting work under `C1`, while D2 planner activation remains intentionally sequenced behind ADR-011 retirement.
 3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch; merge timing is now a normal integration decision rather than an A4 blocker.
 4. After A5/A6, run the broader SQL benchmark/reporting arc under `C1`.
 5. D2 planner activation remains intentionally sequenced behind ADR-011 retirement and the post-A4 runtime priorities.
@@ -50,7 +50,7 @@ Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is compl
 - [x] **FR-007**: HNSW page layout and tuple/page invariants.
 - [x] **FR-008**: HNSW bulk build callbacks.
 - [x] **FR-009**: HNSW scan callbacks and `ef_search` behavior.
-- [ ] **FR-010**: HNSW vacuum callbacks.
+- [x] **FR-010**: HNSW vacuum callbacks.
 - [x] **FR-011**: WAL safety via GenericXLog.
 - [x] **FR-012**: SQL bootstrap and extension packaging.
 - [x] **FR-013**: Two-stage quantization pipeline.
@@ -157,7 +157,9 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 
 The extension is ~80% complete. Quantizer, type, scoring, page layout, build, graph-first scan,
 the initial recall gate, and graph-aware insert are all complete on `main`.
-The next runtime-critical gap is FR-010 vacuum repair.
+The next runtime-critical gaps are no longer vacuum correctness. A6 is closed on `main`, so the
+remaining major runtime work shifts to benchmark/reporting follow-through and later planner
+activation sequencing.
 Planner/config groundwork is substantially complete on `main`: the pure cost model, callback
 scaffolding, and `ef_search` control-surface wiring are merged, while planner-visible scans remain
 intentionally disabled behind ADR-011. With A4 closed, planner activation is no longer blocked on

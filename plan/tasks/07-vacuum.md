@@ -1,6 +1,6 @@
 # Task 07: Vacuum Three-Pass
 
-Status: in progress on `main`
+Status: complete on `main`
 
 Progress notes:
 - A5 is complete on `main`, so the shared traversal and neighbor-pruning dependencies are no
@@ -20,8 +20,9 @@ Progress notes:
   `deleted = true` once pass 1 removes their last heap TID.
 - Duplicate discovery now skips deleted / empty-heaptid elements, so a post-vacuum duplicate
   insert cannot reattach to a finalized dead node.
-- Concurrency validation is still pending. The current repair slice now repairs broken edges
-  across all persisted layers, but it still defers concurrent INSERT / SELECT / VACUUM proof.
+- Concurrency validation is now landed: `scripts/vacuum_concurrency_scratch.sh` runs a 60-second
+  scratch-cluster race with concurrent INSERT, tqhnsw graph scan, and VACUUM workers, using a
+  `pg_test`-only SQL wrapper around the live `ambeginscan/amrescan/amgettuple` path.
 
 ## Scope
 
@@ -41,7 +42,7 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 - [x] **Pass 3 — Finalize.** Set `deleted = true` on fully-dead element tuples once pass 1 strips
   their last heap TID.
 - [x] **amvacuumcleanup.** Report live-element tuple counts and page counts through `IndexBulkDeleteResult`.
-- [ ] **Concurrency validation.** Vacuum must not block concurrent INSERT or SELECT.
+- [x] **Concurrency validation.** Vacuum must not block concurrent INSERT or SELECT.
 
 ## Owns
 
@@ -60,7 +61,7 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 - Three-pass `ambulkdelete`
 - `amvacuumcleanup` with live-element statistics
-- Concurrent safety under INSERT + SELECT + VACUUM
+- Concurrent safety under INSERT + tqhnsw scan + VACUUM
 
 ## Primary Tests
 
@@ -79,6 +80,8 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 - The landed replacement slice still keeps writes narrow: candidate planning stays read-only
   outside `BUFFER_LOCK_EXCLUSIVE`, and the write phase only fills currently free slots on
   affected live nodes instead of evicting existing neighbors.
+- The close-out concurrency proof currently lives as a scratch-cluster harness instead of a normal
+  `#[pg_test]`, because it needs multiple independent PostgreSQL sessions running for 60 seconds.
 - pgvector reference: `hnswvacuum.c` three-pass algorithm.
 - Runtime scan and graph traversal still skip both `deleted` elements and empty-heaptid elements,
   but finalized dead tuples now carry `deleted = true` instead of relying only on the empty-heaptid

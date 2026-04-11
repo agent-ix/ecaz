@@ -219,7 +219,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-212 | Small table serial fallback | FR-021-AC-5 | 100-row table build does not launch workers |
 | TC-213 | Vacuum removes dead heap TIDs | FR-022-AC-1, FR-022-AC-2 | DELETE + VACUUM + search, verify deleted row absent |
 | TC-214 | Vacuum maintains graph connectivity | FR-022-AC-3 | Delete 10%, VACUUM, measure recall ≥ 80% of pre-vacuum |
-| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | Run VACUUM + INSERT + SELECT concurrently for 60s, no errors |
+| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + tqhnsw scan + VACUUM for 60s with no errors |
 | TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
 | TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
 | TC-218 | EXPLAIN (tqvector) recognized | FR-024-AC-1 | `EXPLAIN (tqvector) SELECT ...` parses without error |

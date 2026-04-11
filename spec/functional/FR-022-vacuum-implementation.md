@@ -141,7 +141,9 @@ Current implementation note:
 - `main` now also fills currently free slots on affected live nodes across layer 0 and upper
   layers by reusing the insert-time graph search helpers plus a linear top-up fallback, all with
   the same code-to-code scorer.
-- Broader concurrency validation remains future A6 work.
+- `main` now also carries `scripts/vacuum_concurrency_scratch.sh`, a 60-second scratch-cluster
+  harness with concurrent INSERT, tqhnsw graph scan, and VACUUM workers that exercises the live
+  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper.
 
 ### Pass 3 — Finalize
 
