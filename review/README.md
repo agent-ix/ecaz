@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `9177240`
+Current head: `121e342`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -28,17 +28,18 @@ Current tqhnsw state summary:
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
   - rejects `build_source_column` indexes for live insert in v0.1
-- Vacuum now lands mark + finalize behavior short of graph repair: dead heap TIDs are stripped,
-  fully-dead elements are finalized to `deleted = true`, and duplicate discovery skips dead /
-  empty-heaptid elements.
+- Vacuum now lands mark + dead-edge unlink + finalize behavior short of replacement search: dead
+  heap TIDs are stripped, persisted neighbor tuples clear references to fully-dead element TIDs
+  one page at a time, fully-dead elements are finalized to `deleted = true`, and duplicate
+  discovery skips dead / empty-heaptid elements.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.
 - `amgettuple` now supports visible tuple production through the current forward-only bootstrap linear data-page scan for non-empty indexes.
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Vacuum coverage now includes empty-index / no-callback stats, duplicate-heaptid compaction,
-  scan invisibility after finalize, repeated pass-1/finalize stability, and reinserting the same
-  vector after vacuum without reattaching to a dead node.
+  persisted dead-edge unlink, scan invisibility after finalize, repeated repair/finalize
+  stability, and reinserting the same vector after vacuum without reattaching to a dead node.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
