@@ -11,11 +11,11 @@ These task files are the parallel execution breakdown for `tqvector`.
 
 ## Active Tracks
 
-### Agent 1: Graph Search (critical path)
+### Agent 1: Runtime / Index Core (critical path)
 
-5. `05-graph-scan.md` — A1-A4 (A3 done, A4 current)
-6. `06-graph-insert.md` — A5 (blocked on 05)
-7. `07-vacuum.md` — A6 (blocked on 05, 06)
+5. `05-graph-scan.md` — A1-A4 (**done on `main`**)
+6. `06-graph-insert.md` — A5 (**done on `main`**)
+7. `07-vacuum.md` — A6 (**in progress on `main`**)
 
 ### Agent 2: Planner Integration
 
@@ -30,6 +30,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 ### Post-Gate
 
 10. `10-benchmarks.md` — C1 (infrastructure complete, NFR runs blocked on 05)
+13. `13-insert-throughput.md` — post-A5 decontention follow-up for metadata/tail-page/backlink hotspots
 
 ## Coordination rules
 

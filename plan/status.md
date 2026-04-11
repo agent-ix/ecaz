@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-11
-Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, and A5 graph-aware insert is now merged end-to-end on `main`, including bounded stale-snapshot retry hardening
+Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, and A6 vacuum pass 1 now strips dead heap TIDs plus reports live-element stats
 
 ## Reading Guide
 
@@ -30,7 +30,7 @@ Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, and A5
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
 | `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Done** | 100% | Closed on 2026-04-10: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`) |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | **Done** | 100% | Insert search, forward links, backlinks, overflow pruning, drift accounting, and bounded stale-snapshot retry hardening are merged on `main` |
-| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Unblocked by `A4`; follows `A5` |
+| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | In progress | 20% | Pass 1 dead-TID stripping and live-element stats are merged on `main`; graph repair and finalize remain |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are now mainly blocked on `A6` and the post-vacuum benchmark lane |
@@ -68,6 +68,7 @@ Scan runtime rollup: 72%
 | Current insert correctness | Shape validation, metadata setup, duplicate handling, tail-page append/reuse | Strong | 92% | Live insert shape, duplicate handling, append/reuse, metadata bookkeeping, and retry-aware backlink mutation are stable on `main` |
 | Graph-aware insert | Greedy descent, neighbor selection, backlink repair | Done | 100% | Search, forward links, backlinks, overflow pruning, and bounded stale-snapshot retry hardening are merged |
 | Insert drift accounting | Inserted-since-rebuild tracking and drift-aware measurement | Done | 100% | `tqhnsw_index_admin_snapshot(regclass)` now exposes live-node count, inserted-since-rebuild, and drift fraction |
+| Insert decontention follow-up | Metadata, tail-page, and backlink hotspot reduction | Planned | 10% | Explicitly tracked in `plan/tasks/13-insert-throughput.md`; ADR-026 ordering remains the safety baseline |
 
 Insert path rollup: 88%
 
@@ -75,9 +76,9 @@ Insert path rollup: 88%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Vacuum callback scaffold | Vacuum module split and base callback structure | Partial | 35% | Structural base exists |
-| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Not started | 0% | Runtime foundation is now in place; implementation is the next major runtime lane |
-| Stats cleanup integration | `amvacuumcleanup` and stats alignment | Not started | 0% | Follows repair implementation |
+| Vacuum callback scaffold | Vacuum module split and base callback structure | Strong | 70% | Pass 1 callback-driven heap-TID stripping is now live |
+| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Partial | 20% | Pass 1 mark landed; graph repair and finalize still remain |
+| Stats cleanup integration | `amvacuumcleanup` and stats alignment | Partial | 45% | Live-element counts now flow through cleanup; pg_class-facing proof still remains |
 
 Vacuum / repair rollup: 12%
 
@@ -154,10 +155,10 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** A6 vacuum repair.
+2. **Next runtime lane:** Continue A6 from the landed pass-1 mark slice into graph repair and finalize.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
-5. Full SQL benchmark result generation after A6.
+5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
 
 ## Current Major Blockers
 

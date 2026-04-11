@@ -1,9 +1,15 @@
 # Task 07: Vacuum Three-Pass
 
-Status: blocked on Task 05 (A2 traversal), Task 06 (neighbor pruning)
+Status: in progress on `main`
 
 Progress notes:
-- Vacuum callbacks are currently benign no-ops returning page/tuple stats.
+- A5 is complete on `main`, so the shared traversal and neighbor-pruning dependencies are no
+  longer blockers.
+- Pass 1 is now landed: `ambulkdelete` strips dead heap TIDs from element tuples, and
+  `amvacuumcleanup` reports live-element counts instead of raw tuple tags.
+- This first slice intentionally stops short of graph repair and finalization; fully dead elements
+  currently end pass 1 as `heaptids = []` with `deleted = false`, which the scan/runtime path
+  already treats as unreachable.
 
 ## Scope
 
@@ -11,10 +17,11 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 ## Subtasks
 
-- [ ] **Pass 1 — Mark.** Scan element tuples, compare heap TIDs against dead-tuple bitmap, remove dead TIDs from element tuples, build hash table of fully-dead elements.
+- [x] **Pass 1 — Mark.** Scan element tuples, compare heap TIDs against the vacuum callback,
+  remove dead TIDs from element tuples, and persist the compacted heaptid payload in place.
 - [ ] **Pass 2 — Graph repair.** For each broken connection (deleted neighbor), search for replacement neighbors using A2 traversal with code-to-code scoring. Reuse neighbor selection/pruning logic from Task 06.
 - [ ] **Pass 3 — Finalize.** Set `deleted = true` on fully-dead element tuples.
-- [ ] **amvacuumcleanup.** Update pg_class.reltuples and relpages.
+- [x] **amvacuumcleanup.** Report live-element tuple counts and page counts through `IndexBulkDeleteResult`.
 - [ ] **Concurrency validation.** Vacuum must not block concurrent INSERT or SELECT.
 
 ## Owns
@@ -23,8 +30,8 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 ## Dependencies
 
-- Task 05 subtask A2 (graph traversal for repair search)
-- Task 06 (neighbor selection and pruning logic)
+- Task 05 subtask A2 (graph traversal for repair search) — complete
+- Task 06 (neighbor selection and pruning logic) — complete
 
 ## Unblocks
 
@@ -33,7 +40,7 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 ## Deliverables
 
 - Three-pass `ambulkdelete`
-- `amvacuumcleanup` with statistics
+- `amvacuumcleanup` with live-element statistics
 - Concurrent safety under INSERT + SELECT + VACUUM
 
 ## Primary Tests
@@ -48,3 +55,5 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 - Graph repair is the hardest correctness problem. A deleted node's former neighbors need new connections to maintain graph connectivity. This is essentially "insert-like" neighbor finding for existing nodes.
 - pgvector reference: `hnswvacuum.c` three-pass algorithm.
+- Pass 1 already gives correct scan invisibility for fully-dead elements because runtime scan and
+  graph traversal skip `deleted` elements and also skip any element whose `heaptids` array is empty.

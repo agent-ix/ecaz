@@ -140,6 +140,10 @@ pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
 }
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let code_len = crate::quant::prod::payload_len(usize::from(metadata.dimensions), metadata.bits)
+        .checked_sub(4)
+        .expect("payload length should include gamma");
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -177,7 +181,13 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
             if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                count += 1;
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode element tuple while counting: {e}")
+                    });
+                if !element.deleted && !element.heaptids.is_empty() {
+                    count += 1;
+                }
             }
         }
 

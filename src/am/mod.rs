@@ -65,6 +65,10 @@ pub(crate) use self::insert::debug_insert_level_for_heap_tid;
 
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
+pub(crate) use self::vacuum::debug_vacuum_remove_heap_tids;
+
+#[cfg(any(test, feature = "pg_test"))]
+#[allow(unused_imports)]
 pub(crate) use self::scan_debug::{
     debug_all_top_level_heap_tids, debug_begin_end_scan, debug_bootstrap_phase_transition,
     debug_candidate_frontier_head_lifecycle, debug_consume_candidate_frontier_head,

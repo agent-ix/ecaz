@@ -4337,6 +4337,168 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_compacts_duplicate_heaptids() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_duplicates (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_duplicates VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_duplicates_idx ON tqhnsw_vacuum_pass1_duplicates USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 2);
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_duplicates WHERE id = 2")
+            .expect("delete should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_pass1_duplicates_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_element_tid, duplicate_element) =
+            find_element_for_heap_tid(&elements, survivor_heap_tid);
+
+        assert_eq!(
+            duplicate_element.heaptids,
+            vec![survivor_heap_tid],
+            "pass 1 should compact the duplicate element to the surviving heap tid",
+        );
+        assert!(
+            elements
+                .iter()
+                .all(|(_, element)| !element.heaptids.contains(&deleted_heap_tid)),
+            "pass 1 should remove the deleted heap tid from every element payload",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(
+            stats.num_index_tuples, 2.0,
+            "amvacuumcleanup should report the remaining live element count",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_makes_deleted_row_unreachable() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_scan (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_scan VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_scan_idx ON tqhnsw_vacuum_pass1_scan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_scan", 2);
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_scan WHERE id = 2")
+            .expect("delete should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_scan_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let deleted_element = elements
+            .iter()
+            .find(|(_, element)| {
+                element.code
+                    == encoded_code_bytes(
+                        ProdQuantizer::new(4, 4, 42).encode(&[0.5, 1.0, -0.5, 0.25]),
+                    )
+            })
+            .expect("deleted element should still be present until finalize");
+
+        assert!(
+            deleted_element.1.heaptids.is_empty(),
+            "pass 1 should clear the last heap tid from a fully dead element",
+        );
+        assert!(
+            !deleted_element.1.deleted,
+            "pass 1 should defer the deleted flag to the finalize pass",
+        );
+
+        let returned =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
+        assert!(
+            !returned.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "graph/runtime scans should skip elements whose heap tid array is empty after pass 1",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_repeat VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_repeat_idx ON tqhnsw_vacuum_pass1_repeat USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_repeat", 2);
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_repeat WHERE id = 2")
+            .expect("delete should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_repeat_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let first_stats =
+            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let second_stats =
+            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+
+        assert_eq!(first_stats.tuples_removed, 1.0);
+        assert_eq!(second_stats.tuples_removed, 0.0);
+        assert_eq!(second_stats.num_index_tuples, first_stats.num_index_tuples);
+        assert_eq!(
+            elements
+                .iter()
+                .filter(|(_, element)| element.heaptids.is_empty())
+                .count(),
+            1,
+            "the second pass should observe the already-empty fully dead element without rewriting it again",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
         Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
