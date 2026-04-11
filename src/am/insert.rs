@@ -29,44 +29,110 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 );
             }
 
-            shared::with_locked_metadata_page(index_relation, |metadata| {
-                if metadata.dimensions == 0 && metadata.bits == 0 {
-                    metadata.dimensions = tuple.dimensions;
-                    metadata.bits = tuple.bits;
-                    metadata.seed = tuple.seed;
-                } else if tuple.dimensions != metadata.dimensions
-                    || tuple.bits != metadata.bits
-                    || tuple.seed != metadata.seed
-                {
-                    pgrx::error!(
-                        "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+            // Snapshot metadata under a SHARE lock so the duplicate scan does not
+            // serialize concurrent inserts behind the metadata-page exclusive lock.
+            let metadata_snapshot = shared::read_metadata_page(index_relation);
+
+            // First-insert path: shape has never been initialized. Keep this on the
+            // old exclusive path — it only runs on an effectively empty index, and
+            // holding the exclusive lock across a degenerate duplicate scan is fine.
+            if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
+                shared::with_locked_metadata_page(index_relation, |metadata| {
+                    if metadata.dimensions == 0 && metadata.bits == 0 {
+                        metadata.dimensions = tuple.dimensions;
+                        metadata.bits = tuple.bits;
+                        metadata.seed = tuple.seed;
+                    } else if tuple.dimensions != metadata.dimensions
+                        || tuple.bits != metadata.bits
+                        || tuple.seed != metadata.seed
+                    {
+                        pgrx::error!(
+                            "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                            metadata.dimensions,
+                            metadata.bits,
+                            metadata.seed,
+                            tuple.dimensions,
+                            tuple.bits,
+                            tuple.seed
+                        );
+                    }
+
+                    if let Some(element_tid) = find_duplicate_element_tid(
+                        index_relation,
+                        heap_relation,
                         metadata.dimensions,
                         metadata.bits,
-                        metadata.seed,
-                        tuple.dimensions,
-                        tuple.bits,
-                        tuple.seed
-                    );
-                }
+                        tuple.gamma,
+                        code_len,
+                        &tuple.code,
+                    ) {
+                        coalesce_duplicate_heap_tid(
+                            index_relation,
+                            element_tid,
+                            code_len,
+                            heap_tid,
+                        );
+                        return;
+                    }
 
-                if let Some(element_tid) = find_duplicate_element_tid(
-                    index_relation,
-                    heap_relation,
-                    metadata.dimensions,
-                    metadata.bits,
-                    tuple.gamma,
-                    code_len,
-                    &tuple.code,
-                ) {
-                    coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
-                    return;
-                }
+                    let element_tid = append_heap_tuple(index_relation, &tuple);
+                    if metadata.entry_point == page::ItemPointer::INVALID {
+                        metadata.entry_point = element_tid;
+                    }
+                });
+                return false;
+            }
 
-                let element_tid = append_heap_tuple(index_relation, &tuple);
-                if metadata.entry_point == page::ItemPointer::INVALID {
-                    metadata.entry_point = element_tid;
-                }
-            });
+            // Fast path: shape is known. Validate against the snapshot without
+            // holding any metadata lock — shape fields are write-once at
+            // initialization so the SHARE-read snapshot is authoritative here.
+            if tuple.dimensions != metadata_snapshot.dimensions
+                || tuple.bits != metadata_snapshot.bits
+                || tuple.seed != metadata_snapshot.seed
+            {
+                pgrx::error!(
+                    "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                    metadata_snapshot.dimensions,
+                    metadata_snapshot.bits,
+                    metadata_snapshot.seed,
+                    tuple.dimensions,
+                    tuple.bits,
+                    tuple.seed
+                );
+            }
+
+            // Duplicate scan runs with only SHARE locks on individual data pages.
+            // A concurrent insert committing the same code between this scan and
+            // our append may produce two element tuples with identical codes; the
+            // reviewer in review/10045 explicitly accepted this rare race as the
+            // price of removing the serialization point. Queries already tolerate
+            // multiple element tuples sharing a code.
+            if let Some(element_tid) = find_duplicate_element_tid(
+                index_relation,
+                heap_relation,
+                metadata_snapshot.dimensions,
+                metadata_snapshot.bits,
+                tuple.gamma,
+                code_len,
+                &tuple.code,
+            ) {
+                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+                return false;
+            }
+
+            let element_tid = append_heap_tuple(index_relation, &tuple);
+
+            // Only reacquire the metadata exclusive lock when the snapshot says
+            // entry_point still needs to be set. Re-check under the exclusive
+            // lock in case another insert beat us to it.
+            if metadata_snapshot.entry_point == page::ItemPointer::INVALID {
+                shared::with_locked_metadata_page(index_relation, |metadata| {
+                    if metadata.entry_point == page::ItemPointer::INVALID {
+                        metadata.entry_point = element_tid;
+                    }
+                });
+            }
+
             false
         })
     }
