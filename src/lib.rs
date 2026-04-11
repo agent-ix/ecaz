@@ -6308,13 +6308,14 @@ mod tests {
         corpus: Vec<Vec<f32>>,
         queries: Vec<Vec<f32>>,
         ground_truth_top_k: Vec<Vec<(usize, f32)>>,
-        exact_quantized_row_indices_top10: Vec<Vec<i64>>,
+        exact_quantized_row_indices_top10: Option<Vec<Vec<i64>>>,
         ctid_to_row_index: HashMap<(u32, u16), usize>,
     }
 
     fn build_external_recall_context(
         corpus_table: &str,
         query_table: &str,
+        include_exact_quantized_top10: bool,
     ) -> ExternalRecallContext {
         let corpus_table_ident = recall_fixture_ident(corpus_table);
         let (corpus_ids, corpus) = load_external_recall_relation(corpus_table);
@@ -6363,37 +6364,39 @@ mod tests {
                 (ctid, row_index)
             })
             .collect();
-        let exact_quantized_row_indices_top10: Vec<Vec<i64>> = Spi::connect(|client| {
-            queries
-                .iter()
-                .map(|query| {
-                    client
-                        .select(
-                            &format!(
-                                "SELECT id
-                                 FROM {corpus_table_ident}
-                                 ORDER BY embedding <#> $1
-                                 LIMIT 10"
-                            ),
-                            None,
-                            &[query.clone().into()],
-                        )
-                        .expect("exact quantized external recall query should succeed")
-                        .map(|row| {
-                            let id = row["id"]
-                                .value::<i64>()
-                                .expect("id should decode")
-                                .expect("id should be non-null");
-                            i64::try_from(
-                                *id_to_row_index
-                                    .get(&id)
-                                    .expect("exact quantized id should map back to a corpus row index"),
+        let exact_quantized_row_indices_top10 = include_exact_quantized_top10.then(|| {
+            Spi::connect(|client| {
+                queries
+                    .iter()
+                    .map(|query| {
+                        client
+                            .select(
+                                &format!(
+                                    "SELECT id
+                                     FROM {corpus_table_ident}
+                                     ORDER BY embedding <#> $1
+                                     LIMIT 10"
+                                ),
+                                None,
+                                &[query.clone().into()],
                             )
-                            .expect("row index should fit into bigint")
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect()
+                            .expect("exact quantized external recall query should succeed")
+                            .map(|row| {
+                                let id = row["id"]
+                                    .value::<i64>()
+                                    .expect("id should decode")
+                                    .expect("id should be non-null");
+                                i64::try_from(
+                                    *id_to_row_index.get(&id).expect(
+                                        "exact quantized id should map back to a corpus row index",
+                                    ),
+                                )
+                                .expect("row index should fit into bigint")
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect()
+            })
         });
 
         ExternalRecallContext {
@@ -6491,12 +6494,16 @@ mod tests {
         let mut ndcg_sum = 0.0_f32;
         let mut mae_sum = 0.0_f32;
         let mut spearman_sum = 0.0_f32;
+        let exact_quantized_row_indices_top10 = context
+            .exact_quantized_row_indices_top10
+            .as_ref()
+            .expect("summary context should include exact quantized top-10 rows");
 
         for ((query, truth), exact_quantized_row_indices) in context
             .queries
             .iter()
             .zip(context.ground_truth_top_k.iter())
-            .zip(context.exact_quantized_row_indices_top10.iter())
+            .zip(exact_quantized_row_indices_top10.iter())
         {
             // Graph scan: returns heap tids plus operator-facing `<#>` scores.
             let predicted_row_indices_with_scores: Vec<(usize, f32)> = unsafe {
@@ -6603,8 +6610,56 @@ mod tests {
         m: i32,
         ef_search: i32,
     ) -> GraphScanRecallExternalSummaryRow {
-        let context = build_external_recall_context(corpus_table, query_table);
+        let context = build_external_recall_context(corpus_table, query_table, true);
         probe_graph_scan_recall_external_summary_for_context(&context, index_name, m, ef_search)
+    }
+
+    fn probe_graph_scan_recall_external_gate_row_for_context(
+        context: &ExternalRecallContext,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+        target: Option<f32>,
+    ) -> (i32, i32, f32, Option<f32>, bool) {
+        let index_name_ident = recall_fixture_ident(index_name);
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
+                .expect("external recall index oid query should succeed")
+                .expect("external recall index oid should exist");
+
+        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+            .expect("setting ef_search should succeed");
+
+        let mut graph_top_10_hits = 0_i32;
+        for (query, truth) in context.queries.iter().zip(context.ground_truth_top_k.iter()) {
+            let predicted_row_indices: Vec<i64> = unsafe {
+                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
+            }
+            .into_iter()
+            .map(|heap_tid| {
+                let row_index = *context
+                    .ctid_to_row_index
+                    .get(&heap_tid)
+                    .expect("graph heap tid should map back to a corpus row index");
+                i64::try_from(row_index).expect("row index should fit into bigint")
+            })
+            .collect();
+
+            let truth_top_10_ids: Vec<i64> = truth
+                .iter()
+                .take(RECALL_K)
+                .map(|(idx, _)| *idx as i64)
+                .collect();
+            let predicted_top_10_ids: Vec<i64> =
+                predicted_row_indices.iter().take(RECALL_K).copied().collect();
+            graph_top_10_hits += recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
+        }
+
+        let recall_at_10 =
+            graph_top_10_hits as f32 / ((context.queries.len() as f32) * (RECALL_K as f32));
+        let passed = target.map(|gate| recall_at_10 >= gate).unwrap_or(true);
+        (m, ef_search, recall_at_10, target, passed)
     }
 
     fn run_graph_scan_recall_gate_from_external(
@@ -6613,23 +6668,19 @@ mod tests {
         fixture_prefix: &str,
     ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
         let fixture_prefix = recall_fixture_ident(fixture_prefix);
-        let context = build_external_recall_context(corpus_table, query_table);
+        let context = build_external_recall_context(corpus_table, query_table, false);
         RECALL_GATE_CONFIGS
             .iter()
             .copied()
             .map(|(m, ef_search, target)| {
                 let index_name = format!("{fixture_prefix}_m{m}_idx");
-                let summary = probe_graph_scan_recall_external_summary_for_context(
+                probe_graph_scan_recall_external_gate_row_for_context(
                     &context,
                     &index_name,
                     m,
                     ef_search,
-                );
-                let graph_recall_at_10 = summary.4;
-                let passed = target
-                    .map(|gate| graph_recall_at_10 >= gate)
-                    .unwrap_or(true);
-                (m, ef_search, graph_recall_at_10, target, passed)
+                    target,
+                )
             })
             .collect()
     }
