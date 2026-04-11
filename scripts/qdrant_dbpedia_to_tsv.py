@@ -295,11 +295,23 @@ def _write_tsv(
     )
 
 
+def _source_parquet_basename(source_parquet: str) -> str:
+    # `Path(...).name` handles a trailing slash on directory inputs correctly
+    # (`Path("/a/b/").name == "b"`), unlike `os.path.basename` which would
+    # return an empty string for that form.
+    return Path(source_parquet).name
+
+
+def _source_parquet_shard_basenames(parquet_files: Sequence[Path]) -> list[str]:
+    return sorted(parquet_file.name for parquet_file in parquet_files)
+
+
 def _write_manifest(
     path: Path,
     *,
     profile: SubsetProfile,
     source_parquet: str,
+    parquet_files: Sequence[Path],
     source_dataset: str,
     id_column: str,
     vector_column: str,
@@ -311,7 +323,14 @@ def _write_manifest(
         "manifest_version": 1,
         "prefix": profile.prefix,
         "source_dataset": source_dataset,
+        # `source_parquet` is the absolute path on the developer machine that
+        # generated this manifest. It is kept as a local-debug hint only.
+        # Reviewers on a different machine verify against the portable
+        # `source_parquet_basename` / `source_parquet_shard_basenames` fields
+        # below instead.
         "source_parquet": source_parquet,
+        "source_parquet_basename": _source_parquet_basename(source_parquet),
+        "source_parquet_shard_basenames": _source_parquet_shard_basenames(parquet_files),
         "id_column": id_column,
         "vector_column": vector_column,
         "dimension": dim,
@@ -376,7 +395,10 @@ def main() -> int:
     parser.add_argument(
         "--source-dataset",
         default=DEFAULT_SOURCE_DATASET,
-        help=f"Dataset label stored in the manifest (default: {DEFAULT_SOURCE_DATASET!r})",
+        help=(
+            "Human-readable dataset label stored in the manifest (not a path). "
+            f"Default: {DEFAULT_SOURCE_DATASET!r}"
+        ),
     )
 
     args = parser.parse_args()
@@ -418,6 +440,7 @@ def main() -> int:
         manifest_path,
         profile=profile,
         source_parquet=os.path.abspath(args.parquet),
+        parquet_files=parquet_files,
         source_dataset=args.source_dataset,
         id_column=id_column,
         vector_column=vector_column,
