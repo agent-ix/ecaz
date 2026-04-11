@@ -5,6 +5,7 @@ use pgrx::pg_sys;
 use super::{build, graph, options, page, search, shared, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
+// One initial write pass plus up to two read-only replan retries for drifted full slices.
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(

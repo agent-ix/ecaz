@@ -161,5 +161,10 @@ Every page modification in aminsert SHALL be wrapped in GenericXLogStart/Generic
 ### FR-016-AC-3: No deadlock under concurrent insert
 Concurrent inserts SHALL not deadlock when page locks are acquired in the protocol defined by FR-007.
 
+Current validation note:
+- `main` now closes the lock-ordering and stale-plan retry portion of this requirement for the
+  live insert path. Explicit multi-writer contention benchmarking remains deferred to a later
+  runtime follow-up, so A5 should not be read as a throughput proof.
+
 ### FR-016-AC-4: Recall drift is measurable
 The implementation SHALL expose queryable statistics that identify total live nodes and nodes inserted since the last bulk build or REINDEX, so recall drift checkpoints can be measured as incremental inserts accumulate after bulk build.

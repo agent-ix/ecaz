@@ -143,7 +143,10 @@ Current implementation note:
   the same code-to-code scorer.
 - `main` now also carries `scripts/vacuum_concurrency_scratch.sh`, a 60-second scratch-cluster
   harness with concurrent INSERT, tqhnsw graph scan, and VACUUM workers that exercises the live
-  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper.
+  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper, then runs one
+  final post-quiesce `VACUUM (ANALYZE)` and checks that the live index's reachable live-element
+  count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final table
+  data.
 
 ### Pass 3 — Finalize
 

@@ -701,7 +701,11 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
         if element.deleted {
             return None;
         }
-        element.heaptids.first().copied().map(debug_item_pointer_coords)
+        element
+            .heaptids
+            .first()
+            .copied()
+            .map(debug_item_pointer_coords)
     })
     .collect::<Vec<_>>();
     heap_tids.sort_unstable();
@@ -765,6 +769,53 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
+    index_oid: pg_sys::Oid,
+) -> Vec<page::ItemPointer> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    if metadata.entry_point == page::ItemPointer::INVALID || metadata.dimensions == 0 {
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        return Vec::new();
+    }
+
+    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let m = usize::from(metadata.m);
+    let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
+    let mut visited = std::collections::HashSet::new();
+    let mut reachable = Vec::new();
+
+    while let Some(element_tid) = queue.pop_front() {
+        if !visited.insert(element_tid) {
+            continue;
+        }
+
+        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
+        if element.deleted || element.heaptids.is_empty() {
+            continue;
+        }
+        reachable.push(element_tid);
+
+        for neighbor_tid in
+            unsafe { graph::load_layer0_neighbor_tids(index_relation, element_tid, code_len, m) }
+        {
+            if !visited.contains(&neighbor_tid) {
+                queue.push_back(neighbor_tid);
+            }
+        }
+    }
+
+    reachable.sort_unstable_by(|left, right| {
+        left.block_number
+            .cmp(&right.block_number)
+            .then_with(|| left.offset_number.cmp(&right.offset_number))
+    });
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    reachable
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -814,7 +865,10 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         .collect::<Vec<_>>();
     heap_tids.sort_by(|left, right| left.0.score.total_cmp(&right.0.score));
     heap_tids.truncate(top_level_seed_count);
-    let heap_tids = heap_tids.into_iter().map(|(_, heap_tid)| heap_tid).collect();
+    let heap_tids = heap_tids
+        .into_iter()
+        .map(|(_, heap_tid)| heap_tid)
+        .collect();
 
     unsafe { tqhnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -904,12 +958,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
                 continue;
             }
 
-            heap_tids.extend(
-                element
-                    .heaptids
-                    .into_iter()
-                    .map(debug_item_pointer_coords),
-            );
+            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
         }
         heap_tids
     };
@@ -952,9 +1001,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     let code_len = opaque.scan_code_len;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let layer_tids = unsafe {
-        debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer)
-    };
+    let layer_tids =
+        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
@@ -1030,12 +1078,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
                 continue;
             }
 
-            heap_tids.extend(
-                element
-                    .heaptids
-                    .into_iter()
-                    .map(debug_item_pointer_coords),
-            );
+            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
         }
         heap_tids
     };
@@ -1077,9 +1120,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     let code_len = opaque.scan_code_len;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let layer_tids = unsafe {
-        debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer)
-    };
+    let layer_tids =
+        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
@@ -1104,7 +1146,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
             continue;
         }
 
-        let seed_element = unsafe { graph::load_graph_element(index_relation, seed.node, code_len) };
+        let seed_element =
+            unsafe { graph::load_graph_element(index_relation, seed.node, code_len) };
         if !seed_element.deleted {
             scored_elements.push((seed.score, seed_element.heaptids.clone()));
         }
@@ -1127,7 +1170,8 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
                 continue;
             }
 
-            let score = -quantizer.score_ip_from_parts(prepared_query, neighbor.gamma, &neighbor.code);
+            let score =
+                -quantizer.score_ip_from_parts(prepared_query, neighbor.gamma, &neighbor.code);
             scored_elements.push((score, neighbor.heaptids));
         }
     }
@@ -1233,12 +1277,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
                 continue;
             }
 
-            heap_tids.extend(
-                element
-                    .heaptids
-                    .into_iter()
-                    .map(debug_item_pointer_coords),
-            );
+            heap_tids.extend(element.heaptids.into_iter().map(debug_item_pointer_coords));
         }
         heap_tids
     };

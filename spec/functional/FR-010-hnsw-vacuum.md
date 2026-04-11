@@ -59,4 +59,7 @@ Running VACUUM concurrently with INSERT and SELECT for 60 seconds SHALL NOT prod
 Current validation note:
 - `main` now carries `scripts/vacuum_concurrency_scratch.sh`, a scratch-cluster harness that runs
   concurrent INSERT, tqhnsw graph scan, and VACUUM for 60 seconds using the live
-  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper.
+  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper, then issues one
+  final post-quiesce `VACUUM (ANALYZE)` and checks that the live index's layer-0 reachable live
+  element count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final
+  table data.

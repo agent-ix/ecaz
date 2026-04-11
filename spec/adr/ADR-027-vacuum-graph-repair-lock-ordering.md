@@ -25,6 +25,8 @@ Vacuum graph repair follows this write order:
 2. Scan data pages in ascending block order under `BUFFER_LOCK_SHARE`.
 3. If a page needs repair, release the share lock, reopen that same page alone, and rewrite it
    under one `BUFFER_LOCK_EXCLUSIVE`.
+   That one page-local write window may update multiple logical layer slices of the same
+   persisted neighbor tuple; the ordering rule is per physical page, not per logical layer.
 4. Hold at most one data-page `EXCLUSIVE` lock at a time.
 5. Do not hold a metadata-page `EXCLUSIVE` lock during pass 2.
 6. If future replacement search needs replanning, do that read-only work outside any data-page

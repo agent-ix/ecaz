@@ -30,6 +30,7 @@ struct LayerRepairRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LayerRepairPlan {
     neighbor_tid: page::ItemPointer,
+    source_level: u8,
     layer: u8,
     replacement_tids: Vec<page::ItemPointer>,
 }
@@ -342,7 +343,13 @@ unsafe fn repair_graph_connections(
         unsafe { collect_repair_requests(index_relation, code_len, metadata.m, &deleted_tids) };
     unsafe { unlink_deleted_graph_connections(index_relation, &deleted_tids) };
     let repair_plans = unsafe {
-        plan_repair_replacements(index_relation, &metadata, code_len, &deleted_tids, &repair_requests)
+        plan_repair_replacements(
+            index_relation,
+            &metadata,
+            code_len,
+            &deleted_tids,
+            &repair_requests,
+        )
     };
     unsafe { apply_repair_plans(index_relation, metadata.m, &deleted_tids, &repair_plans) };
 }
@@ -447,8 +454,13 @@ unsafe fn collect_repair_requests_on_page(
             offset_number: offset,
         };
         for layer in 0..=element.level {
-            if layer_slice_contains_deleted_ref(&neighbors.tids, element.level, m, layer, deleted_tids)
-            {
+            if layer_slice_contains_deleted_ref(
+                &neighbors.tids,
+                element.level,
+                m,
+                layer,
+                deleted_tids,
+            ) {
                 requests.push(LayerRepairRequest {
                     source_tid,
                     neighbor_tid: element.neighbortid,
@@ -466,7 +478,7 @@ fn layer_slice_contains_deleted_ref(
     layer: u8,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) -> bool {
-    let Some((start, end)) = repair_slot_bounds(element_level, usize::from(m), layer) else {
+    let Some((start, end)) = graph::layer_slot_bounds(element_level, usize::from(m), layer) else {
         return false;
     };
 
@@ -564,7 +576,8 @@ unsafe fn plan_repair_replacement(
     }
 
     let neighbors = unsafe { graph::load_graph_neighbors(index_relation, source.neighbortid) };
-    let (start, end) = repair_slot_bounds(source.level, usize::from(metadata.m), request.layer)?;
+    let (start, end) =
+        graph::layer_slot_bounds(source.level, usize::from(metadata.m), request.layer)?;
 
     let layer_slice = neighbors
         .tids
@@ -621,6 +634,7 @@ unsafe fn plan_repair_replacement(
 
     Some(LayerRepairPlan {
         neighbor_tid: source.neighbortid,
+        source_level: source.level,
         layer: request.layer,
         replacement_tids: replacements,
     })
@@ -632,9 +646,9 @@ unsafe fn search_repair_candidates_for_layer(
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
-    if let Some(entry_candidate) =
-        unsafe { load_vacuum_entry_candidate(index_relation, planner.metadata, &planner.source.code) }
-    {
+    if let Some(entry_candidate) = unsafe {
+        load_vacuum_entry_candidate(index_relation, planner.metadata, &planner.source.code)
+    } {
         if planner.layer == 0 {
             seeds.push(unsafe {
                 graph::greedy_descend_from_entry(
@@ -815,7 +829,14 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         unsafe {
-            collect_linear_repair_candidates_on_page(page_ptr, page_size, block_number, planner, replacements, &mut scored)
+            collect_linear_repair_candidates_on_page(
+                page_ptr,
+                page_size,
+                block_number,
+                planner,
+                replacements,
+                &mut scored,
+            )
         };
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
@@ -875,9 +896,10 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
-        let element = page::TqElementTuple::decode(tuple_bytes, planner.code_len).unwrap_or_else(
-            |e| pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}"),
-        );
+        let element =
+            page::TqElementTuple::decode(tuple_bytes, planner.code_len).unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
+            });
         if element.deleted || element.heaptids.is_empty() || element.level < planner.layer {
             continue;
         }
@@ -913,7 +935,15 @@ unsafe fn apply_repair_plans(
             end += 1;
         }
 
-        unsafe { apply_repair_plans_on_page(index_relation, block_number, m, deleted_tids, &plans[start..end]) };
+        unsafe {
+            apply_repair_plans_on_page(
+                index_relation,
+                block_number,
+                m,
+                deleted_tids,
+                &plans[start..end],
+            )
+        };
         start = end;
     }
 }
@@ -982,8 +1012,14 @@ unsafe fn apply_repair_plans_on_page(
         }
         let mut tuple_changed = unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
         for plan in &plans[start..end] {
-            tuple_changed |=
-                apply_repair_plan(&mut neighbor.tids, m, plan.layer, deleted_tids, &plan.replacement_tids);
+            tuple_changed |= apply_repair_plan(
+                &mut neighbor.tids,
+                plan.source_level,
+                m,
+                plan.layer,
+                deleted_tids,
+                &plan.replacement_tids,
+            );
         }
         if !tuple_changed {
             start = end;
@@ -1018,12 +1054,13 @@ unsafe fn apply_repair_plans_on_page(
 
 fn apply_repair_plan(
     neighbor_tids: &mut [page::ItemPointer],
+    source_level: u8,
     m: u16,
     layer: u8,
     deleted_tids: &HashSet<page::ItemPointer>,
     replacement_tids: &[page::ItemPointer],
 ) -> bool {
-    let Some((start, end)) = repair_slot_bounds(repair_level_for_slots(neighbor_tids.len(), m), usize::from(m), layer) else {
+    let Some((start, end)) = graph::layer_slot_bounds(source_level, usize::from(m), layer) else {
         return false;
     };
     let layer_slice = neighbor_tids
@@ -1049,33 +1086,6 @@ fn apply_repair_plan(
     }
 
     changed
-}
-
-fn repair_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
-    if layer > element_level {
-        return None;
-    }
-
-    if layer == 0 {
-        let end = m.saturating_mul(2);
-        return Some((0, end));
-    }
-
-    let start = m.saturating_mul(2) + (usize::from(layer).saturating_sub(1) * m);
-    Some((start, start.saturating_add(m)))
-}
-
-fn repair_level_for_slots(total_slots: usize, m: u16) -> u8 {
-    let m = usize::from(m);
-    if total_slots <= m.saturating_mul(2) {
-        return 0;
-    }
-
-    let upper_layers = total_slots
-        .saturating_sub(m.saturating_mul(2))
-        .checked_div(m.max(1))
-        .unwrap_or(0);
-    u8::try_from(upper_layers).unwrap_or(u8::MAX)
 }
 
 unsafe fn rewrite_page_pass2(

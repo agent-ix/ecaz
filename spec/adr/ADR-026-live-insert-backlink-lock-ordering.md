@@ -43,7 +43,9 @@ Live insert follows this write order:
 7. If a full-slice rewrite sees a stale live layer under the page lock, do not replan while that
    page is locked.
    Record the target for retry, finish the current ordered page pass, then re-enter read-only
-   planning for those targets before another ordered write pass begins.
+   planning for those targets before another ordered write pass begins. The retry payload may
+   carry only `(target_element_tid, layer)`; no page-derived or lock-protected data may escape the
+   write phase into the replan phase.
 8. Acquire the metadata-page `EXCLUSIVE` lock only after all data-page writes are complete.
    Metadata promotion/repair never overlaps a data-page `EXCLUSIVE` lock.
 
