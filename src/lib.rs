@@ -8542,6 +8542,8 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join(", ");
+        // Safe string interpolation: every VALUES tuple here is derived from
+        // deterministic test vectors under RECALL_SEED, not external input.
         Spi::run(&format!(
             "INSERT INTO {corpus_table} (id, source, embedding) VALUES {corpus_values}"
         ))
