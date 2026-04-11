@@ -25,6 +25,28 @@ in task 10054's surfaces.
 
 ## What Landed
 
+### Update 2026-04-10 — reviewer follow-ups addressed
+
+After reviewer feedback on commit `2f529c0`, this branch also now:
+
+- rejects any `ef_search != 128` at the SQL probe entry with a hard
+  `pgrx::error!`, so the oracle cannot be invoked at an operating point
+  that does not match the published Qdrant row;
+- renames the output flag from `within_two_percent` to
+  `within_tolerance`, because the contract is `|delta| <= 0.02` absolute,
+  not a relative percent;
+- expands `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md` to call out the
+  synthesized-query-set skew caveat explicitly: if the first measured
+  delta is only slightly outside tolerance, rule out query-distribution
+  drift before blaming the converter / loader / build / scan path;
+- adds one focused `pg_test`
+  (`test_ann_bench_anchor_rejects_noncanonical_ef_search`) so the
+  `ef_search` guard is regression-tested.
+
+The constant duplication between `src/lib.rs` and
+`tests/recall_integration.rs` is left as-is on this branch. That is still
+low-priority follow-up polish, not a blocker for landing the oracle.
+
 ### 1. The published anchor row is documented
 
 `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md` records the single row we anchor
@@ -98,7 +120,7 @@ Added to `src/lib.rs` in the same `#[cfg(any(test, feature = "pg_test"))]`
 block as `tqhnsw_graph_scan_recall_external_summary`. Returns one row:
 
 ```
-m | ef_search | recall_at_10 | published_recall_at_10 | absolute_delta | within_two_percent
+m | ef_search | recall_at_10 | published_recall_at_10 | absolute_delta | within_tolerance
 ```
 
 Implementation notes:
@@ -109,6 +131,8 @@ Implementation notes:
   - `ANN_BENCHMARKS_ANCHOR_TOLERANCE: f32 = 0.02`
   Both are commented with the source URL and a pointer to
   `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md`.
+- The SQL surface now hard-rejects any `ef_search != 128`, because the
+  published anchor is pinned to Qdrant's `hnsw_ef=128` row.
 - The probe is built on top of `ExternalRecallContext`. The new helper
   `probe_graph_scan_recall_ann_benchmarks_reference_for_relation` delegates
   to the existing `probe_graph_scan_recall_external_summary_for_relation`
@@ -183,6 +207,19 @@ green: 241 + 5 + 10 + 2 + 13 = 271 passed, 0 failed, 28 ignored across all
 test binaries. The new `ann_benchmarks_anchor_within_tolerance` test
 appears as one of the 28 ignored entries (1 ignored in
 `tests/recall_integration.rs` when filtered with `-- ann_benchmarks`).
+
+### Follow-up validation after reviewer feedback
+
+```
+cargo test
+PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17 \
+    test_ann_bench_anchor_rejects_noncanonical_ef_search
+PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17
+cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
+```
+
+All passed after the `ef_search` guard / `within_tolerance` rename /
+query-skew caveat update.
 
 ### New profile is registered
 

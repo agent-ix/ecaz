@@ -10,7 +10,7 @@ this is the right moment to land the anchor: coder-1 is about to record the
 first DBpedia gate number and we want an independent "we match a published
 number" result alongside it, so a bad first number is diagnosable.
 Priority: batch 1
-Status: ready
+Status: done
 
 ## Prompt
 
