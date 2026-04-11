@@ -6876,6 +6876,10 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name_ident}'::regclass::oid"))
                 .expect("failure breakdown index oid query should succeed")
                 .expect("failure breakdown index oid should exist");
+        let exact_quantized_row_indices_top10 = context
+            .exact_quantized_row_indices_top10
+            .as_ref()
+            .expect("failure breakdown context should include exact quantized top-10 rows");
 
         Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
@@ -6885,7 +6889,7 @@ mod tests {
             .queries
             .iter()
             .zip(context.ground_truth_top_k.iter())
-            .zip(context.exact_quantized_row_indices_top10.iter())
+            .zip(exact_quantized_row_indices_top10.iter())
             .enumerate()
         {
             let truth_top_10_row_indices: Vec<i64> = truth
@@ -7627,130 +7631,6 @@ mod tests {
         )
     }
 
-    #[pg_extern]
-    #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_hierarchy_summary(
-        index_oid: pg_sys::Oid,
-    ) -> TableIterator<
-        'static,
-        (
-            name!(level, i32),
-            name!(node_count, i32),
-            name!(avg_neighbor_count, f64),
-            name!(min_neighbor_count, i32),
-            name!(max_neighbor_count, i32),
-            name!(expected_max_neighbors, i32),
-        ),
-    > {
-        let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_graph_hierarchy_summary") };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        let m = metadata.m as usize;
-        let code_len = code_len(metadata.dimensions as usize, metadata.bits);
-
-        let neighbor_map: HashMap<am::page::ItemPointer, am::page::TqNeighborTuple> = data_pages
-            .iter()
-            .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: (idx + 1) as u16,
-                            },
-                            am::page::TqNeighborTuple::decode(tuple)
-                                .expect("neighbor tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
-
-        struct LevelStats {
-            node_count: usize,
-            total_neighbors: usize,
-            min_neighbors: usize,
-            max_neighbors: usize,
-        }
-
-        let mut level_stats: HashMap<u8, LevelStats> = HashMap::new();
-
-        for page in &data_pages {
-            for tuple_bytes in &page.tuples {
-                if tuple_bytes.first().copied() != Some(am::page::TQ_ELEMENT_TAG) {
-                    continue;
-                }
-
-                let element = am::page::TqElementTuple::decode(tuple_bytes, code_len)
-                    .expect("element tuple should decode");
-                let neighbor = neighbor_map
-                    .get(&element.neighbortid)
-                    .expect("element neighbor TID should resolve");
-
-                for layer in 0..=element.level {
-                    let (start, end) = if layer == 0 {
-                        (0, m * 2)
-                    } else {
-                        let start = m * 2 + (usize::from(layer) - 1) * m;
-                        (start, start + m)
-                    };
-
-                    let valid_count = neighbor
-                        .tids
-                        .iter()
-                        .skip(start)
-                        .take(end.saturating_sub(start))
-                        .filter(|tid| **tid != am::page::ItemPointer::INVALID)
-                        .count();
-
-                    let stats = level_stats.entry(layer).or_insert(LevelStats {
-                        node_count: 0,
-                        total_neighbors: 0,
-                        min_neighbors: usize::MAX,
-                        max_neighbors: 0,
-                    });
-                    stats.node_count += 1;
-                    stats.total_neighbors += valid_count;
-                    if valid_count < stats.min_neighbors {
-                        stats.min_neighbors = valid_count;
-                    }
-                    if valid_count > stats.max_neighbors {
-                        stats.max_neighbors = valid_count;
-                    }
-                }
-            }
-        }
-
-        let mut rows: Vec<(i32, i32, f64, i32, i32, i32)> = level_stats
-            .iter()
-            .map(|(&level, stats)| {
-                let avg = if stats.node_count > 0 {
-                    stats.total_neighbors as f64 / stats.node_count as f64
-                } else {
-                    0.0
-                };
-                let expected_max = if level == 0 { (m * 2) as i32 } else { m as i32 };
-                (
-                    i32::from(level),
-                    stats.node_count as i32,
-                    avg,
-                    stats.min_neighbors as i32,
-                    stats.max_neighbors as i32,
-                    expected_max,
-                )
-            })
-            .collect();
-        rows.sort_by_key(|(level, _, _, _, _, _)| *level);
-
-        TableIterator::new(rows)
-    }
-
     fn id_heap_tid_map(table_name: &str) -> HashMap<i64, (u32, u16)> {
         Spi::connect(|client| {
             client
@@ -8294,7 +8174,7 @@ mod tests {
         // diagnostics; the histogram itself is fully determined by `index_name`
         // and `ef_search`.
         let _ = m;
-        let context = build_external_recall_context(&corpus_table, &query_table);
+        let context = build_external_recall_context(&corpus_table, &query_table, false);
         TableIterator::new(build_graph_scan_recall_histogram_for_context(
             &context,
             &index_name,
@@ -8321,7 +8201,7 @@ mod tests {
             name!(mean_query_latency_ms, f32),
         ),
     > {
-        let context = build_external_recall_context(&corpus_table, &query_table);
+        let context = build_external_recall_context(&corpus_table, &query_table, true);
         TableIterator::new(run_graph_scan_recall_ef_sweep_for_context(
             &context,
             &index_name,
@@ -8352,7 +8232,7 @@ mod tests {
         // diagnostics; the breakdown itself is fully determined by `index_name`
         // and `ef_search`.
         let _ = m;
-        let context = build_external_recall_context(&corpus_table, &query_table);
+        let context = build_external_recall_context(&corpus_table, &query_table, true);
         TableIterator::new(run_graph_scan_recall_failure_breakdown_for_context(
             &context,
             &index_name,
