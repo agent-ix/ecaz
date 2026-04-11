@@ -891,6 +891,17 @@ mod tests {
         (metadata, elements, neighbors)
     }
 
+    fn find_element_for_heap_tid(
+        elements: &[(am::page::ItemPointer, am::page::TqElementTuple)],
+        heap_tid: am::page::ItemPointer,
+    ) -> (am::page::ItemPointer, &am::page::TqElementTuple) {
+        let (element_tid, element) = elements
+            .iter()
+            .find(|(_, element)| element.heaptids.contains(&heap_tid))
+            .expect("element should be discoverable by heap tid");
+        (*element_tid, element)
+    }
+
     fn encode_recall_query_code(query: &[f32]) -> Vec<u8> {
         let quantizer = ProdQuantizer::cached(
             RECALL_DIM,
@@ -3517,6 +3528,148 @@ mod tests {
         }
 
         panic!("expected a higher-level insert to promote metadata within 128 inserts");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_forward_links_from_live_entry_seed() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_live_forward_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_live_forward_links_idx ON tqhnsw_insert_live_forward_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_live_forward_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let row1_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 1);
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (row1_element_tid, _) = find_element_for_heap_tid(&elements, row1_heap_tid);
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("second insert should succeed");
+
+        let row2_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 2);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_row2_element_tid, row2_element) = find_element_for_heap_tid(&elements, row2_heap_tid);
+        let row2_neighbors = neighbors
+            .get(&row2_element.neighbortid)
+            .expect("second insert neighbor tuple should exist");
+        let populated_layer0_slots = row2_neighbors
+            .tids
+            .iter()
+            .take(usize::from(metadata.m))
+            .copied()
+            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            populated_layer0_slots,
+            vec![row1_element_tid],
+            "the second live insert should seed its forward links from the existing entry element",
+        );
+        assert!(
+            row2_neighbors
+                .tids
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "this checkpoint only fills the first M layer-0 slots and leaves the remaining layer-0 and upper-layer slots invalid",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_forward_links_against_built_graph() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_built_forward_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_built_forward_links_idx ON tqhnsw_insert_built_forward_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_built_forward_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_metadata, before_elements, _before_neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let existing_element_tids = before_elements
+            .iter()
+            .map(|(tid, _)| *tid)
+            .collect::<HashSet<_>>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+             (5, encode_to_tqvector(ARRAY[1.0, 0.2, 0.1, 0.0], 4, 42))",
+        )
+        .expect("live insert should succeed");
+
+        let row5_heap_tid = heap_tid_for_row("tqhnsw_insert_built_forward_links", 5);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (row5_element_tid, row5_element) = find_element_for_heap_tid(&elements, row5_heap_tid);
+        let row5_neighbors = neighbors
+            .get(&row5_element.neighbortid)
+            .expect("inserted element neighbor tuple should exist");
+        let populated_layer0_slots = row5_neighbors
+            .tids
+            .iter()
+            .take(usize::from(metadata.m))
+            .copied()
+            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+
+        assert!(
+            !populated_layer0_slots.is_empty(),
+            "live insert into a built graph should materialize at least one forward link",
+        );
+        assert!(
+            populated_layer0_slots
+                .iter()
+                .all(|tid| existing_element_tids.contains(tid)),
+            "forward links should target pre-existing graph elements in this one-way slice",
+        );
+        assert!(
+            populated_layer0_slots
+                .iter()
+                .all(|tid| *tid != row5_element_tid),
+            "forward links must not self-reference the newly inserted element",
+        );
+        assert!(
+            row5_neighbors
+                .tids
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "this checkpoint leaves the remaining layer-0 and upper-layer slots for later backlink and pruning work",
+        );
     }
 
     #[pg_test]

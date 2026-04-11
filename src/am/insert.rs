@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::pg_sys;
 
-use super::{build, options, page, shared, wal};
+use super::{build, graph, options, page, search, shared, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
@@ -78,7 +78,13 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 
                     let insert_level =
                         choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
-                    let element_tid = append_heap_tuple(index_relation, &tuple, insert_level, m);
+                    let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
+                    let element_tid = append_heap_tuple(
+                        index_relation,
+                        &tuple,
+                        insert_level,
+                        &forward_neighbor_slots,
+                    );
                     if metadata.entry_point == page::ItemPointer::INVALID {
                         metadata.entry_point = element_tid;
                         metadata.max_level = insert_level;
@@ -123,7 +129,19 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 
             let insert_level =
                 choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
-            let element_tid = append_heap_tuple(index_relation, &tuple, insert_level, m);
+            let forward_neighbor_slots = discover_insert_forward_neighbor_slots(
+                index_relation,
+                &metadata_snapshot,
+                &tuple.code,
+                insert_level,
+                m,
+            );
+            let element_tid = append_heap_tuple(
+                index_relation,
+                &tuple,
+                insert_level,
+                &forward_neighbor_slots,
+            );
 
             // Only reacquire the metadata exclusive lock when the snapshot says
             // entry_point still needs repair or the new node outranks the current
@@ -199,16 +217,99 @@ pub(crate) fn debug_insert_level_for_heap_tid(
     choose_insert_level(m, seed, heap_tid, code_len)
 }
 
+fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
+    vec![page::ItemPointer::INVALID; page::neighbor_slots(level, m)]
+}
+
+unsafe fn discover_insert_forward_neighbor_slots(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+    insert_level: u8,
+    m: u16,
+) -> Vec<page::ItemPointer> {
+    let mut slots = empty_insert_neighbor_slots(insert_level, m);
+    let Some(entry_candidate) =
+        (unsafe { load_insert_entry_candidate(index_relation, metadata, code) })
+    else {
+        return slots;
+    };
+
+    let m_usize = usize::from(m);
+    let descended_seed = unsafe {
+        graph::greedy_descend_from_entry(
+            index_relation,
+            code.len(),
+            m_usize,
+            entry_candidate,
+            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+        )
+    };
+    let layer0_candidates = unsafe {
+        graph::search_layer0_result_candidates(
+            index_relation,
+            code.len(),
+            m_usize,
+            usize::from(metadata.ef_construction).max(1),
+            [descended_seed],
+            |_| true,
+            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+        )
+    };
+
+    for (slot, candidate) in slots
+        .iter_mut()
+        .take(m_usize)
+        .zip(layer0_candidates.into_iter().take(m_usize))
+    {
+        *slot = candidate.node;
+    }
+
+    slots
+}
+
+unsafe fn load_insert_entry_candidate(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    if metadata.entry_point == page::ItemPointer::INVALID {
+        return None;
+    }
+
+    let entry =
+        unsafe { graph::load_graph_element(index_relation, metadata.entry_point, code.len()) };
+    let entry_score = score_insert_graph_element(metadata, code, &entry)?;
+    Some(search::BeamCandidate::new(entry.tid, entry_score))
+}
+
+fn score_insert_graph_element(
+    metadata: &page::MetadataPage,
+    query_code: &[u8],
+    element: &graph::GraphElement,
+) -> Option<f32> {
+    if element.deleted || element.heaptids.is_empty() {
+        return None;
+    }
+
+    Some(-crate::score_code_inner_product(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+        query_code,
+        &element.code,
+    ))
+}
+
 unsafe fn append_heap_tuple(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
     level: u8,
-    m: u16,
+    neighbor_tids: &[page::ItemPointer],
 ) -> page::ItemPointer {
-    let neighbor_slot_count = page::neighbor_slots(level, m);
     let neighbor_payload = page::TqNeighborTuple {
-        count: u16::try_from(neighbor_slot_count).expect("neighbor slot count should fit in u16"),
-        tids: vec![page::ItemPointer::INVALID; neighbor_slot_count],
+        count: u16::try_from(neighbor_tids.len()).expect("neighbor slot count should fit in u16"),
+        tids: neighbor_tids.to_vec(),
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode neighbor tuple: {e}"));

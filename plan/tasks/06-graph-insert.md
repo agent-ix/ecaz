@@ -7,9 +7,21 @@ Progress notes:
   append/reuse are implemented.
 - A4 recall gating and the shared traversal helpers are now complete on `main`, so A5 is no
   longer blocked.
-- Current A5 checkpoint scopes random insert-level assignment, pre-sized neighbor tuple
-  allocation, and metadata entry-point / max-level promotion before graph link mutation lands.
-- Graph-aware insertion, drift statistics, and build_source_column insert support remain pending.
+- Initial A5 checkpoints landed random insert-level assignment, pre-sized neighbor tuple
+  allocation, and metadata entry-point / max-level promotion.
+- The next landed slice reuses `greedy_descend_from_entry` and the existing layer-0 search helper
+  to populate simple top-`M` forward links on the new node only.
+- Backlink mutation, upper-layer insert search, neighbor shrinking, drift statistics, and
+  `build_source_column` insert support remain pending.
+
+## Milestone Tracker
+
+- [x] `20%` Level assignment, neighbor tuple sizing, metadata entry-point / max-level promotion
+- [x] `35%` Greedy descent, layer-0 candidate search, and new-node forward links
+- [ ] `50%` Upper-layer candidate search and/or broader forward-link coverage
+- [ ] `75%` Backlink mutation with explicit lock-ordering ADR
+- [ ] `90%` Neighbor overflow handling and shrinking
+- [ ] `100%` Drift accounting and concurrency hardening
 
 ## Scope
 
@@ -17,10 +29,19 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 
 ## Subtasks
 
-- [ ] **Layer assignment.** `floor(-ln(random()) / ln(M))` geometric distribution.
-- [ ] **Greedy descent + beam search.** Use A2 traversal helper with code-to-code scoring (`score_ip_codes_lite`). Find M best neighbors at each insertion layer.
+- [x] **Layer assignment.** `floor(-ln(random()) / ln(M))` geometric distribution.
+- [x] **Pre-sized neighbor tuples.** Allocate `neighbor_slots(level, m)` at insert time instead of
+  hard-coding empty level-0 storage.
+- [x] **Entry point promotion.** Update metadata entry point and max_level when new node has higher layer.
+- [x] **Greedy descent + layer-0 beam search.** Reuse the shared traversal helpers to seed insert
+  candidate discovery and select a simple top-`M` forward set for the new node.
+- [ ] **Upper-layer insert search.** Extend candidate discovery above layer 0 when insert-side
+  forward links stop being layer-0 only.
+- [ ] **Upper-layer forward links.** Decide whether upper-layer forward links are written with the
+  upper-layer search step above or deferred until backlink work lands.
 - [ ] **Back-link updates.** For each selected neighbor, read their TqNeighborTuple, add new node's TID, prune weakest if at capacity M. Each update in its own GenericXLog transaction.
-- [ ] **Entry point promotion.** Update metadata entry point and max_level when new node has higher layer.
+- [ ] **Neighbor list shrinking.** Prune weakest existing links when backlink mutation overflows a
+  target layer budget.
 - [ ] **Drift statistics.** Track `inserted_since_rebuild` in metadata. Expose via page-inspection or SQL.
 - [ ] **Lock ordering protocol.** Define and document consistent page lock ordering to prevent deadlock under concurrent insert.
 
