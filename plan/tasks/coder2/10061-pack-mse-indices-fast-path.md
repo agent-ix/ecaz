@@ -11,7 +11,7 @@ bytes of output). The bit widths used in production are 2-7, all
 small powers and divisors of 8, so a closed-form bytewise pack is
 straightforward and ~10× faster than the bit-by-bit loop.
 Priority: batch 3
-Status: ready
+Status: done
 
 ## Prompt
 

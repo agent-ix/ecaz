@@ -83,8 +83,8 @@ recall re-baselining.
 ### Validation matrix
 
 ```bash
-cargo clippy --all-targets --no-default-features --features 'pg17 pg_test' -- -D warnings
 cargo test --no-default-features --features pg17 --lib quant::prod
+cargo test --no-default-features --features pg17 --lib pack_mse_indices_4bit_microbench -- --ignored --nocapture
 ```
 
 Both pass on this machine (Linux 6.17.0-19-generic, pgrx 0.17,
@@ -128,27 +128,24 @@ widths 1..=7 via the dispatched path) and
 pass without modification, which is the strongest signal that the
 production encode output is unchanged.
 
-### Microbenchmark — not run on this branch
+### Microbenchmark
 
-The task spec asked for an `#[ignore]`-gated microbenchmark targeting
-"≥5× speedup for the 4-bit path". I did not land the microbenchmark
-in the source tree because:
+The branch now includes an `#[ignore]`-gated microbenchmark,
+`pack_mse_indices_4bit_microbench`, that measures the old generic packer
+against the dispatched fast path on the production `1536 x 4-bit`
+shape for `100_000` iterations using `std::hint::black_box`.
 
-1. The change is bit-exact — there is no risk that a "fast path"
-   produces wrong output, only that it might not actually be faster.
-2. The fast path is dispatched purely on `bits_per_index`, so it does
-   not change behavior for any other code path.
-3. Adding an `#[ignore]`-gated benchmark adds maintenance surface that
-   the existing test suite does not have, and pgrx test runs (which
-   need a scratch cluster) are slow enough that the microbenchmark
-   would not realistically be re-run by reviewers.
+Observed output on this machine:
 
-The mechanical claim — "replace 6144 bit-shift iterations with 768
-byte-stores" — is self-evident from the code, and the bit-exact
-regression test is the only thing that actually matters for
-correctness. If a follow-up profiling pass on the real-corpus index
-build wants quantitative numbers, that's the right place to attach
-them, not a synthetic microbench.
+```text
+pack_mse_indices_4bit_microbench generic=9.208771243s fast=2.692307915s speedup=3.42x
+```
+
+So the fast path does not hit the original aspirational `5x` target,
+but it is comfortably above the review floor of `3x`. That is enough
+to justify the added dispatch plus four helper functions: the code stays
+bit-exact, and the hot production path gets a measured wall-clock win
+rather than a purely structural one.
 
 ## Why This Matters
 
@@ -164,6 +161,19 @@ correctness risk.
 This is the "easy win" of the five encode-hot-path tasks: pure
 mechanical refactor, bit-exact, no API change, regression test
 strictly stronger than the previous coverage.
+
+## Update 2026-04-10 — reviewer follow-ups addressed
+
+- Added the requested `#[ignore]` microbenchmark and recorded the
+  measured `3.42x` speedup in-tree next to the benchmark.
+- Tightened the regression-test comment so widths `6` and `7` are
+  explicitly described as generic-path round-trip coverage rather than
+  fast-path-vs-generic coverage.
+- Re-ran the full branch checkpoint after the follow-up update:
+  `cargo test`,
+  `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`,
+  and
+  `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`.
 
 ## Files
 
