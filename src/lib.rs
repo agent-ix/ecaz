@@ -3225,6 +3225,77 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_repairs_invalid_entry_point_after_shape_init() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_entry_point_repair (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_entry_point_repair_idx ON tqhnsw_insert_entry_point_repair USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_entry_point_repair_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, _m, _ef_construction, mut metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        metadata.entry_point = am::page::ItemPointer::INVALID;
+        unsafe {
+            am::debug_update_index_metadata(index_oid, metadata);
+        }
+
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("repairing insert should succeed");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        let element_tids = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        (tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)).then_some(
+                            am::page::ItemPointer {
+                                block_number: page.block_number,
+                                offset_number: u16::try_from(idx + 1)
+                                    .expect("page tuple offset should fit in u16"),
+                            },
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(element_tids.len(), 2);
+        assert!(
+            element_tids.contains(&metadata.entry_point),
+            "repairing insert should repoint metadata at a live element tuple"
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_callbacks_are_benign_noops() {
         Spi::run("CREATE TABLE tqhnsw_vacuum_noop (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");

@@ -48,8 +48,8 @@ pub(crate) unsafe fn planner_integration_snapshot(
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{
-    debug_index_metadata, debug_index_pages, debug_planner_tuning_snapshot, debug_vacuum_stats,
-    DebugIndexDataPage, DebugPlannerTuningSnapshot,
+    debug_index_metadata, debug_index_pages, debug_planner_tuning_snapshot,
+    debug_update_index_metadata, debug_vacuum_stats, DebugIndexDataPage, DebugPlannerTuningSnapshot,
 };
 
 #[cfg(any(test, feature = "pg_test"))]
