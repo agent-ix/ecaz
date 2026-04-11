@@ -28,6 +28,28 @@ diagnosable instead of binary.
 
 ## What Landed
 
+### Update 2026-04-10 — reviewer follow-ups addressed
+
+After reviewer feedback on commit `64732cc`, this branch also now:
+
+- adds `test_tqhnsw_graph_scan_recall_diagnostic_surfaces_smoke`, a
+  focused `pg_test` that exercises all three new SQL surfaces against the
+  synthetic external-fixture helper and cross-checks their outputs against
+  the existing external summary probe;
+- documents in code and here that
+  `am::debug_gettuple_scan_heap_tids[_with_scores]` share the same
+  `tqhnsw_ambeginscan` -> `tqhnsw_amrescan` -> `tqhnsw_amgettuple`
+  traversal, with the `_with_scores` variant only reading
+  `xs_orderbyvals` in addition to the emitted heap tids; and
+- fixes the stale task-spec downstream reference (`10057` -> `10056`).
+
+The manual scratch-cluster smoke remains intentionally deferred. This
+packet pre-stages the diagnostic surfaces and their SQL invocations, but
+coder-1 still owns the first loaded real `tqhnsw_real_10k` / `50k`
+fixture and therefore owns capturing the first real-output transcript in
+the gate-report packet. That is a scoped-down delivery versus the task's
+ideal ask, but it is explicit rather than accidental.
+
 ### 1. Per-query top-10 recall histogram
 
 New pg_test surface:
@@ -137,7 +159,9 @@ walks reviewers through the load and gate-report path.
 - The histogram and breakdown use `am::debug_gettuple_scan_heap_tids`
   (no scores) since neither needs MAE; the sweep delegates to
   `probe_graph_scan_recall_external_summary_for_context` so it inherits the
-  exact same numerics as the existing summary surface.
+  exact same numerics as the existing summary surface. Both debug helpers
+  use the same tqhnsw scan traversal; the `_with_scores` variant only also
+  reads the published order-by score from `xs_orderbyvals`.
 - Failure-breakdown rows are emitted in `query_index` order for
   deterministic diffing.
 - The pg_extern signatures take `m` for parity with the other recall
@@ -183,6 +207,24 @@ The new surfaces are pgrx `#[pg_extern]` functions inside the same
 them are emitted by the same install pass that the recall gate test
 exercises. The existing `pg_test_tqhnsw_graph_scan_recall_gate` continues
 to pass against the synthetic fixture.
+
+### Follow-up validation after reviewer feedback
+
+```
+cargo test
+PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17 \
+    test_tqhnsw_graph_scan_recall_diagnostic_surfaces_smoke
+PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17
+cargo clippy --all-targets --no-default-features --features 'pg17 pg_test' -- -D warnings
+```
+
+All passed. The new `pg_test` covers:
+
+- histogram bucket shape and total-hit agreement with the external summary;
+- `ef_sweep` row ordering and exact agreement with the `ef_search=128`
+  summary row;
+- failure-breakdown row ordering plus aggregate graph/exact hit agreement
+  with the same summary path.
 
 ### Manual smoke against the scratch cluster
 

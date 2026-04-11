@@ -10,7 +10,7 @@ diagnostics do not exist. Pre-staging them is the single highest-leverage
 parallel task on this lane — it turns the first DBpedia run from a yes/no
 result into a diagnosable result.
 Priority: batch 1
-Status: ready
+Status: done
 
 ## Prompt
 
@@ -144,7 +144,7 @@ items, the quantizer is the problem and no amount of `ef_search` will fix it.
 
 ## Out of scope
 
-- Latency benchmarking (covered by task 10057).
+- Latency benchmarking (covered by task 10056).
 - Binary NDCG convention fix — coder-1 owns that on the primary lane.
 - Altering `ExternalRecallContext` itself. It is considered stable; if you
   need a field it does not expose, add the derivation inside your new
