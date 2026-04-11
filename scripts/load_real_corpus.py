@@ -258,6 +258,38 @@ def _verify_manifest(
     if manifest.get("dimension") != dim:
         problems.append(f"dimension={manifest.get('dimension')!r} (expected {dim})")
 
+    # Portable dataset-identity fields (additive, may be absent on older
+    # manifests). The absolute `source_parquet` field is deliberately ignored
+    # here: it is a local-debug hint only and is expected to reference a path
+    # that does not exist on the reviewer's machine.
+    if "source_parquet_basename" in manifest:
+        basename_value = manifest.get("source_parquet_basename")
+        if not isinstance(basename_value, str):
+            problems.append(
+                f"source_parquet_basename={basename_value!r} (expected string)"
+            )
+        elif "/" in basename_value or "\\" in basename_value:
+            problems.append(
+                f"source_parquet_basename={basename_value!r} "
+                "(expected portable basename, not a path)"
+            )
+    if "source_parquet_shard_basenames" in manifest:
+        shard_value = manifest.get("source_parquet_shard_basenames")
+        if not isinstance(shard_value, list) or not all(
+            isinstance(shard, str) for shard in shard_value
+        ):
+            problems.append(
+                f"source_parquet_shard_basenames={shard_value!r} (expected list of strings)"
+            )
+        else:
+            for shard in shard_value:
+                if "/" in shard or "\\" in shard:
+                    problems.append(
+                        f"source_parquet_shard_basenames entry {shard!r} "
+                        "(expected portable basename, not a path)"
+                    )
+                    break
+
     corpus_stats = _inspect_vector_file(corpus_file, dim)
     query_stats = _inspect_vector_file(queries_file, dim)
     checks = [
