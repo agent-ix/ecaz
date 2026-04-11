@@ -1,10 +1,14 @@
 # Task 06: Graph-Aware Insert
 
-Status: blocked on Task 05 (A2 traversal helpers)
+Status: in progress
 
 Progress notes:
 - Live insert shape validation, metadata initialization, duplicate coalescing, and tail-page
   append/reuse are implemented.
+- A4 recall gating and the shared traversal helpers are now complete on `main`, so A5 is no
+  longer blocked.
+- Current A5 checkpoint scopes random insert-level assignment, pre-sized neighbor tuple
+  allocation, and metadata entry-point / max-level promotion before graph link mutation lands.
 - Graph-aware insertion, drift statistics, and build_source_column insert support remain pending.
 
 ## Scope
@@ -26,8 +30,8 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 
 ## Dependencies
 
-- Task 05 subtask A2 (graph traversal helpers)
-- Task 05 subtask A3 (working scan to test reachability of inserted nodes)
+- Task 05 subtask A2 (graph traversal helpers) — complete
+- Task 05 subtask A3 (working scan to test reachability of inserted nodes) — complete
 
 ## Unblocks
 

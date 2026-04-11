@@ -819,6 +819,78 @@ mod tests {
         code_bytes
     }
 
+    fn parse_ctid(ctid: &str) -> am::page::ItemPointer {
+        let trimmed = ctid.trim();
+        let inner = trimmed
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+            .expect("ctid should use (block,offset) formatting");
+        let (block_number, offset_number) = inner
+            .split_once(',')
+            .expect("ctid should contain block and offset");
+        am::page::ItemPointer {
+            block_number: block_number
+                .trim()
+                .parse()
+                .expect("ctid block number should parse"),
+            offset_number: offset_number
+                .trim()
+                .parse()
+                .expect("ctid offset number should parse"),
+        }
+    }
+
+    fn heap_tid_for_row(table_name: &str, id: i64) -> am::page::ItemPointer {
+        let ctid = Spi::get_one::<String>(&format!(
+            "SELECT ctid::text FROM {table_name} WHERE id = {id}"
+        ))
+        .expect("SPI query should succeed")
+        .expect("table row should exist");
+        parse_ctid(&ctid)
+    }
+
+    fn decode_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+        code_len: usize,
+    ) -> (
+        am::page::MetadataPage,
+        Vec<(am::page::ItemPointer, am::page::TqElementTuple)>,
+        HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+    ) {
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let mut elements = Vec::new();
+        let mut neighbors = HashMap::new();
+
+        for page in data_pages {
+            for (idx, tuple) in page.tuples.iter().enumerate() {
+                let tid = am::page::ItemPointer {
+                    block_number: page.block_number,
+                    offset_number: u16::try_from(idx + 1)
+                        .expect("page tuple offset should fit in u16"),
+                };
+                match tuple.first().copied() {
+                    Some(am::page::TQ_ELEMENT_TAG) => {
+                        elements.push((
+                            tid,
+                            am::page::TqElementTuple::decode(tuple, code_len)
+                                .expect("element tuple should decode"),
+                        ));
+                    }
+                    Some(am::page::TQ_NEIGHBOR_TAG) => {
+                        neighbors.insert(
+                            tid,
+                            am::page::TqNeighborTuple::decode(tuple)
+                                .expect("neighbor tuple should decode"),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        (metadata, elements, neighbors)
+    }
+
     fn encode_recall_query_code(query: &[f32]) -> Vec<u8> {
         let quantizer = ProdQuantizer::cached(
             RECALL_DIM,
@@ -2801,6 +2873,7 @@ mod tests {
         )
         .expect("table creation should succeed");
 
+        let m = 2_u16;
         let (dim, pairs_per_page) = (1_u16..=u16::MAX)
             .rev()
             .find_map(|dim| {
@@ -2813,32 +2886,46 @@ mod tests {
                     am::page::FIRST_DATA_BLOCK_NUMBER,
                     pg_sys::BLCKSZ as usize,
                 );
-                let mut pairs = 0_usize;
-                loop {
+                let insert_pair_fits = |page: &mut am::page::DataPage, offset_number: u16| {
+                    let heap_tid = am::page::ItemPointer {
+                        block_number: 0,
+                        offset_number,
+                    };
+                    let level = am::debug_insert_level_for_heap_tid(m, 42, heap_tid, code_len);
+                    let neighbor_slots = am::page::neighbor_slots(level, m);
                     let neighbor = am::page::TqNeighborTuple {
-                        count: 0,
-                        tids: Vec::new(),
+                        count: u16::try_from(neighbor_slots)
+                            .expect("neighbor slot count should fit in u16"),
+                        tids: vec![am::page::ItemPointer::INVALID; neighbor_slots],
                     };
                     let element = am::page::TqElementTuple {
-                        level: 0,
+                        level,
                         deleted: false,
-                        heaptids: vec![am::page::ItemPointer {
-                            block_number: 1,
-                            offset_number: 1,
-                        }],
+                        heaptids: vec![heap_tid],
                         gamma: 0.5,
                         neighbortid: am::page::ItemPointer::INVALID,
                         code: vec![0x11_u8; code_len],
                     };
-                    if staged_page.insert_neighbor(&neighbor).is_err()
-                        || staged_page.insert_element(&element).is_err()
-                    {
-                        break;
-                    }
+                    page.insert_neighbor(&neighbor).is_ok() && page.insert_element(&element).is_ok()
+                };
+                let mut pairs = 0_usize;
+                while insert_pair_fits(
+                    &mut staged_page,
+                    u16::try_from(pairs + 1).expect("offset should fit in u16"),
+                ) {
                     pairs += 1;
                 }
 
-                if pairs >= 2 {
+                let mut next_page = am::page::DataPage::new(
+                    am::page::FIRST_DATA_BLOCK_NUMBER + 1,
+                    pg_sys::BLCKSZ as usize,
+                );
+                let next_offset = u16::try_from(pairs + 1).expect("offset should fit in u16");
+                let reuse_offset = u16::try_from(pairs + 2).expect("offset should fit in u16");
+                if pairs >= 2
+                    && insert_pair_fits(&mut next_page, next_offset)
+                    && insert_pair_fits(&mut next_page, reuse_offset)
+                {
                     Some((dim, pairs))
                 } else {
                     None
@@ -2847,10 +2934,10 @@ mod tests {
             .expect("should find a dimension where one page fits multiple pairs");
         let code_len = code_len(dim as usize, 4);
 
-        Spi::run(
+        Spi::run(&format!(
             "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
-             (embedding tqvector_ip_ops)",
-        )
+             (embedding tqvector_ip_ops) WITH (m = {m})"
+        ))
         .expect("index creation should succeed");
 
         for id in 1..=pairs_per_page {
@@ -3170,21 +3257,36 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
-        assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+        assert_eq!(elements.len(), 1);
 
-        let tuple_count = data_pages
+        let (entry_tid, entry_element) = elements
             .iter()
-            .map(|page| page.tuples.len())
-            .sum::<usize>();
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify the inserted element");
+        assert_eq!(metadata.max_level, entry_element.level);
+        assert_eq!(entry_element.heaptids.len(), 1);
+
+        let neighbor = neighbors
+            .get(&entry_element.neighbortid)
+            .expect("entry element neighbor tuple should exist");
+        assert_eq!(neighbor.count as usize, neighbor.tids.len());
+        assert_eq!(
+            neighbor.tids.len(),
+            am::page::neighbor_slots(entry_element.level, metadata.m)
+        );
+
+        let tuple_count = elements.len() + neighbors.len();
         assert_eq!(
             tuple_count, 2,
             "aminsert should append one neighbor and one element tuple"
         );
+        assert_eq!(metadata.entry_point, *entry_tid);
     }
 
     #[pg_test]
@@ -3209,18 +3311,19 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_reuse_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
-        assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
-
-        let element_count = data_pages
+        let entry_element = elements
             .iter()
-            .flat_map(|page| page.tuples.iter())
-            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
-            .count();
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify a live element tuple");
+        assert_eq!(entry_element.1.level, metadata.max_level);
+
+        let element_count = elements.len();
         assert_eq!(
             element_count, 2,
             "second insert into an initially empty index should validate against persisted shape metadata"
@@ -3271,31 +3374,149 @@ mod tests {
         )
         .expect("repairing insert should succeed");
 
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
-
-        let element_tids = data_pages
+        assert_eq!(elements.len(), 2);
+        let (entry_tid, entry_element) = elements
             .iter()
-            .flat_map(|page| {
-                page.tuples
-                    .iter()
-                    .enumerate()
-                    .filter_map(move |(idx, tuple)| {
-                        (tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)).then_some(
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: u16::try_from(idx + 1)
-                                    .expect("page tuple offset should fit in u16"),
-                            },
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(element_tids.len(), 2);
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("repairing insert should repoint metadata at a live element tuple");
+        assert_eq!(entry_element.level, metadata.max_level);
+        assert_eq!(metadata.entry_point, *entry_tid);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_neighbor_tuple_sizing_matches_levels() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_level_shape (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_level_shape_idx ON tqhnsw_insert_level_shape USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_level_shape_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        let mut inserted_rows = 0_i64;
+        let mut found_upper_level = false;
+        while inserted_rows < 128 && !found_upper_level {
+            inserted_rows += 1;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_level_shape VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = inserted_rows,
+                two = inserted_rows * 2,
+                three = inserted_rows * 3,
+                four = inserted_rows * 4,
+            ))
+            .expect("insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_shape", inserted_rows);
+            let expected_level =
+                am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            found_upper_level |= expected_level > 0;
+        }
         assert!(
-            element_tids.contains(&metadata.entry_point),
-            "repairing insert should repoint metadata at a live element tuple"
+            found_upper_level,
+            "deterministic insert level assignment should produce an upper-layer node within 128 inserts"
         );
+
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert_eq!(elements.len(), inserted_rows as usize);
+        assert!(
+            elements.iter().any(|(_, element)| element.level > 0),
+            "test fixture should contain at least one inserted upper-layer node"
+        );
+
+        for (_, element) in &elements {
+            let neighbor = neighbors
+                .get(&element.neighbortid)
+                .expect("neighbor tuple should exist for each inserted element");
+            assert_eq!(neighbor.count as usize, neighbor.tids.len());
+            assert_eq!(
+                neighbor.tids.len(),
+                am::page::neighbor_slots(element.level, metadata.m),
+                "neighbor tuple sizing should match the inserted element level",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_promotes_entry_point_on_level_up() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_level_promotion (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_level_promotion_idx ON tqhnsw_insert_level_promotion USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_level_promotion VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_level_promotion_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
+        for id in 2_i64..=128_i64 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_level_promotion VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_promotion", id);
+            let expected_level =
+                am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            let (metadata, elements, _neighbors) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            if expected_level > previous_metadata.max_level {
+                let (promoted_tid, promoted_element) = elements
+                    .iter()
+                    .find(|(_, element)| element.heaptids.contains(&heap_tid))
+                    .expect("promoted element should be discoverable by heap tid");
+                assert_eq!(promoted_element.level, expected_level);
+                assert_eq!(metadata.max_level, expected_level);
+                assert_eq!(metadata.entry_point, *promoted_tid);
+                return;
+            }
+            previous_metadata = metadata;
+        }
+
+        panic!("expected a higher-level insert to promote metadata within 128 inserts");
     }
 
     #[pg_test]
@@ -8914,20 +9135,23 @@ mod tests {
         let neighbor_map: HashMap<am::page::ItemPointer, am::page::TqNeighborTuple> = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: (idx + 1) as u16,
-                            },
-                            am::page::TqNeighborTuple::decode(tuple)
-                                .expect("neighbor tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
+                            Some((
+                                am::page::ItemPointer {
+                                    block_number: page.block_number,
+                                    offset_number: (idx + 1) as u16,
+                                },
+                                am::page::TqNeighborTuple::decode(tuple)
+                                    .expect("neighbor tuple should decode"),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect();
 

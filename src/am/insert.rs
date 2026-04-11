@@ -21,6 +21,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = shared::decode_heap_tid(heap_tid);
             let tuple = build::build_heap_tuple(values, isnull, heap_tid);
             let options = options::relation_options(index_relation);
+            let m = u16::try_from(options.m).expect("validated m should fit in u16");
             let code_len = tuple.code.len();
 
             if let Some(source_column) = options.build_source_column {
@@ -75,9 +76,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                         return;
                     }
 
-                    let element_tid = append_heap_tuple(index_relation, &tuple);
+                    let insert_level =
+                        choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
+                    let element_tid = append_heap_tuple(index_relation, &tuple, insert_level, m);
                     if metadata.entry_point == page::ItemPointer::INVALID {
                         metadata.entry_point = element_tid;
+                        metadata.max_level = insert_level;
                     }
                 });
                 return false;
@@ -117,15 +121,23 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 return false;
             }
 
-            let element_tid = append_heap_tuple(index_relation, &tuple);
+            let insert_level =
+                choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
+            let element_tid = append_heap_tuple(index_relation, &tuple, insert_level, m);
 
             // Only reacquire the metadata exclusive lock when the snapshot says
-            // entry_point still needs to be set. Re-check under the lock so we do
-            // not clobber a racing initializer.
-            if metadata_snapshot.entry_point == page::ItemPointer::INVALID {
+            // entry_point still needs repair or the new node outranks the current
+            // maximum level. Re-check under the lock so we do not clobber a
+            // racing initializer or promotion.
+            if metadata_snapshot.entry_point == page::ItemPointer::INVALID
+                || insert_level > metadata_snapshot.max_level
+            {
                 shared::with_locked_metadata_page(index_relation, |metadata| {
-                    if metadata.entry_point == page::ItemPointer::INVALID {
+                    if metadata.entry_point == page::ItemPointer::INVALID
+                        || insert_level > metadata.max_level
+                    {
                         metadata.entry_point = element_tid;
+                        metadata.max_level = insert_level;
                     }
                 });
             }
@@ -134,13 +146,69 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     }
 }
 
+fn choose_insert_level(m: u16, seed: u64, heap_tid: page::ItemPointer, code_len: usize) -> u8 {
+    let max_level = max_insert_level_that_fits(m, code_len, pg_sys::BLCKSZ as usize);
+    if max_level == 0 {
+        return 0;
+    }
+
+    let random_bits = splitmix64(seed ^ encode_heap_tid(heap_tid));
+    level_from_random_bits(random_bits, m, max_level)
+}
+
+fn max_insert_level_that_fits(m: u16, code_len: usize, page_size: usize) -> u8 {
+    let mut level = page::max_level_that_fits(m, page_size);
+    loop {
+        let required_bytes =
+            page::raw_tuple_storage_bytes(page::neighbor_tuple_encoded_len(level, m))
+                + page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len(code_len));
+        if required_bytes <= page_size.saturating_sub(page::PAGE_HEADER_BYTES) {
+            return level;
+        }
+        if level == 0 {
+            return 0;
+        }
+        level = level.saturating_sub(1);
+    }
+}
+
+fn level_from_random_bits(random_bits: u64, m: u16, max_level: u8) -> u8 {
+    let unit = ((random_bits as f64) + 1.0_f64) / ((u64::MAX as f64) + 1.0_f64);
+    let sampled_level = (-unit.ln() / (m as f64).ln()).floor();
+    sampled_level.clamp(0.0_f64, max_level as f64) as u8
+}
+
+fn encode_heap_tid(heap_tid: page::ItemPointer) -> u64 {
+    (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number)
+}
+
+fn splitmix64(mut state: u64) -> u64 {
+    state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    state = (state ^ (state >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    state = (state ^ (state >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    state ^ (state >> 31)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_insert_level_for_heap_tid(
+    m: u16,
+    seed: u64,
+    heap_tid: page::ItemPointer,
+    code_len: usize,
+) -> u8 {
+    choose_insert_level(m, seed, heap_tid, code_len)
+}
+
 unsafe fn append_heap_tuple(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
+    level: u8,
+    m: u16,
 ) -> page::ItemPointer {
+    let neighbor_slot_count = page::neighbor_slots(level, m);
     let neighbor_payload = page::TqNeighborTuple {
-        count: 0,
-        tids: Vec::new(),
+        count: u16::try_from(neighbor_slot_count).expect("neighbor slot count should fit in u16"),
+        tids: vec![page::ItemPointer::INVALID; neighbor_slot_count],
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode neighbor tuple: {e}"));
@@ -199,7 +267,7 @@ unsafe fn append_heap_tuple(
             std::mem::drop(wal_txn);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return unsafe {
-                append_heap_tuple_to_new_page(index_relation, tuple, &neighbor_payload)
+                append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
             };
         }
     }
@@ -219,7 +287,7 @@ unsafe fn append_heap_tuple(
     }
 
     let element_payload = page::TqElementTuple {
-        level: 0,
+        level,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
         gamma: tuple.gamma,
@@ -255,6 +323,7 @@ unsafe fn append_heap_tuple(
 unsafe fn append_heap_tuple_to_new_page(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
+    level: u8,
     neighbor_payload: &[u8],
 ) -> page::ItemPointer {
     let buffer = unsafe {
@@ -291,7 +360,7 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 
     let element_payload = page::TqElementTuple {
-        level: 0,
+        level,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
         gamma: tuple.gamma,
