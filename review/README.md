@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `c257acc`
+Current head: `9177240`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -28,15 +28,17 @@ Current tqhnsw state summary:
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
   - rejects `build_source_column` indexes for live insert in v0.1
-- Vacuum pass 1 now strips dead heap TIDs from element tuples and reports live-element stats,
-  while graph repair and final `deleted = true` marking remain for later A6 slices.
+- Vacuum now lands mark + finalize behavior short of graph repair: dead heap TIDs are stripped,
+  fully-dead elements are finalized to `deleted = true`, and duplicate discovery skips dead /
+  empty-heaptid elements.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.
 - `amgettuple` now supports visible tuple production through the current forward-only bootstrap linear data-page scan for non-empty indexes.
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
 - Vacuum coverage now includes empty-index / no-callback stats, duplicate-heaptid compaction,
-  scan invisibility after pass 1, and repeated pass-1 stability.
+  scan invisibility after finalize, repeated pass-1/finalize stability, and reinserting the same
+  vector after vacuum without reattaching to a dead node.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
