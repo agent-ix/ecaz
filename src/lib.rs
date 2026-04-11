@@ -956,6 +956,22 @@ mod tests {
         &neighbor_tids[start..end]
     }
 
+    fn count_neighbor_refs(
+        neighbors: &HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+        target_tid: am::page::ItemPointer,
+    ) -> usize {
+        neighbors
+            .values()
+            .map(|neighbor| {
+                neighbor
+                    .tids
+                    .iter()
+                    .filter(|tid| **tid == target_tid)
+                    .count()
+            })
+            .sum()
+    }
+
     fn encode_recall_query_code(query: &[f32]) -> Vec<u8> {
         let quantizer = ProdQuantizer::cached(
             RECALL_DIM,
@@ -1170,10 +1186,11 @@ mod tests {
                 .into_iter()
                 .map(|neighbor| i64::try_from(neighbor.d_id).expect("origin id should fit i64"))
                 .collect::<Vec<_>>();
-            let build_code_ids = brute_force_top_k_code_inner_product(&corpus_codes, &query_code, RECALL_K)
-                .into_iter()
-                .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                .collect::<Vec<_>>();
+            let build_code_ids =
+                brute_force_top_k_code_inner_product(&corpus_codes, &query_code, RECALL_K)
+                    .into_iter()
+                    .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
+                    .collect::<Vec<_>>();
             let exact_ids = brute_force_top_k_exact_quantized(&corpus_payloads, query, RECALL_K)
                 .into_iter()
                 .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
@@ -2779,10 +2796,8 @@ mod tests {
 
     #[pg_test]
     fn test_build_keeps_element_neighbor_local() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
 
         let payload_len = code_len(4, 8);
         for id in 1..=128 {
@@ -2812,28 +2827,34 @@ mod tests {
         let elements = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: u16::try_from(idx + 1)
-                                    .expect("page tuple offset should fit in u16"),
-                            },
-                            am::page::TqElementTuple::decode(tuple, code_len(4, 8))
-                                .expect("element tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                            Some((
+                                am::page::ItemPointer {
+                                    block_number: page.block_number,
+                                    offset_number: u16::try_from(idx + 1)
+                                        .expect("page tuple offset should fit in u16"),
+                                },
+                                am::page::TqElementTuple::decode(tuple, code_len(4, 8))
+                                    .expect("element tuple should decode"),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect::<Vec<_>>();
 
-        assert!(!elements.is_empty(), "build should persist at least one element tuple");
-        assert!(elements.iter().any(|(tid, element)| {
-            element.neighbortid.block_number == tid.block_number
-        }));
+        assert!(
+            !elements.is_empty(),
+            "build should persist at least one element tuple"
+        );
+        assert!(elements
+            .iter()
+            .any(|(tid, element)| { element.neighbortid.block_number == tid.block_number }));
         assert!(elements.iter().all(|(tid, element)| {
             element.neighbortid.block_number <= tid.block_number
                 && tid.block_number - element.neighbortid.block_number <= 1
@@ -3416,10 +3437,8 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_non_empty_index_build_rejects_non_finite_gamma() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_build_nan_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
@@ -3435,8 +3454,10 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_tqhnsw_insert_rejects_non_finite_gamma() {
-        Spi::run("CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_nan_gamma_idx ON tqhnsw_insert_nan_gamma USING tqhnsw \
              (embedding tqvector_ip_ops)",
@@ -3991,8 +4012,8 @@ mod tests {
             }
         }
 
-        let (inserted_id, expected_level) =
-            chosen_insert.expect("deterministic insert levels should produce an upper-layer live insert");
+        let (inserted_id, expected_level) = chosen_insert
+            .expect("deterministic insert levels should produce an upper-layer live insert");
         let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", inserted_id);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
@@ -4007,15 +4028,12 @@ mod tests {
             "the chosen live insert must participate in at least one upper layer",
         );
 
-        let layer1_forward_tids = layer_neighbor_slice(
-            &inserted_neighbors.tids,
-            usize::from(metadata.m),
-            1,
-        )
-        .iter()
-        .copied()
-        .filter(|tid| *tid != am::page::ItemPointer::INVALID)
-        .collect::<Vec<_>>();
+        let layer1_forward_tids =
+            layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 1)
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
         assert!(
             !layer1_forward_tids.is_empty(),
             "an upper-layer live insert should populate at least one layer-1 forward link",
@@ -4100,16 +4118,13 @@ mod tests {
             let inserted_neighbors = neighbors_after
                 .get(&inserted_element.neighbortid)
                 .expect("inserted element neighbor tuple should exist");
-            let inserted_layer0_forward_tids = layer_neighbor_slice(
-                &inserted_neighbors.tids,
-                usize::from(metadata.m),
-                0,
-            )
-            .iter()
-            .take(usize::from(metadata.m))
-            .copied()
-            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
-            .collect::<Vec<_>>();
+            let inserted_layer0_forward_tids =
+                layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 0)
+                    .iter()
+                    .take(usize::from(metadata.m))
+                    .copied()
+                    .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                    .collect::<Vec<_>>();
 
             for forward_tid in inserted_layer0_forward_tids {
                 let (_, before_element) = elements_before
@@ -4452,6 +4467,64 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_unlinks_deleted_neighbor_refs() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_unlink (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass2_unlink VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_unlink_idx ON tqhnsw_vacuum_pass2_unlink USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_unlink", 2);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_unlink_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_element_tid, _deleted_element) =
+            find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+        assert!(
+            count_neighbor_refs(&neighbors_before, deleted_element_tid) > 0,
+            "fixture should start with at least one persisted neighbor ref to the soon-to-be-deleted node",
+        );
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass2_unlink WHERE id = 2")
+            .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (_metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_, deleted_element_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == deleted_element_tid)
+            .expect("deleted element tuple should remain on disk after vacuum");
+
+        assert!(
+            deleted_element_after.deleted,
+            "vacuum should still finalize the fully dead element after pass-2 repair",
+        );
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "pass 2 should remove every persisted neighbor ref to the deleted element tid",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
         Spi::run(
             "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding tqvector)",
@@ -4471,18 +4544,27 @@ mod tests {
         .expect("index creation should succeed");
 
         let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_repeat", 2);
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_repeat WHERE id = 2")
-            .expect("delete should succeed");
-
         let index_oid =
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
+        let (_metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_element_tid, _deleted_element) =
+            find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+        assert!(
+            count_neighbor_refs(&neighbors_before, deleted_element_tid) > 0,
+            "fixture should start with at least one persisted neighbor ref to the deleted element",
+        );
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_repeat WHERE id = 2")
+            .expect("delete should succeed");
+
         let first_stats =
             unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
         let second_stats =
             unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
-        let (_metadata, elements, _neighbors) =
+        let (_metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
 
         assert_eq!(first_stats.tuples_removed, 1.0);
@@ -4496,14 +4578,17 @@ mod tests {
             1,
             "the second pass should observe the already-finalized fully dead element without rewriting it again",
         );
+        assert_eq!(
+            count_neighbor_refs(&neighbors, deleted_element_tid),
+            0,
+            "replaying the same vacuum delete-set should keep the deleted element tid fully unlinked from persisted neighbor tuples",
+        );
     }
 
     #[pg_test]
     fn test_tqhnsw_vacuum_finalized_nodes_skip_duplicate_coalesce() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_reinsert (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_vacuum_reinsert (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_reinsert VALUES
              (1, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
@@ -4542,7 +4627,10 @@ mod tests {
         );
         assert_eq!(replacement_element.heaptids, vec![replacement_heap_tid]);
         assert_eq!(
-            elements.iter().filter(|(_, element)| element.deleted).count(),
+            elements
+                .iter()
+                .filter(|(_, element)| element.deleted)
+                .count(),
             1,
             "the finalized vacuum tombstone should remain on disk until page compaction lands",
         );
@@ -4550,7 +4638,10 @@ mod tests {
         let returned =
             unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
         assert!(
-            returned.contains(&(replacement_heap_tid.block_number, replacement_heap_tid.offset_number)),
+            returned.contains(&(
+                replacement_heap_tid.block_number,
+                replacement_heap_tid.offset_number
+            )),
             "the replacement row should stay reachable after reinserting the same encoded vector",
         );
     }
@@ -7742,11 +7833,9 @@ mod tests {
                                     .value::<i64>()
                                     .expect("id should decode")
                                     .expect("id should be non-null");
-                                i64::try_from(
-                                    *id_to_row_index.get(&id).expect(
-                                        "exact quantized id should map back to a corpus row index",
-                                    ),
-                                )
+                                i64::try_from(*id_to_row_index.get(&id).expect(
+                                    "exact quantized id should map back to a corpus row index",
+                                ))
                                 .expect("row index should fit into bigint")
                             })
                             .collect::<Vec<_>>()
@@ -7797,10 +7886,7 @@ mod tests {
         }
     }
 
-    fn spearman_rank_correlation_external(
-        true_top_k: &[(usize, f32)],
-        pred_ids: &[i64],
-    ) -> f32 {
+    fn spearman_rank_correlation_external(true_top_k: &[(usize, f32)], pred_ids: &[i64]) -> f32 {
         let n = true_top_k.len().min(pred_ids.len());
         if n < 2 {
             return 0.0;
@@ -7862,18 +7948,17 @@ mod tests {
             .zip(exact_quantized_row_indices_top10.iter())
         {
             // Graph scan: returns heap tids plus operator-facing `<#>` scores.
-            let predicted_row_indices_with_scores: Vec<(usize, f32)> = unsafe {
-                am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
-            }
-            .into_iter()
-            .map(|(heap_tid, operator_score)| {
-                let row_index = *context
-                    .ctid_to_row_index
-                    .get(&heap_tid)
-                    .expect("graph heap tid should map back to a corpus row index");
-                (row_index, operator_score)
-            })
-            .collect();
+            let predicted_row_indices_with_scores: Vec<(usize, f32)> =
+                unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) }
+                    .into_iter()
+                    .map(|(heap_tid, operator_score)| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        (row_index, operator_score)
+                    })
+                    .collect();
             let predicted_row_indices: Vec<i64> = predicted_row_indices_with_scores
                 .iter()
                 .map(|(row_index, _)| {
@@ -7887,10 +7972,12 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
-            let predicted_top_10_ids: Vec<i64> =
-                predicted_row_indices.iter().take(RECALL_K).copied().collect();
-            let graph_overlap_10 =
-                recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
+            let predicted_top_10_ids: Vec<i64> = predicted_row_indices
+                .iter()
+                .take(RECALL_K)
+                .copied()
+                .collect();
+            let graph_overlap_10 = recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
             graph_top_10_hits += graph_overlap_10;
 
             // Top-100 graph recall vs the wider truth band.
@@ -7930,8 +8017,7 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(row_index, operator_score)| {
                     let approx_inner_product = -*operator_score;
-                    let true_inner_product =
-                        dot_product(query, &context.corpus[*row_index]);
+                    let true_inner_product = dot_product(query, &context.corpus[*row_index]);
                     (approx_inner_product - true_inner_product).abs()
                 })
                 .collect();
@@ -7988,27 +8074,33 @@ mod tests {
             .expect("setting ef_search should succeed");
 
         let mut graph_top_10_hits = 0_i32;
-        for (query, truth) in context.queries.iter().zip(context.ground_truth_top_k.iter()) {
-            let predicted_row_indices: Vec<i64> = unsafe {
-                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
-            }
-            .into_iter()
-            .map(|heap_tid| {
-                let row_index = *context
-                    .ctid_to_row_index
-                    .get(&heap_tid)
-                    .expect("graph heap tid should map back to a corpus row index");
-                i64::try_from(row_index).expect("row index should fit into bigint")
-            })
-            .collect();
+        for (query, truth) in context
+            .queries
+            .iter()
+            .zip(context.ground_truth_top_k.iter())
+        {
+            let predicted_row_indices: Vec<i64> =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .map(|heap_tid| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        i64::try_from(row_index).expect("row index should fit into bigint")
+                    })
+                    .collect();
 
             let truth_top_10_ids: Vec<i64> = truth
                 .iter()
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
-            let predicted_top_10_ids: Vec<i64> =
-                predicted_row_indices.iter().take(RECALL_K).copied().collect();
+            let predicted_top_10_ids: Vec<i64> = predicted_row_indices
+                .iter()
+                .take(RECALL_K)
+                .copied()
+                .collect();
             graph_top_10_hits += recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
         }
 
@@ -8037,8 +8129,7 @@ mod tests {
             ef_search,
         );
         let measured_recall_at_10 = summary.4;
-        let absolute_delta =
-            measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
+        let absolute_delta = measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
         let within_two_percent = absolute_delta.abs() <= ANN_BENCHMARKS_ANCHOR_TOLERANCE;
         (
             m,
@@ -8159,10 +8250,7 @@ mod tests {
             .map(|ef_search| {
                 let started = Instant::now();
                 let summary = probe_graph_scan_recall_external_summary_for_context(
-                    context,
-                    index_name,
-                    m,
-                    ef_search,
+                    context, index_name, m, ef_search,
                 );
                 let elapsed = started.elapsed();
                 let mean_query_latency_ms = if query_count > 0 {
@@ -8922,12 +9010,8 @@ mod tests {
         )
         .expect("reachable unique oracle seed ids should fit");
         let mut frequent_oracle_seeds = oracle_seed_frequency.into_iter().collect::<Vec<_>>();
-        frequent_oracle_seeds.sort_by(|left, right| {
-            right
-                .1
-                .cmp(&left.1)
-                .then_with(|| left.0.cmp(&right.0))
-        });
+        frequent_oracle_seeds
+            .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
         frequent_oracle_seeds.truncate(seed_count.max(10));
         let (top_seed_ids, top_seed_query_counts): (Vec<_>, Vec<_>) =
             frequent_oracle_seeds.into_iter().unzip();
@@ -10053,8 +10137,7 @@ mod tests {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
 
-        let (_block_count, metadata, data_pages) =
-            unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let m = metadata.m as usize;
         let code_len = code_len(metadata.dimensions as usize, metadata.bits);
 
@@ -10147,11 +10230,7 @@ mod tests {
                 } else {
                     0.0
                 };
-                let expected_max = if level == 0 {
-                    (m * 2) as i32
-                } else {
-                    m as i32
-                };
+                let expected_max = if level == 0 { (m * 2) as i32 } else { m as i32 };
                 (
                     i32::from(level),
                     stats.node_count as i32,
@@ -10415,11 +10494,7 @@ mod tests {
 
         // Gate report wrapper: covers all four NFR-003 A4 configurations
         // against the m=8 and m=16 indexes built by the smoke fixture.
-        let gate = run_graph_scan_recall_gate_from_external(
-            &corpus_table,
-            &queries_table,
-            prefix,
-        );
+        let gate = run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, prefix);
         assert_eq!(
             gate.len(),
             RECALL_GATE_CONFIGS.len(),
@@ -10475,8 +10550,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_hnsw_rs_source_graph_recall_clustered_10k() {
-        let corpus = random_clustered_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, 50, 0.3, RECALL_SEED as u64);
-        let queries = random_clustered_vectors(20, RECALL_DIM, 50, 0.3, (RECALL_SEED as u64) + 500_000);
+        let corpus =
+            random_clustered_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, 50, 0.3, RECALL_SEED as u64);
+        let queries =
+            random_clustered_vectors(20, RECALL_DIM, 50, 0.3, (RECALL_SEED as u64) + 500_000);
         let ef_search = 128_usize;
 
         let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 8, ef_search);

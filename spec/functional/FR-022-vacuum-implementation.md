@@ -135,6 +135,11 @@ For each element in `delete_set`:
 
 Graph repair is optional for correctness — deleted nodes are already skipped by scan (FR-009 checks `element.deleted`). However, repair improves recall by maintaining graph connectivity.
 
+Current implementation note:
+- `main` now implements the unlink half of pass 2: persisted neighbor tuples are scanned and any
+  slot pointing at a fully-dead element TID is cleared one page at a time.
+- Replacement search for substitute neighbors remains future A6 work.
+
 ### Pass 3 — Finalize
 
 For each element in `delete_set`:
@@ -154,10 +159,11 @@ After `ambulkdelete`, `amvacuumcleanup` SHALL:
 
 ### Concurrency
 
-- Vacuum acquires `BUFFER_LOCK_SHARE` during Pass 1 scan and `BUFFER_LOCK_EXCLUSIVE` only for page writes
+- Vacuum acquires `BUFFER_LOCK_SHARE` during scan phases and `BUFFER_LOCK_EXCLUSIVE` only for page writes
 - Concurrent inserts to other pages are not blocked
 - Concurrent scans see consistent results: a scan that started before vacuum sees the pre-vacuum state (MVCC through buffer locking)
 - All page writes use GenericXLog for crash safety
+- Pass 2 graph repair follows ADR-027: scan in ascending block order, rewrite one data page at a time, and keep replanning outside data-page `EXCLUSIVE` locks
 
 ### Page Compaction (Future)
 

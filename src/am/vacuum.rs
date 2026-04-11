@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr};
+use std::{collections::HashSet, ffi::c_void, ptr};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
@@ -12,6 +12,12 @@ type BulkDeleteCallback =
 struct ElementVacuumUpdate {
     tid: page::ItemPointer,
     tuple: page::TqElementTuple,
+}
+
+#[derive(Debug, Clone)]
+struct NeighborVacuumUpdate {
+    tid: page::ItemPointer,
+    tuple: page::TqNeighborTuple,
 }
 
 #[derive(Debug, Default)]
@@ -132,6 +138,7 @@ unsafe fn run_pass1_vacuum(
         finalize_tids.extend(final_plan.finalize_tids);
     }
 
+    unsafe { repair_graph_connections(index_relation, &finalize_tids) };
     unsafe { finalize_fully_dead_elements(index_relation, code_len, &finalize_tids) };
 
     unsafe {
@@ -269,6 +276,200 @@ unsafe fn apply_page_pass1_updates(
         if encoded.len() != tuple_len {
             pgrx::error!(
                 "tqhnsw vacuum element tuple size changed from {} to {} on block {}",
+                tuple_len,
+                encoded.len(),
+                block_number
+            );
+        }
+
+        unsafe {
+            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), tuple_len);
+        }
+    }
+}
+
+unsafe fn repair_graph_connections(
+    index_relation: pg_sys::Relation,
+    deleted_tids: &[page::ItemPointer],
+) {
+    if deleted_tids.is_empty() {
+        return;
+    }
+
+    let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let share_buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(share_buffer) } {
+            pgrx::error!("tqhnsw failed to open repair block {block_number}");
+        }
+
+        unsafe { pg_sys::LockBuffer(share_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let share_page_ptr = unsafe { pg_sys::BufferGetPage(share_buffer) }.cast::<u8>();
+        let share_page_size = unsafe { pg_sys::BufferGetPageSize(share_buffer) as usize };
+        let share_updates = unsafe {
+            plan_page_pass2(share_page_ptr, share_page_size, block_number, &deleted_tids)
+        };
+        unsafe { pg_sys::UnlockReleaseBuffer(share_buffer) };
+
+        if share_updates.is_empty() {
+            continue;
+        }
+
+        let exclusive_buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(exclusive_buffer) } {
+            pgrx::error!("tqhnsw failed to reopen repair block {block_number}");
+        }
+
+        unsafe {
+            rewrite_page_pass2(
+                index_relation,
+                exclusive_buffer,
+                block_number,
+                &deleted_tids,
+            )
+        };
+    }
+}
+
+unsafe fn rewrite_page_pass2(
+    index_relation: pg_sys::Relation,
+    buffer: pg_sys::Buffer,
+    block_number: u32,
+    deleted_tids: &HashSet<page::ItemPointer>,
+) {
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let updates = unsafe { plan_page_pass2(page_ptr, page_size, block_number, deleted_tids) };
+    if updates.is_empty() {
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return;
+    }
+
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let wal_page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    unsafe { apply_page_pass2_updates(wal_page_ptr, page_size, block_number, &updates) };
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn plan_page_pass2(
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: u32,
+    deleted_tids: &HashSet<page::ItemPointer>,
+) -> Vec<NeighborVacuumUpdate> {
+    let line_pointer_count = shared::page_line_pointer_count(page_ptr);
+    let mut updates = Vec::new();
+
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!("tqhnsw found invalid repair tuple bounds on block {block_number}");
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        if tuple_bytes.first().copied() != Some(page::TQ_NEIGHBOR_TAG) {
+            continue;
+        }
+
+        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode repair neighbor tuple: {e}"));
+        if neighbor.count as usize > neighbor.tids.len() {
+            pgrx::error!(
+                "tqhnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                neighbor.count,
+                neighbor.tids.len()
+            );
+        }
+        if !unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids) {
+            continue;
+        }
+
+        updates.push(NeighborVacuumUpdate {
+            tid: page::ItemPointer {
+                block_number,
+                offset_number: offset,
+            },
+            tuple: neighbor,
+        });
+    }
+
+    updates
+}
+
+fn unlink_deleted_neighbor_refs(
+    neighbor_tids: &mut [page::ItemPointer],
+    deleted_tids: &HashSet<page::ItemPointer>,
+) -> bool {
+    let mut changed = false;
+    for tid in neighbor_tids.iter_mut() {
+        if deleted_tids.contains(&*tid) {
+            *tid = page::ItemPointer::INVALID;
+            changed = true;
+        }
+    }
+    changed
+}
+
+unsafe fn apply_page_pass2_updates(
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: u32,
+    updates: &[NeighborVacuumUpdate],
+) {
+    for update in updates {
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, update.tid.offset_number) };
+        if item_id.lp_flags() == 0 {
+            pgrx::error!(
+                "tqhnsw repair neighbor tuple slot {}/{} is unused",
+                update.tid.block_number,
+                update.tid.offset_number
+            );
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!("tqhnsw found invalid repair rewrite bounds on block {block_number}");
+        }
+
+        let encoded = update
+            .tuple
+            .encode()
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode repair neighbor tuple: {e}"));
+        if encoded.len() != tuple_len {
+            pgrx::error!(
+                "tqhnsw repair neighbor tuple size changed from {} to {} on block {}",
                 tuple_len,
                 encoded.len(),
                 block_number
