@@ -129,7 +129,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 
             let insert_level =
                 choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
-            let forward_neighbor_slots = discover_insert_forward_neighbor_slots(
+            let (forward_neighbor_slots, forward_selections) = discover_insert_forward_neighbor_slots(
                 index_relation,
                 &metadata_snapshot,
                 &tuple.code,
@@ -142,10 +142,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 insert_level,
                 &forward_neighbor_slots,
             );
-            add_layer0_backlinks_to_forward_neighbors(
+            add_backlinks_to_forward_neighbors(
                 index_relation,
                 code_len,
-                &forward_neighbor_slots,
+                &forward_selections,
                 element_tid,
                 m,
             );
@@ -228,21 +228,46 @@ fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
     vec![page::ItemPointer::INVALID; page::neighbor_slots(level, m)]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LayerForwardSelection {
+    layer: u8,
+    element_tid: page::ItemPointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BacklinkMutation {
+    neighbor_tid: page::ItemPointer,
+    layer: u8,
+}
+
 unsafe fn discover_insert_forward_neighbor_slots(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     code: &[u8],
     insert_level: u8,
     m: u16,
-) -> Vec<page::ItemPointer> {
+) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
     let mut slots = empty_insert_neighbor_slots(insert_level, m);
+    let mut selections = Vec::new();
     let Some(entry_candidate) =
         (unsafe { load_insert_entry_candidate(index_relation, metadata, code) })
     else {
-        return slots;
+        return (slots, selections);
     };
 
     let m_usize = usize::from(m);
+    unsafe {
+        populate_upper_layer_forward_slots(
+            index_relation,
+            metadata,
+            code,
+            insert_level,
+            m_usize,
+            entry_candidate,
+            &mut slots,
+            &mut selections,
+        );
+    }
     let descended_seed = unsafe {
         graph::greedy_descend_from_entry(
             index_relation,
@@ -264,15 +289,9 @@ unsafe fn discover_insert_forward_neighbor_slots(
         )
     };
 
-    for (slot, candidate) in slots
-        .iter_mut()
-        .take(m_usize)
-        .zip(layer0_candidates.into_iter().take(m_usize))
-    {
-        *slot = candidate.node;
-    }
+    write_layer_forward_candidates(&mut slots, &mut selections, 0, m_usize, layer0_candidates);
 
-    slots
+    (slots, selections)
 }
 
 unsafe fn load_insert_entry_candidate(
@@ -308,41 +327,104 @@ fn score_insert_graph_element(
     ))
 }
 
-unsafe fn add_layer0_backlinks_to_forward_neighbors(
+unsafe fn populate_upper_layer_forward_slots(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+    insert_level: u8,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    slots: &mut [page::ItemPointer],
+    selections: &mut Vec<LayerForwardSelection>,
+) {
+    if insert_level == 0 || metadata.max_level == 0 {
+        return;
+    }
+
+    let mut seeds = vec![entry_candidate];
+    for current_layer in (1..=metadata.max_level).rev() {
+        seeds = unsafe {
+            graph::search_layer_result_candidates(
+                index_relation,
+                code.len(),
+                m,
+                current_layer,
+                usize::from(metadata.ef_construction).max(1),
+                seeds,
+                |_| true,
+                |neighbor| score_insert_graph_element(metadata, code, neighbor),
+            )
+        };
+        if current_layer <= insert_level {
+            write_layer_forward_candidates(slots, selections, current_layer, m, seeds.clone());
+        }
+        if seeds.is_empty() {
+            break;
+        }
+    }
+}
+
+fn write_layer_forward_candidates(
+    slots: &mut [page::ItemPointer],
+    selections: &mut Vec<LayerForwardSelection>,
+    layer: u8,
+    m: usize,
+    candidates: impl IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+) {
+    let Some((start, end)) = selected_forward_slot_bounds(m, slots.len(), layer) else {
+        return;
+    };
+
+    for (slot, candidate) in slots[start..end]
+        .iter_mut()
+        .zip(candidates.into_iter().take(end.saturating_sub(start)))
+    {
+        *slot = candidate.node;
+        selections.push(LayerForwardSelection {
+            layer,
+            element_tid: candidate.node,
+        });
+    }
+}
+
+unsafe fn add_backlinks_to_forward_neighbors(
     index_relation: pg_sys::Relation,
     code_len: usize,
-    forward_neighbor_slots: &[page::ItemPointer],
+    selections: &[LayerForwardSelection],
     new_element_tid: page::ItemPointer,
     m: u16,
 ) {
-    let mut backlink_neighbor_tids = forward_neighbor_slots
+    let mut mutations = selections
         .iter()
-        .take(usize::from(m))
         .copied()
-        .filter(|tid| *tid != page::ItemPointer::INVALID)
-        .map(|element_tid| unsafe {
-            graph::load_graph_element(index_relation, element_tid, code_len)
+        .filter(|selection| selection.element_tid != page::ItemPointer::INVALID)
+        .map(|selection| unsafe {
+            let element = graph::load_graph_element(index_relation, selection.element_tid, code_len);
+            BacklinkMutation {
+                neighbor_tid: element.neighbortid,
+                layer: selection.layer,
+            }
         })
-        .map(|element| element.neighbortid)
-        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
         .collect::<Vec<_>>();
-    backlink_neighbor_tids.sort_unstable_by(compare_item_pointers);
-    backlink_neighbor_tids.dedup();
+    mutations.sort_unstable_by(|left, right| {
+        compare_item_pointers(&left.neighbor_tid, &right.neighbor_tid)
+            .then_with(|| left.layer.cmp(&right.layer))
+    });
+    mutations.dedup();
 
     let mut start = 0;
-    while start < backlink_neighbor_tids.len() {
-        let block_number = backlink_neighbor_tids[start].block_number;
+    while start < mutations.len() {
+        let block_number = mutations[start].neighbor_tid.block_number;
         let mut end = start + 1;
-        while end < backlink_neighbor_tids.len()
-            && backlink_neighbor_tids[end].block_number == block_number
-        {
+        while end < mutations.len() && mutations[end].neighbor_tid.block_number == block_number {
             end += 1;
         }
 
         unsafe {
-            add_layer0_backlinks_on_page(
+            add_backlinks_on_page(
                 index_relation,
-                &backlink_neighbor_tids[start..end],
+                &mutations[start..end],
                 new_element_tid,
                 m,
             );
@@ -351,17 +433,17 @@ unsafe fn add_layer0_backlinks_to_forward_neighbors(
     }
 }
 
-unsafe fn add_layer0_backlinks_on_page(
+unsafe fn add_backlinks_on_page(
     index_relation: pg_sys::Relation,
-    neighbor_tids: &[page::ItemPointer],
+    mutations: &[BacklinkMutation],
     new_element_tid: page::ItemPointer,
     m: u16,
 ) {
-    if neighbor_tids.is_empty() {
+    if mutations.is_empty() {
         return;
     }
 
-    let block_number = neighbor_tids[0].block_number;
+    let block_number = mutations[0].neighbor_tid.block_number;
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -383,7 +465,14 @@ unsafe fn add_layer0_backlinks_on_page(
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let mut changed = false;
 
-    for neighbor_tid in neighbor_tids {
+    let mut start = 0;
+    while start < mutations.len() {
+        let neighbor_tid = mutations[start].neighbor_tid;
+        let mut end = start + 1;
+        while end < mutations.len() && mutations[end].neighbor_tid == neighbor_tid {
+            end += 1;
+        }
+
         let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
@@ -414,7 +503,18 @@ unsafe fn add_layer0_backlinks_on_page(
                 neighbor.tids.len()
             );
         }
-        if !insert_layer0_backlink(&mut neighbor.tids, new_element_tid, m) {
+
+        let mut tuple_changed = false;
+        for mutation in &mutations[start..end] {
+            tuple_changed |= insert_backlink_for_layer(
+                &mut neighbor.tids,
+                new_element_tid,
+                m,
+                mutation.layer,
+            );
+        }
+        if !tuple_changed {
+            start = end;
             continue;
         }
 
@@ -432,6 +532,7 @@ unsafe fn add_layer0_backlinks_on_page(
             ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
         }
         changed = true;
+        start = end;
     }
 
     if changed {
@@ -442,22 +543,22 @@ unsafe fn add_layer0_backlinks_on_page(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
-fn insert_layer0_backlink(
+fn insert_backlink_for_layer(
     neighbor_tids: &mut [page::ItemPointer],
     new_element_tid: page::ItemPointer,
     m: u16,
+    layer: u8,
 ) -> bool {
-    let layer0_width = usize::from(m).saturating_mul(2).min(neighbor_tids.len());
-    if layer0_width == 0 {
+    let Some((start, end)) = backlink_slot_bounds(usize::from(m), neighbor_tids.len(), layer)
+    else {
+        return false;
+    };
+    let layer_slice = &mut neighbor_tids[start..end];
+    if layer_slice.contains(&new_element_tid) {
         return false;
     }
 
-    let layer0 = &mut neighbor_tids[..layer0_width];
-    if layer0.contains(&new_element_tid) {
-        return false;
-    }
-
-    let Some(slot) = layer0
+    let Some(slot) = layer_slice
         .iter_mut()
         .find(|tid| **tid == page::ItemPointer::INVALID)
     else {
@@ -465,6 +566,34 @@ fn insert_layer0_backlink(
     };
     *slot = new_element_tid;
     true
+}
+
+fn selected_forward_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+    let (start, end) = backlink_slot_bounds(m, total_slots, layer)?;
+    if layer == 0 {
+        return Some((start, start.saturating_add(m).min(end)));
+    }
+    Some((start, end))
+}
+
+fn backlink_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+    if total_slots == 0 {
+        return None;
+    }
+
+    if layer == 0 {
+        let end = m.saturating_mul(2).min(total_slots);
+        return (end > 0).then_some((0, end));
+    }
+
+    let start = m
+        .saturating_mul(2)
+        .saturating_add((usize::from(layer).saturating_sub(1)).saturating_mul(m));
+    if start >= total_slots {
+        return None;
+    }
+
+    Some((start, start.saturating_add(m).min(total_slots)))
 }
 
 fn compare_item_pointers(left: &page::ItemPointer, right: &page::ItemPointer) -> Ordering {

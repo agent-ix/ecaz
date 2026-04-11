@@ -902,6 +902,23 @@ mod tests {
         (*element_tid, element)
     }
 
+    fn layer_neighbor_slice(
+        neighbor_tids: &[am::page::ItemPointer],
+        m: usize,
+        layer: u8,
+    ) -> &[am::page::ItemPointer] {
+        let (start, end) = if layer == 0 {
+            (0, (m * 2).min(neighbor_tids.len()))
+        } else {
+            let start = (m * 2) + (usize::from(layer) - 1) * m;
+            if start >= neighbor_tids.len() {
+                return &neighbor_tids[0..0];
+            }
+            (start, (start + m).min(neighbor_tids.len()))
+        };
+        &neighbor_tids[start..end]
+    }
+
     fn encode_recall_query_code(query: &[f32]) -> Vec<u8> {
         let quantizer = ProdQuantizer::cached(
             RECALL_DIM,
@@ -3575,8 +3592,9 @@ mod tests {
         let row2_neighbors = neighbors
             .get(&row2_element.neighbortid)
             .expect("second insert neighbor tuple should exist");
-        let populated_layer0_slots = row2_neighbors
-            .tids
+        let row1_layer0 = layer_neighbor_slice(&row1_neighbors.tids, usize::from(metadata.m), 0);
+        let row2_layer0 = layer_neighbor_slice(&row2_neighbors.tids, usize::from(metadata.m), 0);
+        let populated_layer0_slots = row2_layer0
             .iter()
             .take(usize::from(metadata.m))
             .copied()
@@ -3593,20 +3611,15 @@ mod tests {
             "the seed element tid should remain stable after the live insert",
         );
         assert!(
-            row1_neighbors
-                .tids
-                .iter()
-                .take(usize::from(metadata.m) * 2)
-                .any(|tid| *tid == row2_element_tid),
+            row1_layer0.contains(&row2_element_tid),
             "the seeded element should receive a layer-0 backlink to the newly inserted node",
         );
         assert!(
-            row2_neighbors
-                .tids
+            row2_layer0
                 .iter()
                 .skip(usize::from(metadata.m))
                 .all(|tid| *tid == am::page::ItemPointer::INVALID),
-            "this checkpoint only fills the first M layer-0 slots and leaves the remaining layer-0 and upper-layer slots invalid",
+            "the upper-layer checkpoint still leaves the second half of the layer-0 forward window invalid on the new node",
         );
     }
 
@@ -3655,8 +3668,8 @@ mod tests {
         let row5_neighbors = neighbors
             .get(&row5_element.neighbortid)
             .expect("inserted element neighbor tuple should exist");
-        let populated_layer0_slots = row5_neighbors
-            .tids
+        let row5_layer0 = layer_neighbor_slice(&row5_neighbors.tids, usize::from(metadata.m), 0);
+        let populated_layer0_slots = row5_layer0
             .iter()
             .take(usize::from(metadata.m))
             .copied()
@@ -3680,12 +3693,120 @@ mod tests {
             "forward links must not self-reference the newly inserted element",
         );
         assert!(
-            row5_neighbors
-                .tids
+            row5_layer0
                 .iter()
                 .skip(usize::from(metadata.m))
                 .all(|tid| *tid == am::page::ItemPointer::INVALID),
-            "this checkpoint still leaves the second half of layer-0 capacity and any upper-layer slots on the new node for later work",
+            "the second half of the layer-0 forward window stays invalid even after upper-layer links land",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_upper_layer_links_when_available() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_upper_layer_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_upper_layer_links_idx ON tqhnsw_insert_upper_layer_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_upper_layer_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut chosen_insert = None;
+        for id in 1_i64..=192_i64 {
+            let previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_upper_layer_links VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("live insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", id);
+            let level = am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            if previous_metadata.max_level > 0 && level > 0 {
+                chosen_insert = Some((id, level));
+                break;
+            }
+        }
+
+        let (inserted_id, expected_level) =
+            chosen_insert.expect("deterministic insert levels should produce an upper-layer live insert");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", inserted_id);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (inserted_element_tid, inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+        let inserted_neighbors = neighbors
+            .get(&inserted_element.neighbortid)
+            .expect("inserted upper-layer neighbor tuple should exist");
+        assert_eq!(inserted_element.level, expected_level);
+        assert!(
+            inserted_element.level > 0,
+            "the chosen live insert must participate in at least one upper layer",
+        );
+
+        let layer1_forward_tids = layer_neighbor_slice(
+            &inserted_neighbors.tids,
+            usize::from(metadata.m),
+            1,
+        )
+        .iter()
+        .copied()
+        .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+        .collect::<Vec<_>>();
+        assert!(
+            !layer1_forward_tids.is_empty(),
+            "an upper-layer live insert should populate at least one layer-1 forward link",
+        );
+
+        let mut layer1_backlink_targets = 0_usize;
+        for forward_tid in layer1_forward_tids {
+            let (_, forward_element) = elements
+                .iter()
+                .find(|(tid, _)| *tid == forward_tid)
+                .expect("upper-layer forward link should target an existing element");
+            assert!(
+                forward_element.level >= 1,
+                "upper-layer forward links must target elements that participate in layer 1",
+            );
+
+            let forward_neighbors = neighbors
+                .get(&forward_element.neighbortid)
+                .expect("upper-layer forward target neighbor tuple should exist");
+            if layer_neighbor_slice(&forward_neighbors.tids, usize::from(metadata.m), 1)
+                .contains(&inserted_element_tid)
+            {
+                layer1_backlink_targets += 1;
+            }
+        }
+        assert!(
+            layer1_backlink_targets > 0,
+            "at least one sparse layer-1 forward target should receive a matching layer-1 backlink to the new element",
+        );
+        assert!(
+            layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 0)
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "upper-layer link coverage should not change the second half of the layer-0 forward window",
         );
     }
 

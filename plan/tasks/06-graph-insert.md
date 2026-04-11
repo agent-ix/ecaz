@@ -14,15 +14,17 @@ Progress notes:
 - Layer-0 backlink mutation now updates selected existing neighbors in physical page order and
   makes live inserts graph-reachable through the graph-first scan path when selected neighbors
   still have free layer-0 capacity.
-- Upper-layer insert search, upper-layer backlinks, neighbor shrinking, drift statistics, and
-  `build_source_column` insert support remain pending.
+- Insert now also runs upper-layer candidate discovery for live upper-level nodes, writes simple
+  upper-layer forward links on the new node, and applies matching upper-layer backlinks when the
+  selected targets still have free upper-layer capacity.
+- Neighbor shrinking, drift statistics, and `build_source_column` insert support remain pending.
 
 ## Milestone Tracker
 
 - [x] `20%` Level assignment, neighbor tuple sizing, metadata entry-point / max-level promotion
 - [x] `35%` Greedy descent, layer-0 candidate search, and new-node forward links
 - [x] `50%` Layer-0 backlinks, graph reachability, and explicit lock-ordering ADR
-- [ ] `75%` Upper-layer insert search and upper-layer backlink coverage
+- [x] `75%` Upper-layer insert search and upper-layer backlink coverage
 - [ ] `90%` Neighbor overflow handling and shrinking
 - [ ] `100%` Drift accounting and concurrency hardening
 
@@ -38,13 +40,15 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - [x] **Entry point promotion.** Update metadata entry point and max_level when new node has higher layer.
 - [x] **Greedy descent + layer-0 beam search.** Reuse the shared traversal helpers to seed insert
   candidate discovery and select a simple top-`M` forward set for the new node.
-- [ ] **Upper-layer insert search.** Extend candidate discovery above layer 0 when insert-side
-  forward links stop being layer-0 only.
-- [ ] **Upper-layer forward links.** Decide whether upper-layer forward links are written with the
-  upper-layer search step above or deferred until backlink work lands.
+- [x] **Upper-layer insert search.** Live upper-level inserts now reuse `search_layer_result_candidates`
+  above layer 0 to discover per-layer candidates.
+- [x] **Upper-layer forward links.** Upper-level inserts now populate the matching upper-layer
+  slices on the new node with simple top-`M` candidates.
 - [x] **Back-link updates.** Selected layer-0 neighbors now receive the new node's TID when they
   still have free layer-0 capacity, with updates grouped one page at a time in ascending physical
   order. Overflow pruning remains deferred.
+- [x] **Upper-layer back-link updates.** Selected upper-layer neighbors now receive the new node's
+  TID in the matching upper-layer slice when free capacity exists; overflow pruning remains deferred.
 - [ ] **Neighbor list shrinking.** Prune weakest existing links when backlink mutation overflows a
   target layer budget.
 - [ ] **Drift statistics.** Track `inserted_since_rebuild` in metadata. Expose via page-inspection or SQL.
@@ -82,7 +86,7 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 ## Notes
 
 - Back-link updates are the hardest part: each insert touches O(M) neighbor pages.
-- The current backlink slice is intentionally narrow: it only fills free layer-0 slots and defers
-  overflow pruning to the next A5 checkpoint.
+- The current backlink slices are still intentionally narrow: they only fill free layer-0 / upper-layer
+  slots and defer overflow pruning to the next A5 checkpoint.
 - Pruning weakest neighbor requires scoring all existing neighbors to decide which to evict.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).
