@@ -1,6 +1,6 @@
 # Task 12: Real-Corpus Recall Validation
 
-Status: lane in progress — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, and real `50K` directional slices are healthy; broader reruns are still limited by harness cost.
+Status: lane in progress — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, broader real `50K` gate slices now pass too, and the remaining question is signoff scope rather than basic recall viability.
 
 ## Scope
 

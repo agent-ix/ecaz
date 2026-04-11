@@ -78,9 +78,12 @@ Complete the HNSW scan path from module split through validated recall measureme
     - Directional real `50K` evidence is also healthy:
       - four-config gate report over `10` real queries: `87.0% / 90.0% / 91.0% / 92.0%`
       - threshold-point summary over `25` real queries: graph `93.6%`, exact quantized `96.0%`
+      - broader four-config gate report over `50` real queries: `92.6% / 94.4% / 94.8% / 95.2%`
     - That moves the main uncertainty from "does the live graph path fundamentally fail recall" to
       "what is the right broader real-corpus signoff surface, and how do we make that rerun cheap
       enough to use interactively."
+    - The external gate harness was also tightened so gate runs no longer pay for exact-quantized
+      top-10 that only the summary path needs.
 
 ## Owns
 
