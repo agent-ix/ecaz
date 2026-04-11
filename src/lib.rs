@@ -6682,6 +6682,9 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
+            // This uses the same tqhnsw amrescan/amgettuple traversal as the
+            // external summary helper; it simply omits xs_orderby score
+            // extraction because the histogram only needs the returned ids.
             let predicted_top_10_ids: Vec<i64> =
                 unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
                     .into_iter()
@@ -6795,6 +6798,8 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
+            // Same graph traversal as the summary probe, but without order-by
+            // score extraction because the breakdown only reasons about ids.
             let predicted_top_10_row_indices: Vec<i64> =
                 unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
                     .into_iter()
@@ -8946,6 +8951,189 @@ mod tests {
             if expected.2.is_none() {
                 assert!(*passed);
             }
+        }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_graph_scan_recall_diagnostic_surfaces_smoke() {
+        let prefix = "tqhnsw_recall_diag_smoke";
+        create_external_recall_smoke_fixture(prefix, 500, 25);
+
+        let corpus_table = format!("{prefix}_corpus");
+        let queries_table = format!("{prefix}_queries");
+        let m8_index = format!("{prefix}_m8_idx");
+        let summary = probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &queries_table,
+            &m8_index,
+            8,
+            128,
+        );
+        let query_count = summary.3;
+        let expected_graph_hits = (summary.4 * query_count as f32 * RECALL_K as f32).round() as i32;
+        let expected_exact_hits = (summary.9 * query_count as f32 * RECALL_K as f32).round() as i32;
+
+        let histogram_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT recall_bucket, query_count, query_fraction
+                         FROM tests.tqhnsw_graph_scan_recall_histogram(
+                             '{corpus_table}', '{queries_table}', '{m8_index}', 8, 128
+                         )
+                         ORDER BY recall_bucket"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("histogram SQL surface should succeed")
+                .map(|row| {
+                    (
+                        row["recall_bucket"]
+                            .value::<i32>()
+                            .expect("bucket should decode")
+                            .expect("bucket should be non-null"),
+                        row["query_count"]
+                            .value::<i32>()
+                            .expect("count should decode")
+                            .expect("count should be non-null"),
+                        row["query_fraction"]
+                            .value::<f32>()
+                            .expect("fraction should decode")
+                            .expect("fraction should be non-null"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(histogram_rows.len(), RECALL_K + 1);
+        let histogram_total_queries: i32 = histogram_rows.iter().map(|(_, count, _)| *count).sum();
+        let histogram_total_hits: i32 = histogram_rows
+            .iter()
+            .map(|(bucket, count, _)| *bucket * *count)
+            .sum();
+        let histogram_fraction_sum: f32 =
+            histogram_rows.iter().map(|(_, _, fraction)| *fraction).sum();
+        assert_eq!(histogram_total_queries, query_count);
+        assert_eq!(histogram_total_hits, expected_graph_hits);
+        assert!((histogram_fraction_sum - 1.0).abs() < 1.0e-6);
+        for (expected_bucket, (bucket, _, _)) in histogram_rows.iter().enumerate() {
+            assert_eq!(*bucket, expected_bucket as i32);
+        }
+
+        let ef_sweep_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT m, ef_search, recall_at_10, exact_quantized_recall_at_10,
+                                mean_abs_score_error, mean_query_latency_ms
+                         FROM tests.tqhnsw_graph_scan_recall_ef_sweep(
+                             '{corpus_table}', '{queries_table}', '{m8_index}', 8, ARRAY[40, 128, 200]
+                         )
+                         ORDER BY ef_search"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("ef_sweep SQL surface should succeed")
+                .map(|row| {
+                    (
+                        row["m"]
+                            .value::<i32>()
+                            .expect("m should decode")
+                            .expect("m should be non-null"),
+                        row["ef_search"]
+                            .value::<i32>()
+                            .expect("ef_search should decode")
+                            .expect("ef_search should be non-null"),
+                        row["recall_at_10"]
+                            .value::<f32>()
+                            .expect("recall should decode")
+                            .expect("recall should be non-null"),
+                        row["exact_quantized_recall_at_10"]
+                            .value::<f32>()
+                            .expect("exact recall should decode")
+                            .expect("exact recall should be non-null"),
+                        row["mean_abs_score_error"]
+                            .value::<f32>()
+                            .expect("mae should decode")
+                            .expect("mae should be non-null"),
+                        row["mean_query_latency_ms"]
+                            .value::<f32>()
+                            .expect("latency should decode")
+                            .expect("latency should be non-null"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(ef_sweep_rows.len(), 3);
+        assert_eq!(
+            ef_sweep_rows.iter().map(|(_, ef_search, _, _, _, _)| *ef_search).collect::<Vec<_>>(),
+            vec![40, 128, 200]
+        );
+        for (m, _, recall_at_10, exact_recall_at_10, mae, latency_ms) in &ef_sweep_rows {
+            assert_eq!(*m, 8);
+            assert!((0.0..=1.0).contains(recall_at_10));
+            assert!((0.0..=1.0).contains(exact_recall_at_10));
+            assert!(*mae >= 0.0);
+            assert!(*latency_ms >= 0.0);
+        }
+        let ef_128_row = ef_sweep_rows
+            .iter()
+            .find(|(_, ef_search, _, _, _, _)| *ef_search == 128)
+            .expect("ef_search=128 row should be present");
+        assert!((ef_128_row.2 - summary.4).abs() < 1.0e-6);
+        assert!((ef_128_row.3 - summary.9).abs() < 1.0e-6);
+        assert!((ef_128_row.4 - summary.7).abs() < 1.0e-6);
+
+        let breakdown_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT query_index, graph_recall_at_10, exact_quantized_recall_at_10, missed_ids
+                         FROM tests.tqhnsw_graph_scan_recall_failure_breakdown(
+                             '{corpus_table}', '{queries_table}', '{m8_index}', 8, 128, 11
+                         )
+                         ORDER BY query_index"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("failure_breakdown SQL surface should succeed")
+                .map(|row| {
+                    (
+                        row["query_index"]
+                            .value::<i32>()
+                            .expect("query_index should decode")
+                            .expect("query_index should be non-null"),
+                        row["graph_recall_at_10"]
+                            .value::<i32>()
+                            .expect("graph_recall should decode")
+                            .expect("graph_recall should be non-null"),
+                        row["exact_quantized_recall_at_10"]
+                            .value::<i32>()
+                            .expect("exact_recall should decode")
+                            .expect("exact_recall should be non-null"),
+                        row["missed_ids"]
+                            .value::<Vec<i64>>()
+                            .expect("missed_ids should decode")
+                            .expect("missed_ids should be non-null"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(breakdown_rows.len(), query_count as usize);
+        let breakdown_graph_hits: i32 =
+            breakdown_rows.iter().map(|(_, graph_recall, _, _)| *graph_recall).sum();
+        let breakdown_exact_hits: i32 =
+            breakdown_rows.iter().map(|(_, _, exact_recall, _)| *exact_recall).sum();
+        assert_eq!(breakdown_graph_hits, expected_graph_hits);
+        assert_eq!(breakdown_exact_hits, expected_exact_hits);
+        for (expected_query_index, (query_index, graph_recall, exact_recall, _)) in
+            breakdown_rows.iter().enumerate()
+        {
+            assert_eq!(*query_index, expected_query_index as i32);
+            assert!((0..=RECALL_K as i32).contains(graph_recall));
+            assert!((0..=RECALL_K as i32).contains(exact_recall));
         }
     }
 
