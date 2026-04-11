@@ -3566,7 +3566,12 @@ mod tests {
         let row2_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 2);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
-        let (_row2_element_tid, row2_element) = find_element_for_heap_tid(&elements, row2_heap_tid);
+        let (row1_element_tid_after, row1_element) =
+            find_element_for_heap_tid(&elements, row1_heap_tid);
+        let (row2_element_tid, row2_element) = find_element_for_heap_tid(&elements, row2_heap_tid);
+        let row1_neighbors = neighbors
+            .get(&row1_element.neighbortid)
+            .expect("seed element neighbor tuple should exist");
         let row2_neighbors = neighbors
             .get(&row2_element.neighbortid)
             .expect("second insert neighbor tuple should exist");
@@ -3582,6 +3587,18 @@ mod tests {
             populated_layer0_slots,
             vec![row1_element_tid],
             "the second live insert should seed its forward links from the existing entry element",
+        );
+        assert_eq!(
+            row1_element_tid_after, row1_element_tid,
+            "the seed element tid should remain stable after the live insert",
+        );
+        assert!(
+            row1_neighbors
+                .tids
+                .iter()
+                .take(usize::from(metadata.m) * 2)
+                .any(|tid| *tid == row2_element_tid),
+            "the seeded element should receive a layer-0 backlink to the newly inserted node",
         );
         assert!(
             row2_neighbors
@@ -3668,7 +3685,79 @@ mod tests {
                 .iter()
                 .skip(usize::from(metadata.m))
                 .all(|tid| *tid == am::page::ItemPointer::INVALID),
-            "this checkpoint leaves the remaining layer-0 and upper-layer slots for later backlink and pruning work",
+            "this checkpoint still leaves the second half of layer-0 capacity and any upper-layer slots on the new node for later work",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_live_insert_is_graph_reachable_via_backlinks() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_graph_reachable (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_graph_reachable_idx ON tqhnsw_insert_graph_reachable USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 8, ef_search = 8)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_graph_reachable_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut chosen_insert = None;
+        for id in 5_i64..=32_i64 {
+            let delta = (id - 4) as f32 * 0.02;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, 0.1, 0.0], 4, 42))",
+            ))
+            .expect("live insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", id);
+            let level = am::debug_insert_level_for_heap_tid(8, 42, heap_tid, code_len(4, 4));
+            if level == 0 {
+                chosen_insert = Some((id, vec![1.0, delta, 0.1, 0.0]));
+                break;
+            }
+        }
+
+        let (inserted_id, query) = chosen_insert
+            .expect("deterministic insert levels should produce a level-0 live insert");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", inserted_id);
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (inserted_element_tid, _inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+        assert_ne!(
+            metadata.entry_point, inserted_element_tid,
+            "the reachability check should exercise backlinks rather than an entry-point promotion",
+        );
+
+        let (_head, frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, query) };
+        let frontier_tids = frontier_slots
+            .iter()
+            .filter_map(|(valid, tid, _)| valid.then_some(*tid))
+            .collect::<Vec<_>>();
+
+        assert!(
+            !frontier.is_empty(),
+            "reachable live inserts should contribute to a non-empty graph frontier",
+        );
+        assert!(
+            frontier_tids.contains(&(inserted_element_tid.block_number, inserted_element_tid.offset_number)),
+            "the graph-seeded runtime frontier should reach the live-inserted element before any linear fallback",
         );
     }
 

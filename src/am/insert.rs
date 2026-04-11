@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{cmp::Ordering, ptr};
 
 use pgrx::pg_sys;
 
@@ -141,6 +141,13 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 &tuple,
                 insert_level,
                 &forward_neighbor_slots,
+            );
+            add_layer0_backlinks_to_forward_neighbors(
+                index_relation,
+                code_len,
+                &forward_neighbor_slots,
+                element_tid,
+                m,
             );
 
             // Only reacquire the metadata exclusive lock when the snapshot says
@@ -299,6 +306,171 @@ fn score_insert_graph_element(
         query_code,
         &element.code,
     ))
+}
+
+unsafe fn add_layer0_backlinks_to_forward_neighbors(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    forward_neighbor_slots: &[page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) {
+    let mut backlink_neighbor_tids = forward_neighbor_slots
+        .iter()
+        .take(usize::from(m))
+        .copied()
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .map(|element_tid| unsafe {
+            graph::load_graph_element(index_relation, element_tid, code_len)
+        })
+        .map(|element| element.neighbortid)
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .collect::<Vec<_>>();
+    backlink_neighbor_tids.sort_unstable_by(compare_item_pointers);
+    backlink_neighbor_tids.dedup();
+
+    let mut start = 0;
+    while start < backlink_neighbor_tids.len() {
+        let block_number = backlink_neighbor_tids[start].block_number;
+        let mut end = start + 1;
+        while end < backlink_neighbor_tids.len()
+            && backlink_neighbor_tids[end].block_number == block_number
+        {
+            end += 1;
+        }
+
+        unsafe {
+            add_layer0_backlinks_on_page(
+                index_relation,
+                &backlink_neighbor_tids[start..end],
+                new_element_tid,
+                m,
+            );
+        }
+        start = end;
+    }
+}
+
+unsafe fn add_layer0_backlinks_on_page(
+    index_relation: pg_sys::Relation,
+    neighbor_tids: &[page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) {
+    if neighbor_tids.is_empty() {
+        return;
+    }
+
+    let block_number = neighbor_tids[0].block_number;
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to open backlink neighbor block {block_number}");
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut changed = false;
+
+    for neighbor_tid in neighbor_tids {
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
+        if item_id.lp_flags() == 0 {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple slot {}/{} is unused",
+                neighbor_tid.block_number,
+                neighbor_tid.offset_number
+            );
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!(
+                "tqhnsw found invalid backlink neighbor tuple bounds on block {}",
+                neighbor_tid.block_number
+            );
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode backlink neighbor tuple: {e}")
+        });
+        if neighbor.count as usize > neighbor.tids.len() {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple count {} exceeds payload tid count {}",
+                neighbor.count,
+                neighbor.tids.len()
+            );
+        }
+        if !insert_layer0_backlink(&mut neighbor.tids, new_element_tid, m) {
+            continue;
+        }
+
+        let encoded = neighbor.encode().unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to encode backlink neighbor tuple: {e}")
+        });
+        if encoded.len() != tuple_len {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple size changed from {} to {}",
+                tuple_len,
+                encoded.len()
+            );
+        }
+        unsafe {
+            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
+        }
+        changed = true;
+    }
+
+    if changed {
+        unsafe { wal_txn.finish() };
+    } else {
+        std::mem::drop(wal_txn);
+    }
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+fn insert_layer0_backlink(
+    neighbor_tids: &mut [page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) -> bool {
+    let layer0_width = usize::from(m).saturating_mul(2).min(neighbor_tids.len());
+    if layer0_width == 0 {
+        return false;
+    }
+
+    let layer0 = &mut neighbor_tids[..layer0_width];
+    if layer0.contains(&new_element_tid) {
+        return false;
+    }
+
+    let Some(slot) = layer0
+        .iter_mut()
+        .find(|tid| **tid == page::ItemPointer::INVALID)
+    else {
+        return false;
+    };
+    *slot = new_element_tid;
+    true
+}
+
+fn compare_item_pointers(left: &page::ItemPointer, right: &page::ItemPointer) -> Ordering {
+    left.block_number
+        .cmp(&right.block_number)
+        .then_with(|| left.offset_number.cmp(&right.offset_number))
 }
 
 unsafe fn append_heap_tuple(

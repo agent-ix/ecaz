@@ -11,15 +11,18 @@ Progress notes:
   allocation, and metadata entry-point / max-level promotion.
 - The next landed slice reuses `greedy_descend_from_entry` and the existing layer-0 search helper
   to populate simple top-`M` forward links on the new node only.
-- Backlink mutation, upper-layer insert search, neighbor shrinking, drift statistics, and
+- Layer-0 backlink mutation now updates selected existing neighbors in physical page order and
+  makes live inserts graph-reachable through the graph-first scan path when selected neighbors
+  still have free layer-0 capacity.
+- Upper-layer insert search, upper-layer backlinks, neighbor shrinking, drift statistics, and
   `build_source_column` insert support remain pending.
 
 ## Milestone Tracker
 
 - [x] `20%` Level assignment, neighbor tuple sizing, metadata entry-point / max-level promotion
 - [x] `35%` Greedy descent, layer-0 candidate search, and new-node forward links
-- [ ] `50%` Upper-layer candidate search and/or broader forward-link coverage
-- [ ] `75%` Backlink mutation with explicit lock-ordering ADR
+- [x] `50%` Layer-0 backlinks, graph reachability, and explicit lock-ordering ADR
+- [ ] `75%` Upper-layer insert search and upper-layer backlink coverage
 - [ ] `90%` Neighbor overflow handling and shrinking
 - [ ] `100%` Drift accounting and concurrency hardening
 
@@ -39,11 +42,14 @@ Replace disconnected-append insert with graph-connected insert using shared trav
   forward links stop being layer-0 only.
 - [ ] **Upper-layer forward links.** Decide whether upper-layer forward links are written with the
   upper-layer search step above or deferred until backlink work lands.
-- [ ] **Back-link updates.** For each selected neighbor, read their TqNeighborTuple, add new node's TID, prune weakest if at capacity M. Each update in its own GenericXLog transaction.
+- [x] **Back-link updates.** Selected layer-0 neighbors now receive the new node's TID when they
+  still have free layer-0 capacity, with updates grouped one page at a time in ascending physical
+  order. Overflow pruning remains deferred.
 - [ ] **Neighbor list shrinking.** Prune weakest existing links when backlink mutation overflows a
   target layer budget.
 - [ ] **Drift statistics.** Track `inserted_since_rebuild` in metadata. Expose via page-inspection or SQL.
-- [ ] **Lock ordering protocol.** Define and document consistent page lock ordering to prevent deadlock under concurrent insert.
+- [x] **Lock ordering protocol.** Document and use ascending physical data-page order for backlink
+  mutation, with metadata updates deferred until after data-page writes.
 
 ## Owns
 
@@ -76,5 +82,7 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 ## Notes
 
 - Back-link updates are the hardest part: each insert touches O(M) neighbor pages.
+- The current backlink slice is intentionally narrow: it only fills free layer-0 slots and defers
+  overflow pruning to the next A5 checkpoint.
 - Pruning weakest neighbor requires scoring all existing neighbors to decide which to evict.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).
