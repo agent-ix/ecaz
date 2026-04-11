@@ -6,9 +6,11 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 
+use super::explain::TqExplainCounters;
 use super::graph;
 use super::page;
 use super::search;
+use super::stream::{GraphPrefetchState, LinearPrefetchState};
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 
@@ -116,8 +118,11 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 .expect("ef_search should fit in usize")
                 .max(1);
             store_scan_query(opaque, &query);
+            opaque.explain_counters.reset();
             store_scan_prepared_query(opaque, &query, &metadata);
             reset_scan_position(opaque);
+            reset_linear_prefetch_state(opaque);
+            reset_graph_prefetch_state(opaque);
             initialize_scan_entry_candidate(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
@@ -129,6 +134,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 .ensure_prefetched_output((*scan).indexRelation, opaque_ptr)
             {
                 enter_linear_fallback_phase(opaque);
+                reset_linear_prefetch_state(opaque);
             }
         })
     }
@@ -184,6 +190,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
             let opaque_ptr = (*scan).opaque;
             if !opaque_ptr.is_null() {
                 let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
+                free_graph_prefetch_state(opaque);
                 free_scan_candidate_frontier(opaque);
                 free_bootstrap_expansion(opaque);
                 free_scan_expanded_set(opaque);
@@ -232,11 +239,19 @@ fn store_scan_prepared_query(
         return;
     }
 
+    let cache_hit = ProdQuantizer::contains_cached(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+    );
     let quantizer =
         ProdQuantizer::cached(metadata.dimensions as usize, metadata.bits, metadata.seed);
     let prepared = quantizer.prepare_ip_query(query);
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
     opaque.cached_quantizer = Arc::into_raw(quantizer);
+    if cache_hit {
+        opaque.explain_counters.record_quantizer_cache_hit();
+    }
 }
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
@@ -452,6 +467,7 @@ unsafe fn prefetch_next_graph_result_from_frontier(
 
     while let Some(candidate) = consume_candidate_frontier_head(opaque) {
         mark_expanded_source(opaque, candidate.node);
+        opaque.explain_counters.record_bootstrap_expansion();
         if unsafe {
             materialize_graph_result_candidate(index_relation, opaque, result_state, candidate)
         }
@@ -471,15 +487,19 @@ unsafe fn materialize_graph_result_candidate(
     candidate: search::BeamCandidate<page::ItemPointer>,
 ) -> Option<()> {
     if emitted_contains_element(opaque, candidate.node) {
+        opaque.explain_counters.record_element_skipped();
         return None;
     }
 
+    opaque.explain_counters.record_bootstrap_page_read();
     let element =
         unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
     if element.deleted || element.heaptids.is_empty() {
+        opaque.explain_counters.record_element_skipped();
         return None;
     }
 
+    opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
     unsafe { &mut *result_state }.materialize(SelectedScanResult {
         element_tid: candidate.node,
@@ -527,6 +547,27 @@ fn free_bootstrap_expansion(opaque: &mut TqScanOpaque) {
         drop(unsafe { Box::from_raw(opaque.bootstrap_expansion) });
         opaque.bootstrap_expansion = ptr::null_mut();
     }
+}
+
+fn free_graph_prefetch_state(opaque: &mut TqScanOpaque) {
+    if !opaque.graph_prefetch_state.is_null() {
+        drop(unsafe { Box::from_raw(opaque.graph_prefetch_state) });
+        opaque.graph_prefetch_state = ptr::null_mut();
+    }
+}
+
+fn reset_graph_prefetch_state(opaque: &mut TqScanOpaque) {
+    if opaque.graph_prefetch_state.is_null() {
+        opaque.graph_prefetch_state = Box::into_raw(Box::new(GraphPrefetchState::new(Vec::new())));
+    } else {
+        unsafe { &mut *opaque.graph_prefetch_state }.reset(Vec::new());
+    }
+}
+
+fn reset_linear_prefetch_state(opaque: &mut TqScanOpaque) {
+    let first = page::FIRST_DATA_BLOCK_NUMBER;
+    let max_block = opaque.scan_block_count.saturating_sub(1).max(first);
+    opaque.linear_prefetch_state.reset(first, max_block);
 }
 
 type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
@@ -1099,6 +1140,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
     );
+    if emitted {
+        opaque.explain_counters.record_heap_tid_returned();
+    }
     if emitted && graph_traversal_cursor(opaque).needs_prefetch_refresh() {
         let opaque_ptr = opaque as *mut TqScanOpaque;
         unsafe {
@@ -1116,6 +1160,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
 ) -> bool {
     if linear_fallback_cursor(opaque).emit_pending_output(scan) {
         linear_fallback_cursor(opaque).advance_after_emit();
+        opaque.explain_counters.record_heap_tid_returned();
         return true;
     }
 
@@ -1126,7 +1171,11 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     };
 
     mark_emitted_element(opaque, selected.element_tid);
-    linear_fallback_cursor(opaque).emit_materialized_output(scan, selected)
+    let emitted = linear_fallback_cursor(opaque).emit_materialized_output(scan, selected);
+    if emitted {
+        opaque.explain_counters.record_heap_tid_returned();
+    }
+    emitted
 }
 
 unsafe fn select_next_linear_scan_result(
@@ -1139,7 +1188,11 @@ unsafe fn select_next_linear_scan_result(
         return None;
     }
 
-    for block_number in opaque.next_block_number..opaque.scan_block_count {
+    let max_block = opaque.scan_block_count.saturating_sub(1);
+    opaque
+        .linear_prefetch_state
+        .reset(opaque.next_block_number, max_block);
+    while let Some(block_number) = opaque.linear_prefetch_state.next_block() {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
                 index_relation,
@@ -1150,6 +1203,7 @@ unsafe fn select_next_linear_scan_result(
             )
         };
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        opaque.explain_counters.record_linear_page_read();
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
@@ -1162,6 +1216,7 @@ unsafe fn select_next_linear_scan_result(
         for offset in offset_start..=line_pointer_count {
             let item_id = unsafe { &*super::shared::page_item_id(page_ptr, offset) };
             if item_id.lp_flags() == 0 {
+                opaque.explain_counters.record_element_skipped();
                 continue;
             }
 
@@ -1176,6 +1231,7 @@ unsafe fn select_next_linear_scan_result(
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
             if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                opaque.explain_counters.record_element_skipped();
                 continue;
             }
 
@@ -1183,6 +1239,7 @@ unsafe fn select_next_linear_scan_result(
                 pgrx::error!("tqhnsw failed to decode scan element tuple: {e}")
             });
             if element.deleted || element.heaptids.is_empty() {
+                opaque.explain_counters.record_element_skipped();
                 continue;
             }
 
@@ -1197,12 +1254,15 @@ unsafe fn select_next_linear_scan_result(
                 offset_number: offset,
             };
             if emitted_contains_element(opaque, element_tid) {
+                opaque.explain_counters.record_element_skipped();
                 continue;
             }
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            opaque.explain_counters.record_element_scored();
+            let score = score_scan_element_result(opaque, element.gamma, &element.code);
             return Some(SelectedScanResult {
                 element_tid,
-                score: score_scan_element_result(opaque, element.gamma, &element.code),
+                score,
                 heap_tids: element.heaptids,
             });
         }
@@ -1497,6 +1557,9 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
+    pub(super) graph_prefetch_state: *mut GraphPrefetchState,
+    pub(super) linear_prefetch_state: LinearPrefetchState,
+    pub(super) explain_counters: TqExplainCounters,
 }
 
 impl Default for TqScanOpaque {
@@ -1524,6 +1587,12 @@ impl Default for TqScanOpaque {
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
+            graph_prefetch_state: ptr::null_mut(),
+            linear_prefetch_state: LinearPrefetchState::new(
+                page::FIRST_DATA_BLOCK_NUMBER,
+                page::FIRST_DATA_BLOCK_NUMBER,
+            ),
+            explain_counters: TqExplainCounters::default(),
         }
     }
 }

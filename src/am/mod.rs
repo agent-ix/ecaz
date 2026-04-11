@@ -26,7 +26,7 @@ pub(super) const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
 pub(super) const TQHNSW_DEFAULT_EF_SEARCH: i32 = 40;
 pub(super) const TQHNSW_MIN_EF_SEARCH: i32 = 1;
 pub(super) const TQHNSW_MAX_EF_SEARCH: i32 = 1000;
-pub(super) const TQHNSW_PLANNER_SCAN_ENABLED: bool = false;
+pub(super) const TQHNSW_PLANNER_SCAN_ENABLED: bool = true;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 
 pub(crate) fn register_gucs() {

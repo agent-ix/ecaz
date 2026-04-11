@@ -1,11 +1,23 @@
 ---
 id: ADR-011
 title: "Hold planner selection off until ordered tqhnsw scan semantics are credible"
-status: DECIDED
+status: SUPERSEDED
+supersedes_notes: "Retired by D2 planner activation (2026-04-11); FR-020 cost model now wired into amcostestimate. See FR-020-cost-estimation.md for the active costing contract."
 impact: HIGH for FR-009, FR-006
 date: 2026-04-05
 ---
 # ADR-011: Hold planner selection off until ordered tqhnsw scan semantics are credible
+
+> **SUPERSEDED (2026-04-11):** The `f64::MAX` planner override has been removed.
+> `amcostestimate` now delegates to the FR-020 two-phase cost model
+> (graph-traversal + linear-fallback) documented in
+> [FR-020-cost-estimation.md](../functional/FR-020-cost-estimation.md).
+> All four Follow-Up conditions below have been met: greedy descent + layer-0
+> traversal (A3), ordered result production matching the operator class (A3),
+> `ef_search` wired through scan tuning (A4, bb13a7a), and scan validation
+> against brute-force (A4). The remaining PG18 `amgettreeheight` callback binding
+> (FR-020-AC-4) is explicitly out of D2 scope — see FR-020-AC-4 for the
+> PG18-gated follow-up. Historical context preserved below for traceability.
 
 ## Context
 

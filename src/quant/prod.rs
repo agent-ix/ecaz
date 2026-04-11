@@ -76,6 +76,12 @@ impl ProdQuantizer {
             .clone()
     }
 
+    pub fn contains_cached(dim: usize, bits: u8, seed: u64) -> bool {
+        let key = (dim, bits, seed);
+        let guard = cache().lock().expect("quantizer cache poisoned");
+        guard.contains_key(&key)
+    }
+
     pub fn encode(&self, vector: &[f32]) -> EncodedTq {
         assert_eq!(
             vector.len(),

@@ -1,7 +1,5 @@
 use pgrx::pg_sys;
 
-use super::TQHNSW_PLANNER_SCAN_ENABLED;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PlannerCostInputs {
     pub index_pages: f64,
@@ -144,7 +142,6 @@ pub(crate) fn estimate_planner_cost(
         inputs.index_pages * 10.0
     };
     let dimensions = f64::from(inputs.dimensions);
-    let m = f64::from(inputs.m);
     let ef_search = f64::from(inputs.ef_search);
     let tree_height = inputs.tree_height;
 
@@ -153,12 +150,28 @@ pub(crate) fn estimate_planner_cost(
         let linear_cpu = tuple_estimate * constants.cpu_operator_cost * dimensions;
         (0.0, linear_cost + linear_cpu)
     } else {
-        let graph_pages = tree_height * m + ef_search * 2.0 * m;
+        // Graph phase visits ~1 page per upper level (greedy descent to the
+        // entry neighborhood) plus ef_search candidate pages at the bottom
+        // layer. The earlier `tree_height * m + ef_search * 2 * m` formula
+        // wildly overcharged by multiplying ef_search by m, which kept
+        // tqhnsw costlier than a seqscan on every realistic table size.
+        let graph_pages = tree_height + ef_search;
         let graph_cost = graph_pages * constants.random_page_cost;
         let graph_cpu = graph_pages * constants.cpu_operator_cost * dimensions;
         let linear_pages = (inputs.index_pages - graph_pages).max(0.0);
         let linear_cost = linear_pages * constants.seq_page_cost;
-        let linear_cpu = tuple_estimate * constants.cpu_operator_cost * dimensions;
+        // Scale per-tuple CPU work by the fraction of pages the graph phase
+        // did NOT cover. Charging the full tuple_estimate sweep here would
+        // double-count the graph traversal and make tqhnsw always look
+        // costlier than a seqscan, even when the graph covers the whole
+        // index (linear_pages == 0).
+        let linear_fraction = if inputs.index_pages > 0.0 {
+            linear_pages / inputs.index_pages
+        } else {
+            0.0
+        };
+        let linear_cpu =
+            tuple_estimate * constants.cpu_operator_cost * dimensions * linear_fraction;
         let startup_cost = graph_cost + graph_cpu;
         (startup_cost, startup_cost + linear_cost + linear_cpu)
     };
@@ -174,7 +187,7 @@ pub(crate) fn estimate_planner_cost(
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
-    _path: *mut pg_sys::IndexPath,
+    path: *mut pg_sys::IndexPath,
     _loop_count: f64,
     index_startup_cost: *mut pg_sys::Cost,
     index_total_cost: *mut pg_sys::Cost,
@@ -184,19 +197,55 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 ) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            // Prefer explicit non-selection over accidental planner use until the
-            // ordered execution contract is credible.
-            if TQHNSW_PLANNER_SCAN_ENABLED {
-                pgrx::error!("tqhnsw planner costing is not implemented for enabled planner scans");
-            }
-            let gated = gated_planner_cost_estimate(0.0);
-            *index_startup_cost = gated.startup_cost;
-            *index_total_cost = gated.total_cost;
-            *index_selectivity = gated.selectivity;
-            *index_correlation = gated.correlation;
-            *index_pages = gated.index_pages;
+            let index_info = (*path).indexinfo;
+            let index_oid = (*index_info).indexoid;
+            let index_relation =
+                pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let estimate = compute_amcostestimate(index_relation);
+            pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
+
+            *index_startup_cost = estimate.startup_cost;
+            *index_total_cost = estimate.total_cost;
+            *index_selectivity = estimate.selectivity;
+            *index_correlation = estimate.correlation;
+            *index_pages = estimate.index_pages;
         })
     }
+}
+
+unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+    let relation_options = unsafe { super::options::relation_options(index_relation) };
+    let tuning = super::options::resolve_scan_tuning(&relation_options);
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+        )
+    };
+    let index_pages = f64::from(block_count);
+    // Block 0 is always the metadata page; an index with no data pages still
+    // reports block_count == 1. FR-020's "Empty index (0 data pages)" gate
+    // must trip on `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on the raw
+    // page count.
+    if block_count <= super::page::FIRST_DATA_BLOCK_NUMBER {
+        return gated_planner_cost_estimate(index_pages);
+    }
+    let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let tree_height = metadata_fallback_tree_height(metadata.max_level);
+    let constants = unsafe { current_planner_cost_constants() };
+
+    estimate_planner_cost(
+        PlannerCostInputs {
+            index_pages,
+            reltuples,
+            m: relation_options.m,
+            ef_search: tuning.effective_ef_search,
+            dimensions: metadata.dimensions,
+            tree_height: tree_height.tree_height,
+        },
+        constants,
+    )
 }
 
 #[cfg(test)]

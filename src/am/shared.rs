@@ -387,9 +387,9 @@ pub(crate) unsafe fn index_explain_snapshot(
     let explain = super::explain::explain_option_snapshot();
     IndexExplainSnapshot {
         planner_scan_enabled: admin.planner_scan_enabled,
-        ordered_scan_ready: false,
+        ordered_scan_ready: true,
         planner_gate_reason:
-            "planner scan selection is disabled until ordered tqhnsw execution is credible",
+            "planner scan selection is live: FR-020 cost model active (ADR-011 superseded)",
         ordering_strategy: translation.ordering_strategy,
         ordering_compare_type: translation.ordering_compare_type.as_str(),
         pg18_strategy_translation_ready: translation.pg18_callback_ready,
@@ -406,29 +406,37 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
     let metadata = unsafe { read_metadata_page(index_relation) };
-    let index_pages = unsafe {
+    let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
-    } as f64;
+    };
+    let index_pages = f64::from(block_count);
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let tree_height = super::cost::metadata_fallback_tree_height(metadata.max_level);
     let constants = unsafe { super::cost::current_planner_cost_constants() };
-    let modeled = super::cost::estimate_planner_cost(
-        super::cost::PlannerCostInputs {
-            index_pages,
-            reltuples,
-            m: relation_options.m,
-            ef_search: tuning.effective_ef_search,
-            dimensions: metadata.dimensions,
-            tree_height: tree_height.tree_height,
-        },
-        constants,
-    );
+    // Block 0 is always the metadata page; an empty index has block_count == 1.
+    // FR-020's "Empty index (0 data pages)" gate must trip on
+    // `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on `index_pages <= 0`.
+    let modeled = if block_count <= super::page::FIRST_DATA_BLOCK_NUMBER {
+        super::cost::gated_planner_cost_estimate(index_pages)
+    } else {
+        super::cost::estimate_planner_cost(
+            super::cost::PlannerCostInputs {
+                index_pages,
+                reltuples,
+                m: relation_options.m,
+                ef_search: tuning.effective_ef_search,
+                dimensions: metadata.dimensions,
+                tree_height: tree_height.tree_height,
+            },
+            constants,
+        )
+    };
     let gated = super::cost::gated_planner_cost_estimate(index_pages);
 
     IndexCostSnapshot {
         planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
         planner_gate_reason:
-            "planner cost activation is disabled until ordered tqhnsw execution is credible",
+            "planner cost activation is live: FR-020 cost model replaces ADR-011 override",
         relation_ef_search: tuning.relation_ef_search,
         session_ef_search: tuning.session_ef_search,
         effective_ef_search: tuning.effective_ef_search,
@@ -496,9 +504,9 @@ pub(crate) unsafe fn planner_integration_snapshot(
     PlannerIntegrationSnapshot {
         planner_scan_enabled: explain.planner_scan_enabled,
         ordered_scan_ready: explain.ordered_scan_ready,
-        runtime_ordered_scan_ready: false,
+        runtime_ordered_scan_ready: true,
         planner_cost_model_ready: true,
-        planner_cost_callback_live: false,
+        planner_cost_callback_live: true,
         pg18_callback_surface_ready: cost.pg18_tree_height_callback_ready
             && explain.pg18_strategy_translation_ready,
         pg18_diagnostics_surface_ready: diagnostics.pg18_custom_explain_option_ready
@@ -512,7 +520,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
         next_runtime_blocker:
-            "ordered tqhnsw scan semantics and recall validation are not yet credible",
+            "graph-aware insert (A5) and vacuum repair (A6) are the remaining runtime blockers",
         next_pg18_blocker:
             "pgrx pg18 feature support and callback bindings are not yet implemented",
     }

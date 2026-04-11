@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-10
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence; real `10K` passes strongly and broader real `50K` gate slices remain comfortably above threshold
+Last updated: 2026-04-11
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence; D2 planner activation has now landed on its review branch (FR-020 cost model wired into `amcostestimate`, ADR-011 superseded, ReadStream prefetch state and EXPLAIN counters embedded in scan opaque)
 
 ## Reading Guide
 
@@ -36,7 +36,7 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
-| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 10% | No longer blocked on A4 recall evidence; still gated by ADR-011 retirement and downstream sequencing |
+| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 80% | FR-020 cost model now active in `amcostestimate`; ADR-011 marked SUPERSEDED; ReadStream prefetch state + EXPLAIN counters embedded in `TqScanOpaque`; PG18 callback bindings (FR-020-AC-4, FR-024 hook registration) remain follow-ups |
 
 ## 1. Foundation / Build
 
@@ -56,7 +56,7 @@ Foundation / build rollup: 100%
 | Bootstrap traversal seam | Graph/search ownership split, visible frontier protocol, graph-owned layer-0 traversal helpers | Done | 100% | Closed through the A3 cursor and frontier-ownership arc |
 | Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | Cursor-owned runtime complete; bootstrap helpers gated to test/debug |
 | Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | Done | 100% | Fallback is now explicit and only entered when graph traversal cannot produce an initial ordered result |
-| `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
+| `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Done | 100% | Sentinel cleanup landed in commit `bb13a7a` (`TQHNSW_SESSION_EF_SEARCH_UNSET = -1`); runtime, GUC, and snapshot helpers all consume the resolved value |
 | Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Done | 100% | Repaired fixture and external real-corpus helpers now support reusable gate/report surfaces, including detached real-corpus gate capture on `main` |
 
 Scan runtime rollup: 72%
@@ -86,8 +86,8 @@ Vacuum / repair rollup: 12%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Planner scaffold | Cost/explain/stat/read-stream scaffolding | Done | 90% | Merged to `main`; only PG18 callback bindings remain |
-| Planner activation | Real index selection and credible cost model | Not started | 5% | Gated on runtime/recall |
-| PG18 async/read_stream integration | Runtime scan integration with PG18 path | Not started | 10% | Scaffold exists; production integration waits on scan |
+| Planner activation | Real index selection and credible cost model | **In review** | 80% | D2 wired the FR-020 cost model into `amcostestimate`, retired ADR-011, and surfaced live planner cost via the snapshot APIs; PG18 `amgettreeheight` (FR-020-AC-4) is the remaining gated follow-up |
+| PG18 async/read_stream integration | Runtime scan integration with PG18 path | Partial | 35% | `GraphPrefetchState` / `LinearPrefetchState` are now embedded in `TqScanOpaque` and reset across the rescan/endscan lifecycle; live PG18 ReadStream callback registration still requires the PG18 toolchain |
 | Strategy / EXPLAIN surfaces | FR-023 / FR-024 surfaces | Partial | 45% | Descriptive surfaces exist; activation still gated |
 
 Planner / PG18 rollup: 42%
@@ -156,7 +156,7 @@ Release / quality-gate rollup: 62%
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
 2. **Next runtime lane:** A5 graph-aware insert, followed by A6 vacuum repair.
 3. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge timing is now a sequencing decision, not a recall blocker.
-4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
+4. **Planner:** D2 cost-model activation has landed on its review branch. ADR-011 is SUPERSEDED. PG18 callback bindings (`amgettreeheight`, `amexplain` hook, ReadStream registration) remain follow-ups gated on the PG18 toolchain.
 5. Full SQL benchmark result generation after A5/A6.
 
 ## Current Major Blockers
@@ -167,5 +167,5 @@ Release / quality-gate rollup: 62%
 | Synthetic `10K` still fails badly and remains misleading as a benchmark surface | `C1`, post-gate methodology work | Benchmark methodology lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
-| ADR-011 planner gate is still active | `D2` | Planner lane after A4 |
+| ~~ADR-011 planner gate is still active~~ | ~~`D2`~~ | **Resolved** (D2 cost-model activation, 2026-04-11; ADR-011 marked SUPERSEDED) |
 | SIMD merge still needs normal integration timing and follow-up proof | `B1` merge | Coder-2 / integration lane |
