@@ -1,6 +1,6 @@
 # Review Packet
 
-Current head: `a6e9b15`
+Current head: `8a3e13a`
 
 Purpose:
 - Leave focused review requests for another agent to process independently.
@@ -14,23 +14,33 @@ Validation status at this checkpoint:
 Current tqhnsw state summary:
 - Build path is implemented and tested.
 - Planner still avoids using `tqhnsw` scans.
-- `aminsert` supports a narrow live path:
+- `aminsert` now supports a graph-aware live path:
   - validates `(dimensions, bits, seed)` against metadata
   - serializes empty-index metadata initialization under an exclusive metadata-page lock
   - initializes empty-index metadata on first insert
-  - appends disconnected level-0 nodes
-  - reuses tail page when possible
-  - allocates a new page when the tail page cannot fit another neighbor+element pair
+  - assigns a random insert level and pre-sizes neighbor tuples for the allocated layers
+  - reuses shared traversal helpers to discover insert-time neighbors
+  - writes forward links on the new node plus layer-aware backlinks on selected existing nodes
+  - prunes full target slices with the current simple score-ordered top-`M` / top-`2M` rule
+  - retries stale full-slice backlink plans through bounded read-only replanning instead of silently skipping them
+  - tracks `inserted_since_rebuild` in metadata and updates entry-point metadata after graph writes
+  - reuses tail page when possible and allocates a new page when the tail page cannot fit another neighbor+element pair
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
-  - rejects `build_source_column` indexes
-- Vacuum callbacks are benign no-ops that return current page/tuple stats.
+  - rejects `build_source_column` indexes for live insert in v0.1
+- Vacuum now implements the full A6 shape on `main`: pass 1 strips dead heap TIDs, pass 2 clears
+  stale dead-node refs and fills currently free replacement slots across persisted layers, pass 3
+  finalizes fully-dead elements to `deleted = true`, duplicate discovery skips dead /
+  empty-heaptid elements, and `scripts/vacuum_concurrency_scratch.sh` now proves 60-second
+  concurrent INSERT + tqhnsw scan + VACUUM safety against a scratch cluster.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
 - `amgettuple` now requires `amrescan`-initialized scan state before execution.
 - `amgettuple` now supports visible tuple production through the current forward-only bootstrap linear data-page scan for non-empty indexes.
 - `amrescan` defensive error paths now have explicit regression coverage for NULL queries, empty queries, index quals, and multiple ORDER BY keys.
-- Vacuum no-op coverage now includes empty-index and repeated-vacuum regression tests.
+- Vacuum coverage now includes empty-index / no-callback stats, duplicate-heaptid compaction,
+  persisted dead-edge unlink, scan invisibility after finalize, repeated repair/finalize
+  stability, and reinserting the same vector after vacuum without reattaching to a dead node.
 - Scan lifecycle coverage now includes repeated-`amendscan` idempotency.
 - Tail-page coverage now includes rollover-followed-by-reuse on the new tail page.
 - Repeated `amrescan` coverage now verifies that a second rescan overwrites the recorded query dimensions on the same descriptor.
@@ -258,11 +268,10 @@ Review triage at `46d00bb`:
 - The implementation plan and FR-009/US-004 surfaces now distinguish near-term planner groundwork
   from the later ordered-traversal and planner-enablement phases.
 - `tqhnsw_index_admin_snapshot(regclass)` now exposes a read-only SQL/admin surface for a tqhnsw
-  index's live-node count, effective `ef_search`, tuning source, and planner gate state.
-- That admin snapshot currently reports `inserted_since_rebuild` as explicitly unavailable (`NULL`)
-  until live insert drift accounting is implemented, keeping FR-016 staging honest.
-- Admin snapshot coverage now verifies both the happy path and rejection of non-`tqhnsw` indexes,
-  and the test matrix now records this planner/admin statistics scaffolding explicitly.
+  index's live-node count, `inserted_since_rebuild`, `insert_drift_fraction`, effective
+  `ef_search`, tuning source, and planner gate state.
+- Admin snapshot coverage now verifies the happy path, empty-index first insert, duplicate-coalesced
+  live-insert stability, and rejection of non-`tqhnsw` indexes.
 - `tqhnsw_index_explain_snapshot(regclass)` now exposes a separate explain-oriented snapshot that
   reports the hard planner gate, `ordered_scan_ready = false`, explicit gate reasoning, and the
   effective tuning values without claiming that PostgreSQL EXPLAIN can already choose `tqhnsw`.

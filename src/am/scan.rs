@@ -239,13 +239,11 @@ fn store_scan_prepared_query(
         return;
     }
 
-    let cache_hit = ProdQuantizer::contains_cached(
+    let (quantizer, cache_hit) = ProdQuantizer::cached_with_presence(
         metadata.dimensions as usize,
         metadata.bits,
         metadata.seed,
     );
-    let quantizer =
-        ProdQuantizer::cached(metadata.dimensions as usize, metadata.bits, metadata.seed);
     let prepared = quantizer.prepare_ip_query(query);
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
     opaque.cached_quantizer = Arc::into_raw(quantizer);
@@ -1554,6 +1552,8 @@ pub(super) struct TqScanOpaque {
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) result_state: ScanResultState,
     pub(super) fallback_result_state: ScanResultState,
+    // This remains the authoritative cross-call cursor until PG18 ReadStream
+    // flips cursor ownership fully into `linear_prefetch_state`.
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
@@ -2144,6 +2144,7 @@ mod tests {
             bits: 4,
             max_level: 0,
             seed: 42,
+            inserted_since_rebuild: 0,
         };
         let query = [1.0_f32, 2.0, 3.0, 4.0];
         let mut opaque = TqScanOpaque::default();

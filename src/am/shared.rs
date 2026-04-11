@@ -140,6 +140,10 @@ pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
 }
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let code_len = crate::quant::prod::payload_len(usize::from(metadata.dimensions), metadata.bits)
+        .checked_sub(4)
+        .expect("payload length should include gamma");
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -177,7 +181,13 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
             if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                count += 1;
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode element tuple while counting: {e}")
+                    });
+                if !element.deleted && !element.heaptids.is_empty() {
+                    count += 1;
+                }
             }
         }
 
@@ -261,11 +271,12 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     metadata
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct IndexAdminSnapshot {
     pub block_count: u32,
     pub total_live_nodes: usize,
-    pub inserted_since_rebuild: Option<usize>,
+    pub inserted_since_rebuild: usize,
+    pub insert_drift_fraction: f64,
     pub relation_ef_search: i32,
     pub session_ef_search: Option<i32>,
     pub effective_ef_search: i32,
@@ -359,6 +370,15 @@ pub(crate) struct PlannerIntegrationSnapshot {
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let total_live_nodes = unsafe { count_element_tuples(index_relation) };
+    let inserted_since_rebuild =
+        usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
+            pgrx::error!(
+                "tqhnsw metadata inserted_since_rebuild {} exceeds usize",
+                metadata.inserted_since_rebuild
+            )
+        });
     IndexAdminSnapshot {
         block_count: unsafe {
             pg_sys::RelationGetNumberOfBlocksInFork(
@@ -366,8 +386,9 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             )
         },
-        total_live_nodes: unsafe { count_element_tuples(index_relation) },
-        inserted_since_rebuild: None,
+        total_live_nodes,
+        inserted_since_rebuild,
+        insert_drift_fraction: insert_drift_fraction(total_live_nodes, inserted_since_rebuild),
         relation_ef_search: tuning.relation_ef_search,
         session_ef_search: tuning.session_ef_search,
         effective_ef_search: tuning.effective_ef_search,
@@ -377,6 +398,13 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
         },
         planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
     }
+}
+
+fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize) -> f64 {
+    if total_live_nodes == 0 {
+        return 0.0;
+    }
+    inserted_since_rebuild as f64 / total_live_nodes as f64
 }
 
 pub(crate) unsafe fn index_explain_snapshot(
@@ -520,7 +548,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
         next_runtime_blocker:
-            "graph-aware insert (A5) and vacuum repair (A6) are the remaining runtime blockers",
+            "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next",
         next_pg18_blocker:
             "pgrx pg18 feature support and callback bindings are not yet implemented",
     }
@@ -626,6 +654,17 @@ pub(crate) unsafe fn debug_index_metadata(
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
     (block_count, options.m, options.ef_construction, metadata)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_update_index_metadata(
+    index_oid: pg_sys::Oid,
+    metadata: page::MetadataPage,
+) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { update_metadata_page(index_relation, metadata) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]

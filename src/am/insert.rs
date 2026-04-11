@@ -1,10 +1,12 @@
-use std::ptr;
+use std::{cmp::Ordering, ptr};
 
 use pgrx::pg_sys;
 
-use super::{build, options, page, shared, wal};
+use super::{build, graph, options, page, search, shared, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
+// One initial write pass plus up to two read-only replan retries for drifted full slices.
+const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     index_relation: pg_sys::Relation,
@@ -21,6 +23,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = shared::decode_heap_tid(heap_tid);
             let tuple = build::build_heap_tuple(values, isnull, heap_tid);
             let options = options::relation_options(index_relation);
+            let m = u16::try_from(options.m).expect("validated m should fit in u16");
             let code_len = tuple.code.len();
 
             if let Some(source_column) = options.build_source_column {
@@ -29,42 +32,145 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 );
             }
 
-            shared::with_locked_metadata_page(index_relation, |metadata| {
-                if metadata.dimensions == 0 && metadata.bits == 0 {
-                    metadata.dimensions = tuple.dimensions;
-                    metadata.bits = tuple.bits;
-                    metadata.seed = tuple.seed;
-                } else if tuple.dimensions != metadata.dimensions
-                    || tuple.bits != metadata.bits
-                    || tuple.seed != metadata.seed
-                {
-                    pgrx::error!(
-                        "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+            // Snapshot metadata under a SHARE lock so the duplicate scan does not
+            // serialize concurrent inserts behind the metadata-page exclusive lock.
+            let metadata_snapshot = shared::read_metadata_page(index_relation);
+
+            // First-insert path: shape has never been initialized. Keep this on the
+            // old exclusive path because shape init atomicity still matters, and the
+            // duplicate scan is degenerate on an effectively empty index.
+            if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
+                shared::with_locked_metadata_page(index_relation, |metadata| {
+                    if metadata.dimensions == 0 && metadata.bits == 0 {
+                        metadata.dimensions = tuple.dimensions;
+                        metadata.bits = tuple.bits;
+                        metadata.seed = tuple.seed;
+                    } else if tuple.dimensions != metadata.dimensions
+                        || tuple.bits != metadata.bits
+                        || tuple.seed != metadata.seed
+                    {
+                        pgrx::error!(
+                            "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                            metadata.dimensions,
+                            metadata.bits,
+                            metadata.seed,
+                            tuple.dimensions,
+                            tuple.bits,
+                            tuple.seed
+                        );
+                    }
+
+                    if let Some(element_tid) = find_duplicate_element_tid(
+                        index_relation,
+                        heap_relation,
                         metadata.dimensions,
                         metadata.bits,
-                        metadata.seed,
-                        tuple.dimensions,
-                        tuple.bits,
-                        tuple.seed
+                        tuple.gamma,
+                        code_len,
+                        &tuple.code,
+                    ) {
+                        coalesce_duplicate_heap_tid(
+                            index_relation,
+                            element_tid,
+                            code_len,
+                            heap_tid,
+                        );
+                        return;
+                    }
+
+                    let insert_level =
+                        choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
+                    let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
+                    let element_tid = append_heap_tuple(
+                        index_relation,
+                        &tuple,
+                        insert_level,
+                        &forward_neighbor_slots,
                     );
-                }
+                    metadata.inserted_since_rebuild =
+                        metadata.inserted_since_rebuild.saturating_add(1);
+                    if metadata.entry_point == page::ItemPointer::INVALID {
+                        metadata.entry_point = element_tid;
+                        metadata.max_level = insert_level;
+                    }
+                });
+                return false;
+            }
 
-                if let Some(element_tid) = find_duplicate_element_tid(
+            // Fast path: shape is known. Those fields are write-once after
+            // initialization, so the SHARE-read snapshot is authoritative here.
+            if tuple.dimensions != metadata_snapshot.dimensions
+                || tuple.bits != metadata_snapshot.bits
+                || tuple.seed != metadata_snapshot.seed
+            {
+                pgrx::error!(
+                    "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                    metadata_snapshot.dimensions,
+                    metadata_snapshot.bits,
+                    metadata_snapshot.seed,
+                    tuple.dimensions,
+                    tuple.bits,
+                    tuple.seed
+                );
+            }
+
+            // Duplicate scan runs with only SHARE locks on individual data pages.
+            // A concurrent insert that commits the same code between this scan and
+            // our append may double-insert; that rare race is acceptable here in
+            // exchange for removing the metadata-page serialization point.
+            if let Some(element_tid) = find_duplicate_element_tid(
+                index_relation,
+                heap_relation,
+                metadata_snapshot.dimensions,
+                metadata_snapshot.bits,
+                tuple.gamma,
+                code_len,
+                &tuple.code,
+            ) {
+                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+                return false;
+            }
+
+            let insert_level =
+                choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
+            let (forward_neighbor_slots, forward_selections) =
+                discover_insert_forward_neighbor_slots(
                     index_relation,
-                    heap_relation,
-                    metadata.dimensions,
-                    metadata.bits,
-                    tuple.gamma,
-                    code_len,
+                    &metadata_snapshot,
                     &tuple.code,
-                ) {
-                    coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
-                    return;
-                }
+                    insert_level,
+                    m,
+                );
+            let element_tid = append_heap_tuple(
+                index_relation,
+                &tuple,
+                insert_level,
+                &forward_neighbor_slots,
+            );
+            add_backlinks_to_forward_neighbors(
+                index_relation,
+                &metadata_snapshot,
+                code_len,
+                &tuple.code,
+                &forward_selections,
+                element_tid,
+                m,
+            );
 
-                let element_tid = append_heap_tuple(index_relation, &tuple);
-                if metadata.entry_point == page::ItemPointer::INVALID {
+            // Successful live inserts now always advance the metadata-resident
+            // drift counter, so every new-node append takes one final metadata
+            // write phase after all data-page writes are complete. Entry-point
+            // repair/promotion piggybacks on that same lock scope.
+            shared::with_locked_metadata_page(index_relation, |metadata| {
+                metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
+                if metadata.entry_point == page::ItemPointer::INVALID
+                    || insert_level > metadata.max_level
+                {
+                    // Metadata must always advertise a live element at
+                    // metadata.max_level. The new tuple is already appended, so
+                    // repair/promotion happens only after append commits.
                     metadata.entry_point = element_tid;
+                    metadata.max_level = insert_level;
                 }
             });
             false
@@ -72,13 +178,692 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     }
 }
 
+fn choose_insert_level(m: u16, seed: u64, heap_tid: page::ItemPointer, code_len: usize) -> u8 {
+    let max_level = max_insert_level_that_fits(m, code_len, pg_sys::BLCKSZ as usize);
+    if max_level == 0 {
+        return 0;
+    }
+
+    let random_bits = splitmix64(seed ^ encode_heap_tid(heap_tid));
+    level_from_random_bits(random_bits, m, max_level)
+}
+
+fn max_insert_level_that_fits(m: u16, code_len: usize, page_size: usize) -> u8 {
+    let mut level = page::max_level_that_fits(m, page_size);
+    loop {
+        let required_bytes =
+            page::raw_tuple_storage_bytes(page::neighbor_tuple_encoded_len(level, m))
+                + page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len(code_len));
+        if required_bytes <= page_size.saturating_sub(page::PAGE_HEADER_BYTES) {
+            return level;
+        }
+        if level == 0 {
+            return 0;
+        }
+        level = level.saturating_sub(1);
+    }
+}
+
+fn level_from_random_bits(random_bits: u64, m: u16, max_level: u8) -> u8 {
+    // Keep the +1 numerator so bits=0 maps to (0, 1] instead of 0 and cannot
+    // hit ln(0); at f64 precision the denominator rounds to exactly 2^64.
+    let unit = ((random_bits as f64) + 1.0_f64) / ((u64::MAX as f64) + 1.0_f64);
+    let sampled_level = (-unit.ln() / (m as f64).ln()).floor();
+    sampled_level.clamp(0.0_f64, max_level as f64) as u8
+}
+
+fn encode_heap_tid(heap_tid: page::ItemPointer) -> u64 {
+    (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number)
+}
+
+fn splitmix64(mut state: u64) -> u64 {
+    state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    state = (state ^ (state >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    state = (state ^ (state >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    state ^ (state >> 31)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn debug_insert_level_for_heap_tid(
+    m: u16,
+    seed: u64,
+    heap_tid: page::ItemPointer,
+    code_len: usize,
+) -> u8 {
+    choose_insert_level(m, seed, heap_tid, code_len)
+}
+
+fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
+    vec![page::ItemPointer::INVALID; page::neighbor_slots(level, m)]
+}
+
+fn insert_ef_construction(metadata: &page::MetadataPage) -> usize {
+    let ef = usize::from(metadata.ef_construction);
+    debug_assert!(
+        ef > 0,
+        "validated tqhnsw indexes should always persist ef_construction >= 1"
+    );
+    ef.max(1)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LayerForwardSelection {
+    layer: u8,
+    element_tid: page::ItemPointer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BacklinkMutation {
+    target_element_tid: page::ItemPointer,
+    neighbor_tid: page::ItemPointer,
+    layer: u8,
+    kind: BacklinkMutationKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BacklinkMutationKind {
+    InsertIfFree,
+    RewriteFullSlice {
+        expected_slice: Vec<page::ItemPointer>,
+        replacement_slice: Vec<page::ItemPointer>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScoredBacklinkCandidate {
+    tid: page::ItemPointer,
+    score: f32,
+    is_new: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BacklinkMutationOutcome {
+    NoChange,
+    Changed,
+    RetryReplan,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BacklinkPlanner<'a> {
+    metadata: &'a page::MetadataPage,
+    code_len: usize,
+    new_code: &'a [u8],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+}
+
+unsafe fn discover_insert_forward_neighbor_slots(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+    insert_level: u8,
+    m: u16,
+) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
+    let mut slots = empty_insert_neighbor_slots(insert_level, m);
+    let mut selections = Vec::new();
+    let Some(entry_candidate) =
+        (unsafe { load_insert_entry_candidate(index_relation, metadata, code) })
+    else {
+        return (slots, selections);
+    };
+
+    let m_usize = usize::from(m);
+    unsafe {
+        populate_upper_layer_forward_slots(
+            index_relation,
+            metadata,
+            code,
+            insert_level,
+            m_usize,
+            entry_candidate,
+            &mut slots,
+            &mut selections,
+        );
+    }
+    let descended_seed = unsafe {
+        graph::greedy_descend_from_entry(
+            index_relation,
+            code.len(),
+            m_usize,
+            entry_candidate,
+            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+        )
+    };
+    let layer0_candidates = unsafe {
+        graph::search_layer0_result_candidates(
+            index_relation,
+            code.len(),
+            m_usize,
+            insert_ef_construction(metadata),
+            [descended_seed],
+            |_| true,
+            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+        )
+    };
+
+    write_layer_forward_candidates(&mut slots, &mut selections, 0, m_usize, layer0_candidates);
+
+    (slots, selections)
+}
+
+unsafe fn load_insert_entry_candidate(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    if metadata.entry_point == page::ItemPointer::INVALID {
+        return None;
+    }
+
+    let entry =
+        unsafe { graph::load_graph_element(index_relation, metadata.entry_point, code.len()) };
+    let entry_score = score_insert_graph_element(metadata, code, &entry)?;
+    Some(search::BeamCandidate::new(entry.tid, entry_score))
+}
+
+fn score_insert_graph_element(
+    metadata: &page::MetadataPage,
+    query_code: &[u8],
+    element: &graph::GraphElement,
+) -> Option<f32> {
+    if element.deleted || element.heaptids.is_empty() {
+        return None;
+    }
+
+    // BeamCandidate ordering is "lower is better", so negate the inner-product
+    // scorer here to keep insert-side graph search aligned with scan/build.
+    Some(-crate::score_code_inner_product(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+        query_code,
+        &element.code,
+    ))
+}
+
+unsafe fn populate_upper_layer_forward_slots(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code: &[u8],
+    insert_level: u8,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    slots: &mut [page::ItemPointer],
+    selections: &mut Vec<LayerForwardSelection>,
+) {
+    if insert_level == 0 || metadata.max_level == 0 {
+        return;
+    }
+
+    let mut seeds = vec![entry_candidate];
+    for current_layer in (1..=metadata.max_level).rev() {
+        seeds = unsafe {
+            graph::search_layer_result_candidates(
+                index_relation,
+                code.len(),
+                m,
+                current_layer,
+                insert_ef_construction(metadata),
+                seeds,
+                |_| true,
+                |neighbor| score_insert_graph_element(metadata, code, neighbor),
+            )
+        };
+        if current_layer <= insert_level {
+            write_layer_forward_candidates(slots, selections, current_layer, m, seeds.clone());
+        }
+        if seeds.is_empty() {
+            break;
+        }
+    }
+}
+
+fn write_layer_forward_candidates(
+    slots: &mut [page::ItemPointer],
+    selections: &mut Vec<LayerForwardSelection>,
+    layer: u8,
+    m: usize,
+    candidates: impl IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+) {
+    let Some((start, end)) = selected_forward_slot_bounds(m, slots.len(), layer) else {
+        return;
+    };
+
+    for (slot, candidate) in slots[start..end]
+        .iter_mut()
+        .zip(candidates.into_iter().take(end.saturating_sub(start)))
+    {
+        *slot = candidate.node;
+        selections.push(LayerForwardSelection {
+            layer,
+            element_tid: candidate.node,
+        });
+    }
+}
+
+unsafe fn add_backlinks_to_forward_neighbors(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code_len: usize,
+    new_code: &[u8],
+    selections: &[LayerForwardSelection],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) {
+    let planner = BacklinkPlanner {
+        metadata,
+        code_len,
+        new_code,
+        new_element_tid,
+        m,
+    };
+    let mut pending = selections
+        .iter()
+        .copied()
+        .filter(|selection| selection.element_tid != page::ItemPointer::INVALID)
+        .collect::<Vec<_>>();
+    sort_and_dedup_forward_selections(&mut pending);
+
+    for _ in 0..MAX_BACKLINK_REPLAN_PASSES {
+        if pending.is_empty() {
+            break;
+        }
+
+        let mutations = unsafe { plan_backlink_mutations(index_relation, &planner, &pending) };
+        if mutations.is_empty() {
+            break;
+        }
+
+        pending =
+            unsafe { apply_backlink_mutations(index_relation, &mutations, new_element_tid, m) };
+    }
+}
+
+unsafe fn plan_backlink_mutations(
+    index_relation: pg_sys::Relation,
+    planner: &BacklinkPlanner<'_>,
+    selections: &[LayerForwardSelection],
+) -> Vec<BacklinkMutation> {
+    let mut mutations = selections
+        .iter()
+        .copied()
+        .filter_map(|selection| unsafe {
+            let element =
+                graph::load_graph_element(index_relation, selection.element_tid, planner.code_len);
+            let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
+            plan_backlink_mutation(
+                index_relation,
+                planner,
+                &element,
+                &neighbors,
+                selection.layer,
+            )
+        })
+        .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
+        .collect::<Vec<_>>();
+    mutations.sort_unstable_by(|left, right| {
+        compare_item_pointers(&left.neighbor_tid, &right.neighbor_tid)
+            .then_with(|| left.layer.cmp(&right.layer))
+            .then_with(|| {
+                compare_item_pointers(&left.target_element_tid, &right.target_element_tid)
+            })
+    });
+    mutations.dedup();
+    mutations
+}
+
+unsafe fn apply_backlink_mutations(
+    index_relation: pg_sys::Relation,
+    mutations: &[BacklinkMutation],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) -> Vec<LayerForwardSelection> {
+    let mut retries = Vec::new();
+    let mut start = 0;
+    while start < mutations.len() {
+        let block_number = mutations[start].neighbor_tid.block_number;
+        let mut end = start + 1;
+        while end < mutations.len() && mutations[end].neighbor_tid.block_number == block_number {
+            end += 1;
+        }
+
+        retries.extend(unsafe {
+            add_backlinks_on_page(index_relation, &mutations[start..end], new_element_tid, m)
+        });
+        start = end;
+    }
+
+    sort_and_dedup_forward_selections(&mut retries);
+    retries
+}
+
+unsafe fn add_backlinks_on_page(
+    index_relation: pg_sys::Relation,
+    mutations: &[BacklinkMutation],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+) -> Vec<LayerForwardSelection> {
+    if mutations.is_empty() {
+        return Vec::new();
+    }
+
+    let block_number = mutations[0].neighbor_tid.block_number;
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to open backlink neighbor block {block_number}");
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut changed = false;
+    let mut retries = Vec::new();
+
+    let mut start = 0;
+    while start < mutations.len() {
+        let neighbor_tid = mutations[start].neighbor_tid;
+        let mut end = start + 1;
+        while end < mutations.len() && mutations[end].neighbor_tid == neighbor_tid {
+            end += 1;
+        }
+
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
+        if item_id.lp_flags() == 0 {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple slot {}/{} is unused",
+                neighbor_tid.block_number,
+                neighbor_tid.offset_number
+            );
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!(
+                "tqhnsw found invalid backlink neighbor tuple bounds on block {}",
+                neighbor_tid.block_number
+            );
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode backlink neighbor tuple: {e}")
+        });
+        if neighbor.count as usize > neighbor.tids.len() {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple count {} exceeds payload tid count {}",
+                neighbor.count,
+                neighbor.tids.len()
+            );
+        }
+
+        let mut tuple_changed = false;
+        for mutation in &mutations[start..end] {
+            match apply_backlink_mutation(&mut neighbor.tids, new_element_tid, m, mutation) {
+                BacklinkMutationOutcome::NoChange => {}
+                BacklinkMutationOutcome::Changed => tuple_changed = true,
+                BacklinkMutationOutcome::RetryReplan => retries.push(LayerForwardSelection {
+                    layer: mutation.layer,
+                    element_tid: mutation.target_element_tid,
+                }),
+            }
+        }
+        if !tuple_changed {
+            start = end;
+            continue;
+        }
+
+        let encoded = neighbor.encode().unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to encode backlink neighbor tuple: {e}")
+        });
+        if encoded.len() != tuple_len {
+            pgrx::error!(
+                "tqhnsw backlink neighbor tuple size changed from {} to {}",
+                tuple_len,
+                encoded.len()
+            );
+        }
+        unsafe {
+            ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
+        }
+        changed = true;
+        start = end;
+    }
+
+    if changed {
+        unsafe { wal_txn.finish() };
+    } else {
+        std::mem::drop(wal_txn);
+    }
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    retries
+}
+
+unsafe fn plan_backlink_mutation(
+    index_relation: pg_sys::Relation,
+    planner: &BacklinkPlanner<'_>,
+    target_element: &graph::GraphElement,
+    target_neighbors: &graph::GraphNeighbors,
+    layer: u8,
+) -> Option<BacklinkMutation> {
+    let (start, end) =
+        backlink_slot_bounds(usize::from(planner.m), target_neighbors.tids.len(), layer)?;
+    let layer_slice = &target_neighbors.tids[start..end];
+    if layer_slice.contains(&planner.new_element_tid) {
+        return None;
+    }
+
+    if layer_slice.contains(&page::ItemPointer::INVALID) {
+        return Some(BacklinkMutation {
+            target_element_tid: target_element.tid,
+            neighbor_tid: target_neighbors.tid,
+            layer,
+            kind: BacklinkMutationKind::InsertIfFree,
+        });
+    }
+
+    let replacement_slice = unsafe {
+        select_backlink_rewrite_slice(
+            index_relation,
+            planner.metadata,
+            planner.code_len,
+            &target_element.code,
+            layer_slice,
+            planner.new_element_tid,
+            planner.new_code,
+        )
+    };
+    replacement_slice
+        .contains(&planner.new_element_tid)
+        .then_some(BacklinkMutation {
+            target_element_tid: target_element.tid,
+            neighbor_tid: target_neighbors.tid,
+            layer,
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_slice: layer_slice.to_vec(),
+                replacement_slice,
+            },
+        })
+}
+
+unsafe fn select_backlink_rewrite_slice(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code_len: usize,
+    target_code: &[u8],
+    existing_slice: &[page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    new_code: &[u8],
+) -> Vec<page::ItemPointer> {
+    let mut candidates = existing_slice
+        .iter()
+        .copied()
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .map(|tid| unsafe {
+            let element = graph::load_graph_element(index_relation, tid, code_len);
+            ScoredBacklinkCandidate {
+                tid,
+                score: score_backlink_candidate(metadata, target_code, &element.code),
+                is_new: false,
+            }
+        })
+        .collect::<Vec<_>>();
+    candidates.push(ScoredBacklinkCandidate {
+        tid: new_element_tid,
+        score: score_backlink_candidate(metadata, target_code, new_code),
+        is_new: true,
+    });
+    candidates.sort_unstable_by(|left, right| {
+        left.score
+            .total_cmp(&right.score)
+            .then_with(|| left.is_new.cmp(&right.is_new))
+            .then_with(|| compare_item_pointers(&left.tid, &right.tid))
+    });
+    candidates
+        .into_iter()
+        .take(existing_slice.len())
+        .map(|candidate| candidate.tid)
+        .collect()
+}
+
+fn score_backlink_candidate(
+    metadata: &page::MetadataPage,
+    target_code: &[u8],
+    candidate_code: &[u8],
+) -> f32 {
+    -crate::score_code_inner_product(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+        target_code,
+        candidate_code,
+    )
+}
+
+fn apply_backlink_mutation(
+    neighbor_tids: &mut [page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    m: u16,
+    mutation: &BacklinkMutation,
+) -> BacklinkMutationOutcome {
+    let Some((start, end)) =
+        backlink_slot_bounds(usize::from(m), neighbor_tids.len(), mutation.layer)
+    else {
+        return BacklinkMutationOutcome::NoChange;
+    };
+    let layer_slice = &mut neighbor_tids[start..end];
+
+    match &mutation.kind {
+        BacklinkMutationKind::InsertIfFree => {
+            if insert_backlink_if_free(layer_slice, new_element_tid) {
+                BacklinkMutationOutcome::Changed
+            } else {
+                BacklinkMutationOutcome::NoChange
+            }
+        }
+        BacklinkMutationKind::RewriteFullSlice {
+            expected_slice,
+            replacement_slice,
+        } => {
+            if layer_slice.contains(&new_element_tid) {
+                return BacklinkMutationOutcome::NoChange;
+            }
+            if insert_backlink_if_free(layer_slice, new_element_tid) {
+                return BacklinkMutationOutcome::Changed;
+            }
+            if layer_slice != expected_slice.as_slice() {
+                return BacklinkMutationOutcome::RetryReplan;
+            }
+            if layer_slice == replacement_slice.as_slice() {
+                return BacklinkMutationOutcome::NoChange;
+            }
+            layer_slice.copy_from_slice(replacement_slice);
+            BacklinkMutationOutcome::Changed
+        }
+    }
+}
+
+fn insert_backlink_if_free(
+    layer_slice: &mut [page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+) -> bool {
+    if layer_slice.contains(&new_element_tid) {
+        return false;
+    }
+
+    let Some(slot) = layer_slice
+        .iter_mut()
+        .find(|tid| **tid == page::ItemPointer::INVALID)
+    else {
+        return false;
+    };
+    *slot = new_element_tid;
+    true
+}
+
+fn selected_forward_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+    let (start, end) = backlink_slot_bounds(m, total_slots, layer)?;
+    if layer == 0 {
+        return Some((start, start.saturating_add(m).min(end)));
+    }
+    Some((start, end))
+}
+
+fn backlink_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+    if total_slots == 0 {
+        return None;
+    }
+
+    if layer == 0 {
+        let end = m.saturating_mul(2).min(total_slots);
+        return (end > 0).then_some((0, end));
+    }
+
+    let start = m
+        .saturating_mul(2)
+        .saturating_add((usize::from(layer).saturating_sub(1)).saturating_mul(m));
+    if start >= total_slots {
+        return None;
+    }
+
+    Some((start, start.saturating_add(m).min(total_slots)))
+}
+
+fn compare_item_pointers(left: &page::ItemPointer, right: &page::ItemPointer) -> Ordering {
+    left.block_number
+        .cmp(&right.block_number)
+        .then_with(|| left.offset_number.cmp(&right.offset_number))
+}
+
+fn sort_and_dedup_forward_selections(selections: &mut Vec<LayerForwardSelection>) {
+    selections.sort_unstable_by(|left, right| {
+        compare_item_pointers(&left.element_tid, &right.element_tid)
+            .then_with(|| left.layer.cmp(&right.layer))
+    });
+    selections.dedup();
+}
+
 unsafe fn append_heap_tuple(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_tids: &[page::ItemPointer],
 ) -> page::ItemPointer {
     let neighbor_payload = page::TqNeighborTuple {
-        count: 0,
-        tids: Vec::new(),
+        count: u16::try_from(neighbor_tids.len()).expect("neighbor slot count should fit in u16"),
+        tids: neighbor_tids.to_vec(),
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode neighbor tuple: {e}"));
@@ -137,7 +922,7 @@ unsafe fn append_heap_tuple(
             std::mem::drop(wal_txn);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return unsafe {
-                append_heap_tuple_to_new_page(index_relation, tuple, &neighbor_payload)
+                append_heap_tuple_to_new_page(index_relation, tuple, level, &neighbor_payload)
             };
         }
     }
@@ -157,7 +942,7 @@ unsafe fn append_heap_tuple(
     }
 
     let element_payload = page::TqElementTuple {
-        level: 0,
+        level,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
         gamma: tuple.gamma,
@@ -193,6 +978,7 @@ unsafe fn append_heap_tuple(
 unsafe fn append_heap_tuple_to_new_page(
     index_relation: pg_sys::Relation,
     tuple: &build::BuildTuple,
+    level: u8,
     neighbor_payload: &[u8],
 ) -> page::ItemPointer {
     let buffer = unsafe {
@@ -229,7 +1015,7 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 
     let element_payload = page::TqElementTuple {
-        level: 0,
+        level,
         deleted: false,
         heaptids: tuple.heap_tids.clone(),
         gamma: tuple.gamma,
@@ -316,6 +1102,9 @@ unsafe fn find_duplicate_element_tid(
             let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                 pgrx::error!("tqhnsw failed to decode candidate duplicate tuple: {e}")
             });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
             if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
                 unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {
@@ -405,4 +1194,68 @@ unsafe fn coalesce_duplicate_heap_tid(
 
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tid(block_number: u32, offset_number: u16) -> page::ItemPointer {
+        page::ItemPointer {
+            block_number,
+            offset_number,
+        }
+    }
+
+    #[test]
+    fn rewrite_full_slice_requests_retry_when_snapshot_drifted() {
+        let new_element_tid = tid(9, 9);
+        let mut layer_tids = vec![tid(1, 1), tid(1, 2), tid(1, 3), tid(1, 4)];
+        let mutation = BacklinkMutation {
+            target_element_tid: tid(7, 1),
+            neighbor_tid: tid(8, 1),
+            layer: 0,
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_slice: layer_tids.clone(),
+                replacement_slice: vec![new_element_tid, tid(1, 1), tid(1, 2), tid(1, 3)],
+            },
+        };
+
+        layer_tids[0] = tid(5, 5);
+
+        assert_eq!(
+            apply_backlink_mutation(&mut layer_tids, new_element_tid, 2, &mutation),
+            BacklinkMutationOutcome::RetryReplan,
+        );
+        assert_eq!(
+            layer_tids,
+            vec![tid(5, 5), tid(1, 2), tid(1, 3), tid(1, 4)],
+            "a stale full-slice plan should leave the live layer unchanged and request replanning",
+        );
+    }
+
+    #[test]
+    fn rewrite_full_slice_applies_after_replanning_against_current_slice() {
+        let new_element_tid = tid(9, 9);
+        let mut layer_tids = vec![tid(5, 5), tid(1, 2), tid(1, 3), tid(1, 4)];
+        let mutation = BacklinkMutation {
+            target_element_tid: tid(7, 1),
+            neighbor_tid: tid(8, 1),
+            layer: 0,
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_slice: layer_tids.clone(),
+                replacement_slice: vec![new_element_tid, tid(5, 5), tid(1, 2), tid(1, 3)],
+            },
+        };
+
+        assert_eq!(
+            apply_backlink_mutation(&mut layer_tids, new_element_tid, 2, &mutation),
+            BacklinkMutationOutcome::Changed,
+        );
+        assert_eq!(
+            layer_tids,
+            vec![new_element_tid, tid(5, 5), tid(1, 2), tid(1, 3)],
+            "a replanned full-slice mutation should admit the new node against the current live slice",
+        );
+    }
 }

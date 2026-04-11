@@ -126,13 +126,17 @@ What this unblocks:
 
 - A5 graph-aware insert as the next runtime lane
 - A6 vacuum repair after A5
-- planner activation no longer being blocked on lack of recall evidence
+- planner activation no longer being blocked on lack of recall evidence, but
+  the D2 planner-activation slice still needs to be finished
 - SIMD merge timing becoming a normal integration decision rather than a recall
   blocker
 
 What remains outside A4:
 
 - broader post-gate benchmark/report work under `C1`
+- D2 planner activation itself: Condition 3 (`ef_search` wired through scan
+  execution) is still only "Mostly done" in `plan/status.md` because the main
+  runtime wiring landed but sentinel cleanup remains elsewhere
 - synthetic-vs-real methodology follow-up
 - latency/storage reporting
 - insert/vacuum quality after live-write and delete churn

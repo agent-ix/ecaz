@@ -96,12 +96,30 @@ Canonical conversions also emit a sibling manifest:
 
 - `manifest_version`
 - `prefix`
-- dataset/source metadata
+- dataset/source metadata (see below)
 - the exact selection rule
 - dimensionality
 - per-file row counts
 - per-file SHA-256 digests
 - first/last ids for the corpus and query files
+
+The dataset/source metadata fields, expanded, are:
+
+- `source_dataset`: human-readable dataset label (e.g. `"Qdrant
+  dbpedia-entities-openai3-text-embedding-3-large-1536-1M"`), not a path
+- `source_parquet`: the local absolute path used at conversion time, kept
+  as a debugging hint only — **the loader does not verify this field** and
+  reviewers on a different machine are expected to ignore it
+- `source_parquet_basename`: portable basename (just the file or directory
+  name) of `source_parquet`, verified by the loader
+- `source_parquet_shard_basenames`: sorted list of per-shard parquet file
+  basenames that were actually iterated, verified by the loader
+
+The portable basename fields are what reviewers cross-check; the absolute
+`source_parquet` path exists only for the developer who ran the conversion.
+The loader accepts manifests that omit the portable fields (older
+manifests) but rejects any present-but-non-portable values (absolute
+paths, non-strings).
 
 The loader auto-discovers and verifies this manifest when the staged files
 follow the canonical `<basename>_{corpus,queries}.tsv` naming pattern. If the

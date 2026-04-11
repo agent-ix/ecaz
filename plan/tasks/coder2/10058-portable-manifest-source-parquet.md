@@ -10,7 +10,7 @@ other reviewer's machine. That is cosmetic for now but will be noisy the
 moment a second reviewer tries to verify the first run. Fix it before the
 first manifest gets committed and the migration cost goes up.
 Priority: batch 3
-Status: ready
+Status: done
 
 ## Prompt
 

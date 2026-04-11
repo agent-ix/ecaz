@@ -28,6 +28,9 @@ pub mod bench_api {
 
     // Hadamard
     pub use crate::quant::hadamard::{fwht_in_place, orthonormal_fwht_in_place};
+    pub fn simd_backend() -> &'static str {
+        crate::quant::simd_backend_name()
+    }
 
     // Rotation
     pub use crate::quant::rotation::{inverse_srht, pad_input, sign_vector, srht, transform_dim};
@@ -285,6 +288,43 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
     // SAFETY: `msg` is a valid Postgres `StringInfo` owned by the current receive call.
     unsafe { recv_tqvector_message(msg) }
         .unwrap_or_else(|e| pgrx::error!("invalid tqvector binary: {e}"))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn tqhnsw_index_admin_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(total_live_nodes, i64),
+        name!(inserted_since_rebuild, i64),
+        name!(insert_drift_fraction, f64),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(planner_scan_enabled, bool),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_admin_snapshot") };
+    let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        i64::try_from(snapshot.total_live_nodes).expect("total live nodes should fit in i64"),
+        i64::try_from(snapshot.inserted_since_rebuild)
+            .expect("inserted-since-rebuild should fit in i64"),
+        snapshot.insert_drift_fraction,
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.planner_scan_enabled,
+    ))
 }
 
 #[pg_extern(stable, strict)]
@@ -816,6 +856,122 @@ mod tests {
         code_bytes
     }
 
+    fn parse_ctid(ctid: &str) -> am::page::ItemPointer {
+        let trimmed = ctid.trim();
+        let inner = trimmed
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+            .expect("ctid should use (block,offset) formatting");
+        let (block_number, offset_number) = inner
+            .split_once(',')
+            .expect("ctid should contain block and offset");
+        am::page::ItemPointer {
+            block_number: block_number
+                .trim()
+                .parse()
+                .expect("ctid block number should parse"),
+            offset_number: offset_number
+                .trim()
+                .parse()
+                .expect("ctid offset number should parse"),
+        }
+    }
+
+    fn heap_tid_for_row(table_name: &str, id: i64) -> am::page::ItemPointer {
+        let ctid = Spi::get_one::<String>(&format!(
+            "SELECT ctid::text FROM {table_name} WHERE id = {id}"
+        ))
+        .expect("SPI query should succeed")
+        .expect("table row should exist");
+        parse_ctid(&ctid)
+    }
+
+    fn decode_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+        code_len: usize,
+    ) -> (
+        am::page::MetadataPage,
+        Vec<(am::page::ItemPointer, am::page::TqElementTuple)>,
+        HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+    ) {
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let mut elements = Vec::new();
+        let mut neighbors = HashMap::new();
+
+        for page in data_pages {
+            for (idx, tuple) in page.tuples.iter().enumerate() {
+                let tid = am::page::ItemPointer {
+                    block_number: page.block_number,
+                    offset_number: u16::try_from(idx + 1)
+                        .expect("page tuple offset should fit in u16"),
+                };
+                match tuple.first().copied() {
+                    Some(am::page::TQ_ELEMENT_TAG) => {
+                        elements.push((
+                            tid,
+                            am::page::TqElementTuple::decode(tuple, code_len)
+                                .expect("element tuple should decode"),
+                        ));
+                    }
+                    Some(am::page::TQ_NEIGHBOR_TAG) => {
+                        neighbors.insert(
+                            tid,
+                            am::page::TqNeighborTuple::decode(tuple)
+                                .expect("neighbor tuple should decode"),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        (metadata, elements, neighbors)
+    }
+
+    fn find_element_for_heap_tid(
+        elements: &[(am::page::ItemPointer, am::page::TqElementTuple)],
+        heap_tid: am::page::ItemPointer,
+    ) -> (am::page::ItemPointer, &am::page::TqElementTuple) {
+        let (element_tid, element) = elements
+            .iter()
+            .find(|(_, element)| element.heaptids.contains(&heap_tid))
+            .expect("element should be discoverable by heap tid");
+        (*element_tid, element)
+    }
+
+    fn layer_neighbor_slice(
+        neighbor_tids: &[am::page::ItemPointer],
+        m: usize,
+        layer: u8,
+    ) -> &[am::page::ItemPointer] {
+        let (start, end) = if layer == 0 {
+            (0, (m * 2).min(neighbor_tids.len()))
+        } else {
+            let start = (m * 2) + (usize::from(layer) - 1) * m;
+            if start >= neighbor_tids.len() {
+                return &neighbor_tids[0..0];
+            }
+            (start, (start + m).min(neighbor_tids.len()))
+        };
+        &neighbor_tids[start..end]
+    }
+
+    fn count_neighbor_refs(
+        neighbors: &HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+        target_tid: am::page::ItemPointer,
+    ) -> usize {
+        neighbors
+            .values()
+            .map(|neighbor| {
+                neighbor
+                    .tids
+                    .iter()
+                    .filter(|tid| **tid == target_tid)
+                    .count()
+            })
+            .sum()
+    }
+
     fn encode_recall_query_code(query: &[f32]) -> Vec<u8> {
         let quantizer = ProdQuantizer::cached(
             RECALL_DIM,
@@ -1030,10 +1186,11 @@ mod tests {
                 .into_iter()
                 .map(|neighbor| i64::try_from(neighbor.d_id).expect("origin id should fit i64"))
                 .collect::<Vec<_>>();
-            let build_code_ids = brute_force_top_k_code_inner_product(&corpus_codes, &query_code, RECALL_K)
-                .into_iter()
-                .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                .collect::<Vec<_>>();
+            let build_code_ids =
+                brute_force_top_k_code_inner_product(&corpus_codes, &query_code, RECALL_K)
+                    .into_iter()
+                    .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
+                    .collect::<Vec<_>>();
             let exact_ids = brute_force_top_k_exact_quantized(&corpus_payloads, query, RECALL_K)
                 .into_iter()
                 .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
@@ -1634,7 +1791,9 @@ mod tests {
         Spi::run("CREATE TABLE tqhnsw_ac1_large (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
         // Build 10K 64-dim vectors from four MD5 digests per row so each row
-        // gets 64 distinct byte values without 10K × N hashtext calls.
+        // gets 64 distinct byte values without 10K × N hashtext calls. Keeping
+        // this at 64 dimensions is deliberate: lowering the dimension count
+        // flips the FR-020 crossover back toward seqscan at 10K rows.
         Spi::run(
             "INSERT INTO tqhnsw_ac1_large \
              SELECT g, encode_to_tqvector( \
@@ -1692,6 +1851,213 @@ mod tests {
         assert!(
             plan.contains("Index Scan") && plan.contains("tqhnsw_ac1_large_idx"),
             "FR-020-AC-1 / TC-206: planner must naturally pick the tqhnsw index on a 10K-row table: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_tracks_insert_drift() {
+        Spi::run("CREATE TABLE tqhnsw_admin_snapshot (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_idx ON tqhnsw_admin_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 77)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            3
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation ef_search should be non-null"),
+            77
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed"),
+            Some(19)
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_source FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective source should be non-null"),
+            "session"
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (4, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("live insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1
+        );
+        assert!(
+            (Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null")
+                - 0.25)
+                .abs()
+                < 1e-9,
+            "one live insert after a three-row build should report 25% drift",
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (5, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("duplicate insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            4,
+            "duplicate coalescing should not create a new live node",
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1,
+            "duplicate coalescing should not advance the insert-drift counter",
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_counts_empty_first_insert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_empty (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_empty_idx ON tqhnsw_admin_snapshot_empty USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            0
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            0
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot_empty VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("first insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            1
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1,
+            "the first successful live insert should start the post-build drift counter",
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null"),
+            1.0
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_admin_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_wrong_am_idx ON tqhnsw_admin_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
         );
     }
 
@@ -2007,7 +2373,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "graph-aware insert (A5) and vacuum repair (A6) are the remaining runtime blockers"
+            "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next"
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -2604,10 +2970,8 @@ mod tests {
 
     #[pg_test]
     fn test_build_keeps_element_neighbor_local() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
 
         let payload_len = code_len(4, 8);
         for id in 1..=128 {
@@ -2637,28 +3001,34 @@ mod tests {
         let elements = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: u16::try_from(idx + 1)
-                                    .expect("page tuple offset should fit in u16"),
-                            },
-                            am::page::TqElementTuple::decode(tuple, code_len(4, 8))
-                                .expect("element tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                            Some((
+                                am::page::ItemPointer {
+                                    block_number: page.block_number,
+                                    offset_number: u16::try_from(idx + 1)
+                                        .expect("page tuple offset should fit in u16"),
+                                },
+                                am::page::TqElementTuple::decode(tuple, code_len(4, 8))
+                                    .expect("element tuple should decode"),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect::<Vec<_>>();
 
-        assert!(!elements.is_empty(), "build should persist at least one element tuple");
-        assert!(elements.iter().any(|(tid, element)| {
-            element.neighbortid.block_number == tid.block_number
-        }));
+        assert!(
+            !elements.is_empty(),
+            "build should persist at least one element tuple"
+        );
+        assert!(elements
+            .iter()
+            .any(|(tid, element)| { element.neighbortid.block_number == tid.block_number }));
         assert!(elements.iter().all(|(tid, element)| {
             element.neighbortid.block_number <= tid.block_number
                 && tid.block_number - element.neighbortid.block_number <= 1
@@ -2970,6 +3340,7 @@ mod tests {
         )
         .expect("table creation should succeed");
 
+        let m = 2_u16;
         let (dim, pairs_per_page) = (1_u16..=u16::MAX)
             .rev()
             .find_map(|dim| {
@@ -2982,32 +3353,46 @@ mod tests {
                     am::page::FIRST_DATA_BLOCK_NUMBER,
                     pg_sys::BLCKSZ as usize,
                 );
-                let mut pairs = 0_usize;
-                loop {
+                let insert_pair_fits = |page: &mut am::page::DataPage, offset_number: u16| {
+                    let heap_tid = am::page::ItemPointer {
+                        block_number: 0,
+                        offset_number,
+                    };
+                    let level = am::debug_insert_level_for_heap_tid(m, 42, heap_tid, code_len);
+                    let neighbor_slots = am::page::neighbor_slots(level, m);
                     let neighbor = am::page::TqNeighborTuple {
-                        count: 0,
-                        tids: Vec::new(),
+                        count: u16::try_from(neighbor_slots)
+                            .expect("neighbor slot count should fit in u16"),
+                        tids: vec![am::page::ItemPointer::INVALID; neighbor_slots],
                     };
                     let element = am::page::TqElementTuple {
-                        level: 0,
+                        level,
                         deleted: false,
-                        heaptids: vec![am::page::ItemPointer {
-                            block_number: 1,
-                            offset_number: 1,
-                        }],
+                        heaptids: vec![heap_tid],
                         gamma: 0.5,
                         neighbortid: am::page::ItemPointer::INVALID,
                         code: vec![0x11_u8; code_len],
                     };
-                    if staged_page.insert_neighbor(&neighbor).is_err()
-                        || staged_page.insert_element(&element).is_err()
-                    {
-                        break;
-                    }
+                    page.insert_neighbor(&neighbor).is_ok() && page.insert_element(&element).is_ok()
+                };
+                let mut pairs = 0_usize;
+                while insert_pair_fits(
+                    &mut staged_page,
+                    u16::try_from(pairs + 1).expect("offset should fit in u16"),
+                ) {
                     pairs += 1;
                 }
 
-                if pairs >= 2 {
+                let mut next_page = am::page::DataPage::new(
+                    am::page::FIRST_DATA_BLOCK_NUMBER + 1,
+                    pg_sys::BLCKSZ as usize,
+                );
+                let next_offset = u16::try_from(pairs + 1).expect("offset should fit in u16");
+                let reuse_offset = u16::try_from(pairs + 2).expect("offset should fit in u16");
+                if pairs >= 2
+                    && insert_pair_fits(&mut next_page, next_offset)
+                    && insert_pair_fits(&mut next_page, reuse_offset)
+                {
                     Some((dim, pairs))
                 } else {
                     None
@@ -3016,10 +3401,10 @@ mod tests {
             .expect("should find a dimension where one page fits multiple pairs");
         let code_len = code_len(dim as usize, 4);
 
-        Spi::run(
+        Spi::run(&format!(
             "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
-             (embedding tqvector_ip_ops)",
-        )
+             (embedding tqvector_ip_ops) WITH (m = {m})"
+        ))
         .expect("index creation should succeed");
 
         for id in 1..=pairs_per_page {
@@ -3226,10 +3611,8 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_non_empty_index_build_rejects_non_finite_gamma() {
-        Spi::run(
-            "CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)",
-        )
-        .expect("table creation should succeed");
+        Spi::run("CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_build_nan_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
@@ -3245,8 +3628,10 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_tqhnsw_insert_rejects_non_finite_gamma() {
-        Spi::run("CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_nan_gamma_idx ON tqhnsw_insert_nan_gamma USING tqhnsw \
              (embedding tqvector_ip_ops)",
@@ -3339,21 +3724,36 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
-        assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+        assert_eq!(elements.len(), 1);
 
-        let tuple_count = data_pages
+        let (entry_tid, entry_element) = elements
             .iter()
-            .map(|page| page.tuples.len())
-            .sum::<usize>();
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify the inserted element");
+        assert_eq!(metadata.max_level, entry_element.level);
+        assert_eq!(entry_element.heaptids.len(), 1);
+
+        let neighbor = neighbors
+            .get(&entry_element.neighbortid)
+            .expect("entry element neighbor tuple should exist");
+        assert_eq!(neighbor.count as usize, neighbor.tids.len());
+        assert_eq!(
+            neighbor.tids.len(),
+            am::page::neighbor_slots(entry_element.level, metadata.m)
+        );
+
+        let tuple_count = elements.len() + neighbors.len();
         assert_eq!(
             tuple_count, 2,
             "aminsert should append one neighbor and one element tuple"
         );
+        assert_eq!(metadata.entry_point, *entry_tid);
     }
 
     #[pg_test]
@@ -3378,21 +3778,641 @@ mod tests {
             Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_reuse_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
-        assert_eq!(metadata.max_level, 0);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
-
-        let element_count = data_pages
+        let entry_element = elements
             .iter()
-            .flat_map(|page| page.tuples.iter())
-            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
-            .count();
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("entry point should identify a live element tuple");
+        assert_eq!(entry_element.1.level, metadata.max_level);
+
+        let element_count = elements.len();
         assert_eq!(
             element_count, 2,
             "second insert into an initially empty index should validate against persisted shape metadata"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_repairs_invalid_entry_point_after_shape_init() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_entry_point_repair (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_entry_point_repair_idx ON tqhnsw_insert_entry_point_repair USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_entry_point_repair_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, _m, _ef_construction, mut metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(metadata.dimensions, 4);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        metadata.entry_point = am::page::ItemPointer::INVALID;
+        unsafe {
+            am::debug_update_index_metadata(index_oid, metadata);
+        }
+
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("repairing insert should succeed");
+
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
+        assert_eq!(elements.len(), 2);
+        let (entry_tid, entry_element) = elements
+            .iter()
+            .find(|(tid, _)| *tid == metadata.entry_point)
+            .expect("repairing insert should repoint metadata at a live element tuple");
+        assert_eq!(entry_element.level, metadata.max_level);
+        assert_eq!(metadata.entry_point, *entry_tid);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_neighbor_tuple_sizing_matches_levels() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_level_shape (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_level_shape_idx ON tqhnsw_insert_level_shape USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_level_shape_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        let mut inserted_rows = 0_i64;
+        let mut found_upper_level = false;
+        while inserted_rows < 128 && !found_upper_level {
+            inserted_rows += 1;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_level_shape VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = inserted_rows,
+                two = inserted_rows * 2,
+                three = inserted_rows * 3,
+                four = inserted_rows * 4,
+            ))
+            .expect("insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_shape", inserted_rows);
+            let expected_level =
+                am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            found_upper_level |= expected_level > 0;
+        }
+        assert!(
+            found_upper_level,
+            "deterministic insert level assignment should produce an upper-layer node within 128 inserts"
+        );
+
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert_eq!(elements.len(), inserted_rows as usize);
+        assert!(
+            elements.iter().any(|(_, element)| element.level > 0),
+            "test fixture should contain at least one inserted upper-layer node"
+        );
+
+        for (_, element) in &elements {
+            let neighbor = neighbors
+                .get(&element.neighbortid)
+                .expect("neighbor tuple should exist for each inserted element");
+            assert_eq!(neighbor.count as usize, neighbor.tids.len());
+            assert_eq!(
+                neighbor.tids.len(),
+                am::page::neighbor_slots(element.level, metadata.m),
+                "neighbor tuple sizing should match the inserted element level",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_promotes_entry_point_on_level_up() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_level_promotion (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_level_promotion_idx ON tqhnsw_insert_level_promotion USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_level_promotion VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_level_promotion_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
+        for id in 2_i64..=128_i64 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_level_promotion VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_promotion", id);
+            let expected_level =
+                am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            let (metadata, elements, _neighbors) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            if expected_level > previous_metadata.max_level {
+                let (promoted_tid, promoted_element) = elements
+                    .iter()
+                    .find(|(_, element)| element.heaptids.contains(&heap_tid))
+                    .expect("promoted element should be discoverable by heap tid");
+                assert_eq!(promoted_element.level, expected_level);
+                assert_eq!(metadata.max_level, expected_level);
+                assert_eq!(metadata.entry_point, *promoted_tid);
+                return;
+            }
+            previous_metadata = metadata;
+        }
+
+        panic!("expected a higher-level insert to promote metadata within 128 inserts");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_forward_links_from_live_entry_seed() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_live_forward_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_live_forward_links_idx ON tqhnsw_insert_live_forward_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_live_forward_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let row1_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 1);
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (row1_element_tid, _) = find_element_for_heap_tid(&elements, row1_heap_tid);
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("second insert should succeed");
+
+        let row2_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 2);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (row1_element_tid_after, row1_element) =
+            find_element_for_heap_tid(&elements, row1_heap_tid);
+        let (row2_element_tid, row2_element) = find_element_for_heap_tid(&elements, row2_heap_tid);
+        let row1_neighbors = neighbors
+            .get(&row1_element.neighbortid)
+            .expect("seed element neighbor tuple should exist");
+        let row2_neighbors = neighbors
+            .get(&row2_element.neighbortid)
+            .expect("second insert neighbor tuple should exist");
+        let row1_layer0 = layer_neighbor_slice(&row1_neighbors.tids, usize::from(metadata.m), 0);
+        let row2_layer0 = layer_neighbor_slice(&row2_neighbors.tids, usize::from(metadata.m), 0);
+        let populated_layer0_slots = row2_layer0
+            .iter()
+            .take(usize::from(metadata.m))
+            .copied()
+            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            populated_layer0_slots,
+            vec![row1_element_tid],
+            "the second live insert should seed its forward links from the existing entry element",
+        );
+        assert_eq!(
+            row1_element_tid_after, row1_element_tid,
+            "the seed element tid should remain stable after the live insert",
+        );
+        assert!(
+            row1_layer0.contains(&row2_element_tid),
+            "the seeded element should receive a layer-0 backlink to the newly inserted node",
+        );
+        assert!(
+            row2_layer0
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "the upper-layer checkpoint still leaves the second half of the layer-0 forward window invalid on the new node",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_forward_links_against_built_graph() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_built_forward_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_built_forward_links_idx ON tqhnsw_insert_built_forward_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_built_forward_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_metadata, before_elements, _before_neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let existing_element_tids = before_elements
+            .iter()
+            .map(|(tid, _)| *tid)
+            .collect::<HashSet<_>>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+             (5, encode_to_tqvector(ARRAY[1.0, 0.2, 0.1, 0.0], 4, 42))",
+        )
+        .expect("live insert should succeed");
+
+        let row5_heap_tid = heap_tid_for_row("tqhnsw_insert_built_forward_links", 5);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (row5_element_tid, row5_element) = find_element_for_heap_tid(&elements, row5_heap_tid);
+        let row5_neighbors = neighbors
+            .get(&row5_element.neighbortid)
+            .expect("inserted element neighbor tuple should exist");
+        let row5_layer0 = layer_neighbor_slice(&row5_neighbors.tids, usize::from(metadata.m), 0);
+        let populated_layer0_slots = row5_layer0
+            .iter()
+            .take(usize::from(metadata.m))
+            .copied()
+            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+
+        assert!(
+            !populated_layer0_slots.is_empty(),
+            "live insert into a built graph should materialize at least one forward link",
+        );
+        assert!(
+            populated_layer0_slots
+                .iter()
+                .all(|tid| existing_element_tids.contains(tid)),
+            "forward links should target pre-existing graph elements in this one-way slice",
+        );
+        assert!(
+            populated_layer0_slots
+                .iter()
+                .all(|tid| *tid != row5_element_tid),
+            "forward links must not self-reference the newly inserted element",
+        );
+        assert!(
+            row5_layer0
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "the second half of the layer-0 forward window stays invalid even after upper-layer links land",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_populates_upper_layer_links_when_available() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_upper_layer_links (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_upper_layer_links_idx ON tqhnsw_insert_upper_layer_links USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_upper_layer_links_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut chosen_insert = None;
+        for id in 1_i64..=192_i64 {
+            let previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_upper_layer_links VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("live insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", id);
+            let level = am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
+            if previous_metadata.max_level > 0 && level > 0 {
+                chosen_insert = Some((id, level));
+                break;
+            }
+        }
+
+        let (inserted_id, expected_level) = chosen_insert
+            .expect("deterministic insert levels should produce an upper-layer live insert");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", inserted_id);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (inserted_element_tid, inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+        let inserted_neighbors = neighbors
+            .get(&inserted_element.neighbortid)
+            .expect("inserted upper-layer neighbor tuple should exist");
+        assert_eq!(inserted_element.level, expected_level);
+        assert!(
+            inserted_element.level > 0,
+            "the chosen live insert must participate in at least one upper layer",
+        );
+
+        let layer1_forward_tids =
+            layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 1)
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+        assert!(
+            !layer1_forward_tids.is_empty(),
+            "an upper-layer live insert should populate at least one layer-1 forward link",
+        );
+
+        let mut layer1_backlink_targets = 0_usize;
+        for forward_tid in layer1_forward_tids {
+            let (_, forward_element) = elements
+                .iter()
+                .find(|(tid, _)| *tid == forward_tid)
+                .expect("upper-layer forward link should target an existing element");
+            assert!(
+                forward_element.level >= 1,
+                "upper-layer forward links must target elements that participate in layer 1",
+            );
+
+            let forward_neighbors = neighbors
+                .get(&forward_element.neighbortid)
+                .expect("upper-layer forward target neighbor tuple should exist");
+            if layer_neighbor_slice(&forward_neighbors.tids, usize::from(metadata.m), 1)
+                .contains(&inserted_element_tid)
+            {
+                layer1_backlink_targets += 1;
+            }
+        }
+        assert!(
+            layer1_backlink_targets > 0,
+            "at least one sparse layer-1 forward target should receive a matching layer-1 backlink to the new element",
+        );
+        assert!(
+            layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 0)
+                .iter()
+                .skip(usize::from(metadata.m))
+                .all(|tid| *tid == am::page::ItemPointer::INVALID),
+            "upper-layer link coverage should not change the second half of the layer-0 forward window",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_rewrites_full_layer0_backlink_slice() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_full_layer0_backlink (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        for id in 1_i64..=12_i64 {
+            let delta = id as f32 * 0.08;
+            let z = if id % 2 == 0 { 0.25 } else { -0.25 };
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, 0.0], 4, 42))",
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_full_layer0_backlink_idx ON tqhnsw_insert_full_layer0_backlink USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_full_layer0_backlink_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        for id in 13_i64..=40_i64 {
+            let (_metadata_before, elements_before, neighbors_before) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            let delta = (id - 12) as f32 * 0.04;
+            let w = (id - 12) as f32 * 0.02;
+            let z = if id % 2 == 0 { 0.25 } else { -0.25 };
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, {w}], 4, 42))",
+            ))
+            .expect("live insert should succeed");
+
+            let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_full_layer0_backlink", id);
+            let (metadata, elements_after, neighbors_after) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            let (inserted_element_tid, inserted_element) =
+                find_element_for_heap_tid(&elements_after, inserted_heap_tid);
+            let inserted_neighbors = neighbors_after
+                .get(&inserted_element.neighbortid)
+                .expect("inserted element neighbor tuple should exist");
+            let inserted_layer0_forward_tids =
+                layer_neighbor_slice(&inserted_neighbors.tids, usize::from(metadata.m), 0)
+                    .iter()
+                    .take(usize::from(metadata.m))
+                    .copied()
+                    .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                    .collect::<Vec<_>>();
+
+            for forward_tid in inserted_layer0_forward_tids {
+                let (_, before_element) = elements_before
+                    .iter()
+                    .find(|(tid, _)| *tid == forward_tid)
+                    .expect("forward target should exist before the live insert");
+                let before_neighbors = neighbors_before
+                    .get(&before_element.neighbortid)
+                    .expect("forward target neighbor tuple should exist before the live insert");
+                let before_layer0 =
+                    layer_neighbor_slice(&before_neighbors.tids, usize::from(metadata.m), 0);
+                if before_layer0.contains(&am::page::ItemPointer::INVALID) {
+                    continue;
+                }
+
+                let (_, after_element) = elements_after
+                    .iter()
+                    .find(|(tid, _)| *tid == forward_tid)
+                    .expect("forward target should still exist after the live insert");
+                let after_neighbors = neighbors_after
+                    .get(&after_element.neighbortid)
+                    .expect("forward target neighbor tuple should exist after the live insert");
+                let after_layer0 =
+                    layer_neighbor_slice(&after_neighbors.tids, usize::from(metadata.m), 0);
+                if !after_layer0.contains(&inserted_element_tid) {
+                    continue;
+                }
+
+                assert!(
+                    after_layer0
+                        .iter()
+                        .all(|tid| *tid != am::page::ItemPointer::INVALID),
+                    "overflow rewrite should preserve the full 2M layer-0 capacity on selected targets",
+                );
+                assert_ne!(
+                    after_layer0, before_layer0,
+                    "admitting the new element into a full layer-0 target should evict at least one prior neighbor",
+                );
+                return;
+            }
+        }
+
+        panic!("expected a bounded live-insert search to rewrite at least one full layer-0 target");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_live_insert_is_graph_reachable_via_backlinks() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_graph_reachable (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_graph_reachable_idx ON tqhnsw_insert_graph_reachable USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 8, ef_search = 8)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_graph_reachable_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let mut chosen_insert = None;
+        for id in 5_i64..=32_i64 {
+            let delta = (id - 4) as f32 * 0.02;
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, 0.1, 0.0], 4, 42))",
+            ))
+            .expect("live insert should succeed");
+
+            let heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", id);
+            let level = am::debug_insert_level_for_heap_tid(8, 42, heap_tid, code_len(4, 4));
+            if level == 0 {
+                chosen_insert = Some((id, vec![1.0, delta, 0.1, 0.0]));
+                break;
+            }
+        }
+
+        let (inserted_id, query) = chosen_insert
+            .expect("deterministic insert levels should produce a level-0 live insert");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", inserted_id);
+        let (metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (inserted_element_tid, _inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+        assert_ne!(
+            metadata.entry_point, inserted_element_tid,
+            "the reachability check should exercise backlinks rather than an entry-point promotion",
+        );
+
+        let (_head, frontier, frontier_slots, _frontier_provenance, _expanded_sources) =
+            unsafe { am::debug_rescan_candidate_frontier(index_oid, query) };
+        let frontier_tids = frontier_slots
+            .iter()
+            .filter_map(|(valid, tid, _)| valid.then_some(*tid))
+            .collect::<Vec<_>>();
+
+        assert!(
+            !frontier.is_empty(),
+            "reachable live inserts should contribute to a non-empty graph frontier",
+        );
+        assert!(
+            frontier_tids.contains(&(inserted_element_tid.block_number, inserted_element_tid.offset_number)),
+            "the graph-seeded runtime frontier should reach the live-inserted element before any linear fallback",
         );
     }
 
@@ -3506,6 +4526,662 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_compacts_duplicate_heaptids() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_duplicates (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_duplicates VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_duplicates_idx ON tqhnsw_vacuum_pass1_duplicates USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 2);
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_duplicates WHERE id = 2")
+            .expect("delete should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_pass1_duplicates_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_element_tid, duplicate_element) =
+            find_element_for_heap_tid(&elements, survivor_heap_tid);
+
+        assert_eq!(
+            duplicate_element.heaptids,
+            vec![survivor_heap_tid],
+            "pass 1 should compact the duplicate element to the surviving heap tid",
+        );
+        assert!(
+            elements
+                .iter()
+                .all(|(_, element)| !element.heaptids.contains(&deleted_heap_tid)),
+            "pass 1 should remove the deleted heap tid from every element payload",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(
+            stats.num_index_tuples, 2.0,
+            "amvacuumcleanup should report the remaining live element count",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_makes_deleted_row_unreachable() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_scan (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_scan VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_scan_idx ON tqhnsw_vacuum_pass1_scan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_scan", 2);
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_scan WHERE id = 2")
+            .expect("delete should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_scan_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let deleted_element = elements
+            .iter()
+            .find(|(_, element)| {
+                element.code
+                    == encoded_code_bytes(
+                        ProdQuantizer::new(4, 4, 42).encode(&[0.5, 1.0, -0.5, 0.25]),
+                    )
+            })
+            .expect("deleted element should still be present after vacuum finalization");
+
+        assert!(
+            deleted_element.1.heaptids.is_empty(),
+            "pass 1 should clear the last heap tid from a fully dead element",
+        );
+        assert!(
+            deleted_element.1.deleted,
+            "vacuum should finalize a fully dead element once pass 1 strips its last heap tid",
+        );
+
+        let returned =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
+        assert!(
+            !returned.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "graph/runtime scans should skip elements whose heap tid array is empty after pass 1",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 2.0);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_unlinks_deleted_neighbor_refs() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_unlink (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass2_unlink VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_unlink_idx ON tqhnsw_vacuum_pass2_unlink USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_unlink", 2);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_unlink_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_element_tid, _deleted_element) =
+            find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+        assert!(
+            count_neighbor_refs(&neighbors_before, deleted_element_tid) > 0,
+            "fixture should start with at least one persisted neighbor ref to the soon-to-be-deleted node",
+        );
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass2_unlink WHERE id = 2")
+            .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (_metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_, deleted_element_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == deleted_element_tid)
+            .expect("deleted element tuple should remain on disk after vacuum");
+
+        assert!(
+            deleted_element_after.deleted,
+            "vacuum should still finalize the fully dead element after pass-2 repair",
+        );
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "pass 2 should remove every persisted neighbor ref to the deleted element tid",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_layer0_replacement_fills_broken_edges() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_replace (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass2_replace VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.45, -0.9], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.8, 0.2, 0.4, -0.8], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.7, 0.3, 0.35, -0.7], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[0.6, 0.4, 0.3, -0.6], 4, 42)),
+             (6, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.5], 4, 42)),
+             (7, encode_to_tqvector(ARRAY[0.4, 0.6, 0.2, -0.4], 4, 42)),
+             (8, encode_to_tqvector(ARRAY[0.3, 0.7, 0.15, -0.3], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_replace_idx ON tqhnsw_vacuum_pass2_replace USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_replace_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=8)
+                .find_map(|id| {
+                    let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_replace", id);
+                    let (deleted_element_tid, _) =
+                        find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live element should have a persisted neighbor tuple");
+                            let layer0 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                0,
+                            );
+                            layer0.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer0
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable row with a live inbound layer-0 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM tqhnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live element should keep a persisted neighbor tuple");
+            let layer0_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+            let surviving_after = layer0_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "vacuum replacement search should fill at least one broken layer-0 edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_upper_replacement_fills_broken_edges() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_upper_replace (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        for id in 1_i64..=192_i64 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_vacuum_pass2_upper_replace VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_upper_replace_idx ON tqhnsw_vacuum_pass2_upper_replace USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_pass2_upper_replace_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert!(
+            metadata_before.max_level > 0,
+            "fixture should build at least one upper layer before vacuum repair runs",
+        );
+
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=192_i64)
+                .find_map(|id| {
+                    let deleted_heap_tid =
+                        heap_tid_for_row("tqhnsw_vacuum_pass2_upper_replace", id);
+                    let (deleted_element_tid, _) =
+                        find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                                || element.level < 1
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live upper-layer element should have a persisted neighbor tuple");
+                            let layer1 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                1,
+                            );
+                            layer1.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer1
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable row with a live inbound layer-1 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM tqhnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live upper-layer element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live upper-layer element should keep a persisted neighbor tuple");
+            let layer1_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 1);
+            let surviving_after = layer1_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "upper-layer vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "vacuum replacement search should fill at least one broken upper-layer edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass1_repeat VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_repeat_idx ON tqhnsw_vacuum_pass1_repeat USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_repeat", 2);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_repeat_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (_metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_element_tid, _deleted_element) =
+            find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+        assert!(
+            count_neighbor_refs(&neighbors_before, deleted_element_tid) > 0,
+            "fixture should start with at least one persisted neighbor ref to the deleted element",
+        );
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_repeat WHERE id = 2")
+            .expect("delete should succeed");
+
+        let first_stats =
+            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let second_stats =
+            unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+
+        assert_eq!(first_stats.tuples_removed, 1.0);
+        assert_eq!(second_stats.tuples_removed, 0.0);
+        assert_eq!(second_stats.num_index_tuples, first_stats.num_index_tuples);
+        assert_eq!(
+            elements
+                .iter()
+                .filter(|(_, element)| element.heaptids.is_empty() && element.deleted)
+                .count(),
+            1,
+            "the second pass should observe the already-finalized fully dead element without rewriting it again",
+        );
+        assert_eq!(
+            count_neighbor_refs(&neighbors, deleted_element_tid),
+            0,
+            "replaying the same vacuum delete-set should keep the deleted element tid fully unlinked from persisted neighbor tuples",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_finalized_nodes_skip_duplicate_coalesce() {
+        Spi::run("CREATE TABLE tqhnsw_vacuum_reinsert (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+             (1, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_reinsert_idx ON tqhnsw_vacuum_reinsert USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 1);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_reinsert_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_reinsert WHERE id = 1").expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+        )
+        .expect("replacement insert should succeed");
+
+        let replacement_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 2);
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_replacement_tid, replacement_element) =
+            find_element_for_heap_tid(&elements, replacement_heap_tid);
+
+        assert!(
+            !replacement_element.deleted,
+            "duplicate insert should append or coalesce into a live element, not a finalized tombstone",
+        );
+        assert_eq!(replacement_element.heaptids, vec![replacement_heap_tid]);
+        assert_eq!(
+            elements
+                .iter()
+                .filter(|(_, element)| element.deleted)
+                .count(),
+            1,
+            "the finalized vacuum tombstone should remain on disk until page compaction lands",
+        );
+
+        let returned =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
+        assert!(
+            returned.contains(&(
+                replacement_heap_tid.block_number,
+                replacement_heap_tid.offset_number
+            )),
+            "the replacement row should stay reachable after reinserting the same encoded vector",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_scan_result_count_matches_scan_helper() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_result_count_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_result_count_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_result_count_fixture_idx \
+             ON tqhnsw_debug_scan_result_count_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        let rust_count = i32::try_from(unsafe {
+            am::debug_gettuple_scan_heap_tids(index_oid, query.clone()).len()
+        })
+        .expect("scan result count should fit in i32");
+        let sql_count = Spi::get_one::<i32>(
+            "SELECT tests.tqhnsw_debug_scan_result_count(
+                 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+             )",
+        )
+        .expect("debug scan SQL wrapper should succeed")
+        .expect("debug scan SQL wrapper should return a row");
+
+        assert_eq!(
+            sql_count, rust_count,
+            "the SQL-visible debug scan wrapper should exercise the same live tqhnsw scan path",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_reachable_live_count_matches_admin_snapshot() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_reachable_live_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_reachable_live_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_reachable_live_fixture_idx \
+             ON tqhnsw_debug_reachable_live_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_debug_reachable_live_fixture_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let rust_count =
+            i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid).len() })
+                .expect("reachable live element count should fit in i32");
+        let sql_count = Spi::get_one::<i32>(
+            "SELECT tests.tqhnsw_debug_reachable_live_element_count(
+                 'tqhnsw_debug_reachable_live_fixture_idx'::regclass::oid
+             )",
+        )
+        .expect("debug reachability SQL wrapper should succeed")
+        .expect("debug reachability SQL wrapper should return a row");
+        let live_count = Spi::get_one::<i64>(
+            "SELECT total_live_nodes
+             FROM tqhnsw_index_admin_snapshot('tqhnsw_debug_reachable_live_fixture_idx'::regclass)",
+        )
+        .expect("admin snapshot query should succeed")
+        .expect("admin snapshot should return a row");
+
+        assert_eq!(
+            sql_count, rust_count,
+            "the SQL-visible reachability wrapper should match the Rust helper",
+        );
+        assert_eq!(
+            i64::from(sql_count),
+            live_count,
+            "the reachable live element count should match the admin snapshot on a connected fixture",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
         Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -3597,7 +5273,7 @@ mod tests {
             has_prepared_query,
             "non-empty rescans should cache prepared query state for future ordered search"
         );
-        assert_eq!(prepared_lut_len, 32);
+        assert_eq!(prepared_lut_len, 0);
         assert_eq!(prepared_sq_len, 4);
     }
 
@@ -6692,11 +8368,9 @@ mod tests {
                                     .value::<i64>()
                                     .expect("id should decode")
                                     .expect("id should be non-null");
-                                i64::try_from(
-                                    *id_to_row_index.get(&id).expect(
-                                        "exact quantized id should map back to a corpus row index",
-                                    ),
-                                )
+                                i64::try_from(*id_to_row_index.get(&id).expect(
+                                    "exact quantized id should map back to a corpus row index",
+                                ))
                                 .expect("row index should fit into bigint")
                             })
                             .collect::<Vec<_>>()
@@ -6747,10 +8421,7 @@ mod tests {
         }
     }
 
-    fn spearman_rank_correlation_external(
-        true_top_k: &[(usize, f32)],
-        pred_ids: &[i64],
-    ) -> f32 {
+    fn spearman_rank_correlation_external(true_top_k: &[(usize, f32)], pred_ids: &[i64]) -> f32 {
         let n = true_top_k.len().min(pred_ids.len());
         if n < 2 {
             return 0.0;
@@ -6812,18 +8483,17 @@ mod tests {
             .zip(exact_quantized_row_indices_top10.iter())
         {
             // Graph scan: returns heap tids plus operator-facing `<#>` scores.
-            let predicted_row_indices_with_scores: Vec<(usize, f32)> = unsafe {
-                am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone())
-            }
-            .into_iter()
-            .map(|(heap_tid, operator_score)| {
-                let row_index = *context
-                    .ctid_to_row_index
-                    .get(&heap_tid)
-                    .expect("graph heap tid should map back to a corpus row index");
-                (row_index, operator_score)
-            })
-            .collect();
+            let predicted_row_indices_with_scores: Vec<(usize, f32)> =
+                unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) }
+                    .into_iter()
+                    .map(|(heap_tid, operator_score)| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        (row_index, operator_score)
+                    })
+                    .collect();
             let predicted_row_indices: Vec<i64> = predicted_row_indices_with_scores
                 .iter()
                 .map(|(row_index, _)| {
@@ -6837,10 +8507,12 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
-            let predicted_top_10_ids: Vec<i64> =
-                predicted_row_indices.iter().take(RECALL_K).copied().collect();
-            let graph_overlap_10 =
-                recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
+            let predicted_top_10_ids: Vec<i64> = predicted_row_indices
+                .iter()
+                .take(RECALL_K)
+                .copied()
+                .collect();
+            let graph_overlap_10 = recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
             graph_top_10_hits += graph_overlap_10;
 
             // Top-100 graph recall vs the wider truth band.
@@ -6880,8 +8552,7 @@ mod tests {
                 .take(RECALL_K)
                 .map(|(row_index, operator_score)| {
                     let approx_inner_product = -*operator_score;
-                    let true_inner_product =
-                        dot_product(query, &context.corpus[*row_index]);
+                    let true_inner_product = dot_product(query, &context.corpus[*row_index]);
                     (approx_inner_product - true_inner_product).abs()
                 })
                 .collect();
@@ -6938,27 +8609,33 @@ mod tests {
             .expect("setting ef_search should succeed");
 
         let mut graph_top_10_hits = 0_i32;
-        for (query, truth) in context.queries.iter().zip(context.ground_truth_top_k.iter()) {
-            let predicted_row_indices: Vec<i64> = unsafe {
-                am::debug_gettuple_scan_heap_tids(index_oid, query.clone())
-            }
-            .into_iter()
-            .map(|heap_tid| {
-                let row_index = *context
-                    .ctid_to_row_index
-                    .get(&heap_tid)
-                    .expect("graph heap tid should map back to a corpus row index");
-                i64::try_from(row_index).expect("row index should fit into bigint")
-            })
-            .collect();
+        for (query, truth) in context
+            .queries
+            .iter()
+            .zip(context.ground_truth_top_k.iter())
+        {
+            let predicted_row_indices: Vec<i64> =
+                unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query.clone()) }
+                    .into_iter()
+                    .map(|heap_tid| {
+                        let row_index = *context
+                            .ctid_to_row_index
+                            .get(&heap_tid)
+                            .expect("graph heap tid should map back to a corpus row index");
+                        i64::try_from(row_index).expect("row index should fit into bigint")
+                    })
+                    .collect();
 
             let truth_top_10_ids: Vec<i64> = truth
                 .iter()
                 .take(RECALL_K)
                 .map(|(idx, _)| *idx as i64)
                 .collect();
-            let predicted_top_10_ids: Vec<i64> =
-                predicted_row_indices.iter().take(RECALL_K).copied().collect();
+            let predicted_top_10_ids: Vec<i64> = predicted_row_indices
+                .iter()
+                .take(RECALL_K)
+                .copied()
+                .collect();
             graph_top_10_hits += recall_top_k_overlap(&truth_top_10_ids, &predicted_top_10_ids);
         }
 
@@ -6987,8 +8664,7 @@ mod tests {
             ef_search,
         );
         let measured_recall_at_10 = summary.4;
-        let absolute_delta =
-            measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
+        let absolute_delta = measured_recall_at_10 - ANN_BENCHMARKS_ANCHOR_PUBLISHED_RECALL_AT_10;
         let within_two_percent = absolute_delta.abs() <= ANN_BENCHMARKS_ANCHOR_TOLERANCE;
         (
             m,
@@ -7109,10 +8785,7 @@ mod tests {
             .map(|ef_search| {
                 let started = Instant::now();
                 let summary = probe_graph_scan_recall_external_summary_for_context(
-                    context,
-                    index_name,
-                    m,
-                    ef_search,
+                    context, index_name, m, ef_search,
                 );
                 let elapsed = started.elapsed();
                 let mean_query_latency_ms = if query_count > 0 {
@@ -7872,12 +9545,8 @@ mod tests {
         )
         .expect("reachable unique oracle seed ids should fit");
         let mut frequent_oracle_seeds = oracle_seed_frequency.into_iter().collect::<Vec<_>>();
-        frequent_oracle_seeds.sort_by(|left, right| {
-            right
-                .1
-                .cmp(&left.1)
-                .then_with(|| left.0.cmp(&right.0))
-        });
+        frequent_oracle_seeds
+            .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
         frequent_oracle_seeds.truncate(seed_count.max(10));
         let (top_seed_ids, top_seed_query_counts): (Vec<_>, Vec<_>) =
             frequent_oracle_seeds.into_iter().unzip();
@@ -9003,8 +10672,7 @@ mod tests {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
 
-        let (_block_count, metadata, data_pages) =
-            unsafe { am::debug_index_pages(index_oid) };
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let m = metadata.m as usize;
         let code_len = code_len(metadata.dimensions as usize, metadata.bits);
 
@@ -9012,20 +10680,23 @@ mod tests {
         let neighbor_map: HashMap<am::page::ItemPointer, am::page::TqNeighborTuple> = data_pages
             .iter()
             .flat_map(|page| {
-                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
-                    if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
-                        Some((
-                            am::page::ItemPointer {
-                                block_number: page.block_number,
-                                offset_number: (idx + 1) as u16,
-                            },
-                            am::page::TqNeighborTuple::decode(tuple)
-                                .expect("neighbor tuple should decode"),
-                        ))
-                    } else {
-                        None
-                    }
-                })
+                page.tuples
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(idx, tuple)| {
+                        if tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG) {
+                            Some((
+                                am::page::ItemPointer {
+                                    block_number: page.block_number,
+                                    offset_number: (idx + 1) as u16,
+                                },
+                                am::page::TqNeighborTuple::decode(tuple)
+                                    .expect("neighbor tuple should decode"),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect();
 
@@ -9094,11 +10765,7 @@ mod tests {
                 } else {
                     0.0
                 };
-                let expected_max = if level == 0 {
-                    (m * 2) as i32
-                } else {
-                    m as i32
-                };
+                let expected_max = if level == 0 { (m * 2) as i32 } else { m as i32 };
                 (
                     i32::from(level),
                     stats.node_count as i32,
@@ -9112,6 +10779,31 @@ mod tests {
         rows.sort_by_key(|(level, _, _, _, _, _)| *level);
 
         TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    fn tqhnsw_debug_scan_result_count(index_oid: pg_sys::Oid, query: Vec<f32>) -> i32 {
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_result_count") };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        i32::try_from(unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }.len())
+            .expect("debug scan result count should fit in i32")
+    }
+
+    #[pg_extern]
+    fn tqhnsw_debug_reachable_live_element_count(index_oid: pg_sys::Oid) -> i32 {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_reachable_live_element_count")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid) }.len())
+            .expect("debug reachable live element count should fit in i32")
     }
 
     #[pg_test]
@@ -9362,11 +11054,7 @@ mod tests {
 
         // Gate report wrapper: covers all four NFR-003 A4 configurations
         // against the m=8 and m=16 indexes built by the smoke fixture.
-        let gate = run_graph_scan_recall_gate_from_external(
-            &corpus_table,
-            &queries_table,
-            prefix,
-        );
+        let gate = run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, prefix);
         assert_eq!(
             gate.len(),
             RECALL_GATE_CONFIGS.len(),
@@ -9422,8 +11110,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_hnsw_rs_source_graph_recall_clustered_10k() {
-        let corpus = random_clustered_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, 50, 0.3, RECALL_SEED as u64);
-        let queries = random_clustered_vectors(20, RECALL_DIM, 50, 0.3, (RECALL_SEED as u64) + 500_000);
+        let corpus =
+            random_clustered_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, 50, 0.3, RECALL_SEED as u64);
+        let queries =
+            random_clustered_vectors(20, RECALL_DIM, 50, 0.3, (RECALL_SEED as u64) + 500_000);
         let ef_search = 128_usize;
 
         let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 8, ef_search);

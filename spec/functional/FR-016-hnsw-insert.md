@@ -19,7 +19,7 @@ All insert behavior SHALL be relation-local. On partitioned tables, a partition 
 
 ### `aminsert` — Single Row Insert (Page-Level)
 
-Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only.
+Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only for graph construction. Bulk build and live insert both use the symmetric MSE-only code scorer, while ordered scan still uses the gamma-aware raw-query scorer defined by ADR-007.
 
 `build_source_column` note:
 - `build_source_column` is a bulk-build-only reloption in v0.1.
@@ -134,11 +134,17 @@ sequenceDiagram
 - Recall targets in NFR-003 apply to freshly bulk-built indexes. A separate benchmark profile SHALL measure recall drift after incremental inserts.
 
 Current staged behavior:
-- A read-only SQL/admin snapshot surface MAY expose total live node count, planner tuning state,
-  and an explicit `NULL` / unavailable `inserted_since_rebuild` field before live insert drift
-  accounting is implemented.
-- Until drift accounting exists, that surface is preparatory scaffolding rather than full
-  satisfaction of FR-016-AC-4.
+- `tqhnsw_index_admin_snapshot(regclass)` now exposes total live node count,
+  `inserted_since_rebuild`, derived `insert_drift_fraction`, effective `ef_search`, and the
+  current planner-gate state for a `tqhnsw` index.
+- That snapshot now satisfies the observability portion of FR-016-AC-4.
+- Bulk build and live insert now explicitly share the same construction metric:
+  `score_code_inner_product` over compressed codes only. This keeps graph construction
+  consistent between `CREATE INDEX` and `aminsert` while remaining intentionally lower
+  fidelity than the gamma-aware raw-query scan scorer.
+- Full-slice backlink rewrites now retry through bounded read-only replanning when the live layer
+  drifts before the page rewrite, keeping metadata-last lock ordering intact while avoiding
+  silent skip-on-drift behavior.
 
 #### Layer Assignment
 
@@ -154,6 +160,11 @@ Every page modification in aminsert SHALL be wrapped in GenericXLogStart/Generic
 
 ### FR-016-AC-3: No deadlock under concurrent insert
 Concurrent inserts SHALL not deadlock when page locks are acquired in the protocol defined by FR-007.
+
+Current validation note:
+- `main` now closes the lock-ordering and stale-plan retry portion of this requirement for the
+  live insert path. Explicit multi-writer contention benchmarking remains deferred to a later
+  runtime follow-up, so A5 should not be read as a throughput proof.
 
 ### FR-016-AC-4: Recall drift is measurable
 The implementation SHALL expose queryable statistics that identify total live nodes and nodes inserted since the last bulk build or REINDEX, so recall drift checkpoints can be measured as incremental inserts accumulate after bulk build.

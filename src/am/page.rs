@@ -12,7 +12,7 @@ pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
 pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-const METADATA_BYTES: usize = 2 + 2 + 4 + 2 + 2 + 1 + 1 + 8;
+const METADATA_BYTES: usize = 2 + 2 + ITEM_POINTER_BYTES + 2 + 1 + 1 + 8 + 8;
 
 const fn align_up(value: usize, alignment: usize) -> usize {
     let remainder = value % alignment;
@@ -66,6 +66,7 @@ pub struct MetadataPage {
     pub bits: u8,
     pub max_level: u8,
     pub seed: u64,
+    pub inserted_since_rebuild: u64,
 }
 
 impl MetadataPage {
@@ -78,6 +79,7 @@ impl MetadataPage {
         out.push(self.bits);
         out.push(self.max_level);
         out.extend_from_slice(&self.seed.to_le_bytes());
+        out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());
         out
     }
 
@@ -99,6 +101,11 @@ impl MetadataPage {
             bits: input[12],
             max_level: input[13],
             seed: u64::from_le_bytes(input[14..22].try_into().expect("seed bytes")),
+            inserted_since_rebuild: u64::from_le_bytes(
+                input[22..30]
+                    .try_into()
+                    .expect("inserted-since-rebuild bytes"),
+            ),
         })
     }
 
@@ -624,6 +631,7 @@ mod tests {
             bits: 4,
             max_level: 5,
             seed: 42,
+            inserted_since_rebuild: 7,
         };
         let encoded = metadata.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();
@@ -640,6 +648,7 @@ mod tests {
             bits: 4,
             max_level: 5,
             seed: 42,
+            inserted_since_rebuild: 7,
         };
 
         let page = metadata.encode_page(DEFAULT_PAGE_SIZE).unwrap();
@@ -797,6 +806,7 @@ mod tests {
             bits: 4,
             max_level: 3,
             seed: 42,
+            inserted_since_rebuild: 5,
         };
         let encoded = meta.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();

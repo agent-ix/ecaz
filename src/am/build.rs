@@ -148,6 +148,7 @@ impl BuildState {
             bits: 0,
             max_level: 0,
             seed: 0,
+            inserted_since_rebuild: 0,
         }
     }
 
@@ -605,6 +606,7 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
                 bits,
                 max_level,
                 seed: state.seed.expect("non-empty build should record seed"),
+                inserted_since_rebuild: 0,
             },
         )
     };

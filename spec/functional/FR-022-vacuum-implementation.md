@@ -135,6 +135,19 @@ For each element in `delete_set`:
 
 Graph repair is optional for correctness — deleted nodes are already skipped by scan (FR-009 checks `element.deleted`). However, repair improves recall by maintaining graph connectivity.
 
+Current implementation note:
+- `main` now implements the unlink half of pass 2: persisted neighbor tuples are scanned and any
+  slot pointing at a fully-dead element TID is cleared one page at a time.
+- `main` now also fills currently free slots on affected live nodes across layer 0 and upper
+  layers by reusing the insert-time graph search helpers plus a linear top-up fallback, all with
+  the same code-to-code scorer.
+- `main` now also carries `scripts/vacuum_concurrency_scratch.sh`, a 60-second scratch-cluster
+  harness with concurrent INSERT, tqhnsw graph scan, and VACUUM workers that exercises the live
+  `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper, then runs one
+  final post-quiesce `VACUUM (ANALYZE)` and checks that the live index's reachable live-element
+  count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final table
+  data.
+
 ### Pass 3 — Finalize
 
 For each element in `delete_set`:
@@ -154,10 +167,11 @@ After `ambulkdelete`, `amvacuumcleanup` SHALL:
 
 ### Concurrency
 
-- Vacuum acquires `BUFFER_LOCK_SHARE` during Pass 1 scan and `BUFFER_LOCK_EXCLUSIVE` only for page writes
+- Vacuum acquires `BUFFER_LOCK_SHARE` during scan phases and `BUFFER_LOCK_EXCLUSIVE` only for page writes
 - Concurrent inserts to other pages are not blocked
 - Concurrent scans see consistent results: a scan that started before vacuum sees the pre-vacuum state (MVCC through buffer locking)
 - All page writes use GenericXLog for crash safety
+- Pass 2 graph repair follows ADR-027: scan in ascending block order, rewrite one data page at a time, and keep replanning outside data-page `EXCLUSIVE` locks
 
 ### Page Compaction (Future)
 

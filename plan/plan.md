@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-10 (A4 closed on `main` using canonical real-corpus evidence; canonical real `10K` passes strongly and broader real `50K` gate slices also pass comfortably).
+Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is complete, and A6 vacuum repair is complete with concurrency validation on `main`).
 
 ## Current Task Board
 
@@ -12,8 +12,8 @@ Last updated: 2026-04-10 (A4 closed on `main` using canonical real-corpus eviden
 - `A2` graph/search traversal seam: **done** (search seam extraction complete)
 - `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
 - `A4` recall gate: **done**
-- `A5` graph-aware insert: next runtime focus
-- `A6` vacuum repair: follows A5
+- `A5` graph-aware insert: **done**
+- `A6` vacuum repair: **done**
 
 ### Parallel lanes
 
@@ -26,7 +26,7 @@ Last updated: 2026-04-10 (A4 closed on `main` using canonical real-corpus eviden
 ### Current sequencing
 
 1. **Coder-1:** A4 is closed. The real-corpus lane on `main` now carries the trusted signoff surface: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
-2. **Current immediate runtime lane:** A5 graph-aware insert.
+2. **Current immediate runtime lane:** A6 is closed on `main`. The runtime lane can now move to post-vacuum benchmark/reporting work under `C1`, while D2 planner activation remains intentionally sequenced behind ADR-011 retirement.
 3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch; merge timing is now a normal integration decision rather than an A4 blocker.
 4. After A5/A6, run the broader SQL benchmark/reporting arc under `C1`.
 5. D2 planner activation remains intentionally sequenced behind ADR-011 retirement and the post-A4 runtime priorities.
@@ -50,13 +50,13 @@ Last updated: 2026-04-10 (A4 closed on `main` using canonical real-corpus eviden
 - [x] **FR-007**: HNSW page layout and tuple/page invariants.
 - [x] **FR-008**: HNSW bulk build callbacks.
 - [x] **FR-009**: HNSW scan callbacks and `ef_search` behavior.
-- [ ] **FR-010**: HNSW vacuum callbacks.
+- [x] **FR-010**: HNSW vacuum callbacks.
 - [x] **FR-011**: WAL safety via GenericXLog.
 - [x] **FR-012**: SQL bootstrap and extension packaging.
 - [x] **FR-013**: Two-stage quantization pipeline.
 - [ ] **FR-014**: SIMD acceleration with scalar fallback.
 - [x] **FR-015**: `ProdQuantizer` orchestrator and core encode/decode/score APIs.
-- [ ] **FR-016**: HNSW online insert callbacks and insert-drift statistics.
+- [x] **FR-016**: HNSW online insert callbacks and insert-drift statistics.
 - [x] **FR-017**: Prepared-query inner product function.
 - [x] **FR-018**: Negative score wrapper functions.
 - [ ] **FR-019**: Async I/O via PG18 `read_stream` API.
@@ -155,9 +155,11 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 
 ### Current State Summary
 
-The extension is ~75% complete. Quantizer, type, scoring, page layout, build, graph-first scan,
-and the initial recall gate are all complete on `main`.
-The next runtime-critical gaps are FR-016 graph-aware insert and FR-010 vacuum repair.
+The extension is ~80% complete. Quantizer, type, scoring, page layout, build, graph-first scan,
+the initial recall gate, and graph-aware insert are all complete on `main`.
+The next runtime-critical gaps are no longer vacuum correctness. A6 is closed on `main`, so the
+remaining major runtime work shifts to benchmark/reporting follow-through and later planner
+activation sequencing.
 Planner/config groundwork is substantially complete on `main`: the pure cost model, callback
 scaffolding, and `ef_search` control-surface wiring are merged, while planner-visible scans remain
 intentionally disabled behind ADR-011. With A4 closed, planner activation is no longer blocked on
@@ -296,7 +298,7 @@ All items are serial because each depends on the previous.
 - **Exit criteria:** Inserted rows are reachable via HNSW scan. No deadlock under concurrent insert. Drift counter is queryable.
 
 #### A6: Vacuum Three-Pass (FR-010)
-- **Scope:** Implement ambulkdelete with mark/repair/finalize passes. Graph repair uses A2 traversal to find replacement neighbors. amvacuumcleanup updates pg_class stats.
+- **Scope:** Implement ambulkdelete with mark/repair/finalize passes. Graph repair uses A2 traversal to find replacement neighbors. The current landed slice repairs broken edges across all persisted layers while keeping the write phase fill-only. amvacuumcleanup updates pg_class stats.
 - **Owns:** FR-010 completion
 - **Estimated new code:** ~400-600 lines
 - **Difficulty:** Hard — graph repair while maintaining connectivity is the hardest correctness problem

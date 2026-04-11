@@ -97,7 +97,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-130 | Multi-PG-version support | FR-012-AC-3 | `cargo pgrx test pg14`, pg15, pg16, pg17 all pass |
 | TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
-| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read exposed metadata or stats view, assert total_live_nodes and inserted_since_rebuild are present and consistent after inserts |
+| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read `tqhnsw_index_admin_snapshot(regclass)`, assert `total_live_nodes`, `inserted_since_rebuild`, and `insert_drift_fraction` stay consistent after inserts and duplicate coalescing |
 | TC-142 | Planner integration snapshot exposes cross-lane blockers | FR-009, FR-020 | Read `tqhnsw_planner_integration_snapshot(regclass)`, assert modeled planner-cost readiness is true while planner activation, ordered scan readiness, and PG18 readiness remain false with explicit blocker strings |
 | TC-137 | Pure planner cost model stays gated behind ADR-011 | FR-020, FR-009 | Unit-test `estimate_planner_cost(...)` crossover and edge cases while `amcostestimate` still returns prohibitive costs |
 | TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `tqhnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, tuning/metadata inputs are explicit, and tree-height sourcing is reported as metadata fallback until PG18 callback wiring exists |
@@ -219,7 +219,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-212 | Small table serial fallback | FR-021-AC-5 | 100-row table build does not launch workers |
 | TC-213 | Vacuum removes dead heap TIDs | FR-022-AC-1, FR-022-AC-2 | DELETE + VACUUM + search, verify deleted row absent |
 | TC-214 | Vacuum maintains graph connectivity | FR-022-AC-3 | Delete 10%, VACUUM, measure recall ≥ 80% of pre-vacuum |
-| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | Run VACUUM + INSERT + SELECT concurrently for 60s, no errors |
+| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + tqhnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final table data |
 | TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
 | TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
 | TC-218 | EXPLAIN (tqvector) recognized | FR-024-AC-1 | `EXPLAIN (tqvector) SELECT ...` parses without error |

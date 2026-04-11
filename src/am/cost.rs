@@ -4,6 +4,9 @@ use pgrx::pg_sys;
 pub(crate) struct PlannerCostInputs {
     pub index_pages: f64,
     pub reltuples: f64,
+    // Reserved for future calibration work; the current FR-020 model does not
+    // read `m`, but we keep it in the input surface so later adjustments do
+    // not need to reshape every call site.
     pub m: i32,
     pub ef_search: i32,
     pub dimensions: u16,

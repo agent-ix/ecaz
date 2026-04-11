@@ -360,7 +360,7 @@ fn valid_neighbor_tids_for_layer(
         .collect()
 }
 
-fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
+pub(crate) fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
     if layer > element_level {
         return None;
     }
