@@ -12,7 +12,7 @@ registers, the comparison is `f32` magnitude, and the loop trip count
 is a constant the compiler could fully unroll if the codebook size
 were exposed.
 Priority: batch 3
-Status: ready
+Status: done
 
 ## Prompt
 
