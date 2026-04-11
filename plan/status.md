@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-11
-Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, and A6 now lands vacuum mark, dead-edge unlink, layer-0 replacement fill, and finalize behavior
+Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, and A6 now lands vacuum mark, dead-edge unlink, layer-aware replacement fill, and finalize behavior
 
 ## Reading Guide
 
@@ -30,7 +30,7 @@ Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, A5 gra
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
 | `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Done** | 100% | Closed on 2026-04-10: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`) |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | **Done** | 100% | Insert search, forward links, backlinks, overflow pruning, drift accounting, and bounded stale-snapshot retry hardening are merged on `main` |
-| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | In progress | 70% | Mark, dead-edge unlink, layer-0 replacement fill, and finalize are merged on `main`; upper-layer repair plus concurrency validation remain |
+| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | In progress | 85% | Mark, dead-edge unlink, layer-aware replacement fill, and finalize are merged on `main`; concurrency validation remains |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are now mainly blocked on `A6` and the post-vacuum benchmark lane |
@@ -77,7 +77,7 @@ Insert path rollup: 88%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Vacuum callback scaffold | Vacuum module split and base callback structure | Strong | 88% | Callback-driven mark/unlink/finalize behavior is now live |
-| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Partial | 70% | Mark, dead-edge unlink, layer-0 replacement fill, and finalize landed; upper-layer replacement still remains |
+| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Strong | 85% | Mark, dead-edge unlink, layer-aware replacement fill, and finalize landed; concurrency validation still remains |
 | Stats cleanup integration | `amvacuumcleanup` and stats alignment | Partial | 55% | Live-element counts now flow through cleanup; pg_class-facing proof still remains |
 
 Vacuum / repair rollup: 20%
@@ -155,7 +155,7 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** Continue A6 from the landed layer-0 replacement slice into upper-layer repair and concurrency validation.
+2. **Next runtime lane:** Continue A6 from the landed layer-aware replacement slice into concurrency validation.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
@@ -166,6 +166,6 @@ Release / quality-gate rollup: 62%
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
 | Synthetic `10K` still fails badly and remains misleading as a benchmark surface | `C1`, post-gate methodology work | Benchmark methodology lane |
-| Vacuum upper-layer repair and concurrency validation are not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
+| Vacuum concurrency validation is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
 | ADR-011 planner gate is still active | `D2` | Planner lane after A4 |
 | aarch64 SIMD runtime validation still needs hardware | `B1` | Coder-2 / validation lane |

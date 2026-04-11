@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is complete, and A6 now lands vacuum mark/unlink/layer-0-replacement/finalize behavior).
+Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is complete, and A6 now lands vacuum mark/unlink/layer-aware-replacement/finalize behavior).
 
 ## Current Task Board
 
@@ -26,7 +26,7 @@ Last updated: 2026-04-11 (A4 is closed on `main`, A5 graph-aware insert is compl
 ### Current sequencing
 
 1. **Coder-1:** A4 is closed. The real-corpus lane on `main` now carries the trusted signoff surface: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
-2. **Current immediate runtime lane:** A6 vacuum repair, starting from the landed layer-0 replacement checkpoint and continuing into upper-layer repair plus concurrency validation.
+2. **Current immediate runtime lane:** A6 vacuum repair, starting from the landed layer-aware replacement checkpoint and continuing into concurrency validation.
 3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch; merge timing is now a normal integration decision rather than an A4 blocker.
 4. After A5/A6, run the broader SQL benchmark/reporting arc under `C1`.
 5. D2 planner activation remains intentionally sequenced behind ADR-011 retirement and the post-A4 runtime priorities.
@@ -296,7 +296,7 @@ All items are serial because each depends on the previous.
 - **Exit criteria:** Inserted rows are reachable via HNSW scan. No deadlock under concurrent insert. Drift counter is queryable.
 
 #### A6: Vacuum Three-Pass (FR-010)
-- **Scope:** Implement ambulkdelete with mark/repair/finalize passes. Graph repair uses A2 traversal to find replacement neighbors. The current landed slice repairs dead layer-0 edges; upper-layer replacement still remains. amvacuumcleanup updates pg_class stats.
+- **Scope:** Implement ambulkdelete with mark/repair/finalize passes. Graph repair uses A2 traversal to find replacement neighbors. The current landed slice repairs broken edges across all persisted layers while keeping the write phase fill-only. amvacuumcleanup updates pg_class stats.
 - **Owns:** FR-010 completion
 - **Estimated new code:** ~400-600 lines
 - **Difficulty:** Hard — graph repair while maintaining connectivity is the hardest correctness problem

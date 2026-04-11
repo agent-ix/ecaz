@@ -21,14 +21,16 @@ struct NeighborVacuumUpdate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Layer0RepairRequest {
+struct LayerRepairRequest {
     source_tid: page::ItemPointer,
     neighbor_tid: page::ItemPointer,
+    layer: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Layer0RepairPlan {
+struct LayerRepairPlan {
     neighbor_tid: page::ItemPointer,
+    layer: u8,
     replacement_tids: Vec<page::ItemPointer>,
 }
 
@@ -40,6 +42,19 @@ struct LinearRepairPlanner<'a> {
     source_code: &'a [u8],
     deleted_tids: &'a HashSet<page::ItemPointer>,
     existing_set: &'a HashSet<page::ItemPointer>,
+    layer: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RepairSearchPlanner<'a> {
+    metadata: &'a page::MetadataPage,
+    code_len: usize,
+    source: &'a graph::GraphElement,
+    layer: u8,
+    deleted_tids: &'a HashSet<page::ItemPointer>,
+    existing_layer: &'a [page::ItemPointer],
+    existing_set: &'a HashSet<page::ItemPointer>,
+    target_len: usize,
 }
 
 #[derive(Debug, Default)]
@@ -323,28 +338,21 @@ unsafe fn repair_graph_connections(
         .checked_sub(4)
         .expect("payload length should include gamma");
     let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
-    let repair_requests = unsafe {
-        collect_layer0_repair_requests(index_relation, code_len, metadata.m, &deleted_tids)
-    };
+    let repair_requests =
+        unsafe { collect_repair_requests(index_relation, code_len, metadata.m, &deleted_tids) };
     unsafe { unlink_deleted_graph_connections(index_relation, &deleted_tids) };
     let repair_plans = unsafe {
-        plan_layer0_repair_replacements(
-            index_relation,
-            &metadata,
-            code_len,
-            &deleted_tids,
-            &repair_requests,
-        )
+        plan_repair_replacements(index_relation, &metadata, code_len, &deleted_tids, &repair_requests)
     };
-    unsafe { apply_layer0_repair_plans(index_relation, metadata.m, &deleted_tids, &repair_plans) };
+    unsafe { apply_repair_plans(index_relation, metadata.m, &deleted_tids, &repair_plans) };
 }
 
-unsafe fn collect_layer0_repair_requests(
+unsafe fn collect_repair_requests(
     index_relation: pg_sys::Relation,
     code_len: usize,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
-) -> Vec<Layer0RepairRequest> {
+) -> Vec<LayerRepairRequest> {
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -368,7 +376,7 @@ unsafe fn collect_layer0_repair_requests(
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         unsafe {
-            collect_layer0_repair_requests_on_page(
+            collect_repair_requests_on_page(
                 index_relation,
                 page_ptr,
                 page_size,
@@ -384,13 +392,14 @@ unsafe fn collect_layer0_repair_requests(
 
     requests.sort_unstable_by(|left, right| {
         compare_item_pointers(&left.neighbor_tid, &right.neighbor_tid)
+            .then_with(|| left.layer.cmp(&right.layer))
             .then_with(|| compare_item_pointers(&left.source_tid, &right.source_tid))
     });
     requests.dedup();
     requests
 }
 
-unsafe fn collect_layer0_repair_requests_on_page(
+unsafe fn collect_repair_requests_on_page(
     index_relation: pg_sys::Relation,
     page_ptr: *mut u8,
     page_size: usize,
@@ -398,7 +407,7 @@ unsafe fn collect_layer0_repair_requests_on_page(
     code_len: usize,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
-    requests: &mut Vec<Layer0RepairRequest>,
+    requests: &mut Vec<LayerRepairRequest>,
 ) {
     let line_pointer_count = shared::page_line_pointer_count(page_ptr);
 
@@ -433,26 +442,38 @@ unsafe fn collect_layer0_repair_requests_on_page(
         }
 
         let neighbors = unsafe { graph::load_graph_neighbors(index_relation, element.neighbortid) };
-        if layer0_slice_contains_deleted_ref(&neighbors.tids, m, deleted_tids) {
-            requests.push(Layer0RepairRequest {
-                source_tid: page::ItemPointer {
-                    block_number,
-                    offset_number: offset,
-                },
-                neighbor_tid: element.neighbortid,
-            });
+        let source_tid = page::ItemPointer {
+            block_number,
+            offset_number: offset,
+        };
+        for layer in 0..=element.level {
+            if layer_slice_contains_deleted_ref(&neighbors.tids, element.level, m, layer, deleted_tids)
+            {
+                requests.push(LayerRepairRequest {
+                    source_tid,
+                    neighbor_tid: element.neighbortid,
+                    layer,
+                });
+            }
         }
     }
 }
 
-fn layer0_slice_contains_deleted_ref(
+fn layer_slice_contains_deleted_ref(
     neighbor_tids: &[page::ItemPointer],
+    element_level: u8,
     m: u16,
+    layer: u8,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) -> bool {
+    let Some((start, end)) = repair_slot_bounds(element_level, usize::from(m), layer) else {
+        return false;
+    };
+
     neighbor_tids
         .iter()
-        .take(layer0_slot_end(m, neighbor_tids.len()))
+        .skip(start)
+        .take(end.saturating_sub(start))
         .any(|tid| deleted_tids.contains(tid))
 }
 
@@ -506,51 +527,50 @@ unsafe fn unlink_deleted_graph_connections(
     }
 }
 
-unsafe fn plan_layer0_repair_replacements(
+unsafe fn plan_repair_replacements(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     code_len: usize,
     deleted_tids: &HashSet<page::ItemPointer>,
-    requests: &[Layer0RepairRequest],
-) -> Vec<Layer0RepairPlan> {
+    requests: &[LayerRepairRequest],
+) -> Vec<LayerRepairPlan> {
     let mut plans = requests
         .iter()
         .filter_map(|request| unsafe {
-            plan_layer0_repair_replacement(
-                index_relation,
-                metadata,
-                code_len,
-                deleted_tids,
-                request,
-            )
+            plan_repair_replacement(index_relation, metadata, code_len, deleted_tids, request)
         })
         .collect::<Vec<_>>();
     plans.sort_unstable_by(|left, right| {
         compare_item_pointers(&left.neighbor_tid, &right.neighbor_tid)
+            .then_with(|| left.layer.cmp(&right.layer))
     });
     plans
 }
 
-unsafe fn plan_layer0_repair_replacement(
+unsafe fn plan_repair_replacement(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     code_len: usize,
     deleted_tids: &HashSet<page::ItemPointer>,
-    request: &Layer0RepairRequest,
-) -> Option<Layer0RepairPlan> {
+    request: &LayerRepairRequest,
+) -> Option<LayerRepairPlan> {
     let source = unsafe { graph::load_graph_element(index_relation, request.source_tid, code_len) };
-    if source.deleted || source.heaptids.is_empty() || source.neighbortid != request.neighbor_tid {
+    if source.deleted
+        || source.heaptids.is_empty()
+        || source.neighbortid != request.neighbor_tid
+        || request.layer > source.level
+    {
         return None;
     }
 
     let neighbors = unsafe { graph::load_graph_neighbors(index_relation, source.neighbortid) };
-    let layer0_end = layer0_slot_end(metadata.m, neighbors.tids.len());
-    if layer0_end == 0 {
-        return None;
-    }
+    let (start, end) = repair_slot_bounds(source.level, usize::from(metadata.m), request.layer)?;
 
-    let layer0_slice = &neighbors.tids[..layer0_end];
-    let free_slots = layer0_slice
+    let layer_slice = neighbors
+        .tids
+        .get(start..end)
+        .expect("repair slot bounds should fit within persisted neighbor tuples");
+    let free_slots = layer_slice
         .iter()
         .filter(|tid| **tid == page::ItemPointer::INVALID)
         .count();
@@ -558,59 +578,23 @@ unsafe fn plan_layer0_repair_replacement(
         return None;
     }
 
-    let existing_layer0 = layer0_slice
+    let existing_layer = layer_slice
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID && !deleted_tids.contains(tid))
         .collect::<Vec<_>>();
-    let existing_set = existing_layer0.iter().copied().collect::<HashSet<_>>();
-    let mut seeds = Vec::new();
-
-    if let Some(entry_candidate) =
-        unsafe { load_vacuum_entry_candidate(index_relation, metadata, &source.code) }
-    {
-        seeds.push(unsafe {
-            graph::greedy_descend_from_entry(
-                index_relation,
-                code_len,
-                usize::from(metadata.m),
-                entry_candidate,
-                |neighbor| score_vacuum_graph_element(metadata, &source.code, neighbor),
-            )
-        });
-    }
-
-    seeds.extend(existing_layer0.iter().filter_map(|tid| unsafe {
-        let element = graph::load_graph_element(index_relation, *tid, code_len);
-        score_vacuum_graph_element(metadata, &source.code, &element)
-            .map(|score| search::BeamCandidate::new(*tid, score))
-    }));
-    dedup_beam_candidates_by_tid(&mut seeds);
-    if seeds.is_empty() {
-        return None;
-    }
-
-    let replacements = unsafe {
-        graph::search_layer0_result_candidates(
-            index_relation,
-            code_len,
-            usize::from(metadata.m),
-            repair_ef_construction(metadata),
-            seeds,
-            |neighbor_tid| neighbor_tid != source.tid && !deleted_tids.contains(&neighbor_tid),
-            |neighbor| score_vacuum_graph_element(metadata, &source.code, neighbor),
-        )
-    }
-    .into_iter()
-    .map(|candidate| candidate.node)
-    .filter(|tid| {
-        *tid != source.tid
-            && *tid != page::ItemPointer::INVALID
-            && !existing_set.contains(tid)
-            && !deleted_tids.contains(tid)
-    })
-    .take(free_slots)
-    .collect::<Vec<_>>();
+    let existing_set = existing_layer.iter().copied().collect::<HashSet<_>>();
+    let planner = RepairSearchPlanner {
+        metadata,
+        code_len,
+        source: &source,
+        layer: request.layer,
+        deleted_tids,
+        existing_layer: &existing_layer,
+        existing_set: &existing_set,
+        target_len: free_slots,
+    };
+    let replacements = unsafe { search_repair_candidates_for_layer(index_relation, &planner) };
     let mut replacements = replacements;
     if replacements.len() < free_slots {
         let linear_planner = LinearRepairPlanner {
@@ -620,9 +604,10 @@ unsafe fn plan_layer0_repair_replacement(
             source_code: &source.code,
             deleted_tids,
             existing_set: &existing_set,
+            layer: request.layer,
         };
         unsafe {
-            top_up_layer0_repair_replacements_from_linear_scan(
+            top_up_repair_replacements_from_linear_scan(
                 index_relation,
                 &linear_planner,
                 &mut replacements,
@@ -634,10 +619,121 @@ unsafe fn plan_layer0_repair_replacement(
         return None;
     }
 
-    Some(Layer0RepairPlan {
+    Some(LayerRepairPlan {
         neighbor_tid: source.neighbortid,
+        layer: request.layer,
         replacement_tids: replacements,
     })
+}
+
+unsafe fn search_repair_candidates_for_layer(
+    index_relation: pg_sys::Relation,
+    planner: &RepairSearchPlanner<'_>,
+) -> Vec<page::ItemPointer> {
+    let mut seeds = Vec::new();
+
+    if let Some(entry_candidate) =
+        unsafe { load_vacuum_entry_candidate(index_relation, planner.metadata, &planner.source.code) }
+    {
+        if planner.layer == 0 {
+            seeds.push(unsafe {
+                graph::greedy_descend_from_entry(
+                    index_relation,
+                    planner.code_len,
+                    usize::from(planner.metadata.m),
+                    entry_candidate,
+                    |neighbor| {
+                        score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
+                    },
+                )
+            });
+        } else {
+            let mut upper_seeds = vec![entry_candidate];
+            for current_layer in (planner.layer..=planner.metadata.max_level).rev() {
+                upper_seeds = unsafe {
+                    graph::search_layer_result_candidates(
+                        index_relation,
+                        planner.code_len,
+                        usize::from(planner.metadata.m),
+                        current_layer,
+                        repair_ef_construction(planner.metadata),
+                        upper_seeds,
+                        |_| true,
+                        |neighbor| {
+                            score_vacuum_graph_element(
+                                planner.metadata,
+                                &planner.source.code,
+                                neighbor,
+                            )
+                        },
+                    )
+                };
+                if upper_seeds.is_empty() {
+                    break;
+                }
+            }
+            seeds.extend(upper_seeds);
+        }
+    }
+
+    seeds.extend(planner.existing_layer.iter().filter_map(|tid| unsafe {
+        let element = graph::load_graph_element(index_relation, *tid, planner.code_len);
+        score_vacuum_graph_element(planner.metadata, &planner.source.code, &element)
+            .map(|score| search::BeamCandidate::new(*tid, score))
+    }));
+    dedup_beam_candidates_by_tid(&mut seeds);
+    if seeds.is_empty() {
+        return Vec::new();
+    }
+
+    let candidates = if planner.layer == 0 {
+        unsafe {
+            graph::search_layer0_result_candidates(
+                index_relation,
+                planner.code_len,
+                usize::from(planner.metadata.m),
+                repair_ef_construction(planner.metadata),
+                seeds,
+                |neighbor_tid| {
+                    neighbor_tid != planner.source.tid
+                        && !planner.deleted_tids.contains(&neighbor_tid)
+                },
+                |neighbor| {
+                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
+                },
+            )
+        }
+    } else {
+        unsafe {
+            graph::search_layer_result_candidates(
+                index_relation,
+                planner.code_len,
+                usize::from(planner.metadata.m),
+                planner.layer,
+                repair_ef_construction(planner.metadata),
+                seeds,
+                |neighbor_tid| {
+                    neighbor_tid != planner.source.tid
+                        && !planner.deleted_tids.contains(&neighbor_tid)
+                },
+                |neighbor| {
+                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
+                },
+            )
+        }
+    };
+
+    candidates
+        .into_iter()
+        .map(|candidate| candidate.node)
+        .filter(|tid| {
+            *tid != planner.source.tid
+                && *tid != page::ItemPointer::INVALID
+                && !planner.existing_set.contains(tid)
+                && !planner.deleted_tids.contains(tid)
+        })
+        .take(planner.target_len)
+        .collect::<Vec<_>>()
 }
 
 unsafe fn load_vacuum_entry_candidate(
@@ -686,7 +782,7 @@ fn dedup_beam_candidates_by_tid(candidates: &mut Vec<search::BeamCandidate<page:
     candidates.retain(|candidate| seen.insert(candidate.node));
 }
 
-unsafe fn top_up_layer0_repair_replacements_from_linear_scan(
+unsafe fn top_up_repair_replacements_from_linear_scan(
     index_relation: pg_sys::Relation,
     planner: &LinearRepairPlanner<'_>,
     replacements: &mut Vec<page::ItemPointer>,
@@ -719,14 +815,7 @@ unsafe fn top_up_layer0_repair_replacements_from_linear_scan(
         let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         unsafe {
-            collect_linear_repair_candidates_on_page(
-                page_ptr,
-                page_size,
-                block_number,
-                planner,
-                replacements,
-                &mut scored,
-            )
+            collect_linear_repair_candidates_on_page(page_ptr, page_size, block_number, planner, replacements, &mut scored)
         };
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
@@ -789,7 +878,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
         let element = page::TqElementTuple::decode(tuple_bytes, planner.code_len).unwrap_or_else(
             |e| pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}"),
         );
-        if element.deleted || element.heaptids.is_empty() {
+        if element.deleted || element.heaptids.is_empty() || element.level < planner.layer {
             continue;
         }
 
@@ -806,11 +895,11 @@ unsafe fn collect_linear_repair_candidates_on_page(
     }
 }
 
-unsafe fn apply_layer0_repair_plans(
+unsafe fn apply_repair_plans(
     index_relation: pg_sys::Relation,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
-    plans: &[Layer0RepairPlan],
+    plans: &[LayerRepairPlan],
 ) {
     if plans.is_empty() {
         return;
@@ -824,25 +913,17 @@ unsafe fn apply_layer0_repair_plans(
             end += 1;
         }
 
-        unsafe {
-            apply_layer0_repair_plans_on_page(
-                index_relation,
-                block_number,
-                m,
-                deleted_tids,
-                &plans[start..end],
-            )
-        };
+        unsafe { apply_repair_plans_on_page(index_relation, block_number, m, deleted_tids, &plans[start..end]) };
         start = end;
     }
 }
 
-unsafe fn apply_layer0_repair_plans_on_page(
+unsafe fn apply_repair_plans_on_page(
     index_relation: pg_sys::Relation,
     block_number: u32,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
-    plans: &[Layer0RepairPlan],
+    plans: &[LayerRepairPlan],
 ) {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
@@ -865,13 +946,20 @@ unsafe fn apply_layer0_repair_plans_on_page(
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let mut changed = false;
 
-    for plan in plans {
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, plan.neighbor_tid.offset_number) };
+    let mut start = 0;
+    while start < plans.len() {
+        let neighbor_tid = plans[start].neighbor_tid;
+        let mut end = start + 1;
+        while end < plans.len() && plans[end].neighbor_tid == neighbor_tid {
+            end += 1;
+        }
+
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
                 "tqhnsw repair neighbor tuple slot {}/{} is unused",
-                plan.neighbor_tid.block_number,
-                plan.neighbor_tid.offset_number
+                neighbor_tid.block_number,
+                neighbor_tid.offset_number
             );
         }
 
@@ -892,7 +980,13 @@ unsafe fn apply_layer0_repair_plans_on_page(
                 neighbor.tids.len()
             );
         }
-        if !apply_layer0_repair_plan(&mut neighbor.tids, m, deleted_tids, &plan.replacement_tids) {
+        let mut tuple_changed = unlink_deleted_neighbor_refs(&mut neighbor.tids, deleted_tids);
+        for plan in &plans[start..end] {
+            tuple_changed |=
+                apply_repair_plan(&mut neighbor.tids, m, plan.layer, deleted_tids, &plan.replacement_tids);
+        }
+        if !tuple_changed {
+            start = end;
             continue;
         }
 
@@ -911,6 +1005,7 @@ unsafe fn apply_layer0_repair_plans_on_page(
             ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
         }
         changed = true;
+        start = end;
     }
 
     if changed {
@@ -921,28 +1016,29 @@ unsafe fn apply_layer0_repair_plans_on_page(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
-fn apply_layer0_repair_plan(
+fn apply_repair_plan(
     neighbor_tids: &mut [page::ItemPointer],
     m: u16,
+    layer: u8,
     deleted_tids: &HashSet<page::ItemPointer>,
     replacement_tids: &[page::ItemPointer],
 ) -> bool {
-    let mut changed = unlink_deleted_neighbor_refs(neighbor_tids, deleted_tids);
-    let layer0_end = layer0_slot_end(m, neighbor_tids.len());
-    if layer0_end == 0 {
-        return changed;
-    }
-
-    let layer0_slice = &mut neighbor_tids[..layer0_end];
+    let Some((start, end)) = repair_slot_bounds(repair_level_for_slots(neighbor_tids.len(), m), usize::from(m), layer) else {
+        return false;
+    };
+    let layer_slice = neighbor_tids
+        .get_mut(start..end)
+        .expect("repair slot bounds should fit within persisted neighbor tuples");
+    let mut changed = false;
     for candidate_tid in replacement_tids {
         if *candidate_tid == page::ItemPointer::INVALID
             || deleted_tids.contains(candidate_tid)
-            || layer0_slice.contains(candidate_tid)
+            || layer_slice.contains(candidate_tid)
         {
             continue;
         }
 
-        let Some(slot) = layer0_slice
+        let Some(slot) = layer_slice
             .iter_mut()
             .find(|tid| **tid == page::ItemPointer::INVALID)
         else {
@@ -955,8 +1051,31 @@ fn apply_layer0_repair_plan(
     changed
 }
 
-fn layer0_slot_end(m: u16, total_slots: usize) -> usize {
-    usize::from(m).saturating_mul(2).min(total_slots)
+fn repair_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
+    if layer > element_level {
+        return None;
+    }
+
+    if layer == 0 {
+        let end = m.saturating_mul(2);
+        return Some((0, end));
+    }
+
+    let start = m.saturating_mul(2) + (usize::from(layer).saturating_sub(1) * m);
+    Some((start, start.saturating_add(m)))
+}
+
+fn repair_level_for_slots(total_slots: usize, m: u16) -> u8 {
+    let m = usize::from(m);
+    if total_slots <= m.saturating_mul(2) {
+        return 0;
+    }
+
+    let upper_layers = total_slots
+        .saturating_sub(m.saturating_mul(2))
+        .checked_div(m.max(1))
+        .unwrap_or(0);
+    u8::try_from(upper_layers).unwrap_or(u8::MAX)
 }
 
 unsafe fn rewrite_page_pass2(

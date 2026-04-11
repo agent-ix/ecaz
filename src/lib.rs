@@ -4648,6 +4648,143 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_upper_replacement_fills_broken_edges() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_upper_replace (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        for id in 1_i64..=192_i64 {
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_vacuum_pass2_upper_replace VALUES (
+                    {id},
+                    encode_to_tqvector(ARRAY[
+                        {id}.0,
+                        {two}.0,
+                        {three}.0,
+                        {four}.0
+                    ], 4, 42)
+                )",
+                id = id,
+                two = id * 2,
+                three = id * 3,
+                four = id * 4,
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_upper_replace_idx ON tqhnsw_vacuum_pass2_upper_replace USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_pass2_upper_replace_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert!(
+            metadata_before.max_level > 0,
+            "fixture should build at least one upper layer before vacuum repair runs",
+        );
+
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=192_i64)
+                .find_map(|id| {
+                    let deleted_heap_tid =
+                        heap_tid_for_row("tqhnsw_vacuum_pass2_upper_replace", id);
+                    let (deleted_element_tid, _) =
+                        find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                                || element.level < 1
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live upper-layer element should have a persisted neighbor tuple");
+                            let layer1 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                1,
+                            );
+                            layer1.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer1
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable row with a live inbound layer-1 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM tqhnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live upper-layer element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live upper-layer element should keep a persisted neighbor tuple");
+            let layer1_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 1);
+            let surviving_after = layer1_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "upper-layer vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "vacuum replacement search should fill at least one broken upper-layer edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
         Spi::run(
             "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding tqvector)",

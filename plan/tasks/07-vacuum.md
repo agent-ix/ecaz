@@ -13,13 +13,15 @@ Progress notes:
 - Pass 2 layer-0 replacement fill is now landed: once unlink removes a dead layer-0 edge from a
   live node, vacuum reuses the insert-time graph search helpers to top up currently free layer-0
   slots with replacement candidates.
+- Pass 2 upper-layer replacement fill is now also landed: the same repair path now reconnects
+  affected upper-layer slices with layer-aware graph search plus linear top-up fallback, while
+  still keeping the write phase fill-only.
 - Pass 3 is also now landed for the no-repair checkpoint: fully dead elements are finalized to
   `deleted = true` once pass 1 removes their last heap TID.
 - Duplicate discovery now skips deleted / empty-heaptid elements, so a post-vacuum duplicate
   insert cannot reattach to a finalized dead node.
-- Upper-layer replacement search / reconnect is still pending inside pass 2. The current repair
-  slice now repairs dead layer-0 edges but still defers higher-layer replacement and concurrency
-  validation.
+- Concurrency validation is still pending. The current repair slice now repairs broken edges
+  across all persisted layers, but it still defers concurrent INSERT / SELECT / VACUUM proof.
 
 ## Scope
 
@@ -34,8 +36,8 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 - [x] **Pass 2b1 — Layer-0 replacement fill.** For live nodes whose layer-0 slice lost a deleted
   neighbor, reuse A2 traversal plus the Task-06 scorer to fill currently free layer-0 slots with
   replacement candidates.
-- [ ] **Pass 2b2 — Upper-layer replacement search.** Extend repair beyond layer 0 and decide
-  whether any stronger pruning/retry policy is needed once replacement touches fuller slices.
+- [x] **Pass 2b2 — Upper-layer replacement search.** Extend repair beyond layer 0 while keeping
+  the write phase fill-only on currently free slots.
 - [x] **Pass 3 — Finalize.** Set `deleted = true` on fully-dead element tuples once pass 1 strips
   their last heap TID.
 - [x] **amvacuumcleanup.** Report live-element tuple counts and page counts through `IndexBulkDeleteResult`.
@@ -75,8 +77,8 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
   deleted node's outgoing adjacency. That catches asymmetric stale edges too.
 - Multi-page repair writes now follow `spec/adr/ADR-027-vacuum-graph-repair-lock-ordering.md`.
 - The landed replacement slice still keeps writes narrow: candidate planning stays read-only
-  outside `BUFFER_LOCK_EXCLUSIVE`, and the write phase only fills currently free layer-0 slots on
-  affected live nodes.
+  outside `BUFFER_LOCK_EXCLUSIVE`, and the write phase only fills currently free slots on
+  affected live nodes instead of evicting existing neighbors.
 - pgvector reference: `hnswvacuum.c` three-pass algorithm.
 - Runtime scan and graph traversal still skip both `deleted` elements and empty-heaptid elements,
   but finalized dead tuples now carry `deleted = true` instead of relying only on the empty-heaptid

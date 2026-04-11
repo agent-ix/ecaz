@@ -13,8 +13,8 @@ A6 extends `tqhnsw` vacuum from heap-TID stripping and tombstone finalization in
 Once pass 2 starts rewriting persisted neighbor tuples, one vacuum run may mutate many data pages
 that are unrelated to the deleted element's home page.
 
-The first pass-2 checkpoint only unlinked dead-element TIDs from neighbor tuples. The next slice
-now adds layer-0 replacement fill, but it still preserves the same deadlock-safety boundary by
+The first pass-2 checkpoint only unlinked dead-element TIDs from neighbor tuples. The next slices
+now add layer-aware replacement fill, but they still preserve the same deadlock-safety boundary by
 planning candidates read-only and only filling currently free slots during the ordered page write.
 
 ## Decision
@@ -29,8 +29,8 @@ Vacuum graph repair follows this write order:
 5. Do not hold a metadata-page `EXCLUSIVE` lock during pass 2.
 6. If future replacement search needs replanning, do that read-only work outside any data-page
    `EXCLUSIVE` lock before the next ordered page rewrite.
-7. The current replacement slice may only top up `INVALID` layer-0 slots during the write phase;
-   it does not evict live neighbors while holding the page write lock.
+7. The current replacement slice may only top up `INVALID` slots during the write phase; it does
+   not evict live neighbors while holding the page write lock.
 
 In short: ordered page scan, one data-page write lock at a time, no metadata overlap.
 
@@ -39,7 +39,7 @@ In short: ordered page scan, one data-page write lock at a time, no metadata ove
 ### Positive
 
 - Pass-2 unlink repair can touch arbitrary neighbor pages without introducing mixed lock order.
-- Layer-0 replacement fill now has a stable concurrency boundary to build on.
+- Layer-aware replacement fill now has a stable concurrency boundary to build on.
 - The current share-then-exclusive rewrite shape matches the existing narrow vacuum pass-1 pattern.
 
 ### Negative
