@@ -138,8 +138,9 @@ Current staged behavior:
   `inserted_since_rebuild`, derived `insert_drift_fraction`, effective `ef_search`, and the
   current planner-gate state for a `tqhnsw` index.
 - That snapshot now satisfies the observability portion of FR-016-AC-4.
-- Concurrent insert hardening and the corresponding deadlock-focused validation remain staged
-  follow-on work for FR-016-AC-3.
+- Full-slice backlink rewrites now retry through bounded read-only replanning when the live layer
+  drifts before the page rewrite, keeping metadata-last lock ordering intact while avoiding
+  silent skip-on-drift behavior.
 
 #### Layer Assignment
 

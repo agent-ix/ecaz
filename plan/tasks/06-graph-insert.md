@@ -18,11 +18,11 @@ Progress notes:
   upper-layer forward links on the new node, and applies matching upper-layer backlinks when the
   selected targets still have free upper-layer capacity.
 - Backlink mutation now also prunes full target slices with simple score-ordered top-`M` /
-  top-`2M` selection, guarded by a same-snapshot check before the page rewrite so concurrent
-  full-slice drift is conservatively skipped instead of overwritten.
+  top-`2M` selection.
 - Metadata now tracks `inserted_since_rebuild`, and the SQL/admin snapshot reports both that
   counter and the derived insert-drift fraction for live indexes.
-- Concurrency hardening remains the last A5 checkpoint.
+- Full-slice backlink rewrites now use bounded read-only replanning when the live layer drifts
+  before the page rewrite, so stale full-slice plans are retried instead of being silently skipped.
 - `build_source_column` live insert remains intentionally unsupported in v0.1.
 
 ## Milestone Tracker
@@ -33,7 +33,7 @@ Progress notes:
 - [x] `75%` Upper-layer insert search and upper-layer backlink coverage
 - [x] `90%` Neighbor overflow handling and shrinking
 - [x] `95%` Drift accounting and SQL/admin observability
-- [ ] `100%` Concurrency hardening and concurrency-focused validation
+- [x] `100%` Concurrency hardening and concurrency-focused validation
 
 ## Scope
 
@@ -57,12 +57,14 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - [x] **Upper-layer back-link updates.** Selected upper-layer neighbors now receive the new node's
   TID in the matching upper-layer slice when free capacity exists; overflow pruning remains deferred.
 - [x] **Neighbor list shrinking.** Full target slices now use simple score-ordered top-`M` /
-  top-`2M` pruning for the selected layer, while guarded rewrites skip concurrent full-slice drift
-  instead of overwriting it blindly.
+  top-`2M` pruning for the selected layer.
 - [x] **Drift statistics.** `inserted_since_rebuild` now persists in metadata and is exposed
   through `tqhnsw_index_admin_snapshot(regclass)` alongside the derived drift fraction.
 - [x] **Lock ordering protocol.** Document and use ascending physical data-page order for backlink
   mutation, with metadata updates deferred until after data-page writes.
+- [x] **Concurrency hardening.** Stale full-slice backlink plans now re-enter a bounded read-only
+  replan pass instead of being silently skipped, and deterministic regression coverage locks in
+  that retry path.
 
 ## Owns
 
@@ -95,13 +97,11 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 ## Notes
 
 - Back-link updates are the hardest part: each insert touches O(M) neighbor pages.
-- The current backlink slices are still intentionally narrow: they only fill free layer-0 / upper-layer
-  slots and defer concurrency hardening to the final A5 checkpoint.
 - Overflow pruning now scores the current layer slice plus the new node and keeps the best
   `2M` layer-0 or `M` upper-layer links using the existing code scorer.
-- Full-slice rewrite still refuses to overwrite a target layer that changed since the read-side
-  planning snapshot; the concurrency-focused retry/hardening work remains part of the final
-  `100%` milestone.
+- Full-slice rewrite now refuses to overwrite a target layer that changed since the read-side
+  planning snapshot while that page lock is held, then retries those targets through a bounded
+  read-only replan pass after the current write pass completes.
 - Successful live inserts now always finish with a metadata-page write phase because the
   drift counter is metadata-resident; ADR-026 still applies because metadata remains last.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).

@@ -14,15 +14,16 @@ rewriting existing neighbor tuples, a single insert can touch multiple data page
 the metadata page. Without an explicit lock protocol, concurrent inserts could deadlock by taking
 page locks in different orders or by mixing metadata and data-page write locks.
 
-This checkpoint keeps the write surface intentionally narrow:
+The final A5 insert path now uses that same lock protocol across:
 
-- the new node gets forward links before it is visible as an entry-point promotion
-- backlinks are written only into selected layer-0 neighbors
-- backlinks are added only when a free layer-0 slot already exists
-- overflow pruning and upper-layer backlink mutation are deferred
+- forward-link append on the new node
+- layer-0 and upper-layer backlink mutation
+- full-slice pruning for overflowed targets
+- bounded stale-snapshot replanning for concurrent full-slice drift
 
-Even with that narrow scope, the lock order needs to be durable because the same protocol will be
-reused by later overflow and upper-layer work.
+The lock order still needs to stay explicit because retrying a stale full-slice plan must not
+reintroduce deadlock risk by mixing page orders or by replanning while holding a data-page
+`EXCLUSIVE` lock.
 
 ## Decision
 
@@ -39,7 +40,11 @@ Live insert follows this write order:
    When multiple target tuples live on the same page, they are updated under one buffer
    `EXCLUSIVE` lock and one GenericXLog transaction for that page.
 6. Within a page, update neighbor tuples in ascending offset order.
-7. Acquire the metadata-page `EXCLUSIVE` lock only after all data-page writes are complete.
+7. If a full-slice rewrite sees a stale live layer under the page lock, do not replan while that
+   page is locked.
+   Record the target for retry, finish the current ordered page pass, then re-enter read-only
+   planning for those targets before another ordered write pass begins.
+8. Acquire the metadata-page `EXCLUSIVE` lock only after all data-page writes are complete.
    Metadata promotion/repair never overlaps a data-page `EXCLUSIVE` lock.
 
 In short: data pages first, one page at a time, in ascending physical order; metadata last.
@@ -49,15 +54,14 @@ In short: data pages first, one page at a time, in ascending physical order; met
 ### Positive
 
 - Concurrent live inserts share a deterministic data-page lock order.
-- The current backlink slice can group multiple tuple rewrites on one page without widening the
-  deadlock surface.
-- Later overflow-pruning work can reuse the same page-ordering rule.
+- Backlink mutation can group multiple tuple rewrites on one page without widening the deadlock
+  surface.
+- Full-slice retry can happen without holding a data-page `EXCLUSIVE` lock across replan reads.
 
 ### Negative
 
 - Backlink targets must be materialized and sorted before the write phase starts.
-- The current checkpoint skips layer-0 backlinks when the target slice is already full; that keeps
-  the lock surface narrow but leaves pruning work for a later slice.
+- A stale full-slice rewrite may need another read-only planning pass before it can be retried.
 
 ### Neutral
 

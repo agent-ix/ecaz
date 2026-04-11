@@ -22,6 +22,7 @@ Current tqhnsw state summary:
   - reuses shared traversal helpers to discover insert-time neighbors
   - writes forward links on the new node plus layer-aware backlinks on selected existing nodes
   - prunes full target slices with the current simple score-ordered top-`M` / top-`2M` rule
+  - retries stale full-slice backlink plans through bounded read-only replanning instead of silently skipping them
   - tracks `inserted_since_rebuild` in metadata and updates entry-point metadata after graph writes
   - reuses tail page when possible and allocates a new page when the tail page cannot fit another neighbor+element pair
   - coalesces duplicate encoded vectors into existing element tuples
