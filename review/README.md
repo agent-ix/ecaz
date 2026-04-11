@@ -14,16 +14,19 @@ Validation status at this checkpoint:
 Current tqhnsw state summary:
 - Build path is implemented and tested.
 - Planner still avoids using `tqhnsw` scans.
-- `aminsert` supports a narrow live path:
+- `aminsert` now supports a graph-aware live path:
   - validates `(dimensions, bits, seed)` against metadata
   - serializes empty-index metadata initialization under an exclusive metadata-page lock
   - initializes empty-index metadata on first insert
-  - appends disconnected level-0 nodes
-  - reuses tail page when possible
-  - allocates a new page when the tail page cannot fit another neighbor+element pair
+  - assigns a random insert level and pre-sizes neighbor tuples for the allocated layers
+  - reuses shared traversal helpers to discover insert-time neighbors
+  - writes forward links on the new node plus layer-aware backlinks on selected existing nodes
+  - prunes full target slices with the current simple score-ordered top-`M` / top-`2M` rule
+  - tracks `inserted_since_rebuild` in metadata and updates entry-point metadata after graph writes
+  - reuses tail page when possible and allocates a new page when the tail page cannot fit another neighbor+element pair
   - coalesces duplicate encoded vectors into existing element tuples
   - rejects duplicate heap-TID overflow
-  - rejects `build_source_column` indexes
+  - rejects `build_source_column` indexes for live insert in v0.1
 - Vacuum callbacks are benign no-ops that return current page/tuple stats.
 - `ambeginscan` allocates a real scan descriptor plus opaque state.
 - `amrescan` validates a single `real[]` ORDER BY query and records minimal query-shape state.
@@ -258,11 +261,10 @@ Review triage at `46d00bb`:
 - The implementation plan and FR-009/US-004 surfaces now distinguish near-term planner groundwork
   from the later ordered-traversal and planner-enablement phases.
 - `tqhnsw_index_admin_snapshot(regclass)` now exposes a read-only SQL/admin surface for a tqhnsw
-  index's live-node count, effective `ef_search`, tuning source, and planner gate state.
-- That admin snapshot currently reports `inserted_since_rebuild` as explicitly unavailable (`NULL`)
-  until live insert drift accounting is implemented, keeping FR-016 staging honest.
-- Admin snapshot coverage now verifies both the happy path and rejection of non-`tqhnsw` indexes,
-  and the test matrix now records this planner/admin statistics scaffolding explicitly.
+  index's live-node count, `inserted_since_rebuild`, `insert_drift_fraction`, effective
+  `ef_search`, tuning source, and planner gate state.
+- Admin snapshot coverage now verifies the happy path, empty-index first insert, duplicate-coalesced
+  live-insert stability, and rejection of non-`tqhnsw` indexes.
 - `tqhnsw_index_explain_snapshot(regclass)` now exposes a separate explain-oriented snapshot that
   reports the hard planner gate, `ordered_scan_ready = false`, explicit gate reasoning, and the
   effective tuning values without claiming that PostgreSQL EXPLAIN can already choose `tqhnsw`.

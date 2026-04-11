@@ -292,6 +292,43 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
+fn tqhnsw_index_admin_snapshot(
+    index_oid: pg_sys::Oid,
+) -> TableIterator<
+    'static,
+    (
+        name!(block_count, i64),
+        name!(total_live_nodes, i64),
+        name!(inserted_since_rebuild, i64),
+        name!(insert_drift_fraction, f64),
+        name!(relation_ef_search, i32),
+        name!(session_ef_search, Option<i32>),
+        name!(effective_ef_search, i32),
+        name!(effective_source, String),
+        name!(planner_scan_enabled, bool),
+    ),
+> {
+    let index_relation =
+        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_admin_snapshot") };
+    let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    TableIterator::once((
+        i64::from(snapshot.block_count),
+        i64::try_from(snapshot.total_live_nodes).expect("total live nodes should fit in i64"),
+        i64::try_from(snapshot.inserted_since_rebuild)
+            .expect("inserted-since-rebuild should fit in i64"),
+        snapshot.insert_drift_fraction,
+        snapshot.relation_ef_search,
+        snapshot.session_ef_search,
+        snapshot.effective_ef_search,
+        snapshot.effective_source.to_owned(),
+        snapshot.planner_scan_enabled,
+    ))
+}
+
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
 fn tqhnsw_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
@@ -1623,6 +1660,213 @@ mod tests {
         assert!(
             !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
             "planner should not use tqhnsw for scans before scan callbacks exist: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_tracks_insert_drift() {
+        Spi::run("CREATE TABLE tqhnsw_admin_snapshot (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_idx ON tqhnsw_admin_snapshot USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (ef_search = 77)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            3
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            0
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null"),
+            0.0
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT relation_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("relation ef_search should be non-null"),
+            77
+        );
+        assert_eq!(
+            Spi::get_one::<i32>(
+                "SELECT session_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed"),
+            Some(19)
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT effective_source FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("effective source should be non-null"),
+            "session"
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (4, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("live insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            4
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1
+        );
+        assert!(
+            (Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null")
+                - 0.25)
+                .abs()
+                < 1e-9,
+            "one live insert after a three-row build should report 25% drift",
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot VALUES
+             (5, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+        )
+        .expect("duplicate insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            4,
+            "duplicate coalescing should not create a new live node",
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1,
+            "duplicate coalescing should not advance the insert-drift counter",
+        );
+
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_index_admin_snapshot_counts_empty_first_insert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_empty (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_empty_idx ON tqhnsw_admin_snapshot_empty USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            0
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            0
+        );
+
+        Spi::run(
+            "INSERT INTO tqhnsw_admin_snapshot_empty VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("first insert should succeed");
+
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("live-node count should be non-null"),
+            1
+        );
+        assert_eq!(
+            Spi::get_one::<i64>(
+                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("inserted-since-rebuild should be non-null"),
+            1,
+            "the first successful live insert should start the post-build drift counter",
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("insert drift fraction should be non-null"),
+            1.0
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
+    fn test_tqhnsw_index_admin_snapshot_rejects_non_tqhnsw_index() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_admin_snapshot_wrong_am_idx ON tqhnsw_admin_snapshot_wrong_am USING btree (value)",
+        )
+        .expect("index creation should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
         );
     }
 

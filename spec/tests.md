@@ -97,7 +97,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-130 | Multi-PG-version support | FR-012-AC-3 | `cargo pgrx test pg14`, pg15, pg16, pg17 all pass |
 | TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
-| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read exposed metadata or stats view, assert total_live_nodes and inserted_since_rebuild are present and consistent after inserts |
+| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read `tqhnsw_index_admin_snapshot(regclass)`, assert `total_live_nodes`, `inserted_since_rebuild`, and `insert_drift_fraction` stay consistent after inserts and duplicate coalescing |
 | TC-142 | Planner integration snapshot exposes cross-lane blockers | FR-009, FR-020 | Read `tqhnsw_planner_integration_snapshot(regclass)`, assert modeled planner-cost readiness is true while planner activation, ordered scan readiness, and PG18 readiness remain false with explicit blocker strings |
 | TC-137 | Pure planner cost model stays gated behind ADR-011 | FR-020, FR-009 | Unit-test `estimate_planner_cost(...)` crossover and edge cases while `amcostestimate` still returns prohibitive costs |
 | TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `tqhnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, tuning/metadata inputs are explicit, and tree-height sourcing is reported as metadata fallback until PG18 callback wiring exists |

@@ -86,6 +86,7 @@ proptest! {
             bits,
             max_level,
             seed,
+            inserted_since_rebuild: seed,
         };
 
         let encoded = metadata.encode();
@@ -98,6 +99,7 @@ proptest! {
         prop_assert_eq!(decoded.bits, metadata.bits);
         prop_assert_eq!(decoded.max_level, metadata.max_level);
         prop_assert_eq!(decoded.seed, metadata.seed);
+        prop_assert_eq!(decoded.inserted_since_rebuild, metadata.inserted_since_rebuild);
     }
 }
 

@@ -85,6 +85,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                         insert_level,
                         &forward_neighbor_slots,
                     );
+                    metadata.inserted_since_rebuild =
+                        metadata.inserted_since_rebuild.saturating_add(1);
                     if metadata.entry_point == page::ItemPointer::INVALID {
                         metadata.entry_point = element_tid;
                         metadata.max_level = insert_level;
@@ -152,22 +154,20 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 m,
             );
 
-            // Only reacquire the metadata exclusive lock when the snapshot says
-            // entry_point still needs repair or the new node outranks the current
-            // maximum level. Re-check under the lock so we do not clobber a
-            // racing initializer or promotion.
-            if metadata_snapshot.entry_point == page::ItemPointer::INVALID
-                || insert_level > metadata_snapshot.max_level
-            {
-                shared::with_locked_metadata_page(index_relation, |metadata| {
-                    if metadata.entry_point == page::ItemPointer::INVALID
-                        || insert_level > metadata.max_level
-                    {
-                        metadata.entry_point = element_tid;
-                        metadata.max_level = insert_level;
-                    }
-                });
-            }
+            // Successful live inserts now always advance the metadata-resident
+            // drift counter, so every new-node append takes one final metadata
+            // write phase after all data-page writes are complete. Entry-point
+            // repair/promotion piggybacks on that same lock scope.
+            shared::with_locked_metadata_page(index_relation, |metadata| {
+                metadata.inserted_since_rebuild =
+                    metadata.inserted_since_rebuild.saturating_add(1);
+                if metadata.entry_point == page::ItemPointer::INVALID
+                    || insert_level > metadata.max_level
+                {
+                    metadata.entry_point = element_tid;
+                    metadata.max_level = insert_level;
+                }
+            });
             false
         })
     }

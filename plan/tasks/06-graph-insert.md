@@ -20,7 +20,10 @@ Progress notes:
 - Backlink mutation now also prunes full target slices with simple score-ordered top-`M` /
   top-`2M` selection, guarded by a same-snapshot check before the page rewrite so concurrent
   full-slice drift is conservatively skipped instead of overwritten.
-- Drift statistics and `build_source_column` insert support remain pending.
+- Metadata now tracks `inserted_since_rebuild`, and the SQL/admin snapshot reports both that
+  counter and the derived insert-drift fraction for live indexes.
+- Concurrency hardening remains the last A5 checkpoint.
+- `build_source_column` live insert remains intentionally unsupported in v0.1.
 
 ## Milestone Tracker
 
@@ -29,7 +32,8 @@ Progress notes:
 - [x] `50%` Layer-0 backlinks, graph reachability, and explicit lock-ordering ADR
 - [x] `75%` Upper-layer insert search and upper-layer backlink coverage
 - [x] `90%` Neighbor overflow handling and shrinking
-- [ ] `100%` Drift accounting and concurrency hardening
+- [x] `95%` Drift accounting and SQL/admin observability
+- [ ] `100%` Concurrency hardening and concurrency-focused validation
 
 ## Scope
 
@@ -55,7 +59,8 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - [x] **Neighbor list shrinking.** Full target slices now use simple score-ordered top-`M` /
   top-`2M` pruning for the selected layer, while guarded rewrites skip concurrent full-slice drift
   instead of overwriting it blindly.
-- [ ] **Drift statistics.** Track `inserted_since_rebuild` in metadata. Expose via page-inspection or SQL.
+- [x] **Drift statistics.** `inserted_since_rebuild` now persists in metadata and is exposed
+  through `tqhnsw_index_admin_snapshot(regclass)` alongside the derived drift fraction.
 - [x] **Lock ordering protocol.** Document and use ascending physical data-page order for backlink
   mutation, with metadata updates deferred until after data-page writes.
 
@@ -97,4 +102,6 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - Full-slice rewrite still refuses to overwrite a target layer that changed since the read-side
   planning snapshot; the concurrency-focused retry/hardening work remains part of the final
   `100%` milestone.
+- Successful live inserts now always finish with a metadata-page write phase because the
+  drift counter is metadata-resident; ADR-026 still applies because metadata remains last.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).

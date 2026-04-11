@@ -2075,6 +2075,7 @@ mod tests {
             bits: 4,
             max_level: 0,
             seed: 42,
+            inserted_since_rebuild: 0,
         };
         let query = [1.0_f32, 2.0, 3.0, 4.0];
         let mut opaque = TqScanOpaque::default();

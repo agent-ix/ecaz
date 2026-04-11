@@ -39,6 +39,12 @@ pub(crate) unsafe fn index_cost_snapshot(
     unsafe { shared::index_cost_snapshot(index_relation) }
 }
 
+pub(crate) unsafe fn index_admin_snapshot(
+    index_relation: pgrx::pg_sys::Relation,
+) -> shared::IndexAdminSnapshot {
+    unsafe { shared::index_admin_snapshot(index_relation) }
+}
+
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::PlannerIntegrationSnapshot {

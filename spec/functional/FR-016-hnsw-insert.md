@@ -134,11 +134,12 @@ sequenceDiagram
 - Recall targets in NFR-003 apply to freshly bulk-built indexes. A separate benchmark profile SHALL measure recall drift after incremental inserts.
 
 Current staged behavior:
-- A read-only SQL/admin snapshot surface MAY expose total live node count, planner tuning state,
-  and an explicit `NULL` / unavailable `inserted_since_rebuild` field before live insert drift
-  accounting is implemented.
-- Until drift accounting exists, that surface is preparatory scaffolding rather than full
-  satisfaction of FR-016-AC-4.
+- `tqhnsw_index_admin_snapshot(regclass)` now exposes total live node count,
+  `inserted_since_rebuild`, derived `insert_drift_fraction`, effective `ef_search`, and the
+  current planner-gate state for a `tqhnsw` index.
+- That snapshot now satisfies the observability portion of FR-016-AC-4.
+- Concurrent insert hardening and the corresponding deadlock-focused validation remain staged
+  follow-on work for FR-016-AC-3.
 
 #### Layer Assignment
 

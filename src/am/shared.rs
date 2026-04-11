@@ -261,11 +261,12 @@ pub(super) unsafe fn read_metadata_page(index_relation: pg_sys::Relation) -> pag
     metadata
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct IndexAdminSnapshot {
     pub block_count: u32,
     pub total_live_nodes: usize,
-    pub inserted_since_rebuild: Option<usize>,
+    pub inserted_since_rebuild: usize,
+    pub insert_drift_fraction: f64,
     pub relation_ef_search: i32,
     pub session_ef_search: Option<i32>,
     pub effective_ef_search: i32,
@@ -359,6 +360,15 @@ pub(crate) struct PlannerIntegrationSnapshot {
 pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> IndexAdminSnapshot {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
+    let metadata = unsafe { read_metadata_page(index_relation) };
+    let total_live_nodes = unsafe { count_element_tuples(index_relation) };
+    let inserted_since_rebuild =
+        usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
+            pgrx::error!(
+                "tqhnsw metadata inserted_since_rebuild {} exceeds usize",
+                metadata.inserted_since_rebuild
+            )
+        });
     IndexAdminSnapshot {
         block_count: unsafe {
             pg_sys::RelationGetNumberOfBlocksInFork(
@@ -366,8 +376,9 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             )
         },
-        total_live_nodes: unsafe { count_element_tuples(index_relation) },
-        inserted_since_rebuild: None,
+        total_live_nodes,
+        inserted_since_rebuild,
+        insert_drift_fraction: insert_drift_fraction(total_live_nodes, inserted_since_rebuild),
         relation_ef_search: tuning.relation_ef_search,
         session_ef_search: tuning.session_ef_search,
         effective_ef_search: tuning.effective_ef_search,
@@ -377,6 +388,13 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
         },
         planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
     }
+}
+
+fn insert_drift_fraction(total_live_nodes: usize, inserted_since_rebuild: usize) -> f64 {
+    if total_live_nodes == 0 {
+        return 0.0;
+    }
+    inserted_since_rebuild as f64 / total_live_nodes as f64
 }
 
 pub(crate) unsafe fn index_explain_snapshot(
