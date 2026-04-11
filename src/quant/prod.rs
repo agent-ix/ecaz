@@ -152,7 +152,7 @@ impl ProdQuantizer {
             qjl_enabled(self.original_dim, self.bits).then(|| qjl::qjl_project(query, &self.qjl_signs));
         let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
 
-        let bits_per_index = self.bits - 1;
+        let bits_per_index = mse_bits(self.original_dim, self.bits);
         let lut = if bits_per_index == 3 {
             Vec::new()
         } else {
@@ -229,6 +229,20 @@ impl ProdQuantizer {
         let mut mse_sum = 0.0_f32;
         let mut qjl_sum = 0.0_f32;
         let mut dim_index = 0usize;
+        let qjl_active = qjl_enabled(self.original_dim, self.bits);
+
+        if !qjl_active {
+            while dim_index < self.original_dim {
+                let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
+                mse_sum += if bits_per_index == 3 {
+                    self.codebook[centroid_index] * prepared.rotated[dim_index]
+                } else {
+                    prepared.lut[dim_index * num_centroids + centroid_index]
+                };
+                dim_index += 1;
+            }
+            return mse_sum;
+        }
 
         if bits_per_index == 3 {
             while dim_index + 8 <= self.original_dim {

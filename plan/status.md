@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-10
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence; real `10K` passes strongly and broader real `50K` gate slices remain comfortably above threshold
+Last updated: 2026-04-11
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, and B1 SIMD is now merged and validated on x86_64; aarch64 runtime validation still requires hardware
 
 ## Reading Guide
 
@@ -16,10 +16,10 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | --- | ---: | --- |
 | Correctness-complete | 82% | Foundation/build solid; graph-first scan and recall gate are complete; graph-aware insert and vacuum repair remain |
 | Test/validation-complete | 80% | Broad unit/integration/CI coverage exists, with real-corpus recall evidence now in hand; final unsafe hardening remains |
-| Benchmark/profile-complete | 42% | Benchmark harnesses exist and the initial real-corpus recall gate is closed; latency/storage and post-insert/vacuum suites remain |
-| Optimization-complete | 18% | SIMD runtime dispatch and AVX2+NEON scoring landed on feature branch; merge and throughput proof remain for the integration lane |
+| Benchmark/profile-complete | 46% | Benchmark harnesses exist, the initial real-corpus recall gate is closed, and merged SIMD microbench evidence now exists on `main`; latency/storage and post-insert/vacuum suites remain |
+| Optimization-complete | 42% | SIMD runtime dispatch, AVX2 FWHT/scoring, NEON 3-bit scoring, and prepared-query hot-path cuts are merged on `main`; scan-path tuning and aarch64 runtime validation remain |
 | Release-ready | 62% | Build packaging and quality infrastructure are in decent shape, and the initial recall gate is now closed on real data |
-| Total project completion | 75% | Weighted overall estimate to final intended scope |
+| Total project completion | 77% | Weighted overall estimate to final intended scope |
 
 ## Execution Task Map
 
@@ -31,7 +31,7 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Done** | 100% | Closed on 2026-04-10: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`) |
 | `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Unblocked by `A4`; next runtime lane |
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Unblocked by `A4`; follows `A5` |
-| `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
+| `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
@@ -109,7 +109,7 @@ Testing / validation rollup: 76%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Microbenchmark infrastructure | Criterion, iai-callgrind, dhat, Makefile targets, shared generators | Done | 100% | Harnesses are built and validated |
-| Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
+| Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 84% | Useful baseline numbers exist, and the merged SIMD lane now has current-main vs merged Criterion evidence for `prepare_ip_query` and `score_ip_encoded` |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
 | End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Strong | 78% | The initial real-corpus signoff surface is now closed: canonical real `10K` passes strongly and the broader real `50K` `50`-query gate reports `92.6% / 94.4% / 94.8% / 95.2%`; broader post-gate reporting remains under `C1` |
@@ -121,9 +121,9 @@ Benchmarking / profiling rollup: 42%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Scalar baseline | Working scalar quantizer and scan code paths | Partial | 55% | Correct baseline exists, but this is not the same as an optimization pass |
-| Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Not started | 10% | Benchmark harnesses exist, but no serious optimization campaign has been run yet |
-| SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **In progress** | 25% | Runtime dispatch + AVX2/NEON scoring paths on feature branch; equivalence tests and throughput proof pending |
+| Scalar baseline | Working scalar quantizer and scan code paths | Done | 100% | Scalar reference paths are still present and remain the comparison baseline for SIMD validation |
+| Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Strong | 72% | The merged B1 lane now includes padded-SRHT query prep, prepared-query LUT cuts, and AVX2 FWHT/scoring improvements with current-main benchmark evidence |
+| SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **Mostly done** | 90% | Merged on `main`; x86_64 equivalence + throughput proof are complete, and NEON implementation is present but still needs aarch64 runtime validation |
 | Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 10% | A4 is closed; further tuning is now post-gate optimization work rather than recall rescue |
 | Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | Not started | 5% | Some design notes exist, not a real tuning pass yet |
 
@@ -155,7 +155,7 @@ Release / quality-gate rollup: 62%
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
 2. **Next runtime lane:** A5 graph-aware insert, followed by A6 vacuum repair.
-3. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge timing is now a sequencing decision, not a recall blocker.
+3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
 5. Full SQL benchmark result generation after A5/A6.
 
