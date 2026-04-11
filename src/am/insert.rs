@@ -132,13 +132,14 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 
             let insert_level =
                 choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
-            let (forward_neighbor_slots, forward_selections) = discover_insert_forward_neighbor_slots(
-                index_relation,
-                &metadata_snapshot,
-                &tuple.code,
-                insert_level,
-                m,
-            );
+            let (forward_neighbor_slots, forward_selections) =
+                discover_insert_forward_neighbor_slots(
+                    index_relation,
+                    &metadata_snapshot,
+                    &tuple.code,
+                    insert_level,
+                    m,
+                );
             let element_tid = append_heap_tuple(
                 index_relation,
                 &tuple,
@@ -160,11 +161,13 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             // write phase after all data-page writes are complete. Entry-point
             // repair/promotion piggybacks on that same lock scope.
             shared::with_locked_metadata_page(index_relation, |metadata| {
-                metadata.inserted_since_rebuild =
-                    metadata.inserted_since_rebuild.saturating_add(1);
+                metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
                 if metadata.entry_point == page::ItemPointer::INVALID
                     || insert_level > metadata.max_level
                 {
+                    // Metadata must always advertise a live element at
+                    // metadata.max_level. The new tuple is already appended, so
+                    // repair/promotion happens only after append commits.
                     metadata.entry_point = element_tid;
                     metadata.max_level = insert_level;
                 }
@@ -201,6 +204,8 @@ fn max_insert_level_that_fits(m: u16, code_len: usize, page_size: usize) -> u8 {
 }
 
 fn level_from_random_bits(random_bits: u64, m: u16, max_level: u8) -> u8 {
+    // Keep the +1 numerator so bits=0 maps to (0, 1] instead of 0 and cannot
+    // hit ln(0); at f64 precision the denominator rounds to exactly 2^64.
     let unit = ((random_bits as f64) + 1.0_f64) / ((u64::MAX as f64) + 1.0_f64);
     let sampled_level = (-unit.ln() / (m as f64).ln()).floor();
     sampled_level.clamp(0.0_f64, max_level as f64) as u8
@@ -229,6 +234,15 @@ pub(crate) fn debug_insert_level_for_heap_tid(
 
 fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
     vec![page::ItemPointer::INVALID; page::neighbor_slots(level, m)]
+}
+
+fn insert_ef_construction(metadata: &page::MetadataPage) -> usize {
+    let ef = usize::from(metadata.ef_construction);
+    debug_assert!(
+        ef > 0,
+        "validated tqhnsw indexes should always persist ef_construction >= 1"
+    );
+    ef.max(1)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -319,7 +333,7 @@ unsafe fn discover_insert_forward_neighbor_slots(
             index_relation,
             code.len(),
             m_usize,
-            usize::from(metadata.ef_construction).max(1),
+            insert_ef_construction(metadata),
             [descended_seed],
             |_| true,
             |neighbor| score_insert_graph_element(metadata, code, neighbor),
@@ -355,6 +369,8 @@ fn score_insert_graph_element(
         return None;
     }
 
+    // BeamCandidate ordering is "lower is better", so negate the inner-product
+    // scorer here to keep insert-side graph search aligned with scan/build.
     Some(-crate::score_code_inner_product(
         metadata.dimensions as usize,
         metadata.bits,
@@ -386,7 +402,7 @@ unsafe fn populate_upper_layer_forward_slots(
                 code.len(),
                 m,
                 current_layer,
-                usize::from(metadata.ef_construction).max(1),
+                insert_ef_construction(metadata),
                 seeds,
                 |_| true,
                 |neighbor| score_insert_graph_element(metadata, code, neighbor),
@@ -471,20 +487,25 @@ unsafe fn plan_backlink_mutations(
         .iter()
         .copied()
         .filter_map(|selection| unsafe {
-            let element = graph::load_graph_element(
-                index_relation,
-                selection.element_tid,
-                planner.code_len,
-            );
+            let element =
+                graph::load_graph_element(index_relation, selection.element_tid, planner.code_len);
             let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
-            plan_backlink_mutation(index_relation, planner, &element, &neighbors, selection.layer)
+            plan_backlink_mutation(
+                index_relation,
+                planner,
+                &element,
+                &neighbors,
+                selection.layer,
+            )
         })
         .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
         .collect::<Vec<_>>();
     mutations.sort_unstable_by(|left, right| {
         compare_item_pointers(&left.neighbor_tid, &right.neighbor_tid)
             .then_with(|| left.layer.cmp(&right.layer))
-            .then_with(|| compare_item_pointers(&left.target_element_tid, &right.target_element_tid))
+            .then_with(|| {
+                compare_item_pointers(&left.target_element_tid, &right.target_element_tid)
+            })
     });
     mutations.dedup();
     mutations
@@ -506,12 +527,7 @@ unsafe fn apply_backlink_mutations(
         }
 
         retries.extend(unsafe {
-            add_backlinks_on_page(
-                index_relation,
-                &mutations[start..end],
-                new_element_tid,
-                m,
-            )
+            add_backlinks_on_page(index_relation, &mutations[start..end], new_element_tid, m)
         });
         start = end;
     }
@@ -741,7 +757,8 @@ fn apply_backlink_mutation(
     m: u16,
     mutation: &BacklinkMutation,
 ) -> BacklinkMutationOutcome {
-    let Some((start, end)) = backlink_slot_bounds(usize::from(m), neighbor_tids.len(), mutation.layer)
+    let Some((start, end)) =
+        backlink_slot_bounds(usize::from(m), neighbor_tids.len(), mutation.layer)
     else {
         return BacklinkMutationOutcome::NoChange;
     };

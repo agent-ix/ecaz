@@ -19,7 +19,7 @@ All insert behavior SHALL be relation-local. On partitioned tables, a partition 
 
 ### `aminsert` — Single Row Insert (Page-Level)
 
-Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only.
+Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only for graph construction. Bulk build and live insert both use the symmetric MSE-only code scorer, while ordered scan still uses the gamma-aware raw-query scorer defined by ADR-007.
 
 `build_source_column` note:
 - `build_source_column` is a bulk-build-only reloption in v0.1.
@@ -138,6 +138,10 @@ Current staged behavior:
   `inserted_since_rebuild`, derived `insert_drift_fraction`, effective `ef_search`, and the
   current planner-gate state for a `tqhnsw` index.
 - That snapshot now satisfies the observability portion of FR-016-AC-4.
+- Bulk build and live insert now explicitly share the same construction metric:
+  `score_code_inner_product` over compressed codes only. This keeps graph construction
+  consistent between `CREATE INDEX` and `aminsert` while remaining intentionally lower
+  fidelity than the gamma-aware raw-query scan scorer.
 - Full-slice backlink rewrites now retry through bounded read-only replanning when the live layer
   drifts before the page rewrite, keeping metadata-last lock ordering intact while avoiding
   silent skip-on-drift behavior.

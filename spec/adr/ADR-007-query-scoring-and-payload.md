@@ -77,6 +77,16 @@ score_code_to_code(a, b) = Σ_i centroid[idx_a_i] * centroid[idx_b_i]
 
 The QJL correction term is omitted in this path in v0.1.
 
+Bulk graph construction SHALL use this same symmetric compressed-code metric in both places that
+create or repair the graph without a raw query:
+
+- `CREATE INDEX` / bulk build neighbor selection
+- live insert neighbor selection, backlink pruning, and related graph repair
+
+Ordered scan continues to use the prepared raw-query scorer (`score_ip_from_parts`) instead.
+That divergence is deliberate: the gamma/QJL term is query-specific search state, so it applies
+at scan time but not during query-free graph construction.
+
 ## Consequences
 
 ### Benefits

@@ -99,9 +99,18 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - Back-link updates are the hardest part: each insert touches O(M) neighbor pages.
 - Overflow pruning now scores the current layer slice plus the new node and keeps the best
   `2M` layer-0 or `M` upper-layer links using the existing code scorer.
+- Bulk build and live insert intentionally share the same construction metric:
+  `score_code_inner_product` over compressed codes only. Ordered scan still uses the
+  gamma-aware raw-query scorer from ADR-007.
 - Full-slice rewrite now refuses to overwrite a target layer that changed since the read-side
   planning snapshot while that page lock is held, then retries those targets through a bounded
   read-only replan pass after the current write pass completes.
 - Successful live inserts now always finish with a metadata-page write phase because the
   drift counter is metadata-resident; ADR-026 still applies because metadata remains last.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).
+- Pre-sized live-insert neighbor tuples intentionally leave unused slots as `INVALID`, and the
+  runtime traversal contract already skips those placeholder TIDs (`collect_successor_candidates`
+  regression coverage in `src/am/scan.rs`).
+- Insert-level assignment is deterministic per `(seed, heap_tid)` today. If delete/rewrite flows
+  start recycling heap TIDs, future insert work must add fresh per-row entropy so levels do not
+  remain stable across unrelated rows that reuse the same physical TID.
