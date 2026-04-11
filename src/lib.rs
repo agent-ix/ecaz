@@ -3811,6 +3811,107 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_insert_rewrites_full_layer0_backlink_slice() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_full_layer0_backlink (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        for id in 1_i64..=12_i64 {
+            let delta = id as f32 * 0.08;
+            let z = if id % 2 == 0 { 0.25 } else { -0.25 };
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, 0.0], 4, 42))",
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_full_layer0_backlink_idx ON tqhnsw_insert_full_layer0_backlink USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_full_layer0_backlink_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        for id in 13_i64..=40_i64 {
+            let (_metadata_before, elements_before, neighbors_before) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            let delta = (id - 12) as f32 * 0.04;
+            let w = (id - 12) as f32 * 0.02;
+            let z = if id % 2 == 0 { 0.25 } else { -0.25 };
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, {w}], 4, 42))",
+            ))
+            .expect("live insert should succeed");
+
+            let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_full_layer0_backlink", id);
+            let (metadata, elements_after, neighbors_after) =
+                decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+            let (inserted_element_tid, inserted_element) =
+                find_element_for_heap_tid(&elements_after, inserted_heap_tid);
+            let inserted_neighbors = neighbors_after
+                .get(&inserted_element.neighbortid)
+                .expect("inserted element neighbor tuple should exist");
+            let inserted_layer0_forward_tids = layer_neighbor_slice(
+                &inserted_neighbors.tids,
+                usize::from(metadata.m),
+                0,
+            )
+            .iter()
+            .take(usize::from(metadata.m))
+            .copied()
+            .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+
+            for forward_tid in inserted_layer0_forward_tids {
+                let (_, before_element) = elements_before
+                    .iter()
+                    .find(|(tid, _)| *tid == forward_tid)
+                    .expect("forward target should exist before the live insert");
+                let before_neighbors = neighbors_before
+                    .get(&before_element.neighbortid)
+                    .expect("forward target neighbor tuple should exist before the live insert");
+                let before_layer0 =
+                    layer_neighbor_slice(&before_neighbors.tids, usize::from(metadata.m), 0);
+                if before_layer0.contains(&am::page::ItemPointer::INVALID) {
+                    continue;
+                }
+
+                let (_, after_element) = elements_after
+                    .iter()
+                    .find(|(tid, _)| *tid == forward_tid)
+                    .expect("forward target should still exist after the live insert");
+                let after_neighbors = neighbors_after
+                    .get(&after_element.neighbortid)
+                    .expect("forward target neighbor tuple should exist after the live insert");
+                let after_layer0 =
+                    layer_neighbor_slice(&after_neighbors.tids, usize::from(metadata.m), 0);
+                if !after_layer0.contains(&inserted_element_tid) {
+                    continue;
+                }
+
+                assert!(
+                    after_layer0
+                        .iter()
+                        .all(|tid| *tid != am::page::ItemPointer::INVALID),
+                    "overflow rewrite should preserve the full 2M layer-0 capacity on selected targets",
+                );
+                assert_ne!(
+                    after_layer0, before_layer0,
+                    "admitting the new element into a full layer-0 target should evict at least one prior neighbor",
+                );
+                return;
+            }
+        }
+
+        panic!("expected a bounded live-insert search to rewrite at least one full layer-0 target");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_live_insert_is_graph_reachable_via_backlinks() {
         Spi::run(
             "CREATE TABLE tqhnsw_insert_graph_reachable (id bigint primary key, embedding tqvector)",

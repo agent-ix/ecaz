@@ -17,7 +17,10 @@ Progress notes:
 - Insert now also runs upper-layer candidate discovery for live upper-level nodes, writes simple
   upper-layer forward links on the new node, and applies matching upper-layer backlinks when the
   selected targets still have free upper-layer capacity.
-- Neighbor shrinking, drift statistics, and `build_source_column` insert support remain pending.
+- Backlink mutation now also prunes full target slices with simple score-ordered top-`M` /
+  top-`2M` selection, guarded by a same-snapshot check before the page rewrite so concurrent
+  full-slice drift is conservatively skipped instead of overwritten.
+- Drift statistics and `build_source_column` insert support remain pending.
 
 ## Milestone Tracker
 
@@ -25,7 +28,7 @@ Progress notes:
 - [x] `35%` Greedy descent, layer-0 candidate search, and new-node forward links
 - [x] `50%` Layer-0 backlinks, graph reachability, and explicit lock-ordering ADR
 - [x] `75%` Upper-layer insert search and upper-layer backlink coverage
-- [ ] `90%` Neighbor overflow handling and shrinking
+- [x] `90%` Neighbor overflow handling and shrinking
 - [ ] `100%` Drift accounting and concurrency hardening
 
 ## Scope
@@ -49,8 +52,9 @@ Replace disconnected-append insert with graph-connected insert using shared trav
   order. Overflow pruning remains deferred.
 - [x] **Upper-layer back-link updates.** Selected upper-layer neighbors now receive the new node's
   TID in the matching upper-layer slice when free capacity exists; overflow pruning remains deferred.
-- [ ] **Neighbor list shrinking.** Prune weakest existing links when backlink mutation overflows a
-  target layer budget.
+- [x] **Neighbor list shrinking.** Full target slices now use simple score-ordered top-`M` /
+  top-`2M` pruning for the selected layer, while guarded rewrites skip concurrent full-slice drift
+  instead of overwriting it blindly.
 - [ ] **Drift statistics.** Track `inserted_since_rebuild` in metadata. Expose via page-inspection or SQL.
 - [x] **Lock ordering protocol.** Document and use ascending physical data-page order for backlink
   mutation, with metadata updates deferred until after data-page writes.
@@ -87,6 +91,10 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 
 - Back-link updates are the hardest part: each insert touches O(M) neighbor pages.
 - The current backlink slices are still intentionally narrow: they only fill free layer-0 / upper-layer
-  slots and defer overflow pruning to the next A5 checkpoint.
-- Pruning weakest neighbor requires scoring all existing neighbors to decide which to evict.
+  slots and defer concurrency hardening to the final A5 checkpoint.
+- Overflow pruning now scores the current layer slice plus the new node and keeps the best
+  `2M` layer-0 or `M` upper-layer links using the existing code scorer.
+- Full-slice rewrite still refuses to overwrite a target layer that changed since the read-side
+  planning snapshot; the concurrency-focused retry/hardening work remains part of the final
+  `100%` milestone.
 - The neighbor selection logic is shared with vacuum graph repair (Task 07).

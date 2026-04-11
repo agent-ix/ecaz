@@ -144,7 +144,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             );
             add_backlinks_to_forward_neighbors(
                 index_relation,
+                &metadata_snapshot,
                 code_len,
+                &tuple.code,
                 &forward_selections,
                 element_tid,
                 m,
@@ -234,10 +236,36 @@ struct LayerForwardSelection {
     element_tid: page::ItemPointer,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BacklinkMutation {
     neighbor_tid: page::ItemPointer,
     layer: u8,
+    kind: BacklinkMutationKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BacklinkMutationKind {
+    InsertIfFree,
+    RewriteFullSlice {
+        expected_slice: Vec<page::ItemPointer>,
+        replacement_slice: Vec<page::ItemPointer>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScoredBacklinkCandidate {
+    tid: page::ItemPointer,
+    score: f32,
+    is_new: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BacklinkPlanner<'a> {
+    metadata: &'a page::MetadataPage,
+    code_len: usize,
+    new_code: &'a [u8],
+    new_element_tid: page::ItemPointer,
+    m: u16,
 }
 
 unsafe fn discover_insert_forward_neighbor_slots(
@@ -389,21 +417,28 @@ fn write_layer_forward_candidates(
 
 unsafe fn add_backlinks_to_forward_neighbors(
     index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
     code_len: usize,
+    new_code: &[u8],
     selections: &[LayerForwardSelection],
     new_element_tid: page::ItemPointer,
     m: u16,
 ) {
+    let planner = BacklinkPlanner {
+        metadata,
+        code_len,
+        new_code,
+        new_element_tid,
+        m,
+    };
     let mut mutations = selections
         .iter()
         .copied()
         .filter(|selection| selection.element_tid != page::ItemPointer::INVALID)
-        .map(|selection| unsafe {
+        .filter_map(|selection| unsafe {
             let element = graph::load_graph_element(index_relation, selection.element_tid, code_len);
-            BacklinkMutation {
-                neighbor_tid: element.neighbortid,
-                layer: selection.layer,
-            }
+            let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
+            plan_backlink_mutation(index_relation, &planner, &element, &neighbors, selection.layer)
         })
         .filter(|mutation| mutation.neighbor_tid != page::ItemPointer::INVALID)
         .collect::<Vec<_>>();
@@ -506,11 +541,11 @@ unsafe fn add_backlinks_on_page(
 
         let mut tuple_changed = false;
         for mutation in &mutations[start..end] {
-            tuple_changed |= insert_backlink_for_layer(
+            tuple_changed |= apply_backlink_mutation(
                 &mut neighbor.tids,
                 new_element_tid,
                 m,
-                mutation.layer,
+                mutation,
             );
         }
         if !tuple_changed {
@@ -543,17 +578,145 @@ unsafe fn add_backlinks_on_page(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
-fn insert_backlink_for_layer(
+unsafe fn plan_backlink_mutation(
+    index_relation: pg_sys::Relation,
+    planner: &BacklinkPlanner<'_>,
+    target_element: &graph::GraphElement,
+    target_neighbors: &graph::GraphNeighbors,
+    layer: u8,
+) -> Option<BacklinkMutation> {
+    let (start, end) =
+        backlink_slot_bounds(usize::from(planner.m), target_neighbors.tids.len(), layer)?;
+    let layer_slice = &target_neighbors.tids[start..end];
+    if layer_slice.contains(&planner.new_element_tid) {
+        return None;
+    }
+
+    if layer_slice.contains(&page::ItemPointer::INVALID) {
+        return Some(BacklinkMutation {
+            neighbor_tid: target_neighbors.tid,
+            layer,
+            kind: BacklinkMutationKind::InsertIfFree,
+        });
+    }
+
+    let replacement_slice = unsafe {
+        select_backlink_rewrite_slice(
+            index_relation,
+            planner.metadata,
+            planner.code_len,
+            &target_element.code,
+            layer_slice,
+            planner.new_element_tid,
+            planner.new_code,
+        )
+    };
+    replacement_slice
+        .contains(&planner.new_element_tid)
+        .then_some(BacklinkMutation {
+            neighbor_tid: target_neighbors.tid,
+            layer,
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_slice: layer_slice.to_vec(),
+                replacement_slice,
+            },
+        })
+}
+
+unsafe fn select_backlink_rewrite_slice(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    code_len: usize,
+    target_code: &[u8],
+    existing_slice: &[page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+    new_code: &[u8],
+) -> Vec<page::ItemPointer> {
+    let mut candidates = existing_slice
+        .iter()
+        .copied()
+        .filter(|tid| *tid != page::ItemPointer::INVALID)
+        .map(|tid| unsafe {
+            let element = graph::load_graph_element(index_relation, tid, code_len);
+            ScoredBacklinkCandidate {
+                tid,
+                score: score_backlink_candidate(metadata, target_code, &element.code),
+                is_new: false,
+            }
+        })
+        .collect::<Vec<_>>();
+    candidates.push(ScoredBacklinkCandidate {
+        tid: new_element_tid,
+        score: score_backlink_candidate(metadata, target_code, new_code),
+        is_new: true,
+    });
+    candidates.sort_unstable_by(|left, right| {
+        left.score
+            .total_cmp(&right.score)
+            .then_with(|| left.is_new.cmp(&right.is_new))
+            .then_with(|| compare_item_pointers(&left.tid, &right.tid))
+    });
+    candidates
+        .into_iter()
+        .take(existing_slice.len())
+        .map(|candidate| candidate.tid)
+        .collect()
+}
+
+fn score_backlink_candidate(
+    metadata: &page::MetadataPage,
+    target_code: &[u8],
+    candidate_code: &[u8],
+) -> f32 {
+    -crate::score_code_inner_product(
+        metadata.dimensions as usize,
+        metadata.bits,
+        metadata.seed,
+        target_code,
+        candidate_code,
+    )
+}
+
+fn apply_backlink_mutation(
     neighbor_tids: &mut [page::ItemPointer],
     new_element_tid: page::ItemPointer,
     m: u16,
-    layer: u8,
+    mutation: &BacklinkMutation,
 ) -> bool {
-    let Some((start, end)) = backlink_slot_bounds(usize::from(m), neighbor_tids.len(), layer)
+    let Some((start, end)) = backlink_slot_bounds(usize::from(m), neighbor_tids.len(), mutation.layer)
     else {
         return false;
     };
     let layer_slice = &mut neighbor_tids[start..end];
+
+    match &mutation.kind {
+        BacklinkMutationKind::InsertIfFree => insert_backlink_if_free(layer_slice, new_element_tid),
+        BacklinkMutationKind::RewriteFullSlice {
+            expected_slice,
+            replacement_slice,
+        } => {
+            if layer_slice.contains(&new_element_tid) {
+                return false;
+            }
+            if insert_backlink_if_free(layer_slice, new_element_tid) {
+                return true;
+            }
+            if layer_slice != expected_slice.as_slice() {
+                return false;
+            }
+            if layer_slice == replacement_slice.as_slice() {
+                return false;
+            }
+            layer_slice.copy_from_slice(replacement_slice);
+            true
+        }
+    }
+}
+
+fn insert_backlink_if_free(
+    layer_slice: &mut [page::ItemPointer],
+    new_element_tid: page::ItemPointer,
+) -> bool {
     if layer_slice.contains(&new_element_tid) {
         return false;
     }
