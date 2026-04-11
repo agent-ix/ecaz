@@ -276,9 +276,11 @@ The wrapper pins the same socket / port / database / `psql` binary as
 `load_real_corpus_scratch.sh`, so the "load then bench" path against the
 repo-local pgrx scratch cluster needs no per-run env setup. Each
 `(m, ef_search)` cell emits one summary line with `p50`, `p95`, `p99`,
-`mean`, `min`, `max`, and observed `qps` against the same query set used
-by the recall probes. See `spec/non-functional/NFR-001-query-latency.md`
-for the gate target.
+`mean`, `min`, `max`, wall-clock cell time, and `server_qps` derived from
+the summed per-query `Execution Time` values rather than client-side `psql`
+spawn overhead. The banner also prints the key scratch-cluster GUCs and
+host CPU / RAM summary so recorded runs are self-describing. See
+`spec/non-functional/NFR-001-query-latency.md` for the gate target.
 
 ## Troubleshooting
 

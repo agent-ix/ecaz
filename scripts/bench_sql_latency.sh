@@ -16,7 +16,8 @@
 #    data — load and bench are decoupled, see docs/RECALL_REAL_CORPUS.md.
 #
 #       scripts/bench_sql_latency.sh --prefix tqhnsw_real_10k \
-#           --m 8 --m 16 --ef-search 40,64,100,128,160,200
+#           --m 8 --m 16 --ef-search 40,64,100,128,160,200 \
+#           --output /tmp/nfr1_real_10k.txt
 set -euo pipefail
 
 PSQL_BIN="${TQV_PSQL_BIN:-psql}"
@@ -83,6 +84,35 @@ done
 # ---------------------------------------------------------------------------
 # Real-corpus mode
 # ---------------------------------------------------------------------------
+print_real_corpus_env_banner() {
+  local shared_buffers
+  local work_mem
+  local max_parallel_workers
+  local host_uname
+  local host_cpu
+  local host_ram
+
+  shared_buffers=$("$PSQL_BIN" -X -A -t -q -c "SHOW shared_buffers;")
+  work_mem=$("$PSQL_BIN" -X -A -t -q -c "SHOW work_mem;")
+  max_parallel_workers=$("$PSQL_BIN" -X -A -t -q -c "SHOW max_parallel_workers_per_gather;")
+  host_uname="$(uname -a)"
+  host_cpu="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//')"
+  host_ram="$(grep -m1 '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2 " " $3}')"
+
+  echo "shared_buffers: ${shared_buffers:-unknown}"
+  echo "work_mem: ${work_mem:-unknown}"
+  echo "max_parallel_workers_per_gather: ${max_parallel_workers:-unknown}"
+  echo "host_uname: ${host_uname:-unknown}"
+  if [[ -n "$host_cpu" ]]; then
+    echo "host_cpu: ${host_cpu}"
+  fi
+  if [[ -n "$host_ram" ]]; then
+    echo "host_ram: ${host_ram}"
+  fi
+  echo "cache_state: operator-supplied; script does not warm cache"
+  echo
+}
+
 run_real_corpus_bench() {
   local prefix="$1"
   if [[ ! "$prefix" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
@@ -124,6 +154,7 @@ run_real_corpus_bench() {
     echo "query limit:  $QUERY_LIMIT"
   fi
   echo
+  print_real_corpus_env_banner
 
   local query_count
   query_count=$("$PSQL_BIN" -X -A -t -q -c "SELECT count(*) FROM ${query_table};")
@@ -140,6 +171,7 @@ run_real_corpus_bench() {
 
   local queries_tsv
   queries_tsv="$(mktemp -t tqv_queries.XXXXXX.tsv)"
+  local results_file=""
   trap 'rm -f "$queries_tsv" "$results_file"' EXIT
 
   local query_select="SELECT source FROM ${query_table} ORDER BY id"
@@ -147,8 +179,11 @@ run_real_corpus_bench() {
     query_select="${query_select} LIMIT ${QUERY_LIMIT}"
   fi
   "$PSQL_BIN" -X -A -t -q -c "${query_select};" > "$queries_tsv"
+  if LC_ALL=C grep -q "'" "$queries_tsv"; then
+    echo "query literals from ${query_table} contain a single quote; refusing to inline unsafe SQL" >&2
+    exit 1
+  fi
 
-  local results_file
   results_file="$(mktemp -t tqv_latency_real.XXXXXX.txt)"
 
   for m in "${PREFIX_M_LIST[@]}"; do
@@ -167,7 +202,7 @@ run_real_corpus_bench() {
       while IFS= read -r query_line; do
         [[ -z "$query_line" ]] && continue
         "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
-SET LOCAL tqhnsw.ef_search = ${ef};
+SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -220,7 +255,8 @@ def pct(p: float) -> float:
 
 
 wall_seconds = max(1e-9, float(wall_end_str) - float(wall_start_str))
-qps = n / wall_seconds
+server_seconds = max(1e-9, sum(times_ms) / 1000.0)
+server_qps = n / server_seconds
 
 summary = {
     "m": int(m_str),
@@ -233,7 +269,7 @@ summary = {
     "min_ms": times_ms[0],
     "max_ms": times_ms[-1],
     "wall_seconds": wall_seconds,
-    "qps": qps,
+    "server_qps": server_qps,
 }
 
 line = (
@@ -245,7 +281,8 @@ line = (
     f"mean={summary['mean_ms']:.3f}ms "
     f"min={summary['min_ms']:.3f}ms "
     f"max={summary['max_ms']:.3f}ms "
-    f"qps={summary['qps']:.2f}"
+    f"wall={summary['wall_seconds']:.3f}s "
+    f"server_qps={summary['server_qps']:.2f}"
 )
 print(line)
 if output_path:
