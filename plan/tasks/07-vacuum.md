@@ -7,9 +7,10 @@ Progress notes:
   longer blockers.
 - Pass 1 is now landed: `ambulkdelete` strips dead heap TIDs from element tuples, and
   `amvacuumcleanup` reports live-element counts instead of raw tuple tags.
-- This first slice intentionally stops short of graph repair and finalization; fully dead elements
-  currently end pass 1 as `heaptids = []` with `deleted = false`, which the scan/runtime path
-  already treats as unreachable.
+- Pass 3 is also now landed for the no-repair checkpoint: fully dead elements are finalized to
+  `deleted = true` once pass 1 removes their last heap TID.
+- Duplicate discovery now skips deleted / empty-heaptid elements, so a post-vacuum duplicate
+  insert cannot reattach to a finalized dead node.
 
 ## Scope
 
@@ -20,7 +21,8 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 - [x] **Pass 1 — Mark.** Scan element tuples, compare heap TIDs against the vacuum callback,
   remove dead TIDs from element tuples, and persist the compacted heaptid payload in place.
 - [ ] **Pass 2 — Graph repair.** For each broken connection (deleted neighbor), search for replacement neighbors using A2 traversal with code-to-code scoring. Reuse neighbor selection/pruning logic from Task 06.
-- [ ] **Pass 3 — Finalize.** Set `deleted = true` on fully-dead element tuples.
+- [x] **Pass 3 — Finalize.** Set `deleted = true` on fully-dead element tuples once pass 1 strips
+  their last heap TID.
 - [x] **amvacuumcleanup.** Report live-element tuple counts and page counts through `IndexBulkDeleteResult`.
 - [ ] **Concurrency validation.** Vacuum must not block concurrent INSERT or SELECT.
 
@@ -55,5 +57,6 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 - Graph repair is the hardest correctness problem. A deleted node's former neighbors need new connections to maintain graph connectivity. This is essentially "insert-like" neighbor finding for existing nodes.
 - pgvector reference: `hnswvacuum.c` three-pass algorithm.
-- Pass 1 already gives correct scan invisibility for fully-dead elements because runtime scan and
-  graph traversal skip `deleted` elements and also skip any element whose `heaptids` array is empty.
+- Runtime scan and graph traversal still skip both `deleted` elements and empty-heaptid elements,
+  but finalized dead tuples now carry `deleted = true` instead of relying only on the empty-heaptid
+  intermediate state.

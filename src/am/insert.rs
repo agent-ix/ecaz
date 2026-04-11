@@ -1084,6 +1084,9 @@ unsafe fn find_duplicate_element_tid(
             let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                 pgrx::error!("tqhnsw failed to decode candidate duplicate tuple: {e}")
             });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
             if element.code == code && element.gamma.to_bits() == gamma.to_bits() {
                 unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
                 return Some(page::ItemPointer {

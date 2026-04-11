@@ -18,6 +18,7 @@ struct ElementVacuumUpdate {
 struct PagePass1Plan {
     live_elements: usize,
     removed_heap_tids: usize,
+    finalize_tids: Vec<page::ItemPointer>,
     updates: Vec<ElementVacuumUpdate>,
 }
 
@@ -65,6 +66,7 @@ unsafe fn run_pass1_vacuum(
 
     let mut live_elements = 0_usize;
     let mut removed_heap_tids = 0_usize;
+    let mut finalize_tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
         let share_buffer = unsafe {
@@ -98,6 +100,7 @@ unsafe fn run_pass1_vacuum(
         if share_plan.updates.is_empty() {
             live_elements += share_plan.live_elements;
             removed_heap_tids += share_plan.removed_heap_tids;
+            finalize_tids.extend(share_plan.finalize_tids);
             continue;
         }
 
@@ -126,7 +129,10 @@ unsafe fn run_pass1_vacuum(
         };
         live_elements += final_plan.live_elements;
         removed_heap_tids += final_plan.removed_heap_tids;
+        finalize_tids.extend(final_plan.finalize_tids);
     }
+
+    unsafe { finalize_fully_dead_elements(index_relation, code_len, &finalize_tids) };
 
     unsafe {
         (*stats).num_pages = block_count;
@@ -217,6 +223,9 @@ unsafe fn plan_page_pass1(
         if !element.deleted && !element.heaptids.is_empty() {
             plan.live_elements += 1;
         }
+        if !element.deleted && element.heaptids.is_empty() {
+            plan.finalize_tids.push(tid);
+        }
         if removed == 0 {
             continue;
         }
@@ -270,6 +279,118 @@ unsafe fn apply_page_pass1_updates(
             ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), tuple_len);
         }
     }
+}
+
+unsafe fn finalize_fully_dead_elements(
+    index_relation: pg_sys::Relation,
+    code_len: usize,
+    tids: &[page::ItemPointer],
+) {
+    if tids.is_empty() {
+        return;
+    }
+
+    let mut tids = tids.to_vec();
+    tids.sort_unstable_by(compare_item_pointers);
+    tids.dedup();
+
+    let mut start = 0;
+    while start < tids.len() {
+        let block_number = tids[start].block_number;
+        let mut end = start + 1;
+        while end < tids.len() && tids[end].block_number == block_number {
+            end += 1;
+        }
+
+        unsafe {
+            finalize_fully_dead_elements_on_page(
+                index_relation,
+                block_number,
+                code_len,
+                &tids[start..end],
+            )
+        };
+        start = end;
+    }
+}
+
+unsafe fn finalize_fully_dead_elements_on_page(
+    index_relation: pg_sys::Relation,
+    block_number: u32,
+    code_len: usize,
+    tids: &[page::ItemPointer],
+) {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to open finalize block {block_number}");
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut updates = Vec::new();
+
+    for tid in tids {
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
+        if item_id.lp_flags() == 0 {
+            pgrx::error!(
+                "tqhnsw finalize element tuple slot {}/{} is unused",
+                tid.block_number,
+                tid.offset_number
+            );
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!("tqhnsw found invalid finalize tuple bounds on block {block_number}");
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
+        });
+        if element.deleted || !element.heaptids.is_empty() {
+            continue;
+        }
+
+        element.deleted = true;
+        updates.push(ElementVacuumUpdate {
+            tid: *tid,
+            tuple: element,
+        });
+    }
+
+    if updates.is_empty() {
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return;
+    }
+
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let wal_page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    unsafe { apply_page_pass1_updates(wal_page_ptr, page_size, block_number, &updates) };
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+fn compare_item_pointers(
+    left: &page::ItemPointer,
+    right: &page::ItemPointer,
+) -> std::cmp::Ordering {
+    left.block_number
+        .cmp(&right.block_number)
+        .then_with(|| left.offset_number.cmp(&right.offset_number))
 }
 
 unsafe fn heap_tid_is_dead(

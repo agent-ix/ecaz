@@ -4427,15 +4427,15 @@ mod tests {
                         ProdQuantizer::new(4, 4, 42).encode(&[0.5, 1.0, -0.5, 0.25]),
                     )
             })
-            .expect("deleted element should still be present until finalize");
+            .expect("deleted element should still be present after vacuum finalization");
 
         assert!(
             deleted_element.1.heaptids.is_empty(),
             "pass 1 should clear the last heap tid from a fully dead element",
         );
         assert!(
-            !deleted_element.1.deleted,
-            "pass 1 should defer the deleted flag to the finalize pass",
+            deleted_element.1.deleted,
+            "vacuum should finalize a fully dead element once pass 1 strips its last heap tid",
         );
 
         let returned =
@@ -4491,10 +4491,67 @@ mod tests {
         assert_eq!(
             elements
                 .iter()
-                .filter(|(_, element)| element.heaptids.is_empty())
+                .filter(|(_, element)| element.heaptids.is_empty() && element.deleted)
                 .count(),
             1,
-            "the second pass should observe the already-empty fully dead element without rewriting it again",
+            "the second pass should observe the already-finalized fully dead element without rewriting it again",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_finalized_nodes_skip_duplicate_coalesce() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_reinsert (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+             (1, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_reinsert_idx ON tqhnsw_vacuum_reinsert USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 1);
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_reinsert_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_reinsert WHERE id = 1").expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+        )
+        .expect("replacement insert should succeed");
+
+        let replacement_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 2);
+        let (_metadata, elements, _neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_replacement_tid, replacement_element) =
+            find_element_for_heap_tid(&elements, replacement_heap_tid);
+
+        assert!(
+            !replacement_element.deleted,
+            "duplicate insert should append or coalesce into a live element, not a finalized tombstone",
+        );
+        assert_eq!(replacement_element.heaptids, vec![replacement_heap_tid]);
+        assert_eq!(
+            elements.iter().filter(|(_, element)| element.deleted).count(),
+            1,
+            "the finalized vacuum tombstone should remain on disk until page compaction lands",
+        );
+
+        let returned =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, vec![0.5, 1.0, -0.5, 0.25]) };
+        assert!(
+            returned.contains(&(replacement_heap_tid.block_number, replacement_heap_tid.offset_number)),
+            "the replacement row should stay reachable after reinserting the same encoded vector",
         );
     }
 
