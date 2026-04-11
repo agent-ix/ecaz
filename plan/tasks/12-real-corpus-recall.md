@@ -1,6 +1,6 @@
 # Task 12: Real-Corpus Recall Validation
 
-Status: lane in progress — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, broader real `50K` gate slices now pass too, and the remaining question is signoff scope rather than basic recall viability.
+Status: done for `v0.1` A4 signoff — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, and broader real `50K` gate slices also pass comfortably on `main`.
 
 ## Scope
 
@@ -26,7 +26,8 @@ Recent A4 investigation changed the problem statement:
 - `NFR-003` already says recall benchmarks SHALL run against DBpedia OpenAI embeddings or
   equivalent
 
-So A4 is now blocked on benchmark methodology as well as implementation correctness.
+So A4 had to be re-grounded on benchmark methodology as well as implementation correctness; this
+task is the lane that resolved that ambiguity on `main`.
 
 ## Subtasks
 
@@ -65,6 +66,9 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
   `(m, ef_search, corpus_rows, query_count, graph_recall_at_10, graph_recall_at_100, ndcg_at_10,
   mean_abs_score_error, spearman_rho_at_10, exact_quantized_recall_at_10, graph_below_exact_queries,
   worst_exact_gap)` per call. The gate report adds the explicit `passes_gate` column.
+- [x] **A4 closeout evidence.** Canonical real `10K` and broader real `50K` signoff evidence is
+  recorded in review packets `223` through `226`, closing A4 on the real-corpus surface required
+  by `NFR-003`.
 
 ## Owns
 
@@ -78,7 +82,7 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 
 ## Unblocks
 
-- A4 decision-making on a credible dataset
+- A4 closeout on a credible dataset
 - Final `NFR-003` benchmark reporting
 - Any project decision about whether the current A4 failure is an implementation defect or a
   synthetic-fixture mismatch
@@ -90,7 +94,7 @@ So A4 is now blocked on benchmark methodology as well as implementation correctn
 - A manifest/hash contract that makes the staged subset reproducible across reruns
 - A loader script / SQL path for corpus and query tables
 - Reusable relation-backed recall measurement on external data
-- A benchmark report or review packet with the first real-corpus A4 results
+- A benchmark report or review packet with the real-corpus A4 signoff results
 
 ## Primary Tests
 

@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-10
-Basis: real-corpus recall lane is live on `main`; canonical DBpedia-derived `10K` gate passes strongly; directional `50K` gate slices are healthy; broader `50K` reruns remain a harness-cost problem
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence; real `10K` passes strongly and broader real `50K` gate slices remain comfortably above threshold
 
 ## Reading Guide
 
@@ -14,12 +14,12 @@ Basis: real-corpus recall lane is live on `main`; canonical DBpedia-derived `10K
 
 | Rollup | % Done | Meaning |
 | --- | ---: | --- |
-| Correctness-complete | 78% | Foundation/build solid; graph-first scan complete; graph-aware insert and vacuum repair remain |
-| Test/validation-complete | 76% | Broad unit/integration/CI coverage exists, but graph-first scan validation and final unsafe hardening remain |
-| Benchmark/profile-complete | 36% | Benchmark harnesses exist, but end-to-end HNSW latency, storage, and recall evidence is still mostly blocked |
-| Optimization-complete | 18% | SIMD runtime dispatch and AVX2+NEON scoring landed on feature branch; merge and throughput proof pending A3 |
-| Release-ready | 56% | Build packaging and quality infrastructure are in decent shape; cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
-| Total project completion | 72% | Weighted overall estimate to final intended scope |
+| Correctness-complete | 82% | Foundation/build solid; graph-first scan and recall gate are complete; graph-aware insert and vacuum repair remain |
+| Test/validation-complete | 80% | Broad unit/integration/CI coverage exists, with real-corpus recall evidence now in hand; final unsafe hardening remains |
+| Benchmark/profile-complete | 42% | Benchmark harnesses exist and the initial real-corpus recall gate is closed; latency/storage and post-insert/vacuum suites remain |
+| Optimization-complete | 18% | SIMD runtime dispatch and AVX2+NEON scoring landed on feature branch; merge and throughput proof remain for the integration lane |
+| Release-ready | 62% | Build packaging and quality infrastructure are in decent shape, and the initial recall gate is now closed on real data |
+| Total project completion | 75% | Weighted overall estimate to final intended scope |
 
 ## Execution Task Map
 
@@ -28,15 +28,15 @@ Basis: real-corpus recall lane is live on `main`; canonical DBpedia-derived `10K
 | `A1` | AM split | `scan`, `insert`, `build`, `options`, `cost`, `vacuum`, `routine`, `shared`, `search` module split | Done | 100% | Complete on `main` |
 | `A2` | Graph/search traversal seam | Layer-0 traversal helpers, visible frontier protocol, bootstrap traversal boundary | Done | 100% | Landed as part of the A3 close arc |
 | `A3` | Graph-first scan runtime | Make graph/search traversal the primary ordered scan path with linear fallback shell | **Done** | 100% | Cursor-owned graph-first runtime complete (reviews 182-193); bootstrap helpers gated to test/debug |
-| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **In progress — strong real-data pass, final signoff pending** | 93% | Synthetic `10K` still hard-fails and is no longer treated as a credible gate surface by itself, but canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`), broader real `50K` gate evidence is now also strong (`10`-query gate: `87.0% / 90.0% / 91.0% / 92.0%`; `50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`), and the gate path no longer pays the exact-quantized summary cost; remaining work is signoff scope, not recall collapse |
-| `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Blocked on `A3`/`A4` |
-| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Blocked on `A3`/`A4` |
+| `A4` | Recall gate | HNSW Recall@10 measurement and go/no-go threshold | **Done** | 100% | Closed on 2026-04-10: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`) |
+| `A5` | Graph-aware insert | Greedy descent, neighbor selection, backlinks, drift handling | Not started | 0% | Unblocked by `A4`; next runtime lane |
+| `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | Not started | 0% | Unblocked by `A4`; follows `A5` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **In progress (coder-2)** | 25% | Runtime dispatch + AVX2/NEON scoring on feature branch `coder1-b1-simd-accel` |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are blocked on `A3`/`A5`/`A6` |
-| `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **In progress** | 95% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and strong real `10K` / broader real `50K` results are landed; remaining work is signoff reporting |
+| `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
-| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 5% | Blocked on `A4` and planner gate retirement |
+| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 10% | No longer blocked on A4 recall evidence; still gated by ADR-011 retirement and downstream sequencing |
 
 ## 1. Foundation / Build
 
@@ -57,7 +57,7 @@ Foundation / build rollup: 100%
 | Graph-first ordered execution | Make graph/search traversal primary in `amgettuple` | Done | 100% | Cursor-owned runtime complete; bootstrap helpers gated to test/debug |
 | Linear fallback policy | Keep linear scan as explicit fallback shell during A3 | Done | 100% | Fallback is now explicit and only entered when graph traversal cannot produce an initial ordered result |
 | `ef_search` runtime behavior | Resolved `ef_search` drives bootstrap frontier sizing | Mostly done | 85% | Main runtime wiring landed; sentinel cleanup remains elsewhere |
-| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Done | 100% | Repaired batched fixture harness plus fixture-backed gate helpers now support reusable 10K report surfaces, but one-time 10K reset/index build is still too expensive for an interactive loop |
+| Recall gate readiness | Runtime integrity sufficient to measure HNSW Recall@10 | Done | 100% | Repaired fixture and external real-corpus helpers now support reusable gate/report surfaces, including detached real-corpus gate capture on `main` |
 
 Scan runtime rollup: 72%
 
@@ -66,7 +66,7 @@ Scan runtime rollup: 72%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Current insert correctness | Shape validation, metadata setup, duplicate handling, tail-page append/reuse | Partial | 55% | Safe append path exists |
-| Graph-aware insert | Greedy descent, neighbor selection, backlink repair | Not started | 0% | Blocked on validated graph-first scan |
+| Graph-aware insert | Greedy descent, neighbor selection, backlink repair | Not started | 0% | Unblocked by A4; next runtime implementation task |
 | Insert drift accounting | Inserted-since-rebuild tracking and drift-aware measurement | Not started | 0% | Follows graph-aware insert |
 
 Insert path rollup: 22%
@@ -76,7 +76,7 @@ Insert path rollup: 22%
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
 | Vacuum callback scaffold | Vacuum module split and base callback structure | Partial | 35% | Structural base exists |
-| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Not started | 0% | Blocked on graph traversal confidence |
+| Graph repair logic | Mark, repair, finalize passes over deleted nodes | Not started | 0% | Runtime foundation is now in place; implementation still follows A5 |
 | Stats cleanup integration | `amvacuumcleanup` and stats alignment | Not started | 0% | Follows repair implementation |
 
 Vacuum / repair rollup: 12%
@@ -99,7 +99,7 @@ Planner / PG18 rollup: 42%
 | Unit / property / layout tests | Scalar, page, codec, search protocol, size/layout checks | Strong | 92% | Broad low-level coverage exists |
 | `cargo test` / `pgrx test` integration | Extension-level build and runtime integration | Strong | 82% | Good staged-behavior coverage exists |
 | CI / safety tooling | Clippy, deny, fuzz, miri, benchmark-action, nightly checks | Strong | 75% | Base infrastructure is present |
-| Graph-first runtime validation | Ordered scan behavior under A3 | In progress | 78% | Ordered-result regression is in place; repaired 10K evidence still fails, but the new live `1k` tiled-FWHT probe clears a `70%` graph Recall@10 floor at `(m=8, ef=128)` |
+| Graph-first runtime validation | Ordered scan behavior under A3 | Strong | 92% | Ordered-result regression is in place, canonical real `10K` passes strongly, and broader real `50K` slices stay comfortably above the A4 gate |
 | Unsafe/stability audit | Final unsafe review and hardening pass | Partial | 50% | Tooling exists; final audit remains |
 
 Testing / validation rollup: 76%
@@ -112,10 +112,10 @@ Testing / validation rollup: 76%
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 80% | Useful baseline numbers exist |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A5/A6 and full benchmark runs |
-| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | In progress — blocked on dataset lane | 50% | Repaired 10K synthetic graph-first run on 2026-04-08 still fails, the `1536` tiled-FWHT production path materially raises the cheap `1k` exact ceiling and clears a live `1k` graph probe, but new raw-reference baselines also show the current synthetic fixtures are not a credible gate surface; Task 12 / C2 now tracks the real-corpus rerun path |
+| End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Strong | 78% | The initial real-corpus signoff surface is now closed: canonical real `10K` passes strongly and the broader real `50K` `50`-query gate reports `92.6% / 94.4% / 94.8% / 95.2%`; broader post-gate reporting remains under `C1` |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
-Benchmarking / profiling rollup: 36%
+Benchmarking / profiling rollup: 42%
 
 ## 8. Optimization / SIMD
 
@@ -124,7 +124,7 @@ Benchmarking / profiling rollup: 36%
 | Scalar baseline | Working scalar quantizer and scan code paths | Partial | 55% | Correct baseline exists, but this is not the same as an optimization pass |
 | Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Not started | 10% | Benchmark harnesses exist, but no serious optimization campaign has been run yet |
 | SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **In progress** | 25% | Runtime dispatch + AVX2/NEON scoring paths on feature branch; equivalence tests and throughput proof pending |
-| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 0% | Wait until A4 confirms scalar recall/correctness on the live graph path |
+| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 10% | A4 is closed; further tuning is now post-gate optimization work rather than recall rescue |
 | Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | Not started | 5% | Some design notes exist, not a real tuning pass yet |
 
 Optimization / SIMD rollup: 18%
@@ -146,17 +146,17 @@ Docs / coordination rollup: 80%
 | --- | --- | --- | ---: | --- |
 | Extension packaging/build | Extension packaging and local build/install path | Done | 100% | Solid |
 | Quality gate infrastructure | CI, deny, miri, fuzz, benchmark-action, validation commands | Strong | 75% | Good base exists |
-| Release proof | Recall signoff, planner/runtime readiness, benchmark evidence | Not started | 20% | Depends on A3, A4, D2 |
+| Release proof | Recall signoff, planner/runtime readiness, benchmark evidence | Partial | 40% | Recall signoff is now in hand; planner/runtime maturity and broader benchmark evidence remain |
 | Operational confidence | Final safety/perf/readiness sweep | Partial | 35% | Needs end-to-end runtime maturity |
 
-Release / quality-gate rollup: 58%
+Release / quality-gate rollup: 62%
 
 ## Current Critical Sequence
 
-1. **Coder-1:** A3 done — graph-first scan runtime is cursor-owned and live. **A4 is next: recall gate.**
-2. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge after A4 confirms scalar correctness.
-3. **Now:** A4 remains open, but the live real-data picture is strong: canonical real `10K` passes strongly and a broader real `50K` `50`-query gate also clears comfortably. The highest-value next move is therefore signoff/reporting, not more synthetic debugging.
-4. After A4 is signed off on the chosen real-corpus surface: merge SIMD, D2 planner activation, A5 insert, A6 vacuum.
+1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
+2. **Next runtime lane:** A5 graph-aware insert, followed by A6 vacuum repair.
+3. **Coder-2:** B1 in progress — SIMD acceleration on feature branch. Merge timing is now a sequencing decision, not a recall blocker.
+4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
 5. Full SQL benchmark result generation after A5/A6.
 
 ## Current Major Blockers
@@ -164,9 +164,8 @@ Release / quality-gate rollup: 58%
 | Blocker | Affects | Owner / lane |
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
-| Synthetic `10K` still fails badly and remains misleading as a gate surface, even though real `10K` / directional `50K` now look healthy | `A4`, `C1`, `C2`, `D2` | Benchmark methodology lane |
-| The project still needs to decide what real-corpus artifact is sufficient for final A4 signoff | `A4`, `C2`, `C1` | Benchmark methodology lane |
+| Synthetic `10K` still fails badly and remains misleading as a benchmark surface | `C1`, post-gate methodology work | Benchmark methodology lane |
 | Graph-aware insert is not yet implemented | `A5`, `C1` drift benchmarks | Runtime lane |
 | Vacuum graph repair is not yet implemented | `A6`, `C1` post-vacuum benchmarks | Runtime lane |
-| ADR-011 planner gate is still active | `D2` | Planner lane after `A4` |
-| SIMD merge blocked on A3 scalar correctness confirmation | `B1` merge | Coder-2 (feature branch ready, merge after A3) |
+| ADR-011 planner gate is still active | `D2` | Planner lane after A4 |
+| SIMD merge still needs normal integration timing and follow-up proof | `B1` merge | Coder-2 / integration lane |

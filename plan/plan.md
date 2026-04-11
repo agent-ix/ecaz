@@ -2,7 +2,7 @@
 
 This plan is derived from the current `spec/` set for `tqvector`, with dependency edges inferred primarily from `traces:` frontmatter and validated against the requirement text.
 
-Last updated: 2026-04-10 (real-corpus lane live on `main`; canonical real `10K` gate passes strongly; broader real `50K` gate slices now pass too; remaining work is A4 signoff scope).
+Last updated: 2026-04-10 (A4 closed on `main` using canonical real-corpus evidence; canonical real `10K` passes strongly and broader real `50K` gate slices also pass comfortably).
 
 ## Current Task Board
 
@@ -11,25 +11,25 @@ Last updated: 2026-04-10 (real-corpus lane live on `main`; canonical real `10K` 
 - `A1` AM split: **done**
 - `A2` graph/search traversal seam: **done** (search seam extraction complete)
 - `A3` wire graph-first scan runtime: **done** (cursor-owned runtime, reviews 161-193)
-- `A4` recall gate: **in progress — strong real-data pass, final signoff pending** ← current focus
-- `A5` graph-aware insert: blocked on A4
-- `A6` vacuum repair: blocked on A4
+- `A4` recall gate: **done**
+- `A5` graph-aware insert: next runtime focus
+- `A6` vacuum repair: follows A5
 
 ### Parallel lanes
 
-- `B1` SIMD: **in progress** (coder-2, feature branch; merge after A4 confirms scalar correctness)
+- `B1` SIMD: **in progress** (coder-2, feature branch; merge when integration timing is right)
 - `B2` CI / fuzz / quality gates: mostly complete (TC-036 unsafe audit remaining)
-- `C2` real-corpus recall lane: **in progress** (loader + broader real results landed; signoff/reporting remains)
+- `C2` real-corpus recall lane: **done for A4** (loader + real-corpus signoff evidence landed)
 - `D1` planner scaffold: **done** (merged to main from planner-integration-lane + planner-part2)
-- `D2` planner activation: blocked on A4 and ADR-011 retirement
+- `D2` planner activation: no longer blocked on A4 recall evidence; still gated by ADR-011 retirement and project sequencing
 
 ### Current sequencing
 
-1. **Coder-1:** A4 synthetic/runtime debugging established that the in-repo synthetic fixtures are reproducible but not credible gate surfaces by themselves.
-2. **Current immediate lane:** C2 / Task 12 is now live on `main`: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`), and broader real `50K` evidence now also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
-3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch, still blocked on A4 signoff.
-4. After A4 is signed off on the chosen real-corpus surface: merge SIMD, D2 planner activation, A5 insert, A6 vacuum can proceed.
-5. Full SQL benchmark result generation after A5/A6.
+1. **Coder-1:** A4 is closed. The real-corpus lane on `main` now carries the trusted signoff surface: canonical real `10K` passes strongly (`97.1% / 97.3% / 97.4% / 97.5%`) and broader real `50K` evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
+2. **Current immediate runtime lane:** A5 graph-aware insert.
+3. **Coder-2:** B1 — SIMD acceleration (AVX2+FMA, NEON, runtime detection). Feature branch; merge timing is now a normal integration decision rather than an A4 blocker.
+4. After A5/A6, run the broader SQL benchmark/reporting arc under `C1`.
+5. D2 planner activation remains intentionally sequenced behind ADR-011 retirement and the post-A4 runtime priorities.
 
 ## Requirements Summary
 
@@ -49,7 +49,7 @@ Last updated: 2026-04-10 (real-corpus lane live on `main`; canonical real `10K` 
 - [x] **FR-006**: SQL operators and operator class.
 - [x] **FR-007**: HNSW page layout and tuple/page invariants.
 - [x] **FR-008**: HNSW bulk build callbacks.
-- [ ] **FR-009**: HNSW scan callbacks and `ef_search` behavior.
+- [x] **FR-009**: HNSW scan callbacks and `ef_search` behavior.
 - [ ] **FR-010**: HNSW vacuum callbacks.
 - [x] **FR-011**: WAL safety via GenericXLog.
 - [x] **FR-012**: SQL bootstrap and extension packaging.
@@ -68,7 +68,7 @@ Last updated: 2026-04-10 (real-corpus lane live on `main`; canonical real `10K` 
 
 - [ ] **NFR-001**: Query latency and throughput targets. _Microbench infrastructure done; SQL-level blocked on scan._
 - [ ] **NFR-002**: Storage compression and index-size accounting. _Layout assertions done; pg_relation_size blocked on scan._
-- [ ] **NFR-003**: Recall quality and benchmark methodology. _Real-corpus lane is now live on `main`: canonical real `10K` passes strongly and broader real `50K` gate slices also pass. Remaining work is final signoff/reporting, not proving recall on the old synthetic gate alone._
+- [ ] **NFR-003**: Recall quality and benchmark methodology. _The A4 signoff slice is now closed on real corpus (`10K` and broader `50K` evidence landed on `main`), while broader post-gate benchmark/reporting work remains under `C1`._
 - [ ] **NFR-004**: Safety and stability. _Fuzz targets (4), miri (11), proptest (15) done; unsafe audit remaining._
 - [ ] **NFR-005**: Build and CI quality gates. _CI pipeline, Makefile, proptest, layout-check, bench-action done; cargo deny wired._
 
@@ -155,12 +155,13 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 
 ### Current State Summary
 
-The extension is ~70% complete. All quantizer, type, scoring, page layout, and build code is done.
-The critical gap is FR-009 ordered graph traversal scan — without it, index queries don't work.
-Planner/config groundwork is now substantially complete on `main`: the pure cost model, callback
+The extension is ~75% complete. Quantizer, type, scoring, page layout, build, graph-first scan,
+and the initial recall gate are all complete on `main`.
+The next runtime-critical gaps are FR-016 graph-aware insert and FR-010 vacuum repair.
+Planner/config groundwork is substantially complete on `main`: the pure cost model, callback
 scaffolding, and `ef_search` control-surface wiring are merged, while planner-visible scans remain
-intentionally disabled behind ADR-011 and D2 remains blocked on A4. Insert and vacuum also need
-graph traversal for neighbor selection and graph repair, making scan the single gating dependency.
+intentionally disabled behind ADR-011. With A4 closed, planner activation is no longer blocked on
+recall evidence, but it is still sequenced after the next runtime priorities.
 
 ### Remaining Dependency Graph
 
@@ -277,7 +278,8 @@ All items are serial because each depends on the previous.
   2. Recall@10 measurement (set intersection)
   3. Test at multiple configurations: (m=8, ef=40), (m=8, ef=128), (m=8, ef=200), (m=16, ef=200)
   4. Report recall numbers — these anchor all downstream quality claims
-- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Old 2026-04-08 synthetic `10K` evidence (`8.4% / 21.8% / 26.8% / 35.3%`) remains a useful contradiction, but not a credible signoff surface by itself. Current 2026-04-10 real-data evidence is materially better: canonical real `10K` passes strongly at `97.1% / 97.3% / 97.4% / 97.5%`, and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`). A4 therefore remains open only until the project records the final real-corpus signoff artifact it wants to trust.
+- **Exit criteria:** Recall@10 >= 89% at m=8 ef=128 on 10K+ vectors at 1536-dim 4-bit. Old 2026-04-08 synthetic `10K` evidence (`8.4% / 21.8% / 26.8% / 35.3%`) remains a useful contradiction, but not a credible signoff surface by itself. Current 2026-04-10 real-data evidence is materially better: canonical real `10K` passes strongly at `97.1% / 97.3% / 97.4% / 97.5%`, and broader real `50K` gate evidence also passes (`50`-query gate: `92.6% / 94.4% / 94.8% / 95.2%`).
+- **Status: CLOSED** (2026-04-10, reviews 223-226). The A4 release gate is satisfied on the real-corpus surface required by `NFR-003`.
 
 #### A5: Graph-Aware Insert (FR-016)
 - **Scope:** Replace disconnected-append insert with graph-connected insert. Layer assignment, greedy descent via A2 helpers, beam search for neighbors, back-link updates, entry point promotion, drift statistics.
@@ -349,7 +351,7 @@ Planner integration spans two phases: scaffolding that can start now, and wiring
   6. ReadStream callback signatures for graph and linear streams (PG18, feature-gated, not yet wired into scan loop)
   7. Unit tests for cost model: planner selects index at 10K rows, prefers seqscan at 50 rows, handles edge cases (empty index, zero reltuples)
 - **File ownership:** `am/cost.rs` (cost model + amgettreeheight), `am/explain.rs` (EXPLAIN hook), `am/stream.rs` (async I/O). These files do not overlap with graph search agent's `am/scan.rs` and `am/search.rs`.
-- **Status:** substantially complete on `main` after merging `planner-integration-lane` and `planner-part2`; only D2 wiring remains blocked on A4.
+- **Status:** substantially complete on `main` after merging `planner-integration-lane` and `planner-part2`; only D2 wiring and ADR-011 retirement remain.
 - **Exit criteria:** All scaffolding compiles, tests pass, but `amcostestimate` still returns `f64::MAX`. No functional change to query behavior.
 
 #### D2: Wire Planner (gated on A4 recall gate)
@@ -412,13 +414,13 @@ Coder-2 (planner → SIMD):
 | `02-datum-and-io.md` | Phase 2 (type/I/O) | complete |
 | `03-sql-surface.md` | Phase 2 (functions/operators) | complete |
 | `04-page-layout-and-wal.md` | Phase 3 | complete |
-| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | **A1/A2/A3 done, A4 ready to start** |
+| `05-graph-scan.md` | A1 + A2 + A3 + A4 (scan critical path) | **A1/A2/A3/A4 done on main** |
 | `06-graph-insert.md` | A5 (graph-aware insert) | blocked on 05 |
 | `07-vacuum.md` | A6 (vacuum three-pass) | blocked on 05, 06 |
 | `08-simd.md` | B1 (SIMD acceleration) | **in progress (coder-2, feature branch)** |
 | `09-ci-and-safety.md` | B2 (CI pipeline, fuzz, audit) | mostly complete (unsafe audit remaining) |
 | `10-benchmarks.md` | C1 (full benchmark suite) | **infrastructure complete**, NFR runs blocked on 05 |
-| `11-planner.md` | D1 + D2 (planner integration) | **D1 done on main; D2 blocked on A4** |
+| `11-planner.md` | D1 + D2 (planner integration) | **D1 done on main; D2 no longer blocked on A4 recall evidence** |
 
 ---
 
@@ -537,6 +539,6 @@ Exit criteria:
 ### Active risks
 - **Graph traversal correctness:** The A2 traversal helper is the foundation for scan, insert, and vacuum. A bug here propagates everywhere. Invest in thorough testing with known-graph topologies before building on top.
 - **Buffer pin discipline:** Traversal must read/decode/release per page. Holding pins across neighbor hops will deadlock or exhaust shared_buffers. Test with `max_buffer_pins` instrumentation.
-- **Recall uncertainty:** Until A4 measures recall, there is no evidence the quantizer+HNSW combination meets spec targets. This is an existential risk. Do not skip the recall gate.
+- **Synthetic-vs-real benchmark mismatch:** The old synthetic `10K` contradiction remains useful for debugging, but it is no longer the signoff surface. Keep the real-corpus lane as the benchmark authority for future recall claims.
 - **Insert lock ordering:** Back-link updates touch multiple pages per insert. Without a consistent lock ordering protocol, concurrent inserts can deadlock. Define and document the protocol in A5 before implementing.
 - **SIMD merge timing:** SIMD work (B1) can proceed in parallel but should not merge into main until after A3 confirms scalar scan correctness. Merging SIMD earlier risks masking scalar bugs behind SIMD-specific behavior.
