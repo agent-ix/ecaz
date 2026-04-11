@@ -239,6 +239,64 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
    );
    ```
 
+## Truth Cache (wide query slices)
+
+Each call to `tqhnsw_graph_scan_recall_external_gate_report` /
+`tqhnsw_graph_scan_recall_external_summary` rebuilds the fp32 ground-truth
+set and the exact-quantized top-10 from scratch. For `tqhnsw_real_50k` that is
+`Q × 50_000` fp32 inner products plus `Q` sequential scans — several minutes
+of blocking SPI work at `Q = 50` and beyond, and enough that wider slices have
+been timing out client sessions before the report finishes.
+
+The truth cache surfaces split that work into a one-time build plus a cheap
+cached probe. The expensive work is materialized into two Postgres tables
+(`<cache_prefix>_truth`, `<cache_prefix>_exact_quantized`); cached gate and
+summary calls read those tables instead of recomputing.
+
+1. Build the cache once per `(corpus_table, query_table)` pair:
+   ```sql
+   SELECT * FROM tqhnsw_graph_scan_recall_external_cache_build(
+       'tqhnsw_real_50k_corpus',
+       'tqhnsw_real_50k_queries',
+       'tqhnsw_real_50k_cache'
+   );
+   -- corpus_rows | query_count | truth_rows | exact_quantized_rows
+   ```
+   The function is idempotent: it runs `CREATE TABLE IF NOT EXISTS` and
+   `TRUNCATE` before repopulating, so rerunning it refreshes the cache in
+   place.
+
+2. Run the cached gate report against the warm cache:
+   ```sql
+   SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report_cached(
+       'tqhnsw_real_50k_corpus',
+       'tqhnsw_real_50k_queries',
+       'tqhnsw_real_50k_cache',
+       'tqhnsw_real_50k'
+   );
+   ```
+   The row shape is identical to `tqhnsw_graph_scan_recall_external_gate_report`.
+   The cached variant produces the same numbers as the non-cached variant for
+   the same `(corpus, queries, index)`; it only removes the repeated
+   `O(Q × N)` truth work.
+
+3. For per-query detail against a warm cache, use the cached summary surface:
+   ```sql
+   SELECT * FROM tqhnsw_graph_scan_recall_external_summary_cached(
+       'tqhnsw_real_50k_corpus',
+       'tqhnsw_real_50k_queries',
+       'tqhnsw_real_50k_cache',
+       'tqhnsw_real_50k_m8_idx',
+       8,
+       128
+   );
+   ```
+
+The cache is keyed on the `(corpus_table, query_table)` pair that was passed
+to `_cache_build`. Rebuild the cache whenever either relation changes.
+Indexes are not cached — `ctid_to_row_index` is index-specific and is always
+rebuilt live inside each probe call.
+
 ## Reporting
 
 Real-corpus A4 results MUST be recorded in the same durable style as the

@@ -6409,6 +6409,274 @@ mod tests {
         }
     }
 
+    /// Build the expensive half of `build_external_recall_context` once and
+    /// materialize it into two Postgres cache tables keyed by `cache_prefix`.
+    ///
+    /// Returns `(corpus_rows, query_count, truth_rows, exact_quantized_rows)`
+    /// so callers can verify the cache was populated.
+    ///
+    /// The tables are `CREATE TABLE IF NOT EXISTS` + `TRUNCATE`, making the
+    /// call idempotent. Subsequent gate-report / summary calls can use the
+    /// `_cached` variants to skip the `O(Q × N)` fp32 truth work and the Q
+    /// exact-quantized sequential scans.
+    fn build_external_recall_truth_cache(
+        corpus_table: &str,
+        query_table: &str,
+        cache_prefix: &str,
+    ) -> (i32, i32, i32, i32) {
+        let cache_prefix_ident = recall_fixture_ident(cache_prefix);
+        let truth_table = format!("{cache_prefix_ident}_truth");
+        let exact_quantized_table = format!("{cache_prefix_ident}_exact_quantized");
+
+        // One-time expensive build: corpus load + fp32 truth + exact-quantized
+        // top-10. The non-cached path already does exactly this work; reuse it
+        // so the cached path and the live path cannot drift.
+        let context = build_external_recall_context(corpus_table, query_table, true);
+        let exact_quantized_row_indices_top10 = context
+            .exact_quantized_row_indices_top10
+            .as_ref()
+            .expect("cache build should include exact quantized top-10 rows");
+
+        Spi::run(&format!(
+            "CREATE TABLE IF NOT EXISTS {truth_table} (
+                query_idx int4 NOT NULL,
+                rank int4 NOT NULL,
+                corpus_row_idx int8 NOT NULL,
+                score float4 NOT NULL
+            )"
+        ))
+        .expect("truth cache table create should succeed");
+        Spi::run(&format!(
+            "CREATE TABLE IF NOT EXISTS {exact_quantized_table} (
+                query_idx int4 NOT NULL,
+                rank int4 NOT NULL,
+                corpus_row_idx int8 NOT NULL
+            )"
+        ))
+        .expect("exact quantized cache table create should succeed");
+        Spi::run(&format!("TRUNCATE {truth_table}"))
+            .expect("truth cache truncate should succeed");
+        Spi::run(&format!("TRUNCATE {exact_quantized_table}"))
+            .expect("exact quantized cache truncate should succeed");
+
+        let mut truth_row_count = 0_i32;
+        for (query_idx, truth) in context.ground_truth_top_k.iter().enumerate() {
+            if truth.is_empty() {
+                continue;
+            }
+            let values_sql = truth
+                .iter()
+                .enumerate()
+                .map(|(rank, (row_idx, score))| {
+                    format!("({query_idx}, {rank}, {row_idx}, {score}::float4)")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO {truth_table} (query_idx, rank, corpus_row_idx, score) \
+                 VALUES {values_sql}"
+            ))
+            .expect("truth cache insert should succeed");
+            truth_row_count += i32::try_from(truth.len()).expect("truth row count fits into int");
+        }
+
+        let mut exact_quantized_row_count = 0_i32;
+        for (query_idx, indices) in exact_quantized_row_indices_top10.iter().enumerate() {
+            if indices.is_empty() {
+                continue;
+            }
+            let values_sql = indices
+                .iter()
+                .enumerate()
+                .map(|(rank, row_idx)| format!("({query_idx}, {rank}, {row_idx})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO {exact_quantized_table} (query_idx, rank, corpus_row_idx) \
+                 VALUES {values_sql}"
+            ))
+            .expect("exact quantized cache insert should succeed");
+            exact_quantized_row_count +=
+                i32::try_from(indices.len()).expect("exact quantized row count fits into int");
+        }
+
+        let corpus_rows =
+            i32::try_from(context.corpus_ids.len()).expect("corpus row count should fit into int");
+        let query_count =
+            i32::try_from(context.queries.len()).expect("query count should fit into int");
+        (
+            corpus_rows,
+            query_count,
+            truth_row_count,
+            exact_quantized_row_count,
+        )
+    }
+
+    /// Cache-backed peer of `build_external_recall_context`. Loads the corpus
+    /// and queries live (needed for `ctid_to_row_index` and the in-memory
+    /// corpus buffer), but populates `ground_truth_top_k` and
+    /// `exact_quantized_row_indices_top10` by reading the cache tables
+    /// written by `build_external_recall_truth_cache`.
+    fn build_external_recall_context_from_cache(
+        corpus_table: &str,
+        query_table: &str,
+        cache_prefix: &str,
+        include_exact_quantized_top10: bool,
+    ) -> ExternalRecallContext {
+        let corpus_table_ident = recall_fixture_ident(corpus_table);
+        let cache_prefix_ident = recall_fixture_ident(cache_prefix);
+        let truth_table = format!("{cache_prefix_ident}_truth");
+        let exact_quantized_table = format!("{cache_prefix_ident}_exact_quantized");
+
+        let (corpus_ids, corpus) = load_external_recall_relation(corpus_table);
+        let (_query_ids, queries) = load_external_recall_relation(query_table);
+
+        assert!(
+            !corpus.is_empty(),
+            "external recall corpus {corpus_table_ident} must contain at least one row"
+        );
+        assert!(
+            !queries.is_empty(),
+            "external recall query table must contain at least one row"
+        );
+
+        let query_count = queries.len();
+        let mut ground_truth_top_k: Vec<Vec<(usize, f32)>> = vec![Vec::new(); query_count];
+        Spi::connect(|client| {
+            let rows = client
+                .select(
+                    &format!(
+                        "SELECT query_idx, rank, corpus_row_idx, score
+                         FROM {truth_table}
+                         ORDER BY query_idx, rank"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("truth cache query should succeed");
+            for row in rows {
+                let query_idx = row["query_idx"]
+                    .value::<i32>()
+                    .expect("query_idx should decode")
+                    .expect("query_idx should be non-null");
+                let rank = row["rank"]
+                    .value::<i32>()
+                    .expect("rank should decode")
+                    .expect("rank should be non-null");
+                let corpus_row_idx = row["corpus_row_idx"]
+                    .value::<i64>()
+                    .expect("corpus_row_idx should decode")
+                    .expect("corpus_row_idx should be non-null");
+                let score = row["score"]
+                    .value::<f32>()
+                    .expect("score should decode")
+                    .expect("score should be non-null");
+                let q = usize::try_from(query_idx).expect("query_idx should be non-negative");
+                assert!(
+                    q < query_count,
+                    "cached truth query_idx {q} out of bounds for {query_count} queries"
+                );
+                let bucket = &mut ground_truth_top_k[q];
+                let expected_rank =
+                    i32::try_from(bucket.len()).expect("truth bucket len fits into int");
+                assert_eq!(
+                    rank, expected_rank,
+                    "cached truth ranks must be contiguous per query"
+                );
+                bucket.push((
+                    usize::try_from(corpus_row_idx)
+                        .expect("corpus_row_idx should be non-negative"),
+                    score,
+                ));
+            }
+        });
+        for (q, bucket) in ground_truth_top_k.iter().enumerate() {
+            assert!(
+                !bucket.is_empty(),
+                "cached truth for query {q} is missing — rerun \
+                 tqhnsw_graph_scan_recall_external_cache_build"
+            );
+        }
+
+        let id_to_row_index: HashMap<i64, usize> = corpus_ids
+            .iter()
+            .enumerate()
+            .map(|(idx, id)| (*id, idx))
+            .collect();
+        let ctid_to_row_index: HashMap<(u32, u16), usize> = ctid_id_map(&corpus_table_ident)
+            .into_iter()
+            .map(|(ctid, id)| {
+                let id_i64 = i64::try_from(id).expect("ctid id should fit into bigint");
+                let row_index = *id_to_row_index
+                    .get(&id_i64)
+                    .expect("ctid id should map back to a corpus row index");
+                (ctid, row_index)
+            })
+            .collect();
+
+        let exact_quantized_row_indices_top10 = include_exact_quantized_top10.then(|| {
+            let mut buckets: Vec<Vec<i64>> = vec![Vec::new(); query_count];
+            Spi::connect(|client| {
+                let rows = client
+                    .select(
+                        &format!(
+                            "SELECT query_idx, rank, corpus_row_idx
+                             FROM {exact_quantized_table}
+                             ORDER BY query_idx, rank"
+                        ),
+                        None,
+                        &[],
+                    )
+                    .expect("exact quantized cache query should succeed");
+                for row in rows {
+                    let query_idx = row["query_idx"]
+                        .value::<i32>()
+                        .expect("query_idx should decode")
+                        .expect("query_idx should be non-null");
+                    let rank = row["rank"]
+                        .value::<i32>()
+                        .expect("rank should decode")
+                        .expect("rank should be non-null");
+                    let corpus_row_idx = row["corpus_row_idx"]
+                        .value::<i64>()
+                        .expect("corpus_row_idx should decode")
+                        .expect("corpus_row_idx should be non-null");
+                    let q = usize::try_from(query_idx).expect("query_idx should be non-negative");
+                    assert!(
+                        q < query_count,
+                        "cached exact quantized query_idx {q} out of bounds for \
+                         {query_count} queries"
+                    );
+                    let bucket = &mut buckets[q];
+                    let expected_rank = i32::try_from(bucket.len())
+                        .expect("exact quantized bucket len fits into int");
+                    assert_eq!(
+                        rank, expected_rank,
+                        "cached exact quantized ranks must be contiguous per query"
+                    );
+                    bucket.push(corpus_row_idx);
+                }
+            });
+            for (q, bucket) in buckets.iter().enumerate() {
+                assert!(
+                    !bucket.is_empty(),
+                    "cached exact quantized top-10 for query {q} is missing — rerun \
+                     tqhnsw_graph_scan_recall_external_cache_build"
+                );
+            }
+            buckets
+        });
+
+        ExternalRecallContext {
+            corpus_ids,
+            corpus,
+            queries,
+            ground_truth_top_k,
+            exact_quantized_row_indices_top10,
+            ctid_to_row_index,
+        }
+    }
+
     fn ndcg_at_k_external(true_top_k: &[(usize, f32)], pred_ids: &[i64], k: usize) -> f32 {
         let relevance: HashMap<usize, f32> =
             true_top_k.iter().take(k).map(|(i, s)| (*i, *s)).collect();
@@ -6669,6 +6937,48 @@ mod tests {
     ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
         let fixture_prefix = recall_fixture_ident(fixture_prefix);
         let context = build_external_recall_context(corpus_table, query_table, false);
+        RECALL_GATE_CONFIGS
+            .iter()
+            .copied()
+            .map(|(m, ef_search, target)| {
+                let index_name = format!("{fixture_prefix}_m{m}_idx");
+                probe_graph_scan_recall_external_gate_row_for_context(
+                    &context,
+                    &index_name,
+                    m,
+                    ef_search,
+                    target,
+                )
+            })
+            .collect()
+    }
+
+    fn probe_graph_scan_recall_external_summary_for_cached_relation(
+        corpus_table: &str,
+        query_table: &str,
+        cache_prefix: &str,
+        index_name: &str,
+        m: i32,
+        ef_search: i32,
+    ) -> GraphScanRecallExternalSummaryRow {
+        let context =
+            build_external_recall_context_from_cache(corpus_table, query_table, cache_prefix, true);
+        probe_graph_scan_recall_external_summary_for_context(&context, index_name, m, ef_search)
+    }
+
+    fn run_graph_scan_recall_gate_from_external_cached(
+        corpus_table: &str,
+        query_table: &str,
+        cache_prefix: &str,
+        fixture_prefix: &str,
+    ) -> Vec<(i32, i32, f32, Option<f32>, bool)> {
+        let fixture_prefix = recall_fixture_ident(fixture_prefix);
+        let context = build_external_recall_context_from_cache(
+            corpus_table,
+            query_table,
+            cache_prefix,
+            false,
+        );
         RECALL_GATE_CONFIGS
             .iter()
             .copied()
@@ -7992,6 +8302,87 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_external_cache_build(
+        corpus_table: String,
+        query_table: String,
+        cache_prefix: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(corpus_rows, i32),
+            name!(query_count, i32),
+            name!(truth_rows, i32),
+            name!(exact_quantized_rows, i32),
+        ),
+    > {
+        let (corpus_rows, query_count, truth_rows, exact_quantized_rows) =
+            build_external_recall_truth_cache(&corpus_table, &query_table, &cache_prefix);
+        TableIterator::once((corpus_rows, query_count, truth_rows, exact_quantized_rows))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_external_summary_cached(
+        corpus_table: String,
+        query_table: String,
+        cache_prefix: String,
+        index_name: String,
+        m: i32,
+        ef_search: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(corpus_rows, i32),
+            name!(query_count, i32),
+            name!(graph_recall_at_10, f32),
+            name!(graph_recall_at_100, f32),
+            name!(ndcg_at_10, f32),
+            name!(mean_abs_score_error, f32),
+            name!(spearman_rho_at_10, f32),
+            name!(exact_quantized_recall_at_10, f32),
+            name!(graph_below_exact_queries, i32),
+            name!(worst_exact_gap, i32),
+        ),
+    > {
+        TableIterator::once(probe_graph_scan_recall_external_summary_for_cached_relation(
+            &corpus_table,
+            &query_table,
+            &cache_prefix,
+            &index_name,
+            m,
+            ef_search,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_graph_scan_recall_external_gate_report_cached(
+        corpus_table: String,
+        query_table: String,
+        cache_prefix: String,
+        fixture_prefix: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(m, i32),
+            name!(ef_search, i32),
+            name!(recall_at_10, f32),
+            name!(gate_recall_at_10, Option<f32>),
+            name!(passes_gate, bool),
+        ),
+    > {
+        TableIterator::new(run_graph_scan_recall_gate_from_external_cached(
+            &corpus_table,
+            &query_table,
+            &cache_prefix,
+            &fixture_prefix,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_graph_scan_recall_probe(
         m: i32,
         ef_search: i32,
@@ -8704,6 +9095,78 @@ mod tests {
                 assert!(*passed);
             }
         }
+    }
+
+    #[pg_test]
+    #[ignore]
+    fn test_tqhnsw_graph_scan_recall_external_cache_smoke_500() {
+        // Covers the truth-cache split added for the real `50k` harness: a
+        // one-time `_cache_build` followed by `_cached` summary and gate
+        // surfaces must agree with the non-cached path against the same
+        // (corpus, queries, index) fixture.
+        let prefix = "tqhnsw_recall_external_cache_smoke";
+        create_external_recall_smoke_fixture(prefix, 500, 25);
+
+        let corpus_table = format!("{prefix}_corpus");
+        let queries_table = format!("{prefix}_queries");
+        let m8_index = format!("{prefix}_m8_idx");
+        let cache_prefix = format!("{prefix}_cache");
+
+        // Fresh cache build.
+        let (corpus_rows, query_count, truth_rows, exact_quantized_rows) =
+            build_external_recall_truth_cache(&corpus_table, &queries_table, &cache_prefix);
+        assert_eq!(corpus_rows, 500);
+        assert_eq!(query_count, 25);
+        // 25 queries × top-100 truth rows each.
+        assert_eq!(truth_rows, 25 * 100);
+        // 25 queries × top-10 exact-quantized rows each.
+        assert_eq!(exact_quantized_rows, 25 * 10);
+
+        // Idempotent: rebuilding against the same (corpus, queries, prefix)
+        // must TRUNCATE and repopulate to the same row counts.
+        let (corpus_rows_two, query_count_two, truth_rows_two, exact_quantized_rows_two) =
+            build_external_recall_truth_cache(&corpus_table, &queries_table, &cache_prefix);
+        assert_eq!(corpus_rows, corpus_rows_two);
+        assert_eq!(query_count, query_count_two);
+        assert_eq!(truth_rows, truth_rows_two);
+        assert_eq!(exact_quantized_rows, exact_quantized_rows_two);
+
+        // Cached summary must match the non-cached summary for the same
+        // (index, m, ef_search). This is the core claim of the cache: it
+        // only removes work, it does not change the result.
+        let summary_direct = probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &queries_table,
+            &m8_index,
+            8,
+            128,
+        );
+        let summary_cached = probe_graph_scan_recall_external_summary_for_cached_relation(
+            &corpus_table,
+            &queries_table,
+            &cache_prefix,
+            &m8_index,
+            8,
+            128,
+        );
+        assert_eq!(
+            summary_direct, summary_cached,
+            "cached summary should match non-cached summary"
+        );
+
+        // Cached gate report must match the non-cached gate report row-for-row.
+        let gate_direct =
+            run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, prefix);
+        let gate_cached = run_graph_scan_recall_gate_from_external_cached(
+            &corpus_table,
+            &queries_table,
+            &cache_prefix,
+            prefix,
+        );
+        assert_eq!(
+            gate_direct, gate_cached,
+            "cached gate report should match non-cached gate report"
+        );
     }
 
     #[cfg(test)]
