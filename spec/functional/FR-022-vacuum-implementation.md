@@ -138,7 +138,9 @@ Graph repair is optional for correctness — deleted nodes are already skipped b
 Current implementation note:
 - `main` now implements the unlink half of pass 2: persisted neighbor tuples are scanned and any
   slot pointing at a fully-dead element TID is cleared one page at a time.
-- Replacement search for substitute neighbors remains future A6 work.
+- `main` now also fills currently free layer-0 slots on affected live nodes by reusing the
+  insert-time graph search helpers and the same code-to-code scorer.
+- Upper-layer replacement search and broader concurrency validation remain future A6 work.
 
 ### Pass 3 — Finalize
 

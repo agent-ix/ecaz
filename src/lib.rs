@@ -4525,6 +4525,129 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_layer0_replacement_fills_broken_edges() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass2_replace (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_vacuum_pass2_replace VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.45, -0.9], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.8, 0.2, 0.4, -0.8], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.7, 0.3, 0.35, -0.7], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[0.6, 0.4, 0.3, -0.6], 4, 42)),
+             (6, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.5], 4, 42)),
+             (7, encode_to_tqvector(ARRAY[0.4, 0.6, 0.2, -0.4], 4, 42)),
+             (8, encode_to_tqvector(ARRAY[0.3, 0.7, 0.15, -0.3], 4, 42))",
+        )
+        .expect("seed inserts should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass2_replace_idx ON tqhnsw_vacuum_pass2_replace USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_replace_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=8)
+                .find_map(|id| {
+                    let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_replace", id);
+                    let (deleted_element_tid, _) =
+                        find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live element should have a persisted neighbor tuple");
+                            let layer0 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                0,
+                            );
+                            layer0.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer0
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable row with a live inbound layer-0 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM tqhnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live element should keep a persisted neighbor tuple");
+            let layer0_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+            let surviving_after = layer0_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "vacuum replacement search should fill at least one broken layer-0 edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
         Spi::run(
             "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding tqvector)",
