@@ -14,17 +14,19 @@ Scope:
 - `src/am/shared.rs` — snapshot helper strings updated to reflect the post-activation
   state (`planner_gate_reason`, `next_runtime_blocker`, `runtime_ordered_scan_ready`,
   `planner_cost_callback_live`, `ordered_scan_ready`)
-- `src/quant/prod.rs` — adds `ProdQuantizer::contains_cached(dim, bits, seed) -> bool`
-  so `store_scan_prepared_query` can detect a cache hit before calling `cached(...)`
-  (which would otherwise insert and obscure the hit/miss distinction)
+- `src/quant/prod.rs` — `store_scan_prepared_query` now uses
+  `ProdQuantizer::cached_with_presence(dim, bits, seed) -> (Arc<Self>, bool)`
+  so quantizer cache-hit detection stays exact without the old two-lock TOCTOU
+  split between `contains_cached(...)` and `cached(...)`
 - `src/lib.rs` — three SPI pg_test updates plus a new FR-020-AC-2 acceptance test:
   - `test_tqhnsw_index_cost_snapshot_reports_modeled_and_gated_costs` — flipped
     expectations to assert `planner_scan_enabled = true` and a `planner_gate_reason`
     that mentions `FR-020`
   - `test_tqhnsw_planner_integration_snapshot_reports_blockers` — flipped
     `runtime_ordered_scan_ready` / `planner_cost_callback_live` / `ordered_scan_ready`
-    to `true`, updated the expected `planner_gate_reason` and `next_runtime_blocker`
-    strings to point at A5 / A6 as the remaining runtime blockers
+    to `true`, updated the expected `planner_gate_reason`, and after merging
+    current `main` updated `next_runtime_blocker` to report that no merged
+    runtime blocker remains on `main`
   - Renamed `test_tqhnsw_planner_surface_stays_disabled` →
     `test_tqhnsw_planner_chooses_index_scan_for_ordered_query`, inverted the
     EXPLAIN-output assertion to require `Index Scan`
@@ -155,7 +157,7 @@ helpers and a `reset()`. Increments now fire at:
 | `record_element_skipped` | `materialize_graph_result_candidate` (already-emitted, deleted, or empty heap_tids) and `select_next_linear_scan_result` (zero `lp_flags`, wrong tag, deleted, empty, or already emitted) |
 | `record_linear_page_read` | `select_next_linear_scan_result`, after `LockBuffer` succeeds |
 | `record_heap_tid_returned` | `produce_next_graph_traversal_heap_tid` (after `emit_prefetched_output`) and `produce_next_linear_fallback_heap_tid` (after both `emit_pending_output` and `emit_materialized_output`) |
-| `record_quantizer_cache_hit` | `store_scan_prepared_query`, gated on the new `ProdQuantizer::contains_cached(dim, bits, seed)` check **before** the `ProdQuantizer::cached(...)` call (which would otherwise insert and lose the hit/miss signal) |
+| `record_quantizer_cache_hit` | `store_scan_prepared_query`, using `ProdQuantizer::cached_with_presence(dim, bits, seed)` so the hit/miss signal and the returned quantizer come from the same mutex acquisition |
 
 The counters are not yet surfaced to PG EXPLAIN output — that registration is
 the FR-024 PG18 hook work and is explicitly out of D2 scope (see `Out of
@@ -185,8 +187,9 @@ beneath the banner so the trace is intact.
   still report `f64::MAX` so the diff between the modeled and the historical
   gated estimate stays observable)
 - `planner_integration_snapshot`: `runtime_ordered_scan_ready: true`,
-  `planner_cost_callback_live: true`, `next_runtime_blocker: "graph-aware
-  insert (A5) and vacuum repair (A6) are the remaining runtime blockers"`
+  `planner_cost_callback_live: true`, and after merging the current `main`
+  line now reports `next_runtime_blocker: "no merged runtime blocker remains
+  on main; post-vacuum benchmark/reporting is next"`
 
 `src/lib.rs` SPI tests assert the new strings and flag values directly so the
 snapshot wiring is verified end-to-end against the running PG instance.
@@ -282,6 +285,38 @@ The two unit tests that guard the cost-model crossover both still hold after
 the formula change, so the recalibration did not trade correctness at one end
 of the scale for correctness at the other.
 
+## Merge-time follow-ups (2026-04-11, current `origin/main` integration)
+
+This branch now includes `origin/main` through `c6d85d0` so the final landing
+back to `main` is fast-forwardable. While integrating D2 on top of the merged
+A5/A6/B1 state, I addressed the small non-blocking follow-ups from reviewer
+feedback `2026-04-11-02-reviewer.md` that were still worth carrying now:
+
+- `planner_integration_snapshot.next_runtime_blocker` no longer claims A5/A6
+  are pending. It now reports: `"no merged runtime blocker remains on main;
+  post-vacuum benchmark/reporting is next"`, and the SPI regression in
+  `src/lib.rs` was updated to match.
+- `ProdQuantizer::contains_cached(...)` + `cached(...)` was collapsed into a
+  single `cached_with_presence() -> (Arc<Self>, bool)` helper so the
+  `quantizer_cache_hit` signal no longer has the TOCTOU window from two mutex
+  acquisitions.
+- `PlannerCostInputs.m` now carries an explicit comment that it is reserved for
+  future calibration even though the current FR-020 formula does not read it.
+- `TqScanOpaque::next_block_number` now has an explicit comment that it remains
+  the authoritative cross-call cursor until PG18 ReadStream owns that state.
+- `test_fr020_ac1_planner_chooses_index_scan_for_large_table` now documents why
+  its 64-dimensional fixture is load-bearing for the 10K-row crossover.
+- `GraphPrefetchState::reset()` now preserves the existing `Vec<u32>`
+  allocation on empty resets instead of swapping it out with a fresh `Vec::new()`.
+
+Validation rerun on the merged branch:
+
+```
+cargo test
+PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17
+cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings
+```
+
 ## Validation
 
 ```
@@ -326,15 +361,12 @@ Out-of-scope items (per the D2 task brief):
    lifecycle, which is the shape PG18 ReadStream actually wants. Is that
    the right interpretation, or should the carrier itself become the
    cursor and `next_block_number` be deleted?
-3. **The `quantizer_cache_hit` detection split.** The new
-   `ProdQuantizer::contains_cached(...)` helper takes the cache mutex, calls
-   `contains_key`, and drops the mutex; then `store_scan_prepared_query`
-   takes the mutex again inside `cached(...)`. That is a tiny TOCTOU window
-   for the cache hit *signal*, not for correctness — the second call always
-   either returns the existing entry or inserts a new one. I judged the
-   correctness/clarity tradeoff to be worth two mutex grabs per scan rescan.
-   Is that acceptable, or do we want a `cached_with_hit_status(...) ->
-   (Arc<Self>, bool)` method instead?
+3. **The `quantizer_cache_hit` seam.** Reviewer feedback asked for the
+   `contains_cached(...)` + `cached(...)` split to collapse into a single
+   mutex acquisition. The branch now does that with
+   `cached_with_presence() -> (Arc<Self>, bool)` and `store_scan_prepared_query`
+   consumes that tuple directly. Is that the right long-term seam, or should it
+   be renamed before PG18 EXPLAIN makes the counter more visible?
 4. **Counter granularity for `stats_elements_scored`.** I count this counter
    at the *outer wrapper* sites (`materialize_graph_result_candidate`,
    `select_next_linear_scan_result`) where we already hold `&mut opaque`,
@@ -360,8 +392,9 @@ Out-of-scope items (per the D2 task brief):
 - Any change to the `TqExplainCounters` struct itself, the staged
   `RegisterExtensionExplainOption` shape, or the FR-019 ReadStream callback
   signatures. All of those land when the PG18 toolchain lands.
-- Any change to A5 graph-aware insert or A6 vacuum repair (those are now
-  the next runtime blockers per the updated `next_runtime_blocker` string).
+- Any runtime-path change to A5 graph-aware insert or A6 vacuum repair. Both
+  lanes are already merged on current `main`; D2 only updates the
+  planner-facing blocker string so it matches that merged state.
 - Removing the `gated_*` fields from `IndexCostSnapshot`. They are still
   useful as the historical-comparison surface and remove cleanly later.
 - Touching the B1 SIMD branch. B1 is on `coder2-b1-simd-accel` and only
