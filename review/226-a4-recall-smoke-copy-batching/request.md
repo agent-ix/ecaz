@@ -172,6 +172,15 @@ seeding. Reducing it is review 218 item 4's territory
 (`build_external_recall_context` refactor to share corpus loads across
 gate configs), not this task.
 
+That remaining probe-sharing work now has an explicit successor task:
+
+- `plan/tasks/coder2/10064-external-recall-harness-truth-cache.md`
+
+The per-row `encode_to_tqvector` cost that caps seeding at `~8 s` on
+this machine also has an explicit successor task:
+
+- `plan/tasks/coder2/10063-bulk-encode-sql-surface.md`
+
 ### Byte-identical reruns
 
 The smoke test asserts byte-identical reruns inside the test body:
@@ -214,6 +223,21 @@ leaves the helper in a shape where the next person looking at smoke
 runtime will correctly target the index-build / probe phases (which is
 where the time actually lives) rather than re-discovering the same
 INSERT loop.
+
+## Update 2026-04-10 — reviewer follow-ups addressed
+
+- Added an inline comment at the batched corpus `INSERT` call site
+  explaining why the `format!(...)` interpolation is safe here: the
+  values are deterministic test vectors under `RECALL_SEED`, not
+  external input.
+- Recorded the explicit successor tasks the reviewer asked for:
+  `10063` covers the per-call `encode_to_tqvector` hotspot and `10064`
+  covers the review-218 item-4 probe-sharing / truth-cache work.
+- Re-ran the full branch checkpoint after the follow-up update:
+  `cargo test`,
+  `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`,
+  and
+  `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`.
 
 ## Files
 

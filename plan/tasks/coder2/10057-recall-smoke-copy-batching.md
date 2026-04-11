@@ -9,7 +9,7 @@ eligible to run in CI. Reviews 220/221/222 did not touch this. The fix is
 mechanical and completely isolated from the A4 primary lane, so it is safe
 coder-2 work to pick up in parallel.
 Priority: batch 3
-Status: ready
+Status: done
 
 ## Prompt
 
