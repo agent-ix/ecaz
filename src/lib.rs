@@ -2431,6 +2431,70 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_build_keeps_element_neighbor_local() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+
+        let payload_len = code_len(4, 8);
+        for id in 1..=128 {
+            let code = (0..payload_len)
+                .map(|offset| ((id * 29 + offset as i32) & 0xff) as u8)
+                .collect::<Vec<_>>();
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_build_locality VALUES \
+                 ({id}, '[dim=4,bits=8,seed=42,gamma=0.5]:{payload}'::tqvector)",
+                payload = hex::encode(code),
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_build_locality_idx ON tqhnsw_build_locality USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_build_locality_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        let (_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let elements = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().filter_map(move |(idx, tuple)| {
+                    if tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG) {
+                        Some((
+                            am::page::ItemPointer {
+                                block_number: page.block_number,
+                                offset_number: u16::try_from(idx + 1)
+                                    .expect("page tuple offset should fit in u16"),
+                            },
+                            am::page::TqElementTuple::decode(tuple, code_len(4, 8))
+                                .expect("element tuple should decode"),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        assert!(!elements.is_empty(), "build should persist at least one element tuple");
+        assert!(elements.iter().any(|(tid, element)| {
+            element.neighbortid.block_number == tid.block_number
+        }));
+        assert!(elements.iter().all(|(tid, element)| {
+            element.neighbortid.block_number <= tid.block_number
+                && tid.block_number - element.neighbortid.block_number <= 1
+        }),
+        "build should keep each element tuple on the same page as its neighbor tuple or on the immediately following page");
+    }
+
+    #[pg_test]
     fn test_non_empty_index_build_coalesces_duplicate_vectors() {
         Spi::run("CREATE TABLE tqhnsw_duplicate_build (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
@@ -2985,6 +3049,42 @@ mod tests {
             vec![0.5_f32.to_bits(), 1.5_f32.to_bits()],
             "live insert should persist element gamma values alongside same-code distinct tuples"
         );
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
+    fn test_non_empty_index_build_rejects_non_finite_gamma() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_build_nan_gamma VALUES
+             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_build_nan_gamma_idx ON tqhnsw_build_nan_gamma USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
+    fn test_tqhnsw_insert_rejects_non_finite_gamma() {
+        Spi::run("CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_nan_gamma_idx ON tqhnsw_insert_nan_gamma USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_nan_gamma VALUES
+             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
+        )
+        .expect("insert should fail");
     }
 
     #[pg_test]
