@@ -529,6 +529,37 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
     let graph_nodes = build_hnsw_graph(state);
 
+    #[cfg(debug_assertions)]
+    {
+        let max_level = graph_nodes.iter().map(|n| n.level).max().unwrap_or(0);
+        let node_count = graph_nodes.len();
+        if node_count > 2 * state.options.m as usize {
+            debug_assert!(
+                max_level > 0,
+                "tqhnsw build produced a flat hierarchy (max_level=0) with {} nodes and m={}; \
+                 this likely means the build is not reading upper-layer assignments from hnsw_rs",
+                node_count,
+                state.options.m
+            );
+        }
+    }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        let max_level = graph_nodes.iter().map(|n| n.level).max().unwrap_or(0);
+        let node_count = graph_nodes.len();
+        let mut level_counts = vec![0; max_level as usize + 1];
+        for node in &graph_nodes {
+            level_counts[node.level as usize] += 1;
+        }
+        pgrx::debug1!(
+            "tqhnsw build: {} nodes, max_level={}, level distribution: {:?}",
+            node_count,
+            max_level,
+            level_counts
+        );
+    }
+
     for (idx, tuple) in state.heap_tuples.iter().enumerate() {
         let element_tid = data_pages
             .insert_element(&page::TqElementTuple {
