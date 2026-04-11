@@ -484,6 +484,8 @@ mod tests {
     use rand::Rng;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -534,6 +536,10 @@ mod tests {
         // byte-for-byte identical output to the generic per-bit loop.
         // Covers every bit width 2..=7, including the production
         // (1536, 4) length and a non-multiple-of-8 boundary case.
+        // For widths 6 and 7 the dispatched path falls through to the
+        // generic packer too, so the cross-check is load-bearing for
+        // 2..=5 and the round-trip assertion is the meaningful check
+        // for 6..=7.
         let mut rng = ChaCha8Rng::seed_from_u64(0xC0FFEE);
         for bits in 2..=7_u8 {
             let max_value = 1_u16 << bits;
@@ -553,6 +559,40 @@ mod tests {
                 assert_eq!(unpacked, indices, "round-trip failed at bits={bits}, len={len}");
             }
         }
+    }
+
+    #[test]
+    // Measured on Linux 6.17.0-19-generic (x86_64), Rust stable, on
+    // 2026-04-10: generic = 9.21s, fast = 2.69s, speedup = 3.42x
+    // for 100_000 iterations of the 1536 x 4-bit production shape.
+    #[ignore = "microbenchmark; run manually with --ignored --nocapture"]
+    fn pack_mse_indices_4bit_microbench() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0x5EED);
+        let indices = (0..1536)
+            .map(|_| rng.gen_range(0..16_u16))
+            .collect::<Vec<_>>();
+        let iterations = 100_000;
+
+        let mut generic_len = 0_usize;
+        let generic_start = Instant::now();
+        for _ in 0..iterations {
+            generic_len += black_box(pack_mse_indices_generic(black_box(&indices), 4)).len();
+        }
+        let generic_elapsed = generic_start.elapsed();
+
+        let mut fast_len = 0_usize;
+        let fast_start = Instant::now();
+        for _ in 0..iterations {
+            fast_len += black_box(pack_mse_indices(black_box(&indices), 4)).len();
+        }
+        let fast_elapsed = fast_start.elapsed();
+
+        assert_eq!(generic_len, fast_len);
+
+        let speedup = generic_elapsed.as_secs_f64() / fast_elapsed.as_secs_f64();
+        eprintln!(
+            "pack_mse_indices_4bit_microbench generic={generic_elapsed:?} fast={fast_elapsed:?} speedup={speedup:.2}x"
+        );
     }
 
     #[test]
