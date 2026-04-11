@@ -51,20 +51,30 @@ Per-cell measurement loop:
 
 - Pulls the query set from `<prefix>_queries.source` once at start, into a
   tmp file in psql `\pset format aligned-off, tuples-only` shape (curly-brace
-  `real[]` literal).
+  `real[]` literal), and now rejects any line containing a single quote before
+  it is interpolated back into SQL.
 - For each `(m, ef_search)` pair:
+  - Emits an explicit session-level `SET tqhnsw.ef_search = ...` before each
+    `EXPLAIN`, so the measurement is not relying on ambiguous `SET LOCAL`
+    behavior across implicit `psql` transactions.
   - Wraps each query in `EXPLAIN (ANALYZE, TIMING, FORMAT JSON) SELECT id
     FROM <prefix>_corpus ORDER BY embedding <#> '{...}'::real[] LIMIT K`
-  - Captures the wall-clock duration of the entire cell as well, and uses
-    `n_queries / wall_seconds` as the observed `qps`.
+  - Captures the wall-clock duration of the entire cell as well, but reports
+    server-side throughput as `server_qps = n / sum(Execution Time)` so the
+    output is not dominated by client-side `psql` spawn overhead.
   - Pipes the captured EXPLAIN output through an inline python parser
     (same JSON-fragment scan as the legacy synthetic path) to extract
     `Execution Time` per query.
   - Emits one summary line:
     ```
-    m=8   ef_search=40   n=200  p50=...ms p95=...ms p99=...ms mean=...ms min=...ms max=...ms qps=...
+    m=8   ef_search=40   n=200  p50=...ms p95=...ms p99=...ms mean=...ms min=...ms max=...ms wall=...s server_qps=...
     ```
   - Appends the same line to `--output` if provided.
+
+Before the first cell, the script also prints a small environment banner with
+`shared_buffers`, `work_mem`, `max_parallel_workers_per_gather`, `uname -a`,
+CPU model, RAM, and an explicit cache-state reminder so captured output is
+self-describing.
 
 Per the task design notes, the script does **not** load anything in
 real-corpus mode. Load and bench stay decoupled.
@@ -110,9 +120,8 @@ is unchanged.
 - Did not add a load step to the bench script. The loader stays in
   `scripts/load_real_corpus.py`.
 - Did not add any new latency percentiles. NFR-001 declares p50 and p99;
-  the script also reports p95 and `qps` because they sit alongside the
-  required percentiles in the same sort, but the gate target lines stay on
-  p50 / p99 only.
+  the script still reports p95 alongside them, but the gate target lines stay
+  on p50 / p99 only.
 - Same `build_source_column = 'source'` indexes the A4 recall lane builds
   are the indexes the bench script reads — no parallel index, no DDL of
   any kind in `bench_sql_latency.sh`.
@@ -128,6 +137,19 @@ $ bash -n scripts/bench_sql_latency_scratch.sh
 ```
 
 both clean.
+
+### Script-level regression test
+
+```
+$ bash scripts/tests/test_bench_sql_latency_real_mode.sh
+```
+
+Passes. The test stubs `psql` and proves three things the reviewer asked for:
+
+- the real-corpus path now emits `SET tqhnsw.ef_search = ...`, not `SET LOCAL`
+- the summary line reports `server_qps`, not client-spawn `qps`
+- the environment banner and two very different `ef_search` cells are both
+  surfaced as expected
 
 ### Help / arg-parser smoke
 
@@ -208,6 +230,23 @@ This deferral matches the same pattern as the ann-benchmarks anchor in
 code path and hands the first measured number off to the operator that
 already has the staged corpus.
 
+## Update 2026-04-10 — reviewer follow-ups addressed
+
+- Replaced the ambiguous `SET LOCAL tqhnsw.ef_search` with session-level
+  `SET tqhnsw.ef_search`, so each cell now unambiguously benchmarks the
+  requested `ef_search`.
+- Replaced the misleading client-spawn `qps` metric with `server_qps`
+  derived from summed per-query `Execution Time`, while still reporting
+  wall-clock cell time separately.
+- Added the requested environment banner and a defensive single-quote guard
+  on query literals.
+- Added `scripts/tests/test_bench_sql_latency_real_mode.sh` to lock the
+  real-corpus path against the reviewer’s main regressions.
+- Branch status is now explicitly **blocked on D2 planner activation**.
+  `main` still planner-disables tqhnsw scans, so the first measured SQL
+  latency run would benchmark seq scans rather than the index path this task
+  is meant to characterize.
+
 ## Why This Matters
 
 Until this branch lands, the only A1/NFR-001 numbers in the repo are
@@ -233,6 +272,8 @@ baseline.
 
 - `scripts/bench_sql_latency.sh` (additive `--prefix` mode, +264 lines)
 - `scripts/bench_sql_latency_scratch.sh` (new wrapper)
+- `scripts/tests/test_bench_sql_latency_real_mode.sh` (stubbed regression test
+  for the real-corpus path)
 - `docs/RECALL_REAL_CORPUS.md` (new "Reusing the Loaded Tables for
   NFR-001 Latency" section)
 - `spec/non-functional/NFR-001-query-latency.md` (one-paragraph cross-link

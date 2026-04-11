@@ -10,7 +10,12 @@ for free — latency — without re-loading anything. This closes the gap
 between "A4 is anchored on real embeddings" and "A1 is anchored on real
 embeddings" which is the other half of `NFR-001` / `NFR-003` credibility.
 Priority: batch 2
-Status: ready
+Status: blocked
+
+Blocked on: the D2 planner-activation slice. `main` still planner-disables
+planner-visible `tqhnsw` scans, so this SQL latency surface would currently
+measure seq scans rather than index scans. The harness work on this branch is
+still useful, but the first real gate numbers must wait for D2.
 
 ## Prompt
 
