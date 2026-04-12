@@ -40,6 +40,24 @@ The next slice needs to reconcile:
 
 without conflating AM work with outer SQL/executor behavior.
 
+## Revised C1 Read
+
+This packet changed the C1 interpretation materially.
+
+- Warm-cache representative latency on the current `10k` real-corpus build is
+  now at the NFR-001 `p50 < 5ms` target surface for `m=8, ef_search=40`.
+- The old packet-259 `~46ms` representative startup reading is not
+  reproducible on the current warm-cache build and should be treated as a
+  cold-cache or otherwise non-representative artifact.
+- The remaining large gap on the verified cold-cache surface is therefore not
+  a hidden tqhnsw CPU path; it is overwhelmingly the cost of buffer misses /
+  page reads during graph traversal.
+
+So the main C1 CPU optimization arc is functionally complete for the warm
+surface. The next C1 question is not “where is the missing warm CPU time?” but
+“how should warm and cold latency be reported separately, and is there a
+worthwhile I/O-side mitigation for the cold surface?”
+
 ## Planned work
 
 1. Add a total tqhnsw startup boundary probe around the AM startup path.
