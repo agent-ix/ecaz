@@ -376,18 +376,21 @@ The same `<prefix>_corpus`, `<prefix>_queries`, and `<prefix>_m{N}_idx`
 artifacts produced by `scripts/load_real_corpus.py` for the A4 recall lane
 also serve the `NFR-001` query-latency lane: load and bench are decoupled,
 so once the loader has built the tables and indexes there is no second
-load step. The latency reporting surface is
-`scripts/bench_sql_latency.sh` which now accepts a canonical real-corpus
-prefix directly. A worked example against the already-loaded
-`tqhnsw_real_10k` fixture:
+load step. The raw reporting surface is `scripts/bench_sql_latency.sh`, but
+durable `NFR-001` artifacts should go through the planner-verified launcher
+`scripts/bench_sql_latency_verified.sh`, which first checks a representative
+`EXPLAIN` plan and refuses to run unless the planner selects the expected
+`<prefix>_m{N}_idx`. The verified launcher currently accepts one effective
+`m` per invocation so the chosen index is unambiguous. A worked example
+against the already-loaded `tqhnsw_real_10k` fixture:
 
 ```bash
-scripts/bench_sql_latency_scratch.sh \
+scripts/bench_sql_latency_verified_scratch.sh \
     --prefix tqhnsw_real_10k \
-    --m 8 --m 16 \
+    --m 8 \
     --ef-search 40,64,100,128,160,200 \
     --cache-state cold \
-    --output /tmp/nfr1_real_10k.summary > /tmp/nfr1_real_10k.stdout
+    --output /tmp/nfr1_real_10k_m8.summary > /tmp/nfr1_real_10k_m8.stdout
 ```
 
 The wrapper pins the same socket / port / database / `psql` binary as
@@ -403,6 +406,11 @@ host / GUC banner (`CPU`, `RAM`, `shared_buffers`, `work_mem`,
 label), which is why the canonical command redirects stdout to a companion
 artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
 gate target.
+
+If the planner surface is not yet active for the target index, the verified
+launcher aborts before timing and prints the representative plan. That is the
+intended behavior on current `main`: a sequential `Sort -> Seq Scan` plan is
+not a valid HNSW latency artifact.
 
 ## Troubleshooting
 

@@ -31,11 +31,13 @@ Benchmarks SHALL be run on representative hardware and reported in `BENCHMARKS.m
 
 The real-corpus latency lane reuses the canonical loader path documented in
 `docs/RECALL_REAL_CORPUS.md` (see "Reusing the Loaded Tables for NFR-001
-Latency"). The reporting surface is `scripts/bench_sql_latency.sh --prefix
-<canonical-prefix>`, which sweeps `(m, ef_search)` against the same indexes
-the recall lane builds and emits per-cell `p50` / `p95` / `p99` summaries,
-plus `server_qps` derived from summed per-query `EXPLAIN (ANALYZE)` execution
-times and a stdout environment banner for artifact capture.
+Latency"). Durable HNSW artifacts should use
+`scripts/bench_sql_latency_verified.sh --prefix <canonical-prefix> --m <m>`,
+which aborts unless a representative `EXPLAIN` plan selects the expected
+tqhnsw index for that run. The delegated reporting surface remains
+`scripts/bench_sql_latency.sh`, which emits per-cell `p50` / `p95` / `p99`
+summaries, `server_qps` derived from summed per-query `EXPLAIN (ANALYZE)`
+execution times, and a stdout environment banner for artifact capture.
 
 ### Required Methodology
 
