@@ -465,3 +465,55 @@ The isolated `m=16` surface has not yet been rerun after packets `255` and
 canonical `m=8` lane above. The next honest comparison step would be an
 isolated rerun of `tqhnsw_real_10k_m16only` on the current code, but the
 larger remaining latency gap is still on raw runtime, not `m` selection.
+
+## Run Update: 2026-04-12 (QJL-disabled 4-bit score fast path)
+
+Packet `257` kept the graph runtime unchanged and instead optimized the
+QJL-disabled `bits = 4` score path used by the real-corpus 1536-dim lane. The
+change passed the required checkpoint gate:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+The verified canonical `m=8` rerun used:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m8_noqjl_score.summary
+```
+
+Completed cells:
+
+```text
+m=8   ef_search=40   n=200   p50=50.283ms p95=53.238ms  p99=55.862ms  mean=50.521ms min=46.541ms max=60.999ms  server_qps=19.79 wall=10.83s
+m=8   ef_search=64   n=200   p50=54.331ms p95=91.486ms  p99=104.949ms mean=57.345ms min=48.861ms max=123.289ms server_qps=17.44 wall=13.77s
+m=8   ef_search=100  n=200   p50=57.820ms p95=63.342ms  p99=70.617ms  mean=57.997ms min=51.008ms max=75.340ms  server_qps=17.24 wall=12.35s
+m=8   ef_search=128  n=200   p50=60.312ms p95=64.450ms  p99=66.955ms  mean=60.150ms min=54.430ms max=69.580ms  server_qps=16.63 wall=14.13s
+m=8   ef_search=160  n=200   p50=63.722ms p95=68.823ms  p99=70.548ms  mean=63.575ms min=56.444ms max=75.351ms  server_qps=15.73 wall=13.46s
+m=8   ef_search=200  n=200   p50=68.254ms p95=77.307ms  p99=83.182ms  mean=68.260ms min=58.277ms max=85.272ms  server_qps=14.65 wall=15.80s
+```
+
+Compared to the post-greedy canonical `m=8` surface from packet `256`:
+
+- `ef_search=40`: mean `69.855ms -> 50.521ms`
+- `ef_search=64`: mean `79.753ms -> 57.345ms`
+- `ef_search=100`: mean `92.465ms -> 57.997ms`
+- `ef_search=128`: mean `101.467ms -> 60.150ms`
+- `ef_search=160`: mean `112.132ms -> 63.575ms`
+- `ef_search=200`: mean `124.238ms -> 68.260ms`
+
+That makes this the new best verified canonical `m=8` surface on `main`.
+
+Even after this step-change, `NFR-001` still remains open by a wide margin:
+
+- requirement baseline: `p50 < 5ms` at `m=8, ef_search=40`
+- current measured baseline: `p50 = 50.283ms`, `p99 = 55.862ms`
+
+So C1 is still an optimization lane, but the bottleneck mix has shifted again:
+the 4-bit score path is no longer the clean first target it was before packet
+`257`.
