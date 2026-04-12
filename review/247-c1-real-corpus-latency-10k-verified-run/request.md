@@ -180,7 +180,7 @@ can serve as a durable C1 closeout.
 ## Run Update: 2026-04-11 (m16 launcher attempt)
 
 With the `m=8, ef_search=200` cell repaired, the next step was the planned
-verified `m=16` sweep:
+verified `m=16` sweep on the shared canonical table:
 
 ```bash
 scripts/bench_sql_latency_verified_scratch.sh \
@@ -203,10 +203,62 @@ Limit  (cost=302.72..336.58 rows=10 width=12)
   ->  Index Scan using tqhnsw_real_10k_m8_idx on tqhnsw_real_10k_corpus
 ```
 
-So the remaining C1 gap is no longer “can we route the query?” It is “can we
-either make the planner cost model discriminate between the `m=8` and `m=16`
-indexes, or introduce a benchmark seam that can honestly target the intended
-index without silently measuring a different one?”
+That confirmed the remaining topology problem: on the shared canonical table,
+the planner naturally prefers the cheaper `m=8` tqhnsw index.
+
+## Run Update: 2026-04-11 (isolated m16 surface)
+
+To measure `m=16` honestly without lying to the planner, the same staged TSVs
+were loaded into an isolated one-index prefix:
+
+```bash
+./scripts/load_real_corpus_scratch.sh \
+    --prefix tqhnsw_real_10k_m16only \
+    --corpus-file /home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_corpus.tsv \
+    --queries-file /home/peter/dev/datasets/tqhnsw_real_10k/tqhnsw_real_10k_queries.tsv \
+    --m 16 \
+    --allow-manifest-mismatch
+```
+
+That creates:
+
+- `tqhnsw_real_10k_m16only_corpus`
+- `tqhnsw_real_10k_m16only_queries`
+- `tqhnsw_real_10k_m16only_m16_idx`
+
+The verified sweep then ran against that isolated prefix:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k_m16only \
+    --m 16 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m16only.summary
+```
+
+Completed cells:
+
+```text
+m=16  ef_search=40   n=200   p50=148.902ms p95=162.914ms p99=168.812ms mean=148.659ms min=130.837ms max=172.814ms server_qps=6.73 wall=30.64s
+m=16  ef_search=64   n=200   p50=195.037ms p95=214.783ms p99=253.494ms mean=194.966ms min=165.693ms max=268.405ms server_qps=5.13 wall=38.67s
+m=16  ef_search=100  n=200   p50=266.061ms p95=287.915ms p99=321.608ms mean=263.784ms min=221.468ms max=367.158ms server_qps=3.79 wall=52.42s
+m=16  ef_search=128  n=200   p50=319.995ms p95=346.969ms p99=401.160ms mean=317.408ms min=264.918ms max=410.527ms server_qps=3.15 wall=63.17s
+m=16  ef_search=160  n=200   p50=383.110ms p95=408.949ms p99=424.347ms mean=377.647ms min=327.830ms max=437.783ms server_qps=2.65 wall=75.23s
+m=16  ef_search=200  n=200   p50=462.573ms p95=496.152ms p99=529.941ms mean=457.512ms min=380.804ms max=643.833ms server_qps=2.19 wall=89.95s
+```
+
+## Current read
+
+Using the repaired and isolated measurement surfaces:
+
+- `m=8` remains slightly faster at `ef_search=40`, `64`, `100`, and `200`
+- `m=16` is effectively tied at `128`
+- `m=16` is slightly faster at `160`
+
+The difference is small enough that `m=16` does **not** currently look like a
+clear latency win. The larger remaining opportunity is still raw scan runtime,
+not “switch from `m=8` to `m=16`.”
 
 ## Interim Read
 
