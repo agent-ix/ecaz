@@ -33,6 +33,35 @@ still leaving p50/p95/p99 looking plausible.
 4. Run the required checkpoint gate plus a shell-level smoke read for the new
    failure mode.
 
+## Outcome
+
+Kept.
+
+The launcher now rejects negative per-query timings for non-`EXPLAIN` modes
+before it computes the summary, so a wall-clock step can no longer print a
+bogus mean that still looks plausible in p50/p95/p99.
+
+The change landed in:
+
+- `scripts/bench_sql_latency.sh`
+- `scripts/tests/test_bench_sql_latency_summary.py`
+
+## Validation
+
+- `bash -n scripts/bench_sql_latency.sh`
+- `python3 -m unittest scripts.tests.test_bench_sql_latency_summary`
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+## Smoke read
+
+The new launcher regression test extracts the inline summary Python from
+`scripts/bench_sql_latency.sh`, feeds it synthetic result files, and checks:
+
+- a negative `cached-plan` sample is rejected with a non-zero exit
+- positive `plain-server` samples still summarize normally
+
 ## Exit criteria
 
 - negative per-query timings make the launcher fail instead of printing a bogus
