@@ -149,9 +149,9 @@ HNSW latency artifact and should not be read as tqhnsw scan runtime.
 ### Current completion state
 
 - `m=8, ef_search=40..160`: complete and valid
-- `m=8, ef_search=200`: invalidated by planner fallback; must be rerun behind
-  packet `249`'s per-cell guard and/or after planner-cost tuning
-- `m=16` sweep: not started yet
+- `m=8, ef_search=200`: restored after packets `249` and `250`; full rerun now
+  records `mean=454.021ms`, `p95=490.704ms`, `p99=560.238ms`, `wall=89.30s`
+- `m=16` sweep: attempted, but blocked immediately by index selection
 
 ## Run Update: 2026-04-11 (planner-cost follow-up)
 
@@ -176,6 +176,37 @@ m=8   ef_search=200  n=1  p50=413.156ms mean=413.156ms wall=0.43s
 That restores the planner side of the `ef_search=200` cell, but this packet
 still needs the full 200-query rerun plus the pending `m=16` sweep before it
 can serve as a durable C1 closeout.
+
+## Run Update: 2026-04-11 (m16 launcher attempt)
+
+With the `m=8, ef_search=200` cell repaired, the next step was the planned
+verified `m=16` sweep:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 16 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m16.summary
+```
+
+The run aborted at the first cell exactly as the verified guard is supposed to:
+
+- expected index: `tqhnsw_real_10k_m16_idx`
+- actual planner choice at `ef_search=40`: `tqhnsw_real_10k_m8_idx`
+
+Representative plan:
+
+```text
+Limit  (cost=302.72..336.58 rows=10 width=12)
+  ->  Index Scan using tqhnsw_real_10k_m8_idx on tqhnsw_real_10k_corpus
+```
+
+So the remaining C1 gap is no longer “can we route the query?” It is “can we
+either make the planner cost model discriminate between the `m=8` and `m=16`
+indexes, or introduce a benchmark seam that can honestly target the intended
+index without silently measuring a different one?”
 
 ## Interim Read
 
