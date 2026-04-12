@@ -30,7 +30,8 @@ Usage:
 
   Real-corpus mode (reuses preloaded tables and indexes):
     bash scripts/bench_sql_latency.sh --prefix <prefix> [--m N]... \
-        [--ef-search csv] [--query-limit N] [--cache-state LABEL] [--output FILE]
+        [--ef-search csv] [--query-limit N] [--cache-state LABEL] \
+        [--warmup-passes N] [--session-mode MODE] [--output FILE]
 
 Options (real-corpus mode):
   --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
@@ -44,6 +45,13 @@ Options (real-corpus mode):
                  all rows in <prefix>_queries.
   --cache-state  Free-form label recorded in the stdout banner (e.g. cold,
                  warm, warm-after-prime). Default: unspecified.
+  --warmup-passes
+                 Number of full query-set warmup passes to run before timing
+                 each (m, ef_search) cell. Default: 0.
+  --session-mode Session reuse mode for each (m, ef_search) cell:
+                 per-query (default) opens one psql/backend per timed query.
+                 per-cell runs all warmup + timed queries for the cell in a
+                 single backend session.
   --output       Append the per-cell summary to FILE in addition to stdout.
   -h, --help     Show this message and exit.
 
@@ -61,6 +69,8 @@ PREFIX_M_LIST=()
 EF_SEARCH_CSV=""
 QUERY_LIMIT=""
 CACHE_STATE="unspecified"
+WARMUP_PASSES="0"
+SESSION_MODE="per-query"
 OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -75,6 +85,10 @@ while [[ $# -gt 0 ]]; do
       QUERY_LIMIT="$2"; shift 2 ;;
     --cache-state)
       CACHE_STATE="$2"; shift 2 ;;
+    --warmup-passes)
+      WARMUP_PASSES="$2"; shift 2 ;;
+    --session-mode)
+      SESSION_MODE="$2"; shift 2 ;;
     --output)
       OUTPUT_FILE="$2"; shift 2 ;;
     -h|--help)
@@ -168,6 +182,14 @@ run_real_corpus_bench() {
   if [[ -z "$EF_SEARCH_CSV" ]]; then
     EF_SEARCH_CSV="40,64,100,128,160,200"
   fi
+  if [[ ! "$WARMUP_PASSES" =~ ^[0-9]+$ ]]; then
+    echo "invalid warmup pass count: $WARMUP_PASSES" >&2
+    exit 2
+  fi
+  if [[ "$SESSION_MODE" != "per-query" && "$SESSION_MODE" != "per-cell" ]]; then
+    echo "invalid session mode: $SESSION_MODE (expected per-query or per-cell)" >&2
+    exit 2
+  fi
   IFS=',' read -r -a ef_list <<< "$EF_SEARCH_CSV"
   for ef in "${ef_list[@]}"; do
     if [[ ! "$ef" =~ ^[0-9]+$ ]]; then
@@ -199,6 +221,10 @@ run_real_corpus_bench() {
   if [[ -n "$OUTPUT_FILE" ]]; then
     echo "summary file: $OUTPUT_FILE"
   fi
+  if [[ "$WARMUP_PASSES" != "0" ]]; then
+    echo "warmup passes: $WARMUP_PASSES"
+  fi
+  echo "session mode: $SESSION_MODE"
   print_real_corpus_env_banner
   echo
 
@@ -216,7 +242,9 @@ run_real_corpus_bench() {
 
   local queries_tsv
   queries_tsv="$(mktemp -t tqv_queries.XXXXXX.tsv)"
-  trap 'rm -f "$queries_tsv" "$results_file"' EXIT
+  local cell_sql
+  cell_sql="$(mktemp -t tqv_latency_cell.XXXXXX.sql)"
+  trap 'rm -f "$queries_tsv" "$results_file" "$cell_sql"' EXIT
 
   local query_select="SELECT source FROM ${query_table} ORDER BY id"
   if [[ -n "$QUERY_LIMIT" ]]; then
@@ -266,16 +294,60 @@ run_real_corpus_bench() {
       : > "$results_file"
       local wall_start
       wall_start="$(date +%s.%N)"
-      while IFS= read -r query_line; do
-        [[ -z "$query_line" ]] && continue
-        "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
+      local warmup_pass
+      if [[ "$SESSION_MODE" == "per-cell" ]]; then
+        : > "$cell_sql"
+        if (( WARMUP_PASSES > 0 )); then
+          for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
+            echo "[warmup] m=${m} ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
+            while IFS= read -r query_line; do
+              [[ -z "$query_line" ]] && continue
+              cat >> "$cell_sql" <<SQL
+SET tqhnsw.ef_search = ${ef};
+SELECT id FROM ${corpus_table}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${k};
+SQL
+            done < "$queries_tsv"
+          done
+        fi
+        while IFS= read -r query_line; do
+          [[ -z "$query_line" ]] && continue
+          cat >> "$cell_sql" <<SQL
 SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
 SQL
-      done < "$queries_tsv"
+        done < "$queries_tsv"
+        "$PSQL_BIN" -X -A -t -q -f "$cell_sql" > "$results_file"
+      else
+        if (( WARMUP_PASSES > 0 )); then
+          for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
+            echo "[warmup] m=${m} ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
+            while IFS= read -r query_line; do
+              [[ -z "$query_line" ]] && continue
+              "$PSQL_BIN" -X -A -t -q > /dev/null <<SQL
+SET tqhnsw.ef_search = ${ef};
+SELECT id FROM ${corpus_table}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${k};
+SQL
+            done < "$queries_tsv"
+          done
+        fi
+        while IFS= read -r query_line; do
+          [[ -z "$query_line" ]] && continue
+          "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
+SET tqhnsw.ef_search = ${ef};
+EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
+SELECT id FROM ${corpus_table}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${k};
+SQL
+        done < "$queries_tsv"
+      fi
       local wall_end
       wall_end="$(date +%s.%N)"
 

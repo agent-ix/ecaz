@@ -1,7 +1,7 @@
 # Project Status
 
 Last updated: 2026-04-12
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, and C1 now has durable real-corpus NFR-001 latency artifacts on `main` after the ordered-scan score-cache rerun, even though the measured surface still misses the spec target by a wide margin
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, and C1 now has durable real-corpus NFR-001 latency artifacts plus a verified warm-cache seam on `main`, even though both the honest warm `10K` surface and the colder artifact surface still miss the spec target
 
 ## Reading Guide
 
@@ -33,7 +33,7 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | **Done** | 100% | Mark, repair, finalize, and the 60-second INSERT + scan + VACUUM concurrency harness are merged on `main` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
-| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 62% | Durable real-corpus NFR-001 latency artifacts now exist on `main` for canonical `m=8` and isolated `m=16`, but the measured surface still misses the spec target badly and NFR-002 remains open |
+| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 66% | Durable real-corpus NFR-001 artifacts now exist on `main`, and the launcher now supports verified warm per-cell runs, but the honest warm `10K` surface is still about `p50=14.3ms` at `m=8, ef_search=40` and NFR-002 remains open |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 80% | FR-020 cost model now active in `amcostestimate`; ADR-011 marked SUPERSEDED; ReadStream prefetch state + EXPLAIN counters embedded in `TqScanOpaque`; PG18 callback bindings (FR-020-AC-4, FR-024 hook registration) remain follow-ups |
@@ -125,7 +125,7 @@ Benchmarking / profiling rollup: 42%
 | Scalar baseline | Working scalar quantizer and scan code paths | Done | 100% | Scalar reference paths are still present and remain the comparison baseline for SIMD validation |
 | Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Strong | 72% | The merged B1 lane now includes padded-SRHT query prep, prepared-query LUT cuts, and AVX2 FWHT/scoring improvements with current-main benchmark evidence |
 | SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **Mostly done** | 90% | Merged on `main`; x86_64 equivalence + throughput proof are complete, and NEON implementation is present but still needs aarch64 runtime validation |
-| Runtime scan optimization | Tuning the graph-first scan hot path | In progress | 40% | Scan-local graph-read and score caches are merged with real-corpus latency wins, but the current NFR-001 surface is still far above target |
+| Runtime scan optimization | Tuning the graph-first scan hot path | In progress | 44% | Scan-local graph-read and score caches are merged with real-corpus latency wins, and warm per-cell measurement is now separated from per-query backend churn, but the current NFR-001 surface is still above target |
 | Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | In progress | 22% | Shared-buffer churn has already been cut materially on the real `10K` path, but more runtime/memory tuning is still available |
 
 Optimization / SIMD rollup: 18%
@@ -155,7 +155,7 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts on `main`; the next C1 work is pure optimization and storage-result follow-through, not benchmark-integrity bring-up.
+2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts plus a verified warm per-cell seam on `main`; the next C1 work is optimization and normative `50K`/storage-result follow-through, not basic benchmark-integrity bring-up.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 cost-model activation has landed on its review branch. ADR-011 is SUPERSEDED. PG18 callback bindings (`amgettreeheight`, `amexplain` hook, ReadStream registration) remain follow-ups gated on the PG18 toolchain.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
@@ -166,6 +166,6 @@ Release / quality-gate rollup: 62%
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
 | Synthetic `10K` still fails badly and remains misleading as a benchmark surface | `C1`, post-gate methodology work | Benchmark methodology lane |
-| Durable NFR-001 artifacts now exist, but the real-corpus baseline still misses spec badly (`m=8, ef_search=40`: `p50=88.588ms`, `p99=103.261ms` vs `<5ms` / `<15ms`) | `C1` | Runtime optimization lane |
+| Durable NFR-001 artifacts now exist, and verified warm per-cell runs reduce the real `10K` baseline materially, but both surfaces still miss spec (`cold` canonical `m=8, ef_search=40`: `p50=50.283ms`, `p99=55.862ms`; `warm` per-cell after 3 prime passes: `p50=14.315ms`, `p99=17.613ms` vs `<5ms` / `<15ms`) | `C1` | Runtime optimization lane |
 | ~~ADR-011 planner gate is still active~~ | ~~`D2`~~ | **Resolved** (D2 cost-model activation, 2026-04-11; ADR-011 marked SUPERSEDED) |
 | aarch64 SIMD runtime validation still needs hardware | `B1` | Coder-2 / validation lane |

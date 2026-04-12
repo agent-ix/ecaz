@@ -36,6 +36,10 @@ def load_sql(argv: list[str]) -> str:
     if "-c" in argv:
         idx = argv.index("-c")
         return argv[idx + 1]
+    if "-f" in argv:
+        idx = argv.index("-f")
+        with open(argv[idx + 1], "r", encoding="utf-8") as fh:
+            return fh.read()
     return sys.stdin.read()
 
 
@@ -46,10 +50,59 @@ def extract_ef(sql: str) -> int | None:
     return None
 
 
+def log_event(kind: str, ef: int | None) -> None:
+    log_path = os.environ.get("TQV_FAKE_PSQL_LOG")
+    if not log_path:
+        return
+    with open(log_path, "a", encoding="utf-8") as fh:
+        fh.write(f"{kind}:{ef if ef is not None else 'none'}\\n")
+
+
+def plan_output(expected_index: str, ef: int, fallback_ef: str | None) -> str:
+    if fallback_ef and ef == int(fallback_ef):
+        return (
+            "Limit\\n"
+            "  ->  Sort\\n"
+            "        Sort Key: ((tqhnsw_real_test_corpus.embedding <#> '{0.1,0.2,0.3,0.4}'::real[]))\\n"
+            "        ->  Seq Scan on tqhnsw_real_test_corpus"
+        )
+    return (
+        "Limit\\n"
+        f"  ->  Index Scan using {expected_index} on tqhnsw_real_test_corpus\\n"
+        "        Order By: (embedding <#> '{0.1,0.2,0.3,0.4}'::real[])"
+    )
+
+
 sql = load_sql(sys.argv[1:])
 normalized = " ".join(sql.split())
 fallback_ef = os.environ.get("TQV_FAKE_PSQL_FALLBACK_EF")
 expected_index = "tqhnsw_real_test_m8_idx"
+statements = [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
+
+if len(statements) > 1:
+    current_ef = None
+    outputs = []
+    for stmt in statements:
+        normalized_stmt = " ".join(stmt.split())
+        if normalized_stmt.startswith("SET tqhnsw.ef_search ="):
+            current_ef = extract_ef(stmt)
+        elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized_stmt:
+            ef = current_ef or 0
+            log_event("measure", ef)
+            outputs.append(json.dumps([{"Execution Time": float(100 + ef)}]))
+        elif normalized_stmt.startswith("EXPLAIN") and "SELECT id FROM tqhnsw_real_test_corpus" in normalized_stmt:
+            ef = current_ef or 0
+            log_event("plan", ef)
+            outputs.append(plan_output(expected_index, ef, fallback_ef))
+        elif "SELECT id FROM tqhnsw_real_test_corpus" in normalized_stmt:
+            ef = current_ef or 0
+            log_event("warmup", ef)
+            outputs.append("1")
+        else:
+            print(f"unhandled fake psql SQL statement: {normalized_stmt}", file=sys.stderr)
+            sys.exit(1)
+    print("\\n".join(outputs))
+    sys.exit(0)
 
 if "SHOW shared_buffers" in normalized:
     print("128MB")
@@ -73,22 +126,16 @@ elif "SELECT to_regclass('tqhnsw_real_test_m8_idx') IS NOT NULL" in normalized:
     print("t")
 elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized:
     ef = extract_ef(sql) or 0
+    log_event("measure", ef)
     print(json.dumps([{"Execution Time": float(100 + ef)}]))
 elif "EXPLAIN" in normalized:
     ef = extract_ef(sql) or 0
-    if fallback_ef and ef == int(fallback_ef):
-        print(
-            "Limit\\n"
-            "  ->  Sort\\n"
-            "        Sort Key: ((tqhnsw_real_test_corpus.embedding <#> '{0.1,0.2,0.3,0.4}'::real[]))\\n"
-            "        ->  Seq Scan on tqhnsw_real_test_corpus"
-        )
-    else:
-        print(
-            "Limit\\n"
-            f"  ->  Index Scan using {expected_index} on tqhnsw_real_test_corpus\\n"
-            "        Order By: (embedding <#> '{0.1,0.2,0.3,0.4}'::real[])"
-        )
+    log_event("plan", ef)
+    print(plan_output(expected_index, ef, fallback_ef))
+elif "SELECT id FROM tqhnsw_real_test_corpus" in normalized:
+    ef = extract_ef(sql) or 0
+    log_event("warmup", ef)
+    print("1")
 else:
     print(f"unhandled fake psql SQL: {normalized}", file=sys.stderr)
     sys.exit(1)
@@ -106,7 +153,15 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def _run_verified(self, *, ef_search: str, fallback_ef: str | None) -> subprocess.CompletedProcess[str]:
+    def _run_verified(
+        self,
+        *,
+        ef_search: str,
+        fallback_ef: str | None,
+        warmup_passes: str | None = None,
+        log_file: Path | None = None,
+        session_mode: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         summary_file = self.tmp_dir / "summary.txt"
         env = os.environ.copy()
         env["TQV_PSQL_BIN"] = str(self.fake_psql)
@@ -114,21 +169,30 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
             env["TQV_FAKE_PSQL_FALLBACK_EF"] = fallback_ef
         else:
             env.pop("TQV_FAKE_PSQL_FALLBACK_EF", None)
+        if log_file is not None:
+            env["TQV_FAKE_PSQL_LOG"] = str(log_file)
+        else:
+            env.pop("TQV_FAKE_PSQL_LOG", None)
+        args = [
+            "bash",
+            str(VERIFIED_SCRIPT),
+            "--prefix",
+            "tqhnsw_real_test",
+            "--m",
+            "8",
+            "--ef-search",
+            ef_search,
+            "--query-limit",
+            "1",
+            "--output",
+            str(summary_file),
+        ]
+        if warmup_passes is not None:
+            args.extend(["--warmup-passes", warmup_passes])
+        if session_mode is not None:
+            args.extend(["--session-mode", session_mode])
         return subprocess.run(
-            [
-                "bash",
-                str(VERIFIED_SCRIPT),
-                "--prefix",
-                "tqhnsw_real_test",
-                "--m",
-                "8",
-                "--ef-search",
-                ef_search,
-                "--query-limit",
-                "1",
-                "--output",
-                str(summary_file),
-            ],
+            args,
             cwd=REPO_ROOT,
             env=env,
             text=True,
@@ -169,6 +233,23 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
         self.assertEqual(len(lines), 2, lines)
         self.assertIn("ef_search=40", lines[0])
         self.assertIn("ef_search=128", lines[1])
+
+    def test_verified_launcher_warms_each_cell_before_timing(self) -> None:
+        log_file = self.tmp_dir / "events.log"
+        result = self._run_verified(
+            ef_search="40",
+            fallback_ef=None,
+            warmup_passes="2",
+            log_file=log_file,
+            session_mode="per-cell",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("[warmup] m=8 ef_search=40 pass 1/2", result.stderr)
+        self.assertIn("[warmup] m=8 ef_search=40 pass 2/2", result.stderr)
+
+        events = log_file.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(events, ["plan:40", "warmup:40", "warmup:40", "measure:40"])
 
 
 if __name__ == "__main__":

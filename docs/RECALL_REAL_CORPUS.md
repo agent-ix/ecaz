@@ -393,6 +393,26 @@ scripts/bench_sql_latency_verified_scratch.sh \
     --output /tmp/nfr1_real_10k_m8.summary > /tmp/nfr1_real_10k_m8.stdout
 ```
 
+For warm-cache runs, the same launcher now also supports:
+
+- `--warmup-passes N` to prime the exact query set before timing each
+  `(m, ef_search)` cell
+- `--session-mode per-cell` to keep the entire warmup + timed cell in one
+  backend session instead of opening a fresh `psql` connection per query
+
+Example warm-cache run:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40 \
+    --cache-state warm-after-prime \
+    --warmup-passes 3 \
+    --session-mode per-cell \
+    --output /tmp/nfr1_real_10k_m8_warm.summary > /tmp/nfr1_real_10k_m8_warm.stdout
+```
+
 The wrapper pins the same socket / port / database / `psql` binary as
 `load_real_corpus_scratch.sh`, so the "load then bench" path against the
 repo-local pgrx scratch cluster needs no per-run env setup. Each
@@ -406,6 +426,11 @@ host / GUC banner (`CPU`, `RAM`, `shared_buffers`, `work_mem`,
 label), which is why the canonical command redirects stdout to a companion
 artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
 gate target.
+
+`--session-mode per-query` remains the default for backward compatibility, but
+it materially overstates warm-cache latency because each timed query runs in a
+fresh backend session. Warm-cache artifacts should therefore use
+`--session-mode per-cell`.
 
 If the planner surface is not active for the target index, the verified
 launcher aborts before timing and prints the representative plan. That is the
