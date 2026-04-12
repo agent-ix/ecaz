@@ -208,23 +208,59 @@ impl ProdQuantizer {
         mse_packed: &[u8],
         qjl_packed: &[u8],
     ) -> f32 {
-        if qjl_enabled(self.original_dim, self.bits) {
-            match backend() {
-                #[cfg(target_arch = "x86_64")]
-                SimdBackend::Avx2Fma => unsafe {
-                    self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
-                },
-                #[cfg(target_arch = "aarch64")]
-                SimdBackend::Neon => unsafe {
-                    self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
-                },
-                SimdBackend::Scalar => {
-                    self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
-                }
+        if !qjl_enabled(self.original_dim, self.bits) {
+            if self.bits == 4 {
+                return self.score_ip_from_split_parts_no_qjl_4bit(prepared, mse_packed);
             }
-        } else {
-            self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
+
+            return self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed);
         }
+
+        match backend() {
+            #[cfg(target_arch = "x86_64")]
+            SimdBackend::Avx2Fma => unsafe {
+                self.score_ip_from_split_parts_avx2(prepared, gamma, mse_packed, qjl_packed)
+            },
+            #[cfg(target_arch = "aarch64")]
+            SimdBackend::Neon => unsafe {
+                self.score_ip_from_split_parts_neon(prepared, gamma, mse_packed, qjl_packed)
+            },
+            SimdBackend::Scalar => {
+                self.score_ip_from_split_parts_scalar(prepared, gamma, mse_packed, qjl_packed)
+            }
+        }
+    }
+
+    fn score_ip_from_split_parts_no_qjl_4bit(
+        &self,
+        prepared: &PreparedQuery,
+        mse_packed: &[u8],
+    ) -> f32 {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+
+        let mut sum = 0.0_f32;
+        let mut dim_index = 0usize;
+
+        for &packed in mse_packed {
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let low_nibble = (packed & 0x0F) as usize;
+            sum += self.codebook[low_nibble] * prepared.rotated[dim_index];
+            dim_index += 1;
+
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let high_nibble = (packed >> 4) as usize;
+            sum += self.codebook[high_nibble] * prepared.rotated[dim_index];
+            dim_index += 1;
+        }
+
+        sum
     }
 
     fn score_ip_from_split_parts_scalar(
