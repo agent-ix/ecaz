@@ -30,9 +30,12 @@ pub(crate) unsafe fn load_graph_element(
     element_tid: page::ItemPointer,
     code_len: usize,
 ) -> GraphElement {
-    let tuple_bytes = unsafe { read_page_tuple_bytes(index_relation, element_tid, "element") };
-    let element = page::TqElementTuple::decode(&tuple_bytes, code_len)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"));
+    let element = unsafe {
+        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+            page::TqElementTuple::decode(tuple_bytes, code_len)
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"));
     GraphElement {
         tid: element_tid,
         level: element.level,
@@ -56,9 +59,10 @@ pub(crate) unsafe fn load_graph_neighbors(
         };
     }
 
-    let tuple_bytes = unsafe { read_page_tuple_bytes(index_relation, neighbor_tid, "neighbor") };
-    let neighbor = page::TqNeighborTuple::decode(&tuple_bytes)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph neighbor tuple: {e}"));
+    let neighbor = unsafe {
+        read_page_tuple(index_relation, neighbor_tid, "neighbor", page::TqNeighborTuple::decode)
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph neighbor tuple: {e}"));
     let count = neighbor.count as usize;
     if count > neighbor.tids.len() {
         pgrx::error!(
@@ -615,11 +619,15 @@ where
         .collect()
 }
 
-unsafe fn read_page_tuple_bytes(
+unsafe fn read_page_tuple<T, DecodeFn>(
     index_relation: pg_sys::Relation,
     tuple_tid: page::ItemPointer,
     tuple_kind: &str,
-) -> Vec<u8> {
+    decode: DecodeFn,
+) -> Result<T, String>
+where
+    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+{
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,
@@ -658,10 +666,10 @@ unsafe fn read_page_tuple_bytes(
         );
     }
 
-    let tuple_bytes =
-        unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) }.to_vec();
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let decoded = decode(tuple_bytes);
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-    tuple_bytes
+    decoded
 }
 
 #[cfg(test)]
