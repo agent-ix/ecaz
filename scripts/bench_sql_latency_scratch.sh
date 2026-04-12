@@ -13,7 +13,9 @@
 # Example:
 #   scripts/bench_sql_latency_scratch.sh \
 #       --prefix tqhnsw_real_10k --m 8 --m 16 \
-#       --ef-search 40,64,100,128,160,200
+#       --ef-search 40,64,100,128,160,200 \
+#       --cache-state cold \
+#       --output /tmp/nfr1_real_10k.summary > /tmp/nfr1_real_10k.stdout
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

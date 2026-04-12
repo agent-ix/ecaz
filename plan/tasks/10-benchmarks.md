@@ -1,10 +1,10 @@
 # Task 10: Full Benchmark Suite
 
-Status: **infrastructure complete** — NFR benchmark runs blocked on Task 05 (scan), Task 06 (insert drift), Task 07 (vacuum quality)
+Status: **infrastructure complete** — A3/A5/A6 are merged on `main`; C1 is now in result-capture mode, starting with trustworthy real-corpus `NFR-001` latency reporting
 
 ## Scope
 
-Build the complete quality and performance benchmark infrastructure required by NFR-001, NFR-002, and NFR-003, then run the full suite once scan/insert/vacuum are operational.
+Build the complete quality and performance benchmark infrastructure required by NFR-001, NFR-002, and NFR-003, then capture the end-to-end result artifacts now that scan / insert / vacuum are operational on `main`.
 
 ## Infrastructure Status
 
@@ -49,12 +49,12 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 - DataPage element insert: ~68ns, read: ~48ns (code_len=768)
 - All proptest, size_of, and recall smoke tests pass.
 
-### Still Blocked (requires scan/insert/vacuum)
+### Open Result-Capture Work
 
-- [ ] **Latency benchmarks (NFR-001).** HNSW p50/p99 on 50K vectors. Sequential scan throughput. Warm/cold cache. Requires working graph scan (Task 05).
-- [ ] **Storage accounting (NFR-002).** pg_relation_size, pg_column_size. Requires working index build + scan (Task 05).
-- [ ] **Full recall suite (NFR-003).** Recall@10 at all (m, ef) configurations via SQL. Post-insert drift (0/5/10/20%). Post-vacuum recall. MSE-only vs MSE+QJL ablation. Requires Tasks 05, 06, 07.
-- [ ] **BC-001 through BC-016.** All spec benchmark cases require a working index.
+- [ ] **Latency benchmarks (NFR-001).** Capture warm/cold HNSW p50/p99 on the canonical real corpus, plus sequential-scan throughput and artifact metadata. First slice: harden `bench_sql_latency.sh` real-corpus reporting so `ef_search`, cache state, and host / GUC details are recorded correctly.
+- [ ] **Storage accounting (NFR-002).** Capture `pg_relation_size`, `pg_total_relation_size`, and per-datum sizing against the same real-corpus benchmark surfaces.
+- [ ] **Full recall suite (NFR-003).** Extend beyond the A4 gate into broader `(m, ef)` SQL reporting, post-insert drift checkpoints, post-vacuum recall refresh, and MSE-only vs MSE+QJL ablations.
+- [ ] **BC-001 through BC-016.** Result artifacts now depend on running the scripts against staged benchmark corpora, not on missing scan / insert / vacuum functionality.
 
 ## Owns
 
@@ -64,9 +64,10 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 
 ## Dependencies
 
-- Task 05 (working graph scan for any SQL-level benchmark)
-- Task 06 (insert-drift benchmarks)
-- Task 07 (post-vacuum quality benchmarks)
+- Task 05 / A3 (working graph scan) — **resolved on `main`**
+- Task 06 / A5 (insert-drift observability) — **resolved on `main`**
+- Task 07 / A6 (post-vacuum quality baseline) — **resolved on `main`**
+- A staged benchmark corpus plus the matching built indexes remain the practical prerequisite for each recorded result artifact
 
 ## Unblocks
 
@@ -76,8 +77,8 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 
 - ~~Reproducible benchmark scripts~~ **done**
 - ~~Benchmark infrastructure and tooling~~ **done**
-- Benchmark result artifacts (latency histograms, recall tables, storage breakdown) — **blocked**
-- Pass/fail against declared NFR targets — **blocked**
+- Benchmark result artifacts (latency histograms, recall tables, storage breakdown) — **in progress**
+- Pass/fail against declared NFR targets — **pending recorded runs**
 
 ## Primary Tests
 
@@ -86,5 +87,5 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 ## Notes
 
 - The initial recall gate (Task 05 A4) provides early signal. This task extends that into the full suite.
-- Do not start drift/vacuum benchmarks until Tasks 06 and 07 land — premature measurement wastes time.
+- With A5/A6 merged, C1 should start by making the existing SQL benchmark/reporting surfaces trustworthy and self-describing before recording the first durable artifacts.
 - Pure-Rust recall harness (tests/recall_integration.rs) can run now for quantizer-level recall independent of HNSW graph quality.

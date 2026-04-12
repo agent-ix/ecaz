@@ -16,7 +16,8 @@
 #    data — load and bench are decoupled, see docs/RECALL_REAL_CORPUS.md.
 #
 #       scripts/bench_sql_latency.sh --prefix tqhnsw_real_10k \
-#           --m 8 --m 16 --ef-search 40,64,100,128,160,200
+#           --m 8 --m 16 --ef-search 40,64,100,128,160,200 \
+#           --cache-state cold --output /tmp/nfr1_real_10k.summary
 set -euo pipefail
 
 PSQL_BIN="${TQV_PSQL_BIN:-psql}"
@@ -29,7 +30,7 @@ Usage:
 
   Real-corpus mode (reuses preloaded tables and indexes):
     bash scripts/bench_sql_latency.sh --prefix <prefix> [--m N]... \
-        [--ef-search csv] [--query-limit N] [--output FILE]
+        [--ef-search csv] [--query-limit N] [--cache-state LABEL] [--output FILE]
 
 Options (real-corpus mode):
   --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
@@ -41,6 +42,8 @@ Options (real-corpus mode):
   --ef-search    Comma-separated ef_search list. Default: 40,64,100,128,160,200.
   --query-limit  Cap the number of queries per (m, ef_search) cell. Default:
                  all rows in <prefix>_queries.
+  --cache-state  Free-form label recorded in the stdout banner (e.g. cold,
+                 warm, warm-after-prime). Default: unspecified.
   --output       Append the per-cell summary to FILE in addition to stdout.
   -h, --help     Show this message and exit.
 
@@ -57,6 +60,7 @@ PREFIX=""
 PREFIX_M_LIST=()
 EF_SEARCH_CSV=""
 QUERY_LIMIT=""
+CACHE_STATE="unspecified"
 OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -69,6 +73,8 @@ while [[ $# -gt 0 ]]; do
       EF_SEARCH_CSV="$2"; shift 2 ;;
     --query-limit)
       QUERY_LIMIT="$2"; shift 2 ;;
+    --cache-state)
+      CACHE_STATE="$2"; shift 2 ;;
     --output)
       OUTPUT_FILE="$2"; shift 2 ;;
     -h|--help)
@@ -83,6 +89,42 @@ done
 # ---------------------------------------------------------------------------
 # Real-corpus mode
 # ---------------------------------------------------------------------------
+show_pg_setting() {
+  local name="$1"
+  "$PSQL_BIN" -X -A -t -q -c "SHOW ${name};"
+}
+
+print_real_corpus_env_banner() {
+  local os_name cpu_model ram_total shared_buffers work_mem parallel_workers
+
+  os_name="$(uname -srmo 2>/dev/null || echo unknown)"
+  cpu_model="$(
+    awk -F: '/model name/ {sub(/^[ \t]+/, "", $2); print $2; exit}' /proc/cpuinfo 2>/dev/null \
+      || true
+  )"
+  ram_total="$(
+    awk '/MemTotal:/ {print $2 " " $3; exit}' /proc/meminfo 2>/dev/null || true
+  )"
+  shared_buffers="$(show_pg_setting shared_buffers)"
+  work_mem="$(show_pg_setting work_mem)"
+  parallel_workers="$(show_pg_setting max_parallel_workers_per_gather)"
+
+  if [[ -z "$cpu_model" ]]; then
+    cpu_model="unknown"
+  fi
+  if [[ -z "$ram_total" ]]; then
+    ram_total="unknown"
+  fi
+
+  echo "OS:           $os_name"
+  echo "CPU:          $cpu_model"
+  echo "RAM:          $ram_total"
+  echo "cache state:  $CACHE_STATE"
+  echo "shared_buffers: $shared_buffers"
+  echo "work_mem:       $work_mem"
+  echo "max_parallel_workers_per_gather: $parallel_workers"
+}
+
 run_real_corpus_bench() {
   local prefix="$1"
   if [[ ! "$prefix" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
@@ -123,6 +165,10 @@ run_real_corpus_bench() {
   if [[ -n "$QUERY_LIMIT" ]]; then
     echo "query limit:  $QUERY_LIMIT"
   fi
+  if [[ -n "$OUTPUT_FILE" ]]; then
+    echo "summary file: $OUTPUT_FILE"
+  fi
+  print_real_corpus_env_banner
   echo
 
   local query_count
@@ -136,7 +182,6 @@ run_real_corpus_bench() {
       query_count="$QUERY_LIMIT"
     fi
   fi
-  echo "queries available: $query_count"
 
   local queries_tsv
   queries_tsv="$(mktemp -t tqv_queries.XXXXXX.tsv)"
@@ -147,6 +192,11 @@ run_real_corpus_bench() {
     query_select="${query_select} LIMIT ${QUERY_LIMIT}"
   fi
   "$PSQL_BIN" -X -A -t -q -c "${query_select};" > "$queries_tsv"
+  echo "queries available: $query_count"
+  if grep -n "'" "$queries_tsv" >/dev/null; then
+    echo "unexpected single quote in query literal output from ${query_table}" >&2
+    exit 2
+  fi
 
   local results_file
   results_file="$(mktemp -t tqv_latency_real.XXXXXX.txt)"
@@ -167,7 +217,7 @@ run_real_corpus_bench() {
       while IFS= read -r query_line; do
         [[ -z "$query_line" ]] && continue
         "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
-SET LOCAL tqhnsw.ef_search = ${ef};
+SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -220,7 +270,8 @@ def pct(p: float) -> float:
 
 
 wall_seconds = max(1e-9, float(wall_end_str) - float(wall_start_str))
-qps = n / wall_seconds
+sum_ms = sum(times_ms)
+server_qps = (1000.0 * n / sum_ms) if sum_ms > 0 else float("inf")
 
 summary = {
     "m": int(m_str),
@@ -233,7 +284,7 @@ summary = {
     "min_ms": times_ms[0],
     "max_ms": times_ms[-1],
     "wall_seconds": wall_seconds,
-    "qps": qps,
+    "server_qps": server_qps,
 }
 
 line = (
@@ -245,7 +296,8 @@ line = (
     f"mean={summary['mean_ms']:.3f}ms "
     f"min={summary['min_ms']:.3f}ms "
     f"max={summary['max_ms']:.3f}ms "
-    f"qps={summary['qps']:.2f}"
+    f"server_qps={summary['server_qps']:.2f} "
+    f"wall={summary['wall_seconds']:.2f}s"
 )
 print(line)
 if output_path:

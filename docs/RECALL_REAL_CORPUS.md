@@ -386,16 +386,23 @@ scripts/bench_sql_latency_scratch.sh \
     --prefix tqhnsw_real_10k \
     --m 8 --m 16 \
     --ef-search 40,64,100,128,160,200 \
-    --output /tmp/nfr1_real_10k.txt
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k.summary > /tmp/nfr1_real_10k.stdout
 ```
 
 The wrapper pins the same socket / port / database / `psql` binary as
 `load_real_corpus_scratch.sh`, so the "load then bench" path against the
 repo-local pgrx scratch cluster needs no per-run env setup. Each
 `(m, ef_search)` cell emits one summary line with `p50`, `p95`, `p99`,
-`mean`, `min`, `max`, and observed `qps` against the same query set used
-by the recall probes. See `spec/non-functional/NFR-001-query-latency.md`
-for the gate target.
+`mean`, `min`, `max`, `server_qps`, and total cell wall time against the
+same query set used by the recall probes. `server_qps` is derived from the
+summed per-query `EXPLAIN (ANALYZE)` execution times, so it reflects server
+execution rather than `psql` process-spawn overhead. Stdout also emits a
+host / GUC banner (`CPU`, `RAM`, `shared_buffers`, `work_mem`,
+`max_parallel_workers_per_gather`, and the operator-supplied `--cache-state`
+label), which is why the canonical command redirects stdout to a companion
+artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
+gate target.
 
 ## Troubleshooting
 

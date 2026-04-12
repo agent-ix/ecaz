@@ -33,7 +33,7 @@ Basis: A4 is closed on `main`, B1 SIMD is merged and validated on x86_64, A5 gra
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | **Done** | 100% | Mark, repair, finalize, and the 60-second INSERT + scan + VACUUM concurrency harness are merged on `main` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
-| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; final result runs are now mainly blocked on `A6` and the post-vacuum benchmark lane |
+| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; A6 is merged on `main`, and the first post-A6 slice is trustworthy real-corpus latency capture/reporting |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | Not started | 10% | No longer blocked on A4 recall evidence; still gated by ADR-011 retirement and downstream sequencing |
@@ -112,7 +112,7 @@ Testing / validation rollup: 76%
 | Microbenchmark infrastructure | Criterion, iai-callgrind, dhat, Makefile targets, shared generators | Done | 100% | Harnesses are built and validated |
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 84% | Useful baseline numbers exist, and the merged SIMD lane now has current-main vs merged Criterion evidence for `prepare_ip_query` and `score_ip_encoded` |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
-| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Blocked on A6 and full benchmark runs |
+| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | Real-corpus latency capture hardening is underway; first durable latency/storage artifacts still need a staged benchmark corpus |
 | End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Strong | 78% | The initial real-corpus signoff surface is now closed: canonical real `10K` passes strongly and the broader real `50K` `50`-query gate reports `92.6% / 94.4% / 94.8% / 95.2%`; broader post-gate reporting remains under `C1` |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
 
@@ -155,7 +155,7 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** A6 is closed; the runtime lane can now shift to post-vacuum benchmark/reporting work under `C1` or reopen planner/runtime sequencing as priorities dictate.
+2. **Next runtime lane:** A6 is closed; `C1` can now shift to post-vacuum benchmark/reporting work, starting with trustworthy real-corpus NFR-001 latency capture on the landed loader/index surfaces.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 is no longer blocked on A4 recall evidence, but ADR-011 retirement and planner sequencing still remain.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.

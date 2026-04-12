@@ -33,7 +33,9 @@ The real-corpus latency lane reuses the canonical loader path documented in
 `docs/RECALL_REAL_CORPUS.md` (see "Reusing the Loaded Tables for NFR-001
 Latency"). The reporting surface is `scripts/bench_sql_latency.sh --prefix
 <canonical-prefix>`, which sweeps `(m, ef_search)` against the same indexes
-the recall lane builds and emits per-cell `p50` / `p95` / `p99` summaries.
+the recall lane builds and emits per-cell `p50` / `p95` / `p99` summaries,
+plus `server_qps` derived from summed per-query `EXPLAIN (ANALYZE)` execution
+times and a stdout environment banner for artifact capture.
 
 ### Required Methodology
 
