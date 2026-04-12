@@ -43,3 +43,33 @@ query latency.
 - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - the new plain timing read is recorded for the warm `10K`, `m=8`,
   `ef_search=40`, `warm-after-prime3`, `per-cell` seam
+
+## In-Progress Findings
+
+- Added a local `--timing-mode plain-server` branch in
+  `scripts/bench_sql_latency.sh`.
+- The new mode keeps the existing planner verification, warmup controls, and
+  session-mode behavior.
+- The measured query is now timed with `clock_timestamp()` around a
+  `MATERIALIZED` ordered subquery instead of per-query `EXPLAIN (ANALYZE)`.
+
+Current local read on the warm verified `10K`, `m=8`, `ef_search=40`,
+`warm-after-prime3`, `per-cell` seam:
+
+```text
+explain mode:      p50=11.024ms p95=13.244ms p99=15.491ms mean=11.111ms
+plain-server mode: p50=10.932ms p95=13.377ms p99=16.915ms mean=11.020ms
+```
+
+So far this does **not** support the earlier assumption that `EXPLAIN`
+instrumentation is the dominant reason the warm C1 surface still sits around
+`11ms`. The new mode is useful, but the current result says the bottleneck is
+somewhere else.
+
+Validation status:
+
+- `bash -n scripts/bench_sql_latency.sh` passed
+- `cargo test` passed on the current local script state
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings` passed
+- explicit `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17` has not
+  been rerun yet for this script-only slice
