@@ -709,17 +709,6 @@ unsafe fn cached_graph_adjacency(
     (element, neighbors)
 }
 
-unsafe fn cached_neighbor_tids_for_layer(
-    index_relation: pg_sys::Relation,
-    opaque: *mut TqScanOpaque,
-    element_tid: page::ItemPointer,
-    layer: u8,
-) -> Vec<page::ItemPointer> {
-    let (element, neighbors) = unsafe { cached_graph_adjacency(index_relation, opaque, element_tid) };
-    let scan_m = usize::from(unsafe { &*opaque }.scan_m);
-    graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer)
-}
-
 unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
@@ -730,29 +719,34 @@ unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
 where
     KeepFn: FnMut(page::ItemPointer) -> bool,
 {
-    let neighbor_tids =
-        unsafe { cached_neighbor_tids_for_layer(index_relation, opaque, source_tid, layer) };
-    let mut candidates = Vec::with_capacity(neighbor_tids.len());
+    let (element, neighbors) = unsafe { cached_graph_adjacency(index_relation, opaque, source_tid) };
+    let scan_m = usize::from(unsafe { &*opaque }.scan_m);
+    let capacity = graph::layer_slot_bounds(element.level, scan_m, layer)
+        .map(|(start, end)| end.min(neighbors.tids.len()).saturating_sub(start.min(neighbors.tids.len())))
+        .unwrap_or(0);
+    let mut candidates = Vec::with_capacity(capacity);
 
-    for neighbor_tid in neighbor_tids {
-        if !keep_neighbor_tid(neighbor_tid) {
-            continue;
-        }
-
-        let neighbor = unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
-        if neighbor.deleted || neighbor.heaptids.is_empty() {
-            continue;
-        }
-
-        let score = unsafe {
-            cached_scan_element_score(opaque, neighbor.tid, neighbor.gamma, &neighbor.code)
-        };
-        candidates.push(search::BeamCandidate::with_source(
-            neighbor.tid,
-            score,
-            source_tid,
-        ));
-    }
+    graph::for_each_valid_neighbor_tid_for_layer(
+        &neighbors.tids,
+        element.level,
+        scan_m,
+        layer,
+        |neighbor_tid| {
+            if keep_neighbor_tid(neighbor_tid) {
+                let neighbor = unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
+                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
+                    let score = unsafe {
+                        cached_scan_element_score(opaque, neighbor.tid, neighbor.gamma, &neighbor.code)
+                    };
+                    candidates.push(search::BeamCandidate::with_source(
+                        neighbor.tid,
+                        score,
+                        source_tid,
+                    ));
+                }
+            }
+        },
+    );
 
     candidates
 }

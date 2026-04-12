@@ -123,18 +123,17 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    let neighbor_tids =
-        unsafe { load_layer0_neighbor_tids(index_relation, source_tid, code_len, m) };
-    layer0_successor_candidates_from_elements(
-        source_tid,
-        neighbor_tids
-            .into_iter()
-            .filter(|neighbor_tid| keep_neighbor_tid(*neighbor_tid))
-            .map(|neighbor_tid| unsafe {
-                load_graph_element(index_relation, neighbor_tid, code_len)
-            }),
-        |neighbor| score_candidate(neighbor),
-    )
+    unsafe {
+        load_successor_candidates_for_layer(
+            index_relation,
+            source_tid,
+            code_len,
+            m,
+            0,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    }
 }
 
 pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
@@ -153,14 +152,14 @@ where
         entry_candidate,
         entry_element.level,
         |source_tid, layer| unsafe {
-            let neighbor_tids =
-                load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
-            layer0_successor_candidates_from_elements(
+            load_successor_candidates_for_layer(
+                index_relation,
                 source_tid,
-                neighbor_tids
-                    .into_iter()
-                    .map(|neighbor_tid| load_graph_element(index_relation, neighbor_tid, code_len)),
-                |neighbor| score_candidate(neighbor),
+                code_len,
+                m,
+                layer,
+                |_| true,
+                &mut score_candidate,
             )
         },
     )
@@ -234,15 +233,14 @@ where
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
     search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
-        let neighbor_tids =
-            load_neighbor_tids_for_layer(index_relation, source_tid, code_len, m, layer);
-        layer0_successor_candidates_from_elements(
+        load_successor_candidates_for_layer(
+            index_relation,
             source_tid,
-            neighbor_tids
-                .into_iter()
-                .filter(|neighbor_tid| keep_neighbor_tid(*neighbor_tid))
-                .map(|neighbor_tid| load_graph_element(index_relation, neighbor_tid, code_len)),
-            |neighbor| score_candidate(neighbor),
+            code_len,
+            m,
+            layer,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
         )
     })
 }
@@ -352,17 +350,40 @@ pub(crate) fn valid_neighbor_tids_for_layer(
     m: usize,
     layer: u8,
 ) -> Vec<page::ItemPointer> {
+    let mut tids = Vec::with_capacity(layer_neighbor_slot_capacity(
+        neighbor_tids.len(),
+        element_level,
+        m,
+        layer,
+    ));
+    for_each_valid_neighbor_tid_for_layer(neighbor_tids, element_level, m, layer, |tid| {
+        tids.push(tid);
+    });
+    tids
+}
+
+pub(crate) fn for_each_valid_neighbor_tid_for_layer<F>(
+    neighbor_tids: &[page::ItemPointer],
+    element_level: u8,
+    m: usize,
+    layer: u8,
+    mut visit: F,
+) where
+    F: FnMut(page::ItemPointer),
+{
     let Some((start, end)) = layer_slot_bounds(element_level, m, layer) else {
-        return Vec::new();
+        return;
     };
 
-    neighbor_tids
+    for &tid in neighbor_tids
         .iter()
         .skip(start)
         .take(end.saturating_sub(start))
-        .copied()
-        .filter(|tid| *tid != page::ItemPointer::INVALID)
-        .collect()
+    {
+        if tid != page::ItemPointer::INVALID {
+            visit(tid);
+        }
+    }
 }
 
 pub(crate) fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Option<(usize, usize)> {
@@ -377,6 +398,20 @@ pub(crate) fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Optio
 
     let start = m.saturating_mul(2) + (usize::from(layer).saturating_sub(1) * m);
     Some((start, start.saturating_add(m)))
+}
+
+fn layer_neighbor_slot_capacity(
+    neighbor_tid_count: usize,
+    element_level: u8,
+    m: usize,
+    layer: u8,
+) -> usize {
+    let Some((start, end)) = layer_slot_bounds(element_level, m, layer) else {
+        return 0;
+    };
+    let bounded_start = start.min(neighbor_tid_count);
+    let bounded_end = end.min(neighbor_tid_count);
+    bounded_end.saturating_sub(bounded_start)
 }
 
 pub(crate) fn greedy_descend_with_successors<NodeId, SuccessorFn>(
@@ -591,6 +626,45 @@ where
     let mut search = search::BeamSearch::new(ef_search);
     search.seed_many(seeds);
     search.run(|candidate| successors(candidate.node))
+}
+
+unsafe fn load_successor_candidates_for_layer<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    code_len: usize,
+    m: usize,
+    layer: u8,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
+    let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity(
+        neighbors.tids.len(),
+        element.level,
+        m,
+        layer,
+    ));
+
+    for_each_valid_neighbor_tid_for_layer(&neighbors.tids, element.level, m, layer, |neighbor_tid| {
+        if keep_neighbor_tid(neighbor_tid) {
+            let neighbor = unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
+            if !neighbor.deleted && !neighbor.heaptids.is_empty() {
+                if let Some(score) = score_candidate(&neighbor) {
+                    candidates.push(search::BeamCandidate::with_source(
+                        neighbor.tid,
+                        score,
+                        source_tid,
+                    ));
+                }
+            }
+        }
+    });
+
+    candidates
 }
 
 fn layer0_successor_candidates_from_elements<I, F>(
