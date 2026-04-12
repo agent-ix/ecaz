@@ -108,7 +108,7 @@ Since packet-open:
 - the verified scratch launcher also now auto-detects the active local pg17
   socket between `/tmp/tqvector_pgrx_home` and `${HOME}/.pgrx`
 
-### Observed `m=8` results so far
+### Observed `m=8` results
 
 Command used:
 
@@ -135,20 +135,12 @@ m=8   ef_search=64   n=200   p50=190.189ms p95=202.887ms p99=211.387ms mean=189.
 m=8   ef_search=100  n=200   p50=263.911ms p95=280.042ms p99=292.275ms mean=262.439ms min=234.273ms max=331.911ms server_qps=3.81 wall=52.18s
 m=8   ef_search=128  n=200   p50=322.025ms p95=339.410ms p99=343.483ms mean=320.426ms min=282.956ms max=373.059ms server_qps=3.12 wall=63.78s
 m=8   ef_search=160  n=200   p50=386.370ms p95=404.463ms p99=452.724ms mean=384.200ms min=345.348ms max=466.840ms server_qps=2.60 wall=75.32s
+m=8   ef_search=200  n=200   p50=6276.095ms p95=6481.173ms p99=6862.115ms mean=6295.632ms min=6044.156ms max=8153.601ms server_qps=0.16 wall=1209.01s
 ```
 
-### Why the run is only partial
+### Current completion state
 
-The final `m=8, ef_search=200` cell was still actively executing after the
-earlier cells had completed and been persisted, but it was taking far longer
-than the established `40..160` curve. The run was cut there to preserve the
-usable partial surface and avoid spending the rest of the operator slice on one
-tail point.
-
-At cutoff time:
-
-- `m=8, ef_search=40..160`: complete
-- `m=8, ef_search=200`: pending rerun
+- `m=8, ef_search=40..200`: complete
 - `m=16` sweep: not started yet
 
 ## Interim Read
@@ -157,10 +149,19 @@ The repaired C1 surface now demonstrates the key unblock:
 
 - planner verification passes against the expected tqhnsw index
 - runtime ordered tqhnsw scans execute successfully for the real `10k` corpus
-- the observed `m=8` latency curve is monotonic through `ef_search=160`
+- the observed `m=8` latency curve is monotonic, but the `ef_search=200`
+  point is dramatically worse than the rest of the surface
+
+That tail is not a minor regression. It is a major behavior change:
+
+- `ef_search=160`: mean `384.200ms`
+- `ef_search=200`: mean `6295.632ms`
+
+So C1 is now blocked by performance, not by planner/runtime correctness.
 
 The packet does **not** yet constitute a final `NFR-001` closeout because the
-`ef_search=200` tail point and the `m=16` run are still outstanding.
+`m=16` run is still outstanding and the `m=8, ef_search=200` tail now needs
+follow-up analysis rather than just more collection.
 
 ## Review Focus
 
