@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ptr;
 use std::sync::Arc;
 
@@ -193,6 +193,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
             if !opaque_ptr.is_null() {
                 let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
                 free_graph_prefetch_state(opaque);
+                free_scan_graph_cache(opaque);
                 free_scan_candidate_frontier(opaque);
                 free_bootstrap_expansion(opaque);
                 free_scan_expanded_set(opaque);
@@ -270,12 +271,186 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
     clear_scan_candidate_state(opaque);
+    reset_scan_graph_cache(opaque);
     opaque.result_state.clear();
     opaque.fallback_result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
+}
+
+fn reset_scan_graph_cache(opaque: &mut TqScanOpaque) {
+    if opaque.graph_element_cache.is_null() {
+        opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
+    } else {
+        unsafe { &mut *opaque.graph_element_cache }.clear();
+    }
+
+    if opaque.graph_neighbor_cache.is_null() {
+        opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
+    } else {
+        unsafe { &mut *opaque.graph_neighbor_cache }.clear();
+    }
+}
+
+fn free_scan_graph_cache(opaque: &mut TqScanOpaque) {
+    if !opaque.graph_element_cache.is_null() {
+        drop(unsafe { Box::from_raw(opaque.graph_element_cache) });
+        opaque.graph_element_cache = ptr::null_mut();
+    }
+
+    if !opaque.graph_neighbor_cache.is_null() {
+        drop(unsafe { Box::from_raw(opaque.graph_neighbor_cache) });
+        opaque.graph_neighbor_cache = ptr::null_mut();
+    }
+}
+
+fn graph_element_cache_mut(
+    opaque: &mut TqScanOpaque,
+) -> &mut HashMap<page::ItemPointer, Arc<graph::GraphElement>> {
+    if opaque.graph_element_cache.is_null() {
+        opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
+    }
+
+    unsafe { &mut *opaque.graph_element_cache }
+}
+
+fn graph_neighbor_cache_mut(
+    opaque: &mut TqScanOpaque,
+) -> &mut HashMap<page::ItemPointer, Arc<graph::GraphNeighbors>> {
+    if opaque.graph_neighbor_cache.is_null() {
+        opaque.graph_neighbor_cache = Box::into_raw(Box::new(HashMap::new()));
+    }
+
+    unsafe { &mut *opaque.graph_neighbor_cache }
+}
+
+unsafe fn cached_graph_element(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> Arc<graph::GraphElement> {
+    let opaque_ref = unsafe { &mut *opaque };
+    if !opaque_ref.graph_element_cache.is_null() {
+        if let Some(element) = unsafe { &*opaque_ref.graph_element_cache }.get(&element_tid) {
+            return Arc::clone(element);
+        }
+    }
+
+    let element = Arc::new(unsafe {
+        graph::load_graph_element(index_relation, element_tid, opaque_ref.scan_code_len)
+    });
+    graph_element_cache_mut(opaque_ref).insert(element_tid, Arc::clone(&element));
+    element
+}
+
+unsafe fn cached_graph_neighbors(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    neighbor_tid: page::ItemPointer,
+) -> Arc<graph::GraphNeighbors> {
+    let opaque_ref = unsafe { &mut *opaque };
+    if !opaque_ref.graph_neighbor_cache.is_null() {
+        if let Some(neighbors) = unsafe { &*opaque_ref.graph_neighbor_cache }.get(&neighbor_tid) {
+            return Arc::clone(neighbors);
+        }
+    }
+
+    let neighbors = Arc::new(unsafe { graph::load_graph_neighbors(index_relation, neighbor_tid) });
+    graph_neighbor_cache_mut(opaque_ref).insert(neighbor_tid, Arc::clone(&neighbors));
+    neighbors
+}
+
+unsafe fn cached_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> (Arc<graph::GraphElement>, Arc<graph::GraphNeighbors>) {
+    let element = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+    let neighbors = unsafe { cached_graph_neighbors(index_relation, opaque, element.neighbortid) };
+    (element, neighbors)
+}
+
+unsafe fn cached_neighbor_tids_for_layer(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    layer: u8,
+) -> Vec<page::ItemPointer> {
+    let (element, neighbors) = unsafe { cached_graph_adjacency(index_relation, opaque, element_tid) };
+    let scan_m = usize::from(unsafe { &*opaque }.scan_m);
+    graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer)
+}
+
+unsafe fn cached_scan_successor_candidates_for_layer<KeepFn>(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    source_tid: page::ItemPointer,
+    layer: u8,
+    mut keep_neighbor_tid: KeepFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+{
+    let neighbor_tids =
+        unsafe { cached_neighbor_tids_for_layer(index_relation, opaque, source_tid, layer) };
+    let mut candidates = Vec::with_capacity(neighbor_tids.len());
+
+    for neighbor_tid in neighbor_tids {
+        if !keep_neighbor_tid(neighbor_tid) {
+            continue;
+        }
+
+        let neighbor = unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
+        if neighbor.deleted || neighbor.heaptids.is_empty() {
+            continue;
+        }
+
+        let score =
+            score_scan_element_result(unsafe { &*opaque }, neighbor.gamma, &neighbor.code);
+        candidates.push(search::BeamCandidate::with_source(
+            neighbor.tid,
+            score,
+            source_tid,
+        ));
+    }
+
+    candidates
+}
+
+unsafe fn cached_upper_layer_seed_candidates(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    entry_level: u8,
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    if entry_level == 0 {
+        return vec![entry_candidate];
+    }
+
+    let mut seeds = vec![entry_candidate];
+    let bootstrap_limit = bootstrap_frontier_limit(unsafe { &*opaque });
+    for layer in (1..=entry_level).rev() {
+        seeds = graph::search_layer0_result_candidates_with_successors(
+            bootstrap_limit,
+            seeds,
+            |source_tid| unsafe {
+                cached_scan_successor_candidates_for_layer(
+                    index_relation,
+                    opaque,
+                    source_tid,
+                    layer,
+                    |_| true,
+                )
+            },
+        );
+        if seeds.is_empty() {
+            break;
+        }
+    }
+
+    seeds
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -492,8 +667,7 @@ unsafe fn materialize_graph_result_candidate(
     }
 
     opaque.explain_counters.record_bootstrap_page_read();
-    let element =
-        unsafe { graph::load_graph_element(index_relation, candidate.node, opaque.scan_code_len) };
+    let element = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
     if element.deleted || element.heaptids.is_empty() {
         opaque.explain_counters.record_element_skipped();
         return None;
@@ -504,7 +678,7 @@ unsafe fn materialize_graph_result_candidate(
     unsafe { &mut *result_state }.materialize(SelectedScanResult {
         element_tid: candidate.node,
         score: candidate.score,
-        heap_tids: element.heaptids,
+        heap_tids: element.heaptids.clone(),
     });
     Some(())
 }
@@ -761,50 +935,29 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    let entry = unsafe {
-        graph::load_graph_element(index_relation, metadata.entry_point, opaque.scan_code_len)
-    };
+    let entry = unsafe { cached_graph_element(index_relation, opaque, metadata.entry_point) };
     if entry.deleted || entry.heaptids.is_empty() {
         return;
     }
 
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
-    let bootstrap_limit = bootstrap_frontier_limit(opaque);
-    let upper_layer_seeds = unsafe {
-        graph::search_upper_layer_seed_candidates(
-            index_relation,
-            opaque.scan_code_len,
-            usize::from(opaque.scan_m),
-            entry_candidate,
-            entry.level,
-            bootstrap_limit,
-            |neighbor| {
-                Some(score_scan_element_result(
-                    opaque,
-                    neighbor.gamma,
-                    &neighbor.code,
-                ))
-            },
-        )
-    };
-    let ordered_candidates = unsafe {
-        graph::search_layer0_result_candidates(
-            index_relation,
-            opaque.scan_code_len,
-            usize::from(opaque.scan_m),
-            bootstrap_limit,
-            upper_layer_seeds,
-            |neighbor_tid| !visited_contains_element(opaque, neighbor_tid),
-            |neighbor| {
-                Some(score_scan_element_result(
-                    opaque,
-                    neighbor.gamma,
-                    &neighbor.code,
-                ))
-            },
-        )
-    };
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    let upper_layer_seeds =
+        unsafe { cached_upper_layer_seed_candidates(index_relation, opaque_ptr, entry_candidate, entry.level) };
+    let ordered_candidates = graph::search_layer0_result_candidates_with_successors(
+        bootstrap_frontier_limit(opaque),
+        upper_layer_seeds,
+        |source_tid| unsafe {
+            cached_scan_successor_candidates_for_layer(
+                index_relation,
+                opaque_ptr,
+                source_tid,
+                0,
+                |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
+            )
+        },
+    );
     stage_ordered_graph_results(opaque, ordered_candidates);
 }
 
@@ -1550,6 +1703,8 @@ pub(super) struct TqScanOpaque {
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
+    pub(super) graph_element_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphElement>>,
+    pub(super) graph_neighbor_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphNeighbors>>,
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) result_state: ScanResultState,
@@ -1582,6 +1737,8 @@ impl Default for TqScanOpaque {
             visited_tids: ptr::null_mut(),
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
+            graph_element_cache: ptr::null_mut(),
+            graph_neighbor_cache: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             bootstrap_expansion: ptr::null_mut(),
             result_state: ScanResultState::default(),
@@ -1785,6 +1942,44 @@ mod tests {
             candidate_frontier_head(&mut opaque).is_none(),
             "amrescan/reset should clear prior graph traversal frontier state before rebuilding it"
         );
+    }
+
+    #[test]
+    fn reset_scan_position_clears_scan_graph_cache() {
+        let mut opaque = TqScanOpaque::default();
+        graph_element_cache_mut(&mut opaque).insert(
+            tid(91, 1),
+            Arc::new(graph::GraphElement {
+                tid: tid(91, 1),
+                level: 1,
+                deleted: false,
+                heaptids: vec![tid(191, 1)],
+                gamma: 1.0,
+                neighbortid: tid(91, 2),
+                code: vec![7, 9],
+            }),
+        );
+        graph_neighbor_cache_mut(&mut opaque).insert(
+            tid(91, 2),
+            Arc::new(graph::GraphNeighbors {
+                tid: tid(91, 2),
+                count: 1,
+                tids: vec![tid(92, 1)],
+            }),
+        );
+
+        reset_scan_position(&mut opaque);
+
+        assert!(
+            unsafe { &*opaque.graph_element_cache }.is_empty(),
+            "amrescan/reset should drop cached graph elements before reseeding the ordered scan"
+        );
+        assert!(
+            unsafe { &*opaque.graph_neighbor_cache }.is_empty(),
+            "amrescan/reset should drop cached graph neighbors before reseeding the ordered scan"
+        );
+
+        free_scan_graph_cache(&mut opaque);
     }
 
     #[test]

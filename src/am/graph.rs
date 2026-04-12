@@ -341,7 +341,7 @@ where
     })
 }
 
-fn valid_neighbor_tids_for_layer(
+pub(crate) fn valid_neighbor_tids_for_layer(
     neighbor_tids: &[page::ItemPointer],
     element_level: u8,
     m: usize,
@@ -403,7 +403,7 @@ where
     current
 }
 
-fn search_layer0_result_candidates_with_successors<NodeId, SeedIter, SuccessorFn>(
+pub(crate) fn search_layer0_result_candidates_with_successors<NodeId, SeedIter, SuccessorFn>(
     ef_search: usize,
     seeds: SeedIter,
     mut successors: SuccessorFn,
