@@ -10,7 +10,8 @@ impl GraphPrefetchState {
     }
 
     pub(crate) fn reset(&mut self, blocks: Vec<u32>) {
-        self.blocks = blocks;
+        self.blocks.clear();
+        self.blocks.extend(blocks);
         self.index = 0;
     }
 

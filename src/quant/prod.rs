@@ -78,6 +78,17 @@ impl ProdQuantizer {
             .clone()
     }
 
+    pub fn cached_with_presence(dim: usize, bits: u8, seed: u64) -> (Arc<Self>, bool) {
+        let key = (dim, bits, seed);
+        let mut guard = cache().lock().expect("quantizer cache poisoned");
+        let was_present = guard.contains_key(&key);
+        let quantizer = guard
+            .entry(key)
+            .or_insert_with(|| Arc::new(Self::new(dim, bits, seed)))
+            .clone();
+        (quantizer, was_present)
+    }
+
     pub fn encode(&self, vector: &[f32]) -> EncodedTq {
         assert_eq!(
             vector.len(),
@@ -1454,6 +1465,15 @@ mod tests {
         let first = ProdQuantizer::cached(64, 4, 42);
         let second = ProdQuantizer::cached(64, 4, 42);
         assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn cached_with_presence_reports_whether_entry_already_existed() {
+        let (_, first_present) = ProdQuantizer::cached_with_presence(63, 5, 0xDEADBEEF_u64);
+        let (_, second_present) = ProdQuantizer::cached_with_presence(63, 5, 0xDEADBEEF_u64);
+
+        assert!(!first_present);
+        assert!(second_present);
     }
 
     // --- Miri tests (small dimensions for speed) ---

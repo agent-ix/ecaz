@@ -1634,28 +1634,41 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_planner_surface_stays_disabled() {
-        Spi::run("CREATE TABLE tqhnsw_no_scan_plan (id bigint primary key, embedding tqvector)")
+    fn test_fr020_empty_index_remains_planner_gated() {
+        Spi::run("CREATE TABLE tqhnsw_empty_cost (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_no_scan_plan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
-        )
-        .expect("insert should succeed");
-        Spi::run(
-            "CREATE INDEX tqhnsw_no_scan_plan_idx ON tqhnsw_no_scan_plan USING tqhnsw \
+            "CREATE INDEX tqhnsw_empty_cost_idx ON tqhnsw_empty_cost USING tqhnsw \
              (embedding tqvector_ip_ops)",
         )
-        .expect("index creation should succeed");
-        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        .expect("empty-index creation should succeed");
+
+        let modeled_startup = Spi::get_one::<f64>(
+            "SELECT modeled_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_empty_cost_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled startup should be non-null");
+        let modeled_total = Spi::get_one::<f64>(
+            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_empty_cost_idx'::regclass)",
+        )
+        .expect("snapshot query should succeed")
+        .expect("modeled total should be non-null");
+        assert_eq!(
+            modeled_startup,
+            f64::MAX,
+            "empty tqhnsw index must keep the FR-020 gate active even after D2 activation"
+        );
+        assert_eq!(
+            modeled_total,
+            f64::MAX,
+            "empty tqhnsw index must keep the FR-020 gate active even after D2 activation"
+        );
 
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_no_scan_plan \
+                     SELECT id FROM tqhnsw_empty_cost \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 1",
                     None,
@@ -1676,7 +1689,168 @@ mod tests {
 
         assert!(
             !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
-            "planner should not use tqhnsw for scans before scan callbacks exist: {plan}"
+            "planner must not pick an empty tqhnsw index even with D2 activation: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_fr020_ac2_planner_prefers_seqscan_for_small_tables() {
+        Spi::run("CREATE TABLE tqhnsw_small_seqscan (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_small_seqscan \
+             SELECT g, encode_to_tqvector(ARRAY[g::real, (g * 0.25)::real, (g * -0.5)::real, 1.0::real], 4, 42) \
+             FROM generate_series(1, 50) AS g",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_small_seqscan_idx ON tqhnsw_small_seqscan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE tqhnsw_small_seqscan").expect("analyze should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_small_seqscan \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
+            "planner should prefer sequential scan on a 50-row table even with FR-020 activated (AC-2): {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_planner_chooses_index_scan_for_ordered_query() {
+        Spi::run("CREATE TABLE tqhnsw_scan_plan (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_scan_plan VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_scan_plan_idx ON tqhnsw_scan_plan USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_scan_plan \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+            "planner should select the tqhnsw index scan once FR-020 cost activation is live: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_fr020_ac1_planner_chooses_index_scan_for_large_table() {
+        Spi::run("CREATE TABLE tqhnsw_ac1_large (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        // Build 10K 64-dim vectors from four MD5 digests per row so each row
+        // gets 64 distinct byte values without 10K × N hashtext calls. Keeping
+        // this at 64 dimensions is deliberate: lowering the dimension count
+        // flips the FR-020 crossover back toward seqscan at 10K rows.
+        Spi::run(
+            "INSERT INTO tqhnsw_ac1_large \
+             SELECT g, encode_to_tqvector( \
+                 ARRAY( \
+                     SELECT ((get_byte( \
+                              decode(md5(g::text) \
+                                     || md5((g + 999983)::text) \
+                                     || md5((g + 1999993)::text) \
+                                     || md5((g + 2999999)::text), 'hex'), \
+                              i)::real - 128.0) / 128.0)::real \
+                     FROM generate_series(0, 63) AS i), \
+                 4, 42) \
+             FROM generate_series(1, 10000) AS g",
+        )
+        .expect("10k-row insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_ac1_large_idx ON tqhnsw_ac1_large USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE tqhnsw_ac1_large").expect("analyze should succeed");
+
+        let query_array = {
+            let mut s = String::from("ARRAY[");
+            for i in 0..64 {
+                if i > 0 {
+                    s.push(',');
+                }
+                s.push_str(&format!("{:.6}", (i as f32 * 0.05 - 1.5)));
+            }
+            s.push_str("]::real[]");
+            s
+        };
+        let explain_sql = format!(
+            "EXPLAIN (COSTS OFF) SELECT id FROM tqhnsw_ac1_large \
+             ORDER BY embedding <#> {query_array} LIMIT 10"
+        );
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(&explain_sql, None, &[])
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Index Scan") && plan.contains("tqhnsw_ac1_large_idx"),
+            "FR-020-AC-1 / TC-206: planner must naturally pick the tqhnsw index on a 10K-row table: {plan}"
         );
     }
 
@@ -1907,12 +2081,12 @@ mod tests {
         Spi::run("ANALYZE tqhnsw_cost_snapshot").expect("analyze should succeed");
 
         assert!(
-            !Spi::get_one::<bool>(
+            Spi::get_one::<bool>(
                 "SELECT planner_scan_enabled FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner flag should be non-null"),
-            "planner gate should still be off"
+            "planner gate should be live after D2 cost-model activation"
         );
         assert!(
             Spi::get_one::<String>(
@@ -1920,8 +2094,8 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("gate reason should be non-null")
-                .contains("disabled"),
-            "cost snapshot should explain why live planner costing is still gated"
+                .contains("FR-020"),
+            "cost snapshot should reference FR-020 once the planner gate is retired"
         );
         assert_eq!(
             Spi::get_one::<i32>(
@@ -2114,21 +2288,21 @@ mod tests {
         .expect("index creation should succeed");
 
         assert!(
-            !Spi::get_one::<bool>(
+            Spi::get_one::<bool>(
                 "SELECT planner_scan_enabled FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner scan flag should be non-null")
         );
         assert!(
-            !Spi::get_one::<bool>(
+            Spi::get_one::<bool>(
                 "SELECT ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("ordered scan readiness should be non-null")
         );
         assert!(
-            !Spi::get_one::<bool>(
+            Spi::get_one::<bool>(
                 "SELECT runtime_ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
@@ -2142,7 +2316,7 @@ mod tests {
             .expect("planner cost model readiness should be non-null")
         );
         assert!(
-            !Spi::get_one::<bool>(
+            Spi::get_one::<bool>(
                 "SELECT planner_cost_callback_live FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
@@ -2191,7 +2365,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("planner gate reason should be non-null"),
-            "planner scan selection is disabled until ordered tqhnsw execution is credible"
+            "planner scan selection is live: FR-020 cost model active (ADR-011 superseded)"
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -2199,7 +2373,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "ordered tqhnsw scan semantics and recall validation are not yet credible"
+            "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next"
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -6163,8 +6337,8 @@ mod tests {
         );
         assert_eq!(snapshot.effective_source, "relation");
         assert!(
-            !snapshot.planner_scan_enabled,
-            "planner-facing scan selection should remain explicitly disabled"
+            snapshot.planner_scan_enabled,
+            "planner-facing scan selection should be live after D2 cost-model activation"
         );
     }
 
