@@ -32,23 +32,51 @@ At `ef_search=40` the heap is small, but this path runs in the steady-state
 result-emission loop and compounds with repeated stale-leader drops. At higher
 `ef_search` values it gets worse.
 
-## Planned work
+## Implementation
 
-1. Change queued-node removal to a lazy scheme instead of draining and
-   rebuilding the heap every time.
-2. Preserve the current scheduler semantics:
-   stale queued nodes disappear from `peek_best_matching`, `take_best_matching`,
-   `snapshot_frontier`, and reseeding rules.
-3. Add or update unit tests around queued removal and stale-leader skipping.
-4. Rerun the full validation gate plus the warm verified `10K`, `m=8`,
-   `ef_search=40`, `warm-after-prime3`, `per-cell` seam.
+Completed work:
 
-## Exit criteria
+1. Replaced the eager heap drain in `src/am/search.rs` with a separate live
+   queued-node set.
+2. `forget_queued` now clears queued state lazily instead of draining and
+   rebuilding the full `BinaryHeap`.
+3. `peek_best`, `pop_best`, `snapshot_frontier`, `frontier_len`, and `is_empty`
+   now respect the live queued set so stale leaders are skipped at the head and
+   do not leak back through scheduler inspection.
+4. Kept the existing scheduler semantics for reseeding, visited accounting, and
+   stale-leader dropping in the search tests.
 
-- queued-node removal no longer drains and rebuilds the full heap
-- scheduler semantics remain unchanged for the existing search tests
+## Result
+
+Current local read on the warm verified `10K`, `m=8`, `ef_search=40`,
+`warm-after-prime3`, `per-cell`, `cached-plan` seam:
+
+```text
+before: p50=11.028ms p95=13.461ms p99=14.857ms mean=11.041ms
+after:  p50=10.932ms p95=13.137ms p99=15.059ms mean=10.993ms
+```
+
+That is only a small move, but it is at least directionally positive on p50 /
+mean / p95. This is not a C1-closing win; it is a low-signal cleanup checkpoint
+that removes a clearly avoidable heap rebuild path without regressing the warm
+surface.
+
+## Validation
+
+- targeted scheduler tests:
+  - `cargo test beam_search_`
 - `cargo test`
 - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
 - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-- warm verified `10K`, `m=8`, `ef_search=40`, `warm-after-prime3`, `per-cell`
-  read recorded
+- warm verified `10K`, `m=8`, `ef_search=40`, `warm-after-prime3`, `per-cell`,
+  `cached-plan`
+
+All required gates were rerun and completed green after the final search state.
+
+## Conclusion
+
+This slice is worth keeping because it removes an obviously wasteful
+`BinaryHeap` drain/rebuild path and leaves the warm verified surface slightly
+better, not worse. The effect is small enough that the next C1 slice should aim
+at a larger remaining churn source rather than spend more time polishing the
+scheduler.
