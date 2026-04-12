@@ -399,6 +399,9 @@ For warm-cache runs, the same launcher now also supports:
   `(m, ef_search)` cell
 - `--session-mode per-cell` to keep the entire warmup + timed cell in one
   backend session instead of opening a fresh `psql` connection per query
+- `--timing-mode plain-server` to time the ordered query with server-side
+  `clock_timestamp()` around a `MATERIALIZED` subquery instead of relying on
+  per-query `EXPLAIN (ANALYZE)`
 
 Example warm-cache run:
 
@@ -426,6 +429,11 @@ host / GUC banner (`CPU`, `RAM`, `shared_buffers`, `work_mem`,
 label), which is why the canonical command redirects stdout to a companion
 artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
 gate target.
+
+The default timing seam is still `--timing-mode explain`, because it remains
+useful for cross-checking planner-visible execution surfaces. The newer
+`--timing-mode plain-server` path is available when you want the same
+planner-verified query measured without per-query `EXPLAIN` output.
 
 `--session-mode per-query` remains the default for backward compatibility, but
 it materially overstates warm-cache latency because each timed query runs in a

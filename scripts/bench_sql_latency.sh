@@ -31,7 +31,8 @@ Usage:
   Real-corpus mode (reuses preloaded tables and indexes):
     bash scripts/bench_sql_latency.sh --prefix <prefix> [--m N]... \
         [--ef-search csv] [--query-limit N] [--cache-state LABEL] \
-        [--warmup-passes N] [--session-mode MODE] [--output FILE]
+        [--warmup-passes N] [--session-mode MODE] [--timing-mode MODE] \
+        [--output FILE]
 
 Options (real-corpus mode):
   --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
@@ -52,6 +53,10 @@ Options (real-corpus mode):
                  per-query (default) opens one psql/backend per timed query.
                  per-cell runs all warmup + timed queries for the cell in a
                  single backend session.
+  --timing-mode  How to time each measured query:
+                 explain (default) uses per-query EXPLAIN (ANALYZE, FORMAT JSON).
+                 plain-server runs the plain ordered query and measures it with
+                 server-side clock_timestamp() around a MATERIALIZED subquery.
   --output       Append the per-cell summary to FILE in addition to stdout.
   -h, --help     Show this message and exit.
 
@@ -71,6 +76,7 @@ QUERY_LIMIT=""
 CACHE_STATE="unspecified"
 WARMUP_PASSES="0"
 SESSION_MODE="per-query"
+TIMING_MODE="explain"
 OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -89,6 +95,8 @@ while [[ $# -gt 0 ]]; do
       WARMUP_PASSES="$2"; shift 2 ;;
     --session-mode)
       SESSION_MODE="$2"; shift 2 ;;
+    --timing-mode)
+      TIMING_MODE="$2"; shift 2 ;;
     --output)
       OUTPUT_FILE="$2"; shift 2 ;;
     -h|--help)
@@ -190,6 +198,10 @@ run_real_corpus_bench() {
     echo "invalid session mode: $SESSION_MODE (expected per-query or per-cell)" >&2
     exit 2
   fi
+  if [[ "$TIMING_MODE" != "explain" && "$TIMING_MODE" != "plain-server" ]]; then
+    echo "invalid timing mode: $TIMING_MODE (expected explain or plain-server)" >&2
+    exit 2
+  fi
   IFS=',' read -r -a ef_list <<< "$EF_SEARCH_CSV"
   for ef in "${ef_list[@]}"; do
     if [[ ! "$ef" =~ ^[0-9]+$ ]]; then
@@ -225,6 +237,7 @@ run_real_corpus_bench() {
     echo "warmup passes: $WARMUP_PASSES"
   fi
   echo "session mode: $SESSION_MODE"
+  echo "timing mode:  $TIMING_MODE"
   print_real_corpus_env_banner
   echo
 
@@ -298,6 +311,7 @@ run_real_corpus_bench() {
       if [[ "$SESSION_MODE" == "per-cell" ]]; then
         : > "$cell_sql"
         if (( WARMUP_PASSES > 0 )); then
+          printf '\\o /dev/null\n' >> "$cell_sql"
           for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
             echo "[warmup] m=${m} ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
             while IFS= read -r query_line; do
@@ -310,16 +324,36 @@ LIMIT ${k};
 SQL
             done < "$queries_tsv"
           done
+          printf '\\o\n' >> "$cell_sql"
         fi
         while IFS= read -r query_line; do
           [[ -z "$query_line" ]] && continue
-          cat >> "$cell_sql" <<SQL
+          if [[ "$TIMING_MODE" == "explain" ]]; then
+            cat >> "$cell_sql" <<SQL
 SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
 SQL
+          else
+            cat >> "$cell_sql" <<SQL
+SET tqhnsw.ef_search = ${ef};
+WITH started AS (
+  SELECT clock_timestamp() AS t0
+),
+measured AS MATERIALIZED (
+  SELECT id FROM ${corpus_table}
+  ORDER BY embedding <#> '${query_line}'::real[]
+  LIMIT ${k}
+),
+finished AS (
+  SELECT clock_timestamp() AS t1, count(*) AS rows_seen FROM measured
+)
+SELECT extract(epoch FROM (finished.t1 - started.t0)) * 1000.0
+FROM started, finished;
+SQL
+          fi
         done < "$queries_tsv"
         "$PSQL_BIN" -X -A -t -q -f "$cell_sql" > "$results_file"
       else
@@ -339,44 +373,74 @@ SQL
         fi
         while IFS= read -r query_line; do
           [[ -z "$query_line" ]] && continue
-          "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
+          if [[ "$TIMING_MODE" == "explain" ]]; then
+            "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
 SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
 SQL
+          else
+            "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
+SET tqhnsw.ef_search = ${ef};
+WITH started AS (
+  SELECT clock_timestamp() AS t0
+),
+measured AS MATERIALIZED (
+  SELECT id FROM ${corpus_table}
+  ORDER BY embedding <#> '${query_line}'::real[]
+  LIMIT ${k}
+),
+finished AS (
+  SELECT clock_timestamp() AS t1, count(*) AS rows_seen FROM measured
+)
+SELECT extract(epoch FROM (finished.t1 - started.t0)) * 1000.0
+FROM started, finished;
+SQL
+          fi
         done < "$queries_tsv"
       fi
       local wall_end
       wall_end="$(date +%s.%N)"
 
-      python3 - "$results_file" "$m" "$ef" "$wall_start" "$wall_end" "$OUTPUT_FILE" <<'PY'
+      python3 - "$results_file" "$m" "$ef" "$wall_start" "$wall_end" "$OUTPUT_FILE" "$TIMING_MODE" <<'PY'
 import json
 import statistics
 import sys
 
-results_path, m_str, ef_str, wall_start_str, wall_end_str, output_path = sys.argv[1:]
+results_path, m_str, ef_str, wall_start_str, wall_end_str, output_path, timing_mode = sys.argv[1:]
 
 times_ms = []
-with open(results_path, "r", encoding="utf-8") as fh:
-    content = fh.read()
-depth = 0
-start = None
-for i, c in enumerate(content):
-    if c == "[" and depth == 0:
-        start = i
-    if c == "[":
-        depth += 1
-    if c == "]":
-        depth -= 1
-        if depth == 0 and start is not None:
+if timing_mode == "explain":
+    with open(results_path, "r", encoding="utf-8") as fh:
+        content = fh.read()
+    depth = 0
+    start = None
+    for i, c in enumerate(content):
+        if c == "[" and depth == 0:
+            start = i
+        if c == "[":
+            depth += 1
+        if c == "]":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    plan = json.loads(content[start : i + 1])
+                    times_ms.append(float(plan[0]["Execution Time"]))
+                except (json.JSONDecodeError, KeyError, IndexError, ValueError):
+                    pass
+                start = None
+else:
+    with open(results_path, "r", encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line:
+                continue
             try:
-                plan = json.loads(content[start : i + 1])
-                times_ms.append(float(plan[0]["Execution Time"]))
-            except (json.JSONDecodeError, KeyError, IndexError, ValueError):
+                times_ms.append(float(line))
+            except ValueError:
                 pass
-            start = None
 
 if not times_ms:
     print(f"  no per-query timings parsed", file=sys.stderr)
