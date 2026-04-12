@@ -416,3 +416,52 @@ Against `NFR-001`, this is still not a closeout:
 So the runtime is now dramatically better and the artifacts are durable, but
 the latency target is still missed by a wide margin. C1 has moved from
 "runtime and planner integrity bring-up" into a pure optimization/readout lane.
+
+## Run Update: 2026-04-12 (greedy upper-layer seeding)
+
+Packet `256` replaced scan-time upper-layer result-window seeding with greedy
+descent. The change stayed within the scan runtime and passed the required
+checkpoint gate:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+The verified canonical `m=8` rerun on the shared real-`10k` prefix used:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m8_greedy_upper.summary
+```
+
+Completed cells:
+
+```text
+m=8   ef_search=40   n=200   p50=69.562ms  p95=79.380ms  p99=83.530ms  mean=69.855ms  min=55.491ms  max=84.006ms  server_qps=14.32 wall=14.71s
+m=8   ef_search=64   n=200   p50=79.898ms  p95=90.619ms  p99=98.609ms  mean=79.753ms  min=62.327ms  max=104.349ms server_qps=12.54 wall=16.71s
+m=8   ef_search=100  n=200   p50=92.714ms  p95=106.607ms p99=116.384ms mean=92.465ms  min=71.284ms  max=117.682ms server_qps=10.81 wall=20.62s
+m=8   ef_search=128  n=200   p50=102.767ms p95=114.942ms p99=119.196ms mean=101.467ms min=79.701ms  max=134.937ms server_qps=9.86  wall=21.02s
+m=8   ef_search=160  n=200   p50=113.216ms p95=129.379ms p99=141.886ms mean=112.132ms min=87.779ms  max=162.703ms server_qps=8.92  wall=23.18s
+m=8   ef_search=200  n=200   p50=126.960ms p95=145.479ms p99=150.469ms mean=124.238ms min=93.581ms  max=156.663ms server_qps=8.05  wall=25.57s
+```
+
+Compared to the post-fast-hash canonical `m=8` surface from packet `255`:
+
+- `ef_search=40`: mean `88.360ms -> 69.855ms`
+- `ef_search=64`: mean `103.883ms -> 79.753ms`
+- `ef_search=100`: mean `125.027ms -> 92.465ms`
+- `ef_search=128`: mean `139.747ms -> 101.467ms`
+- `ef_search=160`: mean `153.566ms -> 112.132ms`
+- `ef_search=200`: mean `174.147ms -> 124.238ms`
+
+That makes this the current best verified canonical `m=8` surface on `main`.
+
+The isolated `m=16` surface has not yet been rerun after packets `255` and
+`256`, so the newest apples-to-apples verified artifact is still the shared
+canonical `m=8` lane above. The next honest comparison step would be an
+isolated rerun of `tqhnsw_real_10k_m16only` on the current code, but the
+larger remaining latency gap is still on raw runtime, not `m` selection.
