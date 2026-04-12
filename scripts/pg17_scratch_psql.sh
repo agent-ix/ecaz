@@ -9,7 +9,7 @@ Usage:
   scripts/pg17_scratch_psql.sh [--db DB] [--raw]
 
 Defaults:
-  socket dir: /tmp/tqvector_pgrx_home
+  socket dir: auto-detect /tmp/tqvector_pgrx_home, else $HOME/.pgrx
   port:       28817
   database:   postgres
   mode:       aligned-off, tuples-only, tab-separated, ON_ERROR_STOP=1
@@ -22,7 +22,6 @@ Environment overrides:
 EOF
 }
 
-socket_dir="${TQV_PG_SOCKET_DIR:-/tmp/tqvector_pgrx_home}"
 port="${TQV_PG_PORT:-28817}"
 database="${TQV_PG_DATABASE:-postgres}"
 pgrx_home="${PGRX_HOME:-${HOME}/.pgrx}"
@@ -30,6 +29,20 @@ psql_bin="${TQV_PSQL_BIN:-${pgrx_home}/17.9/pgrx-install/bin/psql}"
 raw_mode=0
 sql=""
 sql_file=""
+
+detect_socket_dir() {
+    local port="$1"
+    local preferred="/tmp/tqvector_pgrx_home"
+    local fallback="${HOME}/.pgrx"
+
+    if [[ -S "${preferred}/.s.PGSQL.${port}" ]]; then
+        printf '%s\n' "${preferred}"
+    elif [[ -S "${fallback}/.s.PGSQL.${port}" ]]; then
+        printf '%s\n' "${fallback}"
+    else
+        printf '%s\n' "${preferred}"
+    fi
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -64,6 +77,14 @@ done
 if [[ -n "$sql" && -n "$sql_file" ]]; then
     echo "--sql and --file are mutually exclusive" >&2
     exit 2
+fi
+
+if [[ -n "${TQV_PG_SOCKET_DIR:-}" ]]; then
+    socket_dir="${TQV_PG_SOCKET_DIR}"
+elif [[ -n "${PGHOST:-}" ]]; then
+    socket_dir="${PGHOST}"
+else
+    socket_dir="$(detect_socket_dir "${port}")"
 fi
 
 psql_args=(

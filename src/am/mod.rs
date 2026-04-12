@@ -88,7 +88,8 @@ pub(crate) use self::scan_debug::{
     debug_rescan_entry_candidate_state, debug_rescan_null_query,
     debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
     debug_rescan_successor_candidate_state, debug_rescan_with_index_qual,
-    debug_rescan_with_multiple_orderbys, debug_top_level_oracle_k_seed_heap_tids,
+    debug_rescan_with_multiple_orderbys, debug_rescan_with_unused_key_buffer,
+    debug_top_level_oracle_k_seed_heap_tids,
     debug_top_level_oracle_k_seed_scan_heap_tids, debug_top_level_oracle_scan_heap_tids,
     debug_top_level_reachable_heap_tids, debug_visited_seed_lifecycle,
 };

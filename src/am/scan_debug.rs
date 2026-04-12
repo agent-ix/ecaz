@@ -389,6 +389,52 @@ pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query:
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
+        .cast::<pg_sys::ScanKeyData>();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, unused_keys, 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let result = (
+        opaque.rescan_called,
+        opaque.query_dimensions,
+        debug_scan_query(opaque),
+        opaque.scan_dimensions,
+        opaque.scan_bits,
+        opaque.scan_code_len,
+        opaque.scan_block_count,
+        !opaque.prepared_query.is_null(),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.lut.len())
+            .unwrap_or(0),
+        opaque
+            .prepared_query
+            .as_ref()
+            .map(|prepared| prepared.sq.len())
+            .unwrap_or(0),
+    );
+
+    unsafe { pg_sys::pfree(unused_keys.cast()) };
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };

@@ -40,7 +40,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
     scan: pg_sys::IndexScanDesc,
-    keys: pg_sys::ScanKey,
+    _keys: pg_sys::ScanKey,
     nkeys: std::ffi::c_int,
     orderbys: pg_sys::ScanKey,
     norderbys: std::ffi::c_int,
@@ -50,7 +50,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             if scan.is_null() {
                 pgrx::error!("tqhnsw amrescan received a null scan descriptor");
             }
-            if nkeys != 0 || !keys.is_null() {
+            // PostgreSQL may still pass an allocated key buffer for pure
+            // ORDER BY scans even when the actual qual count is zero.
+            if nkeys != 0 {
                 pgrx::error!("tqhnsw scan does not support index quals yet");
             }
             if norderbys != 1 {

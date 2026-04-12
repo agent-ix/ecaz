@@ -5378,6 +5378,38 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_rescan_scaffold_accepts_unused_zero_key_buffer() {
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_zero_qual_buffer");
+        let (
+            rescan_called,
+            query_dimensions,
+            stored_query,
+            scan_dimensions,
+            scan_bits,
+            scan_code_len,
+            scan_block_count,
+            has_prepared_query,
+            prepared_lut_len,
+            prepared_sq_len,
+        ) = unsafe { am::debug_rescan_with_unused_key_buffer(index_oid, query.clone()) };
+
+        assert!(rescan_called, "amrescan should still initialize scan state");
+        assert_eq!(query_dimensions, query.len() as u16);
+        assert_eq!(stored_query, query);
+        assert_eq!(scan_dimensions, 4);
+        assert_eq!(scan_bits, 4);
+        assert_eq!(scan_code_len, code_len(4, 4));
+        assert!(
+            scan_block_count >= 2,
+            "rescan should cache the current index block count"
+        );
+        assert!(has_prepared_query, "non-empty rescans should prepare the query");
+        assert_eq!(prepared_lut_len, 0);
+        assert_eq!(prepared_sq_len, 4);
+    }
+
+    #[pg_test]
     #[should_panic(expected = "tqhnsw scan does not support index quals yet")]
     fn test_tqhnsw_rescan_scaffold_rejects_index_quals() {
         let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_quals");
@@ -5494,6 +5526,81 @@ mod tests {
                 .iter()
                 .all(|heap_tid| expected_tids.contains(heap_tid)),
             "every emitted heap tid should still belong to the indexed table"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_sql_ordered_index_scan_executes() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_sql_ordered_exec (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_sql_ordered_exec VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_sql_ordered_exec_idx ON tqhnsw_sql_ordered_exec USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE tqhnsw_sql_ordered_exec").expect("analyze should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_sql_ordered_exec \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 2",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+            "ordered execution test should route through tqhnsw at runtime: {plan}"
+        );
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM tqhnsw_sql_ordered_exec \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 2",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(ordered_ids.len(), 2, "query should return the requested LIMIT");
+        assert_eq!(
+            ordered_ids[0], 1,
+            "runtime ordered index scan should return the nearest vector first"
         );
     }
 
