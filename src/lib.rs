@@ -11269,6 +11269,29 @@ mod tests {
     }
 
     #[pg_extern]
+    fn tqhnsw_debug_scan_heap_tids(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<'static, (name!(block_number, i64), name!(offset_number, i32))> {
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_heap_tids") };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let rows = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
+            .into_iter()
+            .map(|(block_number, offset_number)| {
+                (
+                    i64::from(block_number),
+                    i32::from(offset_number),
+                )
+            })
+            .collect::<Vec<_>>();
+        TableIterator::new(rows)
+    }
+
+    #[pg_extern]
     fn tqhnsw_debug_reachable_live_element_count(index_oid: pg_sys::Oid) -> i32 {
         let index_relation = unsafe {
             open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_reachable_live_element_count")
