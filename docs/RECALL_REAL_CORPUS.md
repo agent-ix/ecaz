@@ -402,6 +402,9 @@ For warm-cache runs, the same launcher now also supports:
 - `--timing-mode plain-server` to time the ordered query with server-side
   `clock_timestamp()` around a `MATERIALIZED` subquery instead of relying on
   per-query `EXPLAIN (ANALYZE)`
+- `--timing-mode cached-plan` to time a temp server function whose ordered
+  scan plan is reused across the whole cell; this mode only works with
+  `--session-mode per-cell`
 
 Example warm-cache run:
 
@@ -433,7 +436,10 @@ gate target.
 The default timing seam is still `--timing-mode explain`, because it remains
 useful for cross-checking planner-visible execution surfaces. The newer
 `--timing-mode plain-server` path is available when you want the same
-planner-verified query measured without per-query `EXPLAIN` output.
+planner-verified query measured without per-query `EXPLAIN` output. The
+`--timing-mode cached-plan` path goes one step further and reuses a single
+server-side planned ordered query across the full cell so parse / planning
+churn can be bounded separately from the AM hot path.
 
 `--session-mode per-query` remains the default for backward compatibility, but
 it materially overstates warm-cache latency because each timed query runs in a

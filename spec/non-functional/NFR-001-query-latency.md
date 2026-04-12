@@ -38,8 +38,8 @@ tqhnsw index for that run. The delegated reporting surface remains
 `scripts/bench_sql_latency.sh`, which emits per-cell `p50` / `p95` / `p99`
 summaries, `server_qps` derived from the summed per-query timing surface for
 the selected mode (`EXPLAIN (ANALYZE)` by default, or plain server-side
-statement timing when requested), and a stdout environment banner for artifact
-capture.
+statement timing or cached-plan server-function timing when requested), and a
+stdout environment banner for artifact capture.
 
 ### Required Methodology
 

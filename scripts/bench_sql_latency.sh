@@ -57,6 +57,8 @@ Options (real-corpus mode):
                  explain (default) uses per-query EXPLAIN (ANALYZE, FORMAT JSON).
                  plain-server runs the plain ordered query and measures it with
                  server-side clock_timestamp() around a MATERIALIZED subquery.
+                 cached-plan (per-cell only) measures a temp server function
+                 whose ordered-scan plan is reused across the cell.
   --output       Append the per-cell summary to FILE in addition to stdout.
   -h, --help     Show this message and exit.
 
@@ -198,8 +200,12 @@ run_real_corpus_bench() {
     echo "invalid session mode: $SESSION_MODE (expected per-query or per-cell)" >&2
     exit 2
   fi
-  if [[ "$TIMING_MODE" != "explain" && "$TIMING_MODE" != "plain-server" ]]; then
-    echo "invalid timing mode: $TIMING_MODE (expected explain or plain-server)" >&2
+  if [[ "$TIMING_MODE" != "explain" && "$TIMING_MODE" != "plain-server" && "$TIMING_MODE" != "cached-plan" ]]; then
+    echo "invalid timing mode: $TIMING_MODE (expected explain, plain-server, or cached-plan)" >&2
+    exit 2
+  fi
+  if [[ "$TIMING_MODE" == "cached-plan" && "$SESSION_MODE" != "per-cell" ]]; then
+    echo "timing mode cached-plan requires --session-mode per-cell" >&2
     exit 2
   fi
   IFS=',' read -r -a ef_list <<< "$EF_SEARCH_CSV"
@@ -310,18 +316,48 @@ run_real_corpus_bench() {
       local warmup_pass
       if [[ "$SESSION_MODE" == "per-cell" ]]; then
         : > "$cell_sql"
+        if [[ "$TIMING_MODE" == "cached-plan" ]]; then
+          cat >> "$cell_sql" <<SQL
+SET tqhnsw.ef_search = ${ef};
+CREATE OR REPLACE FUNCTION pg_temp.tqv_latency_cached_plan(input_query real[])
+RETURNS double precision
+LANGUAGE plpgsql
+AS \$tqv\$
+DECLARE
+  started timestamptz;
+  finished timestamptz;
+BEGIN
+  started := clock_timestamp();
+  PERFORM id FROM ${corpus_table}
+  ORDER BY embedding <#> input_query
+  LIMIT ${k};
+  finished := clock_timestamp();
+  RETURN extract(epoch FROM (finished - started)) * 1000.0;
+END
+\$tqv\$;
+\o /dev/null
+SELECT pg_temp.tqv_latency_cached_plan('${probe_query}'::real[]);
+\o
+SQL
+        fi
         if (( WARMUP_PASSES > 0 )); then
           printf '\\o /dev/null\n' >> "$cell_sql"
           for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
             echo "[warmup] m=${m} ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
             while IFS= read -r query_line; do
               [[ -z "$query_line" ]] && continue
-              cat >> "$cell_sql" <<SQL
+              if [[ "$TIMING_MODE" == "cached-plan" ]]; then
+                cat >> "$cell_sql" <<SQL
+SELECT pg_temp.tqv_latency_cached_plan('${query_line}'::real[]);
+SQL
+              else
+                cat >> "$cell_sql" <<SQL
 SET tqhnsw.ef_search = ${ef};
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
 SQL
+              fi
             done < "$queries_tsv"
           done
           printf '\\o\n' >> "$cell_sql"
@@ -336,7 +372,7 @@ SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
 SQL
-          else
+          elif [[ "$TIMING_MODE" == "plain-server" ]]; then
             cat >> "$cell_sql" <<SQL
 SET tqhnsw.ef_search = ${ef};
 WITH started AS (
@@ -352,6 +388,10 @@ finished AS (
 )
 SELECT extract(epoch FROM (finished.t1 - started.t0)) * 1000.0
 FROM started, finished;
+SQL
+          else
+            cat >> "$cell_sql" <<SQL
+SELECT pg_temp.tqv_latency_cached_plan('${query_line}'::real[]);
 SQL
           fi
         done < "$queries_tsv"
