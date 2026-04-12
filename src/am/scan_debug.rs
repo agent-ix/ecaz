@@ -294,6 +294,8 @@ type DebugScanProfile = (
     i64,
     i32,
     i64,
+    i32,
+    i32,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -696,6 +698,9 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
             .expect("counter should fit in i32"),
         i64::try_from(rescan_debug_profile.candidate_score_elapsed_us)
             .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.score_cache_hits).expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.score_cache_misses)
+            .expect("counter should fit in i32"),
     )
 }
 

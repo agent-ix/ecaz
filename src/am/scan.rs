@@ -33,6 +33,8 @@ pub(super) struct ScanDebugProfile {
     pub(super) graph_neighbor_cache_hits: u64,
     pub(super) graph_neighbor_cache_misses: u64,
     pub(super) graph_neighbor_load_elapsed_us: u64,
+    pub(super) score_cache_hits: u64,
+    pub(super) score_cache_misses: u64,
     pub(super) candidate_score_calls: u64,
     pub(super) candidate_score_elapsed_us: u64,
 }
@@ -103,6 +105,22 @@ fn record_candidate_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_candidate_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_score_cache_hit(opaque: &mut TqScanOpaque) {
+    opaque.debug_profile.score_cache_hits += 1;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_score_cache_hit(_opaque: &mut TqScanOpaque) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_score_cache_miss(opaque: &mut TqScanOpaque) {
+    opaque.debug_profile.score_cache_misses += 1;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_score_cache_miss(_opaque: &mut TqScanOpaque) {}
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
@@ -278,6 +296,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
                 let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
                 free_graph_prefetch_state(opaque);
                 free_scan_graph_cache(opaque);
+                free_scan_score_cache(opaque);
                 free_scan_candidate_frontier(opaque);
                 free_bootstrap_expansion(opaque);
                 free_scan_expanded_set(opaque);
@@ -356,6 +375,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
     clear_scan_candidate_state(opaque);
     reset_scan_graph_cache(opaque);
+    reset_scan_score_cache(opaque);
     reset_scan_debug_profile(opaque);
     opaque.result_state.clear();
     opaque.fallback_result_state.clear();
@@ -379,6 +399,14 @@ fn reset_scan_graph_cache(opaque: &mut TqScanOpaque) {
     }
 }
 
+fn reset_scan_score_cache(opaque: &mut TqScanOpaque) {
+    if opaque.score_cache.is_null() {
+        opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
+    } else {
+        unsafe { &mut *opaque.score_cache }.clear();
+    }
+}
+
 fn free_scan_graph_cache(opaque: &mut TqScanOpaque) {
     if !opaque.graph_element_cache.is_null() {
         drop(unsafe { Box::from_raw(opaque.graph_element_cache) });
@@ -388,6 +416,13 @@ fn free_scan_graph_cache(opaque: &mut TqScanOpaque) {
     if !opaque.graph_neighbor_cache.is_null() {
         drop(unsafe { Box::from_raw(opaque.graph_neighbor_cache) });
         opaque.graph_neighbor_cache = ptr::null_mut();
+    }
+}
+
+fn free_scan_score_cache(opaque: &mut TqScanOpaque) {
+    if !opaque.score_cache.is_null() {
+        drop(unsafe { Box::from_raw(opaque.score_cache) });
+        opaque.score_cache = ptr::null_mut();
     }
 }
 
@@ -409,6 +444,42 @@ fn graph_neighbor_cache_mut(
     }
 
     unsafe { &mut *opaque.graph_neighbor_cache }
+}
+
+fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer, f32> {
+    if opaque.score_cache.is_null() {
+        opaque.score_cache = Box::into_raw(Box::new(HashMap::new()));
+    }
+
+    unsafe { &mut *opaque.score_cache }
+}
+
+unsafe fn cached_scan_element_score(
+    opaque: *mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    gamma: f32,
+    code_bytes: &[u8],
+) -> f32 {
+    let opaque_ref = unsafe { &mut *opaque };
+    if !opaque_ref.score_cache.is_null() {
+        if let Some(score) = unsafe { &*opaque_ref.score_cache }.get(&element_tid) {
+            record_score_cache_hit(opaque_ref);
+            return *score;
+        }
+    }
+
+    record_score_cache_miss(opaque_ref);
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = score_scan_element_result(opaque_ref, gamma, code_bytes);
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_candidate_score_elapsed(opaque_ref, elapsed_us);
+    score_cache_mut(opaque_ref).insert(element_tid, score);
+    score
 }
 
 unsafe fn cached_graph_element(
@@ -510,16 +581,9 @@ where
             continue;
         }
 
-        #[cfg(any(test, feature = "pg_test"))]
-        let started = Instant::now();
-        let score =
-            score_scan_element_result(unsafe { &*opaque }, neighbor.gamma, &neighbor.code);
-        #[cfg(any(test, feature = "pg_test"))]
-        let elapsed_us =
-            u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
-        #[cfg(not(any(test, feature = "pg_test")))]
-        let elapsed_us = 0;
-        record_candidate_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+        let score = unsafe {
+            cached_scan_element_score(opaque, neighbor.tid, neighbor.gamma, &neighbor.code)
+        };
         candidates.push(search::BeamCandidate::with_source(
             neighbor.tid,
             score,
@@ -1051,7 +1115,8 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
+    let entry_score =
+        unsafe { cached_scan_element_score(opaque, entry.tid, entry.gamma, &entry.code) };
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
     let opaque_ptr = opaque as *mut TqScanOpaque;
     #[cfg(any(test, feature = "pg_test"))]
@@ -1832,6 +1897,7 @@ pub(super) struct TqScanOpaque {
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
     pub(super) graph_element_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphElement>>,
     pub(super) graph_neighbor_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphNeighbors>>,
+    pub(super) score_cache: *mut HashMap<page::ItemPointer, f32>,
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
     pub(super) bootstrap_expansion: *mut search::BeamSearch<page::ItemPointer>,
     pub(super) result_state: ScanResultState,
@@ -1868,6 +1934,7 @@ impl Default for TqScanOpaque {
             emitted_result_tids: ptr::null_mut(),
             graph_element_cache: ptr::null_mut(),
             graph_neighbor_cache: ptr::null_mut(),
+            score_cache: ptr::null_mut(),
             candidate_frontier: ptr::null_mut(),
             bootstrap_expansion: ptr::null_mut(),
             result_state: ScanResultState::default(),
@@ -2076,7 +2143,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_scan_position_clears_scan_graph_cache() {
+    fn reset_scan_position_clears_scan_local_caches() {
         let mut opaque = TqScanOpaque::default();
         graph_element_cache_mut(&mut opaque).insert(
             tid(91, 1),
@@ -2098,6 +2165,7 @@ mod tests {
                 tids: vec![tid(92, 1)],
             }),
         );
+        score_cache_mut(&mut opaque).insert(tid(91, 1), -7.5);
 
         reset_scan_position(&mut opaque);
 
@@ -2109,8 +2177,13 @@ mod tests {
             unsafe { &*opaque.graph_neighbor_cache }.is_empty(),
             "amrescan/reset should drop cached graph neighbors before reseeding the ordered scan"
         );
+        assert!(
+            unsafe { &*opaque.score_cache }.is_empty(),
+            "amrescan/reset should drop cached element scores before reseeding the ordered scan"
+        );
 
         free_scan_graph_cache(&mut opaque);
+        free_scan_score_cache(&mut opaque);
     }
 
     #[test]

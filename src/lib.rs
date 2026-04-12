@@ -5187,6 +5187,8 @@ mod tests {
             graph_neighbor_load_elapsed_us,
             candidate_score_calls,
             candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert_eq!(
@@ -5220,6 +5222,10 @@ mod tests {
         assert!(
             candidate_score_calls > 0 && candidate_score_elapsed_us >= 0,
             "profiling should record candidate scoring work during scan seeding",
+        );
+        assert!(
+            score_cache_hits >= 0 && score_cache_misses > 0,
+            "profiling should surface score-cache counters and at least one first-score miss on a non-empty fixture",
         );
         assert!(
             result_count > 0,
@@ -11091,6 +11097,8 @@ mod tests {
             _graph_neighbor_load_elapsed_us,
             _candidate_score_calls,
             _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
@@ -11139,6 +11147,8 @@ mod tests {
             name!(graph_neighbor_load_elapsed_us, i64),
             name!(candidate_score_calls, i32),
             name!(candidate_score_elapsed_us, i64),
+            name!(score_cache_hits, i32),
+            name!(score_cache_misses, i32),
         ),
     > {
         let index_relation = unsafe {
@@ -11183,6 +11193,8 @@ mod tests {
             graph_neighbor_load_elapsed_us,
             candidate_score_calls,
             candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
@@ -11196,6 +11208,8 @@ mod tests {
             graph_neighbor_load_elapsed_us,
             candidate_score_calls,
             candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
         ))
     }
 
