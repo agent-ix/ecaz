@@ -330,3 +330,89 @@ Expected artifacts for this rerun:
 
 The completed summary lines and revised C1 read will be appended here once the
 rerun finishes.
+
+## Run Update: 2026-04-12 (score-cache rerun complete)
+
+The verified rerun completed on top of packet `254`'s score-cache checkpoint.
+
+### Canonical `m=8` rerun
+
+Command used:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m8_scorecache.summary
+```
+
+Completed cells:
+
+```text
+m=8   ef_search=40   n=200   p50=88.588ms  p95=98.193ms  p99=103.261ms mean=89.089ms  min=76.797ms  max=106.311ms server_qps=11.22 wall=19.96s
+m=8   ef_search=64   n=200   p50=106.081ms p95=122.159ms p99=131.747ms mean=106.258ms min=91.629ms  max=153.262ms server_qps=9.41  wall=22.01s
+m=8   ef_search=100  n=200   p50=125.762ms p95=141.822ms p99=153.593ms mean=125.833ms min=106.770ms max=158.239ms server_qps=7.95  wall=25.91s
+m=8   ef_search=128  n=200   p50=141.625ms p95=164.515ms p99=173.066ms mean=141.723ms min=116.648ms max=182.332ms server_qps=7.06  wall=29.11s
+m=8   ef_search=160  n=200   p50=156.947ms p95=176.708ms p99=190.143ms mean=156.208ms min=128.881ms max=200.697ms server_qps=6.40  wall=31.99s
+m=8   ef_search=200  n=200   p50=173.301ms p95=204.956ms p99=234.492ms mean=173.680ms min=140.074ms max=265.483ms server_qps=5.76  wall=35.49s
+```
+
+### Isolated `m=16` rerun
+
+Command used:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k_m16only \
+    --m 16 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m16only_scorecache.summary
+```
+
+Completed cells:
+
+```text
+m=16  ef_search=40   n=200   p50=88.795ms  p95=101.055ms p99=109.004ms mean=89.637ms  min=74.567ms  max=118.637ms server_qps=11.16 wall=20.03s
+m=16  ef_search=64   n=200   p50=105.408ms p95=123.099ms p99=130.242ms mean=106.521ms min=87.499ms  max=146.175ms server_qps=9.39  wall=22.06s
+m=16  ef_search=100  n=200   p50=127.171ms p95=143.737ms p99=152.691ms mean=127.250ms min=106.440ms max=162.147ms server_qps=7.86  wall=26.17s
+m=16  ef_search=128  n=200   p50=142.072ms p95=164.259ms p99=176.806ms mean=142.539ms min=117.579ms max=185.011ms server_qps=7.02  wall=29.25s
+m=16  ef_search=160  n=200   p50=157.133ms p95=177.546ms p99=188.151ms mean=156.759ms min=127.955ms max=205.981ms server_qps=6.38  wall=32.08s
+m=16  ef_search=200  n=200   p50=174.553ms p95=202.650ms p99=215.789ms mean=174.326ms min=141.134ms max=226.704ms server_qps=5.74  wall=34.19s
+```
+
+### Artifact paths
+
+- `/tmp/nfr1_real_10k_m8_scorecache.summary`
+- `/tmp/nfr1_real_10k_m16only_scorecache.summary`
+
+## Revised C1 read
+
+The score-cache checkpoint materially changed the C1 latency surface.
+
+Compared to the prior verified `m=8` surface on the same lane:
+
+- `ef_search=40`: mean `140.982ms -> 89.089ms`
+- `ef_search=64`: mean `189.651ms -> 106.258ms`
+- `ef_search=100`: mean `262.439ms -> 125.833ms`
+- `ef_search=128`: mean `320.426ms -> 141.723ms`
+- `ef_search=160`: mean `384.200ms -> 156.208ms`
+- `ef_search=200`: mean `454.021ms -> 173.680ms`
+
+So the new checkpoint cut the canonical `m=8` mean surface by roughly
+`37% -> 62%`, depending on `ef_search`.
+
+Across the rerun itself, `m=8` and isolated `m=16` are now effectively tied.
+`m=8` is still slightly faster at every measured `ef_search`, but the gap is
+well under `2ms` mean at every cell.
+
+Against `NFR-001`, this is still not a closeout:
+
+- requirement baseline: `p50 < 5ms` for `m=8, ef_search=40`
+- measured baseline: `p50 = 88.588ms`, `p99 = 103.261ms`
+
+So the runtime is now dramatically better and the artifacts are durable, but
+the latency target is still missed by a wide margin. C1 has moved from
+"runtime and planner integrity bring-up" into a pure optimization/readout lane.
