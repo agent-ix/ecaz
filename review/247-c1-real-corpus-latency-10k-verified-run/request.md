@@ -98,6 +98,70 @@ At packet-open time:
 The measured summary lines and the read against `NFR-001` will be added to this
 packet once the runs finish.
 
+## Run Update: 2026-04-11
+
+Since packet-open:
+
+- packet `248` landed the runtime fix that allows planner-routed ordered scans
+  to execute when PostgreSQL passes a non-null zero-qual key buffer into
+  `amrescan`
+- the verified scratch launcher also now auto-detects the active local pg17
+  socket between `/tmp/tqvector_pgrx_home` and `${HOME}/.pgrx`
+
+### Observed `m=8` results so far
+
+Command used:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m8.summary
+```
+
+Representative preflight:
+
+```text
+[verified] representative EXPLAIN uses tqhnsw_real_10k_m8_idx
+```
+
+Completed cells written to `/tmp/nfr1_real_10k_m8.summary`:
+
+```text
+m=8   ef_search=40   n=200   p50=140.133ms p95=155.791ms p99=175.270ms mean=140.982ms min=122.753ms max=185.471ms server_qps=7.09 wall=29.15s
+m=8   ef_search=64   n=200   p50=190.189ms p95=202.887ms p99=211.387ms mean=189.651ms min=169.224ms max=215.236ms server_qps=5.27 wall=37.65s
+m=8   ef_search=100  n=200   p50=263.911ms p95=280.042ms p99=292.275ms mean=262.439ms min=234.273ms max=331.911ms server_qps=3.81 wall=52.18s
+m=8   ef_search=128  n=200   p50=322.025ms p95=339.410ms p99=343.483ms mean=320.426ms min=282.956ms max=373.059ms server_qps=3.12 wall=63.78s
+m=8   ef_search=160  n=200   p50=386.370ms p95=404.463ms p99=452.724ms mean=384.200ms min=345.348ms max=466.840ms server_qps=2.60 wall=75.32s
+```
+
+### Why the run is only partial
+
+The final `m=8, ef_search=200` cell was still actively executing after the
+earlier cells had completed and been persisted, but it was taking far longer
+than the established `40..160` curve. The run was cut there to preserve the
+usable partial surface and avoid spending the rest of the operator slice on one
+tail point.
+
+At cutoff time:
+
+- `m=8, ef_search=40..160`: complete
+- `m=8, ef_search=200`: pending rerun
+- `m=16` sweep: not started yet
+
+## Interim Read
+
+The repaired C1 surface now demonstrates the key unblock:
+
+- planner verification passes against the expected tqhnsw index
+- runtime ordered tqhnsw scans execute successfully for the real `10k` corpus
+- the observed `m=8` latency curve is monotonic through `ef_search=160`
+
+The packet does **not** yet constitute a final `NFR-001` closeout because the
+`ef_search=200` tail point and the `m=16` run are still outstanding.
+
 ## Review Focus
 
 - Is this the right measurement boundary for the first durable HNSW latency
