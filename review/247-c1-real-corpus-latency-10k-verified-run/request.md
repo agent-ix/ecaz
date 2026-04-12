@@ -289,3 +289,44 @@ rerun under the stricter per-cell planner guard.
   artifacts on the canonical real `10k` surface?
 - Once the artifacts are captured, should this packet inline the full summary
   table, or just attach the artifact paths and a short operator digest?
+
+## Run Update: 2026-04-12 (score-cache rerun planned)
+
+Packet `254` landed and pushed a scan-local ordered-scan score cache. On the
+same representative real `10k` query (`id=10000`, `m=8`), that slice already
+shifted the hot path materially:
+
+- `ef_search=40`: representative SQL `Execution Time` dropped
+  `126.200ms -> 95.759ms`
+- `ef_search=200`: representative SQL `Execution Time` dropped
+  `418.902ms -> 186.563ms`
+
+That is large enough that the previously recorded C1 summary lines are now
+stale as a performance read. The next active step is to rerun the verified
+surface on top of the score-cache checkpoint.
+
+Planned rerun commands:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k \
+    --m 8 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m8_scorecache.summary
+
+scripts/bench_sql_latency_verified_scratch.sh \
+    --prefix tqhnsw_real_10k_m16only \
+    --m 16 \
+    --ef-search 40,64,100,128,160,200 \
+    --cache-state cold \
+    --output /tmp/nfr1_real_10k_m16only_scorecache.summary
+```
+
+Expected artifacts for this rerun:
+
+- `/tmp/nfr1_real_10k_m8_scorecache.summary`
+- `/tmp/nfr1_real_10k_m16only_scorecache.summary`
+
+The completed summary lines and revised C1 read will be appended here once the
+rerun finishes.
