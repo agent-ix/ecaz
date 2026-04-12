@@ -286,6 +286,13 @@ type DebugScanProfile = (
     i32,
     i64,
     i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
     i32,
     i32,
     i64,
@@ -678,9 +685,23 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
         i32::try_from(total_counters.stats_heap_tids_returned).expect("counter should fit in i32"),
         total_counters.stats_quantizer_cache_hit,
         final_emitted_count,
+        i64::try_from(rescan_debug_profile.prepare_query_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.reset_state_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.initialize_entry_elapsed_us)
+            .expect("timing should fit in i64"),
         i64::try_from(rescan_debug_profile.upper_layer_seed_elapsed_us)
             .expect("timing should fit in i64"),
         i64::try_from(rescan_debug_profile.layer0_seed_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.stage_ordered_results_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.initial_prefetch_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.frontier_consume_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.graph_result_materialize_elapsed_us)
             .expect("timing should fit in i64"),
         i32::try_from(rescan_debug_profile.graph_element_cache_hits)
             .expect("counter should fit in i32"),

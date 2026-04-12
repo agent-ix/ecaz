@@ -25,8 +25,15 @@ enum BootstrapExpandPolicy {
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct ScanDebugProfile {
+    pub(super) prepare_query_elapsed_us: u64,
+    pub(super) reset_state_elapsed_us: u64,
+    pub(super) initialize_entry_elapsed_us: u64,
     pub(super) upper_layer_seed_elapsed_us: u64,
     pub(super) layer0_seed_elapsed_us: u64,
+    pub(super) stage_ordered_results_elapsed_us: u64,
+    pub(super) initial_prefetch_elapsed_us: u64,
+    pub(super) frontier_consume_elapsed_us: u64,
+    pub(super) graph_result_materialize_elapsed_us: u64,
     pub(super) graph_element_cache_hits: u64,
     pub(super) graph_element_cache_misses: u64,
     pub(super) graph_element_load_elapsed_us: u64,
@@ -48,6 +55,30 @@ fn reset_scan_debug_profile(opaque: &mut TqScanOpaque) {
 fn reset_scan_debug_profile(_opaque: &mut TqScanOpaque) {}
 
 #[cfg(any(test, feature = "pg_test"))]
+fn record_prepare_query_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.prepare_query_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_prepare_query_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_reset_state_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.reset_state_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_reset_state_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_initialize_entry_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.initialize_entry_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_initialize_entry_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn record_upper_layer_seed_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
     opaque.debug_profile.upper_layer_seed_elapsed_us += elapsed_us;
 }
@@ -62,6 +93,38 @@ fn record_layer0_seed_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_layer0_seed_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_stage_ordered_results_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.stage_ordered_results_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_stage_ordered_results_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_initial_prefetch_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.initial_prefetch_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_initial_prefetch_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_frontier_consume_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.frontier_consume_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_frontier_consume_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_graph_result_materialize_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.graph_result_materialize_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_graph_result_materialize_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_graph_element_cache_hit(opaque: &mut TqScanOpaque) {
@@ -223,23 +286,55 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 .max(1);
             store_scan_query(opaque, &query);
             opaque.explain_counters.reset();
+            #[cfg(any(test, feature = "pg_test"))]
+            let prepare_started = Instant::now();
             store_scan_prepared_query(opaque, &query, &metadata);
+            #[cfg(any(test, feature = "pg_test"))]
+            let prepare_elapsed_us =
+                u64::try_from(prepare_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let prepare_elapsed_us = 0;
+            record_prepare_query_elapsed(opaque, prepare_elapsed_us);
+            #[cfg(any(test, feature = "pg_test"))]
+            let reset_started = Instant::now();
             reset_scan_position(opaque);
             reset_linear_prefetch_state(opaque);
             reset_graph_prefetch_state(opaque);
+            #[cfg(any(test, feature = "pg_test"))]
+            let reset_elapsed_us =
+                u64::try_from(reset_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let reset_elapsed_us = 0;
+            record_reset_state_elapsed(opaque, reset_elapsed_us);
+            #[cfg(any(test, feature = "pg_test"))]
+            let initialize_started = Instant::now();
             initialize_scan_entry_candidate(
                 (*scan).indexRelation,
                 (*scan).heapRelation,
                 opaque,
                 &metadata,
             );
+            #[cfg(any(test, feature = "pg_test"))]
+            let initialize_elapsed_us = u64::try_from(initialize_started.elapsed().as_micros())
+                .expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let initialize_elapsed_us = 0;
+            record_initialize_entry_elapsed(opaque, initialize_elapsed_us);
             let opaque_ptr = opaque as *mut TqScanOpaque;
+            #[cfg(any(test, feature = "pg_test"))]
+            let prefetch_started = Instant::now();
             if !graph_traversal_cursor(opaque)
                 .ensure_prefetched_output((*scan).indexRelation, opaque_ptr)
             {
                 enter_linear_fallback_phase(opaque);
                 reset_linear_prefetch_state(opaque);
             }
+            #[cfg(any(test, feature = "pg_test"))]
+            let initial_prefetch_elapsed_us =
+                u64::try_from(prefetch_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let initial_prefetch_elapsed_us = 0;
+            record_initial_prefetch_elapsed(opaque, initial_prefetch_elapsed_us);
         })
     }
 }
@@ -798,16 +893,44 @@ unsafe fn prefetch_next_graph_result_from_frontier(
         return false;
     }
 
-    while let Some(candidate) = consume_candidate_frontier_head(opaque) {
+    loop {
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_started = Instant::now();
+        let candidate = consume_candidate_frontier_head(opaque);
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_elapsed_us =
+            u64::try_from(consume_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let consume_elapsed_us = 0;
+        record_frontier_consume_elapsed(opaque, consume_elapsed_us);
+        let Some(candidate) = candidate else {
+            break;
+        };
+
         mark_expanded_source(opaque, candidate.node);
         opaque.explain_counters.record_bootstrap_expansion();
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_started = Instant::now();
         if unsafe {
             materialize_graph_result_candidate(index_relation, opaque, result_state, candidate)
         }
         .is_some()
         {
+            #[cfg(any(test, feature = "pg_test"))]
+            let materialize_elapsed_us = u64::try_from(materialize_started.elapsed().as_micros())
+                .expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let materialize_elapsed_us = 0;
+            record_graph_result_materialize_elapsed(opaque, materialize_elapsed_us);
             return true;
         }
+
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_elapsed_us =
+            u64::try_from(materialize_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let materialize_elapsed_us = 0;
+        record_graph_result_materialize_elapsed(opaque, materialize_elapsed_us);
     }
 
     false
@@ -1133,7 +1256,15 @@ unsafe fn initialize_scan_entry_candidate(
     #[cfg(not(any(test, feature = "pg_test")))]
     let layer0_elapsed_us = 0;
     record_layer0_seed_elapsed(opaque, layer0_elapsed_us);
+    #[cfg(any(test, feature = "pg_test"))]
+    let stage_started = Instant::now();
     stage_ordered_graph_results(opaque, ordered_candidates);
+    #[cfg(any(test, feature = "pg_test"))]
+    let stage_elapsed_us =
+        u64::try_from(stage_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let stage_elapsed_us = 0;
+    record_stage_ordered_results_elapsed(opaque, stage_elapsed_us);
 }
 
 fn stage_ordered_graph_results(

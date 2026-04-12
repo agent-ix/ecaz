@@ -5177,8 +5177,15 @@ mod tests {
             total_heap_tids_returned,
             _total_quantizer_cache_hit,
             total_emitted_elements,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
             rescan_upper_layer_seed_elapsed_us,
             rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
             graph_element_cache_hits,
             graph_element_cache_misses,
             graph_element_load_elapsed_us,
@@ -5204,7 +5211,15 @@ mod tests {
             "prefetching the first ordered result should read at least one graph page",
         );
         assert!(
-            rescan_upper_layer_seed_elapsed_us >= 0 && rescan_layer0_seed_elapsed_us >= 0,
+            rescan_prepare_query_elapsed_us >= 0
+                && rescan_reset_state_elapsed_us >= 0
+                && rescan_initialize_entry_elapsed_us >= 0
+                && rescan_upper_layer_seed_elapsed_us >= 0
+                && rescan_layer0_seed_elapsed_us >= 0
+                && rescan_stage_ordered_results_elapsed_us >= 0
+                && rescan_initial_prefetch_elapsed_us >= 0
+                && rescan_frontier_consume_elapsed_us >= 0
+                && rescan_graph_result_materialize_elapsed_us >= 0,
             "the profile helper should surface non-negative rescan timing buckets",
         );
         assert!(
@@ -11087,8 +11102,15 @@ mod tests {
             total_heap_tids_returned,
             total_quantizer_cache_hit,
             total_emitted_elements,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
             _rescan_upper_layer_seed_elapsed_us,
             _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
             _graph_element_cache_hits,
             _graph_element_cache_misses,
             _graph_element_load_elapsed_us,
@@ -11137,8 +11159,15 @@ mod tests {
     ) -> TableIterator<
         'static,
         (
+            name!(rescan_prepare_query_elapsed_us, i64),
+            name!(rescan_reset_state_elapsed_us, i64),
+            name!(rescan_initialize_entry_elapsed_us, i64),
             name!(rescan_upper_layer_seed_elapsed_us, i64),
             name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(rescan_stage_ordered_results_elapsed_us, i64),
+            name!(rescan_initial_prefetch_elapsed_us, i64),
+            name!(rescan_frontier_consume_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
             name!(graph_element_cache_hits, i32),
             name!(graph_element_cache_misses, i32),
             name!(graph_element_load_elapsed_us, i64),
@@ -11183,8 +11212,15 @@ mod tests {
             _total_heap_tids_returned,
             _total_quantizer_cache_hit,
             _total_emitted_elements,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
             rescan_upper_layer_seed_elapsed_us,
             rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
             graph_element_cache_hits,
             graph_element_cache_misses,
             graph_element_load_elapsed_us,
@@ -11198,8 +11234,15 @@ mod tests {
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
             rescan_upper_layer_seed_elapsed_us,
             rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
             graph_element_cache_hits,
             graph_element_cache_misses,
             graph_element_load_elapsed_us,
