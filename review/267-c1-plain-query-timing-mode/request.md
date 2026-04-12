@@ -25,33 +25,24 @@ In `scripts/bench_sql_latency.sh`:
 So the current warm verified surface is still not a clean read of steady-state
 query latency.
 
-## Planned work
+## Implementation
 
-1. Add a plain server-side query timing mode alongside the current explain mode.
-2. Keep planner verification active before timing each measured cell.
-3. Preserve the existing explain-based mode for compatibility and debugging.
-4. Record the warm per-cell `10K`, `m=8`, `ef_search=40` result with the new
-   plain timing seam.
+Completed work:
 
-## Exit criteria
+1. Added `--timing-mode explain|plain-server` to
+   `scripts/bench_sql_latency.sh`.
+2. Kept the existing per-cell planner verification unchanged, so the verified
+   launcher still aborts before timing if the wrong index or a seqscan plan is
+   selected.
+3. Added a `plain-server` branch that times the ordered query with
+   `clock_timestamp()` around a `MATERIALIZED` subquery, while preserving the
+   existing warmup and session reuse controls.
+4. Updated `docs/RECALL_REAL_CORPUS.md` and
+   `spec/non-functional/NFR-001-query-latency.md` so the new timing seam is
+   documented and the spec no longer implies that `EXPLAIN` timing is the only
+   reporting surface.
 
-- verified launcher still aborts when the planner picks the wrong index
-- benchmark script can report plain server-side query timings without relying
-  on per-query `EXPLAIN (ANALYZE)`
-- `cargo test`
-- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
-- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-- the new plain timing read is recorded for the warm `10K`, `m=8`,
-  `ef_search=40`, `warm-after-prime3`, `per-cell` seam
-
-## In-Progress Findings
-
-- Added a local `--timing-mode plain-server` branch in
-  `scripts/bench_sql_latency.sh`.
-- The new mode keeps the existing planner verification, warmup controls, and
-  session-mode behavior.
-- The measured query is now timed with `clock_timestamp()` around a
-  `MATERIALIZED` ordered subquery instead of per-query `EXPLAIN (ANALYZE)`.
+## Result
 
 Current local read on the warm verified `10K`, `m=8`, `ef_search=40`,
 `warm-after-prime3`, `per-cell` seam:
@@ -66,10 +57,20 @@ instrumentation is the dominant reason the warm C1 surface still sits around
 `11ms`. The new mode is useful, but the current result says the bottleneck is
 somewhere else.
 
-Validation status:
+## Validation
 
 - `bash -n scripts/bench_sql_latency.sh` passed
-- `cargo test` passed on the current local script state
-- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings` passed
-- explicit `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17` has not
-  been rerun yet for this script-only slice
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+All required gates were rerun and completed green after the final script state.
+
+## Conclusion
+
+This slice is worth keeping because it gives the C1 lane an honest
+planner-verified plain-query timing surface. The important finding, though, is
+that plain server-side timing is almost identical to the explain-based warm
+surface on the current `10K` fixture. That means the next C1 slice should stop
+chasing `EXPLAIN` overhead and instead investigate statement planning / query
+submission overhead or another warm-path seam outside the scorer microbench.
