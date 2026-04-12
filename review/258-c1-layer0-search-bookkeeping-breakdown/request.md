@@ -63,6 +63,66 @@ internal cost visible enough to optimize surgically instead of guessing.
    same slice; otherwise stop with a concrete, reviewable profile of the next
    hotspot.
 
+## Checkpoint Findings
+
+The first instrumentation pass landed and the scratch SQL wrapper was refreshed
+so the new hot-path columns are queryable against the real `10k` fixture.
+
+Representative `tests.tqhnsw_debug_scan_hot_path_profile(...)` output on query
+`id=10000` now shows:
+
+- `ef_search=40`
+  - prepare query: `0us`
+  - reset state: `4us`
+  - initialize entry: `5630us`
+  - upper-layer seed: `1116us`
+  - layer-0 seed: `4429us`
+  - stage ordered results: `51us`
+  - initial prefetch: `18us`
+  - frontier consume: `14us`
+  - graph result materialize: `2us`
+  - graph element load: `696us` across `241` misses
+  - graph neighbor load: `250us` across `46` misses
+  - candidate scoring: `3476us` across `241` misses and `205` cache hits
+- `ef_search=200`
+  - prepare query: `0us`
+  - reset state: `6us`
+  - initialize entry: `23099us`
+  - upper-layer seed: `965us`
+  - layer-0 seed: `21861us`
+  - stage ordered results: `221us`
+  - initial prefetch: `38us`
+  - frontier consume: `32us`
+  - graph result materialize: `3us`
+  - graph element load: `2962us` across `997` misses
+  - graph neighbor load: `978us` across `202` misses
+  - candidate scoring: `13302us` across `997` misses and `1156` cache hits
+
+Those numbers are materially useful, but they do **not** explain the real SQL
+startup latency by themselves. A representative SQL probe for the same
+`m=8 / ef_search=40 / id=10000` query:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+SELECT id
+FROM tqhnsw_real_10k_corpus
+ORDER BY embedding <#> (SELECT source FROM tqhnsw_real_10k_queries WHERE id = 10000)
+LIMIT 10;
+```
+
+still reports:
+
+- `Index Scan using tqhnsw_real_10k_m8_idx`
+  - startup: `46.187ms`
+  - total: `52.091ms`
+
+So this packet closes one ambiguity and opens the next one more sharply:
+the current seed/load/score counters are real, but the remaining node startup
+cost is still outside the buckets currently recorded in `opaque.debug_profile`.
+The next profiling pass needs to reconcile that SQL node time against the AM
+startup boundary instead of assuming the remaining gap is all inside layer-0
+bookkeeping.
+
 ## Exit criteria
 
 - this packet records where the remaining rescan time actually goes
