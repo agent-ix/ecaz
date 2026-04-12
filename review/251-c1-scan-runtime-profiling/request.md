@@ -91,3 +91,91 @@ These are hypotheses only. The next slice needs measured counters and timing.
 - the packet records at least one real `10k` profile capture
 - the next optimization target is justified by measured counters/timing, not
   only by static inspection
+
+## Run Update: 2026-04-11
+
+The first profiling checkpoint landed a PG-test debug helper:
+
+- `tests.tqhnsw_debug_scan_profile(index_oid, query real[])`
+
+It runs one ordered tqhnsw scan and returns:
+
+- explicit timing around `amrescan`
+- explicit timing around the `amgettuple` emission loop
+- the existing explain-style counters after rescan and at full exhaustion
+- basic scan-state shape (phase, staged slots, visited/emitted counts)
+
+Checkpoint validation was green:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+## Profile capture: real `10k`, `m=8`, `ef_search=40`
+
+Warm-cache sample over the first five real query rows from
+`tqhnsw_real_10k_queries` against `tqhnsw_real_10k_m8_idx`:
+
+```text
+id=10000 rescan=18.350ms emit=0.040ms total=18.396ms
+id=10001 rescan= 9.297ms emit=0.033ms total= 9.335ms
+id=10002 rescan= 5.129ms emit=0.033ms total= 5.167ms
+id=10003 rescan= 4.407ms emit=0.030ms total= 4.442ms
+id=10004 rescan= 3.490ms emit=0.030ms total= 3.524ms
+```
+
+Common shape across those samples:
+
+- `rescan_phase = graph_traversal`
+- `rescan_current_result = true`
+- `final_phase = exhausted`
+- `total_linear_pages_read = 0`
+- `total_bootstrap_expansions = 40`
+- `total_bootstrap_pages_read = 40`
+- `total_elements_scored = 40`
+- `total_heap_tids_returned = 40`
+
+So the ordered tqhnsw runtime itself is strongly front-loaded in `amrescan`.
+Tuple emission is negligible once the staged result window exists.
+
+## Paired SQL plan readout
+
+To compare the AM-local profile against actual SQL execution, the same real
+query shape was checked with `EXPLAIN (ANALYZE, BUFFERS)`:
+
+### `ef_search=40`
+
+```text
+Index Scan using tqhnsw_real_10k_m8_idx on tqhnsw_real_10k_corpus
+  actual time=5.855..6.710 rows=10
+  Buffers: shared hit=1505
+Execution Time: 6.804 ms
+```
+
+### `ef_search=200`
+
+```text
+Index Scan using tqhnsw_real_10k_m8_idx on tqhnsw_real_10k_corpus
+  actual time=13.170..13.651 rows=10
+  Buffers: shared hit=6167
+Execution Time: 13.749 ms
+```
+
+## Current read
+
+Two things are clear now:
+
+1. Warm-cache SQL latency is already single-digit milliseconds at
+   `ef_search=40`, so the earlier `~141ms` C1 benchmark result is primarily a
+   cold-cache surface, not a warm executor hot path.
+2. The dominant remaining issue is page-touch volume during graph search.
+   The helper's current counters only see emitted-candidate materialization, but
+   `EXPLAIN (BUFFERS)` shows the actual index scan touches far more shared
+   buffers than those counters report:
+   - about `1505` shared-buffer hits at `ef_search=40`
+   - about `6167` shared-buffer hits at `ef_search=200`
+
+That means the next optimization target should not be tuple emission. It should
+reduce repeated graph page access during rescan/search, most likely through
+scan-local graph element / adjacency reuse or another mechanism that lowers the
+number of element and neighbor page touches per query.
