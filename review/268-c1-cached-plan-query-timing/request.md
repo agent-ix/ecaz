@@ -26,21 +26,52 @@ there is still harness-side churn to peel away; if it stays flat, the next
 slice should go back to executor / AM hot-path work instead of more timing
 seams.
 
-## Planned work
+## Implementation
 
-1. Add a cached-plan timing mode for `per-cell` runs.
-2. Use a server-side cached query surface so repeated queries in the cell reuse
-   the same planned ordered scan shape.
-3. Keep the existing planner verification before timing the cell.
-4. Record the same warm verified `10K`, `m=8`, `ef_search=40` cell against the
-   cached-plan seam.
+Completed work:
 
-## Exit criteria
+1. Added `--timing-mode cached-plan` to `scripts/bench_sql_latency.sh`.
+2. Restricted that mode to `--session-mode per-cell`, since session reuse is
+   what makes server-side plan reuse meaningful.
+3. Added a per-cell `pg_temp.tqv_latency_cached_plan(real[])` plpgsql helper
+   that times the ordered query with `clock_timestamp()` while reusing the same
+   planned ordered-scan statement across the full cell.
+4. Kept the existing planner verification unchanged, so the verified launcher
+   still aborts before timing if the representative plan does not select the
+   expected tqhnsw index.
+5. Updated `docs/RECALL_REAL_CORPUS.md` and
+   `spec/non-functional/NFR-001-query-latency.md` so the new seam is
+   documented explicitly.
 
-- new cached-plan timing mode only runs when session reuse makes it meaningful
-- verified launcher still aborts when the representative plan is wrong
+## Result
+
+Current local read on the warm verified `10K`, `m=8`, `ef_search=40`,
+`warm-after-prime3`, `per-cell` seam:
+
+```text
+explain mode:      p50=11.024ms p95=13.244ms p99=15.491ms mean=11.111ms
+plain-server mode: p50=10.932ms p95=13.377ms p99=16.915ms mean=11.020ms
+cached-plan mode:  p50=11.028ms p95=13.461ms p99=14.857ms mean=11.041ms
+```
+
+This is another negative-but-useful result: cached plan reuse does **not** move
+the warm C1 mean materially. The warm surface is still about `11ms`, so parse /
+planning churn is not the dominant remaining gap on this `10K` lane.
+
+## Validation
+
+- `bash -n scripts/bench_sql_latency.sh` passed
 - `cargo test`
 - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
 - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-- warm verified `10K`, `m=8`, `ef_search=40`, `warm-after-prime3`, `per-cell`
-  read recorded for the cached-plan seam
+
+All required gates were rerun and completed green after the final script state.
+
+## Conclusion
+
+This slice is worth keeping because it closes the remaining obvious timing-seam
+question from packets `264` and `267`. The important finding is still negative:
+once the query runs in a warm persistent backend, neither `EXPLAIN` output nor
+fresh statement planning explains the remaining `~11ms` C1 latency. The next
+checkpoint should return to executor / AM hot-path work rather than more
+launcher-side timing variants.
