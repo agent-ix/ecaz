@@ -320,6 +320,7 @@ where
 pub struct BeamSearch<NodeId> {
     ef_search: usize,
     frontier: BinaryHeap<Reverse<QueuedCandidate<NodeId>>>,
+    queued: HashSet<NodeId>,
     visited: HashSet<NodeId>,
     discovery_order: Vec<BeamCandidate<NodeId>>,
     sequence: u64,
@@ -333,6 +334,7 @@ where
         Self {
             ef_search,
             frontier: BinaryHeap::new(),
+            queued: HashSet::new(),
             visited: HashSet::new(),
             discovery_order: Vec::new(),
             sequence: 0,
@@ -354,11 +356,11 @@ where
     }
 
     pub fn is_empty(&self) -> bool {
-        self.frontier.is_empty()
+        self.queued.is_empty()
     }
 
     pub fn frontier_len(&self) -> usize {
-        self.frontier.len()
+        self.queued.len()
     }
 
     pub fn visited_count(&self) -> usize {
@@ -369,8 +371,15 @@ where
         &self.discovery_order
     }
 
-    pub fn peek_best(&self) -> Option<BeamCandidate<NodeId>> {
-        self.frontier.peek().map(|Reverse(queued)| queued.candidate)
+    pub fn peek_best(&mut self) -> Option<BeamCandidate<NodeId>> {
+        loop {
+            let candidate = self.frontier.peek().map(|Reverse(queued)| queued.candidate)?;
+            if self.queued.contains(&candidate.node) {
+                return Some(candidate);
+            }
+
+            self.frontier.pop();
+        }
     }
 
     pub fn peek_best_matching<MatchFn>(
@@ -407,33 +416,28 @@ where
     }
 
     pub fn forget_queued(&mut self, node: NodeId) -> Option<BeamCandidate<NodeId>> {
-        let mut removed = None;
-        let retained = self
-            .frontier
-            .drain()
-            .filter_map(|Reverse(queued)| {
-                if queued.candidate.node == node {
-                    removed = Some(queued.candidate);
-                    None
-                } else {
-                    Some(Reverse(queued))
-                }
-            })
-            .collect::<Vec<_>>();
-        self.frontier = retained.into();
-
-        if let Some(candidate) = removed {
-            self.visited.remove(&node);
-            self.discovery_order
-                .retain(|discovered| discovered.node != node);
-            return Some(candidate);
+        if !self.queued.remove(&node) {
+            return None;
         }
 
-        None
+        let candidate = self
+            .discovery_order
+            .iter()
+            .find(|discovered| discovered.node == node)
+            .copied()?;
+        self.visited.remove(&node);
+        self.discovery_order
+            .retain(|discovered| discovered.node != node);
+        Some(candidate)
     }
 
     pub fn pop_best(&mut self) -> Option<BeamCandidate<NodeId>> {
-        self.frontier.pop().map(|Reverse(queued)| queued.candidate)
+        loop {
+            let candidate = self.frontier.pop().map(|Reverse(queued)| queued.candidate)?;
+            if self.queued.remove(&candidate.node) {
+                return Some(candidate);
+            }
+        }
     }
 
     pub fn expand_one<NeighborFn, NeighborIter>(
@@ -480,6 +484,7 @@ where
         self.discovery_order.push(candidate);
         self.frontier
             .push(Reverse(QueuedCandidate::new(candidate, self.sequence)));
+        self.queued.insert(candidate.node);
         self.sequence += 1;
         true
     }
@@ -491,6 +496,7 @@ where
             .into_vec()
             .into_iter()
             .map(|Reverse(queued)| queued.candidate)
+            .filter(|candidate| self.queued.contains(&candidate.node))
             .collect::<Vec<_>>();
         frontier.sort_by(candidate_order);
         frontier
