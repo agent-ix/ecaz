@@ -44,16 +44,18 @@ Current staged behavior:
 │    tree_height    = amgettreeheight() [PG18] or max_level        │
 │    dimensions     = from metadata page                          │
 │                                                                 │
-│  Phase 1 — Graph Traversal (bootstrap):                         │
-│    graph_pages = tree_height * m                                │
-│                + ef_search * 2 * m    [layer-0 beam search]     │
+│  Phase 1 — Graph Traversal (ordered tqhnsw search):             │
+│    graph_pages = tree_height + ef_search                        │
+│    score_dims  = dimensions * 0.75   [LUT-scored CPU term]      │
 │    graph_cost  = graph_pages * random_page_cost                 │
-│    graph_cpu   = graph_pages * cpu_operator_cost * dimensions   │
+│    graph_cpu   = graph_pages * cpu_operator_cost * score_dims   │
 │                                                                 │
-│  Phase 2 — Linear Scan (fallback):                              │
+│  Phase 2 — Residual linear coverage:                            │
 │    linear_pages = max(0, index_pages - graph_pages)             │
+│    linear_fraction = linear_pages / index_pages                 │
 │    linear_cost  = linear_pages * seq_page_cost                  │
-│    linear_cpu   = num_tuples * cpu_operator_cost * dimensions   │
+│    linear_cpu   = num_tuples * cpu_operator_cost                │
+│                * score_dims * linear_fraction                   │
 │                                                                 │
 │  Outputs:                                                       │
 │    startup_cost = graph_cost + graph_cpu                        │
@@ -78,15 +80,17 @@ sequenceDiagram
     AM->>Rel: Read index_pages, reltuples from pg_class
     AM->>Meta: Read m, ef_search, tree_height, dimensions from metadata page
 
-    Note over AM: Compute bootstrap phase cost
-    AM->>AM: graph_pages = tree_height × m + ef_search × 2 × m
+    Note over AM: Compute ordered tqhnsw traversal cost
+    AM->>AM: graph_pages = tree_height + ef_search
+    AM->>AM: score_dims = dimensions × 0.75
     AM->>AM: graph_cost = graph_pages × random_page_cost
-    AM->>AM: graph_cpu = graph_pages × cpu_operator_cost × dimensions
+    AM->>AM: graph_cpu = graph_pages × cpu_operator_cost × score_dims
 
-    Note over AM: Compute linear scan fallback cost
+    Note over AM: Compute residual linear coverage cost
     AM->>AM: linear_pages = max(0, index_pages − graph_pages)
+    AM->>AM: linear_fraction = linear_pages / index_pages
     AM->>AM: linear_cost = linear_pages × seq_page_cost
-    AM->>AM: linear_cpu = num_tuples × cpu_operator_cost × dimensions
+    AM->>AM: linear_cpu = num_tuples × cpu_operator_cost × score_dims × linear_fraction
 
     AM->>AM: startup_cost = graph_cost + graph_cpu
     AM->>AM: total_cost = startup_cost + linear_cost + linear_cpu
