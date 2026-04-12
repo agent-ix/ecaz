@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::ptr;
 use std::sync::Arc;
+#[cfg(any(test, feature = "pg_test"))]
+use std::time::Instant;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
@@ -19,6 +21,88 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 enum BootstrapExpandPolicy {
     ScoreOrder,
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct ScanDebugProfile {
+    pub(super) upper_layer_seed_elapsed_us: u64,
+    pub(super) layer0_seed_elapsed_us: u64,
+    pub(super) graph_element_cache_hits: u64,
+    pub(super) graph_element_cache_misses: u64,
+    pub(super) graph_element_load_elapsed_us: u64,
+    pub(super) graph_neighbor_cache_hits: u64,
+    pub(super) graph_neighbor_cache_misses: u64,
+    pub(super) graph_neighbor_load_elapsed_us: u64,
+    pub(super) candidate_score_calls: u64,
+    pub(super) candidate_score_elapsed_us: u64,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn reset_scan_debug_profile(opaque: &mut TqScanOpaque) {
+    opaque.debug_profile = ScanDebugProfile::default();
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn reset_scan_debug_profile(_opaque: &mut TqScanOpaque) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_upper_layer_seed_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.upper_layer_seed_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_upper_layer_seed_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_layer0_seed_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.layer0_seed_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_layer0_seed_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_graph_element_cache_hit(opaque: &mut TqScanOpaque) {
+    opaque.debug_profile.graph_element_cache_hits += 1;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_graph_element_cache_hit(_opaque: &mut TqScanOpaque) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_graph_element_cache_miss_load(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.graph_element_cache_misses += 1;
+    opaque.debug_profile.graph_element_load_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_graph_element_cache_miss_load(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_graph_neighbor_cache_hit(opaque: &mut TqScanOpaque) {
+    opaque.debug_profile.graph_neighbor_cache_hits += 1;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_graph_neighbor_cache_hit(_opaque: &mut TqScanOpaque) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_graph_neighbor_cache_miss_load(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.graph_neighbor_cache_misses += 1;
+    opaque.debug_profile.graph_neighbor_load_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_graph_neighbor_cache_miss_load(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_candidate_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.candidate_score_calls += 1;
+    opaque.debug_profile.candidate_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_candidate_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     index_relation: pg_sys::Relation,
@@ -272,6 +356,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
     clear_scan_candidate_state(opaque);
     reset_scan_graph_cache(opaque);
+    reset_scan_debug_profile(opaque);
     opaque.result_state.clear();
     opaque.fallback_result_state.clear();
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
@@ -334,13 +419,22 @@ unsafe fn cached_graph_element(
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_element_cache.is_null() {
         if let Some(element) = unsafe { &*opaque_ref.graph_element_cache }.get(&element_tid) {
+            record_graph_element_cache_hit(opaque_ref);
             return Arc::clone(element);
         }
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
     let element = Arc::new(unsafe {
         graph::load_graph_element(index_relation, element_tid, opaque_ref.scan_code_len)
     });
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_graph_element_cache_miss_load(opaque_ref, elapsed_us);
     graph_element_cache_mut(opaque_ref).insert(element_tid, Arc::clone(&element));
     element
 }
@@ -353,11 +447,20 @@ unsafe fn cached_graph_neighbors(
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_neighbor_cache.is_null() {
         if let Some(neighbors) = unsafe { &*opaque_ref.graph_neighbor_cache }.get(&neighbor_tid) {
+            record_graph_neighbor_cache_hit(opaque_ref);
             return Arc::clone(neighbors);
         }
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
     let neighbors = Arc::new(unsafe { graph::load_graph_neighbors(index_relation, neighbor_tid) });
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_graph_neighbor_cache_miss_load(opaque_ref, elapsed_us);
     graph_neighbor_cache_mut(opaque_ref).insert(neighbor_tid, Arc::clone(&neighbors));
     neighbors
 }
@@ -407,8 +510,16 @@ where
             continue;
         }
 
+        #[cfg(any(test, feature = "pg_test"))]
+        let started = Instant::now();
         let score =
             score_scan_element_result(unsafe { &*opaque }, neighbor.gamma, &neighbor.code);
+        #[cfg(any(test, feature = "pg_test"))]
+        let elapsed_us =
+            u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let elapsed_us = 0;
+        record_candidate_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
         candidates.push(search::BeamCandidate::with_source(
             neighbor.tid,
             score,
@@ -943,8 +1054,18 @@ unsafe fn initialize_scan_entry_candidate(
     let entry_score = score_scan_element_result(opaque, entry.gamma, &entry.code);
     let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
     let opaque_ptr = opaque as *mut TqScanOpaque;
+    #[cfg(any(test, feature = "pg_test"))]
+    let upper_layer_started = Instant::now();
     let upper_layer_seeds =
         unsafe { cached_upper_layer_seed_candidates(index_relation, opaque_ptr, entry_candidate, entry.level) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let upper_layer_elapsed_us =
+        u64::try_from(upper_layer_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let upper_layer_elapsed_us = 0;
+    record_upper_layer_seed_elapsed(opaque, upper_layer_elapsed_us);
+    #[cfg(any(test, feature = "pg_test"))]
+    let layer0_started = Instant::now();
     let ordered_candidates = graph::search_layer0_result_candidates_with_successors(
         bootstrap_frontier_limit(opaque),
         upper_layer_seeds,
@@ -958,6 +1079,12 @@ unsafe fn initialize_scan_entry_candidate(
             )
         },
     );
+    #[cfg(any(test, feature = "pg_test"))]
+    let layer0_elapsed_us =
+        u64::try_from(layer0_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let layer0_elapsed_us = 0;
+    record_layer0_seed_elapsed(opaque, layer0_elapsed_us);
     stage_ordered_graph_results(opaque, ordered_candidates);
 }
 
@@ -1717,6 +1844,8 @@ pub(super) struct TqScanOpaque {
     pub(super) graph_prefetch_state: *mut GraphPrefetchState,
     pub(super) linear_prefetch_state: LinearPrefetchState,
     pub(super) explain_counters: TqExplainCounters,
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(super) debug_profile: ScanDebugProfile,
 }
 
 impl Default for TqScanOpaque {
@@ -1752,6 +1881,8 @@ impl Default for TqScanOpaque {
                 page::FIRST_DATA_BLOCK_NUMBER,
             ),
             explain_counters: TqExplainCounters::default(),
+            #[cfg(any(test, feature = "pg_test"))]
+            debug_profile: ScanDebugProfile::default(),
         }
     }
 }

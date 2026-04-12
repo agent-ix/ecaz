@@ -5177,6 +5177,16 @@ mod tests {
             total_heap_tids_returned,
             _total_quantizer_cache_hit,
             total_emitted_elements,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert_eq!(
@@ -5190,6 +5200,26 @@ mod tests {
         assert!(
             rescan_bootstrap_pages_read > 0,
             "prefetching the first ordered result should read at least one graph page",
+        );
+        assert!(
+            rescan_upper_layer_seed_elapsed_us >= 0 && rescan_layer0_seed_elapsed_us >= 0,
+            "the profile helper should surface non-negative rescan timing buckets",
+        );
+        assert!(
+            graph_element_cache_misses > 0 && graph_neighbor_cache_misses > 0,
+            "profiling should record graph cache misses on a non-empty fixture",
+        );
+        assert!(
+            graph_element_load_elapsed_us >= 0 && graph_neighbor_load_elapsed_us >= 0,
+            "profiling should surface non-negative graph load timing buckets",
+        );
+        assert!(
+            graph_element_cache_hits >= 0 && graph_neighbor_cache_hits >= 0,
+            "profiling should surface graph cache hit counters even when the fixture is tiny",
+        );
+        assert!(
+            candidate_score_calls > 0 && candidate_score_elapsed_us >= 0,
+            "profiling should record candidate scoring work during scan seeding",
         );
         assert!(
             result_count > 0,
@@ -11026,7 +11056,147 @@ mod tests {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
 
-        TableIterator::once(unsafe { am::debug_profile_ordered_scan(index_oid, query) })
+        let (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
+
+        TableIterator::once((
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_hot_path_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_upper_layer_seed_elapsed_us, i64),
+            name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(graph_element_cache_hits, i32),
+            name!(graph_element_cache_misses, i32),
+            name!(graph_element_load_elapsed_us, i64),
+            name!(graph_neighbor_cache_hits, i32),
+            name!(graph_neighbor_cache_misses, i32),
+            name!(graph_neighbor_load_elapsed_us, i64),
+            name!(candidate_score_calls, i32),
+            name!(candidate_score_elapsed_us, i64),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
+
+        TableIterator::once((
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+        ))
     }
 
     #[pg_extern]

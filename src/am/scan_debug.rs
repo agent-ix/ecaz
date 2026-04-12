@@ -284,6 +284,16 @@ type DebugScanProfile = (
     i32,
     bool,
     i32,
+    i64,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i64,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -612,6 +622,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
         .expect("expanded count should fit in i32");
     let rescan_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
         .expect("emitted count should fit in i32");
+    let rescan_debug_profile = opaque.debug_profile;
 
     let emit_started = Instant::now();
     let mut result_count = 0_i32;
@@ -665,6 +676,26 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
         i32::try_from(total_counters.stats_heap_tids_returned).expect("counter should fit in i32"),
         total_counters.stats_quantizer_cache_hit,
         final_emitted_count,
+        i64::try_from(rescan_debug_profile.upper_layer_seed_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(rescan_debug_profile.layer0_seed_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.graph_element_cache_hits)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.graph_element_cache_misses)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.graph_element_load_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.graph_neighbor_cache_hits)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.graph_neighbor_cache_misses)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.graph_neighbor_load_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.candidate_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.candidate_score_elapsed_us)
+            .expect("timing should fit in i64"),
     )
 }
 
