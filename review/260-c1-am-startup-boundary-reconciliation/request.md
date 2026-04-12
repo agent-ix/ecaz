@@ -65,29 +65,46 @@ without conflating AM work with outer SQL/executor behavior.
     - `layer0_seed_elapsed_us=14373`
     - `graph_element_load_elapsed_us=11633`
     - `candidate_score_elapsed_us=1006`
-- Those totals are far smaller than the earlier `EXPLAIN (ANALYZE, FORMAT JSON)`
-  `Index Scan` startup number (`46.187ms` at `ef_search=40`).
+- A fresh direct SQL rerun on the same representative query is materially lower
+  than the older packet-259 reading and is now close to the AM boundary probe:
+  - `EXPLAIN (ANALYZE, FORMAT JSON)` at `ef_search=40`
+    - `Index Scan` startup: `4.194ms`
+    - `Index Scan` total: `4.816ms`
+    - execution time: `4.947ms`
+  - `EXPLAIN (ANALYZE, BUFFERS)` at `ef_search=40`
+    - `Index Scan` startup: `4.081ms`
+    - `Index Scan` total: `4.556ms`
+    - execution time: `4.750ms`
+- On the current build and warmed representative query, the gap between direct
+  SQL `Index Scan` startup (`~4.1ms`) and tqhnsw `amrescan` total (`3.289ms`) is
+  now only about `0.8ms` to `0.9ms`, not `~40ms`.
+- A repeated plain-query wall-time sanity check stays below the direct `EXPLAIN`
+  numbers:
+  - 5,000 repeated plain scans of the representative query completed in
+    `5.655s` inside the live `psql` session
+  - that is about `1.131ms/query`
 - Backend-side `perf` is now available on this machine and the first real server
-  capture against repeated plain SQL scans shows tqvector cycles still dominated
+  capture against repeated plain SQL scans still shows tqvector cycles dominated
   by scoring:
   - `31.78%` `tqvector::quant::prod::ProdQuantizer::score_ip_from_split_parts`
   - `4.11%` `Vec<T>::extend_from_slice`
   - `1.20%` `tqvector::am::graph::read_page_tuple_bytes`
-- A direct wall-time sanity check on the plain query path is materially lower
-  than the `EXPLAIN` numbers:
-  - 5,000 repeated plain scans of the representative query completed in `4.42s`
-  - that is about `0.884ms/query` end-to-end through `psql`
 
 ## Current Read
 
-The missing `~40ms` does not appear to be hidden inside tqhnsw `amrescan`
-itself. The stronger emerging hypothesis is that the old C1 `EXPLAIN ANALYZE`
-surface is dominated by `EXPLAIN`/instrumentation overhead rather than by the
-actual plain ordered index scan.
+On the current local build, the earlier packet-259 `~46ms` representative probe
+is not reproducible. The direct SQL startup time for that same query is now
+around `4.1ms`, which is already close to the new tqhnsw `amrescan` boundary
+counter at `3.289ms`.
 
-The next step is to confirm that interpretation on a small multi-query sample
-and then decide whether C1 should pivot from `EXPLAIN`-reported execution time
-to a plain-query timing harness for the real latency requirement.
+That changes the packet-260 question from “where is the missing 40ms inside
+tqhnsw?” to “what accounts for the remaining sub-millisecond gap between the AM
+boundary and the full SQL `Index Scan` startup on the representative query, and
+was the older 46ms reading stale, cold-cache, or otherwise non-representative?”
+
+The next step is to lock down that current measurement with a small multi-query
+sample and then decide whether C1 should keep using the existing `EXPLAIN`
+surface as-is or add a complementary plain-query timing harness.
 
 ## Exit criteria
 
