@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
 use std::ptr;
 use std::sync::Arc;
 #[cfg(any(test, feature = "pg_test"))]
 use std::time::Instant;
 
+use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};

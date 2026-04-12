@@ -1,6 +1,8 @@
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::hash::Hash;
+
+use hashbrown::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BeamCandidate<NodeId> {

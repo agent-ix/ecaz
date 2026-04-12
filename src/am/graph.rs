@@ -1,7 +1,8 @@
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::BinaryHeap;
 use std::ptr;
 
+use hashbrown::HashSet;
 use pgrx::pg_sys;
 
 use super::{page, search};
