@@ -8,9 +8,9 @@ Branch:
 Prior C1 packet:
 - `review/244-c1-real-corpus-latency-hardening/request.md`
 
-This packet is opened as a live draft before the long-running measurement
-finishes, so the current C1 benchmark slice has a durable review surface while
-the operator run is in flight.
+This packet was opened as a live draft before the long-running measurement
+finished, so the current C1 benchmark slice had a durable review surface while
+the operator run was in flight.
 
 The hardened real-corpus latency path from packet `244` is now landed on
 `main`, and the local host has the canonical staged DBpedia-derived fixtures:
@@ -27,7 +27,7 @@ The hardened real-corpus latency path from packet `244` is now landed on
 4. build:
    - `tqhnsw_real_10k_m8_idx`
    - `tqhnsw_real_10k_m16_idx`
-5. run the hardened `NFR-001` latency sweep:
+5. attempt the hardened `NFR-001` latency sweep:
 
 ```bash
 PGHOST=/home/peter/.pgrx \
@@ -72,27 +72,49 @@ Per-cell summary lines should now report:
 
 ## Status
 
-At packet-open time:
+Initial operator progress:
 
 - cluster start: complete
 - extension create: complete
 - `tqhnsw_real_10k` load: complete
 - `m=8` / `m=16` index build: complete
-- latency sweep: **running**
+- latency sweep: attempted, then aborted
 
 The stdout banner has already been verified to contain the expected host / GUC
-metadata, and the sweep is currently executing the first matrix cell:
+metadata. The sweep was then started on the first matrix cell:
 
 - `m=8`
 - `ef_search=40`
 
-The final artifact contents and the pass/fail read against `NFR-001` will be
-added in a follow-up update to this same packet once the sweep finishes.
+No per-cell summary line was emitted before the operator check flagged that the
+run was taking unexpectedly long. A representative `EXPLAIN` then confirmed the
+root cause:
+
+```text
+Limit
+  ->  Sort
+        Sort Key: (embedding <#> ...)
+        ->  Seq Scan on tqhnsw_real_10k_corpus
+```
+
+So this attempted run was **not** a valid HNSW latency artifact. It was stopped
+intentionally instead of letting it continue to time the wrong surface.
+
+At the time of abort:
+
+- `/tmp/nfr1_real_10k.stdout` existed and contained the expected banner
+- `/tmp/nfr1_real_10k.summary` had not yet been created
+
+This packet therefore records the operator attempt and the discovery that the
+current launcher would silently benchmark `Sort -> Seq Scan` on `main`.
+The matching fix lands in:
+
+- `review/246-c1-latency-launcher-plan-verification/request.md`
 
 ## Review Focus
 
 - Does this packet capture the right durable measurement boundary for the first
   post-A6 `NFR-001` artifact on the canonical real `10k` surface?
-- Once the run completes, are the captured stdout banner and per-cell summary
-  files sufficient, or should the packet also inline a shorter operator digest
-  alongside the verbatim artifacts?
+- Is the aborted operator attempt, plus the captured banner-only stdout and the
+  representative `Sort -> Seq Scan` plan, sufficient evidence for why this did
+  not become a durable latency artifact?
