@@ -51,12 +51,17 @@ impl ProdQuantizer {
         assert!((2..=8).contains(&bits), "bits must be within 2..=8");
 
         let transform_dim = rotation::effective_transform_dim(dim);
+        let qjl_active = qjl_enabled(dim, bits);
         let codebook = codebook::lloyd_max(mse_bits(dim, bits) as usize, dim, 20_000)
             .into_iter()
             .map(|value| value as f32)
             .collect();
         let signs = rotation::sign_vector(transform_dim, seed);
-        let qjl_signs = rotation::sign_vector(transform_dim, seed ^ 0x9E37_79B9_7F4A_7C15);
+        let qjl_signs = if qjl_active {
+            rotation::sign_vector(transform_dim, seed ^ 0x9E37_79B9_7F4A_7C15)
+        } else {
+            Vec::new()
+        };
 
         Self {
             transform_dim,
@@ -158,16 +163,15 @@ impl ProdQuantizer {
             self.original_dim
         );
 
+        let qjl_active = qjl_enabled(self.original_dim, self.bits);
         let mut rotated = rotation::srht_padded(query, &self.signs);
-        let mut qjl_projection =
-            qjl_enabled(self.original_dim, self.bits).then(|| qjl::qjl_project(query, &self.qjl_signs));
+        let mut qjl_projection = qjl_active.then(|| qjl::qjl_project(query, &self.qjl_signs));
         let num_centroids = 1usize << mse_bits(self.original_dim, self.bits);
 
-        let bits_per_index = mse_bits(self.original_dim, self.bits);
-        let lut = if bits_per_index == 3 {
-            Vec::new()
-        } else {
+        let lut = if prepared_query_uses_lut(self.original_dim, self.bits) {
             build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, num_centroids)
+        } else {
+            Vec::new()
         };
         rotated.truncate(self.original_dim);
         if let Some(projection) = qjl_projection.as_mut() {
@@ -178,7 +182,7 @@ impl ProdQuantizer {
             lut,
             rotated,
             sq: qjl_projection.unwrap_or_default(),
-            qjl_scale: if qjl_enabled(self.original_dim, self.bits) {
+            qjl_scale: if qjl_active {
                 (PI / 2.0).sqrt() / self.original_dim as f32
             } else {
                 0.0
@@ -281,7 +285,7 @@ impl ProdQuantizer {
         if !qjl_active {
             while dim_index < self.original_dim {
                 let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
-                mse_sum += if bits_per_index == 3 {
+                mse_sum += if bits_per_index == 3 || prepared.lut.is_empty() {
                     self.codebook[centroid_index] * prepared.rotated[dim_index]
                 } else {
                     prepared.lut[dim_index * num_centroids + centroid_index]
@@ -967,6 +971,10 @@ fn qjl_enabled(dim: usize, bits: u8) -> bool {
     !(bits == 4 && rotation::tile_dim(dim).is_some())
 }
 
+fn prepared_query_uses_lut(dim: usize, bits: u8) -> bool {
+    qjl_enabled(dim, bits) || bits != 4
+}
+
 fn mse_bits(dim: usize, bits: u8) -> u8 {
     if qjl_enabled(dim, bits) {
         bits.saturating_sub(1)
@@ -1363,6 +1371,30 @@ mod tests {
         assert_eq!(encoded.mse_packed.len(), 768);
         assert!(encoded.qjl_packed.is_empty());
         assert_eq!(quantizer.pack_payload(&encoded).len(), 772);
+    }
+
+    #[test]
+    fn quantizer_1536_4bit_disables_unused_qjl_and_lut_state() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 8);
+        let prepared = quantizer.prepare_ip_query(&query);
+
+        assert!(quantizer.qjl_signs.is_empty());
+        assert!(prepared.lut.is_empty());
+        assert!(prepared.sq.is_empty());
+        assert_eq!(prepared.qjl_scale, 0.0);
+    }
+
+    #[test]
+    fn quantizer_32_4bit_keeps_qjl_and_lut_state_when_active() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 11);
+        let prepared = quantizer.prepare_ip_query(&query);
+
+        assert_eq!(quantizer.qjl_signs.len(), quantizer.transform_dim);
+        assert!(!prepared.lut.is_empty());
+        assert!(!prepared.sq.is_empty());
+        assert!(prepared.qjl_scale > 0.0);
     }
 
     #[test]

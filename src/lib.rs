@@ -5423,7 +5423,7 @@ mod tests {
             has_prepared_query,
             "non-empty rescans should cache prepared query state for future ordered search"
         );
-        assert_eq!(prepared_lut_len, 0);
+        assert_eq!(prepared_lut_len, 32);
         assert_eq!(prepared_sq_len, 4);
     }
 
@@ -5558,7 +5558,7 @@ mod tests {
             has_prepared_query,
             "non-empty rescans should prepare the query"
         );
-        assert_eq!(prepared_lut_len, 0);
+        assert_eq!(prepared_lut_len, 32);
         assert_eq!(prepared_sq_len, 4);
     }
 
