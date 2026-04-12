@@ -24,21 +24,48 @@ In `src/quant/prod.rs`:
 So the current warm path still leaves SIMD throughput on the table exactly
 where the active production lane spends its scoring time.
 
-## Planned work
+## Experiment
 
-1. Add an AVX2 fast path for no-QJL `4-bit` scoring on x86_64.
-2. Keep scalar fallback behavior identical for non-AVX2 or non-x86 targets.
-3. Extend test coverage so the AVX2 path remains numerically aligned with the
-   scalar reference.
-4. Re-run the full checkpoint gate and the same verified warm per-cell `10K`
-   cell to measure macro impact.
+I implemented and tested an x86_64 AVX2/FMA fast path for
+`score_ip_from_split_parts_no_qjl_4bit(...)` in `src/quant/prod.rs`.
 
-## Exit criteria
+The implementation did pass the production-dimension scalar-vs-dispatched
+agreement test after fixing the packed-nibble lane ordering bug
+(`low0, high0, low1, high1, ...`), so this was a valid correctness probe.
 
-- no-QJL `4-bit` scoring dispatches to AVX2 when available
-- scalar and AVX2 paths agree on representative production-dimension cases
-- `cargo test`
-- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
-- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-- verified warm rerun recorded against the same `10K`, `m=8`, `ef_search=40`,
-  `warm-after-prime3`, `per-cell` seam
+## Result
+
+The experiment did **not** justify landing the code.
+
+Direct scorer microbench, using the existing `simd_bench` binary with forced
+backends on the same local build:
+
+```text
+TQVECTOR_SIMD=scalar   score_ip_encoded/d1536_b4: ns_per_iter=14082.5
+TQVECTOR_SIMD=avx2+fma score_ip_encoded/d1536_b4: ns_per_iter=14301.6
+```
+
+So the AVX2 path was slightly slower than the scalar path on the isolated
+`1536x4-bit` scorer.
+
+The verified warm SQL rerun was also too small to justify the extra code:
+
+```text
+packet 265 baseline: p50=11.024ms p95=13.244ms p99=15.491ms mean=11.111ms
+packet 266 probe:    p50=11.102ms p95=13.137ms p99=14.654ms mean=11.010ms
+```
+
+That is essentially flat on mean/p50, with only a modest p99 improvement.
+
+## Decision
+
+I discarded the AVX2 implementation and reverted the code locally. This packet
+remains as a recorded failed experiment because the result is still useful:
+for the current no-QJL `1536x4-bit` lane, a simple AVX2 nibble-decode +
+permute/blend scorer does **not** beat the existing scalar path.
+
+## Next direction
+
+The next C1 slice should move away from this particular scorer SIMD idea and
+target a seam with clearer headroom than the current no-QJL `4-bit` scalar
+loop.
