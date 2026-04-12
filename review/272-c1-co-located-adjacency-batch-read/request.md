@@ -46,6 +46,45 @@ worth targeting directly.
 4. Run the full checkpoint gate and rerun the verified warm `10K`, `m=8`,
    `ef_search=40`, `warm-after-prime3`, `per-cell` seam.
 
+## Outcome
+
+Discarded.
+
+The implementation added a same-page adjacency decode path in `src/am/graph.rs`
+and taught the scan-local cached adjacency miss path in `src/am/scan.rs` to use
+that combined read on first load. The code validated cleanly, but the warm C1
+surface stayed effectively flat relative to packet `270`, so the code was
+reverted and nothing from this probe is kept in `main`.
+
+## Validation
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+## Measurements
+
+Canonical comparison point from packet `270`:
+
+- warm verified `10K`, `m=8`, `ef_search=40`, `warm-after-prime3`,
+  `session-mode=per-cell`, `timing-mode=cached-plan`
+- baseline: `p50=10.753ms`, `p95=12.784ms`, `p99=14.034ms`, `mean=10.720ms`
+
+Two valid reruns on the packet `272` build:
+
+- rerun 1: `p50=10.761ms`, `p95=12.491ms`, `p99=13.396ms`, `mean=10.700ms`
+- rerun 2: `p50=10.802ms`, `p95=12.741ms`, `p99=14.246ms`, `mean=10.762ms`
+
+That is effectively flat. The first run trims the tail slightly, the second
+gives it back, and the mean movement is within noise against the packet `270`
+baseline.
+
+## Decision
+
+- revert the co-located adjacency batch-read implementation
+- keep packet `272` as a recorded failed experiment
+- do not land the combined locked-page adjacency decode path
+
 ## Exit criteria
 
 - first adjacency load no longer requires two separate buffer reads when the
