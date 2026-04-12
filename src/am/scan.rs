@@ -594,38 +594,21 @@ where
     candidates
 }
 
-unsafe fn cached_upper_layer_seed_candidates(
+unsafe fn cached_upper_layer_seed_candidate(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
     entry_candidate: search::BeamCandidate<page::ItemPointer>,
     entry_level: u8,
-) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+) -> search::BeamCandidate<page::ItemPointer> {
     if entry_level == 0 {
-        return vec![entry_candidate];
+        return entry_candidate;
     }
 
-    let mut seeds = vec![entry_candidate];
-    let bootstrap_limit = bootstrap_frontier_limit(unsafe { &*opaque });
-    for layer in (1..=entry_level).rev() {
-        seeds = graph::search_layer0_result_candidates_with_successors(
-            bootstrap_limit,
-            seeds,
-            |source_tid| unsafe {
-                cached_scan_successor_candidates_for_layer(
-                    index_relation,
-                    opaque,
-                    source_tid,
-                    layer,
-                    |_| true,
-                )
-            },
-        );
-        if seeds.is_empty() {
-            break;
-        }
-    }
-
-    seeds
+    graph::greedy_descend_with_successors(entry_candidate, entry_level, |source_tid, layer| unsafe {
+        cached_scan_successor_candidates_for_layer(index_relation, opaque, source_tid, layer, |_| {
+            true
+        })
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1121,8 +1104,8 @@ unsafe fn initialize_scan_entry_candidate(
     let opaque_ptr = opaque as *mut TqScanOpaque;
     #[cfg(any(test, feature = "pg_test"))]
     let upper_layer_started = Instant::now();
-    let upper_layer_seeds =
-        unsafe { cached_upper_layer_seed_candidates(index_relation, opaque_ptr, entry_candidate, entry.level) };
+    let upper_layer_seed =
+        unsafe { cached_upper_layer_seed_candidate(index_relation, opaque_ptr, entry_candidate, entry.level) };
     #[cfg(any(test, feature = "pg_test"))]
     let upper_layer_elapsed_us =
         u64::try_from(upper_layer_started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -1133,7 +1116,7 @@ unsafe fn initialize_scan_entry_candidate(
     let layer0_started = Instant::now();
     let ordered_candidates = graph::search_layer0_result_candidates_with_successors(
         bootstrap_frontier_limit(opaque),
-        upper_layer_seeds,
+        [upper_layer_seed],
         |source_tid| unsafe {
             cached_scan_successor_candidates_for_layer(
                 index_relation,

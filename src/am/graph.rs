@@ -375,7 +375,7 @@ pub(crate) fn layer_slot_bounds(element_level: u8, m: usize, layer: u8) -> Optio
     Some((start, start.saturating_add(m)))
 }
 
-fn greedy_descend_with_successors<NodeId, SuccessorFn>(
+pub(crate) fn greedy_descend_with_successors<NodeId, SuccessorFn>(
     mut current: search::BeamCandidate<NodeId>,
     entry_level: u8,
     mut load_successors: SuccessorFn,
