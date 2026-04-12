@@ -5127,6 +5127,97 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_scan_profile_reports_graph_first_counters() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_profile_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_profile_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_profile_fixture_idx \
+             ON tqhnsw_debug_scan_profile_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_debug_scan_profile_fixture_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            _total_elements_skipped,
+            total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            total_emitted_elements,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
+
+        assert_eq!(
+            rescan_phase, "graph_traversal",
+            "the profile helper should report that ordered scans start in the graph-traversal phase",
+        );
+        assert!(
+            rescan_current_result,
+            "amrescan should prefetch the first ordered result into current-result state on a non-empty index",
+        );
+        assert!(
+            rescan_bootstrap_pages_read > 0,
+            "prefetching the first ordered result should read at least one graph page",
+        );
+        assert!(
+            result_count > 0,
+            "the profiled scan should return at least one heap TID on a non-empty fixture",
+        );
+        assert_eq!(
+            final_phase, "exhausted",
+            "a full profiled scan should end in the exhausted phase",
+        );
+        assert_eq!(
+            final_ordered_slots, 0,
+            "full scan exhaustion should leave no current result or frontier slots staged",
+        );
+        assert_eq!(
+            total_linear_pages_read, 0,
+            "the graph-first ordered runtime should not fall back to linear scanning on this fixture",
+        );
+        assert!(
+            total_elements_scored >= total_emitted_elements,
+            "scored elements should cover every emitted ordered element",
+        );
+        assert_eq!(
+            total_heap_tids_returned, result_count,
+            "heap-TID return count should match the helper's emitted row count",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_reachable_live_count_matches_admin_snapshot() {
         Spi::run(
             "CREATE TABLE tqhnsw_debug_reachable_live_fixture \
@@ -5404,7 +5495,10 @@ mod tests {
             scan_block_count >= 2,
             "rescan should cache the current index block count"
         );
-        assert!(has_prepared_query, "non-empty rescans should prepare the query");
+        assert!(
+            has_prepared_query,
+            "non-empty rescans should prepare the query"
+        );
         assert_eq!(prepared_lut_len, 0);
         assert_eq!(prepared_sq_len, 4);
     }
@@ -5597,7 +5691,11 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        assert_eq!(ordered_ids.len(), 2, "query should return the requested LIMIT");
+        assert_eq!(
+            ordered_ids.len(),
+            2,
+            "query should return the requested LIMIT"
+        );
         assert_eq!(
             ordered_ids[0], 1,
             "runtime ordered index scan should return the nearest vector first"
@@ -10886,6 +10984,49 @@ mod tests {
         rows.sort_by_key(|(level, _, _, _, _, _)| *level);
 
         TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(rescan_phase, String),
+            name!(rescan_current_result, bool),
+            name!(rescan_ordered_slots, i32),
+            name!(rescan_pending_heap_tids, i32),
+            name!(rescan_visited_elements, i32),
+            name!(rescan_expanded_sources, i32),
+            name!(rescan_emitted_elements, i32),
+            name!(rescan_bootstrap_expansions, i32),
+            name!(rescan_bootstrap_pages_read, i32),
+            name!(rescan_quantizer_cache_hit, bool),
+            name!(result_count, i32),
+            name!(final_phase, String),
+            name!(final_ordered_slots, i32),
+            name!(total_bootstrap_expansions, i32),
+            name!(total_bootstrap_pages_read, i32),
+            name!(total_linear_pages_read, i32),
+            name!(total_elements_scored, i32),
+            name!(total_elements_skipped, i32),
+            name!(total_heap_tids_returned, i32),
+            name!(total_quantizer_cache_hit, bool),
+            name!(total_emitted_elements, i32),
+        ),
+    > {
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_profile") };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        TableIterator::once(unsafe { am::debug_profile_ordered_scan(index_oid, query) })
     }
 
     #[pg_extern]

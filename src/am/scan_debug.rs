@@ -1,5 +1,7 @@
 #[cfg(any(test, feature = "pg_test"))]
 use std::ptr;
+#[cfg(any(test, feature = "pg_test"))]
+use std::time::Instant;
 
 #[cfg(any(test, feature = "pg_test"))]
 use pgrx::{pg_sys, FromDatum};
@@ -232,6 +234,57 @@ fn debug_sorted_expanded_source_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords
     tids.sort_unstable();
     tids
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_sorted_emitted_tids(opaque: &TqScanOpaque) -> Vec<HeapTidCoords> {
+    if opaque.emitted_result_tids.is_null() {
+        return Vec::new();
+    }
+
+    let mut tids = unsafe { &*opaque.emitted_result_tids }
+        .iter()
+        .map(|tid| (tid.block_number, tid.offset_number))
+        .collect::<Vec<_>>();
+    tids.sort_unstable();
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_execution_phase_label(phase: ScanExecutionPhase) -> &'static str {
+    match phase {
+        ScanExecutionPhase::GraphTraversal => "graph_traversal",
+        ScanExecutionPhase::LinearFallback => "linear_fallback",
+        ScanExecutionPhase::Exhausted => "exhausted",
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugScanProfile = (
+    i64,
+    i64,
+    i64,
+    String,
+    bool,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    bool,
+    i32,
+    String,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+    bool,
+    i32,
+);
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -525,6 +578,94 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_profile_ordered_scan(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugScanProfile {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let total_started = Instant::now();
+    let rescan_started = Instant::now();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
+        .expect("rescan timing should fit in i64");
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let rescan_counters = opaque.explain_counters;
+    let rescan_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
+    let rescan_current_result = active_result_state_ref(opaque).current().has_element();
+    let rescan_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
+        .expect("slot count should fit in i32");
+    let rescan_pending_heap_tids = i32::from(active_result_state_ref(opaque).pending_count());
+    let rescan_visited_count = i32::try_from(debug_sorted_visited_tids(opaque).len())
+        .expect("visited count should fit in i32");
+    let rescan_expanded_count = i32::try_from(debug_sorted_expanded_source_tids(opaque).len())
+        .expect("expanded count should fit in i32");
+    let rescan_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
+        .expect("emitted count should fit in i32");
+
+    let emit_started = Instant::now();
+    let mut result_count = 0_i32;
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        result_count += 1;
+    }
+    let emit_elapsed_us =
+        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let total_counters = opaque.explain_counters;
+    let final_phase = debug_execution_phase_label(opaque.execution_phase).to_string();
+    let final_ordered_slots = i32::try_from(debug_runtime_ordered_slots(opaque).len())
+        .expect("slot count should fit in i32");
+    let final_emitted_count = i32::try_from(debug_sorted_emitted_tids(opaque).len())
+        .expect("emitted count should fit in i32");
+
+    let total_elapsed_us =
+        i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    (
+        rescan_elapsed_us,
+        emit_elapsed_us,
+        total_elapsed_us,
+        rescan_phase,
+        rescan_current_result,
+        rescan_ordered_slots,
+        rescan_pending_heap_tids,
+        rescan_visited_count,
+        rescan_expanded_count,
+        rescan_emitted_count,
+        i32::try_from(rescan_counters.stats_bootstrap_expansions)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_counters.stats_bootstrap_pages_read)
+            .expect("counter should fit in i32"),
+        rescan_counters.stats_quantizer_cache_hit,
+        result_count,
+        final_phase,
+        final_ordered_slots,
+        i32::try_from(total_counters.stats_bootstrap_expansions)
+            .expect("counter should fit in i32"),
+        i32::try_from(total_counters.stats_bootstrap_pages_read)
+            .expect("counter should fit in i32"),
+        i32::try_from(total_counters.stats_linear_pages_read).expect("counter should fit in i32"),
+        i32::try_from(total_counters.stats_elements_scored).expect("counter should fit in i32"),
+        i32::try_from(total_counters.stats_elements_skipped).expect("counter should fit in i32"),
+        i32::try_from(total_counters.stats_heap_tids_returned).expect("counter should fit in i32"),
+        total_counters.stats_quantizer_cache_hit,
+        final_emitted_count,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
