@@ -153,6 +153,30 @@ HNSW latency artifact and should not be read as tqhnsw scan runtime.
   packet `249`'s per-cell guard and/or after planner-cost tuning
 - `m=16` sweep: not started yet
 
+## Run Update: 2026-04-11 (planner-cost follow-up)
+
+Packet `250` tuned the FR-020 CPU term so the representative real-`10k`
+`m=8, ef_search=200` query now stays on the index:
+
+- `tqhnsw_index_cost_snapshot('tqhnsw_real_10k_m8_idx')` at
+  `SET tqhnsw.ef_search = 200` now reports `modeled_startup_cost = 1403.52`
+- plain `EXPLAIN` again shows:
+
+```text
+Index Scan using tqhnsw_real_10k_m8_idx on tqhnsw_real_10k_corpus
+```
+
+- the verified scratch launcher now succeeds for a one-query smoke at
+  `ef_search=200`:
+
+```text
+m=8   ef_search=200  n=1  p50=413.156ms mean=413.156ms wall=0.43s
+```
+
+That restores the planner side of the `ef_search=200` cell, but this packet
+still needs the full 200-query rerun plus the pending `m=16` sweep before it
+can serve as a durable C1 closeout.
+
 ## Interim Read
 
 The repaired C1 surface now demonstrates the key unblock:
