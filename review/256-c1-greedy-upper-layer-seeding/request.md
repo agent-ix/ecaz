@@ -47,6 +47,27 @@ So the scan runtime is now the outlier.
    surface to see whether the upper-layer bucket collapses materially without
    compromising behavior.
 
+## Progress
+
+The code checkpoint for the greedy shift is now in place and green under the
+required validation gate:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+The concrete code change is narrow:
+
+- expose `graph::greedy_descend_with_successors` to the scan runtime
+- replace scan-time upper-layer result-window seeding with greedy descent to a
+  single candidate
+- keep the layer-0 beam search unchanged, seeded from that single upper-layer
+  result
+
+Measurement is still pending. The next step is to rerun the representative
+hot-path probe and the verified real-corpus `m=8` surface to determine whether
+this slice is worth keeping.
+
 ## Exit criteria
 
 - a pushed checkpoint materially reduces upper-layer seed time on the real C1
