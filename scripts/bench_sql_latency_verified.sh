@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Verified real-corpus latency launcher for tqvector HNSW scans.
 #
-# This is a guarded wrapper around scripts/bench_sql_latency.sh. Before it
-# starts a long real-corpus run, it checks a representative EXPLAIN plan and
-# refuses to proceed unless the planner selects the exact tqhnsw index implied
-# by --prefix/--m. This prevents silent Seq Scan + Sort measurements and also
-# catches cases where the planner picks a different tqhnsw index than the one
-# the operator intended to benchmark.
+# This is a guarded wrapper around scripts/bench_sql_latency.sh. It exports the
+# exact tqhnsw index implied by --prefix/--m and the delegate script verifies,
+# for every (m, ef_search) cell, that the measured query still plans on that
+# index. This prevents silent Seq Scan + Sort measurements and also catches
+# cases where the planner picks a different tqhnsw index than the one the
+# operator intended to benchmark.
 #
 # The verified launcher is intentionally real-corpus-only and intentionally
 # requires at most one effective m per invocation. Run it once per m value.
@@ -15,7 +15,6 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 delegate_script="${repo_root}/scripts/bench_sql_latency.sh"
-PSQL_BIN="${TQV_PSQL_BIN:-psql}"
 
 print_help() {
   cat <<'USAGE'
@@ -26,7 +25,7 @@ Usage:
 Behavior:
   - real-corpus only
   - requires at most one effective m per invocation (defaults to 8)
-  - verifies a representative EXPLAIN plan uses <prefix>_m{N}_idx
+  - verifies every measured (m, ef_search) cell uses <prefix>_m{N}_idx
   - aborts before timing if the plan falls back to Seq Scan + Sort or picks
     a different index than expected
 
@@ -90,39 +89,7 @@ if [[ ! "$declared_m" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
-corpus_table="${prefix}_corpus"
-query_table="${prefix}_queries"
 index_name="${prefix}_m${declared_m}_idx"
-k="${K:-10}"
-
-probe_query="$("$PSQL_BIN" -X -A -t -q -c "SELECT source FROM ${query_table} ORDER BY id LIMIT 1;")"
-if [[ -z "$probe_query" ]]; then
-  echo "no probe query found in ${query_table}; did the loader run?" >&2
-  exit 1
-fi
-if [[ "$probe_query" == *"'"* ]]; then
-  echo "unexpected single quote in probe query literal output from ${query_table}" >&2
-  exit 2
-fi
-
-plan_text="$("$PSQL_BIN" -X -A -t -q <<SQL
-EXPLAIN
-SELECT id FROM ${corpus_table}
-ORDER BY embedding <#> '${probe_query}'::real[]
-LIMIT ${k};
-SQL
-)"
-
-if ! grep -Fq "${index_name}" <<<"$plan_text"; then
-  echo "planner verification failed for ${index_name}" >&2
-  echo "expected the representative plan to use ${index_name}, but it did not." >&2
-  echo "aborting before timing so this launcher does not record Seq Scan + Sort" >&2
-  echo "or the wrong tqhnsw index for the requested m value." >&2
-  echo >&2
-  echo "Representative EXPLAIN plan:" >&2
-  echo "${plan_text}" >&2
-  exit 1
-fi
-
-echo "[verified] representative EXPLAIN uses ${index_name}" >&2
+export TQV_REQUIRE_INDEX_NAME="${index_name}"
+echo "[verified] requiring planner use ${index_name} for every measured cell" >&2
 exec bash "${delegate_script}" "${forwarded_args[@]}"

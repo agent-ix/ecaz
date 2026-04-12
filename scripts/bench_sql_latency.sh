@@ -125,6 +125,37 @@ print_real_corpus_env_banner() {
   echo "max_parallel_workers_per_gather: $parallel_workers"
 }
 
+verify_expected_index_plan() {
+  local corpus_table="$1"
+  local query_literal="$2"
+  local k="$3"
+  local ef="$4"
+  local expected_index="$5"
+
+  local plan_text
+  plan_text="$("$PSQL_BIN" -X -A -t -q <<SQL
+SET tqhnsw.ef_search = ${ef};
+EXPLAIN
+SELECT id FROM ${corpus_table}
+ORDER BY embedding <#> '${query_literal}'::real[]
+LIMIT ${k};
+SQL
+)"
+
+  if ! grep -Fq "${expected_index}" <<<"$plan_text"; then
+    echo "planner verification failed for ${expected_index} at ef_search=${ef}" >&2
+    echo "expected the measured query to use ${expected_index}, but it did not." >&2
+    echo "aborting before timing so this run does not record Seq Scan + Sort" >&2
+    echo "or the wrong tqhnsw index for the requested m value." >&2
+    echo >&2
+    echo "Representative EXPLAIN plan:" >&2
+    echo "${plan_text}" >&2
+    return 1
+  fi
+
+  echo "[verified] planner uses ${expected_index} at ef_search=${ef}" >&2
+}
+
 run_real_corpus_bench() {
   local prefix="$1"
   if [[ ! "$prefix" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
@@ -197,6 +228,14 @@ run_real_corpus_bench() {
     echo "unexpected single quote in query literal output from ${query_table}" >&2
     exit 2
   fi
+  local probe_query=""
+  while IFS= read -r probe_query; do
+    [[ -n "$probe_query" ]] && break
+  done < "$queries_tsv"
+  if [[ -z "$probe_query" ]]; then
+    echo "no probe query found in ${query_table}; did the loader run?" >&2
+    exit 1
+  fi
 
   local results_file
   results_file="$(mktemp -t tqv_latency_real.XXXXXX.txt)"
@@ -209,8 +248,21 @@ run_real_corpus_bench() {
       echo "index ${index_name} not found; build it with scripts/load_real_corpus.py --m ${m}" >&2
       exit 1
     fi
+    if [[ -n "${TQV_REQUIRE_INDEX_NAME:-}" && "${TQV_REQUIRE_INDEX_NAME}" != "${index_name}" ]]; then
+      echo "verified bench expected index ${TQV_REQUIRE_INDEX_NAME}, but current cell resolves to ${index_name}" >&2
+      echo "invoke the verified launcher separately for each m value." >&2
+      exit 2
+    fi
     for ef in "${ef_list[@]}"; do
       echo "--- m=${m} ef_search=${ef} ---"
+      if [[ -n "${TQV_REQUIRE_INDEX_NAME:-}" ]]; then
+        verify_expected_index_plan \
+          "${corpus_table}" \
+          "${probe_query}" \
+          "${k}" \
+          "${ef}" \
+          "${TQV_REQUIRE_INDEX_NAME}"
+      fi
       : > "$results_file"
       local wall_start
       wall_start="$(date +%s.%N)"
