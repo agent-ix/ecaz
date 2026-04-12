@@ -517,3 +517,35 @@ Even after this step-change, `NFR-001` still remains open by a wide margin:
 So C1 is still an optimization lane, but the bottleneck mix has shifted again:
 the 4-bit score path is no longer the clean first target it was before packet
 `257`.
+
+## Run Update: 2026-04-12 (verified warm-cache seam)
+
+Packet `261` extended the verified launcher so warm-cache runs can prime the
+query set and, critically, keep each `(m, ef_search)` cell inside one backend
+session:
+
+- `--warmup-passes N`
+- `--session-mode per-query|per-cell`
+
+The planner/index guard still runs before any warmup or timing, so this warm
+surface remains a verified tqhnsw artifact rather than a forced-plan seam.
+
+Representative `tqhnsw_real_10k`, `m=8`, `ef_search=40` results:
+
+```text
+per-query  warmup=1: p50=50.246ms p95=53.903ms p99=57.319ms mean=50.496ms
+per-cell   warmup=1: p50=15.883ms p95=24.149ms p99=32.691ms mean=16.843ms
+per-cell   warmup=3: p50=14.315ms p95=16.350ms p99=17.613ms mean=14.194ms
+```
+
+That establishes two things:
+
+1. backend/session reuse matters materially for honest warm-cache reporting
+2. even the stronger warm per-cell surface still misses `NFR-001`
+
+So the corrected C1 read is no longer “warm is already solved.” The more
+accurate read is:
+
+- canonical cold verified `10K` surface: still far above target
+- verified warm per-cell `10K` surface: much better, but still about `3x`
+  above the `p50 < 5ms` target and slightly above the `p99 < 15ms` target
