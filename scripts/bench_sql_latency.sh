@@ -486,6 +486,17 @@ if not times_ms:
     print(f"  no per-query timings parsed", file=sys.stderr)
     sys.exit(2)
 
+if timing_mode != "explain":
+    negative_times = [value for value in times_ms if value < 0]
+    if negative_times:
+        print(
+            "  invalid negative per-query timings parsed for "
+            f"{timing_mode}: count={len(negative_times)} "
+            f"min={min(negative_times):.3f}ms; rerun this cell",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
 times_ms.sort()
 n = len(times_ms)
 
