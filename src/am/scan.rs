@@ -25,6 +25,10 @@ enum BootstrapExpandPolicy {
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct ScanDebugProfile {
+    pub(super) amrescan_total_elapsed_us: u64,
+    pub(super) query_decode_elapsed_us: u64,
+    pub(super) scan_setup_elapsed_us: u64,
+    pub(super) store_query_elapsed_us: u64,
     pub(super) prepare_query_elapsed_us: u64,
     pub(super) reset_state_elapsed_us: u64,
     pub(super) initialize_entry_elapsed_us: u64,
@@ -53,6 +57,38 @@ fn reset_scan_debug_profile(opaque: &mut TqScanOpaque) {
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn reset_scan_debug_profile(_opaque: &mut TqScanOpaque) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_amrescan_total_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.amrescan_total_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_amrescan_total_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_query_decode_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.query_decode_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_query_decode_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_scan_setup_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.scan_setup_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_scan_setup_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_store_query_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.store_query_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_store_query_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_prepare_query_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
@@ -227,17 +263,26 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 pgrx::error!("tqhnsw amrescan received null order-by scan keys");
             }
 
+            #[cfg(any(test, feature = "pg_test"))]
+            let amrescan_started = Instant::now();
             let orderby = &*orderbys;
             if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
                 pgrx::error!("tqhnsw scan query must not be NULL");
             }
 
+            #[cfg(any(test, feature = "pg_test"))]
+            let query_decode_started = Instant::now();
             let query = Vec::<f32>::from_polymorphic_datum(
                 orderby.sk_argument,
                 false,
                 pg_sys::FLOAT4ARRAYOID,
             )
             .unwrap_or_else(|| pgrx::error!("tqhnsw scan requires a real[] ORDER BY query"));
+            #[cfg(any(test, feature = "pg_test"))]
+            let query_decode_elapsed_us =
+                u64::try_from(query_decode_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let query_decode_elapsed_us = 0;
             if query.is_empty() {
                 pgrx::error!("tqhnsw scan query must not be empty");
             }
@@ -249,6 +294,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 );
             }
 
+            #[cfg(any(test, feature = "pg_test"))]
+            let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
@@ -284,7 +331,22 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
                 .expect("ef_search should fit in usize")
                 .max(1);
+            #[cfg(any(test, feature = "pg_test"))]
+            let scan_setup_elapsed_us =
+                u64::try_from(scan_setup_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let scan_setup_elapsed_us = 0;
+            record_query_decode_elapsed(opaque, query_decode_elapsed_us);
+            record_scan_setup_elapsed(opaque, scan_setup_elapsed_us);
+            #[cfg(any(test, feature = "pg_test"))]
+            let store_query_started = Instant::now();
             store_scan_query(opaque, &query);
+            #[cfg(any(test, feature = "pg_test"))]
+            let store_query_elapsed_us =
+                u64::try_from(store_query_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let store_query_elapsed_us = 0;
+            record_store_query_elapsed(opaque, store_query_elapsed_us);
             opaque.explain_counters.reset();
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_started = Instant::now();
@@ -335,6 +397,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(not(any(test, feature = "pg_test")))]
             let initial_prefetch_elapsed_us = 0;
             record_initial_prefetch_elapsed(opaque, initial_prefetch_elapsed_us);
+            #[cfg(any(test, feature = "pg_test"))]
+            let amrescan_total_elapsed_us =
+                u64::try_from(amrescan_started.elapsed().as_micros()).expect("timing should fit in u64");
+            #[cfg(not(any(test, feature = "pg_test")))]
+            let amrescan_total_elapsed_us = 0;
+            record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
         })
     }
 }
