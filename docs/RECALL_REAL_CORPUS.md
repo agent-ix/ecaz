@@ -407,10 +407,16 @@ label), which is why the canonical command redirects stdout to a companion
 artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
 gate target.
 
-If the planner surface is not yet active for the target index, the verified
+If the planner surface is not active for the target index, the verified
 launcher aborts before timing and prints the representative plan. That is the
-intended behavior on current `main`: a sequential `Sort -> Seq Scan` plan is
-not a valid HNSW latency artifact.
+guard against silently recording a sequential `Sort -> Seq Scan` plan as an
+HNSW artifact. On current `main`, the canonical `tqhnsw_real_10k` `m=8`
+surface is planner-visible and produces durable NFR-001 artifacts through the
+verified launcher. When comparing alternate `m` values on the same loaded
+corpus, the planner may naturally prefer the cheaper sibling index; in that
+case, use an isolated prefix (for example `tqhnsw_real_10k_m16only`) so the
+verified run measures the intended index honestly rather than forcing the
+planner to lie.
 
 ## Troubleshooting
 

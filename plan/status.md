@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-11
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is now complete on `main`, and D2 planner activation has now landed on its review branch (FR-020 cost model wired into `amcostestimate`, ADR-011 superseded, ReadStream prefetch state and EXPLAIN counters embedded in scan opaque)
+Last updated: 2026-04-12
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, and C1 now has durable real-corpus NFR-001 latency artifacts on `main` after the ordered-scan score-cache rerun, even though the measured surface still misses the spec target by a wide margin
 
 ## Reading Guide
 
@@ -16,8 +16,8 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | --- | ---: | --- |
 | Correctness-complete | 91% | Foundation/build solid; graph-first scan, recall gate, graph-aware insert, and vacuum repair are complete; planner activation and PG18 runtime work remain |
 | Test/validation-complete | 87% | Broad unit/integration/CI coverage exists, with real-corpus recall evidence, live-insert drift observability, bounded stale-snapshot retry coverage, and a 60-second vacuum concurrency harness now in hand; final unsafe hardening remains |
-| Benchmark/profile-complete | 47% | Benchmark harnesses exist, the initial real-corpus recall gate is closed, and merged SIMD microbench evidence now exists on `main`; latency/storage and post-insert/vacuum suites remain |
-| Optimization-complete | 42% | SIMD runtime dispatch, AVX2 FWHT/scoring, NEON 3-bit scoring, and prepared-query hot-path cuts are merged on `main`; scan-path tuning and aarch64 runtime validation remain |
+| Benchmark/profile-complete | 58% | Benchmark harnesses exist, the initial real-corpus recall gate is closed, and durable real-corpus latency artifacts now exist on `main`; storage and broader post-insert/vacuum suites still remain |
+| Optimization-complete | 49% | SIMD runtime dispatch, AVX2 FWHT/scoring, NEON 3-bit scoring, prepared-query hot-path cuts, and the first real scan-path wins are merged on `main`; deeper scan tuning and aarch64 runtime validation remain |
 | Release-ready | 70% | Build packaging and quality infrastructure are in decent shape, the initial recall gate is closed on real data, and vacuum repair now has concurrency validation on `main` |
 | Total project completion | 84% | Weighted overall estimate to final intended scope |
 
@@ -33,7 +33,7 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `A6` | Vacuum repair | Mark/repair/finalize vacuum with graph repair | **Done** | 100% | Mark, repair, finalize, and the 60-second INSERT + scan + VACUUM concurrency harness are merged on `main` |
 | `B1` | SIMD | AVX2+FMA, NEON, runtime detection, equivalence tests, throughput proof | **Substantially complete** | 90% | Merged on `main` on 2026-04-11; x86_64 validation and throughput proof are in hand, while aarch64 runtime validation still needs hardware |
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
-| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 45% | Infrastructure is built; A6 is merged on `main`, and the current latency launcher now fails fast unless the planner picks the requested tqhnsw index, so durable HNSW latency artifacts remain blocked on planner-visible scans |
+| `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 62% | Durable real-corpus NFR-001 latency artifacts now exist on `main` for canonical `m=8` and isolated `m=16`, but the measured surface still misses the spec target badly and NFR-002 remains open |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
 | `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
 | `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 80% | FR-020 cost model now active in `amcostestimate`; ADR-011 marked SUPERSEDED; ReadStream prefetch state + EXPLAIN counters embedded in `TqScanOpaque`; PG18 callback bindings (FR-020-AC-4, FR-024 hook registration) remain follow-ups |
@@ -112,9 +112,9 @@ Testing / validation rollup: 76%
 | Microbenchmark infrastructure | Criterion, iai-callgrind, dhat, Makefile targets, shared generators | Done | 100% | Harnesses are built and validated |
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 84% | Useful baseline numbers exist, and the merged SIMD lane now has current-main vs merged Criterion evidence for `prepare_ip_query` and `score_ip_encoded` |
 | SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
-| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | Not started | 0% | The real-corpus launcher is now planner-verified, but current `main` still falls back to `Sort -> Seq Scan`; first durable HNSW latency/storage artifacts remain blocked on planner-visible tqhnsw scans |
+| End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | In progress | 42% | Durable real-corpus NFR-001 latency artifacts now exist on `main` (`m=8` canonical, `m=16` isolated), but they still miss the latency target badly and NFR-002 storage artifacts are still pending |
 | End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Strong | 78% | The initial real-corpus signoff surface is now closed: canonical real `10K` passes strongly and the broader real `50K` `50`-query gate reports `92.6% / 94.4% / 94.8% / 95.2%`; broader post-gate reporting remains under `C1` |
-| Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Not started | 10% | Premature before graph-first scan is primary |
+| Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Strong | 68% | Real `10K` hot-path profiling is now in hand; graph rereads and then repeated scoring were both measured and converted into merged scan-path wins |
 
 Benchmarking / profiling rollup: 42%
 
@@ -125,8 +125,8 @@ Benchmarking / profiling rollup: 42%
 | Scalar baseline | Working scalar quantizer and scan code paths | Done | 100% | Scalar reference paths are still present and remain the comparison baseline for SIMD validation |
 | Quantizer optimization passes | Deliberate score/encode/hadamard improvement work based on profiling | Strong | 72% | The merged B1 lane now includes padded-SRHT query prep, prepared-query LUT cuts, and AVX2 FWHT/scoring improvements with current-main benchmark evidence |
 | SIMD acceleration | AVX2+FMA, NEON, runtime detection, equivalence proof, throughput proof | **Mostly done** | 90% | Merged on `main`; x86_64 equivalence + throughput proof are complete, and NEON implementation is present but still needs aarch64 runtime validation |
-| Runtime scan optimization | Tuning the graph-first scan hot path | Not started | 10% | A4 is closed; further tuning is now post-gate optimization work rather than recall rescue |
-| Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | Not started | 5% | Some design notes exist, not a real tuning pass yet |
+| Runtime scan optimization | Tuning the graph-first scan hot path | In progress | 40% | Scan-local graph-read and score caches are merged with real-corpus latency wins, but the current NFR-001 surface is still far above target |
+| Memory / buffer tuning | Traversal footprint, buffer behavior, allocator-pressure tuning | In progress | 22% | Shared-buffer churn has already been cut materially on the real `10K` path, but more runtime/memory tuning is still available |
 
 Optimization / SIMD rollup: 18%
 
@@ -155,7 +155,7 @@ Release / quality-gate rollup: 62%
 ## Current Critical Sequence
 
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
-2. **Next runtime lane:** A6 is closed; `C1` can continue hardening benchmark/reporting surfaces, but durable HNSW latency capture still needs planner-visible tqhnsw scans or a forced benchmark seam.
+2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts on `main`; the next C1 work is pure optimization and storage-result follow-through, not benchmark-integrity bring-up.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
 4. **Planner:** D2 cost-model activation has landed on its review branch. ADR-011 is SUPERSEDED. PG18 callback bindings (`amgettreeheight`, `amexplain` hook, ReadStream registration) remain follow-ups gated on the PG18 toolchain.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
@@ -166,6 +166,6 @@ Release / quality-gate rollup: 62%
 | --- | --- | --- |
 | ~~Graph-first ordered scan runtime is not yet primary~~ | ~~`A3`, `A4`, `A5`, `A6`, `C1`, `D2`~~ | **Resolved** (A3 closed 2026-04-08) |
 | Synthetic `10K` still fails badly and remains misleading as a benchmark surface | `C1`, post-gate methodology work | Benchmark methodology lane |
-| Planner-visible tqhnsw scans remain disabled on `main`, so the verified latency launcher currently aborts on `Sort -> Seq Scan` plans | `C1`, `D2` | Planner / benchmark lane |
+| Durable NFR-001 artifacts now exist, but the real-corpus baseline still misses spec badly (`m=8, ef_search=40`: `p50=88.588ms`, `p99=103.261ms` vs `<5ms` / `<15ms`) | `C1` | Runtime optimization lane |
 | ~~ADR-011 planner gate is still active~~ | ~~`D2`~~ | **Resolved** (D2 cost-model activation, 2026-04-11; ADR-011 marked SUPERSEDED) |
 | aarch64 SIMD runtime validation still needs hardware | `B1` | Coder-2 / validation lane |
