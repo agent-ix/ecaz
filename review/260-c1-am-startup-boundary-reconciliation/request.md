@@ -106,6 +106,19 @@ The next step is to lock down that current measurement with a small multi-query
 sample and then decide whether C1 should keep using the existing `EXPLAIN`
 surface as-is or add a complementary plain-query timing harness.
 
+## Checkpoint
+
+- Code checkpoint: `04098c2` `debug: add AM rescan boundary timing probes`
+- Validation:
+  - `cargo test`
+  - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+  - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+- Packet status: open
+
+This checkpoint resolved the packet’s main instrumentation gap: we now have an
+explicit tqhnsw `amrescan` boundary counter and can compare it directly against
+the representative SQL `Index Scan` startup time on the current build.
+
 ## Exit criteria
 
 - this packet explains where the missing AM startup time lives relative to the
