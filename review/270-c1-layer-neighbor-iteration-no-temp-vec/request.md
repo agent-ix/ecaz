@@ -29,22 +29,52 @@ In the current graph and scan helpers:
 This is not expected to be a huge win by itself, but it is a direct
 per-expansion allocation cut in the warm graph traversal path.
 
-## Planned work
+## Implementation
 
-1. Add an in-place layer-neighbor iteration helper in `src/am/graph.rs`.
-2. Rewrite the hot successor-loading paths to use that helper directly instead
-   of allocating an intermediate `Vec<ItemPointer>`.
-3. Preserve the existing public helper behavior for tests/debug callers that
-   still want a materialized `Vec`.
-4. Rerun the full checkpoint gate and the warm verified `10K`, `m=8`,
-   `ef_search=40`, `warm-after-prime3`, `per-cell`, `cached-plan` seam.
+Completed work:
 
-## Exit criteria
+1. Added an in-place layer-neighbor iterator in `src/am/graph.rs`.
+2. Kept `valid_neighbor_tids_for_layer(...)` as a materializing helper for
+   tests/debug callers, but rewired it to build on the new iterator.
+3. Rewrote the generic graph successor-loading helpers and the scan-local
+   cached successor path in `src/am/scan.rs` so they iterate valid layer
+   neighbors directly instead of first allocating a temporary
+   `Vec<ItemPointer>`.
+4. Preserved the existing graph/search semantics and test surfaces.
 
-- hot successor-loading paths stop materializing a temporary neighbor-tid `Vec`
-- existing graph/search tests remain green
+## Result
+
+Current local read on the warm verified `10K`, `m=8`, `ef_search=40`,
+`warm-after-prime3`, `per-cell`, `cached-plan` seam:
+
+```text
+before: p50=10.932ms p95=13.137ms p99=15.059ms mean=10.993ms
+after:  p50=10.753ms p95=12.784ms p99=14.034ms mean=10.720ms
+```
+
+This is still not a major C1-closing step, but it is a clearer win than the
+prior scheduler cleanup: about a `2.5%` mean reduction on the current warm
+steady-state seam, with p50 / p95 / p99 all moving in the right direction.
+
+## Validation
+
+- targeted graph/scan checks:
+  - `cargo test valid_neighbor_tids_for_layer`
+  - `cargo test layer0_successor_candidates_from_elements`
+  - `cargo test run_layer0_beam_search_with_successors`
+  - `cargo test current_candidate_frontier_head_tid`
 - `cargo test`
 - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
 - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - warm verified `10K`, `m=8`, `ef_search=40`, `warm-after-prime3`, `per-cell`,
   `cached-plan` read recorded
+
+All required gates were rerun and completed green after the final graph/scan
+state.
+
+## Conclusion
+
+This slice is worth keeping. The result is large enough to say the per-layer
+neighbor materialization churn was real, not just theoretical. The next slice
+should keep pushing on the same theme and target the remaining temporary
+successor/result vectors rather than opening another measurement seam.
