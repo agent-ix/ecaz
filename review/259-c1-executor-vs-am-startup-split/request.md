@@ -48,6 +48,63 @@ hot path will have sharply diminishing returns.
 3. Record the result in this packet with a concrete recommendation for the next
    optimization seam.
 
+## Checkpoint Findings
+
+This slice added a narrow debug SQL surface,
+`tests.tqhnsw_debug_scan_heap_tids(index_oid, query)`, so the exact top-`k`
+heap TIDs selected by the AM can be compared against a direct heap fetch.
+
+For the representative real-`10k` probe:
+
+- query source: `tqhnsw_real_10k_queries.id = 10000`
+- index: `tqhnsw_real_10k_m8_idx`
+- `ef_search = 40`
+
+the ordered tqhnsw SQL query still reports:
+
+- `Index Scan using tqhnsw_real_10k_m8_idx`
+  - startup: `46.187ms`
+  - total: `52.091ms`
+
+But fetching the exact top-10 heap rows already chosen by the AM via a direct
+`ctid` lookup:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+SELECT id
+FROM tqhnsw_real_10k_corpus
+WHERE ctid = ANY (
+  ARRAY[
+    '(1173,3)'::tid,
+    '(1160,9)'::tid,
+    '(1138,1)'::tid,
+    '(1114,2)'::tid,
+    '(1149,9)'::tid,
+    '(1071,5)'::tid,
+    '(1093,4)'::tid,
+    '(1103,9)'::tid,
+    '(1082,3)'::tid,
+    '(1060,7)'::tid
+  ]
+);
+```
+
+comes back as:
+
+- `Tid Scan`
+  - startup: `0.046ms`
+  - total: `0.084ms`
+  - execution time: `0.123ms`
+
+So the ambiguity from packet `258` is now resolved:
+the missing `~40ms` startup gap is **not** heap/executor row fetch after tqhnsw
+has already selected the rows. It remains on the tqhnsw startup side.
+
+That means the next C1 slice should stay inside the AM boundary and reconcile
+the real SQL startup wall time against the currently under-accounted AM startup
+surface, instead of spending time on heap fetch or executor-visible row lookup
+costs.
+
 ## Exit criteria
 
 - this packet identifies whether the remaining `~40ms` startup gap is primarily
