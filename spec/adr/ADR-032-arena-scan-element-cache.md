@@ -1,164 +1,231 @@
 ---
 id: ADR-032
-title: "Arena-Based Scan Element Cache"
+title: "Node-Centric Approximate-First Scan State"
 status: PROPOSED
 impact: Affects NFR-001, ADR-031
-date: 2026-04-12
+date: 2026-04-13
 ---
-# ADR-032: Arena-Based Scan Element Cache
+# ADR-032: Node-Centric Approximate-First Scan State
 
 ## Context
 
-### Per-element heap allocation on every cache miss
+### ADR-031 proved the remaining lever is algorithmic
 
-The current scan-local graph element cache (`HashMap<ItemPointer, Arc<CachedGraphElement>>`)
-allocates on every cache miss:
+ADR-031 delivered the major warm-path win because it reduced expensive exact work:
 
-1. `Arc::new(CachedGraphElement)` — one heap allocation for the Arc wrapper
-2. `Vec<ItemPointer>` for heaptids — up to 10 × 6 bytes
-3. `Vec<u64>` for binary words (ADR-031 sidecar) — up to 24 × 8 bytes
-4. HashMap entry bookkeeping (hashbrown's per-entry overhead)
+- cached binary state
+- lazy exact scoring
+- real `50k` warm `m=8`, `ef_search=40` down to about `p50=1.48ms`, `mean=1.51ms`
 
-Each `Arc::clone`/`drop` during beam search also touches the atomic reference count, adding
-cache-line contention on the allocator side.
+That result changed the optimization target. The hot path is no longer asking for tiny
+container cleanups first. It is asking for a scan architecture that does less repeated node
+work and makes approximate-first traversal cheaper to sustain.
 
-At `m=8`, `ef_search=40`, a single query traverses ~300-400 elements. On the warm path most
-are cache hits, but on cold startup or when the working set exceeds cache capacity, every miss
-pays the full allocation chain.
+### The weak ADR-032 interpretation was tested and rejected
 
-### pgvector's approach
+Packets `291` and `292` explored the narrow interpretation of ADR-032:
 
-pgvector uses a flat `visited` bitset for deduplication and stack-allocated neighbor arrays
-(`ItemPointerData indextids[HNSW_MAX_M * 2]`). There are zero per-element heap allocations
-during graph traversal. Scores are computed from pinned buffer pages with no intermediate
-copies.
+- packet `291`: element-cache arena only
+- packet `292`: neighbor-cache arena plus inline adjacency fast path
 
-### Current state after ADR-031
+Both validated and both regressed the canonical warm real-`50k` seam. That does **not**
+invalidate a larger ADR-032 redesign. It only invalidates the weak version:
 
-ADR-031 (packets 278-285) shifted the dominant warm cost from scoring to element
-load/cache overhead. The lazy-scoring architecture means exact scoring is deferred, but the
-per-element allocation chain on cache miss remains unchanged. Further warm latency
-improvement requires reducing allocation overhead, not scoring cost.
+- replace one `Arc`/`Vec` ownership boundary at a time
+- keep the current split cache layout
+- keep the current tid-based lookup pattern
+- hope local allocation savings matter on their own
+
+They do not.
+
+### Current scan state is still split across repeated tid lookups
+
+The graph-first path still spreads one logical node's state across multiple scan-local
+structures:
+
+- element cache keyed by `element_tid`
+- neighbor cache keyed by `neighbortid`
+- exact score cache keyed by `element_tid`
+- frontier and result bookkeeping carried as tids rather than stable scan-local node ids
+
+That means the hot path keeps rediscovering and rejoining state that belongs together:
+
+1. load or look up the source element
+2. load or look up its adjacency separately
+3. consult a separate score cache
+4. carry tids through frontier logic, then look the node up again later
+
+If ADR-032 is going to matter, it must attack that repeated node-state churn directly.
+
+## Decision
+
+ADR-032 is reframed as a **node-centric, approximate-first scan redesign**, not as an
+arena-cleanup ADR.
+
+The goal is to make the scan algorithmically cheaper by co-locating all hot query-local
+state for a graph node in one scan-lifetime slot and letting traversal operate on those
+slots directly.
 
 ## Proposal
 
-Replace the per-element `Arc<CachedGraphElement>` cache with a scan-lifetime arena
-allocator. Elements are bump-allocated into a contiguous memory region and referenced by
-index rather than Arc pointer.
+Introduce a fused scan-local node cache keyed by `element_tid`.
 
 ### Design shape
 
-```
-ScanArena {
-    elements: Vec<ArenaElement>,       // flat, pre-sized
-    element_index: HashMap<ItemPointer, u32>,  // TID -> arena slot
-    scores: HashMap<ItemPointer, f32>, // score cache (unchanged)
+```text
+ScanNodeArena {
+    nodes: Vec<CachedGraphNode>,
+    index_by_tid: HashMap<ItemPointer, u32>,
 }
 
-struct ArenaElement {
+CachedGraphNode {
     tid: ItemPointer,
     level: u8,
     deleted: bool,
-    heaptid_count: u8,
-    heaptids: [ItemPointer; 10],       // inline, no Vec
+    heaptids: [ItemPointer; 10] + count,
     neighbortid: ItemPointer,
-    binary_words: [u64; 24],           // inline, no Vec (ADR-031)
+    binary_words: [u64; 24] or wider fallback,
+    neighbors: Option<CachedNeighbors>,
+    exact_score: NodeExactScoreState,
+    traversal: NodeTraversalState,
 }
+
+CachedNeighbors {
+    tids: inline-or-heap adjacency payload,
+    count: usize,
+}
+
+NodeExactScoreState =
+    Unscored
+  | ApproxOnly
+  | Exact(f32)
+
+Frontier / result structures:
+    store node-slot ids rather than element tids
 ```
 
-Key properties:
+### Core properties
 
-1. **Zero per-element heap allocation.** Elements are written into pre-allocated arena slots.
-   No `Arc`, no `Vec`, no per-element `Box`.
+1. **One lookup per node.** Element metadata, binary state, adjacency, and exact-score
+   lifecycle live behind one slot id.
 
-2. **Inline fixed-size fields.** Heaptids (10 × 6B = 60B) and binary words (24 × 8B = 192B)
-   are stored inline on the arena element. These are bounded by compile-time constants
-   (`HEAPTID_INLINE_CAPACITY`, binary word count derived from dimensions).
+2. **Lazy adjacency fill.** A node slot can exist before adjacency is decoded. Source
+   expansion populates `neighbors` on first need, then reuses it from the same slot.
 
-3. **Pre-sized arena.** The arena can be sized to `ef_search * expected_expansion_factor` at
-   scan start. If it fills, it grows like a `Vec` but without per-element allocation.
+3. **Exact-score-once semantics.** Once a node graduates from approximate-only to exact, the
+   score is attached to the node slot itself instead of living in a side cache keyed by tid.
 
-4. **No reference counting.** Elements are referenced by `u32` arena index. No atomic
-   refcount operations. The arena is dropped in bulk at scan end.
+4. **Slot-based traversal.** Frontier candidates, visible seeds, binary-prefilter survivors,
+   and result materialization can all operate on scan-local slot ids instead of repeated
+   tid re-lookups.
 
-5. **Cache-friendly layout.** Contiguous arena storage means sequential element access
-   benefits from hardware prefetch, unlike chasing `Arc` pointers scattered across the heap.
+5. **Approximate-first traversal support.** Because approximate state and exact-score
+   lifecycle live together, the scan can postpone exact work until a node becomes
+   competitive, rather than bouncing between caches to recover the same state.
 
-### Neighbor cache
+## Why this is different from packets 291 and 292
 
-The neighbor cache (`HashMap<ItemPointer, Arc<GraphNeighbors>>`) has the same pattern:
-`Arc::new(GraphNeighbors)` with an internal `Vec<ItemPointer>`. This can use a parallel
-arena with a fixed-size neighbor array (`[ItemPointer; MAX_M * 2]`).
+Packets `291` and `292` only changed ownership shape locally.
 
-### Migration path
+This ADR instead changes the **unit of scan state** from:
 
-1. Introduce `ArenaElement` with inline arrays as an internal type in `scan.rs`
-2. Replace `Arc<CachedGraphElement>` with arena index in the element cache
-3. Replace `Arc<GraphNeighbors>` with arena index in the neighbor cache
-4. Update all beam-search and successor functions to use arena references
-5. Benchmark warm and cold paths on real 50K corpus
+- separate element object
+- separate adjacency object
+- separate exact-score cache entry
 
-This is a scan-internal refactor — it does not change page layout, tuple encoding, or the
-graph read API. External consumers (build, vacuum, insert) continue using the existing
-`GraphElement` / `GraphNeighbors` types.
+to:
+
+- one node slot with one lifecycle
+
+That is the minimum redesign that has a plausible path to being algorithmically cheaper
+rather than cosmetically cheaper.
+
+## Non-Goals
+
+- no new persisted index format
+- no new quantizer or scoring codec
+- no change to on-disk tuple layout in this ADR
+- no claim that arena allocation alone is the win
+
+ADR-030 remains the larger index-v2 encoding/layout project. ADR-032 is a scan-runtime
+redesign for the current persisted format.
+
+That sequencing is intentional:
+
+- ADR-031 is already very promising on the current format
+- ADR-032 is the larger scan-runtime redesign that tries to push that promising path further
+- ADR-030 is still the bigger persisted encoding/layout redesign and should remain separate
+  from this runtime lane
+
+## Initial implementation direction
+
+The first legitimate ADR-032 code slice should:
+
+1. introduce `CachedGraphNode` plus `ScanNodeArena`
+2. key the scan-local cache only by `element_tid`
+3. move adjacency onto the same node slot as lazy state
+4. preserve current scan semantics while converting frontier expansion to node slots
+
+Only after that seam exists should follow-on slices decide whether to:
+
+- collapse the separate exact-score cache fully into node slots
+- carry more traversal state per node
+- let broader approximate-first ranking operate on slots directly
 
 ## Expected Impact
 
-### Allocation reduction
+### Primary
 
-Per cache miss, eliminates:
-- 1 × `Arc` allocation (~32-48 bytes + allocator overhead)
-- 1 × `Vec<ItemPointer>` (60 bytes + allocator overhead)
-- 1 × `Vec<u64>` (192 bytes + allocator overhead)
-- Atomic refcount operations on every `Arc::clone`/`drop`
+- fewer repeated joins between element state, adjacency state, and score state
+- fewer redundant tid-based cache lookups on the hot path
+- cleaner exact-score-once lifecycle
+- better substrate for stronger ADR-031 follow-on filtering
 
-### Latency estimate
+### Secondary
 
-The allocation chain is not the dominant cost at ~4.7ms (50K warm), but it is the next
-addressable seam after scoring cost was reduced by ADR-031. Expected improvement: 5-15% on
-warm cache-miss-heavy workloads, potentially more on cold startup where most elements are
-misses.
+- less `Arc`/`Vec` churn as a side effect
+- better locality from co-locating per-node state
 
-### Interaction with ADR-031 persisted sidecar
-
-With persisted binary sidecars (packet 285), the arena element can read binary words
-directly from the page without an intermediate `Vec`. The inline `[u64; 24]` is populated
-by copying from the borrowed `TqElementTupleRef` sidecar bytes — a single `memcpy` into
-the pre-allocated slot.
+The secondary effects are welcome, but they are not the reason for the ADR.
 
 ## Risks
 
-1. **Fixed-size arrays waste memory for small elements.** An element with 1 heaptid and no
-   binary words still occupies the full `ArenaElement` size (~320 bytes). At `ef_search=40`
-   with ~400 elements, the arena would be ~128KB — well within L2 cache.
+1. **Large refactor surface.** This touches scan-local caches, frontier bookkeeping, and
+   result materialization together.
 
-2. **Arena index lifetime.** Arena indices are only valid for the scan lifetime. Misuse
-   (stashing an arena index across scans) would be a correctness bug. This is the same
-   lifetime constraint as the current raw-pointer scan opaque state.
+2. **Slot lifetime correctness.** Slot ids are scan-lifetime objects. Any leakage across
+   rescans would be a correctness bug.
 
-3. **Larger refactor surface.** Every function that currently takes `Arc<CachedGraphElement>`
-   must change to take an arena reference or index. This is a broad scan-internal change.
+3. **May still not be enough.** If the dominant remaining cost is exact-score count rather
+   than node-state churn, ADR-032 may only become valuable when paired with a stronger
+   ADR-031 filtering seam.
 
 ## Decision Criteria
 
-- Warm 50K latency improvement measurable on verified harness
-- Cold startup latency improvement (first-query-after-restart) measurable
-- No recall regression on the real corpus summary harness
-- Clean cargo test / pgrx test / clippy gates
+- canonical warm real-`50k` seam improves beyond the kept ADR-031 Tier 1 baseline
+- exact-score pressure or repeated node-state churn is measurably reduced
+- no recall regression on the real-corpus summary harness
+- clean `cargo test`, `cargo pgrx test pg17`, and clippy gates on kept slices
 
 ## Status
 
-PROPOSED and now under active exploration on the dedicated `adr032-arena-scan-cache`
-branch.
+PROPOSED and reframed on the dedicated `adr032-arena-scan-cache` branch.
 
-Tier 1 is complete and kept. Tier 2 was implemented and measured in packet `290`, then
-discarded after it regressed the canonical warm real-`50k` ADR-031 seam. That leaves the
-arena refactor as the next legitimate path for pushing beyond the current kept Tier 1
-surface.
+Packets `291` and `292` are now treated as **rejected weak variants** of the ADR, not as the
+ADR itself. They showed that local arena/cache substitutions alone do not move the kept
+ADR-031 warm path in the right direction.
+
+The next legitimate ADR-032 slice is a fused node-centric scan cache, not another isolated
+`Arc`/`Vec` ownership swap.
+
+ADR-032 is being run down before ADR-030 specifically because ADR-031 already has a strong
+signal on the current persisted format, so the next rational question is whether a larger
+scan-runtime redesign can compound that win before taking on the bigger index-v2 format work.
 
 ## References
 
-- Packet 278: Introduced `CachedGraphElement` without code payload
-- Packet 281: ADR-031 cached binary prefilter, showed allocation chain is the remaining cost
-- Packet 285: Persisted binary sidecar, inline arena read path
-- pgvector `hnswutils.c`: Zero-allocation graph traversal reference
+- packet `281`: ADR-031 cached binary prefilter runtime win
+- packet `287`: ADR-031 Tier 1 inline scan cache keep
+- packet `291`: rejected element-cache-only arena variant
+- packet `292`: rejected neighbor-cache-only arena variant
+- `pgvector` `hnswutils.c`: reference point for tight scan-local node handling
