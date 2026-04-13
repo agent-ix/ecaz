@@ -59,3 +59,76 @@ Record:
   outputs at `ef_search=128` and `200`
 - the packet makes a clear call on whether ADR-031 validation is now sufficient
   on the loaded `m=8` fixture
+
+## Bounded Results
+
+Commands used:
+
+```bash
+./scripts/run_real_corpus_recall_scratch.sh summary \
+  --index tqhnsw_real_50k_m8_idx \
+  --m 8 \
+  --ef-search 128 \
+  --corpus-table tqhnsw_real_50k_corpus \
+  --queries-table tqhnsw_real_50k_queries_200_adr031
+```
+
+```bash
+./scripts/run_real_corpus_recall_scratch.sh summary \
+  --index tqhnsw_real_50k_m8_idx \
+  --m 8 \
+  --ef-search 200 \
+  --corpus-table tqhnsw_real_50k_corpus \
+  --queries-table tqhnsw_real_50k_queries_200_adr031
+```
+
+Observed outputs:
+
+```text
+ef_search=128
+graph_recall_at_10=0.8875
+graph_recall_at_100=0.8557
+ndcg_at_10=0.9265069
+mean_abs_score_error=0.005824261
+spearman_rho_at_10=0.771818
+exact_quantized_recall_at_10=0.8425
+graph_below_exact_queries=1
+worst_exact_gap=1
+```
+
+```text
+ef_search=200
+graph_recall_at_10=0.8965
+graph_recall_at_100=0.8835
+ndcg_at_10=0.9326531
+mean_abs_score_error=0.0058192904
+spearman_rho_at_10=0.78615135
+exact_quantized_recall_at_10=0.8425
+graph_below_exact_queries=2
+worst_exact_gap=1
+```
+
+Interpretation:
+
+- unlike the `ef_search=40` seam from packet `283`, the higher-`ef_search`
+  graph outputs are not in exact per-query parity with the quantized oracle on
+  this bounded sample
+- the mismatch is small (`1-2` queries, worst gap `1`), and the aggregate graph
+  recall is actually higher than the exact-quantized recall versus fp32 truth
+- that means these summaries do not show a large ADR-031 regression, but they
+  also do not prove exact live-vs-oracle parity at higher `ef_search`
+
+## Readout
+
+ADR-031 validation is sufficient at the latency target seam (`m=8`,
+`ef_search=40`) on the loaded `50k` fixture.
+
+Higher-`ef_search` runtime behavior is still acceptable on this bounded sample,
+but it remains an open question whether the small live-vs-oracle divergence is
+new with ADR-031 or just the same preexisting HNSW behavior at higher
+`ef_search`.
+
+If that distinction matters before the next implementation step, the right
+follow-on is not another blind summary run. The right follow-on is an explicit
+A/B seam that compares ADR-031 enabled vs disabled on the same build, or a
+full gate rerun after loading the missing `m=16` index.
