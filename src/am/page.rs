@@ -159,6 +159,79 @@ pub struct TqElementTuple {
     pub code: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TqElementTupleRef<'a> {
+    pub level: u8,
+    pub deleted: bool,
+    heaptid_bytes: &'a [u8],
+    heaptid_count: usize,
+    pub gamma: f32,
+    pub neighbortid: ItemPointer,
+    pub code: &'a [u8],
+}
+
+impl<'a> TqElementTupleRef<'a> {
+    pub fn decode(input: &'a [u8], code_len: usize) -> Result<Self, String> {
+        let expected_len = TqElementTuple::encoded_len(code_len);
+        if input.len() != expected_len {
+            return Err(format!(
+                "element tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_ELEMENT_TAG {
+            return Err(format!("invalid element tuple tag: {}", input[0]));
+        }
+
+        let heaptid_bytes_start = 3;
+        let heaptid_bytes_len = HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES;
+        let heaptid_bytes = &input[heaptid_bytes_start..heaptid_bytes_start + heaptid_bytes_len];
+        let mut cursor = heaptid_bytes_start + heaptid_bytes_len;
+
+        let heaptid_count = input[cursor] as usize;
+        cursor += 1;
+        if heaptid_count > HEAPTID_INLINE_CAPACITY {
+            return Err(format!(
+                "invalid heap tid count: got {heaptid_count}, max {}",
+                HEAPTID_INLINE_CAPACITY
+            ));
+        }
+
+        let gamma = f32::from_le_bytes(input[cursor..cursor + 4].try_into().expect("gamma bytes"));
+        cursor += 4;
+        let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
+        cursor += ITEM_POINTER_BYTES;
+
+        Ok(Self {
+            level: input[1],
+            deleted: input[2] != 0,
+            heaptid_bytes,
+            heaptid_count,
+            gamma,
+            neighbortid,
+            code: &input[cursor..],
+        })
+    }
+
+    pub fn heaptid_count(&self) -> usize {
+        self.heaptid_count
+    }
+
+    pub fn heaptids(&self) -> impl Iterator<Item = ItemPointer> + '_ {
+        self.heaptid_bytes
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .take(self.heaptid_count)
+            .map(|chunk| {
+                ItemPointer::decode(chunk)
+                    .expect("borrowed element tuple view should only expose validated tid bytes")
+            })
+    }
+
+    pub fn collect_heaptids(&self) -> Vec<ItemPointer> {
+        self.heaptids().collect()
+    }
+}
+
 impl TqElementTuple {
     pub fn encode(&self) -> Result<Vec<u8>, String> {
         if self.heaptids.len() > HEAPTID_INLINE_CAPACITY {
@@ -197,53 +270,14 @@ impl TqElementTuple {
     }
 
     pub fn decode(input: &[u8], code_len: usize) -> Result<Self, String> {
-        let expected_len = 1
-            + 1
-            + 1
-            + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
-            + 1
-            + 4
-            + ITEM_POINTER_BYTES
-            + code_len;
-        if input.len() != expected_len {
-            return Err(format!(
-                "element tuple length mismatch: got {}, expected {expected_len}",
-                input.len()
-            ));
-        }
-        if input[0] != TQ_ELEMENT_TAG {
-            return Err(format!("invalid element tuple tag: {}", input[0]));
-        }
-
-        let mut cursor = 3;
-        let mut heaptids = Vec::with_capacity(HEAPTID_INLINE_CAPACITY);
-        for _ in 0..HEAPTID_INLINE_CAPACITY {
-            let tid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
-            heaptids.push(tid);
-            cursor += ITEM_POINTER_BYTES;
-        }
-
-        let heaptid_count = input[cursor] as usize;
-        cursor += 1;
-        if heaptid_count > HEAPTID_INLINE_CAPACITY {
-            return Err(format!(
-                "invalid heap tid count: got {heaptid_count}, max {}",
-                HEAPTID_INLINE_CAPACITY
-            ));
-        }
-
-        let gamma = f32::from_le_bytes(input[cursor..cursor + 4].try_into().expect("gamma bytes"));
-        cursor += 4;
-        let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
-        cursor += ITEM_POINTER_BYTES;
-
+        let element = TqElementTupleRef::decode(input, code_len)?;
         Ok(Self {
-            level: input[1],
-            deleted: input[2] != 0,
-            heaptids: heaptids.into_iter().take(heaptid_count).collect(),
-            gamma,
-            neighbortid,
-            code: input[cursor..].to_vec(),
+            level: element.level,
+            deleted: element.deleted,
+            heaptids: element.collect_heaptids(),
+            gamma: element.gamma,
+            neighbortid: element.neighbortid,
+            code: element.code.to_vec(),
         })
     }
 
@@ -670,6 +704,29 @@ mod tests {
         let encoded = tuple.encode().unwrap();
         let decoded = TqElementTuple::decode(&encoded, 32).unwrap();
         assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn element_tuple_ref_exposes_borrowed_code_and_live_heaptids() {
+        let tuple = TqElementTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(10, 1), tid(11, 2)],
+            gamma: 0.75,
+            neighbortid: tid(20, 4),
+            code: vec![0xAB; 24],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqElementTupleRef::decode(&encoded, 24).unwrap();
+
+        assert_eq!(decoded.level, tuple.level);
+        assert_eq!(decoded.deleted, tuple.deleted);
+        assert_eq!(decoded.heaptid_count(), tuple.heaptids.len());
+        assert_eq!(decoded.collect_heaptids(), tuple.heaptids);
+        assert_eq!(decoded.gamma.to_bits(), tuple.gamma.to_bits());
+        assert_eq!(decoded.neighbortid, tuple.neighbortid);
+        assert_eq!(decoded.code, tuple.code.as_slice());
     }
 
     #[test]

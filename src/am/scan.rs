@@ -138,6 +138,27 @@ fn record_stage_ordered_results_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_stage_ordered_results_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct CachedGraphElement {
+    tid: page::ItemPointer,
+    level: u8,
+    deleted: bool,
+    heaptids: Vec<page::ItemPointer>,
+    neighbortid: page::ItemPointer,
+}
+
+impl CachedGraphElement {
+    fn from_tuple_ref(tid: page::ItemPointer, element: page::TqElementTupleRef<'_>) -> Self {
+        Self {
+            tid,
+            level: element.level,
+            deleted: element.deleted,
+            heaptids: element.collect_heaptids(),
+            neighbortid: element.neighbortid,
+        }
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 fn record_initial_prefetch_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
     opaque.debug_profile.initial_prefetch_elapsed_us += elapsed_us;
@@ -591,7 +612,7 @@ fn free_scan_score_cache(opaque: &mut TqScanOpaque) {
 
 fn graph_element_cache_mut(
     opaque: &mut TqScanOpaque,
-) -> &mut HashMap<page::ItemPointer, Arc<graph::GraphElement>> {
+) -> &mut HashMap<page::ItemPointer, Arc<CachedGraphElement>> {
     if opaque.graph_element_cache.is_null() {
         opaque.graph_element_cache = Box::into_raw(Box::new(HashMap::new()));
     }
@@ -617,31 +638,23 @@ fn score_cache_mut(opaque: &mut TqScanOpaque) -> &mut HashMap<page::ItemPointer,
     unsafe { &mut *opaque.score_cache }
 }
 
-unsafe fn cached_scan_element_score(
-    opaque: *mut TqScanOpaque,
+unsafe fn score_and_cache_scan_element(
+    opaque: &mut TqScanOpaque,
     element_tid: page::ItemPointer,
     gamma: f32,
     code_bytes: &[u8],
 ) -> f32 {
-    let opaque_ref = unsafe { &mut *opaque };
-    if !opaque_ref.score_cache.is_null() {
-        if let Some(score) = unsafe { &*opaque_ref.score_cache }.get(&element_tid) {
-            record_score_cache_hit(opaque_ref);
-            return *score;
-        }
-    }
-
-    record_score_cache_miss(opaque_ref);
+    record_score_cache_miss(opaque);
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
-    let score = score_scan_element_result(opaque_ref, gamma, code_bytes);
+    let score = unsafe { score_scan_element_result(opaque, gamma, code_bytes) };
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
         u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let elapsed_us = 0;
-    record_candidate_score_elapsed(opaque_ref, elapsed_us);
-    score_cache_mut(opaque_ref).insert(element_tid, score);
+    record_candidate_score_elapsed(opaque, elapsed_us);
+    score_cache_mut(opaque).insert(element_tid, score);
     score
 }
 
@@ -649,19 +662,35 @@ unsafe fn cached_graph_element(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
-) -> Arc<graph::GraphElement> {
+) -> (Arc<CachedGraphElement>, Option<f32>) {
     let opaque_ref = unsafe { &mut *opaque };
     if !opaque_ref.graph_element_cache.is_null() {
         if let Some(element) = unsafe { &*opaque_ref.graph_element_cache }.get(&element_tid) {
             record_graph_element_cache_hit(opaque_ref);
-            return Arc::clone(element);
+            return (Arc::clone(element), None);
         }
     }
 
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
+    let mut cached_score = None;
     let element = Arc::new(unsafe {
-        graph::load_graph_element(index_relation, element_tid, opaque_ref.scan_code_len)
+        graph::with_graph_element_tuple(
+            index_relation,
+            element_tid,
+            opaque_ref.scan_code_len,
+            |element| {
+                if !element.deleted && element.heaptid_count() > 0 {
+                    cached_score = Some(score_and_cache_scan_element(
+                        opaque_ref,
+                        element_tid,
+                        element.gamma,
+                        element.code,
+                    ));
+                }
+                CachedGraphElement::from_tuple_ref(element_tid, element)
+            },
+        )
     });
     #[cfg(any(test, feature = "pg_test"))]
     let elapsed_us =
@@ -670,7 +699,43 @@ unsafe fn cached_graph_element(
     let elapsed_us = 0;
     record_graph_element_cache_miss_load(opaque_ref, elapsed_us);
     graph_element_cache_mut(opaque_ref).insert(element_tid, Arc::clone(&element));
-    element
+    debug_assert!(
+        element.deleted
+            || element.heaptids.is_empty()
+            || cached_score.is_some(),
+        "live graph elements should populate the scan-local score cache on load"
+    );
+    (element, cached_score)
+}
+
+unsafe fn cached_graph_element_and_score(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> (Arc<CachedGraphElement>, Option<f32>) {
+    let (element, loaded_score) = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+    if element.deleted || element.heaptids.is_empty() {
+        return (element, None);
+    }
+    if let Some(score) = loaded_score {
+        return (element, Some(score));
+    }
+
+    let opaque_ref = unsafe { &mut *opaque };
+    let score = if opaque_ref.score_cache.is_null() {
+        None
+    } else {
+        unsafe { &*opaque_ref.score_cache }.get(&element_tid).copied()
+    }
+    .unwrap_or_else(|| {
+        pgrx::error!(
+            "tqhnsw scan score cache missed cached live graph element {}:{}",
+            element_tid.block_number,
+            element_tid.offset_number
+        )
+    });
+    record_score_cache_hit(opaque_ref);
+    (element, Some(score))
 }
 
 unsafe fn cached_graph_neighbors(
@@ -703,8 +768,8 @@ unsafe fn cached_graph_adjacency(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
-) -> (Arc<graph::GraphElement>, Arc<graph::GraphNeighbors>) {
-    let element = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
+) -> (Arc<CachedGraphElement>, Arc<graph::GraphNeighbors>) {
+    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, element_tid) };
     let neighbors = unsafe { cached_graph_neighbors(index_relation, opaque, element.neighbortid) };
     (element, neighbors)
 }
@@ -733,11 +798,9 @@ where
         layer,
         |neighbor_tid| {
             if keep_neighbor_tid(neighbor_tid) {
-                let neighbor = unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
-                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
-                    let score = unsafe {
-                        cached_scan_element_score(opaque, neighbor.tid, neighbor.gamma, &neighbor.code)
-                    };
+                let (neighbor, score) =
+                    unsafe { cached_graph_element_and_score(index_relation, opaque, neighbor_tid) };
+                if let Some(score) = score {
                     candidates.push(search::BeamCandidate::with_source(
                         neighbor.tid,
                         score,
@@ -1010,7 +1073,7 @@ unsafe fn materialize_graph_result_candidate(
     }
 
     opaque.explain_counters.record_bootstrap_page_read();
-    let element = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
     if element.deleted || element.heaptids.is_empty() {
         opaque.explain_counters.record_element_skipped();
         return None;
@@ -1278,14 +1341,16 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    let entry = unsafe { cached_graph_element(index_relation, opaque, metadata.entry_point) };
+    let (entry, entry_score) =
+        unsafe { cached_graph_element_and_score(index_relation, opaque, metadata.entry_point) };
     if entry.deleted || entry.heaptids.is_empty() {
         return;
     }
 
-    let entry_score =
-        unsafe { cached_scan_element_score(opaque, entry.tid, entry.gamma, &entry.code) };
-    let entry_candidate = search::BeamCandidate::new(entry.tid, entry_score);
+    let entry_candidate = search::BeamCandidate::new(
+        entry.tid,
+        entry_score.expect("live entry candidates should have a cached score"),
+    );
     let opaque_ptr = opaque as *mut TqScanOpaque;
     #[cfg(any(test, feature = "pg_test"))]
     let upper_layer_started = Instant::now();
@@ -2071,7 +2136,7 @@ pub(super) struct TqScanOpaque {
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
-    pub(super) graph_element_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphElement>>,
+    pub(super) graph_element_cache: *mut HashMap<page::ItemPointer, Arc<CachedGraphElement>>,
     pub(super) graph_neighbor_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphNeighbors>>,
     pub(super) score_cache: *mut HashMap<page::ItemPointer, f32>,
     pub(super) candidate_frontier: *mut VisibleCandidateFrontierState,
@@ -2323,14 +2388,12 @@ mod tests {
         let mut opaque = TqScanOpaque::default();
         graph_element_cache_mut(&mut opaque).insert(
             tid(91, 1),
-            Arc::new(graph::GraphElement {
+            Arc::new(CachedGraphElement {
                 tid: tid(91, 1),
                 level: 1,
                 deleted: false,
                 heaptids: vec![tid(191, 1)],
-                gamma: 1.0,
                 neighbortid: tid(91, 2),
-                code: vec![7, 9],
             }),
         );
         graph_neighbor_cache_mut(&mut opaque).insert(

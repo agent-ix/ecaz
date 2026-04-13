@@ -47,6 +47,23 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
+pub(crate) unsafe fn with_graph_element_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    code_len: usize,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqElementTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, element_tid, "element", |tuple_bytes| {
+            Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"))
+}
+
 pub(crate) unsafe fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
