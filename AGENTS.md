@@ -35,16 +35,35 @@ Each review topic is a directory under `review/`:
 - If new feedback is present for a topic you own, process it before starting new implementation work.
 - Do not close review requests yourself. Leave requests open until an outside reviewer has responded.
 - Do not re-triage closed review topics unless an outside reviewer reopens them.
+- Treat each significant implementation or investigation attempt as its own review topic.
+- A review packet draft is only for preserving in-progress work on the current attempt if that
+  attempt runs long.
+- If the approach, hypothesis, or measurement seam changes in a meaningful way, start a new review
+  packet before continuing.
+- Do not append multiple distinct attempts to one long-lived packet just because they are related
+  to the same ADR or milestone.
+- Failed attempts still need their own packet so the branch preserves a readable experiment log.
 
 ## Checkpoint Rules
 
 - Work in narrow, testable slices.
+- Keep packet scope narrow: one packet should correspond to one concrete slice or experiment.
 - After each code checkpoint, run:
   - `cargo test`
   - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - Commit each green code checkpoint.
-- After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
+- If a slice is still in progress after a while, update that slice's packet draft before continuing
+  so partial work is recorded.
+- After a checkpoint, add or update the matching review request in `review/` and commit that
+  review-packet update separately.
+- When starting a new significant attempt, create a new packet instead of reusing the previous
+  attempt's packet.
+- Record all known measurements for that attempt in the packet, not just one summary number.
+- If an attempt has multiple runs, list each run's result or explicitly account for why a run was
+  discarded as invalid/noise.
+- If one result is called out as representative, label it as representative without omitting the
+  other known results for that attempt.
 - Push committed checkpoints and review-packet updates to the remote immediately after committing. Feedback that exists only locally is invisible to other agents.
 
 ## Reviewer Workflow
