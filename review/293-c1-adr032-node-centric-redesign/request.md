@@ -91,6 +91,60 @@ actual redesign seam:
 4. only then judge whether ADR-032 is reducing repeated node-state churn in a way that can beat
    the kept ADR-031 baseline
 
+## Attempted Second Cut: Slot-Based Frontier + Bootstrap Scheduler
+
+I then implemented the first real slot-based ADR-032 slice:
+
+- introduce a scan-local `ScanNodeArena`
+- keep one cached node object per `element_tid`
+- move frontier and bootstrap scheduler storage to node-slot ids internally
+- keep the test/readout helpers projecting slots back to tids so the existing review surface
+  stays readable
+
+This is the first slice that actually exercised the intended ADR-032 architecture instead of
+ another cache-shape substitution.
+
+## Validation
+
+The slot-based cut was fully green before measurement:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+## Measurement: Slot-Based Frontier Cut
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- standing ADR-031 Tier 1 baseline: `p50~=1.480-1.485ms`, `mean~=1.507-1.510ms`
+- slot-based cut run 1: `p50=1.548ms`, `p99=2.636ms`, `mean=1.592ms`
+- slot-based cut run 2: `p50=1.542ms`, `p99=2.623ms`, `mean=1.579ms`
+
+So the first actual slot-based traversal cut is still slower than the kept ADR-031 Tier 1
+baseline by about `0.07-0.09ms`.
+
+## Conclusion: Stronger Than The First Cut, Still Not A Keep
+
+This second cut is stronger than the earlier fused-node-cache discard because it really does
+move frontier and scheduler state onto stable node slots. But it still does not beat the
+kept ADR-031 path on the canonical warm seam.
+
+The runtime code for this slot-based cut was also discarded after the confirmation rerun.
+
+## Current Read
+
+ADR-032 is not dead, but the evidence is now sharper:
+
+- cache-shape substitutions alone do not help
+- slot-based frontier bookkeeping alone also does not help enough
+- if ADR-032 is going to matter, the next slice must reduce expensive work per traversal step,
+  not just where the state is stored
+
+The likely next legitimate ADR-032 question is no longer "can slots replace tids?" but
+"can a slot-centric scan state reduce exact-score pressure or avoid redundant source expansion
+in a way the current ADR-031 path does not?"
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
