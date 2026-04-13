@@ -215,6 +215,17 @@ Packets `291` and `292` are now treated as **rejected weak variants** of the ADR
 ADR itself. They showed that local arena/cache substitutions alone do not move the kept
 ADR-031 warm path in the right direction.
 
+The first actual slot-based frontier/scheduler cut also did not beat the kept ADR-031 path.
+That result matters: it means "replace tids with slots" is not, by itself, enough to justify
+ADR-032.
+
+The next viable ADR-032 question is therefore narrower and more demanding:
+
+- can a slot-centric scan state reduce exact-score pressure, source-expansion churn, or other
+  expensive work per traversal step
+- not merely whether the same work can be routed through a cleaner node-centric bookkeeping
+  shape
+
 The next legitimate ADR-032 slice is a fused node-centric scan cache, not another isolated
 `Arc`/`Vec` ownership swap.
 
