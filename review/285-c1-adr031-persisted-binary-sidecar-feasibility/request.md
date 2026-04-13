@@ -114,6 +114,51 @@ The next implementation slice should be:
 3. teach graph/scan reads to use the persisted sidecar when present and derive
    only as fallback
 
+## Implementation Checkpoint
+
+The first persisted-sidecar slice is now implemented and green.
+
+What landed:
+
+- [src/am/page.rs](/home/peter/dev/tqvector/src/am/page.rs)
+  - `TqElementTuple` now supports an optional trailing binary sidecar
+  - `TqElementTupleRef` can decode both old tuples and new tuples with trailing
+    persisted binary words
+  - borrowed readers can access `binary_word_count()` /
+    `collect_binary_words()`
+- [src/am/build.rs](/home/peter/dev/tqvector/src/am/build.rs)
+  - bulk build now writes persisted ADR-031 binary words on the supported
+    no-QJL `4-bit` lane
+  - initial page-fit checks account for the larger element tuple size
+- [src/am/scan.rs](/home/peter/dev/tqvector/src/am/scan.rs)
+  - scan-local graph caching now prefers the persisted binary sidecar when it
+    exists and only derives from code bytes as fallback
+- [src/am/insert.rs](/home/peter/dev/tqvector/src/am/insert.rs)
+  - incremental inserts still write the old shape for now (`binary_words = []`)
+  - read compatibility is preserved because decode accepts both tuple lengths
+
+What did **not** land yet:
+
+- no reloption or user-facing knob
+- no insert-path sidecar write support yet
+- no measurement yet for whether persisted sidecars materially improve the cold
+  real-corpus seam
+
+Validation:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+All three gates are green for this checkpoint.
+
+## Next Step
+
+Install the release build into the scratch pg17 server, rebuild the real `50k`
+fixture so element tuples actually contain persisted sidecars, then take the
+first cold-path ADR-031 measurement. That will tell us whether persisted
+sidecars are worth carrying beyond the already-good cached warm path.
+
 ## Success Criteria
 
 - the packet records the relevant storage/layout seams
