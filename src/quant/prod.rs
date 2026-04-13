@@ -26,6 +26,13 @@ pub struct PreparedQuery {
     pub qjl_scale: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Int8ApproxNoQjl4BitQuery {
+    pub codebook: [i8; 16],
+    pub rotated: Vec<i8>,
+    pub score_scale: f32,
+}
+
 #[derive(Debug)]
 pub struct ProdQuantizer {
     pub transform_dim: usize,
@@ -205,6 +212,48 @@ impl ProdQuantizer {
         self.score_ip_from_split_parts(prepared, gamma, mse_packed, qjl_packed)
     }
 
+    pub fn prepare_ip_query_int8_approx_no_qjl_4bit(
+        &self,
+        query: &[f32],
+    ) -> Int8ApproxNoQjl4BitQuery {
+        assert_eq!(
+            query.len(),
+            self.original_dim,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.original_dim
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "int8 approximate query prep requires the no-QJL 4-bit lane"
+        );
+
+        let rotated = rotation::srht_padded(query, &self.signs);
+        let rotated = &rotated[..self.original_dim];
+        let (rotated_i8, rotated_scale) = quantize_i8(rotated);
+        let (codebook_i8, codebook_scale) = quantize_codebook_i8_16(&self.codebook);
+
+        Int8ApproxNoQjl4BitQuery {
+            codebook: codebook_i8,
+            rotated: rotated_i8,
+            score_scale: rotated_scale * codebook_scale,
+        }
+    }
+
+    pub fn score_ip_from_parts_int8_approx_no_qjl_4bit(
+        &self,
+        prepared: &Int8ApproxNoQjl4BitQuery,
+        code_bytes: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "int8 approximate scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_ip_from_split_parts_int8_approx_no_qjl_4bit(prepared, mse_packed)
+    }
+
     fn score_ip_from_split_parts(
         &self,
         prepared: &PreparedQuery,
@@ -265,6 +314,42 @@ impl ProdQuantizer {
         }
 
         sum
+    }
+
+    fn score_ip_from_split_parts_int8_approx_no_qjl_4bit(
+        &self,
+        prepared: &Int8ApproxNoQjl4BitQuery,
+        mse_packed: &[u8],
+    ) -> f32 {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+
+        if prepared.score_scale == 0.0 {
+            return 0.0;
+        }
+
+        let mut sum = 0_i32;
+        let mut dim_index = 0usize;
+
+        for &packed in mse_packed {
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let low_nibble = (packed & 0x0F) as usize;
+            sum += prepared.codebook[low_nibble] as i32 * prepared.rotated[dim_index] as i32;
+            dim_index += 1;
+
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let high_nibble = (packed >> 4) as usize;
+            sum += prepared.codebook[high_nibble] as i32 * prepared.rotated[dim_index] as i32;
+            dim_index += 1;
+        }
+
+        sum as f32 * prepared.score_scale
     }
 
     fn score_ip_from_split_parts_scalar(
@@ -1027,6 +1112,43 @@ fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: us
     lut
 }
 
+fn quantize_i8(values: &[f32]) -> (Vec<i8>, f32) {
+    let max_abs = values
+        .iter()
+        .fold(0.0_f32, |max_abs, value| max_abs.max(value.abs()));
+    if max_abs <= f32::EPSILON {
+        return (vec![0_i8; values.len()], 0.0);
+    }
+
+    let scale = max_abs / 127.0;
+    let quantized = values
+        .iter()
+        .map(|value| ((*value / scale).round().clamp(-127.0, 127.0)) as i8)
+        .collect();
+    (quantized, scale)
+}
+
+fn quantize_codebook_i8_16(codebook: &[f32]) -> ([i8; 16], f32) {
+    assert_eq!(
+        codebook.len(),
+        16,
+        "int8 codebook quantization requires a 16-entry 4-bit codebook"
+    );
+    let max_abs = codebook
+        .iter()
+        .fold(0.0_f32, |max_abs, value| max_abs.max(value.abs()));
+    if max_abs <= f32::EPSILON {
+        return ([0_i8; 16], 0.0);
+    }
+
+    let scale = max_abs / 127.0;
+    let mut quantized = [0_i8; 16];
+    for (slot, value) in quantized.iter_mut().zip(codebook.iter()) {
+        *slot = ((*value / scale).round().clamp(-127.0, 127.0)) as i8;
+    }
+    (quantized, scale)
+}
+
 pub fn payload_len(dim: usize, bits: u8) -> usize {
     4 + mse_code_len(dim, bits) + qjl_code_len_for_bits(dim, bits)
 }
@@ -1383,6 +1505,66 @@ mod tests {
         assert!(prepared.lut.is_empty());
         assert!(prepared.sq.is_empty());
         assert_eq!(prepared.qjl_scale, 0.0);
+    }
+
+    #[test]
+    fn quantizer_1536_4bit_supports_int8_approx_query_prep() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 12);
+        let prepared = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+
+        assert_eq!(prepared.codebook.len(), 16);
+        assert_eq!(prepared.rotated.len(), 1536);
+        assert!(prepared.score_scale >= 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "int8 approximate query prep requires the no-QJL 4-bit lane")]
+    fn int8_approx_query_prep_rejects_qjl_active_lane() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 13);
+        let _ = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+    }
+
+    #[test]
+    fn int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 21);
+        let prepared_exact = quantizer.prepare_ip_query(&query);
+        let prepared_approx = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+
+        let mut scored = Vec::new();
+        for seed in 0..16_u64 {
+            let vector = if seed == 0 {
+                query.clone()
+            } else {
+                random_unit_vector(1536, 21 + seed)
+            };
+            let encoded = quantizer.encode(&vector);
+            let exact =
+                quantizer.score_ip_from_parts(&prepared_exact, encoded.gamma, &encoded.mse_packed);
+            let approx = quantizer
+                .score_ip_from_parts_int8_approx_no_qjl_4bit(&prepared_approx, &encoded.mse_packed);
+            scored.push((seed, exact, approx));
+        }
+
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .expect("exact scores should be comparable")
+        });
+        assert_eq!(
+            scored[0].0, 0,
+            "exact scorer should rank the identical vector first"
+        );
+
+        scored.sort_by(|a, b| {
+            b.2.partial_cmp(&a.2)
+                .expect("approx scores should be comparable")
+        });
+        assert_eq!(
+            scored[0].0, 0,
+            "approx scorer should rank the identical vector first"
+        );
     }
 
     #[test]
