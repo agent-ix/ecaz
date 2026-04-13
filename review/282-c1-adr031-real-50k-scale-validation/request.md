@@ -63,6 +63,62 @@ Why `query-limit 200` first:
 If this looks healthy, the follow-on should widen to the full canonical query
 table.
 
+## Interim Result
+
+The first `50k` gate read is now complete.
+
+Fixture preparation:
+
+- initial benchmark attempt failed because the scratch database did not yet have
+  `tqhnsw_real_50k_queries`
+- loaded the staged real corpus fixture with:
+
+```bash
+./scripts/load_real_corpus_scratch.sh \
+  --prefix tqhnsw_real_50k \
+  --corpus-file /home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_corpus.tsv \
+  --queries-file /home/peter/dev/datasets/tqhnsw_real_50k/tqhnsw_real_50k_queries.tsv \
+  --m 8
+```
+
+Verified warm scale read:
+
+```text
+prefix=tqhnsw_real_50k
+m=8
+ef_search=40
+query_limit=200
+cache_state=warm-after-prime3
+warmup_passes=3
+session_mode=per-cell
+timing_mode=cached-plan
+p50=4.557ms
+p95=6.111ms
+p99=7.239ms
+mean=4.655ms
+min=3.012ms
+max=7.672ms
+server_qps=214.82
+wall=5.73s
+```
+
+Comparison to packet `281`:
+
+- real `10k`, same `m=8` / `ef_search=40` warm seam: `mean ≈ 2.82ms`
+- real `50k`, first scale gate: `mean = 4.655ms`
+
+This is slower than the `10k` lane, but still strong enough to clear the
+`NFR-001` latency targets at this first `50k` read:
+
+- `p50 < 5ms`
+- `p99 < 15ms`
+
+## Next Step
+
+Keep the ADR-031 cached runtime path and widen this packet to the full
+canonical `1000`-query `tqhnsw_real_50k` read before making any more runtime
+changes.
+
 ## Success Criteria
 
 - the `tqhnsw_real_50k` fixture exists and the verified launcher can run it
