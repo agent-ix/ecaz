@@ -31,6 +31,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 
 10. `10-benchmarks.md` — C1 (infrastructure complete, NFR runs blocked on 05)
 13. `13-insert-throughput.md` — post-A5 decontention follow-up for metadata/tail-page/backlink hotspots
+14. `14-adr030-v2-grouped-index.md` — long-horizon index-v2 grouped search-code redesign
 
 ## Coordination rules
 

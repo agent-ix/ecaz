@@ -12,6 +12,108 @@ date: 2026-04-12
 > exploring, but no longer as a drop-in scorer on the current encoding. From this point
 > forward, treat ADR-030 as an index-v2 direction built around a new grouped search-code
 > layout, and defer that work until ADR-031 has been run down.
+>
+> **2026-04-13 v2 checkpoint:** ADR-030 now has a concrete versioned-v2 direction:
+> transformed grouped `PQ4` search codes, a hot binary sidecar, an optional cold rerank payload,
+> and a query pipeline of `binary prefilter -> grouped FastScan -> tiny rerank`. Do not spend more
+> time on current-format grouped reinterpretation unless a new, specific reason emerges.
+
+## 2026-04-13 Design Checkpoint
+
+ADR-030 is no longer "a faster scorer for today's code bytes." It is a new index format.
+
+### Transform front-end
+
+The v2 metadata should support both:
+
+- `SRHT`
+- `OPQ`
+
+The first implementation path should still start with `SRHT` because tqvector already has that
+transform, and the first question is whether true grouped `PQ4` is strong enough on transformed
+data to justify the redesign at all. `OPQ` is the leading follow-on quality lever if `SRHT`
+grouped `PQ4` is promising but not strong enough.
+
+### Grouped code structure
+
+For the current `1536`-dim lane, the default target grouped code is:
+
+- `96` subvectors
+- `16` dims per subvector
+- `4` bits per subvector
+- one learned 16-centroid codebook per subvector
+
+That produces a `48B` grouped search code per vector and matches the FastScan/QuickerADC-style
+scoring model much better than tqvector's current scalar code stream.
+
+### Persisted payloads
+
+ADR-030 should assume distinct persisted payloads for distinct runtime jobs:
+
+1. **hot grouped search code** for FastScan-style traversal
+2. **hot binary sidecar** for cheap candidate rejection
+3. **cold higher-fidelity rerank payload** for a very small survivor set
+
+The pragmatic first rerank payload is the existing scalar `4-bit` tqvector code kept as a cold
+sidecar. That reuses a scorer we already have while letting the hot search path stay compact. A
+later v2 follow-up can replace the cold payload with a better residual / `PQ8` contract if data
+shows it is worth the extra complexity.
+
+### Page layout
+
+The hot scan tuple should keep only data that the search loop reads often:
+
+- graph-local tuple state
+- hot binary sidecar
+- hot grouped search code
+
+The cold rerank payload should live separately so layer-0 scans do not read a larger rerank blob
+for every candidate. So ADR-030 requires a new hot/cold tuple/page locality plan, not merely a new
+SIMD kernel.
+
+### Query-time scoring pipeline
+
+The intended pipeline is:
+
+1. `ADR-031`-style binary prefilter on the hot binary sidecar
+2. grouped FastScan scorer on the hot grouped `PQ4` payload
+3. tiny rerank on the cold higher-fidelity payload
+
+If later measurements show the grouped scorer is strong enough to stand alone for traversal, the
+binary stage can become optional. But the design should initially assume the composed pipeline,
+because it currently has the best odds of clearing the target frontier.
+
+### Versioning / migration
+
+Treat v2 as rebuild-only. The metadata page needs explicit format/version information instead of
+assuming that all indexes share today's tuple contract.
+
+At minimum, v2 metadata should carry:
+
+- `format_version`
+- transform kind and transform parameters
+- grouped-code configuration
+- payload-presence flags for binary/search/rerank payloads
+
+Do not auto-upgrade v1 indexes in place.
+
+### First feasibility spike
+
+The first bounded experiment should stay offline and answer the highest-risk question:
+
+> does true grouped `PQ4` on transformed tqvector data have enough ranking quality to justify the
+> redesign?
+
+Concretely:
+
+1. extend `src/bin/approx_score_study.rs`
+2. train true grouped codebooks on transformed vectors
+3. start with `SRHT`
+4. compare `f32` vs quantized LUT scoring to isolate LUT loss from encoding loss
+5. compare against fp32 truth on the same overlap/capture metrics already used in packet `280`
+
+Only after that feasibility spike is positive should ADR-030 move into persisted layout and runtime
+integration slices.
 
 ## Context
 
