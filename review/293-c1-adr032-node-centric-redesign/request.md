@@ -264,6 +264,108 @@ The important structural result is that this is the first ADR-032 slice where ch
 exact-score lifecycle beats the kept ADR-031 path decisively. That is the strongest evidence so far
 that the right ADR-032 lever is algorithmic promotion timing, not node-cache bookkeeping alone.
 
+## Follow-Up Attempt: Promote Before Every Layer-0 Expansion
+
+I then tried the most direct quality-recovery follow-up on top of the kept exact-on-head cut:
+
+- add a promotion-aware layer-0 search helper in `graph.rs`
+- exact-score each candidate before it is allowed to expand as a layer-0 source
+- requeue the candidate if exact scoring makes it worse than its current approximate rank
+
+This was intended to recover the `ef=40` recall loss by fixing the expansion order itself rather
+than only fixing final output ordering.
+
+### Result
+
+This variant is a discard.
+
+The first implementation accidentally removed the original beam-search stop condition and
+degenerated into an effectively unbounded layer-0 walk. After fixing that bug, the semantic shape
+was still too expensive: the canonical warm real-`50k`, `m=8`, `ef=40` cell no longer completed in
+the old millisecond band and spent most of its time inside `initialize_scan_entry_candidate`.
+
+A `perf` sample on the repaired version while the warm `ef=40` cell was running showed:
+
+- `40.61%` `ProdQuantizer::score_ip_from_split_parts`
+- `7.98%` `graph::read_page_tuple`
+- `5.30%` `cached_graph_element`
+- `3.15%` `graph::pop_live_frontier_candidate`
+- `2.10%` `graph::push_frontier_and_result_candidate`
+
+Interpretation:
+
+- exact-promoting *every* popped layer-0 source is too expensive
+- the helper no longer catastrophically walks the whole graph after the stop-condition fix
+- but the promotion scope is still far too wide to keep on the warm `ef=40` seam
+
+The runtime code for this full-promotion follow-up was discarded and the branch was restored to the
+last good pushed ADR-032 code state before trying anything else.
+
+## Follow-Up Attempt: Low-Ef Bounded Promotion Budget
+
+I then tried a narrower hybrid follow-up inspired by the reviewer suggestion to make low-`ef`
+promotion selective instead of universal:
+
+- keep the existing kept ADR-032 exact-on-head path as the base
+- only on low `ef_search` (`<= 64`), allow a tiny layer-0 early-promotion budget
+- budget tried here: exact-promote only the first `8` layer-0 expansion candidates
+
+This was meant to recover low-`ef` quality without reintroducing the multi-second blow-up from the
+full-promotion variant.
+
+### Measurement: Warm Real-50k Latency
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- `p50=1.051ms`
+- `p95=1.491ms`
+- `p99=1.741ms`
+- `mean=1.080ms`
+
+So the bounded variant returned to a sane latency regime and stayed faster than the kept ADR-031
+Tier 1 low-`ef` path.
+
+### Measurement: Full Real-50k Recall
+
+Full real-`50k`, `1000` queries, `m=8`, `ef_search=40`:
+
+- `graph_recall_at_10 = 0.7612`
+- `exact_quantized_recall_at_10 = 0.7612`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+Important note: the current `exact_quantized_recall_at_10` comparison on this branch is no longer a
+reliable exact-reference field because the reference SQL can itself use the live tqhnsw index. I
+am using `graph_recall_at_10` versus fp32 truth as the real quality read here.
+
+### Result
+
+This bounded-promotion variant is also a discard.
+
+Even though latency stayed excellent, the real-`50k` `ef=40` graph recall fell to `0.7612`, which
+is worse than the standing kept ADR-032 `ef=40` read of `0.8080`. So a small low-`ef` promotion
+budget is not a free middle ground between the kept exact-on-head frontier and the too-expensive
+full-promotion layer-0 search.
+
+The runtime code for this bounded follow-up was also discarded and the branch was restored again to
+the last good pushed ADR-032 state.
+
+## Updated Read
+
+ADR-032 still looks promising, but the evidence is sharper now:
+
+- changing exact-score timing *at frontier/output consumption* is a real lever
+- exact-promoting *every* layer-0 source before expansion is too expensive
+- exact-promoting only a tiny low-`ef` source budget is fast, but hurts recall even more
+
+So the next legitimate ADR-032 follow-up should probably not be another "how many sources do we
+exact-promote early?" experiment. The better next candidates are:
+
+- a top-`k` frontier lookahead or head-window policy
+- score calibration between approximate binary scores and exact scores
+- score-budget accounting that promotes only when the scan is materially under-spending exact work
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
