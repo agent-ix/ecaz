@@ -186,6 +186,84 @@ This is still draft-only evidence because the debug SQL surface runs under the `
 is not the canonical release benchmark seam. I am using it to choose the next redesign target, not
 to supersede the standing warm latency measurements.
 
+## Attempted Third Cut: Exact-On-Head Frontier Promotion
+
+I implemented the first ADR-032 slice that actually changes scan work instead of only moving
+state around:
+
+- binary-filtered layer-0 successors are admitted to the frontier with approximate scores
+- they are no longer exact-scored immediately during source expansion
+- when a frontier candidate reaches the head, the scan promotes it to exact scoring on demand
+- if exact scoring makes that candidate worse than the next queued candidate, it is requeued with
+  its exact score and the scan keeps going
+
+This keeps the current persisted format and the current ADR-031 binary words, but changes the
+exact-score lifecycle from "score survivors eagerly" to "score at frontier head."
+
+## Validation
+
+The code checkpoint is green:
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+
+## Measurement: Warm Real-50k Latency
+
+Canonical warm real-`50k`, `m=8`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- `ef=40` run 1: `p50=0.869ms`, `p99=1.559ms`, `mean=0.889ms`
+- `ef=40` run 2: `p50=0.875ms`, `p99=1.558ms`, `mean=0.904ms`
+- `ef=128`: `p50=1.643ms`, `p99=2.420ms`, `mean=1.657ms`
+- `ef=200`: `p50=2.363ms`, `p99=3.509ms`, `mean=2.380ms`
+
+For reference, the kept ADR-031 Tier 1 path was roughly:
+
+- `ef=40`: `mean ~= 1.507-1.510ms`
+- `ef=128`: `mean = 3.409ms`
+- `ef=200`: `mean = 4.772ms`
+
+So this cut is materially faster across the measured frontier, not just at one point.
+
+## Measurement: Full Real-50k Recall
+
+Full real-`50k`, `1000` queries:
+
+- `ef=40`:
+  - `graph_recall_at_10 = 0.8080`
+  - `exact_quantized_recall_at_10 = 0.8080`
+  - `graph_below_exact_queries = 0`
+  - `worst_exact_gap = 0`
+- `ef=128`:
+  - `graph_recall_at_10 = 0.8861`
+  - `exact_quantized_recall_at_10 = 0.8080`
+  - `graph_below_exact_queries = 12`
+  - `worst_exact_gap = 1`
+- `ef=200`:
+  - `graph_recall_at_10 = 0.8968`
+  - `exact_quantized_recall_at_10 = 0.8080`
+  - `graph_below_exact_queries = 13`
+  - `worst_exact_gap = 1`
+
+## Current Read
+
+This is the first ADR-032 cut that looks like a real keep candidate.
+
+But the result is more nuanced than "strictly better":
+
+- at low `ef_search=40`, the scan is much faster but recall drops materially
+- at higher `ef_search`, the latency/recall frontier improves a lot:
+  - `ef=128`: `~1.66ms` mean at `0.8861` recall
+  - `ef=200`: `~2.38ms` mean at `0.8968` recall
+
+That means the cut is plausibly useful as a better operating frontier, not as a free dominance
+upgrade at every `ef_search`.
+
+The important structural result is that this is the first ADR-032 slice where changing the
+exact-score lifecycle beats the kept ADR-031 path decisively. That is the strongest evidence so far
+that the right ADR-032 lever is algorithmic promotion timing, not node-cache bookkeeping alone.
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
