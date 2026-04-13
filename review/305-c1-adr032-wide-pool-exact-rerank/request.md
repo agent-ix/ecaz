@@ -30,7 +30,7 @@ If the approximate search is finding good nodes just outside that final `ef_sear
 - relaxing source-local pruning cannot help
 - the next lever is a bounded *wider* cheap candidate pool followed by exact rerank
 
-## Planned Slice
+## Attempt
 
 Prototype a two-stage low-`ef` ADR-032 search:
 
@@ -42,11 +42,73 @@ Prototype a two-stage low-`ef` ADR-032 search:
 Likely first cut:
 
 - only arm for binary low-`ef_search <= 64`
-- widen the rerank pool to a small multiple of `ef_search`
+- widen the rerank pool to `2x ef_search`
 - keep the rest of the runtime path unchanged
 
-## Success Criteria
+Concretely, the first cut used:
 
-- the attempt records all known warm and recall results for the widened rerank pool
-- low-`ef` recall improves meaningfully over the kept `297` read (`0.8080`)
-- the warm latency stays materially below the older ADR-031 path
+- `ef_search <= 64` activation
+- rerank pool width `min(discovered_count, ef_search * 2)`
+- approximate layer-0 search unchanged
+- exact rerank applied to the widened discovered-candidate pool before staging outputs
+
+## Validation
+
+This attempt was measured and then discarded. No green code checkpoint was committed from it.
+
+All known validation reads:
+
+- focused sanity:
+  - `cargo test adr032_wide_rerank_pool_only_arms_low_ef_binary_scans -- --exact --nocapture`: green
+  - `cargo test binary_prefilter_survivor_budget_only_filters_full_source_widths -- --exact --nocapture`: green
+- release install used for measurement:
+  - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx install --release --test --pg-config /home/peter/.pgrx/17.9/pgrx-install/bin/pg_config --features 'pg17 pg_test' --no-default-features`: green
+- no full `cargo test` / `cargo pgrx test` / clippy gate was run after the measurement cut turned clearly negative
+
+## Measurements
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`.
+
+All known warm runs for this attempt:
+
+- valid run 1:
+  - `p50=0.918ms`
+  - `p95=1.128ms`
+  - `p99=1.380ms`
+  - `mean=0.923ms`
+  - `min=0.622ms`
+  - `max=1.626ms`
+  - `server_qps=1083.60`
+  - `wall=13.51s`
+
+Reference kept `297` warm reads on the same seam:
+
+- run 1: `p50=0.869ms`, `p99=1.559ms`, `mean=0.889ms`
+- run 2: `p50=0.875ms`, `p99=1.558ms`, `mean=0.904ms`
+
+Full real-`50k`, `1000` queries.
+
+All known recall rows for this attempt:
+
+- `graph_recall_at_10 = 0.7790`
+- `exact_quantized_recall_at_10 = 0.7790`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+As with the other ADR-032 follow-ups on this branch, the exact-quantized comparator is not a
+reliable exact reference; the meaningful quality read is `graph_recall_at_10` versus fp32 truth.
+
+## Outcome
+
+Discarded.
+
+Widening the exact-rerank pool after the cheap approximate search moved in the wrong direction on
+both axes:
+
+- warm latency regressed from the kept `297` `~0.889-0.904ms` band to `0.923ms`
+- full real-`50k` low-`ef` recall fell from `0.8080` to `0.7790`
+
+This is a strong negative result. It means the low-`ef` ADR-032 quality point is not recoverable by
+simply exact-reranking more of the approximate search output. On this branch, that wider exact
+rerank only pushes the results further toward the weaker quantized-exact operating point.
