@@ -43,3 +43,16 @@ Likely first cut:
 - the attempt records all known warm and recall results for the hybrid ordering policy
 - low-`ef` recall improves over the kept `297` `0.8080` read
 - warm latency stays materially below the older ADR-031 path
+
+## Status
+
+Superseded before execution.
+
+After this draft was opened, reviewer feedback pointed to two higher-signal follow-ups that were
+more urgent to test first:
+
+- packet `307`: same-build low-`ef` frontier sweep
+- packet `308`: exact-scored multi-seed anchoring
+
+Those slices were run and recorded separately. No code was implemented from this packet, so it is
+not an executed experiment and should not be read as one.
