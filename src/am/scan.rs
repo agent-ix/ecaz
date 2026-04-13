@@ -17,6 +17,7 @@ use super::stream::{GraphPrefetchState, LinearPrefetchState};
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
+const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,26 +142,120 @@ fn record_stage_ordered_results_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u
 fn record_stage_ordered_results_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 #[derive(Debug, Clone, PartialEq)]
+struct CachedHeapTids {
+    len: u8,
+    tids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
+}
+
+impl CachedHeapTids {
+    fn from_iter<I>(heaptids: I) -> Self
+    where
+        I: IntoIterator<Item = page::ItemPointer>,
+    {
+        let mut tids = [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY];
+        let mut len = 0usize;
+        for tid in heaptids {
+            assert!(
+                len < page::HEAPTID_INLINE_CAPACITY,
+                "cached heap tids should respect inline tuple capacity"
+            );
+            tids[len] = tid;
+            len += 1;
+        }
+        Self {
+            len: u8::try_from(len).expect("heap tid count should fit in u8"),
+            tids,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn as_slice(&self) -> &[page::ItemPointer] {
+        &self.tids[..self.len as usize]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CachedBinaryWords {
+    Inline {
+        len: u8,
+        words: [u64; ADR031_INLINE_BINARY_WORD_CAPACITY],
+    },
+    Heap(Vec<u64>),
+}
+
+impl CachedBinaryWords {
+    fn empty() -> Self {
+        Self::Inline {
+            len: 0,
+            words: [0_u64; ADR031_INLINE_BINARY_WORD_CAPACITY],
+        }
+    }
+
+    fn from_iter<I>(len: usize, words: I) -> Self
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        if len <= ADR031_INLINE_BINARY_WORD_CAPACITY {
+            let mut inline = [0_u64; ADR031_INLINE_BINARY_WORD_CAPACITY];
+            let mut actual_len = 0usize;
+            for word in words {
+                debug_assert!(
+                    actual_len < ADR031_INLINE_BINARY_WORD_CAPACITY,
+                    "inline binary-word iterator should stay within capacity"
+                );
+                inline[actual_len] = word;
+                actual_len += 1;
+            }
+            debug_assert_eq!(
+                actual_len, len,
+                "binary word iterator should match advertised word count"
+            );
+            Self::Inline {
+                len: u8::try_from(actual_len).expect("inline binary word count should fit in u8"),
+                words: inline,
+            }
+        } else {
+            Self::Heap(words.into_iter().collect())
+        }
+    }
+
+    fn from_vec(words: Vec<u64>) -> Self {
+        let len = words.len();
+        Self::from_iter(len, words)
+    }
+
+    fn as_slice(&self) -> &[u64] {
+        match self {
+            Self::Inline { len, words } => &words[..*len as usize],
+            Self::Heap(words) => words.as_slice(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct CachedGraphElement {
     tid: page::ItemPointer,
     level: u8,
     deleted: bool,
-    heaptids: Vec<page::ItemPointer>,
+    heaptids: CachedHeapTids,
     neighbortid: page::ItemPointer,
-    binary_words: Vec<u64>,
+    binary_words: CachedBinaryWords,
 }
 
 impl CachedGraphElement {
     fn from_tuple_ref(
         tid: page::ItemPointer,
         element: page::TqElementTupleRef<'_>,
-        binary_words: Vec<u64>,
+        binary_words: CachedBinaryWords,
     ) -> Self {
         Self {
             tid,
             level: element.level,
             deleted: element.deleted,
-            heaptids: element.collect_heaptids(),
+            heaptids: CachedHeapTids::from_iter(element.heaptids()),
             neighbortid: element.neighbortid,
             binary_words,
         }
@@ -743,14 +838,20 @@ unsafe fn cached_graph_element(
             |element| {
                 let live_element = !element.deleted && element.heaptid_count() > 0;
                 let binary_words = if binary_query_active {
-                    if !super::options::force_binary_derivation() && element.binary_word_count() > 0 {
-                        element.collect_binary_words()
+                    if !super::options::force_binary_derivation() && element.binary_word_count() > 0
+                    {
+                        CachedBinaryWords::from_iter(
+                            element.binary_word_count(),
+                            element.binary_words(),
+                        )
                     } else {
                         let quantizer = &*opaque_ref.cached_quantizer;
-                        quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code)
+                        CachedBinaryWords::from_vec(
+                            quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code),
+                        )
                     }
                 } else {
-                    Vec::new()
+                    CachedBinaryWords::empty()
                 };
 
                 if live_element {
@@ -975,8 +1076,10 @@ where
                     return;
                 }
 
-                let approx_score = -quantizer
-                    .score_binary_sign_words_no_qjl_4bit(binary_query, &neighbor.binary_words);
+                let approx_score = -quantizer.score_binary_sign_words_no_qjl_4bit(
+                    binary_query,
+                    neighbor.binary_words.as_slice(),
+                );
                 approx_candidates.push(BinaryPrefilterCandidate {
                     ordinal: approx_candidates.len(),
                     element: neighbor,
@@ -1288,11 +1391,11 @@ unsafe fn materialize_graph_result_candidate(
 
     opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
-    unsafe { &mut *result_state }.materialize(SelectedScanResult {
-        element_tid: candidate.node,
-        score: candidate.score,
-        heap_tids: element.heaptids.clone(),
-    });
+    unsafe { &mut *result_state }.materialize_from_parts(
+        candidate.node,
+        candidate.score,
+        element.heaptids.as_slice(),
+    );
     Some(())
 }
 
@@ -2260,8 +2363,17 @@ impl ScanResultState {
     }
 
     fn materialize(&mut self, selected: SelectedScanResult) {
-        self.set_current(selected.element_tid, selected.score);
-        self.store_pending(&selected.heap_tids);
+        self.materialize_from_parts(selected.element_tid, selected.score, &selected.heap_tids);
+    }
+
+    fn materialize_from_parts(
+        &mut self,
+        element_tid: page::ItemPointer,
+        score: f32,
+        heaptids: &[page::ItemPointer],
+    ) {
+        self.set_current(element_tid, score);
+        self.store_pending(heaptids);
     }
 
     fn set_current(&mut self, element_tid: page::ItemPointer, score: f32) {
@@ -2602,9 +2714,9 @@ mod tests {
                 tid: tid(91, 1),
                 level: 1,
                 deleted: false,
-                heaptids: vec![tid(191, 1)],
+                heaptids: CachedHeapTids::from_iter([tid(191, 1)]),
                 neighbortid: tid(91, 2),
-                binary_words: vec![0_u64; 1],
+                binary_words: CachedBinaryWords::from_iter(1, [0_u64]),
             }),
         );
         graph_neighbor_cache_mut(&mut opaque).insert(
@@ -2634,6 +2746,53 @@ mod tests {
 
         free_scan_graph_cache(&mut opaque);
         free_scan_score_cache(&mut opaque);
+    }
+
+    #[test]
+    fn cached_heap_tids_use_inline_storage() {
+        let cached = CachedHeapTids::from_iter([tid(41, 1), tid(41, 2)]);
+
+        assert_eq!(
+            cached.as_slice(),
+            &[tid(41, 1), tid(41, 2)],
+            "cached heap tids should preserve heap tids in inline scan-local storage"
+        );
+        assert!(
+            !cached.is_empty(),
+            "inline cached heap tids should report non-empty when tids are present"
+        );
+    }
+
+    #[test]
+    fn cached_binary_words_inline_target_adr031_width() {
+        let words: Vec<u64> = (0..ADR031_INLINE_BINARY_WORD_CAPACITY as u64).collect();
+        let cached = CachedBinaryWords::from_iter(words.len(), words.iter().copied());
+
+        assert!(
+            matches!(cached, CachedBinaryWords::Inline { .. }),
+            "ADR-031 target binary width should stay in inline scan-local storage"
+        );
+        assert_eq!(
+            cached.as_slice(),
+            words.as_slice(),
+            "inline cached binary words should preserve the persisted sidecar payload"
+        );
+    }
+
+    #[test]
+    fn cached_binary_words_fallback_for_wider_code_paths() {
+        let words: Vec<u64> = (0..=ADR031_INLINE_BINARY_WORD_CAPACITY as u64).collect();
+        let cached = CachedBinaryWords::from_iter(words.len(), words.iter().copied());
+
+        assert!(
+            matches!(cached, CachedBinaryWords::Heap(_)),
+            "wider binary code paths should fall back to heap-backed storage instead of truncating inline words"
+        );
+        assert_eq!(
+            cached.as_slice(),
+            words.as_slice(),
+            "fallback binary-word storage should preserve every word when inline capacity is exceeded"
+        );
     }
 
     #[test]
