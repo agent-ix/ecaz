@@ -42,6 +42,78 @@ scoring to move the warm verified surface.
 5. Validate on the real warm `10K` C1 surface and record whether the slice is a
    keep or a failed experiment.
 
+## Outcome
+
+Discarded.
+
+I prototyped an opt-in ADR-029 runtime gate in the per-source successor scoring
+loop, measured it on the verified warm real-corpus seam, and then reverted the
+code because it did not beat the disabled baseline.
+
+The discarded prototype:
+
+- added a session-only survivor-budget control for the experiment
+- prepared the approximate query alongside the exact query only on the
+  `1536x4-bit`, QJL-disabled lane
+- approximate-scored uncached neighbors first inside
+  `cached_scan_successor_candidates_for_layer(...)`
+- exact-scored only the top approximate survivors for each expanded source
+
+No code from that prototype is kept in the branch.
+
+## Real-corpus readout
+
+Verified warm baseline on the same build, with the experiment disabled:
+
+- `scripts/bench_sql_latency_verified_scratch.sh --prefix tqhnsw_real_10k --m 8 --ef-search 40 --cache-state warm-after-prime3 --warmup-passes 3 --session-mode per-cell --timing-mode cached-plan`
+- `p50=10.593ms`
+- `p95=12.415ms`
+- `p99=14.222ms`
+- `mean=10.577ms`
+
+Experiment run, conservative survivor budget `12`:
+
+- `scripts/bench_sql_latency_verified_scratch.sh --prefix tqhnsw_real_10k --m 8 --ef-search 40 --cache-state warm-after-prime3 --warmup-passes 3 --session-mode per-cell --timing-mode cached-plan --approx-survivor-budget 12`
+- `p50=11.071ms`
+- `p95=15.805ms`
+- `p99=20.344ms`
+- `mean=11.431ms`
+
+Experiment run, more aggressive survivor budget `8`:
+
+- `scripts/bench_sql_latency_verified_scratch.sh --prefix tqhnsw_real_10k --m 8 --ef-search 40 --cache-state warm-after-prime3 --warmup-passes 3 --session-mode per-cell --timing-mode cached-plan --approx-survivor-budget 8`
+- `p50=10.870ms`
+- `p95=13.307ms`
+- `p99=15.725ms`
+- `mean=10.945ms`
+
+## Interpretation
+
+- the source-local survivor gate adds more overhead than it removes on the warm
+  `10K` C1 seam
+- the likely reason is shape mismatch: per-source layer-0 adjacency is already
+  small, so the approximate pass adds extra work before exact-score savings can
+  accumulate
+- packet `274` still stands as evidence that ADR-029 is promising in principle,
+  but this specific insertion point is low-yield
+
+## Decision
+
+Do not keep a per-source survivor gate in `cached_scan_successor_candidates_for_layer(...)`.
+
+If ADR-029 is pursued again, the next runtime experiment should move to a seam
+with a larger candidate pool than one source expansion, or pair the approximate
+pass with a cheaper candidate-materialization path so the extra pass can pay for
+itself.
+
+## Validation
+
+- `bash -n scripts/bench_sql_latency.sh`
+- `cargo test prepared_query_cache_keeps_approx_payload_for_supported_lane_when_enabled -- --nocapture`
+- verified warm real-corpus baseline cell
+- verified warm real-corpus budget-12 cell
+- verified warm real-corpus budget-8 cell
+
 ## Exit criteria
 
 - the approximate-first runtime experiment is isolated to one beam-expansion
