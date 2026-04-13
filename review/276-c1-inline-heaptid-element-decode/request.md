@@ -47,3 +47,42 @@ regression from packet `263`.
   - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - the packet records the verified warm real-corpus before/after readout
+
+## Outcome
+
+Discarded.
+
+The attempted ownership change replaced `Vec<ItemPointer>` heap-tid payloads in
+`TqElementTuple`, `GraphElement`, and `SelectedScanResult` with an inline
+`[ItemPointer; HEAPTID_INLINE_CAPACITY]` plus count, while keeping the broader
+decode flow intact.
+
+The local targeted page-codec checks passed:
+
+- `cargo test element_tuple_roundtrip -- --nocapture`
+- `cargo test inline_heaptids -- --nocapture`
+
+But the full checkpoint gate did not stay clean. Under the full `cargo test`
+suite, two bootstrap-frontier pg tests failed in separate reruns:
+
+- `tests::pg_test_tqhnsw_frontier_head_refills_from_consumed_neighbors`
+- `tests::pg_test_tqhnsw_rescan_builds_bootstrap_candidate_frontier`
+
+Both failures indicated that the graph bootstrap frontier could collapse to only
+the seeded entry candidate under full-suite order, even though the same tests
+passed in isolation after the rollback. That is not a safe checkpoint for a
+small allocation win, so the code change was reverted instead of being pushed.
+
+## Validation
+
+- `cargo test tests::pg_test_tqhnsw_frontier_head_refills_from_consumed_neighbors -- --exact`
+  passed after the rollback
+- `cargo test tests::pg_test_tqhnsw_rescan_builds_bootstrap_candidate_frontier -- --exact`
+  passed after the rollback
+
+## Next step
+
+Stay on the zero-copy / allocation-reduction track, but move to a different
+seam than inline heap-tid ownership. The next candidate should avoid changing
+bootstrap-frontier-visible ownership semantics while still reducing decode/copy
+churn in the graph path.
