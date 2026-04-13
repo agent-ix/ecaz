@@ -11,6 +11,35 @@ use tqvector::bench_api::ProdQuantizer;
 const DIM: usize = 1536;
 const BITS: u8 = 4;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StudyMode {
+    Int8Approx,
+    BinarySign,
+    GroupedMeanF32,
+    GroupedMeanU8,
+}
+
+impl StudyMode {
+    fn parse(value: &str) -> Self {
+        match value {
+            "int8-approx" => Self::Int8Approx,
+            "binary-sign" => Self::BinarySign,
+            "grouped-f32" => Self::GroupedMeanF32,
+            "grouped-u8" => Self::GroupedMeanU8,
+            other => panic!("unknown study mode: {other}"),
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Int8Approx => "int8_approx_no_qjl_4bit",
+            Self::BinarySign => "binary_sign_no_qjl_4bit",
+            Self::GroupedMeanF32 => "grouped_mean_f32_no_qjl_4bit",
+            Self::GroupedMeanU8 => "grouped_mean_u8_no_qjl_4bit",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Config {
     corpus_size: usize,
@@ -22,6 +51,8 @@ struct Config {
     bench_iters: usize,
     corpus_file: Option<String>,
     queries_file: Option<String>,
+    study_mode: StudyMode,
+    group_size: usize,
 }
 
 impl Default for Config {
@@ -36,6 +67,100 @@ impl Default for Config {
             bench_iters: 8,
             corpus_file: None,
             queries_file: None,
+            study_mode: StudyMode::Int8Approx,
+            group_size: 16,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StudyAggregate {
+    spearman_sum: f32,
+    spearman_min: f32,
+    pearson_sum: f32,
+    pearson_min: f32,
+    top_k_overlap_sum: f32,
+    capture_sums: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedScoreMode {
+    F32,
+    U8,
+}
+
+#[derive(Debug, Clone)]
+struct GroupedMeanCode {
+    counts: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct GroupedMeanPreparedQuery {
+    lut_f32: Vec<f32>,
+    lut_u8: Vec<u8>,
+    row_bias: Vec<f32>,
+    row_scale: Vec<f32>,
+}
+
+impl StudyAggregate {
+    fn new(capture_len: usize) -> Self {
+        Self {
+            spearman_sum: 0.0,
+            spearman_min: 1.0,
+            pearson_sum: 0.0,
+            pearson_min: 1.0,
+            top_k_overlap_sum: 0.0,
+            capture_sums: vec![0.0; capture_len],
+        }
+    }
+
+    fn record(
+        &mut self,
+        exact_scores: &[f32],
+        approx_scores: &[f32],
+        top_k: usize,
+        capture_limits: &[usize],
+    ) {
+        let exact_order = sort_indices_desc(exact_scores);
+        let approx_order = sort_indices_desc(approx_scores);
+        let spearman = spearman_rank_correlation(&exact_order, &approx_order);
+        let pearson = pearson_correlation(exact_scores, approx_scores);
+
+        self.spearman_sum += spearman;
+        self.spearman_min = self.spearman_min.min(spearman);
+        self.pearson_sum += pearson;
+        self.pearson_min = self.pearson_min.min(pearson);
+        self.top_k_overlap_sum += overlap_fraction(&exact_order[..top_k], &approx_order[..top_k]);
+
+        for (index, limit) in capture_limits.iter().enumerate() {
+            self.capture_sums[index] +=
+                capture_fraction(&exact_order[..top_k], &approx_order[..*limit]);
+        }
+    }
+
+    fn print(&self, query_count: usize, top_k: usize, capture_limits: &[usize]) {
+        println!(
+            "spearman_rho mean={:.4} min={:.4}",
+            self.spearman_sum / query_count as f32,
+            self.spearman_min
+        );
+        println!(
+            "pearson_r mean={:.4} min={:.4}",
+            self.pearson_sum / query_count as f32,
+            self.pearson_min
+        );
+        println!(
+            "top{}_overlap mean={:.4}",
+            top_k,
+            self.top_k_overlap_sum / query_count as f32
+        );
+        for (index, limit) in capture_limits.iter().enumerate() {
+            println!(
+                "exact_top{}_captured_by_approx_top{} mean={:.4}",
+                top_k,
+                limit,
+                self.capture_sums[index] / query_count as f32
+            );
         }
     }
 }
@@ -107,56 +232,83 @@ fn main() {
         .filter(|limit| *limit <= corpus_len)
         .collect::<Vec<_>>();
 
-    let mut spearman_sum = 0.0_f32;
-    let mut spearman_min = 1.0_f32;
-    let mut pearson_sum = 0.0_f32;
-    let mut pearson_min = 1.0_f32;
-    let mut top_k_overlap_sum = 0.0_f32;
-    let mut capture_sums = vec![0.0_f32; capture_limits.len()];
+    println!("study={}", config.study_mode.label());
+    println!(
+        "dim={DIM} bits={BITS} corpus={} queries={} clusters={} spread={:.3} seed={}",
+        corpus_len, config.query_count, config.clusters, config.spread, config.seed
+    );
+    println!("source={source_label}");
+    match config.study_mode {
+        StudyMode::Int8Approx => run_int8_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            &capture_limits,
+        ),
+        StudyMode::BinarySign => run_binary_sign_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            &capture_limits,
+        ),
+        StudyMode::GroupedMeanF32 => run_grouped_mean_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            &capture_limits,
+            GroupedScoreMode::F32,
+        ),
+        StudyMode::GroupedMeanU8 => run_grouped_mean_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            &capture_limits,
+            GroupedScoreMode::U8,
+        ),
+    }
+}
 
-    for query in &queries {
+fn run_int8_study(
+    config: &Config,
+    quantizer: &ProdQuantizer,
+    queries: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    capture_limits: &[usize],
+) {
+    let mut aggregate = StudyAggregate::new(capture_limits.len());
+
+    for query in queries {
         let exact_prepared = quantizer.prepare_ip_query(query);
         let approx_prepared = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(query);
 
         let mut exact_scores = Vec::with_capacity(codes.len());
         let mut approx_scores = Vec::with_capacity(codes.len());
-        for code in &codes {
+        for code in codes {
             exact_scores.push(quantizer.score_ip_from_parts(&exact_prepared, 0.0, code));
             approx_scores.push(
                 quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(&approx_prepared, code),
             );
         }
 
-        let exact_order = sort_indices_desc(&exact_scores);
-        let approx_order = sort_indices_desc(&approx_scores);
-        let spearman = spearman_rank_correlation(&exact_order, &approx_order);
-        let pearson = pearson_correlation(&exact_scores, &approx_scores);
-
-        spearman_sum += spearman;
-        spearman_min = spearman_min.min(spearman);
-        pearson_sum += pearson;
-        pearson_min = pearson_min.min(pearson);
-        top_k_overlap_sum +=
-            overlap_fraction(&exact_order[..config.top_k], &approx_order[..config.top_k]);
-
-        for (index, limit) in capture_limits.iter().enumerate() {
-            capture_sums[index] +=
-                capture_fraction(&exact_order[..config.top_k], &approx_order[..*limit]);
-        }
+        aggregate.record(&exact_scores, &approx_scores, config.top_k, capture_limits);
     }
 
     let exact_prepared = quantizer.prepare_ip_query(&queries[0]);
     let approx_prepared = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&queries[0]);
     let exact_elapsed = time_scores(config.bench_iters, || {
         let mut sum = 0.0_f32;
-        for code in &codes {
+        for code in codes {
             sum += quantizer.score_ip_from_parts(&exact_prepared, 0.0, code);
         }
         black_box(sum);
     });
     let approx_elapsed = time_scores(config.bench_iters, || {
         let mut sum = 0.0_f32;
-        for code in &codes {
+        for code in codes {
             sum += quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(&approx_prepared, code);
         }
         black_box(sum);
@@ -166,40 +318,154 @@ fn main() {
     let exact_ns_per_score = exact_elapsed.as_secs_f64() * 1e9 / score_count;
     let approx_ns_per_score = approx_elapsed.as_secs_f64() * 1e9 / score_count;
 
-    println!("study=int8_approx_no_qjl_4bit");
-    println!(
-        "dim={DIM} bits={BITS} corpus={} queries={} clusters={} spread={:.3} seed={}",
-        corpus_len, config.query_count, config.clusters, config.spread, config.seed
-    );
-    println!("source={source_label}");
-    println!(
-        "spearman_rho mean={:.4} min={:.4}",
-        spearman_sum / config.query_count as f32,
-        spearman_min
-    );
-    println!(
-        "pearson_r mean={:.4} min={:.4}",
-        pearson_sum / config.query_count as f32,
-        pearson_min
-    );
-    println!(
-        "top{}_overlap mean={:.4}",
-        config.top_k,
-        top_k_overlap_sum / config.query_count as f32
-    );
-    for (index, limit) in capture_limits.iter().enumerate() {
-        println!(
-            "exact_top{}_captured_by_approx_top{} mean={:.4}",
-            config.top_k,
-            limit,
-            capture_sums[index] / config.query_count as f32
-        );
-    }
+    aggregate.print(config.query_count, config.top_k, capture_limits);
     println!(
         "microbench exact_ns_per_score={:.1} approx_ns_per_score={:.1} speedup={:.2}x",
         exact_ns_per_score,
         approx_ns_per_score,
         exact_ns_per_score / approx_ns_per_score.max(f64::EPSILON)
+    );
+}
+
+fn run_binary_sign_study(
+    config: &Config,
+    quantizer: &ProdQuantizer,
+    queries: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    capture_limits: &[usize],
+) {
+    let sign_lookup = sign_lookup_from_codebook(&quantizer.codebook);
+    let binary_codes = codes
+        .iter()
+        .map(|code| binary_sign_words_from_packed(code, DIM, &sign_lookup))
+        .collect::<Vec<_>>();
+    let mut aggregate = StudyAggregate::new(capture_limits.len());
+
+    for query in queries {
+        let exact_prepared = quantizer.prepare_ip_query(query);
+        let query_words = binary_sign_words_from_rotated(&exact_prepared.rotated);
+
+        let mut exact_scores = Vec::with_capacity(codes.len());
+        let mut approx_scores = Vec::with_capacity(codes.len());
+        for (code, binary_code) in codes.iter().zip(binary_codes.iter()) {
+            exact_scores.push(quantizer.score_ip_from_parts(&exact_prepared, 0.0, code));
+            approx_scores.push(binary_sign_similarity(&query_words, binary_code, DIM));
+        }
+
+        aggregate.record(&exact_scores, &approx_scores, config.top_k, capture_limits);
+    }
+
+    let exact_prepared = quantizer.prepare_ip_query(&queries[0]);
+    let query_words = binary_sign_words_from_rotated(&exact_prepared.rotated);
+    let exact_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for code in codes {
+            sum += quantizer.score_ip_from_parts(&exact_prepared, 0.0, code);
+        }
+        black_box(sum);
+    });
+    let binary_cached_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for binary_code in &binary_codes {
+            sum += binary_sign_similarity(&query_words, binary_code, DIM);
+        }
+        black_box(sum);
+    });
+    let binary_derived_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for code in codes {
+            sum += binary_sign_similarity_from_packed(&query_words, code, DIM, &sign_lookup);
+        }
+        black_box(sum);
+    });
+
+    let score_count = (codes.len() * config.bench_iters) as f64;
+    let exact_ns_per_score = exact_elapsed.as_secs_f64() * 1e9 / score_count;
+    let binary_cached_ns_per_score = binary_cached_elapsed.as_secs_f64() * 1e9 / score_count;
+    let binary_derived_ns_per_score = binary_derived_elapsed.as_secs_f64() * 1e9 / score_count;
+
+    aggregate.print(config.query_count, config.top_k, capture_limits);
+    println!(
+        "microbench exact_ns_per_score={:.1} binary_cached_ns_per_score={:.1} binary_derived_ns_per_score={:.1} cached_speedup={:.2}x derived_speedup={:.2}x",
+        exact_ns_per_score,
+        binary_cached_ns_per_score,
+        binary_derived_ns_per_score,
+        exact_ns_per_score / binary_cached_ns_per_score.max(f64::EPSILON),
+        exact_ns_per_score / binary_derived_ns_per_score.max(f64::EPSILON)
+    );
+}
+
+fn run_grouped_mean_study(
+    config: &Config,
+    quantizer: &ProdQuantizer,
+    queries: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    capture_limits: &[usize],
+    mode: GroupedScoreMode,
+) {
+    let grouped_codes = codes
+        .iter()
+        .map(|code| grouped_mean_code_from_packed(code, DIM, config.group_size))
+        .collect::<Vec<_>>();
+    let mut aggregate = StudyAggregate::new(capture_limits.len());
+
+    for query in queries {
+        let exact_prepared = quantizer.prepare_ip_query(query);
+        let grouped_prepared =
+            prepare_grouped_mean_query(&exact_prepared.rotated, &quantizer.codebook, config.group_size);
+
+        let mut exact_scores = Vec::with_capacity(codes.len());
+        let mut approx_scores = Vec::with_capacity(codes.len());
+        for (code, grouped_code) in codes.iter().zip(grouped_codes.iter()) {
+            exact_scores.push(quantizer.score_ip_from_parts(&exact_prepared, 0.0, code));
+            approx_scores.push(match mode {
+                GroupedScoreMode::F32 => grouped_mean_score_f32(&grouped_prepared, grouped_code),
+                GroupedScoreMode::U8 => grouped_mean_score_u8(&grouped_prepared, grouped_code),
+            });
+        }
+
+        aggregate.record(&exact_scores, &approx_scores, config.top_k, capture_limits);
+    }
+
+    let exact_prepared = quantizer.prepare_ip_query(&queries[0]);
+    let grouped_prepared =
+        prepare_grouped_mean_query(&exact_prepared.rotated, &quantizer.codebook, config.group_size);
+    let exact_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for code in codes {
+            sum += quantizer.score_ip_from_parts(&exact_prepared, 0.0, code);
+        }
+        black_box(sum);
+    });
+    let grouped_f32_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for grouped_code in &grouped_codes {
+            sum += grouped_mean_score_f32(&grouped_prepared, grouped_code);
+        }
+        black_box(sum);
+    });
+    let grouped_u8_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for grouped_code in &grouped_codes {
+            sum += grouped_mean_score_u8(&grouped_prepared, grouped_code);
+        }
+        black_box(sum);
+    });
+
+    let score_count = (codes.len() * config.bench_iters) as f64;
+    let exact_ns_per_score = exact_elapsed.as_secs_f64() * 1e9 / score_count;
+    let grouped_f32_ns_per_score = grouped_f32_elapsed.as_secs_f64() * 1e9 / score_count;
+    let grouped_u8_ns_per_score = grouped_u8_elapsed.as_secs_f64() * 1e9 / score_count;
+
+    aggregate.print(config.query_count, config.top_k, capture_limits);
+    println!("group_size={}", config.group_size);
+    println!(
+        "microbench exact_ns_per_score={:.1} grouped_f32_ns_per_score={:.1} grouped_u8_ns_per_score={:.1} grouped_f32_speedup={:.2}x grouped_u8_speedup={:.2}x",
+        exact_ns_per_score,
+        grouped_f32_ns_per_score,
+        grouped_u8_ns_per_score,
+        exact_ns_per_score / grouped_f32_ns_per_score.max(f64::EPSILON),
+        exact_ns_per_score / grouped_u8_ns_per_score.max(f64::EPSILON)
     );
 }
 
@@ -218,6 +484,8 @@ fn parse_args() -> Config {
             "--bench-iters" => config.bench_iters = parse_usize_arg("--bench-iters", args.next()),
             "--corpus-file" => config.corpus_file = Some(parse_string_arg("--corpus-file", args.next())),
             "--queries-file" => config.queries_file = Some(parse_string_arg("--queries-file", args.next())),
+            "--study-mode" => config.study_mode = StudyMode::parse(&parse_string_arg("--study-mode", args.next())),
+            "--group-size" => config.group_size = parse_usize_arg("--group-size", args.next()),
             "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -230,6 +498,12 @@ fn parse_args() -> Config {
     assert!(config.query_count > 0, "--query-count must be positive");
     assert!(config.clusters > 0, "--clusters must be positive");
     assert!(config.bench_iters > 0, "--bench-iters must be positive");
+    assert!(config.group_size > 0, "--group-size must be positive");
+    assert_eq!(
+        DIM % config.group_size,
+        0,
+        "--group-size must evenly divide {DIM}"
+    );
     assert_eq!(
         config.corpus_file.is_some(),
         config.queries_file.is_some(),
@@ -247,6 +521,8 @@ fn print_help() {
     println!("  --seed <u64>        default: 42");
     println!("  --top-k <n>         default: 10");
     println!("  --bench-iters <n>   default: 8");
+    println!("  --study-mode <mode> default: int8-approx; one of: int8-approx, binary-sign, grouped-f32, grouped-u8");
+    println!("  --group-size <n>    default: 16; required for grouped study modes");
     println!("  --corpus-file <tsv> optional: real-corpus TSV with `id<TAB>comma,separated,floats`");
     println!("  --queries-file <tsv> optional: query TSV with `id<TAB>comma,separated,floats`");
 }
@@ -274,6 +550,185 @@ fn parse_f32_arg(flag: &str, value: Option<String>) -> f32 {
 
 fn parse_string_arg(flag: &str, value: Option<String>) -> String {
     value.unwrap_or_else(|| panic!("{flag} requires a value"))
+}
+
+fn sign_lookup_from_codebook(codebook: &[f32]) -> [u8; 16] {
+    assert_eq!(
+        codebook.len(),
+        16,
+        "binary-sign study requires the no-QJL 4-bit lane"
+    );
+
+    let mut signs = [0_u8; 16];
+    for (index, value) in codebook.iter().copied().enumerate() {
+        signs[index] = u8::from(value >= 0.0);
+    }
+    signs
+}
+
+fn binary_sign_words_from_rotated(rotated: &[f32]) -> Vec<u64> {
+    let mut words = vec![0_u64; rotated.len().div_ceil(64)];
+    for (index, value) in rotated.iter().copied().enumerate() {
+        if value >= 0.0 {
+            words[index / 64] |= 1_u64 << (index % 64);
+        }
+    }
+    words
+}
+
+fn binary_sign_words_from_packed(code_bytes: &[u8], dim: usize, sign_lookup: &[u8; 16]) -> Vec<u64> {
+    let mut words = vec![0_u64; dim.div_ceil(64)];
+    let mut dim_index = 0usize;
+
+    for &packed in code_bytes {
+        if dim_index >= dim {
+            break;
+        }
+
+        let low_nibble = (packed & 0x0F) as usize;
+        if sign_lookup[low_nibble] != 0 {
+            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+        }
+        dim_index += 1;
+
+        if dim_index >= dim {
+            break;
+        }
+
+        let high_nibble = (packed >> 4) as usize;
+        if sign_lookup[high_nibble] != 0 {
+            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+        }
+        dim_index += 1;
+    }
+
+    words
+}
+
+fn binary_sign_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
+    let hamming_distance = query_words
+        .iter()
+        .zip(candidate_words.iter())
+        .map(|(query, candidate)| (query ^ candidate).count_ones())
+        .sum::<u32>();
+    let dim_i32 = i32::try_from(dim).expect("study dimensions should fit in i32");
+    let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
+    (dim_i32 - (2 * distance_i32)) as f32
+}
+
+fn binary_sign_similarity_from_packed(
+    query_words: &[u64],
+    code_bytes: &[u8],
+    dim: usize,
+    sign_lookup: &[u8; 16],
+) -> f32 {
+    let candidate_words = binary_sign_words_from_packed(code_bytes, dim, sign_lookup);
+    binary_sign_similarity(query_words, &candidate_words, dim)
+}
+
+fn grouped_mean_code_from_packed(code_bytes: &[u8], dim: usize, group_size: usize) -> GroupedMeanCode {
+    let group_count = dim / group_size;
+    let mut counts = vec![0_u8; group_count * 16];
+    let mut dim_index = 0usize;
+
+    for &packed in code_bytes {
+        if dim_index >= dim {
+            break;
+        }
+
+        let group_index = dim_index / group_size;
+        counts[group_index * 16 + (packed & 0x0F) as usize] += 1;
+        dim_index += 1;
+
+        if dim_index >= dim {
+            break;
+        }
+
+        let group_index = dim_index / group_size;
+        counts[group_index * 16 + (packed >> 4) as usize] += 1;
+        dim_index += 1;
+    }
+
+    GroupedMeanCode { counts }
+}
+
+fn prepare_grouped_mean_query(
+    rotated: &[f32],
+    codebook: &[f32],
+    group_size: usize,
+) -> GroupedMeanPreparedQuery {
+    assert_eq!(codebook.len(), 16, "grouped mean study requires 4-bit codebook");
+
+    let group_count = rotated.len() / group_size;
+    let mut lut_f32 = vec![0.0_f32; group_count * 16];
+    let mut lut_u8 = vec![0_u8; group_count * 16];
+    let mut row_bias = vec![0.0_f32; group_count];
+    let mut row_scale = vec![0.0_f32; group_count];
+
+    for (group_index, group) in rotated.chunks_exact(group_size).enumerate() {
+        let group_mean = group.iter().sum::<f32>() / group.len() as f32;
+        let row = &mut lut_f32[group_index * 16..(group_index + 1) * 16];
+        for (centroid_index, slot) in row.iter_mut().enumerate() {
+            *slot = codebook[centroid_index] * group_mean;
+        }
+
+        let row_min = row
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, |acc, value| acc.min(value));
+        let row_max = row
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, |acc, value| acc.max(value));
+        let scale = ((row_max - row_min) / 255.0).max(f32::EPSILON);
+        row_bias[group_index] = row_min;
+        row_scale[group_index] = scale;
+
+        for (centroid_index, value) in row.iter().copied().enumerate() {
+            let quantized = ((value - row_min) / scale).round().clamp(0.0, 255.0) as u8;
+            lut_u8[group_index * 16 + centroid_index] = quantized;
+        }
+    }
+
+    GroupedMeanPreparedQuery {
+        lut_f32,
+        lut_u8,
+        row_bias,
+        row_scale,
+    }
+}
+
+fn grouped_mean_score_f32(prepared: &GroupedMeanPreparedQuery, grouped_code: &GroupedMeanCode) -> f32 {
+    grouped_code
+        .counts
+        .chunks_exact(16)
+        .zip(prepared.lut_f32.chunks_exact(16))
+        .map(|(counts, lut_row)| {
+            counts
+                .iter()
+                .zip(lut_row.iter())
+                .map(|(&count, &value)| count as f32 * value)
+                .sum::<f32>()
+        })
+        .sum()
+}
+
+fn grouped_mean_score_u8(prepared: &GroupedMeanPreparedQuery, grouped_code: &GroupedMeanCode) -> f32 {
+    grouped_code
+        .counts
+        .chunks_exact(16)
+        .zip(prepared.lut_u8.chunks_exact(16))
+        .enumerate()
+        .map(|(group_index, (counts, lut_row))| {
+            let bias = prepared.row_bias[group_index];
+            let scale = prepared.row_scale[group_index];
+            counts
+                .iter()
+                .zip(lut_row.iter())
+                .map(|(&count, &value)| count as f32 * (bias + scale * value as f32))
+                .sum::<f32>()
+        })
+        .sum()
 }
 
 fn random_unit_vector(dim: usize, seed: u64) -> Vec<f32> {
@@ -436,4 +891,39 @@ fn time_scores(iterations: usize, mut scorer: impl FnMut()) -> Duration {
         scorer();
     }
     start.elapsed()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binary_sign_words_from_packed_matches_expected_sign_bits() {
+        let sign_lookup = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+        let words = binary_sign_words_from_packed(&[0x10, 0x32], 4, &sign_lookup);
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0] & 0b1111, 0b1010);
+    }
+
+    #[test]
+    fn binary_sign_similarity_from_packed_matches_precomputed_words() {
+        let sign_lookup = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
+        let query_words = vec![0b1010_u64];
+        let candidate_words = binary_sign_words_from_packed(&[0x10, 0x32], 4, &sign_lookup);
+
+        assert_eq!(
+            binary_sign_similarity_from_packed(&query_words, &[0x10, 0x32], 4, &sign_lookup),
+            binary_sign_similarity(&query_words, &candidate_words, 4)
+        );
+    }
+
+    #[test]
+    fn grouped_mean_code_counts_track_centroid_histogram_per_group() {
+        let grouped = grouped_mean_code_from_packed(&[0x10, 0x32], 4, 2);
+        assert_eq!(grouped.counts.len(), 32);
+        assert_eq!(grouped.counts[0], 1);
+        assert_eq!(grouped.counts[1], 1);
+        assert_eq!(grouped.counts[16 + 2], 1);
+        assert_eq!(grouped.counts[16 + 3], 1);
+    }
 }
