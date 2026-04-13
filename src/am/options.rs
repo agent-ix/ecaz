@@ -11,7 +11,9 @@ use super::{
 
 const TQHNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
 
-static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(TQHNSW_SESSION_EF_SEARCH_UNSET);
+static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(TQHNSW_SESSION_EF_SEARCH_UNSET);
+static TQHNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static TQHNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
@@ -67,6 +69,14 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_bool_guc(
+        c"tqhnsw.disable_binary_prefilter",
+        c"Disable ADR-031 binary prefilter runtime behavior.",
+        c"Diagnostic override used for A/B comparison; when enabled, tqhnsw skips ADR-031 binary-query preparation so scans fall back to the pre-ADR-031 eager exact-scoring path.",
+        &TQHNSW_DISABLE_BINARY_PREFILTER_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
         c"tqhnsw.force_binary_derivation",
         c"Force ADR-031 scans to ignore persisted binary sidecars.",
         c"Diagnostic override used for A/B comparison; when enabled, tqhnsw derives binary words from code bytes even if persisted sidecars are present.",
@@ -80,6 +90,22 @@ pub(super) fn current_session_ef_search() -> i32 {
     TQHNSW_EF_SEARCH_GUC.get()
 }
 
+#[cfg(test)]
+pub(super) fn disable_binary_prefilter() -> bool {
+    false
+}
+
+#[cfg(not(test))]
+pub(super) fn disable_binary_prefilter() -> bool {
+    TQHNSW_DISABLE_BINARY_PREFILTER_GUC.get()
+}
+
+#[cfg(test)]
+pub(super) fn force_binary_derivation() -> bool {
+    false
+}
+
+#[cfg(not(test))]
 pub(super) fn force_binary_derivation() -> bool {
     TQHNSW_FORCE_BINARY_DERIVATION_GUC.get()
 }
@@ -198,8 +224,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
 #[cfg(test)]
 mod tests {
     use super::{
-        force_binary_derivation, resolve_scan_tuning_values, EfSearchSource, ScanTuning,
-        TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_SESSION_EF_SEARCH_UNSET,
+        disable_binary_prefilter, force_binary_derivation, resolve_scan_tuning_values,
+        EfSearchSource, ScanTuning, TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_SESSION_EF_SEARCH_UNSET,
     };
 
     #[test]
@@ -257,5 +283,10 @@ mod tests {
     #[test]
     fn force_binary_derivation_defaults_off() {
         assert!(!force_binary_derivation());
+    }
+
+    #[test]
+    fn disable_binary_prefilter_defaults_off() {
+        assert!(!disable_binary_prefilter());
     }
 }

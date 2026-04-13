@@ -656,9 +656,9 @@ fn store_scan_prepared_query(
         metadata.seed,
     );
     let prepared = quantizer.prepare_ip_query(query);
-    let binary_prepared = quantizer
-        .binary_sign_no_qjl_4bit_supported()
-        .then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
+    let binary_prepared = (!super::options::disable_binary_prefilter()
+        && quantizer.binary_sign_no_qjl_4bit_supported())
+    .then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
     opaque.binary_sign_query = binary_prepared
         .map(|prepared| Box::into_raw(Box::new(prepared)))

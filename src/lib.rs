@@ -6380,6 +6380,9 @@ mod tests {
 
     #[pg_test]
     fn test_tqhnsw_rescan_builds_bootstrap_candidate_frontier() {
+        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET tqhnsw.disable_binary_prefilter").expect("reset should succeed");
+        Spi::run("RESET tqhnsw.force_binary_derivation").expect("reset should succeed");
         Spi::run(
             "CREATE TABLE tqhnsw_candidate_frontier_state (id bigint primary key, embedding tqvector)",
         )
