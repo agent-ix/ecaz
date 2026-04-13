@@ -411,13 +411,81 @@ Despite the outstanding warm latency, the quality collapse is far worse than the
 ADR-032 `ef=40` recall (`0.8080`). That means the windowed exact-choice policy is overfitting hard
 to the approximate frontier ordering instead of repairing it.
 
-So the next follow-up should not be another window-size tweak. The remaining plausible seam here is
-score calibration between approximate binary scores and exact scores, not more frontier-window
-heuristics.
+So the next follow-up should not be another window-size tweak. The remaining plausible seams here
+are score calibration or exact-score budget accounting, not more frontier-window heuristics.
 
+## Follow-Up Attempt: Binary-Score Calibration
+
+I then tried the next reviewer-suggested seam: calibrate the binary approximate frontier scores
+into the exact-score range before using them for exact-on-head comparisons.
+
+The calibration constants were fit from a real-corpus binary-sign study on the real `50k` corpus:
+
+- `exact_from_binary intercept = 0.013522`
+- `exact_from_binary slope = 0.000857`
+
+In scan-score space, that produced:
+
+- `calibrated_scan_score = raw_binary_scan_score * 0.000857 - 0.013522`
+
+The intent was to make the frontier ordering more comparable to exact scores without reintroducing
+eager exact work.
+
+### Measurement: Warm Real-50k Latency
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- `p50=0.729ms`
+- `p95=1.055ms`
+- `p99=1.294ms`
+- `mean=0.750ms`
+
+So calibration made the low-`ef` warm seam even faster than the standing kept ADR-032 exact-on-head
+cut.
+
+### Measurement: Full Real-50k Recall
+
+Full real-`50k`, `1000` queries, `m=8`, `ef_search=40`:
+
+- `graph_recall_at_10 = 0.6358`
+- `exact_quantized_recall_at_10 = 0.6358`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+Again, the exact-quantized comparator on this branch is not a reliable exact-reference field, so
+the meaningful read is the graph-vs-fp32 `0.6358` recall.
+
+### Result
+
+This calibration variant is a discard.
+
+It sped the scan up further, but only by making the frontier behave even more like the approximate
+binary scorer. That pushed the real `50k`, `ef=40` recall far below the standing kept ADR-032
+exact-on-head read (`0.8080`) and confirmed that score-shape tweaks alone are not enough to
+recover quality.
+
+The runtime code for this calibration follow-up was also discarded and the branch was restored
+again to the last good pushed ADR-032 state.
+
+## Updated Read
+
+ADR-032 still looks promising, but the evidence is sharper now:
+
+- changing exact-score timing *at frontier/output consumption* is a real lever
+- exact-promoting *every* layer-0 source before expansion is too expensive
+- exact-promoting only a tiny low-`ef` source budget is fast, but hurts recall even more
+- low-`ef` frontier head lookahead is fast, but collapses recall badly
+- binary-score calibration makes low-`ef` latency even better, but pushes recall much lower
+
+So the next legitimate ADR-032 follow-up should probably not be another "how many sources do we
+exact-promote early?" experiment or another score-scale heuristic. The better next candidate is:
+
+- score-budget accounting that exact-promotes only when the scan is materially under-spending exact
+  work, or when the frontier would otherwise be driven entirely by approximate ordering at low `ef`
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
-- the next code slice targets the fused node cache, not another isolated `Arc`/`Vec` swap
+- the next code slice changes exact-work policy, not just cache/container shape
 - the packet is kept live as the current draft while that larger slice is implemented and
   measured
