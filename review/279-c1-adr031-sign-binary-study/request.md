@@ -28,17 +28,76 @@ Before touching beam-search runtime, we need a reproducible way to answer:
 
 Without that study, `ADR-031` remains a hand-wavy architecture idea.
 
-## Planned Work
+## Implementation
 
-1. extend the existing `approx_score_study` seam so it can evaluate a
-   sign-derived binary-prefilter mode on the no-QJL `1536x4-bit` production
-   lane
-2. report rank correlation, top-k overlap, and exact-top-k capture inside
-   binary survivor sets on exported real-corpus vectors
-3. report a microbenchmark for the binary-prefilter scoring path against the
-   current exact scorer
-4. keep this slice out of ordered-scan runtime; this packet is about validating
-   `ADR-031`, not integrating it
+Completed work:
+
+1. Extended `src/bin/approx_score_study.rs` with a `--study-mode binary-sign`
+   path for the no-QJL `1536x4-bit` production lane.
+2. Derived query binary codes from the sign of the rotated query dimensions.
+3. Derived candidate binary codes from the sign of the existing 4-bit centroid
+   values selected by each packed code nibble.
+4. Reported:
+   - rank correlation
+   - top-k overlap
+   - exact top-k capture inside binary survivor sets
+   - microbenchmarks for both cached binary scoring and on-the-fly binary-code
+     derivation
+
+This stays entirely out of ordered-scan runtime.
+
+## Outcome
+
+Kept.
+
+Real-corpus release run:
+
+- `cargo run --release --bin approx_score_study -- --study-mode binary-sign --corpus-file /tmp/tqhnsw_real_10k_corpus.tsv --queries-file /tmp/tqhnsw_real_10k_queries.tsv --query-count 20`
+
+Observed on exported `tqhnsw_real_10k` source vectors:
+
+- `spearman_rho mean=0.9320 min=0.8514`
+- `pearson_r mean=0.9468 min=0.8702`
+- `top10_overlap mean=0.8550`
+- `exact_top10_captured_by_approx_top20 mean=0.9650`
+- `exact_top10_captured_by_approx_top50 mean=0.9850`
+- `exact_top10_captured_by_approx_top100 mean=0.9950`
+- `exact_top10_captured_by_approx_top200 mean=1.0000`
+- `microbench exact_ns_per_score=1436.9`
+- `microbench binary_cached_ns_per_score=9.8`
+- `microbench binary_derived_ns_per_score=5820.4`
+- `cached_speedup=146.23x`
+- `derived_speedup=0.25x`
+
+Interpretation:
+
+- the sign-derived binary score is strong enough to stay alive as a real
+  candidate filter on the current corpus
+- it is **not** strong enough to use aggressively at small survivor budgets;
+  top-50 survivors still miss some exact top-10 results
+- it becomes credible at more conservative survivor budgets (`top100`/`top200`)
+- the cached/stored binary-code path is the only viable runtime form; on-the-fly
+  binary derivation is slower than the current exact scorer and should not be
+  integrated as-is
+
+## Decision
+
+`ADR-031` is more promising than the current `ADR-030` grouped comparison seam
+on tqvector's existing scalar-coded format, but only if binary codes are
+cached or stored. The next runtime slice, if we choose to integrate it, should
+assume one of:
+
+1. scan-local cached binary codes
+2. persisted binary sidecar codes
+
+Do not wire an on-the-fly sign-derivation filter into beam search.
+
+## Validation
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+- `cargo run --release --bin approx_score_study -- --study-mode binary-sign --corpus-file /tmp/tqhnsw_real_10k_corpus.tsv --queries-file /tmp/tqhnsw_real_10k_queries.tsv --query-count 20`
 
 ## Exit Criteria
 
