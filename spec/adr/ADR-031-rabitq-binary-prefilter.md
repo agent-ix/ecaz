@@ -139,6 +139,10 @@ Store a 192-byte optimized binary code alongside the existing 768-byte 4-bit cod
 experiment. If sign-based codes correlate adequately, proceed to runtime integration. If not,
 evaluate full RaBitQ before abandoning the direction.
 
+Packet 280 changed the sequencing around ADR-030: grouped FastScan remains interesting, but
+only as a larger index-v2 effort with a new grouped encoding. That makes ADR-031 the active
+near-term path on the current index format until its runtime seams have been fully explored.
+
 ## Consequences
 
 ### If confirmed (sign-derived variant)
@@ -173,6 +177,9 @@ If both ADR-030 and ADR-031 succeed, a three-stage pipeline is possible:
 
 Total: ~2.4μs + ~5μs + ~210μs ≈ **~0.2ms for scoring** — a 20x reduction from the
 current ~4.2ms scoring cost.
+
+Until ADR-031 has been run down, treat this composition as follow-on work rather than the next
+implementation slice. ADR-030 now assumes a larger encoding/layout redesign after packet 280.
 
 ## Selection Criteria (shared with ADR-030)
 

@@ -7,6 +7,12 @@ date: 2026-04-12
 ---
 # ADR-030: FastScan Grouped Subvector Scoring for 4-bit Codes
 
+> **2026-04-12 study update:** Packet 280 did not validate the "reinterpret the current
+> scalar 4-bit format as grouped FastScan" path on the real corpus. ADR-030 remains worth
+> exploring, but no longer as a drop-in scorer on the current encoding. From this point
+> forward, treat ADR-030 as an index-v2 direction built around a new grouped search-code
+> layout, and defer that work until ADR-031 has been run down.
+
 ## Context
 
 ### The per-dimension scoring bottleneck
@@ -68,6 +74,19 @@ within-subvector correlations that scalar quantization misses. But after SRHT ro
 within-subvector correlations should be minimal (that's the purpose of the rotation), so the
 quality gap may be small.
 
+### Post-study correction
+
+Packet 280 weakens the compatibility claim above for tqvector's current encoding. On the real
+`tqhnsw_real_10k` corpus, grouped reinterpretation of the existing per-dimension scalar codes
+lost too much ranking quality at the same time that the expected scorer speedup was not strong
+enough to justify the approximation. The practical conclusion is:
+
+1. ADR-030 is still compatible with the broader TurboQuant philosophy of "rotate first, search
+   in the compressed domain."
+2. ADR-030 is not compelling as a reinterpretation of today's scalar 4-bit code stream.
+3. A serious ADR-030 implementation should assume a new grouped encoding and storage layout,
+   not just a new scorer over the current tuples.
+
 ## Hypothesis
 
 Reinterpreting tqvector's existing 1536 × 4-bit codes as 96 groups of 16 dimensions and
@@ -76,9 +95,11 @@ scoring with precomputed per-group LUT lookups via `vpshufb` can:
 1. Reduce per-score cost from ~14,000ns to ~60-200ns (70-230x speedup)
 2. Maintain bit-identical scores when the LUT is computed in f32 (the reinterpretation
    changes the computation order, not the result)
-3. Require no changes to the on-disk format or encoding pipeline
-4. Enable competitive warm latency at 10K by making scoring cost comparable to pgvector's
+3. Enable competitive warm latency at 10K by making scoring cost comparable to pgvector's
    f32 dot product
+
+This hypothesis did not hold for the current scalar-code format in packet 280. Keep the
+performance target, but do not assume it is reachable without a new grouped encoding.
 
 ## What Not To Assume
 
@@ -126,17 +147,24 @@ scoring with precomputed per-group LUT lookups via `vpshufb` can:
 
 ## Decision
 
-**Open.** The LUT construction correctness check (validation step 1) is the prerequisite.
-If the f32 reinterpretation is not bit-identical (due to floating-point reordering), measure
-the error magnitude and determine whether it's acceptable.
+**Deferred after ADR-031.** Packet 280 was enough to reject the "current encoding, new scorer"
+version of ADR-030 as the immediate C1 path. We still want to explore ADR-030, but only as a
+larger index-v2 effort after ADR-031 has been fully run down.
+
+That deferred ADR-030 should assume work across multiple subsystems:
+
+1. a new grouped search-code encoding, likely after SRHT or a learned rotation
+2. new tuple/page layout for grouped codes and any sidecar search metadata
+3. build-path changes to train or derive grouped codebooks and emit the new payloads
+4. new runtime scoring kernels and likely a versioned compatibility story
 
 ## Consequences
 
 ### If confirmed
 
 - `PreparedQuery` gains a grouped LUT field (96 × 16 uint8 entries = 1.5KB)
-- A new `score_grouped_fastscan_no_qjl_4bit` function scores using vpshufb lookups on the
-  existing packed 4-bit codes without changing the on-disk format
+- A new `score_grouped_fastscan_no_qjl_4bit` function scores using vpshufb lookups on grouped
+  search codes
 - Per-score cost drops from ~14μs to ~0.1-0.2μs — comparable to pgvector's f32 dot product
 - The beam search expansion loop can score all candidates cheaply without a two-stage filter,
   potentially simplifying the ADR-029 pipeline
@@ -150,6 +178,13 @@ the error magnitude and determine whether it's acceptable.
 - The per-dimension scoring architecture remains
 - ADR-029's int8 approximate scorer (with future SIMD) becomes the primary speedup path
 - ADR-031 (RaBitQ binary pre-filter) provides an alternative fast pre-filter
+
+### While deferred
+
+- ADR-031 is the active near-term research and runtime path
+- ADR-030 remains a tracked follow-on, but not a drop-in optimization on the current index
+- Any resumed ADR-030 work should start from the "new grouped encoding" premise rather than
+  retrying the current scalar-code reinterpretation
 
 ## Selection Criteria (shared with ADR-031)
 
@@ -195,3 +230,5 @@ survivors) and confirm it doesn't eat the scoring savings (as happened in packet
 - ADR-029: Compressed-domain approximate scoring — complementary approach
 - Packet 265: Removed 96KB LUT — the per-group LUT avoids this problem by being 64x smaller
 - Packet 274: ADR-029 rank correlation study — validates int8 quantization for this codebook
+- Packet 280: ADR-030 grouped feasibility study — current scalar-code reinterpretation is not
+  strong enough to justify immediate adoption
