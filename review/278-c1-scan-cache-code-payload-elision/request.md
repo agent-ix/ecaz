@@ -36,19 +36,71 @@ cache miss.
 
 ## Implementation
 
-Draft.
+Completed work:
 
-Target the scan-local graph cache only:
+1. Added a borrowed `TqElementTupleRef` decode view in `src/am/page.rs`.
+2. Added a graph helper in `src/am/graph.rs` so scan can operate on that
+   borrowed tuple while the page buffer is pinned.
+3. Reworked the scan-local graph-element cache in `src/am/scan.rs` so it keeps
+   only the metadata needed after first score computation:
+   - `tid`
+   - `level`
+   - `deleted`
+   - `heaptids`
+   - `neighbortid`
+4. Populated the scan-local score cache from the borrowed decode path on graph
+   cache miss, so the encoded `code` payload is scored once without being copied
+   into the cached scan-local element.
 
-1. add a borrowed element-tuple decode view so scan can score directly from the
-   pinned page slice
-2. change the scan-local graph-element cache to store only the metadata it
-   needs after that first score
-3. populate the score cache from the borrowed decode path on cache miss, so the
-   encoded code bytes never need to live in the cached scan-local element
+This kept the broader `graph::GraphElement` surface intact for build / vacuum /
+debug code and limited the zero-copy change to the steady-state ordered-scan
+cache path.
 
-This keeps the change local to scan steady-state behavior without rewriting the
-broader `graph::GraphElement` surface used by build / vacuum / debug code.
+## Result
+
+Kept.
+
+Relative to the standing packet `270` warm verified baseline on real `10K`,
+`m=8`, `ef_search=40`, `warm-after-prime3`, `per-cell`, `cached-plan`:
+
+```text
+packet 270 baseline:
+  p50=10.753ms p95=12.784ms p99=14.034ms mean=10.720ms
+
+probe run 1:
+  p50=10.479ms p95=12.162ms p99=14.205ms mean=10.418ms
+
+probe run 2:
+  p50=10.590ms p95=12.535ms p99=14.752ms mean=10.603ms
+```
+
+So this slice is another small but real warm-path keep:
+
+- both confirmation runs improved mean latency versus the standing packet `270`
+  baseline
+- the average of the two confirmation runs is `10.511ms`, about `1.95%` below
+  the packet `270` baseline mean
+- the gain is not large enough to change the overall C1 picture by itself
+
+This likely exhausts the remaining clearly-defensible zero-copy / payload-copy
+reduction seam for the current scan-local cache shape. The next priority should
+shift to the new quantized-data search/scoring lane (`ADR-031`, `ADR-030`)
+rather than returning to `ADR-029`.
+
+## Validation
+
+- `cargo test`
+- `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+- `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+- two verified warm real-corpus reads on:
+  - `scripts/bench_sql_latency_verified_scratch.sh`
+  - `--prefix tqhnsw_real_10k`
+  - `--m 8`
+  - `--ef-search 40`
+  - `--cache-state warm-after-prime3`
+  - `--warmup-passes 3`
+  - `--session-mode per-cell`
+  - `--timing-mode cached-plan`
 
 ## Exit Criteria
 
