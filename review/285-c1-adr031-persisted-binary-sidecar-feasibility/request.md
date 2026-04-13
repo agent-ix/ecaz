@@ -141,8 +141,7 @@ What did **not** land yet:
 
 - no reloption or user-facing knob
 - no insert-path sidecar write support yet
-- no measurement yet for whether persisted sidecars materially improve the cold
-  real-corpus seam
+- no A/B comparison yet against the pre-sidecar cached-only branch
 
 Validation:
 
@@ -158,6 +157,60 @@ Install the release build into the scratch pg17 server, rebuild the real `50k`
 fixture so element tuples actually contain persisted sidecars, then take the
 first cold-path ADR-031 measurement. That will tell us whether persisted
 sidecars are worth carrying beyond the already-good cached warm path.
+
+## Cold Measurement
+
+The first bounded cold read is now complete on the rebuilt persisted-sidecar
+index:
+
+```bash
+scripts/bench_sql_latency_verified_scratch.sh \
+  --prefix tqhnsw_real_50k \
+  --m 8 \
+  --ef-search 40 \
+  --query-limit 1 \
+  --cache-state cold-after-rebuild \
+  --warmup-passes 0 \
+  --session-mode per-query \
+  --timing-mode plain-server \
+  --output /tmp/adr031_persisted_real_50k_m8_ef40_cold_q1.summary
+```
+
+Observed output:
+
+```text
+m=8
+ef_search=40
+query_limit=1
+cache_state=cold-after-rebuild
+session_mode=per-query
+timing_mode=plain-server
+p50=5.537ms
+p95=5.537ms
+p99=5.537ms
+mean=5.537ms
+server_qps=180.60
+wall=0.02s
+```
+
+Reference point:
+
+- cached ADR-031 warm canonical `50k` seam from packet `282`:
+  `p50=4.633ms`, `p99=7.661ms`, `mean=4.727ms`
+
+This says the persisted-sidecar branch still starts in the same rough latency
+band as the already-good warm cached path. What it does **not** say yet is how
+much improvement came from persisted sidecars versus the prior cached-only
+branch.
+
+## Updated Next Step
+
+The next question is no longer "does persisted ADR-031 work at all?" It does.
+
+The next question is "is it worth carrying?" To answer that cleanly, the next
+slice should produce an A/B comparison against the cached-only branch or add a
+same-build toggle that forces binary-word derivation even when the sidecar is
+present.
 
 ## Success Criteria
 
