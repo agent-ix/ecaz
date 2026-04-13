@@ -145,6 +145,47 @@ The likely next legitimate ADR-032 question is no longer "can slots replace tids
 "can a slot-centric scan state reduce exact-score pressure or avoid redundant source expansion
 in a way the current ADR-031 path does not?"
 
+## Draft Measurement: ADR-031 On/Off Score-Pressure Read
+
+Before attempting another ADR-032 runtime cut, I sampled the existing debug hot-path counters on
+the kept ADR-031 branch to see whether the next redesign should be chasing exact-score volume or
+something else.
+
+Method:
+
+- real `50k` fixture
+- `m=8`, `ef_search=40`
+- first `20` queries from `tqhnsw_real_50k_queries`
+- `tests.tqhnsw_debug_scan_hot_path_profile(...)` on the current kept path
+- compared with `tqhnsw.disable_binary_prefilter` reset vs `on`
+
+Readout:
+
+- ADR-031 enabled:
+  - `avg candidate_score_calls = 521.45`
+  - `avg candidate_score_elapsed_us = 546.50`
+  - `avg graph_element_cache_misses = 527.50`
+  - `avg graph_neighbor_cache_misses = 48.50`
+  - `avg rescan_layer0_seed_elapsed_us = 1495.45`
+- ADR-031 disabled:
+  - `avg candidate_score_calls = 527.50`
+  - `avg candidate_score_elapsed_us = 546.50`
+  - `avg graph_element_cache_misses = 527.50`
+  - `avg graph_neighbor_cache_misses = 48.50`
+  - `avg rescan_layer0_seed_elapsed_us = 1215.70`
+
+Interpretation:
+
+- On this debug seam, ADR-031 on/off barely changes exact-score call count.
+- That means another successful ADR-032 slice probably cannot win by merely dropping a few more
+  source-local survivors or shuffling frontier bookkeeping.
+- The next credible ADR-032 cut needs to change **when** nodes graduate to exact scoring or
+  reduce other expensive per-traversal-step work, not just replace tids with slots.
+
+This is still draft-only evidence because the debug SQL surface runs under the `tests` schema and
+is not the canonical release benchmark seam. I am using it to choose the next redesign target, not
+to supersede the standing warm latency measurements.
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
