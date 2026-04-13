@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::ProdQuantizer;
+use tqvector::bench_api::{pad_input, srht, ProdQuantizer};
 
 const DIM: usize = 1536;
 const BITS: u8 = 4;
@@ -17,6 +17,8 @@ enum StudyMode {
     BinarySign,
     GroupedMeanF32,
     GroupedMeanU8,
+    GroupedPqF32,
+    GroupedPqU8,
 }
 
 impl StudyMode {
@@ -26,6 +28,8 @@ impl StudyMode {
             "binary-sign" => Self::BinarySign,
             "grouped-f32" => Self::GroupedMeanF32,
             "grouped-u8" => Self::GroupedMeanU8,
+            "grouped-pq-f32" => Self::GroupedPqF32,
+            "grouped-pq-u8" => Self::GroupedPqU8,
             other => panic!("unknown study mode: {other}"),
         }
     }
@@ -36,6 +40,8 @@ impl StudyMode {
             Self::BinarySign => "binary_sign_no_qjl_4bit",
             Self::GroupedMeanF32 => "grouped_mean_f32_no_qjl_4bit",
             Self::GroupedMeanU8 => "grouped_mean_u8_no_qjl_4bit",
+            Self::GroupedPqF32 => "grouped_pq_f32_srht",
+            Self::GroupedPqU8 => "grouped_pq_u8_srht",
         }
     }
 }
@@ -53,6 +59,8 @@ struct Config {
     queries_file: Option<String>,
     study_mode: StudyMode,
     group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
 }
 
 impl Default for Config {
@@ -69,6 +77,8 @@ impl Default for Config {
             queries_file: None,
             study_mode: StudyMode::Int8Approx,
             group_size: 16,
+            train_size: 4096,
+            kmeans_iters: 15,
         }
     }
 }
@@ -96,6 +106,26 @@ struct GroupedMeanCode {
 
 #[derive(Debug, Clone)]
 struct GroupedMeanPreparedQuery {
+    lut_f32: Vec<f32>,
+    lut_u8: Vec<u8>,
+    row_bias: Vec<f32>,
+    row_scale: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+struct GroupedPqCode {
+    packed_nibbles: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct GroupedPqModel {
+    codebooks: Vec<Vec<f32>>,
+    group_count: usize,
+    group_size: usize,
+}
+
+#[derive(Debug, Clone)]
+struct GroupedPqPreparedQuery {
     lut_f32: Vec<f32>,
     lut_u8: Vec<u8>,
     row_bias: Vec<f32>,
@@ -176,11 +206,7 @@ fn main() {
         let corpus = load_vectors_from_tsv(corpus_file);
         let queries = load_vectors_from_tsv(queries_file);
         (
-            format!(
-                "tsv:{}:{}",
-                basename(corpus_file),
-                basename(queries_file)
-            ),
+            format!("tsv:{}:{}", basename(corpus_file), basename(queries_file)),
             corpus,
             queries,
         )
@@ -207,7 +233,10 @@ fn main() {
         config.query_count,
         queries.len()
     );
-    let queries = queries.into_iter().take(config.query_count).collect::<Vec<_>>();
+    let queries = queries
+        .into_iter()
+        .take(config.query_count)
+        .collect::<Vec<_>>();
     assert!(
         !corpus.is_empty(),
         "study corpus must contain at least one vector"
@@ -238,21 +267,22 @@ fn main() {
         corpus_len, config.query_count, config.clusters, config.spread, config.seed
     );
     println!("source={source_label}");
+    if matches!(
+        config.study_mode,
+        StudyMode::GroupedPqF32 | StudyMode::GroupedPqU8
+    ) {
+        println!(
+            "group_size={} train_size={} kmeans_iters={}",
+            config.group_size, config.train_size, config.kmeans_iters
+        );
+    }
     match config.study_mode {
-        StudyMode::Int8Approx => run_int8_study(
-            &config,
-            &quantizer,
-            &queries,
-            &codes,
-            &capture_limits,
-        ),
-        StudyMode::BinarySign => run_binary_sign_study(
-            &config,
-            &quantizer,
-            &queries,
-            &codes,
-            &capture_limits,
-        ),
+        StudyMode::Int8Approx => {
+            run_int8_study(&config, &quantizer, &queries, &codes, &capture_limits)
+        }
+        StudyMode::BinarySign => {
+            run_binary_sign_study(&config, &quantizer, &queries, &codes, &capture_limits)
+        }
         StudyMode::GroupedMeanF32 => run_grouped_mean_study(
             &config,
             &quantizer,
@@ -266,6 +296,22 @@ fn main() {
             &quantizer,
             &queries,
             &codes,
+            &capture_limits,
+            GroupedScoreMode::U8,
+        ),
+        StudyMode::GroupedPqF32 => run_grouped_pq_study(
+            &config,
+            &quantizer,
+            &corpus,
+            &queries,
+            &capture_limits,
+            GroupedScoreMode::F32,
+        ),
+        StudyMode::GroupedPqU8 => run_grouped_pq_study(
+            &config,
+            &quantizer,
+            &corpus,
+            &queries,
             &capture_limits,
             GroupedScoreMode::U8,
         ),
@@ -411,8 +457,11 @@ fn run_grouped_mean_study(
 
     for query in queries {
         let exact_prepared = quantizer.prepare_ip_query(query);
-        let grouped_prepared =
-            prepare_grouped_mean_query(&exact_prepared.rotated, &quantizer.codebook, config.group_size);
+        let grouped_prepared = prepare_grouped_mean_query(
+            &exact_prepared.rotated,
+            &quantizer.codebook,
+            config.group_size,
+        );
 
         let mut exact_scores = Vec::with_capacity(codes.len());
         let mut approx_scores = Vec::with_capacity(codes.len());
@@ -428,8 +477,11 @@ fn run_grouped_mean_study(
     }
 
     let exact_prepared = quantizer.prepare_ip_query(&queries[0]);
-    let grouped_prepared =
-        prepare_grouped_mean_query(&exact_prepared.rotated, &quantizer.codebook, config.group_size);
+    let grouped_prepared = prepare_grouped_mean_query(
+        &exact_prepared.rotated,
+        &quantizer.codebook,
+        config.group_size,
+    );
     let exact_elapsed = time_scores(config.bench_iters, || {
         let mut sum = 0.0_f32;
         for code in codes {
@@ -469,6 +521,92 @@ fn run_grouped_mean_study(
     );
 }
 
+fn run_grouped_pq_study(
+    config: &Config,
+    quantizer: &ProdQuantizer,
+    corpus: &[Vec<f32>],
+    queries: &[Vec<f32>],
+    capture_limits: &[usize],
+    mode: GroupedScoreMode,
+) {
+    let transformed_corpus = corpus
+        .iter()
+        .map(|vector| rotate_vector(quantizer, vector))
+        .collect::<Vec<_>>();
+    let model = train_grouped_pq_model(
+        &transformed_corpus,
+        config.group_size,
+        config.train_size,
+        config.kmeans_iters,
+        config.seed ^ 0xA5A5_5A5A_DEAD_BEEF,
+    );
+    let grouped_codes = transformed_corpus
+        .iter()
+        .map(|vector| encode_grouped_pq(vector, &model))
+        .collect::<Vec<_>>();
+
+    let mut aggregate = StudyAggregate::new(capture_limits.len());
+
+    for query in queries {
+        let rotated_query = rotate_vector(quantizer, query);
+        let grouped_prepared = prepare_grouped_pq_query(&rotated_query, &model);
+
+        let mut exact_scores = Vec::with_capacity(corpus.len());
+        let mut approx_scores = Vec::with_capacity(corpus.len());
+        for (candidate, grouped_code) in corpus.iter().zip(grouped_codes.iter()) {
+            exact_scores.push(inner_product(query, candidate));
+            approx_scores.push(match mode {
+                GroupedScoreMode::F32 => grouped_pq_score_f32(&grouped_prepared, grouped_code),
+                GroupedScoreMode::U8 => grouped_pq_score_u8(&grouped_prepared, grouped_code),
+            });
+        }
+
+        aggregate.record(&exact_scores, &approx_scores, config.top_k, capture_limits);
+    }
+
+    let rotated_query = rotate_vector(quantizer, &queries[0]);
+    let grouped_prepared = prepare_grouped_pq_query(&rotated_query, &model);
+    let exact_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for candidate in corpus {
+            sum += inner_product(&queries[0], candidate);
+        }
+        black_box(sum);
+    });
+    let grouped_f32_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for grouped_code in &grouped_codes {
+            sum += grouped_pq_score_f32(&grouped_prepared, grouped_code);
+        }
+        black_box(sum);
+    });
+    let grouped_u8_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for grouped_code in &grouped_codes {
+            sum += grouped_pq_score_u8(&grouped_prepared, grouped_code);
+        }
+        black_box(sum);
+    });
+
+    let score_count = (corpus.len() * config.bench_iters) as f64;
+    let exact_ns_per_score = exact_elapsed.as_secs_f64() * 1e9 / score_count;
+    let grouped_f32_ns_per_score = grouped_f32_elapsed.as_secs_f64() * 1e9 / score_count;
+    let grouped_u8_ns_per_score = grouped_u8_elapsed.as_secs_f64() * 1e9 / score_count;
+
+    aggregate.print(config.query_count, config.top_k, capture_limits);
+    println!("group_size={}", config.group_size);
+    println!("group_count={}", model.group_count);
+    println!("grouped_code_bytes={}", model.group_count.div_ceil(2));
+    println!(
+        "microbench exact_ns_per_score={:.1} grouped_pq_f32_ns_per_score={:.1} grouped_pq_u8_ns_per_score={:.1} grouped_pq_f32_speedup={:.2}x grouped_pq_u8_speedup={:.2}x",
+        exact_ns_per_score,
+        grouped_f32_ns_per_score,
+        grouped_u8_ns_per_score,
+        exact_ns_per_score / grouped_f32_ns_per_score.max(f64::EPSILON),
+        exact_ns_per_score / grouped_u8_ns_per_score.max(f64::EPSILON)
+    );
+}
+
 fn parse_args() -> Config {
     let mut config = Config::default();
     let mut args = std::env::args().skip(1);
@@ -482,10 +620,20 @@ fn parse_args() -> Config {
             "--seed" => config.seed = parse_u64_arg("--seed", args.next()),
             "--top-k" => config.top_k = parse_usize_arg("--top-k", args.next()),
             "--bench-iters" => config.bench_iters = parse_usize_arg("--bench-iters", args.next()),
-            "--corpus-file" => config.corpus_file = Some(parse_string_arg("--corpus-file", args.next())),
-            "--queries-file" => config.queries_file = Some(parse_string_arg("--queries-file", args.next())),
-            "--study-mode" => config.study_mode = StudyMode::parse(&parse_string_arg("--study-mode", args.next())),
+            "--corpus-file" => {
+                config.corpus_file = Some(parse_string_arg("--corpus-file", args.next()))
+            }
+            "--queries-file" => {
+                config.queries_file = Some(parse_string_arg("--queries-file", args.next()))
+            }
+            "--study-mode" => {
+                config.study_mode = StudyMode::parse(&parse_string_arg("--study-mode", args.next()))
+            }
             "--group-size" => config.group_size = parse_usize_arg("--group-size", args.next()),
+            "--train-size" => config.train_size = parse_usize_arg("--train-size", args.next()),
+            "--kmeans-iters" => {
+                config.kmeans_iters = parse_usize_arg("--kmeans-iters", args.next())
+            }
             "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -499,6 +647,8 @@ fn parse_args() -> Config {
     assert!(config.clusters > 0, "--clusters must be positive");
     assert!(config.bench_iters > 0, "--bench-iters must be positive");
     assert!(config.group_size > 0, "--group-size must be positive");
+    assert!(config.train_size > 0, "--train-size must be positive");
+    assert!(config.kmeans_iters > 0, "--kmeans-iters must be positive");
     assert_eq!(
         DIM % config.group_size,
         0,
@@ -521,9 +671,13 @@ fn print_help() {
     println!("  --seed <u64>        default: 42");
     println!("  --top-k <n>         default: 10");
     println!("  --bench-iters <n>   default: 8");
-    println!("  --study-mode <mode> default: int8-approx; one of: int8-approx, binary-sign, grouped-f32, grouped-u8");
+    println!("  --study-mode <mode> default: int8-approx; one of: int8-approx, binary-sign, grouped-f32, grouped-u8, grouped-pq-f32, grouped-pq-u8");
     println!("  --group-size <n>    default: 16; required for grouped study modes");
-    println!("  --corpus-file <tsv> optional: real-corpus TSV with `id<TAB>comma,separated,floats`");
+    println!("  --train-size <n>    default: 4096; grouped-pq training sample cap");
+    println!("  --kmeans-iters <n>  default: 15; grouped-pq k-means iterations");
+    println!(
+        "  --corpus-file <tsv> optional: real-corpus TSV with `id<TAB>comma,separated,floats`"
+    );
     println!("  --queries-file <tsv> optional: query TSV with `id<TAB>comma,separated,floats`");
 }
 
@@ -552,6 +706,285 @@ fn parse_string_arg(flag: &str, value: Option<String>) -> String {
     value.unwrap_or_else(|| panic!("{flag} requires a value"))
 }
 
+fn rotate_vector(quantizer: &ProdQuantizer, vector: &[f32]) -> Vec<f32> {
+    let padded = pad_input(vector, quantizer.transform_dim);
+    let rotated = srht(&padded, &quantizer.signs);
+    rotated[..quantizer.original_dim].to_vec()
+}
+
+fn inner_product(lhs: &[f32], rhs: &[f32]) -> f32 {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| left * right)
+        .sum()
+}
+
+fn train_grouped_pq_model(
+    transformed_corpus: &[Vec<f32>],
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+    seed: u64,
+) -> GroupedPqModel {
+    assert!(
+        !transformed_corpus.is_empty(),
+        "grouped-pq training corpus must not be empty"
+    );
+    let dim = transformed_corpus[0].len();
+    let group_count = dim / group_size;
+    let sample_count = train_size.min(transformed_corpus.len());
+    let sample_indices = sample_indices(transformed_corpus.len(), sample_count, seed);
+    let mut codebooks = Vec::with_capacity(group_count);
+
+    for group_index in 0..group_count {
+        let mut samples = Vec::with_capacity(sample_count * group_size);
+        for &sample_index in &sample_indices {
+            let start = group_index * group_size;
+            let end = start + group_size;
+            samples.extend_from_slice(&transformed_corpus[sample_index][start..end]);
+        }
+        codebooks.push(train_group_codebook(
+            &samples,
+            group_size,
+            kmeans_iters,
+            seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        ));
+    }
+
+    GroupedPqModel {
+        codebooks,
+        group_count,
+        group_size,
+    }
+}
+
+fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
+    if sample_count >= len {
+        return (0..len).collect();
+    }
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut indices = (0..len).collect::<Vec<_>>();
+    for i in 0..sample_count {
+        let swap_index = rng.gen_range(i..len);
+        indices.swap(i, swap_index);
+    }
+    indices.truncate(sample_count);
+    indices
+}
+
+fn train_group_codebook(
+    samples: &[f32],
+    group_size: usize,
+    kmeans_iters: usize,
+    seed: u64,
+) -> Vec<f32> {
+    const CENTROIDS: usize = 16;
+
+    let sample_count = samples.len() / group_size;
+    assert!(
+        sample_count >= CENTROIDS,
+        "need at least {CENTROIDS} samples"
+    );
+
+    let init_indices = sample_indices(sample_count, CENTROIDS, seed);
+    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
+    for (centroid_index, sample_index) in init_indices.into_iter().enumerate() {
+        let sample = sample_slice(samples, sample_index, group_size);
+        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
+    }
+
+    let mut assignments = vec![0usize; sample_count];
+    let mut sums = vec![0.0_f32; CENTROIDS * group_size];
+    let mut counts = [0usize; CENTROIDS];
+
+    for _ in 0..kmeans_iters {
+        sums.fill(0.0);
+        counts.fill(0);
+
+        for (sample_index, assignment) in assignments.iter_mut().enumerate() {
+            let sample = sample_slice(samples, sample_index, group_size);
+            let centroid_index = nearest_centroid(sample, &centroids, group_size);
+            *assignment = centroid_index;
+            counts[centroid_index] += 1;
+            let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
+            for (dst, value) in centroid_sum.iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
+
+        for (centroid_index, &count) in counts.iter().enumerate() {
+            if count == 0 {
+                let fallback_sample = sample_slice(
+                    samples,
+                    (seed as usize + centroid_index) % sample_count,
+                    group_size,
+                );
+                centroid_slice_mut(&mut centroids, centroid_index, group_size)
+                    .copy_from_slice(fallback_sample);
+                continue;
+            }
+
+            let inv_count = (count as f32).recip();
+            let centroid_sum = centroid_slice(&sums, centroid_index, group_size);
+            let centroid = centroid_slice_mut(&mut centroids, centroid_index, group_size);
+            for (dst, value) in centroid.iter_mut().zip(centroid_sum.iter()) {
+                *dst = *value * inv_count;
+            }
+        }
+    }
+
+    centroids
+}
+
+fn encode_grouped_pq(vector: &[f32], model: &GroupedPqModel) -> GroupedPqCode {
+    let mut packed_nibbles = vec![0_u8; model.group_count.div_ceil(2)];
+    for group_index in 0..model.group_count {
+        let start = group_index * model.group_size;
+        let end = start + model.group_size;
+        let centroid_index = nearest_centroid(
+            &vector[start..end],
+            &model.codebooks[group_index],
+            model.group_size,
+        ) as u8;
+        if group_index % 2 == 0 {
+            packed_nibbles[group_index / 2] = centroid_index;
+        } else {
+            packed_nibbles[group_index / 2] |= centroid_index << 4;
+        }
+    }
+
+    GroupedPqCode { packed_nibbles }
+}
+
+fn prepare_grouped_pq_query(
+    rotated_query: &[f32],
+    model: &GroupedPqModel,
+) -> GroupedPqPreparedQuery {
+    let mut lut_f32 = vec![0.0_f32; model.group_count * 16];
+    let mut lut_u8 = vec![0_u8; model.group_count * 16];
+    let mut row_bias = vec![0.0_f32; model.group_count];
+    let mut row_scale = vec![0.0_f32; model.group_count];
+
+    for group_index in 0..model.group_count {
+        let start = group_index * model.group_size;
+        let end = start + model.group_size;
+        let query_group = &rotated_query[start..end];
+        let codebook = &model.codebooks[group_index];
+        let row = &mut lut_f32[group_index * 16..(group_index + 1) * 16];
+
+        for (centroid_index, slot) in row.iter_mut().enumerate().take(16) {
+            *slot = inner_product(
+                query_group,
+                centroid_slice(codebook, centroid_index, model.group_size),
+            );
+        }
+
+        let row_min = row
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, |acc, value| acc.min(value));
+        let row_max = row
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, |acc, value| acc.max(value));
+        let scale = ((row_max - row_min) / 255.0).max(f32::EPSILON);
+        row_bias[group_index] = row_min;
+        row_scale[group_index] = scale;
+
+        for (centroid_index, value) in row.iter().copied().enumerate() {
+            lut_u8[group_index * 16 + centroid_index] =
+                ((value - row_min) / scale).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    GroupedPqPreparedQuery {
+        lut_f32,
+        lut_u8,
+        row_bias,
+        row_scale,
+    }
+}
+
+fn grouped_pq_score_f32(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {
+    (0..prepared.row_bias.len())
+        .map(|group_index| {
+            let centroid_index = grouped_pq_nibble(code, group_index);
+            prepared.lut_f32[group_index * 16 + centroid_index]
+        })
+        .sum()
+}
+
+fn grouped_pq_score_u8(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {
+    (0..prepared.row_bias.len())
+        .map(|group_index| {
+            let centroid_index = grouped_pq_nibble(code, group_index);
+            prepared.row_bias[group_index]
+                + prepared.row_scale[group_index]
+                    * prepared.lut_u8[group_index * 16 + centroid_index] as f32
+        })
+        .sum()
+}
+
+fn grouped_pq_nibble(code: &GroupedPqCode, group_index: usize) -> usize {
+    let packed = code.packed_nibbles[group_index / 2];
+    if group_index % 2 == 0 {
+        usize::from(packed & 0x0F)
+    } else {
+        usize::from(packed >> 4)
+    }
+}
+
+fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
+    let mut best_index = 0usize;
+    let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
+
+    for centroid_index in 1..(centroids.len() / group_size) {
+        let distance = squared_l2(
+            sample,
+            centroid_slice(centroids, centroid_index, group_size),
+        );
+        if distance < best_distance {
+            best_distance = distance;
+            best_index = centroid_index;
+        }
+    }
+
+    best_index
+}
+
+fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| {
+            let delta = left - right;
+            delta * delta
+        })
+        .sum()
+}
+
+fn sample_slice(samples: &[f32], sample_index: usize, group_size: usize) -> &[f32] {
+    let start = sample_index * group_size;
+    let end = start + group_size;
+    &samples[start..end]
+}
+
+fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -> &[f32] {
+    let start = centroid_index * group_size;
+    let end = start + group_size;
+    &centroids[start..end]
+}
+
+fn centroid_slice_mut(
+    centroids: &mut [f32],
+    centroid_index: usize,
+    group_size: usize,
+) -> &mut [f32] {
+    let start = centroid_index * group_size;
+    let end = start + group_size;
+    &mut centroids[start..end]
+}
+
 fn sign_lookup_from_codebook(codebook: &[f32]) -> [u8; 16] {
     assert_eq!(
         codebook.len(),
@@ -576,7 +1009,11 @@ fn binary_sign_words_from_rotated(rotated: &[f32]) -> Vec<u64> {
     words
 }
 
-fn binary_sign_words_from_packed(code_bytes: &[u8], dim: usize, sign_lookup: &[u8; 16]) -> Vec<u64> {
+fn binary_sign_words_from_packed(
+    code_bytes: &[u8],
+    dim: usize,
+    sign_lookup: &[u8; 16],
+) -> Vec<u64> {
     let mut words = vec![0_u64; dim.div_ceil(64)];
     let mut dim_index = 0usize;
 
@@ -626,7 +1063,11 @@ fn binary_sign_similarity_from_packed(
     binary_sign_similarity(query_words, &candidate_words, dim)
 }
 
-fn grouped_mean_code_from_packed(code_bytes: &[u8], dim: usize, group_size: usize) -> GroupedMeanCode {
+fn grouped_mean_code_from_packed(
+    code_bytes: &[u8],
+    dim: usize,
+    group_size: usize,
+) -> GroupedMeanCode {
     let group_count = dim / group_size;
     let mut counts = vec![0_u8; group_count * 16];
     let mut dim_index = 0usize;
@@ -657,7 +1098,11 @@ fn prepare_grouped_mean_query(
     codebook: &[f32],
     group_size: usize,
 ) -> GroupedMeanPreparedQuery {
-    assert_eq!(codebook.len(), 16, "grouped mean study requires 4-bit codebook");
+    assert_eq!(
+        codebook.len(),
+        16,
+        "grouped mean study requires 4-bit codebook"
+    );
 
     let group_count = rotated.len() / group_size;
     let mut lut_f32 = vec![0.0_f32; group_count * 16];
@@ -698,7 +1143,10 @@ fn prepare_grouped_mean_query(
     }
 }
 
-fn grouped_mean_score_f32(prepared: &GroupedMeanPreparedQuery, grouped_code: &GroupedMeanCode) -> f32 {
+fn grouped_mean_score_f32(
+    prepared: &GroupedMeanPreparedQuery,
+    grouped_code: &GroupedMeanCode,
+) -> f32 {
     grouped_code
         .counts
         .chunks_exact(16)
@@ -713,7 +1161,10 @@ fn grouped_mean_score_f32(prepared: &GroupedMeanPreparedQuery, grouped_code: &Gr
         .sum()
 }
 
-fn grouped_mean_score_u8(prepared: &GroupedMeanPreparedQuery, grouped_code: &GroupedMeanCode) -> f32 {
+fn grouped_mean_score_u8(
+    prepared: &GroupedMeanPreparedQuery,
+    grouped_code: &GroupedMeanCode,
+) -> f32 {
     grouped_code
         .counts
         .chunks_exact(16)
@@ -925,5 +1376,37 @@ mod tests {
         assert_eq!(grouped.counts[1], 1);
         assert_eq!(grouped.counts[16 + 2], 1);
         assert_eq!(grouped.counts[16 + 3], 1);
+    }
+
+    #[test]
+    fn grouped_pq_encode_packs_two_nibbles_per_byte() {
+        let model = GroupedPqModel {
+            codebooks: vec![
+                vec![-1.0, 0.0, 0.0, 1.0, 10.0, 10.0, 10.0, 10.0],
+                vec![10.0, 10.0, 10.0, 10.0, -2.0, 0.0, 0.0, 2.0],
+            ],
+            group_count: 2,
+            group_size: 2,
+        };
+        let code = encode_grouped_pq(&[1.0, 1.0, -2.0, -2.0], &model);
+        assert_eq!(code.packed_nibbles, vec![0x31]);
+        assert_eq!(grouped_pq_nibble(&code, 0), 1);
+        assert_eq!(grouped_pq_nibble(&code, 1), 3);
+    }
+
+    #[test]
+    fn grouped_pq_u8_score_tracks_f32_for_same_code() {
+        let prepared = GroupedPqPreparedQuery {
+            lut_f32: vec![1.0, 3.0],
+            lut_u8: vec![0, 255],
+            row_bias: vec![1.0],
+            row_scale: vec![(3.0 - 1.0) / 255.0],
+        };
+        let code = GroupedPqCode {
+            packed_nibbles: vec![0x01],
+        };
+
+        assert!((grouped_pq_score_f32(&prepared, &code) - 3.0).abs() < 1e-6);
+        assert!((grouped_pq_score_u8(&prepared, &code) - 3.0).abs() < 1e-5);
     }
 }
