@@ -743,8 +743,12 @@ unsafe fn cached_graph_element(
             |element| {
                 let live_element = !element.deleted && element.heaptid_count() > 0;
                 let binary_words = if binary_query_active {
-                    let quantizer = &*opaque_ref.cached_quantizer;
-                    quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code)
+                    if element.binary_word_count() > 0 {
+                        element.collect_binary_words()
+                    } else {
+                        let quantizer = &*opaque_ref.cached_quantizer;
+                        quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code)
+                    }
                 } else {
                     Vec::new()
                 };

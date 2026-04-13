@@ -7,6 +7,8 @@ use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
 
+use crate::quant::prod::ProdQuantizer;
+
 use super::{options, page, shared, wal, P_NEW};
 
 #[derive(Debug, Clone)]
@@ -154,13 +156,19 @@ impl BuildState {
 
     pub(super) fn push(&mut self, tuple: BuildTuple) {
         self.scanned_tuples += tuple.heap_tids.len();
+        let binary_word_count =
+            persisted_binary_sidecar_word_count(tuple.dimensions, tuple.bits, tuple.seed);
 
         match (self.dimensions, self.bits, self.seed) {
             (None, None, None) => {
                 self.dimensions = Some(tuple.dimensions);
                 self.bits = Some(tuple.bits);
                 self.seed = Some(tuple.seed);
-                if !page::element_tuple_fits_on_page(tuple.code.len(), self.page_size) {
+                if page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len_with_binary(
+                    tuple.code.len(),
+                    binary_word_count,
+                )) > self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
+                {
                     pgrx::error!(
                         "tqhnsw element tuple for dim {} bits {} does not fit on a page",
                         tuple.dimensions,
@@ -226,6 +234,15 @@ impl BuildState {
         }
 
         self.heap_tuples.push(tuple);
+    }
+}
+
+fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
+    let quantizer = ProdQuantizer::cached(dimensions as usize, bits, seed);
+    if quantizer.binary_sign_no_qjl_4bit_supported() {
+        (dimensions as usize).div_ceil(64)
+    } else {
+        0
     }
 }
 
@@ -538,6 +555,12 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
     let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
     let graph_nodes = build_hnsw_graph(state);
+    let persisted_binary_quantizer = ProdQuantizer::cached(
+        dimensions as usize,
+        bits,
+        state.seed.expect("non-empty build should record seed"),
+    );
+    let write_persisted_binary = persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported();
 
     // Phase 1: Insert placeholder neighbor then element for each node.
     // Writing them back-to-back co-locates them on the same page.
@@ -559,6 +582,12 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
                 gamma: tuple.gamma,
                 neighbortid: neighbor_tid,
                 code: tuple.code.clone(),
+                binary_words: if write_persisted_binary {
+                    persisted_binary_quantizer
+                        .binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+                } else {
+                    Vec::new()
+                },
             })
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage element tuple: {e}"));
 

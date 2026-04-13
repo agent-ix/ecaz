@@ -30,6 +30,7 @@ proptest! {
             gamma: 0.42 + seed as f32 * 0.001,
             neighbortid: ItemPointer { block_number: seed + 100, offset_number: 1 },
             code: vec![0xAB; code_len],
+            binary_words: Vec::new(),
         };
 
         let encoded = tuple.encode().unwrap();
@@ -41,6 +42,7 @@ proptest! {
         prop_assert!((decoded.gamma - tuple.gamma).abs() < 1e-6);
         prop_assert_eq!(decoded.neighbortid, tuple.neighbortid);
         prop_assert_eq!(decoded.code, tuple.code);
+        prop_assert_eq!(decoded.binary_words, tuple.binary_words);
     }
 }
 
@@ -128,6 +130,7 @@ proptest! {
             gamma: 0.5,
             neighbortid: ItemPointer { block_number: 2, offset_number: 1 },
             code: vec![0xFF; code_len],
+            binary_words: Vec::new(),
         };
 
         let encoded = tuple.encode().unwrap();

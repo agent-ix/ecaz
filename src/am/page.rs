@@ -1,5 +1,7 @@
 //! Page-layout primitives for `tqhnsw`.
 
+use std::mem::size_of;
+
 const DEFAULT_PAGE_SIZE: usize = 8192;
 pub const PAGE_HEADER_BYTES: usize = 24;
 const LINE_POINTER_BYTES: usize = 4;
@@ -157,6 +159,7 @@ pub struct TqElementTuple {
     pub gamma: f32,
     pub neighbortid: ItemPointer,
     pub code: Vec<u8>,
+    pub binary_words: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,15 +171,16 @@ pub struct TqElementTupleRef<'a> {
     pub gamma: f32,
     pub neighbortid: ItemPointer,
     pub code: &'a [u8],
+    binary_word_bytes: &'a [u8],
 }
 
 impl<'a> TqElementTupleRef<'a> {
     pub fn decode(input: &'a [u8], code_len: usize) -> Result<Self, String> {
-        let expected_len = TqElementTuple::encoded_len(code_len);
-        if input.len() != expected_len {
+        let min_expected_len = TqElementTuple::encoded_len(code_len);
+        if input.len() < min_expected_len {
             return Err(format!(
-                "element tuple length mismatch: got {}, expected {expected_len}",
-                input.len()
+                "element tuple length mismatch: got {}, expected at least {min_expected_len}",
+                input.len(),
             ));
         }
         if input[0] != TQ_ELEMENT_TAG {
@@ -201,6 +205,16 @@ impl<'a> TqElementTupleRef<'a> {
         cursor += 4;
         let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
         cursor += ITEM_POINTER_BYTES;
+        let code_end = cursor + code_len;
+        let code = &input[cursor..code_end];
+        let binary_word_bytes = &input[code_end..];
+        if binary_word_bytes.len() % size_of::<u64>() != 0 {
+            return Err(format!(
+                "element tuple binary sidecar length {} is not aligned to {}",
+                binary_word_bytes.len(),
+                size_of::<u64>(),
+            ));
+        }
 
         Ok(Self {
             level: input[1],
@@ -209,7 +223,8 @@ impl<'a> TqElementTupleRef<'a> {
             heaptid_count,
             gamma,
             neighbortid,
-            code: &input[cursor..],
+            code,
+            binary_word_bytes,
         })
     }
 
@@ -230,6 +245,20 @@ impl<'a> TqElementTupleRef<'a> {
     pub fn collect_heaptids(&self) -> Vec<ItemPointer> {
         self.heaptids().collect()
     }
+
+    pub fn binary_word_count(&self) -> usize {
+        self.binary_word_bytes.len() / size_of::<u64>()
+    }
+
+    pub fn binary_words(&self) -> impl Iterator<Item = u64> + '_ {
+        self.binary_word_bytes.chunks_exact(size_of::<u64>()).map(|chunk| {
+            u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk"))
+        })
+    }
+
+    pub fn collect_binary_words(&self) -> Vec<u64> {
+        self.binary_words().collect()
+    }
 }
 
 impl TqElementTuple {
@@ -249,7 +278,8 @@ impl TqElementTuple {
                 + 1
                 + 4
                 + ITEM_POINTER_BYTES
-                + self.code.len(),
+                + self.code.len()
+                + self.binary_words.len() * size_of::<u64>(),
         );
         out.push(TQ_ELEMENT_TAG);
         out.push(self.level);
@@ -266,6 +296,9 @@ impl TqElementTuple {
         out.extend_from_slice(&self.gamma.to_le_bytes());
         self.neighbortid.encode_into(&mut out);
         out.extend_from_slice(&self.code);
+        for word in &self.binary_words {
+            out.extend_from_slice(&word.to_le_bytes());
+        }
         Ok(out)
     }
 
@@ -278,10 +311,15 @@ impl TqElementTuple {
             gamma: element.gamma,
             neighbortid: element.neighbortid,
             code: element.code.to_vec(),
+            binary_words: element.collect_binary_words(),
         })
     }
 
     pub fn encoded_len(code_len: usize) -> usize {
+        Self::encoded_len_with_binary(code_len, 0)
+    }
+
+    pub fn encoded_len_with_binary(code_len: usize, binary_word_count: usize) -> usize {
         1 + 1
             + 1
             + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
@@ -289,6 +327,7 @@ impl TqElementTuple {
             + 4
             + ITEM_POINTER_BYTES
             + code_len
+            + binary_word_count * size_of::<u64>()
     }
 }
 
@@ -699,6 +738,7 @@ mod tests {
             gamma: 1.25,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 32],
+            binary_words: Vec::new(),
         };
 
         let encoded = tuple.encode().unwrap();
@@ -715,6 +755,7 @@ mod tests {
             gamma: 0.75,
             neighbortid: tid(20, 4),
             code: vec![0xAB; 24],
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
         };
 
         let encoded = tuple.encode().unwrap();
@@ -727,6 +768,8 @@ mod tests {
         assert_eq!(decoded.gamma.to_bits(), tuple.gamma.to_bits());
         assert_eq!(decoded.neighbortid, tuple.neighbortid);
         assert_eq!(decoded.code, tuple.code.as_slice());
+        assert_eq!(decoded.binary_word_count(), tuple.binary_words.len());
+        assert_eq!(decoded.collect_binary_words(), tuple.binary_words);
     }
 
     #[test]
@@ -738,6 +781,7 @@ mod tests {
             gamma: -0.5,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 32],
+            binary_words: vec![0x1111_2222_3333_4444],
         };
 
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
@@ -799,6 +843,7 @@ mod tests {
             gamma: 0.75,
             neighbortid: tid(20, 4),
             code: vec![0xAA; 772],
+            binary_words: Vec::new(),
         };
 
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
@@ -836,6 +881,7 @@ mod tests {
             gamma: 0.5,
             neighbortid: tid(2, 1),
             code: vec![0xAB; 16],
+            binary_words: vec![0xDEAD_BEEF_CAFE_BABE],
         };
         let encoded = tuple.encode().unwrap();
         let decoded = TqElementTuple::decode(&encoded, 16).unwrap();

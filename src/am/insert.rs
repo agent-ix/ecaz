@@ -951,6 +951,7 @@ unsafe fn append_heap_tuple(
             offset_number: neighbor_offset,
         },
         code: tuple.code.clone(),
+        binary_words: Vec::new(),
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode element tuple: {e}"));
@@ -1024,6 +1025,7 @@ unsafe fn append_heap_tuple_to_new_page(
             offset_number: neighbor_offset,
         },
         code: tuple.code.clone(),
+        binary_words: Vec::new(),
     }
     .encode()
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode fallback element tuple: {e}"));

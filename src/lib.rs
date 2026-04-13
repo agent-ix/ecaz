@@ -2553,11 +2553,28 @@ mod tests {
             .find(|(tid, _)| *tid == metadata.entry_point)
             .expect("entry point should identify an element tuple");
         assert_eq!(entry_element.1.level, metadata.max_level);
+        let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
+            metadata.dimensions as usize,
+            metadata.bits,
+            metadata.seed,
+        );
+        let expected_binary_word_count = if persisted_binary_quantizer
+            .binary_sign_no_qjl_4bit_supported()
+        {
+            (metadata.dimensions as usize).div_ceil(64)
+        } else {
+            0
+        };
         for (element_tid, element) in &elements {
             assert!(element.level <= metadata.max_level);
             assert!(!element.deleted);
             assert_eq!(element.heaptids.len(), 1);
             assert_ne!(element.heaptids[0], am::page::ItemPointer::INVALID);
+            assert_eq!(
+                element.binary_words.len(),
+                expected_binary_word_count,
+                "builds should persist ADR-031 sidecars only on the supported no-QJL 4-bit lane",
+            );
             assert!(neighbor_tids.contains(&element.neighbortid));
             let neighbor = neighbor_map
                 .get(&element.neighbortid)
@@ -3275,6 +3292,7 @@ mod tests {
                     gamma: 0.5,
                     neighbortid: am::page::ItemPointer::INVALID,
                     code: vec![0x11_u8; code_len],
+                    binary_words: Vec::new(),
                 };
                 let required_bytes = am::page::raw_tuple_storage_bytes(
                     neighbor
@@ -3373,6 +3391,7 @@ mod tests {
                         gamma: 0.5,
                         neighbortid: am::page::ItemPointer::INVALID,
                         code: vec![0x11_u8; code_len],
+                        binary_words: Vec::new(),
                     };
                     page.insert_neighbor(&neighbor).is_ok() && page.insert_element(&element).is_ok()
                 };
