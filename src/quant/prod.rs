@@ -33,6 +33,11 @@ pub struct Int8ApproxNoQjl4BitQuery {
     pub score_scale: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinarySignNoQjl4BitQuery {
+    pub words: Vec<u64>,
+}
+
 #[derive(Debug)]
 pub struct ProdQuantizer {
     pub transform_dim: usize,
@@ -240,6 +245,57 @@ impl ProdQuantizer {
         }
     }
 
+    pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
+        self.bits == 4 && !qjl_enabled(self.original_dim, self.bits)
+    }
+
+    pub fn prepare_ip_query_binary_sign_no_qjl_4bit(
+        &self,
+        query: &[f32],
+    ) -> BinarySignNoQjl4BitQuery {
+        assert_eq!(
+            query.len(),
+            self.original_dim,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.original_dim
+        );
+        assert!(
+            self.binary_sign_no_qjl_4bit_supported(),
+            "binary sign query prep requires the no-QJL 4-bit lane"
+        );
+
+        let rotated = rotation::srht_padded(query, &self.signs);
+        BinarySignNoQjl4BitQuery {
+            words: binary_sign_words_from_rotated(&rotated[..self.original_dim]),
+        }
+    }
+
+    pub fn binary_sign_words_from_packed_no_qjl_4bit(&self, code_bytes: &[u8]) -> Vec<u64> {
+        assert!(
+            self.binary_sign_no_qjl_4bit_supported(),
+            "binary sign code derivation requires the no-QJL 4-bit lane"
+        );
+
+        binary_sign_words_from_packed(
+            code_bytes,
+            self.original_dim,
+            &binary_sign_lookup_4bit(&self.codebook),
+        )
+    }
+
+    pub fn score_binary_sign_words_no_qjl_4bit(
+        &self,
+        prepared: &BinarySignNoQjl4BitQuery,
+        candidate_words: &[u64],
+    ) -> f32 {
+        assert!(
+            self.binary_sign_no_qjl_4bit_supported(),
+            "binary sign scoring requires the no-QJL 4-bit lane"
+        );
+        binary_sign_similarity(&prepared.words, candidate_words, self.original_dim)
+    }
+
     pub fn score_ip_from_parts_int8_approx_no_qjl_4bit(
         &self,
         prepared: &Int8ApproxNoQjl4BitQuery,
@@ -386,8 +442,7 @@ impl ProdQuantizer {
                 let sign_lanes = qjl_sign_lanes(qjl_packed[dim_index / 8]);
                 for lane in 0..8 {
                     let absolute = dim_index + lane;
-                    mse_sum +=
-                        self.codebook[indices[lane]] * prepared.rotated[absolute];
+                    mse_sum += self.codebook[indices[lane]] * prepared.rotated[absolute];
                     qjl_sum += prepared.sq[absolute] * sign_lanes[lane];
                 }
                 dim_index += 8;
@@ -395,8 +450,7 @@ impl ProdQuantizer {
 
             while dim_index < self.original_dim {
                 let centroid_index = mse_index_at(mse_packed, dim_index, bits_per_index) as usize;
-                mse_sum +=
-                    self.codebook[centroid_index] * prepared.rotated[dim_index];
+                mse_sum += self.codebook[centroid_index] * prepared.rotated[dim_index];
                 qjl_sum += if qjl_sign_at(qjl_packed, dim_index) {
                     prepared.sq[dim_index]
                 } else {
@@ -671,8 +725,8 @@ impl ProdQuantizer {
     ) -> f32 {
         use std::arch::x86_64::{
             _mm256_add_ps, _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps,
-            _mm256_permutevar8x32_ps,
-            _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps, _mm256_storeu_ps,
+            _mm256_permutevar8x32_ps, _mm256_set1_epi32, _mm256_setr_epi32, _mm256_setzero_ps,
+            _mm256_storeu_ps,
         };
 
         let bits_per_index = mse_bits(self.original_dim, self.bits);
@@ -1149,6 +1203,74 @@ fn quantize_codebook_i8_16(codebook: &[f32]) -> ([i8; 16], f32) {
     (quantized, scale)
 }
 
+fn binary_sign_lookup_4bit(codebook: &[f32]) -> [u8; 16] {
+    assert_eq!(
+        codebook.len(),
+        16,
+        "binary sign lookup requires a 16-entry 4-bit codebook"
+    );
+
+    let mut signs = [0_u8; 16];
+    for (index, value) in codebook.iter().copied().enumerate() {
+        signs[index] = u8::from(value >= 0.0);
+    }
+    signs
+}
+
+fn binary_sign_words_from_rotated(rotated: &[f32]) -> Vec<u64> {
+    let mut words = vec![0_u64; rotated.len().div_ceil(64)];
+    for (index, value) in rotated.iter().copied().enumerate() {
+        if value >= 0.0 {
+            words[index / 64] |= 1_u64 << (index % 64);
+        }
+    }
+    words
+}
+
+fn binary_sign_words_from_packed(
+    code_bytes: &[u8],
+    dim: usize,
+    sign_lookup: &[u8; 16],
+) -> Vec<u64> {
+    let mut words = vec![0_u64; dim.div_ceil(64)];
+    let mut dim_index = 0usize;
+
+    for &packed in code_bytes {
+        if dim_index >= dim {
+            break;
+        }
+
+        let low_nibble = (packed & 0x0F) as usize;
+        if sign_lookup[low_nibble] != 0 {
+            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+        }
+        dim_index += 1;
+
+        if dim_index >= dim {
+            break;
+        }
+
+        let high_nibble = (packed >> 4) as usize;
+        if sign_lookup[high_nibble] != 0 {
+            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
+        }
+        dim_index += 1;
+    }
+
+    words
+}
+
+fn binary_sign_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
+    let hamming_distance = query_words
+        .iter()
+        .zip(candidate_words.iter())
+        .map(|(query, candidate)| (query ^ candidate).count_ones())
+        .sum::<u32>();
+    let dim_i32 = i32::try_from(dim).expect("dimensions should fit in i32");
+    let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
+    (dim_i32 - (2 * distance_i32)) as f32
+}
+
 pub fn payload_len(dim: usize, bits: u8) -> usize {
     4 + mse_code_len(dim, bits) + qjl_code_len_for_bits(dim, bits)
 }
@@ -1312,7 +1434,10 @@ unsafe fn decode_eight_3bit_lanes_avx2(
 ) -> std::arch::x86_64::__m256i {
     use std::arch::x86_64::{_mm256_and_si256, _mm256_set1_epi32, _mm256_srlv_epi32};
 
-    _mm256_and_si256(_mm256_srlv_epi32(_mm256_set1_epi32(word as i32), shifts), mask)
+    _mm256_and_si256(
+        _mm256_srlv_epi32(_mm256_set1_epi32(word as i32), shifts),
+        mask,
+    )
 }
 
 fn qjl_sign_at(packed: &[u8], dim_index: usize) -> bool {
@@ -1412,9 +1537,7 @@ mod tests {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn decode_eight_3bit_lanes_avx2_matches_scalar_when_available() {
-        use std::arch::x86_64::{
-            _mm256_set1_epi32, _mm256_setr_epi32, _mm256_storeu_si256,
-        };
+        use std::arch::x86_64::{_mm256_set1_epi32, _mm256_setr_epi32, _mm256_storeu_si256};
 
         if !is_x86_feature_detected!("avx2") {
             return;
@@ -1422,15 +1545,17 @@ mod tests {
 
         let mut rng = ChaCha8Rng::seed_from_u64(8);
         for _ in 0..1_000 {
-            let indices = (0..8)
-                .map(|_| rng.gen_range(0u16..8))
-                .collect::<Vec<_>>();
+            let indices = (0..8).map(|_| rng.gen_range(0u16..8)).collect::<Vec<_>>();
             let packed = pack_mse_indices(&indices, 3);
             let scalar = decode_eight_3bit_aligned(&packed, 0);
             let shifts = unsafe { _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21) };
             let mask = unsafe { _mm256_set1_epi32(0x7) };
             let lanes = unsafe {
-                decode_eight_3bit_lanes_avx2(decode_eight_3bit_aligned_word(&packed, 0), shifts, mask)
+                decode_eight_3bit_lanes_avx2(
+                    decode_eight_3bit_aligned_word(&packed, 0),
+                    shifts,
+                    mask,
+                )
             };
             let mut avx = [0_i32; 8];
             unsafe { _mm256_storeu_si256(avx.as_mut_ptr().cast(), lanes) };
@@ -1470,7 +1595,10 @@ mod tests {
                 // Round-trip via the existing unpacker too — guards
                 // against any accidental change to the bit ordering.
                 let unpacked = unpack_mse_indices(&dispatched, len, bits);
-                assert_eq!(unpacked, indices, "round-trip failed at bits={bits}, len={len}");
+                assert_eq!(
+                    unpacked, indices,
+                    "round-trip failed at bits={bits}, len={len}"
+                );
             }
         }
     }
@@ -1519,11 +1647,29 @@ mod tests {
     }
 
     #[test]
+    fn quantizer_1536_4bit_supports_binary_sign_query_prep() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 14);
+        let prepared = quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(&query);
+
+        assert_eq!(prepared.words.len(), 24);
+        assert!(quantizer.binary_sign_no_qjl_4bit_supported());
+    }
+
+    #[test]
     #[should_panic(expected = "int8 approximate query prep requires the no-QJL 4-bit lane")]
     fn int8_approx_query_prep_rejects_qjl_active_lane() {
         let quantizer = ProdQuantizer::new(32, 4, 42);
         let query = random_unit_vector(32, 13);
         let _ = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+    }
+
+    #[test]
+    #[should_panic(expected = "binary sign query prep requires the no-QJL 4-bit lane")]
+    fn binary_sign_query_prep_rejects_qjl_active_lane() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 15);
+        let _ = quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(&query);
     }
 
     #[test]
@@ -1564,6 +1710,35 @@ mod tests {
         assert_eq!(
             scored[0].0, 0,
             "approx scorer should rank the identical vector first"
+        );
+    }
+
+    #[test]
+    fn binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 31);
+        let prepared = quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(&query);
+
+        let mut scored = Vec::new();
+        for seed in 0..16_u64 {
+            let vector = if seed == 0 {
+                query.clone()
+            } else {
+                random_unit_vector(1536, 31 + seed)
+            };
+            let encoded = quantizer.encode(&vector);
+            let words = quantizer.binary_sign_words_from_packed_no_qjl_4bit(&encoded.mse_packed);
+            let approx = quantizer.score_binary_sign_words_no_qjl_4bit(&prepared, &words);
+            scored.push((seed, approx));
+        }
+
+        scored.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .expect("binary sign scores should be comparable")
+        });
+        assert_eq!(
+            scored[0].0, 0,
+            "binary sign scorer should rank the identical vector first"
         );
     }
 
@@ -1627,8 +1802,7 @@ mod tests {
         let qjl_signs = unpack_qjl_signs(&encoded.qjl_packed, 32);
         let mut mse_sum = 0.0_f32;
         for (dim_index, mse_index) in mse_indices.iter().enumerate().take(32) {
-            mse_sum +=
-                quantizer.codebook[*mse_index as usize] * prepared.rotated[dim_index];
+            mse_sum += quantizer.codebook[*mse_index as usize] * prepared.rotated[dim_index];
         }
         let qjl_sum = prepared
             .sq
@@ -1924,7 +2098,11 @@ mod tests {
         for byte in 0u8..=255 {
             let lanes = qjl_sign_lanes(byte);
             for (bit, lane) in lanes.iter().enumerate() {
-                let expected = if (byte >> bit) & 1 == 1 { 1.0_f32 } else { -1.0_f32 };
+                let expected = if (byte >> bit) & 1 == 1 {
+                    1.0_f32
+                } else {
+                    -1.0_f32
+                };
                 assert_eq!(
                     *lane, expected,
                     "byte={byte:#04x} bit={bit}: got {lane}, expected {expected}",
