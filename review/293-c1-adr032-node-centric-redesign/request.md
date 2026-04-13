@@ -366,6 +366,55 @@ exact-promote early?" experiment. The better next candidates are:
 - score calibration between approximate binary scores and exact scores
 - score-budget accounting that promotes only when the scan is materially under-spending exact work
 
+## Follow-Up Attempt: Low-Ef Frontier Head Window
+
+I then tried the most conservative version of the reviewer’s lookahead idea:
+
+- keep the pushed ADR-032 exact-on-head base intact
+- only at low `ef_search` (`<= 64`), exact-score a tiny frontier head window before choosing the
+  next output/expansion candidate
+- window tried here: `4` candidates
+- requeue the non-winning window members with their exact scores
+
+This deliberately avoided source-expansion promotion and avoided the earlier multi-second blow-up.
+
+### Measurement: Warm Real-50k Latency
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- `p50=0.794ms`
+- `p95=1.101ms`
+- `p99=1.334ms`
+- `mean=0.814ms`
+
+So the low-`ef` head-window path was extremely fast, even better than the standing kept ADR-032
+exact-on-head cut.
+
+### Measurement: Full Real-50k Recall
+
+Full real-`50k`, `1000` queries, `m=8`, `ef_search=40`:
+
+- `graph_recall_at_10 = 0.4507`
+- `exact_quantized_recall_at_10 = 0.4507`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+Again, the exact-quantized comparator on this branch is not a reliable exact-reference field, so
+the meaningful read is the graph-vs-fp32 `0.4507` recall.
+
+### Result
+
+This head-window variant is a discard.
+
+Despite the outstanding warm latency, the quality collapse is far worse than the standing kept
+ADR-032 `ef=40` recall (`0.8080`). That means the windowed exact-choice policy is overfitting hard
+to the approximate frontier ordering instead of repairing it.
+
+So the next follow-up should not be another window-size tweak. The remaining plausible seam here is
+score calibration between approximate binary scores and exact scores, not more frontier-window
+heuristics.
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
