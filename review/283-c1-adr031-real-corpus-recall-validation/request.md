@@ -113,6 +113,62 @@ path?" On this first bounded sample, it does not. The follow-on question is
 whether that exact-quantized parity still holds on the full `1000`-query
 canonical table.
 
+## Canonical Result
+
+The full `1000`-query real-`50k` summary confirms the same shape:
+
+```bash
+./scripts/run_real_corpus_recall_scratch.sh summary \
+  --index tqhnsw_real_50k_m8_idx \
+  --m 8 \
+  --ef-search 40 \
+  --corpus-table tqhnsw_real_50k_corpus \
+  --queries-table tqhnsw_real_50k_queries
+```
+
+Observed output:
+
+```text
+m=8
+ef_search=40
+corpus_rows=50000
+query_count=1000
+graph_recall_at_10=0.8397
+graph_recall_at_100=0.39436
+ndcg_at_10=0.88905054
+mean_abs_score_error=0.005951367
+spearman_rho_at_10=0.63061213
+exact_quantized_recall_at_10=0.8397
+graph_below_exact_queries=0
+worst_exact_gap=0
+```
+
+This is the decisive read for ADR-031 runtime safety:
+
+- the live graph path still matches exact quantized top-10 on the full canonical
+  query table
+- the observed `~84%` Recall@10 is the current quantizer/storage quality versus
+  fp32 truth, not a new graph/runtime regression from ADR-031
+- packet `282` already showed the same runtime path clears the `50k` warm
+  latency target
+
+## Final Keep / Pivot
+
+Keep the cached ADR-031 runtime path.
+
+At this point ADR-031 has cleared the two questions that could have invalidated
+it on the real `50k` lane:
+
+- latency: passes `NFR-001` at `m=8`, `ef_search=40`
+- runtime recall safety: no observed regression versus exact quantized results
+
+The next ADR-031 work should no longer be basic validation. It should either:
+
+- confirm that the higher-`ef_search` recall gate rows remain stable under the
+  same runtime path, or
+- move to the next implementation step, such as persisted binary sidecars,
+  cold-path measurement, or a broader real-corpus matrix
+
 ## Success Criteria
 
 - the packet records the concrete recall-validation command or harness used
