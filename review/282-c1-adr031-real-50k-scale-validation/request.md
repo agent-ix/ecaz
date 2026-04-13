@@ -113,11 +113,58 @@ This is slower than the `10k` lane, but still strong enough to clear the
 - `p50 < 5ms`
 - `p99 < 15ms`
 
+## Canonical Result
+
+The full canonical `1000`-query `50k` read is now complete on the same verified
+warm seam.
+
+```text
+prefix=tqhnsw_real_50k
+m=8
+ef_search=40
+query_limit=1000
+cache_state=warm-after-prime3
+warmup_passes=3
+session_mode=per-cell
+timing_mode=cached-plan
+p50=4.633ms
+p95=6.399ms
+p99=7.661ms
+mean=4.727ms
+min=2.304ms
+max=10.454ms
+server_qps=211.57
+wall=27.33s
+```
+
+This confirms the `200`-query gate read was not a lucky subset. The cached
+ADR-031 runtime path stays below the `NFR-001` steady-state latency target on
+the normative `50k` lane:
+
+- required `p50 < 5ms`, observed `p50 = 4.633ms`
+- required `p99 < 15ms`, observed `p99 = 7.661ms`
+
+Comparison to packet `281`:
+
+- real `10k`, same warm seam: `mean ≈ 2.82ms`
+- real `50k`, canonical `1000`-query read: `mean = 4.727ms`
+
+The larger lane is slower, as expected, but the cached ADR-031 path still
+holds the target comfortably.
+
+## Keep / Pivot
+
+Keep the cached ADR-031 runtime path.
+
+Do not spend the next slice shaving more latency off the same seam. The more
+important next question is whether the cached ADR-031 path preserves the needed
+quality/recall on the same real-corpus workload.
+
 ## Next Step
 
-Keep the ADR-031 cached runtime path and widen this packet to the full
-canonical `1000`-query `tqhnsw_real_50k` read before making any more runtime
-changes.
+Open the follow-on packet for ADR-031 recall validation on the real corpus,
+then compare the cached ADR-031 runtime path against the pre-ADR-031 ordered
+scan outputs before making further runtime changes.
 
 ## Success Criteria
 
