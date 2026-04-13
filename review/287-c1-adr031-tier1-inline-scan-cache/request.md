@@ -171,6 +171,37 @@ The repeated canonical rerun makes the result look real rather than lucky.
 It also means the real warm `50k` ADR-031 seam is now below the user-stated
 `<2ms` target.
 
+## Recall Recheck
+
+After the latency checkpoint, I reran the full canonical external recall
+summary on the current Tier 1 build:
+
+```bash
+./scripts/run_real_corpus_recall_scratch.sh summary \
+  --index tqhnsw_real_50k_m8_idx \
+  --m 8 \
+  --ef-search 40 \
+  --corpus-table tqhnsw_real_50k_corpus \
+  --queries-table tqhnsw_real_50k_queries
+```
+
+Observed output row:
+
+```text
+8  40  50000  1000  0.8428  0.39616  0.89274156  0.0059756036  0.6240727  0.8428  0  0
+```
+
+Relevant readout:
+
+- `graph_recall_at_10 = 0.8428`
+- `exact_quantized_recall_at_10 = 0.8428`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+So Tier 1 did **not** introduce a runtime recall regression at the target seam.
+The absolute Recall@10 remains about `84%` versus fp32 truth, but that is still
+the quantized-storage quality, not a new scan/runtime loss.
+
 ## Next Step
 
 Tier 2 is still available:
