@@ -226,8 +226,19 @@ The next viable ADR-032 question is therefore narrower and more demanding:
 - not merely whether the same work can be routed through a cleaner node-centric bookkeeping
   shape
 
-The next legitimate ADR-032 slice is a fused node-centric scan cache, not another isolated
-`Arc`/`Vec` ownership swap.
+The first cut that actually changed the exact-score lifecycle is the first one that moved the
+frontier in the right direction: admit binary-scored successors provisionally, exact-score them at
+frontier head, and requeue them if exact scoring makes them worse. On the real `50k` corpus that
+shift produced a materially better latency/recall operating frontier at higher `ef_search`, even
+though it still loses recall at `ef_search=40`.
+
+So ADR-032 now has a concrete signal:
+
+- bookkeeping-only cuts are not enough
+- exact-score-promotion timing is a plausible winning lever
+
+The next legitimate ADR-032 slice should therefore keep pushing on promotion timing and frontier
+state, not return to isolated `Arc`/`Vec` ownership swaps.
 
 ADR-032 is being run down before ADR-030 specifically because ADR-031 already has a strong
 signal on the current persisted format, so the next rational question is whether a larger

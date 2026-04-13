@@ -262,22 +262,15 @@ impl CachedGraphElement {
     }
 }
 
-struct LoadedElementScoreInput {
-    gamma: f32,
-    code_bytes: Vec<u8>,
-}
-
 enum LoadedElementState {
     None,
     ExactScore(f32),
-    ExactPayload(LoadedElementScoreInput),
 }
 
 struct BinaryPrefilterCandidate {
     ordinal: usize,
-    element: Arc<CachedGraphElement>,
+    node: page::ItemPointer,
     approx_score: f32,
-    loaded_state: LoadedElementState,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -856,10 +849,7 @@ unsafe fn cached_graph_element(
 
                 if live_element {
                     loaded_state = if binary_query_active {
-                        LoadedElementState::ExactPayload(LoadedElementScoreInput {
-                            gamma: element.gamma,
-                            code_bytes: element.code.to_vec(),
-                        })
+                        LoadedElementState::None
                     } else {
                         LoadedElementState::ExactScore(score_and_cache_scan_element(
                             opaque_ref,
@@ -922,20 +912,6 @@ unsafe fn exact_score_cached_graph_element(
 ) -> f32 {
     match loaded_state {
         LoadedElementState::ExactScore(score) => score,
-        LoadedElementState::ExactPayload(loaded) => {
-            let opaque_ref = unsafe { &mut *opaque };
-            if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
-                record_score_cache_hit(opaque_ref);
-                score
-            } else {
-                score_and_cache_scan_element(
-                    opaque_ref,
-                    element_tid,
-                    loaded.gamma,
-                    &loaded.code_bytes,
-                )
-            }
-        }
         LoadedElementState::None => {
             let opaque_ref = unsafe { &mut *opaque };
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
@@ -1060,8 +1036,7 @@ where
         layer,
         |neighbor_tid| {
             if keep_neighbor_tid(neighbor_tid) {
-                let (neighbor, loaded_state) =
-                    unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
+                let (neighbor, _) = unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
                 if neighbor.deleted || neighbor.heaptids.is_empty() {
                     return;
                 }
@@ -1082,9 +1057,8 @@ where
                 );
                 approx_candidates.push(BinaryPrefilterCandidate {
                     ordinal: approx_candidates.len(),
-                    element: neighbor,
+                    node: neighbor.tid,
                     approx_score,
-                    loaded_state,
                 });
             }
         },
@@ -1098,17 +1072,9 @@ where
     }
 
     for candidate in approx_candidates {
-        let score = unsafe {
-            exact_score_cached_graph_element(
-                index_relation,
-                opaque,
-                candidate.element.tid,
-                candidate.loaded_state,
-            )
-        };
         candidates.push(search::BeamCandidate::with_source(
-            candidate.element.tid,
-            score,
+            candidate.node,
+            candidate.approx_score,
             source_tid,
         ));
     }
@@ -1331,7 +1297,8 @@ unsafe fn prefetch_next_graph_result_from_frontier(
     loop {
         #[cfg(any(test, feature = "pg_test"))]
         let consume_started = Instant::now();
-        let candidate = consume_candidate_frontier_head(opaque);
+        let candidate =
+            unsafe { consume_candidate_frontier_head_with_exact_promotion(index_relation, opaque) };
         #[cfg(any(test, feature = "pg_test"))]
         let consume_elapsed_us =
             u64::try_from(consume_started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -1815,6 +1782,50 @@ fn consume_candidate_frontier_head(
     with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
         visible_frontier.consume_best(expansion)
     })
+}
+
+fn peek_candidate_frontier_head_score(opaque: &mut TqScanOpaque) -> Option<f32> {
+    with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
+        visible_frontier.best_candidate(expansion).map(|candidate| candidate.score)
+    })
+}
+
+unsafe fn consume_candidate_frontier_head_with_exact_promotion(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> Option<search::BeamCandidate<page::ItemPointer>> {
+    loop {
+        let candidate = consume_candidate_frontier_head(opaque)?;
+        let exact_candidate = if let Some(score) = cached_scan_element_score(opaque, candidate.node) {
+            record_score_cache_hit(opaque);
+            search::BeamCandidate {
+                node: candidate.node,
+                score,
+                source: candidate.source,
+            }
+        } else {
+            let (element, score) =
+                unsafe { cached_graph_element_and_score(index_relation, opaque, candidate.node) };
+            let Some(score) = score else {
+                continue;
+            };
+            search::BeamCandidate {
+                node: element.tid,
+                score,
+                source: candidate.source,
+            }
+        };
+
+        let next_best_score = peek_candidate_frontier_head_score(opaque);
+        if match next_best_score {
+            None => true,
+            Some(next) => exact_candidate.score <= next,
+        } {
+            return Some(exact_candidate);
+        }
+
+        seed_discovered_candidates(opaque, [exact_candidate]);
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
