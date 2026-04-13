@@ -479,10 +479,83 @@ ADR-032 still looks promising, but the evidence is sharper now:
 - binary-score calibration makes low-`ef` latency even better, but pushes recall much lower
 
 So the next legitimate ADR-032 follow-up should probably not be another "how many sources do we
-exact-promote early?" experiment or another score-scale heuristic. The better next candidate is:
+exact-promote early?" experiment or another score-scale heuristic.
 
-- score-budget accounting that exact-promotes only when the scan is materially under-spending exact
-  work, or when the frontier would otherwise be driven entirely by approximate ordering at low `ef`
+## Follow-Up Attempt: Low-Ef Exact-Score Floor On Best Binary Survivors
+
+I then tried the first score-budget accounting cut:
+
+- keep the pushed ADR-032 exact-on-head base intact
+- only at low `ef_search` (`<= 64`), arm a bounded exact-score budget derived from `ef_search`
+- budget used here: `min(ef_search / 2, 24)` total exact scores, spent at most `1` per source
+  expansion
+- spend that budget on the best binary survivor from each expansion before it enters the frontier
+
+This was meant to avoid the earlier "first N source promotions" mistake by spending exact work on
+the most promising newly discovered nodes instead of on source nodes themselves.
+
+### Diagnostic: Exact-Score Spend
+
+On a 10-query real-`50k` sample at `m=8`, `ef_search=40`, the score-budget floor changed the hot
+path materially:
+
+- `candidate_score_calls` rose from `2.00` to `60.50` on average
+- `graph_element_cache_misses` stayed in the same band (`572.80 -> 655.20`)
+
+So this was a real exact-work floor, not a no-op.
+
+### Measurement: Warm Real-50k Latency
+
+Canonical warm real-`50k`, `m=8`, `ef_search=40`, `warmup-passes=3`, `session-mode=per-cell`,
+`timing-mode=cached-plan`:
+
+- `p50=0.839ms`
+- `p95=1.148ms`
+- `p99=1.346ms`
+- `mean=0.863ms`
+
+So latency stayed in the same excellent ADR-032 band and remained slightly better than the
+standing exact-on-head cut.
+
+### Measurement: Full Real-50k Recall
+
+Full real-`50k`, `1000` queries, `m=8`, `ef_search=40`:
+
+- `graph_recall_at_10 = 0.6774`
+- `exact_quantized_recall_at_10 = 0.6774`
+- `graph_below_exact_queries = 0`
+- `worst_exact_gap = 0`
+
+Again, the exact-quantized comparator on this branch is not a reliable exact-reference field, so
+the meaningful read is the graph-vs-fp32 `0.6774` recall.
+
+### Result
+
+This low-`ef` exact-score floor is also a discard.
+
+It spent far more exact work than the standing ADR-032 cut, but still recovered much less recall
+than expected (`0.6774` vs the standing `0.8080`). That means the missing quality is not solved by
+exact-scoring the best candidate from each *local source expansion*. The additional work is being
+spent in the wrong place.
+
+## Updated Read
+
+ADR-032 still looks promising, but the evidence is sharper now:
+
+- changing exact-score timing *at frontier/output consumption* is a real lever
+- exact-promoting *every* layer-0 source before expansion is too expensive
+- exact-promoting only a tiny low-`ef` source budget is fast, but hurts recall even more
+- low-`ef` frontier head lookahead is fast, but collapses recall badly
+- binary-score calibration makes low-`ef` latency even better, but pushes recall much lower
+- a local per-expansion exact-score floor keeps latency excellent, but still fails to recover recall
+
+So the next legitimate ADR-032 follow-up should not be another local-per-source tweak. The better
+next candidate is a **global frontier-level exact-work policy**:
+
+- keep a small exact-scored reservoir or budget tied to the live frontier rather than to each
+  source expansion
+- spend exact work on globally competitive candidates, not on each source's best local survivor
+
 ## Success Criteria
 
 - ADR-032 is explicitly documented as a larger scan-runtime redesign, not a cleanup ADR
