@@ -324,6 +324,11 @@ struct GroupedScoreInput<'a> {
     binary_words: &'a [u64],
 }
 
+enum CandidateScoreDispatch<'a> {
+    Exact(LoadedElementState),
+    Grouped(GroupedScoreInput<'a>),
+}
+
 struct BinaryPrefilterCandidate {
     ordinal: usize,
     element: Arc<CachedGraphElement>,
@@ -1039,6 +1044,36 @@ unsafe fn exact_score_cached_graph_element(
     }
 }
 
+fn candidate_score_dispatch<'a>(
+    element: &'a CachedGraphElement,
+    loaded_state: LoadedElementState,
+) -> CandidateScoreDispatch<'a> {
+    match loaded_state {
+        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(
+            element.grouped_score_input().unwrap_or_else(|| {
+                panic!("exact-unavailable grouped score dispatch requires grouped score input")
+            }),
+        ),
+        other => CandidateScoreDispatch::Exact(other),
+    }
+}
+
+unsafe fn score_cached_graph_element_dispatch(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+    loaded_state: LoadedElementState,
+) -> f32 {
+    match candidate_score_dispatch(element, loaded_state) {
+        CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+            exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
+        },
+        CandidateScoreDispatch::Grouped(_grouped) => {
+            pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
+        }
+    }
+}
+
 unsafe fn cached_graph_element_and_score(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
@@ -1049,9 +1084,8 @@ unsafe fn cached_graph_element_and_score(
     if element.deleted || element.heaptids.is_empty() {
         return (element, None);
     }
-    let score = unsafe {
-        exact_score_cached_graph_element(index_relation, opaque, element_tid, loaded_state)
-    };
+    let score =
+        unsafe { score_cached_graph_element_dispatch(index_relation, opaque, &element, loaded_state) };
     (element, Some(score))
 }
 
@@ -1188,10 +1222,10 @@ where
 
     for candidate in approx_candidates {
         let score = unsafe {
-            exact_score_cached_graph_element(
+            score_cached_graph_element_dispatch(
                 index_relation,
                 opaque,
-                candidate.element.tid,
+                &candidate.element,
                 candidate.loaded_state,
             )
         };
@@ -3378,6 +3412,71 @@ mod tests {
         assert_eq!(grouped.reranktid, tuple.reranktid);
         assert_eq!(grouped.search_code, tuple.search_code.as_slice());
         assert_eq!(grouped.binary_words, tuple.binary_words.as_slice());
+    }
+
+    #[test]
+    fn candidate_score_dispatch_uses_grouped_input_for_exact_unavailable() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(12, 1)],
+            neighbortid: tid(12, 2),
+            reranktid: tid(12, 3),
+            binary_words: vec![0xAABBCCDD00112233],
+            search_code: vec![0xAB, 0xCD],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(12, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(&cached, LoadedElementState::ExactUnavailable) {
+            CandidateScoreDispatch::Grouped(grouped) => {
+                assert_eq!(grouped.reranktid, tuple.reranktid);
+                assert_eq!(grouped.search_code, tuple.search_code.as_slice());
+                assert_eq!(grouped.binary_words, tuple.binary_words.as_slice());
+            }
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("exact-unavailable grouped tuples should dispatch through grouped input")
+            }
+        }
+    }
+
+    #[test]
+    fn candidate_score_dispatch_keeps_scalar_loaded_state_exact() {
+        let tuple = page::TqElementTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(13, 1)],
+            gamma: 0.75,
+            neighbortid: tid(13, 2),
+            code: vec![0x01, 0x23, 0x45, 0x67],
+            binary_words: vec![0x0102030405060708],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::Scalar(
+            page::TqElementTupleRef::decode(&encoded, tuple.code.len()).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(13, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(&cached, LoadedElementState::None) {
+            CandidateScoreDispatch::Exact(LoadedElementState::None) => {}
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("scalar fallback dispatch should preserve the original exact loaded state")
+            }
+            CandidateScoreDispatch::Grouped(_) => {
+                panic!("scalar tuples should never dispatch through grouped score input")
+            }
+        }
     }
 
     #[test]
