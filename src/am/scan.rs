@@ -1058,6 +1058,15 @@ fn candidate_score_dispatch<'a>(
     }
 }
 
+unsafe fn score_grouped_candidate_input(
+    _index_relation: pg_sys::Relation,
+    _opaque: *mut TqScanOpaque,
+    _element_tid: page::ItemPointer,
+    _grouped: GroupedScoreInput<'_>,
+) -> f32 {
+    pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
+}
+
 unsafe fn score_cached_graph_element_dispatch(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
@@ -1068,9 +1077,9 @@ unsafe fn score_cached_graph_element_dispatch(
         CandidateScoreDispatch::Exact(loaded_state) => unsafe {
             exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
         },
-        CandidateScoreDispatch::Grouped(_grouped) => {
-            pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
-        }
+        CandidateScoreDispatch::Grouped(grouped) => unsafe {
+            score_grouped_candidate_input(index_relation, opaque, element.tid, grouped)
+        },
     }
 }
 
