@@ -2816,6 +2816,53 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet")]
+    fn test_experimental_grouped_v2_ordered_scan_rejects_runtime() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_reject (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_reject VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_reject_idx ON tqhnsw_grouped_v2_runtime_reject USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE tqhnsw_grouped_v2_runtime_reject").expect("analyze should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_grouped_v2_runtime_reject \
+             ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                      0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+             LIMIT 1",
+        );
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (

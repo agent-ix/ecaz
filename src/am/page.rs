@@ -94,6 +94,12 @@ impl RerankCodecKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphStorageFormat {
+    ScalarV1,
+    GroupedV2,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ItemPointer {
     pub block_number: u32,
@@ -160,6 +166,14 @@ pub struct CurrentFormatMetadata {
 }
 
 impl MetadataPage {
+    pub fn graph_storage_format(&self) -> Result<GraphStorageFormat, String> {
+        match self.format_version {
+            INDEX_FORMAT_V1_SCALAR => Ok(GraphStorageFormat::ScalarV1),
+            INDEX_FORMAT_V2_GROUPED => Ok(GraphStorageFormat::GroupedV2),
+            other => Err(format!("unsupported metadata format version: {other}")),
+        }
+    }
+
     pub fn current_v1_scalar(current: CurrentFormatMetadata) -> Self {
         let mut payload_flags = 0_u8;
         if current.persisted_binary_sidecar {
@@ -1257,6 +1271,42 @@ mod tests {
         assert_eq!(decoded.transform_kind, TransformKind::Srht);
         assert_eq!(decoded.search_codec_kind, SearchCodecKind::ScalarQuantized);
         assert_eq!(decoded.payload_flags, 0);
+    }
+
+    #[test]
+    fn metadata_graph_storage_format_distinguishes_v1_and_v2() {
+        let v1 = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 16,
+            bits: 4,
+            max_level: 2,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        });
+        assert_eq!(v1.graph_storage_format().unwrap(), GraphStorageFormat::ScalarV1);
+
+        let v2 = MetadataPage {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 16,
+            bits: 4,
+            max_level: 2,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: INDEX_FORMAT_V2_GROUPED,
+            transform_kind: TransformKind::Srht,
+            search_codec_kind: SearchCodecKind::GroupedPq,
+            payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE | PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+        };
+        assert_eq!(v2.graph_storage_format().unwrap(), GraphStorageFormat::GroupedV2);
     }
 
     #[test]

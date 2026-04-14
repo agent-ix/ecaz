@@ -18,6 +18,8 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
+const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
+    "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet";
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -439,6 +441,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
+            validate_runtime_scan_format(&metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -546,6 +550,13 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             let amrescan_total_elapsed_us = 0;
             record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
         })
+    }
+}
+
+fn validate_runtime_scan_format(metadata: &page::MetadataPage) -> Result<(), String> {
+    match metadata.graph_storage_format()? {
+        page::GraphStorageFormat::ScalarV1 => Ok(()),
+        page::GraphStorageFormat::GroupedV2 => Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned()),
     }
 }
 
@@ -3190,6 +3201,32 @@ mod tests {
             opaque.cached_quantizer.is_null(),
             "freeing scan prepared-query state should release the cached quantizer too"
         );
+    }
+
+    #[test]
+    fn validate_runtime_scan_format_rejects_grouped_v2_metadata() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 16,
+            bits: 4,
+            max_level: 2,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+        };
+
+        let error = validate_runtime_scan_format(&metadata).unwrap_err();
+        assert_eq!(error, ADR030_GROUPED_V2_SCAN_UNSUPPORTED);
     }
 
     #[test]
