@@ -3362,6 +3362,269 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_runtime_comparison_summary_matches_emitted_rows() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_summary_idx ON tqhnsw_grouped_v2_runtime_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
+            1.45, 1.55, 1.65,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+
+        let compared_rows = observed
+            .iter()
+            .filter_map(|(_heap_tid, approx_score, comparison_score)| {
+                comparison_score.map(|exact_score| (*approx_score, exact_score))
+            })
+            .collect::<Vec<_>>();
+        let expected_emitted_result_count =
+            i32::try_from(observed.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let expected_compared_result_count =
+            i32::try_from(compared_rows.len()).expect("compared result count should fit in i32");
+        let expected_missing_comparison_count =
+            expected_grouped_result_count - expected_compared_result_count;
+        let expected_mean_abs_score_delta = if compared_rows.is_empty() {
+            0.0
+        } else {
+            compared_rows
+                .iter()
+                .map(|(approx_score, exact_score)| f64::from((approx_score - exact_score).abs()))
+                .sum::<f64>()
+                / f64::from(expected_compared_result_count)
+        };
+        let expected_max_abs_score_delta = compared_rows
+            .iter()
+            .map(|(approx_score, exact_score)| (approx_score - exact_score).abs())
+            .fold(0.0_f32, f32::max);
+        let expected_mean_signed_score_delta = if compared_rows.is_empty() {
+            0.0
+        } else {
+            compared_rows
+                .iter()
+                .map(|(approx_score, exact_score)| f64::from(approx_score - exact_score))
+                .sum::<f64>()
+                / f64::from(expected_compared_result_count)
+        };
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            grouped_result_count,
+                            compared_result_count,
+                            missing_comparison_count,
+                            mean_abs_score_delta,
+                            max_abs_score_delta,
+                            mean_signed_score_delta
+                         FROM tests.tqhnsw_debug_grouped_scan_comparison_summary(
+                            'tqhnsw_grouped_v2_runtime_summary_idx'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped comparison summary query should succeed")
+                .next()
+                .expect("grouped comparison summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["missing_comparison_count"]
+                    .value::<i32>()
+                    .expect("missing comparison count should decode")
+                    .expect("missing comparison count should be non-null"),
+                row["mean_abs_score_delta"]
+                    .value::<f64>()
+                    .expect("mean abs score delta should decode")
+                    .expect("mean abs score delta should be non-null"),
+                row["max_abs_score_delta"]
+                    .value::<f32>()
+                    .expect("max abs score delta should decode")
+                    .expect("max abs score delta should be non-null"),
+                row["mean_signed_score_delta"]
+                    .value::<f64>()
+                    .expect("mean signed score delta should decode")
+                    .expect("mean signed score delta should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert_eq!(missing_comparison_count, expected_missing_comparison_count);
+        assert!(
+            (mean_abs_score_delta - expected_mean_abs_score_delta).abs() <= 1e-6,
+            "mean abs grouped score delta should match the emitted-row summary"
+        );
+        assert!(
+            (max_abs_score_delta - expected_max_abs_score_delta).abs() <= f32::EPSILON,
+            "max abs grouped score delta should match the emitted-row summary"
+        );
+        assert!(
+            (mean_signed_score_delta - expected_mean_signed_score_delta).abs() <= 1e-6,
+            "mean signed grouped score delta should match the emitted-row summary"
+        );
+    }
+
+    #[pg_test]
+    fn test_scalar_runtime_summary_reports_no_grouped_comparisons() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_summary_idx ON tqhnsw_scalar_runtime_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        grouped_result_count,
+                        compared_result_count,
+                        missing_comparison_count,
+                        mean_abs_score_delta,
+                        max_abs_score_delta,
+                        mean_signed_score_delta
+                     FROM tests.tqhnsw_debug_grouped_scan_comparison_summary(
+                        'tqhnsw_scalar_runtime_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar comparison summary query should succeed")
+                .next()
+                .expect("scalar comparison summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["missing_comparison_count"]
+                    .value::<i32>()
+                    .expect("missing comparison count should decode")
+                    .expect("missing comparison count should be non-null"),
+                row["mean_abs_score_delta"]
+                    .value::<f64>()
+                    .expect("mean abs score delta should decode")
+                    .expect("mean abs score delta should be non-null"),
+                row["max_abs_score_delta"]
+                    .value::<f32>()
+                    .expect("max abs score delta should decode")
+                    .expect("max abs score delta should be non-null"),
+                row["mean_signed_score_delta"]
+                    .value::<f64>()
+                    .expect("mean signed score delta should decode")
+                    .expect("mean signed score delta should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(missing_comparison_count, 0);
+        assert_eq!(mean_abs_score_delta, 0.0);
+        assert_eq!(max_abs_score_delta, 0.0);
+        assert_eq!(mean_signed_score_delta, 0.0);
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (
@@ -12114,6 +12377,51 @@ mod tests {
             })
             .collect::<Vec<_>>();
         TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_comparison_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(missing_comparison_count, i32),
+            name!(mean_abs_score_delta, f64),
+            name!(max_abs_score_delta, f32),
+            name!(mean_signed_score_delta, f64),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_summary")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) };
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ))
     }
 
     #[pg_extern]
