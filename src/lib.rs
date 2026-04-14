@@ -4221,6 +4221,712 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_windowed_rows_match_simulation() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_rows (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.02).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_windowed_rows VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_rows_idx ON tqhnsw_grouped_v2_runtime_windowed_rows USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_windowed_rows_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.14_f32, 0.24, 0.34, 0.44, 0.54, 0.64, 0.74, 0.84, 0.94, 1.04, 1.14, 1.24, 1.34, 1.44,
+            1.54, 1.64,
+        ];
+        let baseline_rows =
+            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let window_size = 4_usize;
+        let mut buffered_rows = Vec::with_capacity(window_size);
+        let mut next_idx = 0usize;
+        let mut expected_rows = Vec::with_capacity(baseline_rows.len());
+        while expected_rows.len() < baseline_rows.len() {
+            while buffered_rows.len() < window_size && next_idx < baseline_rows.len() {
+                buffered_rows.push(baseline_rows[next_idx]);
+                next_idx += 1;
+            }
+            let (selected_idx, _) = buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    left.3
+                        .unwrap_or(left.2)
+                        .total_cmp(&right.3.unwrap_or(right.2))
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+                .expect("windowed grouped simulation should always have a buffered row");
+            let (
+                (block_number, offset_number),
+                approx_rank,
+                approx_score,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+            ) = buffered_rows.remove(selected_idx);
+            let windowed_rank =
+                i32::try_from(expected_rows.len() + 1).expect("windowed rank should fit in i32");
+            let windowed_rank_shift = exact_rank.map(|rank| windowed_rank - rank);
+            expected_rows.push((
+                i64::from(block_number),
+                i32::from(offset_number),
+                approx_rank,
+                windowed_rank,
+                approx_score,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+                windowed_rank_shift,
+            ));
+        }
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let actual_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            block_number,
+                            offset_number,
+                            approx_rank,
+                            windowed_rank,
+                            approx_score,
+                            comparison_score,
+                            exact_rank,
+                            exact_rank_shift,
+                            windowed_rank_shift
+                         FROM tests.tqhnsw_debug_grouped_scan_windowed_rows(
+                            'tqhnsw_grouped_v2_runtime_windowed_rows_idx'::regclass::oid,
+                            {query_literal},
+                            4
+                         )
+                         ORDER BY windowed_rank"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped windowed rows query should succeed")
+                .map(|row| {
+                    (
+                        row["block_number"]
+                            .value::<i64>()
+                            .expect("block number should decode")
+                            .expect("block number should be non-null"),
+                        row["offset_number"]
+                            .value::<i32>()
+                            .expect("offset number should decode")
+                            .expect("offset number should be non-null"),
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["windowed_rank"]
+                            .value::<i32>()
+                            .expect("windowed rank should decode")
+                            .expect("windowed rank should be non-null"),
+                        row["approx_score"]
+                            .value::<f32>()
+                            .expect("approx score should decode")
+                            .expect("approx score should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                        row["windowed_rank_shift"]
+                            .value::<i32>()
+                            .expect("windowed rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(actual_rows.len(), expected_rows.len());
+        for (actual, expected) in actual_rows.iter().zip(expected_rows.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(actual.1, expected.1);
+            assert_eq!(actual.2, expected.2);
+            assert_eq!(actual.3, expected.3);
+            assert_eq!(actual.4.to_bits(), expected.4.to_bits());
+            assert_eq!(actual.5.map(f32::to_bits), expected.5.map(f32::to_bits));
+            assert_eq!(actual.6, expected.6);
+            assert_eq!(actual.7, expected.7);
+            assert_eq!(actual.8, expected.8);
+        }
+    }
+
+    #[pg_test]
+    fn test_scalar_windowed_rows_are_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_windowed_rows (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_windowed_rows VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_windowed_rows_idx ON tqhnsw_scalar_runtime_windowed_rows USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        approx_rank,
+                        windowed_rank,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                        windowed_rank_shift
+                     FROM tests.tqhnsw_debug_grouped_scan_windowed_rows(
+                        'tqhnsw_scalar_runtime_windowed_rows_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                        4
+                     )
+                     ORDER BY windowed_rank",
+                    None,
+                    &[],
+                )
+                .expect("scalar windowed rows query should succeed")
+                .map(|row| {
+                    (
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["windowed_rank"]
+                            .value::<i32>()
+                            .expect("windowed rank should decode")
+                            .expect("windowed rank should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                        row["windowed_rank_shift"]
+                            .value::<i32>()
+                            .expect("windowed rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert!(!rows.is_empty());
+        for (
+            idx,
+            (
+                approx_rank,
+                windowed_rank,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+                windowed_rank_shift,
+            ),
+        ) in rows.iter().enumerate()
+        {
+            let expected_rank = i32::try_from(idx + 1).expect("rank should fit in i32");
+            assert_eq!(*approx_rank, expected_rank);
+            assert_eq!(*windowed_rank, expected_rank);
+            assert_eq!(*comparison_score, None);
+            assert_eq!(*exact_rank, None);
+            assert_eq!(*exact_rank_shift, None);
+            assert_eq!(*windowed_rank_shift, None);
+        }
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_windowed_summary_matches_rows() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.035).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.025).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_windowed_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_summary_idx ON tqhnsw_grouped_v2_runtime_windowed_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_windowed_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.16_f32, 0.26, 0.36, 0.46, 0.56, 0.66, 0.76, 0.86, 0.96, 1.06, 1.16, 1.26, 1.36, 1.46,
+            1.56, 1.66,
+        ];
+        let baseline_rows =
+            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let windowed_rows =
+            unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4) };
+
+        let rank_metrics = |rows: &[(i32, Option<i32>, Option<i32>)]| {
+            let mut compared_result_count = 0_i32;
+            let mut abs_rank_shift_sum = 0.0_f64;
+            let mut max_abs_rank_shift = 0_i32;
+            let mut d_squared_sum = 0.0_f64;
+            let mut exact_best_rank = None;
+            let mut exact_top4_max_rank = None;
+
+            for (observed_rank, exact_rank, explicit_rank_shift) in rows {
+                let Some(exact_rank) = exact_rank else {
+                    continue;
+                };
+                compared_result_count += 1;
+                let abs_rank_shift = explicit_rank_shift
+                    .unwrap_or(observed_rank - exact_rank)
+                    .abs();
+                abs_rank_shift_sum += f64::from(abs_rank_shift);
+                max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+                let d = f64::from(observed_rank - exact_rank);
+                d_squared_sum += d * d;
+                if *exact_rank == 1 {
+                    exact_best_rank = Some(*observed_rank);
+                }
+                if *exact_rank <= 4 {
+                    exact_top4_max_rank = Some(
+                        exact_top4_max_rank
+                            .map_or(*observed_rank, |max_rank: i32| max_rank.max(*observed_rank)),
+                    );
+                }
+            }
+
+            let mean_abs_rank_shift = if compared_result_count == 0 {
+                0.0
+            } else {
+                abs_rank_shift_sum / f64::from(compared_result_count)
+            };
+            let spearman_rank_correlation = if compared_result_count < 2 {
+                0.0
+            } else {
+                let n = f64::from(compared_result_count);
+                1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+            };
+
+            (
+                compared_result_count,
+                mean_abs_rank_shift,
+                max_abs_rank_shift,
+                spearman_rank_correlation,
+                exact_best_rank,
+                exact_top4_max_rank,
+            )
+        };
+
+        let expected_emitted_result_count =
+            i32::try_from(baseline_rows.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let baseline_metric_rows = baseline_rows
+            .iter()
+            .map(
+                |(
+                    _heap_tid,
+                    approx_rank,
+                    _approx_score,
+                    _comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+            )
+            .collect::<Vec<_>>();
+        let windowed_metric_rows = windowed_rows
+            .iter()
+            .map(
+                |(
+                    _heap_tid,
+                    _approx_rank,
+                    windowed_rank,
+                    _approx_score,
+                    _comparison_score,
+                    exact_rank,
+                    _exact_rank_shift,
+                    windowed_rank_shift,
+                )| (*windowed_rank, *exact_rank, *windowed_rank_shift),
+            )
+            .collect::<Vec<_>>();
+        let (
+            expected_compared_result_count,
+            expected_mean_abs_rank_shift_before,
+            expected_max_abs_rank_shift_before,
+            expected_spearman_before,
+            expected_exact_best_approx_rank,
+            expected_exact_top4_max_approx_rank,
+        ) = rank_metrics(&baseline_metric_rows);
+        let (
+            _windowed_compared_result_count,
+            expected_mean_abs_rank_shift_after,
+            expected_max_abs_rank_shift_after,
+            expected_spearman_after,
+            expected_exact_best_windowed_rank,
+            expected_exact_top4_max_windowed_rank,
+        ) = rank_metrics(&windowed_metric_rows);
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_before,
+            spearman_after,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            grouped_result_count,
+                            compared_result_count,
+                            window_size,
+                            exact_best_approx_rank,
+                            exact_best_windowed_rank,
+                            exact_top4_max_approx_rank,
+                            exact_top4_max_windowed_rank,
+                            mean_abs_rank_shift_before,
+                            mean_abs_rank_shift_after,
+                            max_abs_rank_shift_before,
+                            max_abs_rank_shift_after,
+                            spearman_rank_correlation_before,
+                            spearman_rank_correlation_after
+                         FROM tests.tqhnsw_debug_grouped_scan_windowed_summary(
+                            'tqhnsw_grouped_v2_runtime_windowed_summary_idx'::regclass::oid,
+                            {query_literal},
+                            4
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped windowed summary query should succeed")
+                .next()
+                .expect("grouped windowed summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["window_size"]
+                    .value::<i32>()
+                    .expect("window size should decode")
+                    .expect("window size should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_best_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact best windowed rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["exact_top4_max_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max windowed rank should decode"),
+                row["mean_abs_rank_shift_before"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift before should decode")
+                    .expect("mean abs rank shift before should be non-null"),
+                row["mean_abs_rank_shift_after"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift after should decode")
+                    .expect("mean abs rank shift after should be non-null"),
+                row["max_abs_rank_shift_before"]
+                    .value::<i32>()
+                    .expect("max abs rank shift before should decode")
+                    .expect("max abs rank shift before should be non-null"),
+                row["max_abs_rank_shift_after"]
+                    .value::<i32>()
+                    .expect("max abs rank shift after should decode")
+                    .expect("max abs rank shift after should be non-null"),
+                row["spearman_rank_correlation_before"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation before should decode")
+                    .expect("spearman rank correlation before should be non-null"),
+                row["spearman_rank_correlation_after"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation after should decode")
+                    .expect("spearman rank correlation after should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert_eq!(window_size, 4);
+        assert_eq!(exact_best_approx_rank, expected_exact_best_approx_rank);
+        assert_eq!(exact_best_windowed_rank, expected_exact_best_windowed_rank);
+        assert_eq!(
+            exact_top4_max_approx_rank,
+            expected_exact_top4_max_approx_rank
+        );
+        assert_eq!(
+            exact_top4_max_windowed_rank,
+            expected_exact_top4_max_windowed_rank
+        );
+        assert!(
+            (mean_abs_rank_shift_before - expected_mean_abs_rank_shift_before).abs() <= 1e-6,
+            "baseline mean abs rank shift should match the row aggregation"
+        );
+        assert!(
+            (mean_abs_rank_shift_after - expected_mean_abs_rank_shift_after).abs() <= 1e-6,
+            "windowed mean abs rank shift should match the row aggregation"
+        );
+        assert_eq!(
+            max_abs_rank_shift_before,
+            expected_max_abs_rank_shift_before
+        );
+        assert_eq!(max_abs_rank_shift_after, expected_max_abs_rank_shift_after);
+        assert!(
+            (spearman_before - expected_spearman_before).abs() <= 1e-6,
+            "baseline spearman should match the row aggregation"
+        );
+        assert!(
+            (spearman_after - expected_spearman_after).abs() <= 1e-6,
+            "windowed spearman should match the row aggregation"
+        );
+        if let (Some(approx_rank), Some(windowed_rank)) =
+            (exact_best_approx_rank, exact_best_windowed_rank)
+        {
+            assert!(
+                windowed_rank <= approx_rank,
+                "a sliding rerank window should not push the exact-best emitted row later than its baseline approximate rank"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_scalar_windowed_summary_is_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_windowed_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_windowed_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_windowed_summary_idx ON tqhnsw_scalar_runtime_windowed_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_before,
+            spearman_after,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        grouped_result_count,
+                        compared_result_count,
+                        window_size,
+                        exact_best_approx_rank,
+                        exact_best_windowed_rank,
+                        exact_top4_max_approx_rank,
+                        exact_top4_max_windowed_rank,
+                        mean_abs_rank_shift_before,
+                        mean_abs_rank_shift_after,
+                        max_abs_rank_shift_before,
+                        max_abs_rank_shift_after,
+                        spearman_rank_correlation_before,
+                        spearman_rank_correlation_after
+                     FROM tests.tqhnsw_debug_grouped_scan_windowed_summary(
+                        'tqhnsw_scalar_runtime_windowed_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                        4
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar windowed summary query should succeed")
+                .next()
+                .expect("scalar windowed summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["window_size"]
+                    .value::<i32>()
+                    .expect("window size should decode")
+                    .expect("window size should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_best_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact best windowed rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["exact_top4_max_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max windowed rank should decode"),
+                row["mean_abs_rank_shift_before"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift before should decode")
+                    .expect("mean abs rank shift before should be non-null"),
+                row["mean_abs_rank_shift_after"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift after should decode")
+                    .expect("mean abs rank shift after should be non-null"),
+                row["max_abs_rank_shift_before"]
+                    .value::<i32>()
+                    .expect("max abs rank shift before should decode")
+                    .expect("max abs rank shift before should be non-null"),
+                row["max_abs_rank_shift_after"]
+                    .value::<i32>()
+                    .expect("max abs rank shift after should decode")
+                    .expect("max abs rank shift after should be non-null"),
+                row["spearman_rank_correlation_before"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation before should decode")
+                    .expect("spearman rank correlation before should be non-null"),
+                row["spearman_rank_correlation_after"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation after should decode")
+                    .expect("spearman rank correlation after should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(window_size, 4);
+        assert_eq!(exact_best_approx_rank, None);
+        assert_eq!(exact_best_windowed_rank, None);
+        assert_eq!(exact_top4_max_approx_rank, None);
+        assert_eq!(exact_top4_max_windowed_rank, None);
+        assert_eq!(mean_abs_rank_shift_before, 0.0);
+        assert_eq!(mean_abs_rank_shift_after, 0.0);
+        assert_eq!(max_abs_rank_shift_before, 0);
+        assert_eq!(max_abs_rank_shift_after, 0);
+        assert_eq!(spearman_before, 0.0);
+        assert_eq!(spearman_after, 0.0);
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (
@@ -13035,6 +13741,133 @@ mod tests {
             window_2_contains_exact_best,
             window_4_contains_exact_best,
             window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_windowed_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(windowed_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+            name!(windowed_rank_shift, Option<i32>),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_windowed_rows")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let rows = unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query, window_size) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    windowed_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                    windowed_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        windowed_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                        windowed_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_windowed_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(window_size, i32),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_best_windowed_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(exact_top4_max_windowed_rank, Option<i32>),
+            name!(mean_abs_rank_shift_before, f64),
+            name!(mean_abs_rank_shift_after, f64),
+            name!(max_abs_rank_shift_before, i32),
+            name!(max_abs_rank_shift_after, i32),
+            name!(spearman_rank_correlation_before, f64),
+            name!(spearman_rank_correlation_after, f64),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "tests.tqhnsw_debug_grouped_scan_windowed_summary",
+            )
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ) = unsafe { am::debug_grouped_scan_windowed_summary(index_oid, query, window_size) };
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
         ))
     }
 

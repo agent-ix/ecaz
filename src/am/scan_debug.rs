@@ -339,6 +339,47 @@ type DebugGroupedScanOrderDriftSummary = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanWindowedRow = (
+    HeapTidCoords,
+    i32,
+    i32,
+    f32,
+    Option<f32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanWindowedSummary = (
+    i32,
+    i32,
+    i32,
+    i32,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    f64,
+    f64,
+    i32,
+    i32,
+    f64,
+    f64,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DebugGroupedRankMetrics {
+    compared_result_count: i32,
+    mean_abs_rank_shift: f64,
+    max_abs_rank_shift: i32,
+    spearman_rank_correlation: f64,
+    exact_best_observed_rank: Option<i32>,
+    exact_top4_max_observed_rank: Option<i32>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -1647,6 +1688,125 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_window_size(window_size: i32) -> usize {
+    if window_size <= 0 {
+        pgrx::error!("tqhnsw debug grouped scan window size must be positive");
+    }
+    usize::try_from(window_size).expect("grouped debug window size should fit in usize")
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_rank_metrics<I>(rows: I) -> DebugGroupedRankMetrics
+where
+    I: IntoIterator<Item = (i32, Option<i32>, Option<i32>)>,
+{
+    let mut compared_result_count = 0_i32;
+    let mut abs_rank_shift_sum = 0.0_f64;
+    let mut max_abs_rank_shift = 0_i32;
+    let mut d_squared_sum = 0.0_f64;
+    let mut exact_best_observed_rank = None;
+    let mut exact_top4_max_observed_rank = None;
+
+    for (observed_rank, exact_rank, explicit_rank_shift) in rows {
+        let Some(exact_rank) = exact_rank else {
+            continue;
+        };
+        compared_result_count += 1;
+
+        let abs_rank_shift = explicit_rank_shift
+            .unwrap_or(observed_rank - exact_rank)
+            .abs();
+        abs_rank_shift_sum += f64::from(abs_rank_shift);
+        max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+
+        let d = f64::from(observed_rank - exact_rank);
+        d_squared_sum += d * d;
+
+        if exact_rank == 1 {
+            exact_best_observed_rank = Some(observed_rank);
+        }
+        if exact_rank <= 4 {
+            exact_top4_max_observed_rank = Some(
+                exact_top4_max_observed_rank
+                    .map_or(observed_rank, |max_rank: i32| max_rank.max(observed_rank)),
+            );
+        }
+    }
+
+    let mean_abs_rank_shift = if compared_result_count == 0 {
+        0.0
+    } else {
+        abs_rank_shift_sum / f64::from(compared_result_count)
+    };
+    let spearman_rank_correlation = if compared_result_count < 2 {
+        0.0
+    } else {
+        let n = f64::from(compared_result_count);
+        1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+    };
+
+    DebugGroupedRankMetrics {
+        compared_result_count,
+        mean_abs_rank_shift,
+        max_abs_rank_shift,
+        spearman_rank_correlation,
+        exact_best_observed_rank,
+        exact_top4_max_observed_rank,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_scan_windowed_rows_from_comparison_rows(
+    rows: &[DebugGroupedScanComparisonRow],
+    window_size: usize,
+) -> Vec<DebugGroupedScanWindowedRow> {
+    let mut buffered_rows = Vec::with_capacity(window_size.max(1));
+    let mut next_idx = 0usize;
+    let mut output_rows = Vec::with_capacity(rows.len());
+
+    while output_rows.len() < rows.len() {
+        while buffered_rows.len() < window_size && next_idx < rows.len() {
+            buffered_rows.push(rows[next_idx]);
+            next_idx += 1;
+        }
+        let Some((selected_idx, _)) =
+            buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    let left_score = left.3;
+                    let right_score = right.3;
+                    let left_exact = left_score.unwrap_or(left.2);
+                    let right_exact = right_score.unwrap_or(right.2);
+                    left_exact
+                        .total_cmp(&right_exact)
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+        else {
+            break;
+        };
+
+        let (heap_tid, approx_rank, approx_score, comparison_score, exact_rank, exact_rank_shift) =
+            buffered_rows.remove(selected_idx);
+        let windowed_rank =
+            i32::try_from(output_rows.len() + 1).expect("windowed rank should fit in i32");
+        let windowed_rank_shift = exact_rank.map(|rank| windowed_rank - rank);
+        output_rows.push((
+            heap_tid,
+            approx_rank,
+            windowed_rank,
+            approx_score,
+            comparison_score,
+            exact_rank,
+            exact_rank_shift,
+            windowed_rank_shift,
+        ));
+    }
+
+    output_rows
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -1772,68 +1932,126 @@ pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
     }
 
     let grouped_result_count = emitted_result_count;
-    let mut compared_result_count = 0_i32;
-    let mut abs_rank_shift_sum = 0.0_f64;
-    let mut max_abs_rank_shift = 0_i32;
-    let mut d_squared_sum = 0.0_f64;
-    let mut exact_best_approx_rank = None;
-    let mut exact_top4_max_approx_rank = None;
-
-    for (_heap_tid, approx_rank, _approx_score, _comparison_score, exact_rank, exact_rank_shift) in
-        rows
-    {
-        let Some(exact_rank) = exact_rank else {
-            continue;
-        };
-        compared_result_count += 1;
-
-        let abs_rank_shift = exact_rank_shift.unwrap_or(approx_rank - exact_rank).abs();
-        abs_rank_shift_sum += f64::from(abs_rank_shift);
-        max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
-
-        let d = f64::from(approx_rank - exact_rank);
-        d_squared_sum += d * d;
-
-        if exact_rank == 1 {
-            exact_best_approx_rank = Some(approx_rank);
-        }
-        if exact_rank <= 4 {
-            exact_top4_max_approx_rank = Some(
-                exact_top4_max_approx_rank
-                    .map_or(approx_rank, |max_rank: i32| max_rank.max(approx_rank)),
-            );
-        }
-    }
-
-    let mean_abs_rank_shift = if compared_result_count == 0 {
-        0.0
-    } else {
-        abs_rank_shift_sum / f64::from(compared_result_count)
-    };
-    let spearman_rank_correlation = if compared_result_count < 2 {
-        0.0
-    } else {
-        let n = f64::from(compared_result_count);
-        1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
-    };
-    let window_1_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 1);
-    let window_2_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 2);
-    let window_4_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 4);
-    let window_8_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 8);
+    let metrics = debug_grouped_rank_metrics(rows.iter().map(
+        |(
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+    ));
+    let window_1_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 1);
+    let window_2_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 2);
+    let window_4_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 4);
+    let window_8_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 8);
 
     (
         emitted_result_count,
         grouped_result_count,
-        compared_result_count,
-        mean_abs_rank_shift,
-        max_abs_rank_shift,
-        spearman_rank_correlation,
-        exact_best_approx_rank,
-        exact_top4_max_approx_rank,
+        metrics.compared_result_count,
+        metrics.mean_abs_rank_shift,
+        metrics.max_abs_rank_shift,
+        metrics.spearman_rank_correlation,
+        metrics.exact_best_observed_rank,
+        metrics.exact_top4_max_observed_rank,
         window_1_contains_exact_best,
         window_2_contains_exact_best,
         window_4_contains_exact_best,
         window_8_contains_exact_best,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_windowed_rows(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    window_size: i32,
+) -> Vec<DebugGroupedScanWindowedRow> {
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let window_size = debug_grouped_window_size(window_size);
+    debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    window_size: i32,
+) -> DebugGroupedScanWindowedSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let window_size = debug_grouped_window_size(window_size);
+    let emitted_result_count =
+        i32::try_from(rows.len()).expect("debug grouped window summary count should fit in i32");
+    if !grouped_results {
+        return (
+            emitted_result_count,
+            0,
+            0,
+            i32::try_from(window_size).expect("grouped debug window size should fit in i32"),
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            0.0,
+            0,
+            0,
+            0.0,
+            0.0,
+        );
+    }
+
+    let grouped_result_count = emitted_result_count;
+    let baseline_metrics = debug_grouped_rank_metrics(rows.iter().map(
+        |(
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+    ));
+    let windowed_rows = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size);
+    let windowed_metrics = debug_grouped_rank_metrics(windowed_rows.iter().map(
+        |(
+            _heap_tid,
+            _approx_rank,
+            windowed_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            _exact_rank_shift,
+            windowed_rank_shift,
+        )| (*windowed_rank, *exact_rank, *windowed_rank_shift),
+    ));
+
+    (
+        emitted_result_count,
+        grouped_result_count,
+        baseline_metrics.compared_result_count,
+        i32::try_from(window_size).expect("grouped debug window size should fit in i32"),
+        baseline_metrics.exact_best_observed_rank,
+        windowed_metrics.exact_best_observed_rank,
+        baseline_metrics.exact_top4_max_observed_rank,
+        windowed_metrics.exact_top4_max_observed_rank,
+        baseline_metrics.mean_abs_rank_shift,
+        windowed_metrics.mean_abs_rank_shift,
+        baseline_metrics.max_abs_rank_shift,
+        windowed_metrics.max_abs_rank_shift,
+        baseline_metrics.spearman_rank_correlation,
+        windowed_metrics.spearman_rank_correlation,
     )
 }
 
