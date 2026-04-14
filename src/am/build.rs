@@ -503,6 +503,43 @@ pub(super) struct HnswBuildNode {
     pub(super) score_neighbors: Vec<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct V2GroupedBuildPayload {
+    pub(super) hot: page::TqGroupedHotTuple,
+    pub(super) rerank: page::TqRerankTuple,
+}
+
+pub(super) fn stage_v2_grouped_build_payload(
+    tuple: &BuildTuple,
+    level: u8,
+    neighbortid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    search_code: Vec<u8>,
+    persisted_binary_quantizer: &ProdQuantizer,
+) -> V2GroupedBuildPayload {
+    let binary_words = if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
+        persisted_binary_quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+    } else {
+        Vec::new()
+    };
+
+    V2GroupedBuildPayload {
+        hot: page::TqGroupedHotTuple {
+            level,
+            deleted: false,
+            heaptids: tuple.heap_tids.clone(),
+            neighbortid,
+            reranktid,
+            binary_words,
+            search_code,
+        },
+        rerank: page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct BuildCodeDistance {
     dimensions: usize,
@@ -1338,5 +1375,91 @@ mod tests {
 
         average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
         assert_eq!(representative, vec![0.75, 0.75]);
+    }
+
+    #[test]
+    fn stage_v2_grouped_build_payload_keeps_hot_and_cold_split() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let vector = (0..1536)
+            .map(|i| match i % 4 {
+                0 => 1.0,
+                1 => 0.0,
+                2 => 0.5,
+                _ => -1.0,
+            })
+            .collect::<Vec<_>>();
+        let tuple = BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 7,
+            }],
+            dimensions: 1536,
+            bits,
+            seed,
+            gamma: 1.25,
+            code: encoded_code(&vector, bits, seed),
+            source_vector: None,
+            source_count: 0,
+        };
+        let quantizer = ProdQuantizer::cached(1536, bits, seed);
+        let payload = stage_v2_grouped_build_payload(
+            &tuple,
+            3,
+            page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+            page::ItemPointer {
+                block_number: 10,
+                offset_number: 3,
+            },
+            vec![0x12, 0x34],
+            &quantizer,
+        );
+
+        assert_eq!(payload.hot.level, 3);
+        assert_eq!(payload.hot.heaptids, tuple.heap_tids);
+        assert_eq!(payload.hot.search_code, vec![0x12, 0x34]);
+        assert_eq!(payload.hot.neighbortid.block_number, 10);
+        assert_eq!(payload.hot.reranktid.offset_number, 3);
+        assert_eq!(
+            payload.hot.binary_words,
+            quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+        );
+        assert_eq!(payload.rerank.gamma.to_bits(), tuple.gamma.to_bits());
+        assert_eq!(payload.rerank.code, tuple.code);
+    }
+
+    #[test]
+    fn stage_v2_grouped_build_payload_skips_binary_sidecar_when_unsupported() {
+        let seed = 42_u64;
+        let bits = 8_u8;
+        let tuple = BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 7,
+            }],
+            dimensions: 8,
+            bits,
+            seed,
+            gamma: 0.5,
+            code: encoded_code(&[1.0, 0.0, 0.5, -1.0, 0.25, 0.5, -0.5, 0.75], bits, seed),
+            source_vector: None,
+            source_count: 0,
+        };
+        let quantizer = ProdQuantizer::cached(8, bits, seed);
+        let payload = stage_v2_grouped_build_payload(
+            &tuple,
+            1,
+            page::ItemPointer::INVALID,
+            page::ItemPointer::INVALID,
+            vec![0xAB],
+            &quantizer,
+        );
+
+        assert!(payload.hot.binary_words.is_empty());
+        assert_eq!(payload.hot.search_code, vec![0xAB]);
+        assert_eq!(payload.rerank.code, tuple.code);
     }
 }
