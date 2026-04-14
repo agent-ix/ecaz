@@ -273,6 +273,7 @@ enum LoadedElementState {
     None,
     ExactScore(f32),
     ExactPayload(LoadedElementScoreInput),
+    ExactUnavailable,
 }
 
 struct BinaryPrefilterCandidate {
@@ -793,6 +794,29 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
     unsafe { &*opaque.score_cache }.get(&element_tid).copied()
 }
 
+unsafe fn live_loaded_state_from_exact_payload(
+    opaque: &mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    binary_query_active: bool,
+    exact_payload: Option<(f32, &[u8])>,
+) -> LoadedElementState {
+    match exact_payload {
+        Some((gamma, code_bytes)) if binary_query_active => {
+            LoadedElementState::ExactPayload(LoadedElementScoreInput {
+                gamma,
+                code_bytes: code_bytes.to_vec(),
+            })
+        }
+        Some((gamma, code_bytes)) => LoadedElementState::ExactScore(score_and_cache_scan_element(
+            opaque,
+            element_tid,
+            gamma,
+            code_bytes,
+        )),
+        None => LoadedElementState::ExactUnavailable,
+    }
+}
+
 fn binary_sign_query(opaque: &TqScanOpaque) -> Option<&BinarySignNoQjl4BitQuery> {
     if opaque.binary_sign_query.is_null() {
         None
@@ -873,23 +897,12 @@ unsafe fn cached_graph_element(
                 };
 
                 if live_element {
-                    loaded_state = match element.exact_payload() {
-                        Some((gamma, code_bytes)) if binary_query_active => {
-                            LoadedElementState::ExactPayload(LoadedElementScoreInput {
-                                gamma,
-                                code_bytes: code_bytes.to_vec(),
-                            })
-                        }
-                        Some((gamma, code_bytes)) => {
-                            LoadedElementState::ExactScore(score_and_cache_scan_element(
-                                opaque_ref,
-                                element_tid,
-                                gamma,
-                                code_bytes,
-                            ))
-                        }
-                        None => LoadedElementState::None,
-                    };
+                    loaded_state = live_loaded_state_from_exact_payload(
+                        opaque_ref,
+                        element_tid,
+                        binary_query_active,
+                        element.exact_payload(),
+                    );
                 }
                 CachedGraphElement::from_graph_tuple_ref(element_tid, element, binary_words)
             },
@@ -905,10 +918,6 @@ unsafe fn cached_graph_element(
     debug_assert!(
         element.deleted
             || element.heaptids.is_empty()
-            || matches!(
-                opaque_ref.scan_graph_storage,
-                graph::GraphStorageDescriptor::GroupedV2(_)
-            )
             || !matches!(loaded_state, LoadedElementState::None),
         "live graph elements should populate exact-score or binary-prefilter state on load"
     );
@@ -964,6 +973,9 @@ unsafe fn exact_score_cached_graph_element(
                     &loaded.code_bytes,
                 )
             }
+        }
+        LoadedElementState::ExactUnavailable => {
+            pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
         }
         LoadedElementState::None => {
             let opaque_ref = unsafe { &mut *opaque };
