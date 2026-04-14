@@ -441,8 +441,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
-            validate_runtime_scan_format(&metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            validate_runtime_scan_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -554,9 +553,11 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
 }
 
 fn validate_runtime_scan_format(metadata: &page::MetadataPage) -> Result<(), String> {
-    match metadata.graph_storage_format()? {
-        page::GraphStorageFormat::ScalarV1 => Ok(()),
-        page::GraphStorageFormat::GroupedV2 => Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned()),
+    match graph::GraphStorageDescriptor::from_metadata(metadata)? {
+        graph::GraphStorageDescriptor::ScalarV1 { .. } => Ok(()),
+        graph::GraphStorageDescriptor::GroupedV2(_) => {
+            Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned())
+        }
     }
 }
 

@@ -7,6 +7,76 @@ use pgrx::pg_sys;
 
 use super::{page, search};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GroupedGraphLayout {
+    pub binary_word_count: usize,
+    pub search_code_len: usize,
+    pub rerank_code_len: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphStorageDescriptor {
+    ScalarV1 { code_len: usize },
+    GroupedV2(GroupedGraphLayout),
+}
+
+impl GraphStorageDescriptor {
+    pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
+        match metadata.graph_storage_format()? {
+            page::GraphStorageFormat::ScalarV1 => Ok(Self::ScalarV1 {
+                code_len: if metadata.dimensions == 0 {
+                    0
+                } else {
+                    crate::code_len(metadata.dimensions as usize, metadata.bits)
+                },
+            }),
+            page::GraphStorageFormat::GroupedV2 => {
+                if metadata.search_codec_kind != page::SearchCodecKind::GroupedPq {
+                    return Err(format!(
+                        "unsupported grouped-v2 search codec: {:?}",
+                        metadata.search_codec_kind
+                    ));
+                }
+                if metadata.search_bits != 4 {
+                    return Err(format!(
+                        "unsupported grouped-v2 search bits: {}",
+                        metadata.search_bits
+                    ));
+                }
+                if metadata.search_subvector_count == 0 || metadata.search_subvector_dim == 0 {
+                    return Err(
+                        "grouped-v2 metadata must record non-zero grouped search shape".to_owned(),
+                    );
+                }
+                if metadata.rerank_codec_kind != page::RerankCodecKind::ScalarQuantized {
+                    return Err(format!(
+                        "unsupported grouped-v2 rerank codec: {:?}",
+                        metadata.rerank_codec_kind
+                    ));
+                }
+                let binary_word_count =
+                    if metadata.payload_flags & page::PAYLOAD_FLAG_BINARY_SIDECAR != 0
+                        && crate::quant::prod::ProdQuantizer::cached(
+                            metadata.dimensions as usize,
+                            metadata.bits,
+                            metadata.seed,
+                        )
+                        .binary_sign_no_qjl_4bit_supported()
+                    {
+                        (metadata.dimensions as usize).div_ceil(64)
+                    } else {
+                        0
+                    };
+                Ok(Self::GroupedV2(GroupedGraphLayout {
+                    binary_word_count,
+                    search_code_len: usize::from(metadata.search_subvector_count).div_ceil(2),
+                    rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
+                }))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GraphElement {
     pub tid: page::ItemPointer,
@@ -18,11 +88,31 @@ pub(crate) struct GraphElement {
     pub code: Vec<u8>,
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedGraphElement {
+    pub tid: page::ItemPointer,
+    pub level: u8,
+    pub deleted: bool,
+    pub heaptids: Vec<page::ItemPointer>,
+    pub neighbortid: page::ItemPointer,
+    pub reranktid: page::ItemPointer,
+    pub binary_words: Vec<u64>,
+    pub search_code: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphNeighbors {
     pub tid: page::ItemPointer,
     pub count: usize,
     pub tids: Vec<page::ItemPointer>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GraphTupleRef<'a> {
+    Scalar(page::TqElementTupleRef<'a>),
+    GroupedHot(page::TqGroupedHotTupleRef<'a>),
 }
 
 pub(crate) unsafe fn load_graph_element(
@@ -47,6 +137,34 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: GroupedGraphLayout,
+) -> GroupedGraphElement {
+    let element = unsafe {
+        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+            page::TqGroupedHotTuple::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"));
+    GroupedGraphElement {
+        tid: element_tid,
+        level: element.level,
+        deleted: element.deleted,
+        heaptids: element.heaptids,
+        neighbortid: element.neighbortid,
+        reranktid: element.reranktid,
+        binary_words: element.binary_words,
+        search_code: element.search_code,
+    }
+}
+
 pub(crate) unsafe fn with_graph_element_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
@@ -64,6 +182,52 @@ where
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"))
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: GroupedGraphLayout,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqGroupedHotTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+            Ok(f(page::TqGroupedHotTupleRef::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_graph_storage_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    f: F,
+) -> R
+where
+    F: FnOnce(GraphTupleRef<'_>) -> R,
+{
+    match storage {
+        GraphStorageDescriptor::ScalarV1 { code_len } => unsafe {
+            with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
+                f(GraphTupleRef::Scalar(tuple))
+            })
+        },
+        GraphStorageDescriptor::GroupedV2(layout) => unsafe {
+            with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
+                f(GraphTupleRef::GroupedHot(tuple))
+            })
+        },
+    }
+}
+
 pub(crate) unsafe fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
@@ -77,7 +241,12 @@ pub(crate) unsafe fn load_graph_neighbors(
     }
 
     let neighbor = unsafe {
-        read_page_tuple(index_relation, neighbor_tid, "neighbor", page::TqNeighborTuple::decode)
+        read_page_tuple(
+            index_relation,
+            neighbor_tid,
+            "neighbor",
+            page::TqNeighborTuple::decode,
+        )
     }
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph neighbor tuple: {e}"));
     let count = neighbor.count as usize;
@@ -101,6 +270,17 @@ pub(crate) unsafe fn load_graph_adjacency(
     code_len: usize,
 ) -> (GraphElement, GraphNeighbors) {
     let element = unsafe { load_graph_element(index_relation, element_tid, code_len) };
+    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    (element, neighbors)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: GroupedGraphLayout,
+) -> (GroupedGraphElement, GraphNeighbors) {
+    let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
     (element, neighbors)
 }
@@ -658,7 +838,8 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
+    let (element, neighbors) =
+        unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
     let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity(
         neighbors.tids.len(),
         element.level,
@@ -666,20 +847,27 @@ where
         layer,
     ));
 
-    for_each_valid_neighbor_tid_for_layer(&neighbors.tids, element.level, m, layer, |neighbor_tid| {
-        if keep_neighbor_tid(neighbor_tid) {
-            let neighbor = unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
-            if !neighbor.deleted && !neighbor.heaptids.is_empty() {
-                if let Some(score) = score_candidate(&neighbor) {
-                    candidates.push(search::BeamCandidate::with_source(
-                        neighbor.tid,
-                        score,
-                        source_tid,
-                    ));
+    for_each_valid_neighbor_tid_for_layer(
+        &neighbors.tids,
+        element.level,
+        m,
+        layer,
+        |neighbor_tid| {
+            if keep_neighbor_tid(neighbor_tid) {
+                let neighbor =
+                    unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
+                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
+                    if let Some(score) = score_candidate(&neighbor) {
+                        candidates.push(search::BeamCandidate::with_source(
+                            neighbor.tid,
+                            score,
+                            source_tid,
+                        ));
+                    }
                 }
             }
-        }
-    });
+        },
+    );
 
     candidates
 }
@@ -772,6 +960,61 @@ mod tests {
             block_number,
             offset_number,
         }
+    }
+
+    #[test]
+    fn graph_storage_descriptor_uses_scalar_code_len_for_v1_metadata() {
+        let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        });
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::ScalarV1 {
+                code_len: crate::code_len(16, 4)
+            }
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_uses_grouped_lengths_for_v2_metadata() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 96,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_BINARY_SIDECAR
+                | page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::GroupedV2(GroupedGraphLayout {
+                binary_word_count: 0,
+                search_code_len: 3,
+                rerank_code_len: crate::code_len(96, 4),
+            })
+        );
     }
 
     #[test]

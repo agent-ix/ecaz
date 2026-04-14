@@ -2739,10 +2739,11 @@ mod tests {
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_grouped_v2_source_build_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
 
@@ -2804,11 +2805,9 @@ mod tests {
         assert_eq!(grouped_hot_tids.len(), 16);
         assert_eq!(rerank_count, 16);
         assert_eq!(neighbor_count, 16);
-        assert!(
-            !page_tuples
-                .iter()
-                .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
-        );
+        assert!(!page_tuples
+            .iter()
+            .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)));
         assert!(
             grouped_hot_tids.contains(&metadata.entry_point),
             "entry point should identify a grouped hot tuple under the experimental ADR-030 v2 build gate"
@@ -2816,7 +2815,119 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet")]
+    fn test_grouped_v2_graph_reads_load_entry_and_neighbors() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_graph_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_graph_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_graph_reads_idx ON tqhnsw_grouped_v2_graph_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_graph_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::GroupedV2(layout) => layout,
+            am::graph::GraphStorageDescriptor::ScalarV1 { .. } => {
+                panic!("experimental grouped-v2 build should not decode as scalar storage")
+            }
+        };
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "test_experimental_grouped_v2_graph_reads")
+        };
+
+        unsafe {
+            am::graph::with_graph_storage_tuple(
+                index_relation,
+                metadata.entry_point,
+                am::graph::GraphStorageDescriptor::GroupedV2(layout),
+                |entry| match entry {
+                    am::graph::GraphTupleRef::GroupedHot(tuple) => {
+                        assert_eq!(tuple.search_code.len(), layout.search_code_len);
+                        assert_eq!(tuple.collect_binary_words().len(), layout.binary_word_count);
+                        assert!(tuple.heaptid_count() > 0);
+                    }
+                    am::graph::GraphTupleRef::Scalar(_) => {
+                        panic!("grouped-v2 entry should decode as grouped-hot tuple")
+                    }
+                },
+            );
+        }
+
+        let (entry, neighbors) = unsafe {
+            am::graph::load_grouped_graph_adjacency(index_relation, metadata.entry_point, layout)
+        };
+
+        assert_eq!(entry.tid, metadata.entry_point);
+        assert!(!entry.deleted);
+        assert_eq!(entry.search_code.len(), layout.search_code_len);
+        assert_eq!(entry.binary_words.len(), layout.binary_word_count);
+        assert!(!entry.heaptids.is_empty());
+        assert_ne!(entry.reranktid, am::page::ItemPointer::INVALID);
+        assert_eq!(neighbors.tid, entry.neighbortid);
+        assert!(neighbors.count > 0);
+        assert!(
+            neighbors
+                .tids
+                .iter()
+                .any(|tid| *tid != am::page::ItemPointer::INVALID),
+            "entry adjacency should include at least one real grouped-hot neighbor",
+        );
+
+        let first_neighbor_tid = neighbors
+            .tids
+            .iter()
+            .copied()
+            .find(|tid| *tid != am::page::ItemPointer::INVALID)
+            .expect("grouped entry should expose a readable neighbor");
+        let neighbor = unsafe {
+            am::graph::load_grouped_graph_element(index_relation, first_neighbor_tid, layout)
+        };
+
+        assert_eq!(neighbor.search_code.len(), layout.search_code_len);
+        assert_eq!(neighbor.binary_words.len(), layout.binary_word_count);
+        assert!(!neighbor.heaptids.is_empty());
+        assert_ne!(neighbor.reranktid, am::page::ItemPointer::INVALID);
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet"
+    )]
     fn test_experimental_grouped_v2_ordered_scan_rejects_runtime() {
         let _lock = env_var_test_lock();
         let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");

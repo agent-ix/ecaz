@@ -3,7 +3,7 @@
 mod build;
 mod cost;
 mod explain;
-mod graph;
+pub(crate) mod graph;
 mod insert;
 mod options;
 pub mod page;
