@@ -551,6 +551,13 @@ pub(super) struct V2GroupedStagedChain {
     pub(super) neighbor_tids: Vec<page::ItemPointer>,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct V2GroupedBuildPlan {
+    pub(super) staged_chain: V2GroupedStagedChain,
+    pub(super) entry_point: page::ItemPointer,
+    pub(super) max_level: u8,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct BuildGroupedPqModel {
     pub(super) codebooks: Vec<Vec<f32>>,
@@ -661,6 +668,31 @@ pub(super) fn stage_v2_grouped_page_chain_from_source(
         .collect::<Result<Vec<_>, _>>()?;
 
     stage_v2_grouped_page_chain(state, graph_nodes, &grouped_search_codes)
+}
+
+pub(super) fn plan_v2_grouped_source_build(
+    state: &BuildState,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<V2GroupedBuildPlan, String> {
+    let graph_nodes = build_hnsw_graph(state);
+    let staged_chain = stage_v2_grouped_page_chain_from_source(
+        state,
+        &graph_nodes,
+        group_size,
+        train_size,
+        kmeans_iters,
+    )?;
+    let entry_point = choose_entry_point(&staged_chain.hot_tids, &graph_nodes, state)
+        .unwrap_or(page::ItemPointer::INVALID);
+    let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+
+    Ok(V2GroupedBuildPlan {
+        staged_chain,
+        entry_point,
+        max_level,
+    })
 }
 
 pub(super) fn train_build_grouped_pq_model(
@@ -2045,5 +2077,51 @@ mod tests {
         assert_eq!(first_neighbor.tids[0], staged.hot_tids[1]);
         assert_eq!(first_hot.search_code.len(), 2);
         assert!(first_hot.binary_words.is_empty());
+    }
+
+    #[test]
+    fn plan_v2_grouped_source_build_reports_entry_point_and_levels() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
+
+        assert_eq!(plan.staged_chain.hot_tids.len(), 16);
+        assert_ne!(plan.entry_point, page::ItemPointer::INVALID);
+        assert!(usize::from(plan.max_level) < 16);
     }
 }
