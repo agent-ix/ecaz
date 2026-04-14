@@ -367,6 +367,16 @@ struct GroupedScorePayloadView<'a> {
     rerank_code_len: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct GroupedScoreRerankPayload<'a> {
+    element_tid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    binary_words: &'a [u64],
+    search_code: &'a [u8],
+    rerank_gamma: f32,
+    rerank_code: Vec<u8>,
+}
+
 enum CandidateScoreDispatch<'a> {
     Exact(LoadedElementState),
     Grouped(GroupedScoreContext<'a>),
@@ -1118,6 +1128,45 @@ fn grouped_score_payload_view<'a>(
     })
 }
 
+fn grouped_score_rerank_payload<'a>(
+    payload: GroupedScorePayloadView<'a>,
+    rerank: graph::GroupedRerankPayload,
+) -> Option<GroupedScoreRerankPayload<'a>> {
+    if rerank.tid != payload.reranktid {
+        return None;
+    }
+    if rerank.code.len() != payload.rerank_code_len {
+        return None;
+    }
+    Some(GroupedScoreRerankPayload {
+        element_tid: payload.element_tid,
+        reranktid: payload.reranktid,
+        binary_words: payload.binary_words,
+        search_code: payload.search_code,
+        rerank_gamma: rerank.gamma,
+        rerank_code: rerank.code,
+    })
+}
+
+unsafe fn load_grouped_score_rerank_payload<'a>(
+    index_relation: pg_sys::Relation,
+    grouped: GroupedScoreContext<'a>,
+) -> Option<GroupedScoreRerankPayload<'a>> {
+    let payload = grouped_score_payload_view(grouped)?;
+    let rerank = unsafe {
+        graph::load_grouped_rerank_payload(
+            index_relation,
+            payload.reranktid,
+            graph::GroupedGraphLayout {
+                binary_word_count: payload.binary_words.len(),
+                search_code_len: payload.search_code.len(),
+                rerank_code_len: payload.rerank_code_len,
+            },
+        )
+    };
+    grouped_score_rerank_payload(payload, rerank)
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
@@ -1135,11 +1184,12 @@ fn candidate_score_dispatch<'a>(
 }
 
 unsafe fn score_grouped_candidate_context(
-    _index_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
     _opaque: *mut TqScanOpaque,
     grouped: GroupedScoreContext<'_>,
 ) -> f32 {
-    let _payload = grouped_score_payload_view(grouped).unwrap_or_else(|| {
+    let _payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+        .unwrap_or_else(|| {
         panic!("grouped score helper requires metadata-aligned grouped payload view")
     });
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
@@ -3698,6 +3748,66 @@ mod tests {
         };
 
         assert_eq!(grouped_score_payload_view(grouped), None);
+    }
+
+    #[test]
+    fn grouped_score_rerank_payload_preserves_hot_and_cold_fields() {
+        let payload = GroupedScorePayloadView {
+            element_tid: tid(30, 4),
+            reranktid: tid(30, 3),
+            binary_words: &[0x0123_4567_89AB_CDEF],
+            search_code: &[0x10, 0x32, 0x54],
+            rerank_code_len: 4,
+        };
+        let rerank = graph::GroupedRerankPayload {
+            tid: tid(30, 3),
+            gamma: 0.75,
+            code: vec![0xAA, 0xBB, 0xCC, 0xDD],
+        };
+
+        let merged = grouped_score_rerank_payload(payload, rerank)
+            .expect("matching rerank tuple should compose with grouped hot payload");
+
+        assert_eq!(merged.element_tid, tid(30, 4));
+        assert_eq!(merged.reranktid, tid(30, 3));
+        assert_eq!(merged.binary_words, &[0x0123_4567_89AB_CDEF]);
+        assert_eq!(merged.search_code, &[0x10, 0x32, 0x54]);
+        assert_eq!(merged.rerank_gamma, 0.75);
+        assert_eq!(merged.rerank_code, vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn grouped_score_rerank_payload_rejects_mismatched_cold_payload() {
+        let payload = GroupedScorePayloadView {
+            element_tid: tid(31, 4),
+            reranktid: tid(31, 3),
+            binary_words: &[0x0123_4567_89AB_CDEF],
+            search_code: &[0x10, 0x32, 0x54],
+            rerank_code_len: 4,
+        };
+
+        assert_eq!(
+            grouped_score_rerank_payload(
+                payload,
+                graph::GroupedRerankPayload {
+                    tid: tid(31, 5),
+                    gamma: 0.5,
+                    code: vec![0xAA, 0xBB, 0xCC, 0xDD],
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            grouped_score_rerank_payload(
+                payload,
+                graph::GroupedRerankPayload {
+                    tid: tid(31, 3),
+                    gamma: 0.5,
+                    code: vec![0xAA, 0xBB],
+                }
+            ),
+            None
+        );
     }
 
     #[test]
