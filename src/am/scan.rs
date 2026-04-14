@@ -352,6 +352,12 @@ struct GroupedScoreCall<'a> {
     input: GroupedScoreInput<'a>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreContext<'a> {
+    element_tid: page::ItemPointer,
+    call: GroupedScoreCall<'a>,
+}
+
 enum CandidateScoreDispatch<'a> {
     Exact(LoadedElementState),
     Grouped(GroupedScoreCall<'a>),
@@ -1072,20 +1078,32 @@ unsafe fn exact_score_cached_graph_element(
     }
 }
 
+fn grouped_score_context_from_scan_state<'a>(
+    scan_graph_storage: graph::GraphStorageDescriptor,
+    element: &'a CachedGraphElement,
+) -> Option<GroupedScoreContext<'a>> {
+    Some(GroupedScoreContext {
+        element_tid: element.tid,
+        call: GroupedScoreCall {
+            shape: GroupedScoreShape::from_scan_graph_storage(scan_graph_storage)?,
+            input: element.grouped_score_input()?,
+        },
+    })
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
     loaded_state: LoadedElementState,
 ) -> CandidateScoreDispatch<'a> {
     match loaded_state {
-        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(GroupedScoreCall {
-            shape: GroupedScoreShape::from_scan_graph_storage(scan_graph_storage).unwrap_or_else(
-                || panic!("grouped score dispatch requires grouped scan storage shape"),
-            ),
-            input: element.grouped_score_input().unwrap_or_else(|| {
-                panic!("exact-unavailable grouped score dispatch requires grouped score input")
-            }),
-        }),
+        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(
+            grouped_score_context_from_scan_state(scan_graph_storage, element)
+                .unwrap_or_else(|| {
+                    panic!("exact-unavailable grouped score dispatch requires grouped score context")
+                })
+                .call,
+        ),
         other => CandidateScoreDispatch::Exact(other),
     }
 }
@@ -3474,6 +3492,81 @@ mod tests {
                 search_code_len: 48,
                 rerank_code_len: 768,
             }
+        );
+    }
+
+    #[test]
+    fn grouped_score_context_uses_scan_shape_and_cached_payloads() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(15, 1)],
+            neighbortid: tid(15, 2),
+            reranktid: tid(15, 3),
+            binary_words: vec![0x1234_5678_9ABC_DEF0, 0x0FED_CBA9_8765_4321],
+            search_code: vec![0x9A, 0xBC, 0xDE],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 2, 3).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(15, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        let context = grouped_score_context_from_scan_state(
+            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+                binary_word_count: 2,
+                search_code_len: 3,
+                rerank_code_len: 96,
+            }),
+            &cached,
+        )
+        .expect("grouped scan state and grouped cached element should produce grouped score context");
+
+        assert_eq!(context.element_tid, tid(15, 4));
+        assert_eq!(
+            context.call.shape,
+            GroupedScoreShape {
+                binary_word_count: 2,
+                search_code_len: 3,
+                rerank_code_len: 96,
+            }
+        );
+        assert_eq!(context.call.input.reranktid, tuple.reranktid);
+        assert_eq!(context.call.input.search_code, tuple.search_code.as_slice());
+        assert_eq!(context.call.input.binary_words, tuple.binary_words.as_slice());
+    }
+
+    #[test]
+    fn grouped_score_context_requires_grouped_scan_storage() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(16, 1)],
+            neighbortid: tid(16, 2),
+            reranktid: tid(16, 3),
+            binary_words: vec![0x0123_4567_89AB_CDEF],
+            search_code: vec![0x21, 0x43],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(16, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(
+            grouped_score_context_from_scan_state(
+                graph::GraphStorageDescriptor::ScalarV1 { code_len: 4 },
+                &cached,
+            ),
+            None
         );
     }
 
