@@ -3345,7 +3345,7 @@ mod tests {
             !observed.is_empty(),
             "grouped-v2 runtime comparison path should emit at least one ordered result"
         );
-        for (heap_tid, _approx_score, comparison_score) in observed {
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
             let comparison_score = comparison_score
                 .expect("grouped-v2 emitted results should carry an exact rerank comparison score");
             let expected = exact_scores
@@ -3411,7 +3411,7 @@ mod tests {
 
         let compared_rows = observed
             .iter()
-            .filter_map(|(_heap_tid, approx_score, comparison_score)| {
+            .filter_map(|(_heap_tid, approx_score, comparison_score, _approx_rank)| {
                 comparison_score.map(|exact_score| (*approx_score, exact_score))
             })
             .collect::<Vec<_>>();
@@ -3672,35 +3672,54 @@ mod tests {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
         };
         let mut expected_exact_ranks = vec![None; observed.len()];
-        let mut compared_rows = observed
+        let mut ordered_observed = observed
             .iter()
             .enumerate()
-            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score))| {
+            .map(
+                |(idx, ((block_number, offset_number), approx_score, comparison_score, approx_rank))| {
+                    (
+                        idx,
+                        *block_number,
+                        *offset_number,
+                        *approx_score,
+                        *comparison_score,
+                        approx_rank.unwrap_or_else(|| {
+                            i32::try_from(idx + 1).expect("approx rank should fit in i32")
+                        }),
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        ordered_observed.sort_by_key(|row| row.5);
+        let mut compared_rows = ordered_observed
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_live_idx, _block_number, _offset_number, _approx_score, comparison_score, _approx_rank))| {
                 comparison_score.map(|exact_score| (idx, exact_score))
             })
             .collect::<Vec<_>>();
         compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            let left_approx_rank = ordered_observed[*left_idx].5;
+            let right_approx_rank = ordered_observed[*right_idx].5;
             left_score
                 .total_cmp(right_score)
-                .then_with(|| left_idx.cmp(right_idx))
+                .then_with(|| left_approx_rank.cmp(&right_approx_rank))
         });
         for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
             expected_exact_ranks[idx] =
                 Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
         }
-        let expected_rows = observed
+        let expected_rows = ordered_observed
             .iter()
             .enumerate()
             .map(
-                |(idx, ((block_number, offset_number), approx_score, comparison_score))| {
-                    let approx_rank =
-                        i32::try_from(idx + 1).expect("approx rank should fit in i32");
+                |(idx, (_live_idx, block_number, offset_number, approx_score, comparison_score, approx_rank))| {
                     let exact_rank = expected_exact_ranks[idx];
                     let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
                     (
                         i64::from(*block_number),
                         i32::from(*offset_number),
-                        approx_rank,
+                        *approx_rank,
                         *approx_score,
                         *comparison_score,
                         exact_rank,
@@ -4388,6 +4407,155 @@ mod tests {
             assert_eq!(actual.7, expected.7);
             assert_eq!(actual.8, expected.8);
         }
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_runtime_live_window_matches_windowed_simulation() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_live_window (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=32 {
+            let source = (0..16)
+                .map(|dim| {
+                    format!(
+                        "{:.6}",
+                        (((id * 43 + dim * 7) as f32) * 0.019).cos()
+                            + (((id * 17 + dim * 5) as f32) * 0.011).sin()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| {
+                    format!(
+                        "{:.6}",
+                        (((id * 29 + dim * 11) as f32) * 0.023).sin()
+                            + (((id * 13 + dim * 3) as f32) * 0.017).cos()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_live_window VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_live_window_idx ON tqhnsw_grouped_v2_runtime_live_window USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_live_window_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let candidate_queries = (0..12)
+            .map(|seed| {
+                (0..16)
+                    .map(|dim| {
+                        (((seed * 31 + dim * 7) as f32) * 0.021).sin()
+                            + (((seed * 19 + dim * 5) as f32) * 0.014).cos()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let (query, expected_live_order, live_rows, baseline_rows) = candidate_queries
+            .into_iter()
+            .find_map(|query| {
+                let windowed_rows =
+                    unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4) };
+                if !windowed_rows
+                    .iter()
+                    .any(|(_heap_tid, approx_rank, windowed_rank, _, _, _, _, _)| {
+                        approx_rank != windowed_rank
+                    })
+                {
+                    return None;
+                }
+
+                let expected_live_order = windowed_rows
+                    .iter()
+                    .map(
+                        |(
+                            heap_tid,
+                            _approx_rank,
+                            _windowed_rank,
+                            _approx_score,
+                            _comparison_score,
+                            _exact_rank,
+                            _exact_rank_shift,
+                            _windowed_rank_shift,
+                        )| *heap_tid,
+                    )
+                    .collect::<Vec<_>>();
+                let live_rows = unsafe {
+                    am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                        index_oid,
+                        query.clone(),
+                    )
+                };
+                let baseline_rows =
+                    unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+                Some((query, expected_live_order, live_rows, baseline_rows))
+            })
+            .expect("at least one deterministic grouped query should exhibit live window movement");
+
+        let actual_live_order = live_rows
+            .iter()
+            .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual_live_order, expected_live_order,
+            "grouped live runtime order should match the window-size-4 simulation chosen in packet 350"
+        );
+
+        let baseline_approx_order = baseline_rows
+            .iter()
+            .map(
+                |(
+                    heap_tid,
+                    _approx_rank,
+                    _approx_score,
+                    _comparison_score,
+                    _exact_rank,
+                    _exact_rank_shift,
+                )| *heap_tid,
+            )
+            .collect::<Vec<_>>();
+        assert_ne!(
+            actual_live_order, baseline_approx_order,
+            "the selected query should prove the live grouped rerank window changes output order"
+        );
+
+        let mut live_rows_sorted_by_approx_rank = live_rows.clone();
+        live_rows_sorted_by_approx_rank.sort_by_key(|(_heap_tid, _approx_score, _comparison_score, approx_rank)| {
+            approx_rank.expect("grouped live results should preserve baseline approximate rank sidecars")
+        });
+        let preserved_approx_order = live_rows_sorted_by_approx_rank
+            .iter()
+            .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            preserved_approx_order, baseline_approx_order,
+            "grouped comparison rows should still expose baseline approximate order after live rerank cutover"
+        );
+
+        let _query_literal = format_recall_vector_sql_literal(&query);
     }
 
     #[pg_test]

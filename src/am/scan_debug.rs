@@ -1646,7 +1646,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
 pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> Vec<(HeapTidCoords, f32, Option<f32>)> {
+) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -1660,10 +1660,12 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     let mut tids = Vec::new();
     while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
-        let score = debug_scan_orderby_score(scan)
-            .expect("graph-first scan should publish an order-by score for emitted tuples");
+        let approx_score = debug_current_result_approx_score(scan)
+            .or_else(|| debug_scan_orderby_score(scan))
+            .expect("graph-first scan should publish an approximate score for emitted tuples");
         let comparison_score = debug_current_result_comparison_score(scan);
-        tids.push((heap_tid, score, comparison_score));
+        let approx_rank = debug_current_result_approx_rank(scan);
+        tids.push((heap_tid, approx_score, comparison_score, approx_rank));
     }
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -1760,13 +1762,17 @@ fn debug_grouped_scan_windowed_rows_from_comparison_rows(
     rows: &[DebugGroupedScanComparisonRow],
     window_size: usize,
 ) -> Vec<DebugGroupedScanWindowedRow> {
+    let mut ordered_rows = rows.to_vec();
+    ordered_rows.sort_by_key(|row| row.1);
     let mut buffered_rows = Vec::with_capacity(window_size.max(1));
     let mut next_idx = 0usize;
-    let mut output_rows = Vec::with_capacity(rows.len());
+    let mut output_rows = Vec::with_capacity(ordered_rows.len());
 
-    while output_rows.len() < rows.len() {
-        while buffered_rows.len() < window_size && next_idx < rows.len() {
-            buffered_rows.push(rows[next_idx]);
+    // This is a sliding prefix window, so the tail drains from progressively smaller
+    // buffers once the approximate-order input is exhausted.
+    while output_rows.len() < ordered_rows.len() {
+        while buffered_rows.len() < window_size && next_idx < ordered_rows.len() {
+            buffered_rows.push(ordered_rows[next_idx]);
             next_idx += 1;
         }
         let Some((selected_idx, _)) =
@@ -1776,6 +1782,8 @@ fn debug_grouped_scan_windowed_rows_from_comparison_rows(
                 .min_by(|(_, left), (_, right)| {
                     let left_score = left.3;
                     let right_score = right.3;
+                    // Missing comparison scores stay in approximate order instead of being
+                    // dropped from the simulation.
                     let left_exact = left_score.unwrap_or(left.2);
                     let right_exact = right_score.unwrap_or(right.2);
                     left_exact
@@ -1813,29 +1821,61 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
 ) -> Vec<DebugGroupedScanComparisonRow> {
     let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
     let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
-    let mut exact_ranks = vec![None; rows.len()];
+    let ordered_rows = if grouped_results {
+        let mut ordered_rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+                (
+                    heap_tid,
+                    approx_score,
+                    comparison_score,
+                    approx_rank.unwrap_or_else(|| {
+                        i32::try_from(idx + 1).expect("approx rank should fit in i32")
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+        ordered_rows.sort_by_key(|row| row.3);
+        ordered_rows
+    } else {
+        rows.into_iter()
+            .enumerate()
+            .map(|(idx, (heap_tid, approx_score, comparison_score, _approx_rank))| {
+                (
+                    heap_tid,
+                    approx_score,
+                    comparison_score,
+                    i32::try_from(idx + 1).expect("approx rank should fit in i32"),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut exact_ranks = vec![None; ordered_rows.len()];
     if grouped_results {
-        let mut compared_rows = rows
+        let mut compared_rows = ordered_rows
             .iter()
             .enumerate()
-            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score))| {
+            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score, _approx_rank))| {
                 comparison_score.map(|exact_score| (idx, exact_score))
             })
             .collect::<Vec<_>>();
         compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            let left_approx_rank = ordered_rows[*left_idx].3;
+            let right_approx_rank = ordered_rows[*right_idx].3;
             left_score
                 .total_cmp(right_score)
-                .then_with(|| left_idx.cmp(right_idx))
+                .then_with(|| left_approx_rank.cmp(&right_approx_rank))
         });
         for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
             exact_ranks[idx] = Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
         }
     }
 
-    rows.into_iter()
+    ordered_rows
+        .into_iter()
         .enumerate()
-        .map(|(idx, (heap_tid, approx_score, comparison_score))| {
-            let approx_rank = i32::try_from(idx + 1).expect("approx rank should fit in i32");
+        .map(|(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
             let exact_rank = exact_ranks[idx];
             let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
             (
@@ -1870,7 +1910,7 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
     let mut signed_delta_sum = 0.0_f64;
     let mut max_abs_score_delta = 0.0_f32;
 
-    for (_heap_tid, approx_score, comparison_score) in rows {
+    for (_heap_tid, approx_score, comparison_score, _approx_rank) in rows {
         match comparison_score {
             Some(exact_score) => {
                 compared_result_count += 1;
@@ -2195,6 +2235,22 @@ fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<
     opaque
         .last_emitted_comparison_score_valid
         .then_some(opaque.last_emitted_comparison_score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_approx_score_valid
+        .then_some(opaque.last_emitted_approx_score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_approx_rank_valid
+        .then_some(opaque.last_emitted_approx_rank)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3068,4 +3124,88 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn comparison_row(
+        block_number: u32,
+        offset_number: u16,
+        approx_rank: i32,
+        approx_score: f32,
+        comparison_score: Option<f32>,
+    ) -> DebugGroupedScanComparisonRow {
+        (
+            (block_number, offset_number),
+            approx_rank,
+            approx_score,
+            comparison_score,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn grouped_window_simulation_is_noop_for_window_one() {
+        let rows = vec![
+            comparison_row(1, 1, 1, -4.0, Some(-3.5)),
+            comparison_row(1, 2, 2, -3.0, Some(-2.5)),
+            comparison_row(1, 3, 3, -2.0, Some(-1.5)),
+        ];
+
+        let observed = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, 1);
+
+        assert_eq!(observed.len(), rows.len());
+        for (idx, (heap_tid, approx_rank, windowed_rank, approx_score, comparison_score, _, _, _)) in
+            observed.iter().enumerate()
+        {
+            assert_eq!(*heap_tid, rows[idx].0);
+            assert_eq!(*approx_rank, rows[idx].1);
+            assert_eq!(*windowed_rank, rows[idx].1);
+            assert_eq!(*approx_score, rows[idx].2);
+            assert_eq!(*comparison_score, rows[idx].3);
+        }
+    }
+
+    #[test]
+    fn grouped_window_simulation_keeps_approx_order_for_tied_exact_scores() {
+        let rows = vec![
+            comparison_row(2, 1, 1, -4.0, Some(-2.0)),
+            comparison_row(2, 2, 2, -3.0, Some(-2.0)),
+            comparison_row(2, 3, 3, -2.0, Some(-1.5)),
+        ];
+
+        let observed = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, 3);
+        let observed_approx_ranks = observed
+            .iter()
+            .map(
+                |(_heap_tid, approx_rank, _windowed_rank, _approx_score, _comparison_score, _, _, _)| {
+                    *approx_rank
+                },
+            )
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            observed_approx_ranks,
+            vec![1, 2, 3],
+            "exact-score ties should preserve the original approximate rank order"
+        );
+    }
+
+    #[test]
+    fn grouped_window_simulation_handles_windows_at_or_beyond_row_count() {
+        let rows = vec![
+            comparison_row(3, 1, 1, -4.0, Some(-1.0)),
+            comparison_row(3, 2, 2, -3.0, Some(-3.0)),
+            comparison_row(3, 3, 3, -2.0, Some(-2.0)),
+        ];
+
+        let exact_window = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, rows.len());
+        let oversized_window =
+            debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, rows.len() + 5);
+
+        assert_eq!(oversized_window, exact_window);
+    }
 }

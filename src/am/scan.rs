@@ -20,6 +20,7 @@ const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
 const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
+const ADR030_GROUPED_V2_LIVE_RERANK_WINDOW: usize = 4;
 const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
     "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet";
 
@@ -145,7 +146,7 @@ fn record_stage_ordered_results_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_stage_ordered_results_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CachedHeapTids {
     len: u8,
     tids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
@@ -178,6 +179,15 @@ impl CachedHeapTids {
 
     fn as_slice(&self) -> &[page::ItemPointer] {
         &self.tids[..self.len as usize]
+    }
+}
+
+impl Default for CachedHeapTids {
+    fn default() -> Self {
+        Self {
+            len: 0,
+            tids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
+        }
     }
 }
 
@@ -894,7 +904,8 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
-    clear_last_emitted_comparison_score(opaque);
+    clear_last_emitted_scan_scores(opaque);
+    clear_grouped_live_rerank_buffer(opaque);
     clear_scan_candidate_state(opaque);
     reset_scan_graph_cache(opaque);
     reset_scan_score_cache(opaque);
@@ -1337,19 +1348,14 @@ fn candidate_score_dispatch<'a>(
     element: &'a CachedGraphElement,
     loaded_state: LoadedElementState,
 ) -> CandidateScoreDispatch<'a> {
+    let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element);
     match loaded_state {
-        LoadedElementState::ExactUnavailable | LoadedElementState::None
-            if grouped_score_context_from_scan_state(scan_graph_storage, element).is_some() =>
-        {
-            CandidateScoreDispatch::Grouped(
-                grouped_score_context_from_scan_state(scan_graph_storage, element).unwrap_or_else(
-                    || {
-                        panic!(
-                            "grouped score dispatch requires grouped score context for grouped payloads"
-                        )
-                    },
-                ),
-            )
+        LoadedElementState::ExactUnavailable | LoadedElementState::None if grouped.is_some() => {
+            CandidateScoreDispatch::Grouped(grouped.unwrap_or_else(|| {
+                panic!(
+                    "grouped score dispatch requires grouped score context for grouped payloads"
+                )
+            }))
         }
         other => CandidateScoreDispatch::Exact(other),
     }
@@ -1579,7 +1585,30 @@ unsafe fn cached_upper_layer_seed_candidate(
 struct PendingScanOutput {
     heap_tid: page::ItemPointer,
     score: f32,
+    approx_score: Option<f32>,
+    approx_rank: Option<i32>,
     comparison_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BufferedGroupedScanResult {
+    element_tid: page::ItemPointer,
+    approx_score: f32,
+    approx_rank_base: i32,
+    comparison_score: Option<f32>,
+    heap_tids: CachedHeapTids,
+}
+
+impl Default for BufferedGroupedScanResult {
+    fn default() -> Self {
+        Self {
+            element_tid: page::ItemPointer::INVALID,
+            approx_score: 0.0,
+            approx_rank_base: 0,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::default(),
+        }
+    }
 }
 
 struct GraphTraversalCursor<'a> {
@@ -1684,7 +1713,10 @@ impl<'a> LinearFallbackCursor<'a> {
         }
     }
 
-    fn emit_materialized_output(&mut self, selected: SelectedScanResult) -> Option<PendingScanOutput> {
+    fn emit_materialized_output(
+        &mut self,
+        selected: SelectedScanResult,
+    ) -> Option<PendingScanOutput> {
         self.materialize(selected);
         let emitted = self.emit_pending_output();
         debug_assert!(
@@ -1732,9 +1764,73 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
 }
 
 fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
+    clear_grouped_live_rerank_buffer(opaque);
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
+}
+
+fn grouped_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
+    matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::GroupedV2(_)
+    )
+}
+
+fn clear_grouped_live_rerank_buffer(opaque: &mut TqScanOpaque) {
+    opaque
+        .grouped_live_rerank_buffer
+        .fill(BufferedGroupedScanResult::default());
+    opaque.grouped_live_rerank_buffer_len = 0;
+    opaque.grouped_live_rerank_next_approx_rank = 1;
+}
+
+fn buffered_grouped_scan_results(
+    opaque: &TqScanOpaque,
+) -> &[BufferedGroupedScanResult] {
+    &opaque.grouped_live_rerank_buffer[..usize::from(opaque.grouped_live_rerank_buffer_len)]
+}
+
+fn push_buffered_grouped_scan_result(
+    opaque: &mut TqScanOpaque,
+    buffered: BufferedGroupedScanResult,
+) {
+    let len = usize::from(opaque.grouped_live_rerank_buffer_len);
+    assert!(
+        len < ADR030_GROUPED_V2_LIVE_RERANK_WINDOW,
+        "grouped live rerank buffer should respect configured window capacity"
+    );
+    opaque.grouped_live_rerank_buffer[len] = buffered;
+    opaque.grouped_live_rerank_buffer_len += 1;
+}
+
+fn pop_best_buffered_grouped_scan_result(
+    opaque: &mut TqScanOpaque,
+) -> Option<BufferedGroupedScanResult> {
+    let buffer_len = usize::from(opaque.grouped_live_rerank_buffer_len);
+    if buffer_len == 0 {
+        return None;
+    }
+
+    let selected_idx = buffered_grouped_scan_results(opaque)
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            let left_exact = left.comparison_score.unwrap_or(left.approx_score);
+            let right_exact = right.comparison_score.unwrap_or(right.approx_score);
+            left_exact
+                .total_cmp(&right_exact)
+                .then_with(|| left.approx_rank_base.cmp(&right.approx_rank_base))
+        })
+        .map(|(idx, _)| idx)
+        .expect("grouped live rerank buffer should have a best candidate when non-empty");
+    let selected = opaque.grouped_live_rerank_buffer[selected_idx];
+    for idx in selected_idx..buffer_len.saturating_sub(1) {
+        opaque.grouped_live_rerank_buffer[idx] = opaque.grouped_live_rerank_buffer[idx + 1];
+    }
+    opaque.grouped_live_rerank_buffer[buffer_len - 1] = BufferedGroupedScanResult::default();
+    opaque.grouped_live_rerank_buffer_len -= 1;
+    Some(selected)
 }
 
 unsafe fn prefetch_next_graph_result_from_frontier(
@@ -1747,6 +1843,12 @@ unsafe fn prefetch_next_graph_result_from_frontier(
         || unsafe { (&*result_state).pending_count() != 0 }
     {
         return false;
+    }
+
+    if grouped_live_rerank_enabled(opaque) {
+        return unsafe {
+            prefetch_next_grouped_windowed_graph_result(index_relation, opaque, result_state)
+        };
     }
 
     loop {
@@ -1792,6 +1894,100 @@ unsafe fn prefetch_next_graph_result_from_frontier(
     false
 }
 
+unsafe fn prefetch_next_grouped_windowed_graph_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    result_state: *mut ScanResultState,
+) -> bool {
+    while usize::from(opaque.grouped_live_rerank_buffer_len) < ADR030_GROUPED_V2_LIVE_RERANK_WINDOW
+    {
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_started = Instant::now();
+        let candidate = consume_candidate_frontier_head(opaque);
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_elapsed_us =
+            u64::try_from(consume_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let consume_elapsed_us = 0;
+        record_frontier_consume_elapsed(opaque, consume_elapsed_us);
+        let Some(candidate) = candidate else {
+            break;
+        };
+
+        mark_expanded_source(opaque, candidate.node);
+        opaque.explain_counters.record_bootstrap_expansion();
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_started = Instant::now();
+        unsafe { buffer_grouped_graph_result_candidate(index_relation, opaque, candidate) };
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_elapsed_us = u64::try_from(materialize_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let materialize_elapsed_us = 0;
+        record_graph_result_materialize_elapsed(opaque, materialize_elapsed_us);
+    }
+
+    let Some(buffered) = pop_best_buffered_grouped_scan_result(opaque) else {
+        return false;
+    };
+
+    mark_emitted_element(opaque, buffered.element_tid);
+    let result_state = unsafe { &mut *result_state };
+    result_state.materialize_with_details(
+        buffered.element_tid,
+        buffered.approx_score,
+        Some(buffered.approx_score),
+        Some(buffered.approx_rank_base),
+        buffered.comparison_score,
+        buffered.heap_tids.as_slice(),
+    );
+    true
+}
+
+unsafe fn buffer_grouped_graph_result_candidate(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) {
+    if emitted_contains_element(opaque, candidate.node) {
+        opaque.explain_counters.record_element_skipped();
+        return;
+    }
+
+    opaque.explain_counters.record_bootstrap_page_read();
+    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+    if element.deleted || element.heaptids.is_empty() {
+        opaque.explain_counters.record_element_skipped();
+        return;
+    }
+
+    let comparison_score = unsafe {
+        grouped_candidate_rerank_comparison_score(
+            index_relation,
+            opaque as *mut TqScanOpaque,
+            &element,
+        )
+    };
+    let approx_rank_base = opaque.grouped_live_rerank_next_approx_rank;
+    let emitted_heap_rows =
+        i32::try_from(element.heaptids.as_slice().len()).expect("heap tid count should fit in i32");
+    opaque.grouped_live_rerank_next_approx_rank = opaque
+        .grouped_live_rerank_next_approx_rank
+        .checked_add(emitted_heap_rows)
+        .expect("grouped approx rank should remain in i32 range");
+    opaque.explain_counters.record_element_scored();
+    push_buffered_grouped_scan_result(
+        opaque,
+        BufferedGroupedScanResult {
+            element_tid: candidate.node,
+            approx_score: candidate.score,
+            approx_rank_base,
+            comparison_score,
+            heap_tids: element.heaptids,
+        },
+    );
+}
+
 unsafe fn materialize_graph_result_candidate(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -1814,19 +2010,23 @@ unsafe fn materialize_graph_result_candidate(
     // capture the cold rerank score alongside emitted results so the next packets
     // can compare approximate-vs-exact behavior on real scan outputs.
     let comparison_score = unsafe {
-        grouped_candidate_rerank_comparison_score(index_relation, opaque as *mut TqScanOpaque, &element)
+        grouped_candidate_rerank_comparison_score(
+            index_relation,
+            opaque as *mut TqScanOpaque,
+            &element,
+        )
     };
     opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
     let result_state = unsafe { &mut *result_state };
-    result_state.materialize_from_parts(
+    result_state.materialize_with_details(
         candidate.node,
         candidate.score,
+        None,
+        None,
+        comparison_score,
         element.heaptids.as_slice(),
     );
-    if let Some(score) = comparison_score {
-        result_state.set_current_comparison_score(score);
-    }
     Some(())
 }
 
@@ -2610,7 +2810,10 @@ unsafe fn select_next_linear_scan_result(
             return Some(SelectedScanResult {
                 element_tid,
                 score,
-                heap_tids: element.heaptids,
+                approx_score: None,
+                approx_rank_base: None,
+                comparison_score: None,
+                heap_tids: CachedHeapTids::from_iter(element.heaptids.iter().copied()),
             });
         }
 
@@ -2676,7 +2879,11 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
-fn clear_last_emitted_comparison_score(opaque: &mut TqScanOpaque) {
+fn clear_last_emitted_scan_scores(opaque: &mut TqScanOpaque) {
+    opaque.last_emitted_approx_score = 0.0;
+    opaque.last_emitted_approx_score_valid = false;
+    opaque.last_emitted_approx_rank = 0;
+    opaque.last_emitted_approx_rank_valid = false;
     opaque.last_emitted_comparison_score = 0.0;
     opaque.last_emitted_comparison_score_valid = false;
 }
@@ -2688,12 +2895,35 @@ fn emit_scan_output(
 ) {
     set_scan_heap_tid(scan, output.heap_tid);
     set_scan_orderby_score(scan, output.score);
+    match output.approx_score {
+        Some(score) => {
+            opaque.last_emitted_approx_score = score;
+            opaque.last_emitted_approx_score_valid = true;
+        }
+        None => {
+            opaque.last_emitted_approx_score = 0.0;
+            opaque.last_emitted_approx_score_valid = false;
+        }
+    }
+    match output.approx_rank {
+        Some(rank) => {
+            opaque.last_emitted_approx_rank = rank;
+            opaque.last_emitted_approx_rank_valid = true;
+        }
+        None => {
+            opaque.last_emitted_approx_rank = 0;
+            opaque.last_emitted_approx_rank_valid = false;
+        }
+    }
     match output.comparison_score {
         Some(score) => {
             opaque.last_emitted_comparison_score = score;
             opaque.last_emitted_comparison_score_valid = true;
         }
-        None => clear_last_emitted_comparison_score(opaque),
+        None => {
+            opaque.last_emitted_comparison_score = 0.0;
+            opaque.last_emitted_comparison_score_valid = false;
+        }
     }
 }
 
@@ -2727,6 +2957,10 @@ pub(super) struct CurrentScanResult {
     heap_tid: page::ItemPointer,
     score: f32,
     score_valid: bool,
+    approx_score: f32,
+    approx_score_valid: bool,
+    approx_rank_base: i32,
+    approx_rank_valid: bool,
     comparison_score: f32,
     comparison_score_valid: bool,
 }
@@ -2752,6 +2986,22 @@ impl CurrentScanResult {
         self.score_valid
     }
 
+    pub(super) fn approx_score(&self) -> f32 {
+        self.approx_score
+    }
+
+    pub(super) fn approx_score_valid(&self) -> bool {
+        self.approx_score_valid
+    }
+
+    pub(super) fn approx_rank_base(&self) -> i32 {
+        self.approx_rank_base
+    }
+
+    pub(super) fn approx_rank_valid(&self) -> bool {
+        self.approx_rank_valid
+    }
+
     pub(super) fn comparison_score(&self) -> f32 {
         self.comparison_score
     }
@@ -2768,6 +3018,10 @@ impl Default for CurrentScanResult {
             heap_tid: page::ItemPointer::INVALID,
             score: 0.0,
             score_valid: false,
+            approx_score: 0.0,
+            approx_score_valid: false,
+            approx_rank_base: 0,
+            approx_rank_valid: false,
             comparison_score: 0.0,
             comparison_score_valid: false,
         }
@@ -2778,7 +3032,10 @@ impl Default for CurrentScanResult {
 struct SelectedScanResult {
     element_tid: page::ItemPointer,
     score: f32,
-    heap_tids: Vec<page::ItemPointer>,
+    approx_score: Option<f32>,
+    approx_rank_base: Option<i32>,
+    comparison_score: Option<f32>,
+    heap_tids: CachedHeapTids,
 }
 
 #[repr(C)]
@@ -2824,10 +3081,19 @@ impl ScanResultState {
     }
 
     fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
+        let approx_rank = self.current.approx_rank_valid().then(|| {
+            self.current.approx_rank_base()
+                + i32::from(self.pending_heaptid_index)
+        });
         let heap_tid = self.take_pending()?;
         Some(PendingScanOutput {
             heap_tid,
             score: self.current.score(),
+            approx_score: self
+                .current
+                .approx_score_valid()
+                .then_some(self.current.approx_score()),
+            approx_rank,
             comparison_score: self
                 .current
                 .comparison_score_valid()
@@ -2845,7 +3111,14 @@ impl ScanResultState {
     }
 
     fn materialize(&mut self, selected: SelectedScanResult) {
-        self.materialize_from_parts(selected.element_tid, selected.score, &selected.heap_tids);
+        self.materialize_with_details(
+            selected.element_tid,
+            selected.score,
+            selected.approx_score,
+            selected.approx_rank_base,
+            selected.comparison_score,
+            selected.heap_tids.as_slice(),
+        );
     }
 
     fn materialize_from_parts(
@@ -2854,18 +3127,51 @@ impl ScanResultState {
         score: f32,
         heaptids: &[page::ItemPointer],
     ) {
-        self.set_current(element_tid, score);
+        self.materialize_with_details(element_tid, score, None, None, None, heaptids);
+    }
+
+    fn materialize_with_details(
+        &mut self,
+        element_tid: page::ItemPointer,
+        score: f32,
+        approx_score: Option<f32>,
+        approx_rank_base: Option<i32>,
+        comparison_score: Option<f32>,
+        heaptids: &[page::ItemPointer],
+    ) {
+        self.set_current_with_details(
+            element_tid,
+            score,
+            approx_score,
+            approx_rank_base,
+            comparison_score,
+        );
         self.store_pending(heaptids);
     }
 
     fn set_current(&mut self, element_tid: page::ItemPointer, score: f32) {
+        self.set_current_with_details(element_tid, score, None, None, None);
+    }
+
+    fn set_current_with_details(
+        &mut self,
+        element_tid: page::ItemPointer,
+        score: f32,
+        approx_score: Option<f32>,
+        approx_rank_base: Option<i32>,
+        comparison_score: Option<f32>,
+    ) {
         self.current = CurrentScanResult {
             element_tid,
             heap_tid: page::ItemPointer::INVALID,
             score,
             score_valid: true,
-            comparison_score: 0.0,
-            comparison_score_valid: false,
+            approx_score: approx_score.unwrap_or(0.0),
+            approx_score_valid: approx_score.is_some(),
+            approx_rank_base: approx_rank_base.unwrap_or(0),
+            approx_rank_valid: approx_rank_base.is_some(),
+            comparison_score: comparison_score.unwrap_or(0.0),
+            comparison_score_valid: comparison_score.is_some(),
         };
     }
 
@@ -2963,6 +3269,13 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
+    grouped_live_rerank_buffer: [BufferedGroupedScanResult; ADR030_GROUPED_V2_LIVE_RERANK_WINDOW],
+    grouped_live_rerank_buffer_len: u8,
+    grouped_live_rerank_next_approx_rank: i32,
+    pub(super) last_emitted_approx_score: f32,
+    pub(super) last_emitted_approx_score_valid: bool,
+    pub(super) last_emitted_approx_rank: i32,
+    pub(super) last_emitted_approx_rank_valid: bool,
     pub(super) last_emitted_comparison_score: f32,
     pub(super) last_emitted_comparison_score_valid: bool,
     pub(super) graph_prefetch_state: *mut GraphPrefetchState,
@@ -3003,6 +3316,14 @@ impl Default for TqScanOpaque {
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
+            grouped_live_rerank_buffer: [BufferedGroupedScanResult::default();
+                ADR030_GROUPED_V2_LIVE_RERANK_WINDOW],
+            grouped_live_rerank_buffer_len: 0,
+            grouped_live_rerank_next_approx_rank: 1,
+            last_emitted_approx_score: 0.0,
+            last_emitted_approx_score_valid: false,
+            last_emitted_approx_rank: 0,
+            last_emitted_approx_rank_valid: false,
             last_emitted_comparison_score: 0.0,
             last_emitted_comparison_score_valid: false,
             graph_prefetch_state: ptr::null_mut(),
@@ -3057,7 +3378,10 @@ mod tests {
                 (candidate.node.offset_number == 2).then(|| SelectedScanResult {
                     element_tid: candidate.node,
                     score: candidate.score,
-                    heap_tids: vec![tid(41, 1)],
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: None,
+                    heap_tids: CachedHeapTids::from_iter([tid(41, 1)]),
                 })
             },
         );
@@ -3111,7 +3435,10 @@ mod tests {
                 (candidate == candidate_b).then(|| SelectedScanResult {
                     element_tid: candidate.node,
                     score: candidate.score,
-                    heap_tids: vec![tid(42, 1)],
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: None,
+                    heap_tids: CachedHeapTids::from_iter([tid(42, 1)]),
                 })
             },
             |candidate| refilled_after.push(candidate.node),
@@ -3375,6 +3702,8 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
                 comparison_score: None,
             }),
             "pending output should expose the first heap tid together with the current result score"
@@ -3384,6 +3713,8 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 2),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
                 comparison_score: None,
             }),
             "pending output should preserve score while draining later heap tids from the same result"
@@ -3413,6 +3744,8 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
                 comparison_score: None,
             }),
             "linear fallback duplicate drain should still emit the first queued heap tid"
@@ -3445,6 +3778,8 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(32, 1),
                 score: -5.0,
+                approx_score: None,
+                approx_rank: None,
                 comparison_score: None,
             }),
             "linear fallback should still emit the final queued heap tid before teardown"
@@ -3541,7 +3876,10 @@ mod tests {
         linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
             element_tid: tid(37, 1),
             score: -10.0,
-            heap_tids: vec![tid(38, 1)],
+            approx_score: None,
+            approx_rank_base: None,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::from_iter([tid(38, 1)]),
         });
 
         assert_eq!(
@@ -3566,7 +3904,10 @@ mod tests {
         linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
             element_tid: tid(38, 1),
             score: -11.0,
-            heap_tids: vec![tid(39, 1)],
+            approx_score: None,
+            approx_rank_base: None,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::from_iter([tid(39, 1)]),
         });
 
         assert_eq!(
@@ -3628,7 +3969,10 @@ mod tests {
             SelectedScanResult {
                 element_tid: tid(26, 1),
                 score: -4.5,
-                heap_tids: vec![tid(31, 1), tid(31, 2)],
+                approx_score: None,
+                approx_rank_base: None,
+                comparison_score: None,
+                heap_tids: CachedHeapTids::from_iter([tid(31, 1), tid(31, 2)]),
             },
         );
 
