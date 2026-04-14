@@ -1167,6 +1167,30 @@ unsafe fn load_grouped_score_rerank_payload<'a>(
     grouped_score_rerank_payload(payload, rerank)
 }
 
+fn score_grouped_rerank_payload_result(
+    quantizer: &ProdQuantizer,
+    prepared_query: &PreparedQuery,
+    payload: &GroupedScoreRerankPayload<'_>,
+) -> f32 {
+    -quantizer.score_ip_from_parts(prepared_query, payload.rerank_gamma, &payload.rerank_code)
+}
+
+unsafe fn score_grouped_rerank_payload_from_scan_state(
+    opaque: *mut TqScanOpaque,
+    payload: &GroupedScoreRerankPayload<'_>,
+) -> f32 {
+    let opaque = unsafe { &*opaque };
+    if opaque.prepared_query.is_null() {
+        pgrx::error!("tqhnsw scan state is missing prepared query");
+    }
+    if opaque.cached_quantizer.is_null() {
+        pgrx::error!("tqhnsw scan state is missing cached quantizer");
+    }
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
@@ -1185,13 +1209,14 @@ fn candidate_score_dispatch<'a>(
 
 unsafe fn score_grouped_candidate_context(
     index_relation: pg_sys::Relation,
-    _opaque: *mut TqScanOpaque,
+    opaque: *mut TqScanOpaque,
     grouped: GroupedScoreContext<'_>,
 ) -> f32 {
     let _payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
         .unwrap_or_else(|| {
         panic!("grouped score helper requires metadata-aligned grouped payload view")
     });
+    let _score = unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &_payload) };
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
 }
 
@@ -3808,6 +3833,30 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn score_grouped_rerank_payload_result_matches_prod_quantizer_path() {
+        let vector = vec![0.1_f32, -0.2, 0.3, -0.4];
+        let query = vec![0.25_f32, 0.5, -0.75, 0.125];
+        let quantizer = ProdQuantizer::new(vector.len(), 4, 42);
+        let encoded = quantizer.encode(&vector);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let mut code_bytes = encoded.mse_packed.clone();
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        let payload = GroupedScoreRerankPayload {
+            element_tid: tid(40, 4),
+            reranktid: tid(40, 3),
+            binary_words: &[],
+            search_code: &[],
+            rerank_gamma: encoded.gamma,
+            rerank_code: code_bytes,
+        };
+
+        let observed = score_grouped_rerank_payload_result(&quantizer, &prepared, &payload);
+        let expected = -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
+
+        assert_eq!(observed, expected);
     }
 
     #[test]
