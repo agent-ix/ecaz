@@ -360,7 +360,7 @@ struct GroupedScoreContext<'a> {
 
 enum CandidateScoreDispatch<'a> {
     Exact(LoadedElementState),
-    Grouped(GroupedScoreCall<'a>),
+    Grouped(GroupedScoreContext<'a>),
 }
 
 struct BinaryPrefilterCandidate {
@@ -1101,18 +1101,16 @@ fn candidate_score_dispatch<'a>(
             grouped_score_context_from_scan_state(scan_graph_storage, element)
                 .unwrap_or_else(|| {
                     panic!("exact-unavailable grouped score dispatch requires grouped score context")
-                })
-                .call,
+                }),
         ),
         other => CandidateScoreDispatch::Exact(other),
     }
 }
 
-unsafe fn score_grouped_candidate_input(
+unsafe fn score_grouped_candidate_context(
     _index_relation: pg_sys::Relation,
     _opaque: *mut TqScanOpaque,
-    _element_tid: page::ItemPointer,
-    _grouped: GroupedScoreCall<'_>,
+    _grouped: GroupedScoreContext<'_>,
 ) -> f32 {
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
 }
@@ -1129,7 +1127,7 @@ unsafe fn score_cached_graph_element_dispatch(
             exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
         },
         CandidateScoreDispatch::Grouped(grouped) => unsafe {
-            score_grouped_candidate_input(index_relation, opaque, element.tid, grouped)
+            score_grouped_candidate_context(index_relation, opaque, grouped)
         },
     }
 }
@@ -3601,17 +3599,18 @@ mod tests {
             LoadedElementState::ExactUnavailable,
         ) {
             CandidateScoreDispatch::Grouped(grouped) => {
+                assert_eq!(grouped.element_tid, tid(12, 4));
                 assert_eq!(
-                    grouped.shape,
+                    grouped.call.shape,
                     GroupedScoreShape {
                         binary_word_count: 1,
                         search_code_len: 2,
                         rerank_code_len: 96,
                     }
                 );
-                assert_eq!(grouped.input.reranktid, tuple.reranktid);
-                assert_eq!(grouped.input.search_code, tuple.search_code.as_slice());
-                assert_eq!(grouped.input.binary_words, tuple.binary_words.as_slice());
+                assert_eq!(grouped.call.input.reranktid, tuple.reranktid);
+                assert_eq!(grouped.call.input.search_code, tuple.search_code.as_slice());
+                assert_eq!(grouped.call.input.binary_words, tuple.binary_words.as_slice());
             }
             CandidateScoreDispatch::Exact(_) => {
                 panic!("exact-unavailable grouped tuples should dispatch through grouped input")
