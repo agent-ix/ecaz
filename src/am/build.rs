@@ -14,6 +14,11 @@ use crate::quant::prod::ProdQuantizer;
 
 use super::{options, page, shared, wal, P_NEW};
 
+const ADR030_EXPERIMENTAL_GROUP_SIZE: usize = 16;
+const ADR030_EXPERIMENTAL_MAX_TRAIN_SIZE: usize = 1024;
+const ADR030_EXPERIMENTAL_KMEANS_ITERS: usize = 8;
+const ADR030_EXPERIMENTAL_BUILD_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD";
+
 #[derive(Debug, Clone)]
 pub(super) struct BuildTuple {
     pub(super) heap_tids: Vec<page::ItemPointer>,
@@ -968,7 +973,14 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
-    let output = current_format_flush_output(state);
+    let output = if experimental_grouped_v2_build_enabled() && state.options.build_source_column.is_some()
+    {
+        experimental_grouped_v2_flush_output(state).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw experimental ADR-030 v2 build failed: {e}")
+        })
+    } else {
+        current_format_flush_output(state)
+    };
     unsafe { flush_build_output(index_relation, &output) };
 }
 
@@ -1020,6 +1032,24 @@ pub(super) fn grouped_v2_flush_output(
             search_subvector_dim,
         },
     })
+}
+
+fn experimental_grouped_v2_build_enabled() -> bool {
+    std::env::var_os(ADR030_EXPERIMENTAL_BUILD_ENV).is_some()
+}
+
+fn experimental_grouped_v2_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+    let train_size = state
+        .heap_tuples
+        .len()
+        .min(ADR030_EXPERIMENTAL_MAX_TRAIN_SIZE);
+    let plan = plan_v2_grouped_source_build(
+        state,
+        ADR030_EXPERIMENTAL_GROUP_SIZE,
+        train_size,
+        ADR030_EXPERIMENTAL_KMEANS_ITERS,
+    )?;
+    grouped_v2_flush_output(state, &plan, ADR030_EXPERIMENTAL_GROUP_SIZE)
 }
 
 fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
@@ -2254,5 +2284,54 @@ mod tests {
         assert!(tuple_tags.contains(&page::TQ_RERANK_TAG));
         assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
         assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
+    }
+
+    #[test]
+    fn experimental_grouped_v2_flush_output_uses_default_v2_parameters() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = experimental_grouped_v2_flush_output(&state).unwrap();
+
+        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(output.metadata.search_subvector_count, 1);
+        assert_eq!(
+            output.metadata.search_subvector_dim,
+            ADR030_EXPERIMENTAL_GROUP_SIZE as u16
+        );
     }
 }
