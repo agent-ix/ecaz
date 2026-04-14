@@ -3253,6 +3253,54 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 16, got 0")]
+    fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "0");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_window (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_window VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_window_idx ON tqhnsw_grouped_v2_runtime_invalid_window USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_window \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped window env");
+    }
+
+    #[pg_test]
     fn test_grouped_v2_runtime_captures_exact_rerank_comparison_scores() {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
@@ -4409,11 +4457,17 @@ mod tests {
         }
     }
 
-    #[pg_test]
-    fn test_grouped_v2_runtime_live_window_matches_windowed_simulation() {
+    fn assert_grouped_v2_runtime_live_window_matches_windowed_simulation(
+        window_size: i32,
+        configure_window_env: bool,
+    ) {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let window_value = window_size.to_string();
+        let _window_guard = configure_window_env.then(|| {
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", &window_value)
+        });
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_live_window (
@@ -4463,7 +4517,7 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let candidate_queries = (0..12)
+        let candidate_queries = (0..24)
             .map(|seed| {
                 (0..16)
                     .map(|dim| {
@@ -4477,8 +4531,9 @@ mod tests {
         let (query, expected_live_order, live_rows, baseline_rows) = candidate_queries
             .into_iter()
             .find_map(|query| {
-                let windowed_rows =
-                    unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4) };
+                let windowed_rows = unsafe {
+                    am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), window_size)
+                };
                 if !windowed_rows
                     .iter()
                     .any(|(_heap_tid, approx_rank, windowed_rank, _, _, _, _, _)| {
@@ -4521,7 +4576,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             actual_live_order, expected_live_order,
-            "grouped live runtime order should match the window-size-4 simulation chosen in packet 350"
+            "grouped live runtime order should match the window-size-{window_size} simulation"
         );
 
         let baseline_approx_order = baseline_rows
@@ -4556,6 +4611,16 @@ mod tests {
         );
 
         let _query_literal = format_recall_vector_sql_literal(&query);
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_runtime_live_window_matches_windowed_simulation() {
+        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(4, false);
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_runtime_live_window_respects_window_env() {
+        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(8, true);
     }
 
     #[pg_test]

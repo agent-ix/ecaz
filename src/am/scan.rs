@@ -20,7 +20,9 @@ const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
 const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
-const ADR030_GROUPED_V2_LIVE_RERANK_WINDOW: usize = 4;
+const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
+const ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
+const ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW: usize = 16;
 const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
     "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet";
 
@@ -594,6 +596,16 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 crate::code_len(metadata.dimensions as usize, metadata.bits)
             };
             opaque.scan_graph_storage = graph_storage;
+            opaque.grouped_live_rerank_window = if matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::GroupedV2(_)
+            ) {
+                u8::try_from(resolve_grouped_live_rerank_window())
+                    .expect("grouped live rerank window should fit in u8")
+            } else {
+                u8::try_from(ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW)
+                    .expect("default grouped live rerank window should fit in u8")
+            };
             opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
@@ -698,6 +710,29 @@ fn validate_runtime_scan_format(
 
 fn experimental_grouped_v2_scan_enabled() -> bool {
     std::env::var_os(ADR030_EXPERIMENTAL_SCAN_ENV).is_some()
+}
+
+fn resolve_grouped_live_rerank_window() -> usize {
+    let Some(raw_window) = std::env::var_os(ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV) else {
+        return ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW;
+    };
+
+    let raw_window = raw_window.to_string_lossy();
+    let parsed_window = raw_window.parse::<usize>().unwrap_or_else(|_| {
+        pgrx::error!(
+            "tqhnsw grouped-v2 live rerank window must be an integer between 1 and {}, got {:?}",
+            ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW,
+            raw_window
+        )
+    });
+    if !(1..=ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW).contains(&parsed_window) {
+        pgrx::error!(
+            "tqhnsw grouped-v2 live rerank window must be between 1 and {}, got {}",
+            ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW,
+            parsed_window
+        );
+    }
+    parsed_window
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -1785,6 +1820,10 @@ fn clear_grouped_live_rerank_buffer(opaque: &mut TqScanOpaque) {
     opaque.grouped_live_rerank_next_approx_rank = 1;
 }
 
+fn grouped_live_rerank_window(opaque: &TqScanOpaque) -> usize {
+    usize::from(opaque.grouped_live_rerank_window)
+}
+
 fn buffered_grouped_scan_results(
     opaque: &TqScanOpaque,
 ) -> &[BufferedGroupedScanResult] {
@@ -1797,7 +1836,7 @@ fn push_buffered_grouped_scan_result(
 ) {
     let len = usize::from(opaque.grouped_live_rerank_buffer_len);
     assert!(
-        len < ADR030_GROUPED_V2_LIVE_RERANK_WINDOW,
+        len < grouped_live_rerank_window(opaque),
         "grouped live rerank buffer should respect configured window capacity"
     );
     opaque.grouped_live_rerank_buffer[len] = buffered;
@@ -1899,8 +1938,8 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
     opaque: &mut TqScanOpaque,
     result_state: *mut ScanResultState,
 ) -> bool {
-    while usize::from(opaque.grouped_live_rerank_buffer_len) < ADR030_GROUPED_V2_LIVE_RERANK_WINDOW
-    {
+    let active_window = grouped_live_rerank_window(opaque);
+    while usize::from(opaque.grouped_live_rerank_buffer_len) < active_window {
         #[cfg(any(test, feature = "pg_test"))]
         let consume_started = Instant::now();
         let candidate = consume_candidate_frontier_head(opaque);
@@ -3269,8 +3308,10 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
-    grouped_live_rerank_buffer: [BufferedGroupedScanResult; ADR030_GROUPED_V2_LIVE_RERANK_WINDOW],
+    grouped_live_rerank_buffer:
+        [BufferedGroupedScanResult; ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
     grouped_live_rerank_buffer_len: u8,
+    grouped_live_rerank_window: u8,
     grouped_live_rerank_next_approx_rank: i32,
     pub(super) last_emitted_approx_score: f32,
     pub(super) last_emitted_approx_score_valid: bool,
@@ -3317,8 +3358,9 @@ impl Default for TqScanOpaque {
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
             grouped_live_rerank_buffer: [BufferedGroupedScanResult::default();
-                ADR030_GROUPED_V2_LIVE_RERANK_WINDOW],
+                ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
+            grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
             grouped_live_rerank_next_approx_rank: 1,
             last_emitted_approx_score: 0.0,
             last_emitted_approx_score_valid: false,
