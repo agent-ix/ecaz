@@ -2963,7 +2963,6 @@ mod tests {
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
         )
         .expect("index creation should succeed");
-        Spi::run("ANALYZE tqhnsw_grouped_v2_runtime_reject").expect("analyze should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
@@ -4029,26 +4028,8 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet")]
     fn test_tqhnsw_insert_rejects_grouped_v2_index() {
-        struct ExperimentalBuildEnvGuard(Option<String>);
-
-        impl Drop for ExperimentalBuildEnvGuard {
-            fn drop(&mut self) {
-                match self.0.take() {
-                    Some(value) => unsafe {
-                        std::env::set_var("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", value)
-                    },
-                    None => unsafe {
-                        std::env::remove_var("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD")
-                    },
-                }
-            }
-        }
-
-        let _env_guard =
-            ExperimentalBuildEnvGuard(std::env::var("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD").ok());
-        unsafe {
-            std::env::set_var("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
-        }
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_insert_grouped_v2_reject (
@@ -4091,6 +4072,50 @@ mod tests {
               ))",
         )
         .expect("insert should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet")]
+    fn test_tqhnsw_vacuum_rejects_grouped_v2_index() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_grouped_v2_reject (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_vacuum_grouped_v2_reject VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_grouped_v2_reject_idx ON tqhnsw_vacuum_grouped_v2_reject USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_grouped_v2_reject_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let _ = unsafe { am::debug_vacuum_stats(index_oid) };
     }
 
     #[pg_test]

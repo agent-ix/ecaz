@@ -8,6 +8,9 @@ use crate::quant::prod::payload_len;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
+const ADR030_GROUPED_V2_VACUUM_UNSUPPORTED: &str =
+    "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet";
+
 #[derive(Debug, Clone)]
 struct ElementVacuumUpdate {
     tid: page::ItemPointer,
@@ -74,6 +77,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            let metadata = shared::read_metadata_page((*info).index);
+            validate_vacuum_storage_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
             let Some(callback) = callback else {
                 return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
             };
@@ -86,7 +91,23 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe { pgrx::pgrx_extern_c_guard(|| shared::tqhnsw_noop_vacuum_stats((*info).index, stats)) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let metadata = shared::read_metadata_page((*info).index);
+            validate_vacuum_storage_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+            shared::tqhnsw_noop_vacuum_stats((*info).index, stats)
+        })
+    }
+}
+
+fn validate_vacuum_storage_format(metadata: &page::MetadataPage) -> Result<(), String> {
+    match metadata.graph_storage_format() {
+        Ok(page::GraphStorageFormat::ScalarV1) => Ok(()),
+        Ok(page::GraphStorageFormat::GroupedV2) => {
+            Err(ADR030_GROUPED_V2_VACUUM_UNSUPPORTED.to_owned())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 unsafe fn run_pass1_vacuum(
@@ -1394,4 +1415,51 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
         )
     };
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_v1_metadata() -> page::MetadataPage {
+        page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 64,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        })
+    }
+
+    fn grouped_v2_metadata() -> page::MetadataPage {
+        page::MetadataPage {
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+            ..scalar_v1_metadata()
+        }
+    }
+
+    #[test]
+    fn validate_vacuum_storage_format_accepts_scalar_v1() {
+        assert_eq!(validate_vacuum_storage_format(&scalar_v1_metadata()), Ok(()));
+    }
+
+    #[test]
+    fn validate_vacuum_storage_format_rejects_grouped_v2() {
+        assert_eq!(
+            validate_vacuum_storage_format(&grouped_v2_metadata()),
+            Err(ADR030_GROUPED_V2_VACUUM_UNSUPPORTED.to_owned())
+        );
+    }
 }
