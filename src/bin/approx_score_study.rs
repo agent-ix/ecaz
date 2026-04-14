@@ -6,7 +6,10 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::{pack_grouped_pq_nibbles, pad_input, srht, ProdQuantizer};
+use tqvector::bench_api::{
+    grouped_pq_nibble, grouped_pq_score_f32 as shared_grouped_pq_score_f32,
+    pack_grouped_pq_nibbles, pad_input, srht, ProdQuantizer,
+};
 
 const DIM: usize = 1536;
 const BITS: u8 = 4;
@@ -904,32 +907,18 @@ fn prepare_grouped_pq_query(
 }
 
 fn grouped_pq_score_f32(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {
-    (0..prepared.row_bias.len())
-        .map(|group_index| {
-            let centroid_index = grouped_pq_nibble(code, group_index);
-            prepared.lut_f32[group_index * 16 + centroid_index]
-        })
-        .sum()
+    shared_grouped_pq_score_f32(&prepared.lut_f32, prepared.row_bias.len(), &code.packed_nibbles)
 }
 
 fn grouped_pq_score_u8(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {
     (0..prepared.row_bias.len())
         .map(|group_index| {
-            let centroid_index = grouped_pq_nibble(code, group_index);
+            let centroid_index = grouped_pq_nibble(&code.packed_nibbles, group_index);
             prepared.row_bias[group_index]
                 + prepared.row_scale[group_index]
                     * prepared.lut_u8[group_index * 16 + centroid_index] as f32
         })
         .sum()
-}
-
-fn grouped_pq_nibble(code: &GroupedPqCode, group_index: usize) -> usize {
-    let packed = code.packed_nibbles[group_index / 2];
-    if group_index % 2 == 0 {
-        usize::from(packed & 0x0F)
-    } else {
-        usize::from(packed >> 4)
-    }
 }
 
 fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
@@ -1387,8 +1376,8 @@ mod tests {
         };
         let code = encode_grouped_pq(&[1.0, 1.0, -2.0, -2.0], &model);
         assert_eq!(code.packed_nibbles, vec![0x21]);
-        assert_eq!(grouped_pq_nibble(&code, 0), 1);
-        assert_eq!(grouped_pq_nibble(&code, 1), 2);
+        assert_eq!(grouped_pq_nibble(&code.packed_nibbles, 0), 1);
+        assert_eq!(grouped_pq_nibble(&code.packed_nibbles, 1), 2);
     }
 
     #[test]
