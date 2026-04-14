@@ -3155,7 +3155,7 @@ mod tests {
 
     #[test]
     fn prepared_query_cache_lifetime_tracks_scan_state() {
-        let metadata = page::MetadataPage {
+        let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
             m: 8,
             ef_construction: 32,
             entry_point: page::ItemPointer::INVALID,
@@ -3164,7 +3164,8 @@ mod tests {
             max_level: 0,
             seed: 42,
             inserted_since_rebuild: 0,
-        };
+            persisted_binary_sidecar: false,
+        });
         let query = [1.0_f32, 2.0, 3.0, 4.0];
         let mut opaque = TqScanOpaque::default();
 

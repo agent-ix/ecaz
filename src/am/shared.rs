@@ -75,9 +75,12 @@ pub(super) unsafe fn update_metadata_page(
     }
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
+    let special_size = (metadata_bytes.len() + 7) & !7;
+    unsafe { pg_sys::PageInit(page, page_size, special_size) };
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
@@ -111,6 +114,8 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
     let page = unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
     let metadata_bytes = metadata.encode();
+    let special_size = (metadata_bytes.len() + 7) & !7;
+    unsafe { pg_sys::PageInit(page, page_size, special_size) };
     unsafe { write_metadata_bytes(page, &metadata_bytes) };
     unsafe { wal_txn.finish() };
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };

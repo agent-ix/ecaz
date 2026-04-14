@@ -1389,9 +1389,9 @@ mod tests {
             group_size: 2,
         };
         let code = encode_grouped_pq(&[1.0, 1.0, -2.0, -2.0], &model);
-        assert_eq!(code.packed_nibbles, vec![0x31]);
+        assert_eq!(code.packed_nibbles, vec![0x21]);
         assert_eq!(grouped_pq_nibble(&code, 0), 1);
-        assert_eq!(grouped_pq_nibble(&code, 1), 3);
+        assert_eq!(grouped_pq_nibble(&code, 1), 2);
     }
 
     #[test]

@@ -47,9 +47,9 @@ pub mod bench_api {
 
     // Page codec
     pub use crate::am::page::{
-        neighbor_slots, neighbor_tuple_encoded_len, DataPage, DataPageChain, ItemPointer,
-        MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
-        PAGE_HEADER_BYTES,
+        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, DataPage, DataPageChain,
+        ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
+        ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
     };
 
     // Text I/O
@@ -2558,13 +2558,12 @@ mod tests {
             metadata.bits,
             metadata.seed,
         );
-        let expected_binary_word_count = if persisted_binary_quantizer
-            .binary_sign_no_qjl_4bit_supported()
-        {
-            (metadata.dimensions as usize).div_ceil(64)
-        } else {
-            0
-        };
+        let expected_binary_word_count =
+            if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
+                (metadata.dimensions as usize).div_ceil(64)
+            } else {
+                0
+            };
         for (element_tid, element) in &elements {
             assert!(element.level <= metadata.max_level);
             assert!(!element.deleted);
@@ -11329,10 +11328,7 @@ mod tests {
         let rows = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
             .into_iter()
             .map(|(block_number, offset_number)| {
-                (
-                    i64::from(block_number),
-                    i32::from(offset_number),
-                )
+                (i64::from(block_number), i32::from(offset_number))
             })
             .collect::<Vec<_>>();
         TableIterator::new(rows)

@@ -14,7 +14,8 @@ pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
 pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
-const METADATA_BYTES: usize = 2 + 2 + ITEM_POINTER_BYTES + 2 + 1 + 1 + 8 + 8;
+const LEGACY_METADATA_BYTES: usize = 2 + 2 + ITEM_POINTER_BYTES + 2 + 1 + 1 + 8 + 8;
+const METADATA_BYTES: usize = LEGACY_METADATA_BYTES + 2 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
 
 const fn align_up(value: usize, alignment: usize) -> usize {
     let remainder = value % alignment;
@@ -25,7 +26,71 @@ const fn align_up(value: usize, alignment: usize) -> usize {
     }
 }
 
+const LEGACY_METADATA_SPECIAL_BYTES: usize = align_up(LEGACY_METADATA_BYTES, ALIGNMENT_BYTES);
 const METADATA_SPECIAL_BYTES: usize = align_up(METADATA_BYTES, ALIGNMENT_BYTES);
+
+pub const INDEX_FORMAT_V1_SCALAR: u16 = 1;
+pub const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;
+pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
+pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum TransformKind {
+    Unknown = 0,
+    Srht = 1,
+    Opq = 2,
+}
+
+impl TransformKind {
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::Srht),
+            2 => Ok(Self::Opq),
+            other => Err(format!("invalid transform kind: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SearchCodecKind {
+    Unknown = 0,
+    ScalarQuantized = 1,
+    GroupedPq = 2,
+}
+
+impl SearchCodecKind {
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::ScalarQuantized),
+            2 => Ok(Self::GroupedPq),
+            other => Err(format!("invalid search codec kind: {other}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RerankCodecKind {
+    None = 0,
+    ScalarQuantized = 1,
+    GroupedPq = 2,
+}
+
+impl RerankCodecKind {
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::ScalarQuantized),
+            2 => Ok(Self::GroupedPq),
+            other => Err(format!("invalid rerank codec kind: {other}")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ItemPointer {
@@ -69,9 +134,64 @@ pub struct MetadataPage {
     pub max_level: u8,
     pub seed: u64,
     pub inserted_since_rebuild: u64,
+    pub format_version: u16,
+    pub transform_kind: TransformKind,
+    pub search_codec_kind: SearchCodecKind,
+    pub payload_flags: u8,
+    pub search_bits: u8,
+    pub rerank_codec_kind: RerankCodecKind,
+    pub search_subvector_count: u16,
+    pub search_subvector_dim: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurrentFormatMetadata {
+    pub m: u16,
+    pub ef_construction: u16,
+    pub entry_point: ItemPointer,
+    pub dimensions: u16,
+    pub bits: u8,
+    pub max_level: u8,
+    pub seed: u64,
+    pub inserted_since_rebuild: u64,
+    pub persisted_binary_sidecar: bool,
 }
 
 impl MetadataPage {
+    pub fn current_v1_scalar(current: CurrentFormatMetadata) -> Self {
+        let mut payload_flags = 0_u8;
+        if current.persisted_binary_sidecar {
+            payload_flags |= PAYLOAD_FLAG_BINARY_SIDECAR;
+        }
+
+        Self {
+            m: current.m,
+            ef_construction: current.ef_construction,
+            entry_point: current.entry_point,
+            dimensions: current.dimensions,
+            bits: current.bits,
+            max_level: current.max_level,
+            seed: current.seed,
+            inserted_since_rebuild: current.inserted_since_rebuild,
+            format_version: INDEX_FORMAT_V1_SCALAR,
+            transform_kind: if current.dimensions == 0 {
+                TransformKind::Unknown
+            } else {
+                TransformKind::Srht
+            },
+            search_codec_kind: if current.dimensions == 0 || current.bits == 0 {
+                SearchCodecKind::Unknown
+            } else {
+                SearchCodecKind::ScalarQuantized
+            },
+            payload_flags,
+            search_bits: current.bits,
+            rerank_codec_kind: RerankCodecKind::None,
+            search_subvector_count: 0,
+            search_subvector_dim: 0,
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(METADATA_BYTES);
         out.extend_from_slice(&self.m.to_le_bytes());
@@ -82,15 +202,35 @@ impl MetadataPage {
         out.push(self.max_level);
         out.extend_from_slice(&self.seed.to_le_bytes());
         out.extend_from_slice(&self.inserted_since_rebuild.to_le_bytes());
+        out.extend_from_slice(&self.format_version.to_le_bytes());
+        out.push(self.transform_kind as u8);
+        out.push(self.search_codec_kind as u8);
+        out.push(self.payload_flags);
+        out.push(self.search_bits);
+        out.push(self.rerank_codec_kind as u8);
+        out.extend_from_slice(&self.search_subvector_count.to_le_bytes());
+        out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());
         out
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() == LEGACY_METADATA_BYTES {
+            return Self::decode_legacy(input);
+        }
         if input.len() != METADATA_BYTES {
             return Err(format!(
                 "metadata page length mismatch: got {}, expected {METADATA_BYTES}",
                 input.len()
             ));
+        }
+
+        let format_version =
+            u16::from_le_bytes(input[30..32].try_into().expect("format version bytes"));
+        if !matches!(
+            format_version,
+            INDEX_FORMAT_V1_SCALAR | INDEX_FORMAT_V2_GROUPED
+        ) {
+            return Err(format!("invalid metadata format version: {format_version}"));
         }
 
         Ok(Self {
@@ -108,7 +248,43 @@ impl MetadataPage {
                     .try_into()
                     .expect("inserted-since-rebuild bytes"),
             ),
+            format_version,
+            transform_kind: TransformKind::decode(input[32])?,
+            search_codec_kind: SearchCodecKind::decode(input[33])?,
+            payload_flags: input[34],
+            search_bits: input[35],
+            rerank_codec_kind: RerankCodecKind::decode(input[36])?,
+            search_subvector_count: u16::from_le_bytes(
+                input[37..39]
+                    .try_into()
+                    .expect("search subvector count bytes"),
+            ),
+            search_subvector_dim: u16::from_le_bytes(
+                input[39..41]
+                    .try_into()
+                    .expect("search subvector dim bytes"),
+            ),
         })
+    }
+
+    fn decode_legacy(input: &[u8]) -> Result<Self, String> {
+        Ok(Self::current_v1_scalar(CurrentFormatMetadata {
+            m: u16::from_le_bytes(input[0..2].try_into().expect("m bytes")),
+            ef_construction: u16::from_le_bytes(
+                input[2..4].try_into().expect("ef construction bytes"),
+            ),
+            entry_point: ItemPointer::decode(&input[4..10])?,
+            dimensions: u16::from_le_bytes(input[10..12].try_into().expect("dimension bytes")),
+            bits: input[12],
+            max_level: input[13],
+            seed: u64::from_le_bytes(input[14..22].try_into().expect("seed bytes")),
+            inserted_since_rebuild: u64::from_le_bytes(
+                input[22..30]
+                    .try_into()
+                    .expect("inserted-since-rebuild bytes"),
+            ),
+            persisted_binary_sidecar: false,
+        }))
     }
 
     pub fn encode_page(&self, page_size: usize) -> Result<Vec<u8>, String> {
@@ -127,27 +303,41 @@ impl MetadataPage {
     }
 
     pub fn decode_page(page: &[u8]) -> Result<Self, String> {
-        if page.len() < PAGE_HEADER_BYTES + METADATA_BYTES {
+        if page.len() < PAGE_HEADER_BYTES + LEGACY_METADATA_BYTES {
             return Err(format!(
                 "page too short: got {}, need at least {}",
                 page.len(),
-                PAGE_HEADER_BYTES + METADATA_BYTES
+                PAGE_HEADER_BYTES + LEGACY_METADATA_BYTES
             ));
         }
 
-        let special_offset = page.len() - METADATA_SPECIAL_BYTES;
-        Self::decode(&page[special_offset..special_offset + METADATA_BYTES])
+        if page.len() >= PAGE_HEADER_BYTES + METADATA_BYTES {
+            let special_offset = page.len() - METADATA_SPECIAL_BYTES;
+            let candidate = &page[special_offset..special_offset + METADATA_BYTES];
+            if let Ok(metadata) = Self::decode(candidate) {
+                return Ok(metadata);
+            }
+        }
+
+        let legacy_offset = page.len() - LEGACY_METADATA_SPECIAL_BYTES;
+        Self::decode(&page[legacy_offset..legacy_offset + LEGACY_METADATA_BYTES])
     }
 
     pub fn decode_contents(contents: &[u8]) -> Result<Self, String> {
-        if contents.len() < METADATA_BYTES {
+        if contents.len() < LEGACY_METADATA_BYTES {
             return Err(format!(
-                "page contents too short: got {}, need at least {METADATA_BYTES}",
+                "page contents too short: got {}, need at least {LEGACY_METADATA_BYTES}",
                 contents.len()
             ));
         }
 
-        Self::decode(&contents[..METADATA_BYTES])
+        if contents.len() >= METADATA_BYTES {
+            if let Ok(metadata) = Self::decode(&contents[..METADATA_BYTES]) {
+                return Ok(metadata);
+            }
+        }
+
+        Self::decode(&contents[..LEGACY_METADATA_BYTES])
     }
 }
 
@@ -251,9 +441,9 @@ impl<'a> TqElementTupleRef<'a> {
     }
 
     pub fn binary_words(&self) -> impl Iterator<Item = u64> + '_ {
-        self.binary_word_bytes.chunks_exact(size_of::<u64>()).map(|chunk| {
-            u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk"))
-        })
+        self.binary_word_bytes
+            .chunks_exact(size_of::<u64>())
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk")))
     }
 
     pub fn collect_binary_words(&self) -> Vec<u64> {
@@ -605,9 +795,10 @@ impl DataPageChain {
             + 1;
         self.pages.push(DataPage::new(next_block, self.page_size));
         debug_assert!(
-            self.pages.iter().enumerate().all(|(i, page)| {
-                page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32
-            }),
+            self.pages
+                .iter()
+                .enumerate()
+                .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),
             "DataPageChain pages are not contiguous"
         );
         self.pages
@@ -696,7 +887,7 @@ mod tests {
 
     #[test]
     fn metadata_roundtrip() {
-        let metadata = MetadataPage {
+        let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
             m: 8,
             ef_construction: 64,
             entry_point: tid(12, 3),
@@ -705,7 +896,8 @@ mod tests {
             max_level: 5,
             seed: 42,
             inserted_since_rebuild: 7,
-        };
+            persisted_binary_sidecar: true,
+        });
         let encoded = metadata.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();
         assert_eq!(decoded, metadata);
@@ -713,7 +905,7 @@ mod tests {
 
     #[test]
     fn metadata_page_roundtrip() {
-        let metadata = MetadataPage {
+        let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
             m: 8,
             ef_construction: 64,
             entry_point: tid(12, 3),
@@ -722,11 +914,37 @@ mod tests {
             max_level: 5,
             seed: 42,
             inserted_since_rebuild: 7,
-        };
+            persisted_binary_sidecar: true,
+        });
 
         let page = metadata.encode_page(DEFAULT_PAGE_SIZE).unwrap();
         let decoded = MetadataPage::decode_page(&page).unwrap();
         assert_eq!(decoded, metadata);
+    }
+
+    #[test]
+    fn metadata_decode_page_accepts_legacy_layout() {
+        let legacy = {
+            let mut out = Vec::with_capacity(LEGACY_METADATA_BYTES);
+            out.extend_from_slice(&8_u16.to_le_bytes());
+            out.extend_from_slice(&64_u16.to_le_bytes());
+            tid(12, 3).encode_into(&mut out);
+            out.extend_from_slice(&1536_u16.to_le_bytes());
+            out.push(4);
+            out.push(5);
+            out.extend_from_slice(&42_u64.to_le_bytes());
+            out.extend_from_slice(&7_u64.to_le_bytes());
+            out
+        };
+        let mut page = vec![0_u8; DEFAULT_PAGE_SIZE];
+        let legacy_offset = DEFAULT_PAGE_SIZE - LEGACY_METADATA_SPECIAL_BYTES;
+        page[legacy_offset..legacy_offset + legacy.len()].copy_from_slice(&legacy);
+
+        let decoded = MetadataPage::decode_page(&page).unwrap();
+        assert_eq!(decoded.format_version, INDEX_FORMAT_V1_SCALAR);
+        assert_eq!(decoded.transform_kind, TransformKind::Srht);
+        assert_eq!(decoded.search_codec_kind, SearchCodecKind::ScalarQuantized);
+        assert_eq!(decoded.payload_flags, 0);
     }
 
     #[test]
@@ -901,7 +1119,7 @@ mod tests {
 
     #[test]
     fn miri_metadata_roundtrip() {
-        let meta = MetadataPage {
+        let meta = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
             m: 8,
             ef_construction: 64,
             entry_point: tid(1, 1),
@@ -910,7 +1128,8 @@ mod tests {
             max_level: 3,
             seed: 42,
             inserted_since_rebuild: 5,
-        };
+            persisted_binary_sidecar: false,
+        });
         let encoded = meta.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();
         assert_eq!(decoded, meta);

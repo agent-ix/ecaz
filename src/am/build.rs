@@ -141,7 +141,7 @@ impl BuildState {
     }
 
     pub(super) fn initial_metadata(&self) -> page::MetadataPage {
-        page::MetadataPage {
+        page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
             m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
             ef_construction: u16::try_from(self.options.ef_construction)
                 .expect("validated ef_construction should fit into u16"),
@@ -151,7 +151,8 @@ impl BuildState {
             max_level: 0,
             seed: 0,
             inserted_since_rebuild: 0,
-        }
+            persisted_binary_sidecar: false,
+        })
     }
 
     pub(super) fn push(&mut self, tuple: BuildTuple) {
@@ -621,12 +622,13 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let entry_point = choose_entry_point(&element_tids, &graph_nodes, state)
         .unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+    let seed = state.seed.expect("non-empty build should record seed");
 
     unsafe { write_data_pages(index_relation, &data_pages) };
     unsafe {
         shared::initialize_metadata_page(
             index_relation,
-            page::MetadataPage {
+            page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
                 m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
                 ef_construction: u16::try_from(state.options.ef_construction)
                     .expect("validated ef_construction should fit into u16"),
@@ -634,9 +636,12 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
                 dimensions,
                 bits,
                 max_level,
-                seed: state.seed.expect("non-empty build should record seed"),
+                seed,
                 inserted_since_rebuild: 0,
-            },
+                persisted_binary_sidecar: persisted_binary_sidecar_word_count(
+                    dimensions, bits, seed,
+                ) > 0,
+            }),
         )
     };
 }
