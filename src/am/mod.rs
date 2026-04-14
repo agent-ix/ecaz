@@ -75,7 +75,7 @@ pub(crate) use self::scan_debug::{
     debug_consume_candidate_frontier_head_slots, debug_end_scan_twice,
     debug_entry_candidate_lifecycle, debug_entry_point_neighbor_tids,
     debug_exact_seed_scan_heap_tids, debug_gettuple_after_rescan_result,
-    debug_grouped_scan_comparison_summary,
+    debug_grouped_scan_comparison_rows, debug_grouped_scan_comparison_summary,
     debug_gettuple_backward_after_rescan, debug_gettuple_consumes_bootstrap_candidate,
     debug_gettuple_current_result_heap_progress, debug_gettuple_current_result_lifecycle,
     debug_gettuple_current_result_neighbors, debug_gettuple_current_result_state,

@@ -313,6 +313,10 @@ type DebugScanProfile = (
 type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanComparisonRow =
+    (HeapTidCoords, i32, f32, Option<f32>, Option<i32>, Option<i32>);
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -1606,20 +1610,71 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
-    index_oid: pg_sys::Oid,
-    query: Vec<f32>,
-) -> DebugGroupedScanComparisonSummary {
+unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let grouped_results = matches!(
-        graph::GraphStorageDescriptor::from_metadata(&metadata)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")),
+        graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")
+        }),
         graph::GraphStorageDescriptor::GroupedV2(_)
     );
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    grouped_results
+}
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> Vec<DebugGroupedScanComparisonRow> {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let mut exact_ranks = vec![None; rows.len()];
+    if grouped_results {
+        let mut compared_rows = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score))| {
+                comparison_score.map(|exact_score| (idx, exact_score))
+            })
+            .collect::<Vec<_>>();
+        compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| left_idx.cmp(right_idx))
+        });
+        for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
+            exact_ranks[idx] =
+                Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
+        }
+    }
+
+    rows.into_iter()
+        .enumerate()
+        .map(|(idx, (heap_tid, approx_score, comparison_score))| {
+            let approx_rank = i32::try_from(idx + 1).expect("approx rank should fit in i32");
+            let exact_rank = exact_ranks[idx];
+            let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
+            (
+                heap_tid,
+                approx_rank,
+                approx_score,
+                grouped_results.then_some(comparison_score).flatten(),
+                exact_rank,
+                exact_rank_shift,
+            )
+        })
+        .collect()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugGroupedScanComparisonSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
     let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
     let emitted_result_count =
         i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");

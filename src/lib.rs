@@ -3625,6 +3625,239 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_runtime_comparison_rows_report_exact_ranks() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_comparison_rows (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.04).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_comparison_rows VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_comparison_rows_idx ON tqhnsw_grouped_v2_runtime_comparison_rows USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_comparison_rows_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25,
+            1.35, 1.45, 1.55,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+        let mut expected_exact_ranks = vec![None; observed.len()];
+        let mut compared_rows = observed
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score))| {
+                comparison_score.map(|exact_score| (idx, exact_score))
+            })
+            .collect::<Vec<_>>();
+        compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| left_idx.cmp(right_idx))
+        });
+        for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
+            expected_exact_ranks[idx] =
+                Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
+        }
+        let expected_rows = observed
+            .iter()
+            .enumerate()
+            .map(
+                |(idx, ((block_number, offset_number), approx_score, comparison_score))| {
+                    let approx_rank =
+                        i32::try_from(idx + 1).expect("approx rank should fit in i32");
+                    let exact_rank = expected_exact_ranks[idx];
+                    let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
+                    (
+                        i64::from(*block_number),
+                        i32::from(*offset_number),
+                        approx_rank,
+                        *approx_score,
+                        *comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let actual_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            block_number,
+                            offset_number,
+                            approx_rank,
+                            approx_score,
+                            comparison_score,
+                            exact_rank,
+                            exact_rank_shift
+                         FROM tests.tqhnsw_debug_grouped_scan_comparison_rows(
+                            'tqhnsw_grouped_v2_runtime_comparison_rows_idx'::regclass::oid,
+                            {query_literal}
+                         )
+                         ORDER BY approx_rank"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped comparison rows query should succeed")
+                .map(|row| {
+                    (
+                        row["block_number"]
+                            .value::<i64>()
+                            .expect("block number should decode")
+                            .expect("block number should be non-null"),
+                        row["offset_number"]
+                            .value::<i32>()
+                            .expect("offset number should decode")
+                            .expect("offset number should be non-null"),
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["approx_score"]
+                            .value::<f32>()
+                            .expect("approx score should decode")
+                            .expect("approx score should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(actual_rows.len(), expected_rows.len());
+        for (actual, expected) in actual_rows.iter().zip(expected_rows.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(actual.1, expected.1);
+            assert_eq!(actual.2, expected.2);
+            assert_eq!(actual.3.to_bits(), expected.3.to_bits());
+            assert_eq!(
+                actual.4.map(f32::to_bits),
+                expected.4.map(f32::to_bits),
+                "comparison score should preserve the emitted exact rerank score"
+            );
+            assert_eq!(actual.5, expected.5);
+            assert_eq!(actual.6, expected.6);
+        }
+    }
+
+    #[pg_test]
+    fn test_scalar_runtime_comparison_rows_leave_exact_order_null() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_comparison_rows (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_comparison_rows VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_comparison_rows_idx ON tqhnsw_scalar_runtime_comparison_rows USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        approx_rank,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift
+                     FROM tests.tqhnsw_debug_grouped_scan_comparison_rows(
+                        'tqhnsw_scalar_runtime_comparison_rows_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )
+                     ORDER BY approx_rank",
+                    None,
+                    &[],
+                )
+                .expect("scalar comparison rows query should succeed")
+                .map(|row| {
+                    (
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"].value::<i32>().expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert!(!rows.is_empty());
+        for (idx, (approx_rank, comparison_score, exact_rank, exact_rank_shift)) in
+            rows.iter().enumerate()
+        {
+            assert_eq!(
+                *approx_rank,
+                i32::try_from(idx + 1).expect("approx rank should fit in i32")
+            );
+            assert_eq!(*comparison_score, None);
+            assert_eq!(*exact_rank, None);
+            assert_eq!(*exact_rank_shift, None);
+        }
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (
@@ -12375,6 +12608,56 @@ mod tests {
             .map(|(block_number, offset_number)| {
                 (i64::from(block_number), i32::from(offset_number))
             })
+            .collect::<Vec<_>>();
+        TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_comparison_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_rows")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let rows = unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                    )
+                },
+            )
             .collect::<Vec<_>>();
         TableIterator::new(rows)
     }
