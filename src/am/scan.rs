@@ -358,6 +358,15 @@ struct GroupedScoreContext<'a> {
     call: GroupedScoreCall<'a>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScorePayloadView<'a> {
+    element_tid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    binary_words: &'a [u64],
+    search_code: &'a [u8],
+    rerank_code_len: usize,
+}
+
 enum CandidateScoreDispatch<'a> {
     Exact(LoadedElementState),
     Grouped(GroupedScoreContext<'a>),
@@ -1091,6 +1100,24 @@ fn grouped_score_context_from_scan_state<'a>(
     })
 }
 
+fn grouped_score_payload_view<'a>(
+    grouped: GroupedScoreContext<'a>,
+) -> Option<GroupedScorePayloadView<'a>> {
+    if grouped.call.input.binary_words.len() != grouped.call.shape.binary_word_count {
+        return None;
+    }
+    if grouped.call.input.search_code.len() != grouped.call.shape.search_code_len {
+        return None;
+    }
+    Some(GroupedScorePayloadView {
+        element_tid: grouped.element_tid,
+        reranktid: grouped.call.input.reranktid,
+        binary_words: grouped.call.input.binary_words,
+        search_code: grouped.call.input.search_code,
+        rerank_code_len: grouped.call.shape.rerank_code_len,
+    })
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
@@ -1110,8 +1137,11 @@ fn candidate_score_dispatch<'a>(
 unsafe fn score_grouped_candidate_context(
     _index_relation: pg_sys::Relation,
     _opaque: *mut TqScanOpaque,
-    _grouped: GroupedScoreContext<'_>,
+    grouped: GroupedScoreContext<'_>,
 ) -> f32 {
+    let _payload = grouped_score_payload_view(grouped).unwrap_or_else(|| {
+        panic!("grouped score helper requires metadata-aligned grouped payload view")
+    });
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
 }
 
@@ -3616,6 +3646,58 @@ mod tests {
                 panic!("exact-unavailable grouped tuples should dispatch through grouped input")
             }
         }
+    }
+
+    #[test]
+    fn grouped_score_payload_view_preserves_context_fields() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(20, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 3,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(20, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        let payload =
+            grouped_score_payload_view(grouped).expect("metadata-aligned grouped context should produce grouped payload view");
+
+        assert_eq!(payload.element_tid, tid(20, 4));
+        assert_eq!(payload.reranktid, tid(20, 3));
+        assert_eq!(
+            payload.binary_words,
+            &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210]
+        );
+        assert_eq!(payload.search_code, &[0x10, 0x32, 0x54]);
+        assert_eq!(payload.rerank_code_len, 96);
+    }
+
+    #[test]
+    fn grouped_score_payload_view_rejects_shape_mismatch() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(21, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 4,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(21, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(grouped_score_payload_view(grouped), None);
     }
 
     #[test]
