@@ -266,6 +266,21 @@ impl CachedGraphElement {
             grouped_search_code: CachedGroupedSearchCode::from_tuple_ref(element),
         }
     }
+
+    fn grouped_score_input(&self) -> Option<GroupedScoreInput<'_>> {
+        match (
+            self.reranktid,
+            self.grouped_search_code.as_slice(),
+            self.binary_words.as_slice(),
+        ) {
+            (Some(reranktid), Some(search_code), binary_words) => Some(GroupedScoreInput {
+                reranktid,
+                search_code,
+                binary_words,
+            }),
+            _ => None,
+        }
+    }
 }
 
 struct LoadedElementScoreInput {
@@ -300,6 +315,13 @@ impl CachedGroupedSearchCode {
             Self::Bytes(search_code) => Some(search_code.as_slice()),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreInput<'a> {
+    reranktid: page::ItemPointer,
+    search_code: &'a [u8],
+    binary_words: &'a [u64],
 }
 
 struct BinaryPrefilterCandidate {
@@ -3325,6 +3347,37 @@ mod tests {
 
         assert_eq!(cached.reranktid, None);
         assert_eq!(cached.grouped_search_code.as_slice(), None);
+        assert_eq!(cached.grouped_score_input(), None);
+    }
+
+    #[test]
+    fn grouped_score_input_uses_cached_grouped_hot_payloads() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 3,
+            deleted: false,
+            heaptids: vec![tid(11, 1)],
+            neighbortid: tid(11, 2),
+            reranktid: tid(11, 3),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+            search_code: vec![0x10, 0x32, 0x54],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 2, 3).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(11, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+        let grouped = cached
+            .grouped_score_input()
+            .expect("grouped hot tuples should expose grouped score input from cached payloads");
+
+        assert_eq!(grouped.reranktid, tuple.reranktid);
+        assert_eq!(grouped.search_code, tuple.search_code.as_slice());
+        assert_eq!(grouped.binary_words, tuple.binary_words.as_slice());
     }
 
     #[test]
