@@ -31,6 +31,17 @@ impl GraphStorageDescriptor {
                 },
             }),
             page::GraphStorageFormat::GroupedV2 => {
+                if metadata.payload_flags & page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE == 0 {
+                    return Err(
+                        "grouped-v2 metadata must advertise grouped search-code payloads"
+                            .to_owned(),
+                    );
+                }
+                if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
+                    return Err(
+                        "grouped-v2 metadata must advertise cold rerank payloads".to_owned(),
+                    );
+                }
                 if metadata.search_codec_kind != page::SearchCodecKind::GroupedPq {
                     return Err(format!(
                         "unsupported grouped-v2 search codec: {:?}",
@@ -1134,6 +1145,60 @@ mod tests {
                 search_code_len: 3,
                 rerank_code_len: crate::code_len(96, 4),
             })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_grouped_v2_missing_grouped_payload_flag() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 96,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("grouped-v2 metadata must advertise grouped search-code payloads".to_owned())
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_grouped_v2_missing_cold_rerank_flag() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 96,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("grouped-v2 metadata must advertise cold rerank payloads".to_owned())
         );
     }
 
