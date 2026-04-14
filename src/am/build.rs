@@ -10,7 +10,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::quant::prod::ProdQuantizer;
+use crate::quant::{grouped_pq::pack_grouped_pq_nibbles, prod::ProdQuantizer};
 
 use super::{options, page, shared, wal, P_NEW};
 
@@ -583,7 +583,8 @@ pub(super) fn stage_v2_grouped_page_chain(
     graph_nodes: &[HnswBuildNode],
     grouped_search_codes: &[Vec<u8>],
 ) -> Result<V2GroupedStagedChain, String> {
-    if state.heap_tuples.len() != graph_nodes.len() || state.heap_tuples.len() != grouped_search_codes.len()
+    if state.heap_tuples.len() != graph_nodes.len()
+        || state.heap_tuples.len() != grouped_search_codes.len()
     {
         return Err(format!(
             "staged v2 inputs length mismatch: tuples={} graph_nodes={} grouped_search_codes={}",
@@ -730,7 +731,8 @@ pub(super) fn train_build_grouped_pq_model(
         .heap_tuples
         .iter()
         .map(|tuple| {
-            tuple.source_vector
+            tuple
+                .source_vector
                 .as_ref()
                 .ok_or_else(|| "grouped build model requires source vectors".to_owned())
         })
@@ -748,7 +750,11 @@ pub(super) fn train_build_grouped_pq_model(
         .collect::<Vec<_>>();
     let group_count = transform_dim / group_size;
     let sample_count = train_size.min(transformed.len());
-    let sample_indices = sample_indices(transformed.len(), sample_count, seed ^ 0xA5A5_5A5A_DEAD_BEEF);
+    let sample_indices = sample_indices(
+        transformed.len(),
+        sample_count,
+        seed ^ 0xA5A5_5A5A_DEAD_BEEF,
+    );
     let mut codebooks = Vec::with_capacity(group_count);
 
     for group_index in 0..group_count {
@@ -868,29 +874,27 @@ fn train_group_codebook(
 }
 
 fn encode_grouped_pq(vector: &[f32], model: &BuildGroupedPqModel) -> Vec<u8> {
-    let mut packed_nibbles = vec![0_u8; model.group_count.div_ceil(2)];
-    for group_index in 0..model.group_count {
+    let mut centroid_indices = vec![0_u8; model.group_count];
+    for (group_index, centroid_index) in centroid_indices.iter_mut().enumerate() {
         let start = group_index * model.group_size;
         let end = start + model.group_size;
-        let centroid_index = nearest_centroid(
+        *centroid_index = nearest_centroid(
             &vector[start..end],
             &model.codebooks[group_index],
             model.group_size,
         ) as u8;
-        if group_index % 2 == 0 {
-            packed_nibbles[group_index / 2] = centroid_index;
-        } else {
-            packed_nibbles[group_index / 2] |= centroid_index << 4;
-        }
     }
-    packed_nibbles
+    pack_grouped_pq_nibbles(&centroid_indices)
 }
 
 fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
     let mut best_index = 0usize;
     let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
     for centroid_index in 1..(centroids.len() / group_size) {
-        let distance = squared_l2(sample, centroid_slice(centroids, centroid_index, group_size));
+        let distance = squared_l2(
+            sample,
+            centroid_slice(centroids, centroid_index, group_size),
+        );
         if distance < best_distance {
             best_distance = distance;
             best_index = centroid_index;
@@ -973,11 +977,11 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
-    let output = if experimental_grouped_v2_build_enabled() && state.options.build_source_column.is_some()
+    let output = if experimental_grouped_v2_build_enabled()
+        && state.options.build_source_column.is_some()
     {
-        experimental_grouped_v2_flush_output(state).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw experimental ADR-030 v2 build failed: {e}")
-        })
+        experimental_grouped_v2_flush_output(state)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw experimental ADR-030 v2 build failed: {e}"))
     } else {
         current_format_flush_output(state)
     };
@@ -2256,7 +2260,10 @@ mod tests {
         let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
         let output = grouped_v2_flush_output(&state, &plan, 4).unwrap();
 
-        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(
+            output.metadata.format_version,
+            page::INDEX_FORMAT_V2_GROUPED
+        );
         assert_eq!(output.metadata.transform_kind, page::TransformKind::Srht);
         assert_eq!(
             output.metadata.search_codec_kind,
@@ -2327,7 +2334,10 @@ mod tests {
 
         let output = experimental_grouped_v2_flush_output(&state).unwrap();
 
-        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(
+            output.metadata.format_version,
+            page::INDEX_FORMAT_V2_GROUPED
+        );
         assert_eq!(output.metadata.search_subvector_count, 1);
         assert_eq!(
             output.metadata.search_subvector_dim,

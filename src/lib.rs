@@ -38,6 +38,7 @@ pub mod bench_api {
 
     // Codebook
     pub use crate::quant::codebook::{beta_pdf, lloyd_max};
+    pub use crate::quant::grouped_pq::pack_grouped_pq_nibbles;
 
     // MSE
     pub use crate::quant::mse::{decode_indices, nearest_centroid_index, quantize_to_indices};

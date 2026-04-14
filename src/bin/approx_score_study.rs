@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::{pad_input, srht, ProdQuantizer};
+use tqvector::bench_api::{pack_grouped_pq_nibbles, pad_input, srht, ProdQuantizer};
 
 const DIM: usize = 1536;
 const BITS: u8 = 4;
@@ -838,23 +838,20 @@ fn train_group_codebook(
 }
 
 fn encode_grouped_pq(vector: &[f32], model: &GroupedPqModel) -> GroupedPqCode {
-    let mut packed_nibbles = vec![0_u8; model.group_count.div_ceil(2)];
-    for group_index in 0..model.group_count {
+    let mut centroid_indices = vec![0_u8; model.group_count];
+    for (group_index, centroid_index) in centroid_indices.iter_mut().enumerate() {
         let start = group_index * model.group_size;
         let end = start + model.group_size;
-        let centroid_index = nearest_centroid(
+        *centroid_index = nearest_centroid(
             &vector[start..end],
             &model.codebooks[group_index],
             model.group_size,
         ) as u8;
-        if group_index % 2 == 0 {
-            packed_nibbles[group_index / 2] = centroid_index;
-        } else {
-            packed_nibbles[group_index / 2] |= centroid_index << 4;
-        }
     }
 
-    GroupedPqCode { packed_nibbles }
+    GroupedPqCode {
+        packed_nibbles: pack_grouped_pq_nibbles(&centroid_indices),
+    }
 }
 
 fn prepare_grouped_pq_query(
