@@ -313,8 +313,30 @@ type DebugScanProfile = (
 type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
 
 #[cfg(any(test, feature = "pg_test"))]
-type DebugGroupedScanComparisonRow =
-    (HeapTidCoords, i32, f32, Option<f32>, Option<i32>, Option<i32>);
+type DebugGroupedScanComparisonRow = (
+    HeapTidCoords,
+    i32,
+    f32,
+    Option<f32>,
+    Option<i32>,
+    Option<i32>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanOrderDriftSummary = (
+    i32,
+    i32,
+    i32,
+    f64,
+    i32,
+    f64,
+    Option<i32>,
+    Option<i32>,
+    bool,
+    bool,
+    bool,
+    bool,
+);
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -1646,8 +1668,7 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
                 .then_with(|| left_idx.cmp(right_idx))
         });
         for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
-            exact_ranks[idx] =
-                Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
+            exact_ranks[idx] = Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
         }
     }
 
@@ -1721,6 +1742,98 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
         mean_abs_score_delta,
         max_abs_score_delta,
         mean_signed_score_delta,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugGroupedScanOrderDriftSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let emitted_result_count =
+        i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");
+    if !grouped_results {
+        return (
+            emitted_result_count,
+            0,
+            0,
+            0.0,
+            0,
+            0.0,
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+
+    let grouped_result_count = emitted_result_count;
+    let mut compared_result_count = 0_i32;
+    let mut abs_rank_shift_sum = 0.0_f64;
+    let mut max_abs_rank_shift = 0_i32;
+    let mut d_squared_sum = 0.0_f64;
+    let mut exact_best_approx_rank = None;
+    let mut exact_top4_max_approx_rank = None;
+
+    for (_heap_tid, approx_rank, _approx_score, _comparison_score, exact_rank, exact_rank_shift) in
+        rows
+    {
+        let Some(exact_rank) = exact_rank else {
+            continue;
+        };
+        compared_result_count += 1;
+
+        let abs_rank_shift = exact_rank_shift.unwrap_or(approx_rank - exact_rank).abs();
+        abs_rank_shift_sum += f64::from(abs_rank_shift);
+        max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+
+        let d = f64::from(approx_rank - exact_rank);
+        d_squared_sum += d * d;
+
+        if exact_rank == 1 {
+            exact_best_approx_rank = Some(approx_rank);
+        }
+        if exact_rank <= 4 {
+            exact_top4_max_approx_rank = Some(
+                exact_top4_max_approx_rank
+                    .map_or(approx_rank, |max_rank: i32| max_rank.max(approx_rank)),
+            );
+        }
+    }
+
+    let mean_abs_rank_shift = if compared_result_count == 0 {
+        0.0
+    } else {
+        abs_rank_shift_sum / f64::from(compared_result_count)
+    };
+    let spearman_rank_correlation = if compared_result_count < 2 {
+        0.0
+    } else {
+        let n = f64::from(compared_result_count);
+        1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+    };
+    let window_1_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 1);
+    let window_2_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 2);
+    let window_4_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 4);
+    let window_8_contains_exact_best = exact_best_approx_rank.is_some_and(|rank| rank <= 8);
+
+    (
+        emitted_result_count,
+        grouped_result_count,
+        compared_result_count,
+        mean_abs_rank_shift,
+        max_abs_rank_shift,
+        spearman_rank_correlation,
+        exact_best_approx_rank,
+        exact_top4_max_approx_rank,
+        window_1_contains_exact_best,
+        window_2_contains_exact_best,
+        window_4_contains_exact_best,
+        window_8_contains_exact_best,
     )
 }
 

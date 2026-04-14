@@ -3295,8 +3295,7 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let query = vec![
-            0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
-            1.6,
+            0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
         ];
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
@@ -3347,9 +3346,8 @@ mod tests {
             "grouped-v2 runtime comparison path should emit at least one ordered result"
         );
         for (heap_tid, _approx_score, comparison_score) in observed {
-            let comparison_score = comparison_score.expect(
-                "grouped-v2 emitted results should carry an exact rerank comparison score",
-            );
+            let comparison_score = comparison_score
+                .expect("grouped-v2 emitted results should carry an exact rerank comparison score");
             let expected = exact_scores
                 .get(&heap_tid)
                 .copied()
@@ -3404,8 +3402,8 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let query = vec![
-            0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
-            1.45, 1.55, 1.65,
+            0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45,
+            1.55, 1.65,
         ];
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
@@ -3667,8 +3665,8 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let query = vec![
-            0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25,
-            1.35, 1.45, 1.55,
+            0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
+            1.45, 1.55,
         ];
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
@@ -3834,7 +3832,9 @@ mod tests {
                         row["comparison_score"]
                             .value::<f32>()
                             .expect("comparison score should decode"),
-                        row["exact_rank"].value::<i32>().expect("exact rank should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
                         row["exact_rank_shift"]
                             .value::<i32>()
                             .expect("exact rank shift should decode"),
@@ -3855,6 +3855,369 @@ mod tests {
             assert_eq!(*exact_rank, None);
             assert_eq!(*exact_rank_shift, None);
         }
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_order_drift_summary_matches_rows() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_order_drift_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.025).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.035).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_order_drift_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_order_drift_summary_idx ON tqhnsw_grouped_v2_runtime_order_drift_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_order_drift_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
+            1.52, 1.62,
+        ];
+        let observed = unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let expected_emitted_result_count =
+            i32::try_from(observed.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let mut expected_compared_result_count = 0_i32;
+        let mut abs_rank_shift_sum = 0.0_f64;
+        let mut expected_max_abs_rank_shift = 0_i32;
+        let mut d_squared_sum = 0.0_f64;
+        let mut expected_exact_best_approx_rank = None;
+        let mut expected_exact_top4_max_approx_rank = None;
+
+        for (
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        ) in &observed
+        {
+            let Some(exact_rank) = exact_rank else {
+                continue;
+            };
+            expected_compared_result_count += 1;
+            let rank_shift =
+                exact_rank_shift.expect("grouped comparison rows should populate exact rank shift");
+            let abs_rank_shift = rank_shift.abs();
+            abs_rank_shift_sum += f64::from(abs_rank_shift);
+            expected_max_abs_rank_shift = expected_max_abs_rank_shift.max(abs_rank_shift);
+            let d = f64::from(*approx_rank - *exact_rank);
+            d_squared_sum += d * d;
+            if *exact_rank == 1 {
+                expected_exact_best_approx_rank = Some(*approx_rank);
+            }
+            if *exact_rank <= 4 {
+                expected_exact_top4_max_approx_rank = Some(
+                    expected_exact_top4_max_approx_rank
+                        .map_or(*approx_rank, |max_rank: i32| max_rank.max(*approx_rank)),
+                );
+            }
+        }
+
+        let expected_mean_abs_rank_shift = if expected_compared_result_count == 0 {
+            0.0
+        } else {
+            abs_rank_shift_sum / f64::from(expected_compared_result_count)
+        };
+        let expected_spearman_rank_correlation = if expected_compared_result_count < 2 {
+            0.0
+        } else {
+            let n = f64::from(expected_compared_result_count);
+            1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+        };
+        let expected_window_1_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 1);
+        let expected_window_2_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 2);
+        let expected_window_4_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 4);
+        let expected_window_8_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 8);
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            grouped_result_count,
+                            compared_result_count,
+                            mean_abs_rank_shift,
+                            max_abs_rank_shift,
+                            spearman_rank_correlation,
+                            exact_best_approx_rank,
+                            exact_top4_max_approx_rank,
+                            window_1_contains_exact_best,
+                            window_2_contains_exact_best,
+                            window_4_contains_exact_best,
+                            window_8_contains_exact_best
+                         FROM tests.tqhnsw_debug_grouped_scan_order_drift_summary(
+                            'tqhnsw_grouped_v2_runtime_order_drift_summary_idx'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped order drift summary query should succeed")
+                .next()
+                .expect("grouped order drift summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["mean_abs_rank_shift"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift should decode")
+                    .expect("mean abs rank shift should be non-null"),
+                row["max_abs_rank_shift"]
+                    .value::<i32>()
+                    .expect("max abs rank shift should decode")
+                    .expect("max abs rank shift should be non-null"),
+                row["spearman_rank_correlation"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation should decode")
+                    .expect("spearman rank correlation should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["window_1_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 1 flag should decode")
+                    .expect("window 1 flag should be non-null"),
+                row["window_2_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 2 flag should decode")
+                    .expect("window 2 flag should be non-null"),
+                row["window_4_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 4 flag should decode")
+                    .expect("window 4 flag should be non-null"),
+                row["window_8_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 8 flag should decode")
+                    .expect("window 8 flag should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert!(
+            (mean_abs_rank_shift - expected_mean_abs_rank_shift).abs() <= 1e-6,
+            "mean abs rank shift should match the emitted-row order summary"
+        );
+        assert_eq!(max_abs_rank_shift, expected_max_abs_rank_shift);
+        assert!(
+            (spearman_rank_correlation - expected_spearman_rank_correlation).abs() <= 1e-6,
+            "spearman rank correlation should match the emitted-row order summary"
+        );
+        assert_eq!(exact_best_approx_rank, expected_exact_best_approx_rank);
+        assert_eq!(
+            exact_top4_max_approx_rank,
+            expected_exact_top4_max_approx_rank
+        );
+        assert_eq!(
+            window_1_contains_exact_best,
+            expected_window_1_contains_exact_best
+        );
+        assert_eq!(
+            window_2_contains_exact_best,
+            expected_window_2_contains_exact_best
+        );
+        assert_eq!(
+            window_4_contains_exact_best,
+            expected_window_4_contains_exact_best
+        );
+        assert_eq!(
+            window_8_contains_exact_best,
+            expected_window_8_contains_exact_best
+        );
+    }
+
+    #[pg_test]
+    fn test_scalar_order_drift_summary_is_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_order_drift_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_order_drift_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_order_drift_summary_idx ON tqhnsw_scalar_runtime_order_drift_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        grouped_result_count,
+                        compared_result_count,
+                        mean_abs_rank_shift,
+                        max_abs_rank_shift,
+                        spearman_rank_correlation,
+                        exact_best_approx_rank,
+                        exact_top4_max_approx_rank,
+                        window_1_contains_exact_best,
+                        window_2_contains_exact_best,
+                        window_4_contains_exact_best,
+                        window_8_contains_exact_best
+                     FROM tests.tqhnsw_debug_grouped_scan_order_drift_summary(
+                        'tqhnsw_scalar_runtime_order_drift_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar order drift summary query should succeed")
+                .next()
+                .expect("scalar order drift summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["grouped_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["mean_abs_rank_shift"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift should decode")
+                    .expect("mean abs rank shift should be non-null"),
+                row["max_abs_rank_shift"]
+                    .value::<i32>()
+                    .expect("max abs rank shift should decode")
+                    .expect("max abs rank shift should be non-null"),
+                row["spearman_rank_correlation"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation should decode")
+                    .expect("spearman rank correlation should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["window_1_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 1 flag should decode")
+                    .expect("window 1 flag should be non-null"),
+                row["window_2_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 2 flag should decode")
+                    .expect("window 2 flag should be non-null"),
+                row["window_4_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 4 flag should decode")
+                    .expect("window 4 flag should be non-null"),
+                row["window_8_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 8 flag should decode")
+                    .expect("window 8 flag should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(mean_abs_rank_shift, 0.0);
+        assert_eq!(max_abs_rank_shift, 0);
+        assert_eq!(spearman_rank_correlation, 0.0);
+        assert_eq!(exact_best_approx_rank, None);
+        assert_eq!(exact_top4_max_approx_rank, None);
+        assert!(!window_1_contains_exact_best);
+        assert!(!window_2_contains_exact_best);
+        assert!(!window_4_contains_exact_best);
+        assert!(!window_8_contains_exact_best);
     }
 
     #[pg_test]
@@ -12614,6 +12977,69 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_order_drift_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(mean_abs_rank_shift, f64),
+            name!(max_abs_rank_shift, i32),
+            name!(spearman_rank_correlation, f64),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(window_1_contains_exact_best, bool),
+            name!(window_2_contains_exact_best, bool),
+            name!(window_4_contains_exact_best, bool),
+            name!(window_8_contains_exact_best, bool),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "tests.tqhnsw_debug_grouped_scan_order_drift_summary",
+            )
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = unsafe { am::debug_grouped_scan_order_drift_summary(index_oid, query) };
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_grouped_scan_comparison_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
@@ -12680,7 +13106,10 @@ mod tests {
         ),
     > {
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_summary")
+            open_valid_tqhnsw_index(
+                index_oid,
+                "tests.tqhnsw_debug_grouped_scan_comparison_summary",
+            )
         };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
