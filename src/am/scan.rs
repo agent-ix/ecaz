@@ -244,7 +244,9 @@ pub(super) struct CachedGraphElement {
     deleted: bool,
     heaptids: CachedHeapTids,
     neighbortid: page::ItemPointer,
+    reranktid: Option<page::ItemPointer>,
     binary_words: CachedBinaryWords,
+    grouped_search_code: CachedGroupedSearchCode,
 }
 
 impl CachedGraphElement {
@@ -259,7 +261,9 @@ impl CachedGraphElement {
             deleted: element.deleted(),
             heaptids: CachedHeapTids::from_iter(element.collect_heaptids()),
             neighbortid: element.neighbortid(),
+            reranktid: element.reranktid(),
             binary_words,
+            grouped_search_code: CachedGroupedSearchCode::from_tuple_ref(element),
         }
     }
 }
@@ -274,6 +278,28 @@ enum LoadedElementState {
     ExactScore(f32),
     ExactPayload(LoadedElementScoreInput),
     ExactUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CachedGroupedSearchCode {
+    None,
+    Bytes(Vec<u8>),
+}
+
+impl CachedGroupedSearchCode {
+    fn from_tuple_ref(element: graph::GraphTupleRef<'_>) -> Self {
+        match element.grouped_search_code() {
+            Some(search_code) => Self::Bytes(search_code.to_vec()),
+            None => Self::None,
+        }
+    }
+
+    fn as_slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::None => None,
+            Self::Bytes(search_code) => Some(search_code.as_slice()),
+        }
+    }
 }
 
 struct BinaryPrefilterCandidate {
@@ -2759,7 +2785,9 @@ mod tests {
                 deleted: false,
                 heaptids: CachedHeapTids::from_iter([tid(191, 1)]),
                 neighbortid: tid(91, 2),
+                reranktid: None,
                 binary_words: CachedBinaryWords::from_iter(1, [0_u64]),
+                grouped_search_code: CachedGroupedSearchCode::None,
             }),
         );
         graph_neighbor_cache_mut(&mut opaque).insert(
@@ -3236,7 +3264,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_graph_element_from_grouped_tuple_ref_keeps_header_and_binary_words() {
+    fn cached_graph_element_from_grouped_tuple_ref_keeps_grouped_hot_payloads() {
         let tuple = page::TqGroupedHotTuple {
             level: 2,
             deleted: false,
@@ -3262,10 +3290,41 @@ mod tests {
         assert!(!cached.deleted);
         assert_eq!(cached.heaptids.as_slice(), tuple.heaptids.as_slice());
         assert_eq!(cached.neighbortid, tuple.neighbortid);
+        assert_eq!(cached.reranktid, Some(tuple.reranktid));
         assert_eq!(
             cached.binary_words.as_slice(),
             tuple.binary_words.as_slice()
         );
+        assert_eq!(
+            cached.grouped_search_code.as_slice(),
+            Some(tuple.search_code.as_slice())
+        );
+    }
+
+    #[test]
+    fn cached_graph_element_from_scalar_tuple_ref_has_no_grouped_hot_payloads() {
+        let tuple = page::TqElementTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(4, 1)],
+            gamma: 1.25,
+            neighbortid: tid(4, 2),
+            code: vec![0x11, 0x22, 0x33, 0x44],
+            binary_words: vec![0xA5A5A5A5A5A5A5A5],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::Scalar(
+            page::TqElementTupleRef::decode(&encoded, tuple.code.len()).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(8, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(cached.reranktid, None);
+        assert_eq!(cached.grouped_search_code.as_slice(), None);
     }
 
     #[test]

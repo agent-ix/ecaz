@@ -151,6 +151,13 @@ impl<'a> GraphTupleRef<'a> {
         }
     }
 
+    pub(crate) fn reranktid(self) -> Option<page::ItemPointer> {
+        match self {
+            Self::Scalar(_) => None,
+            Self::GroupedHot(tuple) => Some(tuple.reranktid),
+        }
+    }
+
     pub(crate) fn binary_word_count(self) -> usize {
         match self {
             Self::Scalar(tuple) => tuple.binary_word_count(),
@@ -169,6 +176,13 @@ impl<'a> GraphTupleRef<'a> {
         match self {
             Self::Scalar(tuple) => Some((tuple.gamma, tuple.code)),
             Self::GroupedHot(_) => None,
+        }
+    }
+
+    pub(crate) fn grouped_search_code(self) -> Option<&'a [u8]> {
+        match self {
+            Self::Scalar(_) => None,
+            Self::GroupedHot(tuple) => Some(tuple.search_code),
         }
     }
 }
