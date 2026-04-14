@@ -10,6 +10,8 @@ const ALIGNMENT_BYTES: usize = 8;
 
 pub const TQ_ELEMENT_TAG: u8 = 0x01;
 pub const TQ_NEIGHBOR_TAG: u8 = 0x02;
+pub const TQ_GROUPED_HOT_TAG: u8 = 0x03;
+pub const TQ_RERANK_TAG: u8 = 0x04;
 pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
@@ -364,6 +366,41 @@ pub struct TqElementTupleRef<'a> {
     binary_word_bytes: &'a [u8],
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqGroupedHotTuple {
+    pub level: u8,
+    pub deleted: bool,
+    pub heaptids: Vec<ItemPointer>,
+    pub neighbortid: ItemPointer,
+    pub reranktid: ItemPointer,
+    pub binary_words: Vec<u64>,
+    pub search_code: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TqGroupedHotTupleRef<'a> {
+    pub level: u8,
+    pub deleted: bool,
+    heaptid_bytes: &'a [u8],
+    heaptid_count: usize,
+    pub neighbortid: ItemPointer,
+    pub reranktid: ItemPointer,
+    binary_word_bytes: &'a [u8],
+    pub search_code: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqRerankTuple {
+    pub gamma: f32,
+    pub code: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TqRerankTupleRef<'a> {
+    pub gamma: f32,
+    pub code: &'a [u8],
+}
+
 impl<'a> TqElementTupleRef<'a> {
     pub fn decode(input: &'a [u8], code_len: usize) -> Result<Self, String> {
         let min_expected_len = TqElementTuple::encoded_len(code_len);
@@ -518,6 +555,193 @@ impl TqElementTuple {
             + ITEM_POINTER_BYTES
             + code_len
             + binary_word_count * size_of::<u64>()
+    }
+}
+
+impl<'a> TqGroupedHotTupleRef<'a> {
+    pub fn decode(
+        input: &'a [u8],
+        binary_word_count: usize,
+        search_code_len: usize,
+    ) -> Result<Self, String> {
+        let expected_len = TqGroupedHotTuple::encoded_len(binary_word_count, search_code_len);
+        if input.len() != expected_len {
+            return Err(format!(
+                "grouped hot tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_GROUPED_HOT_TAG {
+            return Err(format!("invalid grouped hot tuple tag: {}", input[0]));
+        }
+
+        let heaptid_bytes_start = 3;
+        let heaptid_bytes_len = HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES;
+        let heaptid_bytes = &input[heaptid_bytes_start..heaptid_bytes_start + heaptid_bytes_len];
+        let mut cursor = heaptid_bytes_start + heaptid_bytes_len;
+
+        let heaptid_count = input[cursor] as usize;
+        cursor += 1;
+        if heaptid_count > HEAPTID_INLINE_CAPACITY {
+            return Err(format!(
+                "invalid heap tid count: got {heaptid_count}, max {}",
+                HEAPTID_INLINE_CAPACITY
+            ));
+        }
+
+        let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
+        cursor += ITEM_POINTER_BYTES;
+        let reranktid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
+        cursor += ITEM_POINTER_BYTES;
+        let binary_word_bytes_len = binary_word_count * size_of::<u64>();
+        let binary_word_bytes = &input[cursor..cursor + binary_word_bytes_len];
+        cursor += binary_word_bytes_len;
+        let search_code = &input[cursor..cursor + search_code_len];
+
+        Ok(Self {
+            level: input[1],
+            deleted: input[2] != 0,
+            heaptid_bytes,
+            heaptid_count,
+            neighbortid,
+            reranktid,
+            binary_word_bytes,
+            search_code,
+        })
+    }
+
+    pub fn heaptid_count(&self) -> usize {
+        self.heaptid_count
+    }
+
+    pub fn heaptids(&self) -> impl Iterator<Item = ItemPointer> + '_ {
+        self.heaptid_bytes
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .take(self.heaptid_count)
+            .map(|chunk| {
+                ItemPointer::decode(chunk)
+                    .expect("borrowed grouped hot tuple should only expose validated tid bytes")
+            })
+    }
+
+    pub fn collect_heaptids(&self) -> Vec<ItemPointer> {
+        self.heaptids().collect()
+    }
+
+    pub fn binary_words(&self) -> impl Iterator<Item = u64> + '_ {
+        self.binary_word_bytes
+            .chunks_exact(size_of::<u64>())
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk")))
+    }
+
+    pub fn collect_binary_words(&self) -> Vec<u64> {
+        self.binary_words().collect()
+    }
+}
+
+impl TqGroupedHotTuple {
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.heaptids.len() > HEAPTID_INLINE_CAPACITY {
+            return Err(format!(
+                "too many heap tids: got {}, max {}",
+                self.heaptids.len(),
+                HEAPTID_INLINE_CAPACITY
+            ));
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(
+            self.binary_words.len(),
+            self.search_code.len(),
+        ));
+        out.push(TQ_GROUPED_HOT_TAG);
+        out.push(self.level);
+        out.push(u8::from(self.deleted));
+
+        for tid in &self.heaptids {
+            tid.encode_into(&mut out);
+        }
+        for _ in self.heaptids.len()..HEAPTID_INLINE_CAPACITY {
+            ItemPointer::INVALID.encode_into(&mut out);
+        }
+
+        out.push(self.heaptids.len() as u8);
+        self.neighbortid.encode_into(&mut out);
+        self.reranktid.encode_into(&mut out);
+        for word in &self.binary_words {
+            out.extend_from_slice(&word.to_le_bytes());
+        }
+        out.extend_from_slice(&self.search_code);
+        Ok(out)
+    }
+
+    pub fn decode(
+        input: &[u8],
+        binary_word_count: usize,
+        search_code_len: usize,
+    ) -> Result<Self, String> {
+        let hot = TqGroupedHotTupleRef::decode(input, binary_word_count, search_code_len)?;
+        Ok(Self {
+            level: hot.level,
+            deleted: hot.deleted,
+            heaptids: hot.collect_heaptids(),
+            neighbortid: hot.neighbortid,
+            reranktid: hot.reranktid,
+            binary_words: hot.collect_binary_words(),
+            search_code: hot.search_code.to_vec(),
+        })
+    }
+
+    pub fn encoded_len(binary_word_count: usize, search_code_len: usize) -> usize {
+        1 + 1
+            + 1
+            + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
+            + 1
+            + ITEM_POINTER_BYTES
+            + ITEM_POINTER_BYTES
+            + binary_word_count * size_of::<u64>()
+            + search_code_len
+    }
+}
+
+impl<'a> TqRerankTupleRef<'a> {
+    pub fn decode(input: &'a [u8], code_len: usize) -> Result<Self, String> {
+        let expected_len = TqRerankTuple::encoded_len(code_len);
+        if input.len() != expected_len {
+            return Err(format!(
+                "rerank tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_RERANK_TAG {
+            return Err(format!("invalid rerank tuple tag: {}", input[0]));
+        }
+
+        Ok(Self {
+            gamma: f32::from_le_bytes(input[1..5].try_into().expect("gamma bytes")),
+            code: &input[5..5 + code_len],
+        })
+    }
+}
+
+impl TqRerankTuple {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(Self::encoded_len(self.code.len()));
+        out.push(TQ_RERANK_TAG);
+        out.extend_from_slice(&self.gamma.to_le_bytes());
+        out.extend_from_slice(&self.code);
+        out
+    }
+
+    pub fn decode(input: &[u8], code_len: usize) -> Result<Self, String> {
+        let rerank = TqRerankTupleRef::decode(input, code_len)?;
+        Ok(Self {
+            gamma: rerank.gamma,
+            code: rerank.code.to_vec(),
+        })
+    }
+
+    pub fn encoded_len(code_len: usize) -> usize {
+        1 + 4 + code_len
     }
 }
 
@@ -1009,6 +1233,60 @@ mod tests {
     }
 
     #[test]
+    fn grouped_hot_tuple_roundtrip() {
+        let tuple = TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(10, 1), tid(11, 2)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+            search_code: vec![0x12, 0x34, 0x56],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqGroupedHotTuple::decode(&encoded, 2, 3).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn grouped_hot_tuple_ref_exposes_borrowed_payloads() {
+        let tuple = TqGroupedHotTuple {
+            level: 1,
+            deleted: true,
+            heaptids: vec![tid(10, 1), tid(11, 2), tid(12, 3)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0xAAAA_BBBB_CCCC_DDDD],
+            search_code: vec![0x9A, 0xBC],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap();
+
+        assert_eq!(decoded.level, tuple.level);
+        assert_eq!(decoded.deleted, tuple.deleted);
+        assert_eq!(decoded.heaptid_count(), tuple.heaptids.len());
+        assert_eq!(decoded.collect_heaptids(), tuple.heaptids);
+        assert_eq!(decoded.neighbortid, tuple.neighbortid);
+        assert_eq!(decoded.reranktid, tuple.reranktid);
+        assert_eq!(decoded.collect_binary_words(), tuple.binary_words);
+        assert_eq!(decoded.search_code, tuple.search_code.as_slice());
+    }
+
+    #[test]
+    fn rerank_tuple_roundtrip() {
+        let tuple = TqRerankTuple {
+            gamma: -0.75,
+            code: vec![0xAA; 32],
+        };
+
+        let encoded = tuple.encode();
+        let decoded = TqRerankTuple::decode(&encoded, 32).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
     fn neighbor_tuple_roundtrip() {
         let tuple = TqNeighborTuple {
             count: 4,
@@ -1103,6 +1381,33 @@ mod tests {
         };
         let encoded = tuple.encode().unwrap();
         let decoded = TqElementTuple::decode(&encoded, 16).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn miri_grouped_hot_tuple_roundtrip() {
+        let tuple = TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            neighbortid: tid(2, 1),
+            reranktid: tid(3, 1),
+            binary_words: vec![0xDEAD_BEEF_CAFE_BABE],
+            search_code: vec![0xAB, 0xCD],
+        };
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqGroupedHotTuple::decode(&encoded, 1, 2).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn miri_rerank_tuple_roundtrip() {
+        let tuple = TqRerankTuple {
+            gamma: 0.5,
+            code: vec![0xAB; 16],
+        };
+        let encoded = tuple.encode();
+        let decoded = TqRerankTuple::decode(&encoded, 16).unwrap();
         assert_eq!(decoded, tuple);
     }
 
