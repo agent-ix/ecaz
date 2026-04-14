@@ -948,6 +948,30 @@ impl DataPage {
         TqNeighborTuple::decode(self.raw_tuple(tid)?)
     }
 
+    pub fn insert_grouped_hot(
+        &mut self,
+        tuple: &TqGroupedHotTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub fn read_grouped_hot(
+        &self,
+        tid: ItemPointer,
+        binary_word_count: usize,
+        search_code_len: usize,
+    ) -> Result<TqGroupedHotTuple, String> {
+        TqGroupedHotTuple::decode(self.raw_tuple(tid)?, binary_word_count, search_code_len)
+    }
+
+    pub fn insert_rerank(&mut self, tuple: &TqRerankTuple) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode())
+    }
+
+    pub fn read_rerank(&self, tid: ItemPointer, code_len: usize) -> Result<TqRerankTuple, String> {
+        TqRerankTuple::decode(self.raw_tuple(tid)?, code_len)
+    }
+
     pub fn update_element(
         &mut self,
         tid: ItemPointer,
@@ -962,6 +986,22 @@ impl DataPage {
         tuple: &TqNeighborTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
+    pub fn update_grouped_hot(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqGroupedHotTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
+    pub fn update_rerank(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqRerankTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode())
     }
 }
 
@@ -1039,6 +1079,17 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub fn insert_grouped_hot(
+        &mut self,
+        tuple: &TqGroupedHotTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
+    pub fn insert_rerank(&mut self, tuple: &TqRerankTuple) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode())
+    }
+
     pub fn read_element(
         &self,
         tid: ItemPointer,
@@ -1053,6 +1104,23 @@ impl DataPageChain {
         self.get_page(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .read_neighbor(tid)
+    }
+
+    pub fn read_grouped_hot(
+        &self,
+        tid: ItemPointer,
+        binary_word_count: usize,
+        search_code_len: usize,
+    ) -> Result<TqGroupedHotTuple, String> {
+        self.get_page(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .read_grouped_hot(tid, binary_word_count, search_code_len)
+    }
+
+    pub fn read_rerank(&self, tid: ItemPointer, code_len: usize) -> Result<TqRerankTuple, String> {
+        self.get_page(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .read_rerank(tid, code_len)
     }
 
     pub fn update_element(
@@ -1073,6 +1141,26 @@ impl DataPageChain {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .update_neighbor(tid, tuple)
+    }
+
+    pub fn update_grouped_hot(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqGroupedHotTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_grouped_hot(tid, tuple)
+    }
+
+    pub fn update_rerank(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqRerankTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_rerank(tid, tuple)
     }
 }
 
@@ -1287,6 +1375,37 @@ mod tests {
     }
 
     #[test]
+    fn grouped_hot_tuple_page_roundtrip() {
+        let tuple = TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(10, 1), tid(11, 2)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+            search_code: vec![0x12, 0x34, 0x56],
+        };
+
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+        let tuple_tid = page.insert_grouped_hot(&tuple).unwrap();
+        let decoded = page.read_grouped_hot(tuple_tid, 2, 3).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn rerank_tuple_page_roundtrip() {
+        let tuple = TqRerankTuple {
+            gamma: -0.75,
+            code: vec![0xAA; 32],
+        };
+
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+        let tuple_tid = page.insert_rerank(&tuple).unwrap();
+        let decoded = page.read_rerank(tuple_tid, 32).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
     fn neighbor_tuple_roundtrip() {
         let tuple = TqNeighborTuple {
             count: 4,
@@ -1351,6 +1470,49 @@ mod tests {
         assert!(chain.pages().len() > 1);
         assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
         let decoded = chain.read_element(last_tid, 772).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn page_chain_extends_for_multiple_grouped_hot_tuples() {
+        let tuple = TqGroupedHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(10, 1)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF; 8],
+            search_code: vec![0xAA; 700],
+        };
+
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let mut last_tid = ItemPointer::INVALID;
+        for _ in 0..20 {
+            last_tid = chain.insert_grouped_hot(&tuple).unwrap();
+        }
+
+        assert!(chain.pages().len() > 1);
+        assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
+        let decoded = chain.read_grouped_hot(last_tid, 8, 700).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn page_chain_extends_for_multiple_rerank_tuples() {
+        let tuple = TqRerankTuple {
+            gamma: 0.25,
+            code: vec![0xBB; 900],
+        };
+
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let mut last_tid = ItemPointer::INVALID;
+        for _ in 0..20 {
+            last_tid = chain.insert_rerank(&tuple).unwrap();
+        }
+
+        assert!(chain.pages().len() > 1);
+        assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
+        let decoded = chain.read_rerank(last_tid, 900).unwrap();
         assert_eq!(decoded, tuple);
     }
 
