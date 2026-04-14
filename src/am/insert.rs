@@ -7,6 +7,8 @@ use super::{build, graph, options, page, search, shared, wal};
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
+const ADR030_GROUPED_V2_INSERT_UNSUPPORTED: &str =
+    "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet";
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     index_relation: pg_sys::Relation,
@@ -25,16 +27,16 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let options = options::relation_options(index_relation);
             let m = u16::try_from(options.m).expect("validated m should fit in u16");
             let code_len = tuple.code.len();
+            let metadata_snapshot = shared::read_metadata_page(index_relation);
+
+            validate_insert_storage_format(&metadata_snapshot)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
 
             if let Some(source_column) = options.build_source_column {
                 pgrx::error!(
                     "tqhnsw aminsert does not support build_source_column indexes yet: {source_column}"
                 );
             }
-
-            // Snapshot metadata under a SHARE lock so the duplicate scan does not
-            // serialize concurrent inserts behind the metadata-page exclusive lock.
-            let metadata_snapshot = shared::read_metadata_page(index_relation);
 
             // First-insert path: shape has never been initialized. Keep this on the
             // old exclusive path because shape init atomicity still matters, and the
@@ -175,6 +177,13 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             });
             false
         })
+    }
+}
+
+fn validate_insert_storage_format(metadata: &page::MetadataPage) -> Result<(), String> {
+    match metadata.graph_storage_format()? {
+        page::GraphStorageFormat::ScalarV1 => Ok(()),
+        page::GraphStorageFormat::GroupedV2 => Err(ADR030_GROUPED_V2_INSERT_UNSUPPORTED.to_owned()),
     }
 }
 
@@ -1207,6 +1216,53 @@ mod tests {
             block_number,
             offset_number,
         }
+    }
+
+    #[test]
+    fn validate_insert_storage_format_accepts_scalar_v1() {
+        assert_eq!(
+            validate_insert_storage_format(&page::MetadataPage::current_v1_scalar(
+                page::CurrentFormatMetadata {
+                    m: 8,
+                    ef_construction: 64,
+                    entry_point: page::ItemPointer::INVALID,
+                    dimensions: 16,
+                    bits: 4,
+                    max_level: 0,
+                    seed: 42,
+                    inserted_since_rebuild: 0,
+                    persisted_binary_sidecar: false,
+                },
+            )),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn validate_insert_storage_format_rejects_grouped_v2() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 64,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+        };
+
+        assert_eq!(
+            validate_insert_storage_format(&metadata),
+            Err(ADR030_GROUPED_V2_INSERT_UNSUPPORTED.to_owned())
+        );
     }
 
     #[test]
