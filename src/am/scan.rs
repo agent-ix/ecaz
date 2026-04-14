@@ -324,9 +324,37 @@ struct GroupedScoreInput<'a> {
     binary_words: &'a [u64],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GroupedScoreShape {
+    binary_word_count: usize,
+    search_code_len: usize,
+    rerank_code_len: usize,
+}
+
+impl GroupedScoreShape {
+    fn from_scan_graph_storage(
+        scan_graph_storage: graph::GraphStorageDescriptor,
+    ) -> Option<Self> {
+        match scan_graph_storage {
+            graph::GraphStorageDescriptor::ScalarV1 { .. } => None,
+            graph::GraphStorageDescriptor::GroupedV2(layout) => Some(Self {
+                binary_word_count: layout.binary_word_count,
+                search_code_len: layout.search_code_len,
+                rerank_code_len: layout.rerank_code_len,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreCall<'a> {
+    shape: GroupedScoreShape,
+    input: GroupedScoreInput<'a>,
+}
+
 enum CandidateScoreDispatch<'a> {
     Exact(LoadedElementState),
-    Grouped(GroupedScoreInput<'a>),
+    Grouped(GroupedScoreCall<'a>),
 }
 
 struct BinaryPrefilterCandidate {
@@ -1045,15 +1073,19 @@ unsafe fn exact_score_cached_graph_element(
 }
 
 fn candidate_score_dispatch<'a>(
+    scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
     loaded_state: LoadedElementState,
 ) -> CandidateScoreDispatch<'a> {
     match loaded_state {
-        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(
-            element.grouped_score_input().unwrap_or_else(|| {
+        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(GroupedScoreCall {
+            shape: GroupedScoreShape::from_scan_graph_storage(scan_graph_storage).unwrap_or_else(
+                || panic!("grouped score dispatch requires grouped scan storage shape"),
+            ),
+            input: element.grouped_score_input().unwrap_or_else(|| {
                 panic!("exact-unavailable grouped score dispatch requires grouped score input")
             }),
-        ),
+        }),
         other => CandidateScoreDispatch::Exact(other),
     }
 }
@@ -1062,7 +1094,7 @@ unsafe fn score_grouped_candidate_input(
     _index_relation: pg_sys::Relation,
     _opaque: *mut TqScanOpaque,
     _element_tid: page::ItemPointer,
-    _grouped: GroupedScoreInput<'_>,
+    _grouped: GroupedScoreCall<'_>,
 ) -> f32 {
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
 }
@@ -1073,7 +1105,8 @@ unsafe fn score_cached_graph_element_dispatch(
     element: &CachedGraphElement,
     loaded_state: LoadedElementState,
 ) -> f32 {
-    match candidate_score_dispatch(element, loaded_state) {
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    match candidate_score_dispatch(scan_graph_storage, element, loaded_state) {
         CandidateScoreDispatch::Exact(loaded_state) => unsafe {
             exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
         },
@@ -3424,6 +3457,27 @@ mod tests {
     }
 
     #[test]
+    fn grouped_score_shape_uses_grouped_scan_layout() {
+        let shape = GroupedScoreShape::from_scan_graph_storage(graph::GraphStorageDescriptor::GroupedV2(
+            graph::GroupedGraphLayout {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            },
+        ))
+        .expect("grouped scan storage should produce grouped score shape");
+
+        assert_eq!(
+            shape,
+            GroupedScoreShape {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            }
+        );
+    }
+
+    #[test]
     fn candidate_score_dispatch_uses_grouped_input_for_exact_unavailable() {
         let tuple = page::TqGroupedHotTuple {
             level: 1,
@@ -3444,11 +3498,27 @@ mod tests {
             CachedBinaryWords::from_vec(tuple.binary_words.clone()),
         );
 
-        match candidate_score_dispatch(&cached, LoadedElementState::ExactUnavailable) {
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+                binary_word_count: 1,
+                search_code_len: 2,
+                rerank_code_len: 96,
+            }),
+            &cached,
+            LoadedElementState::ExactUnavailable,
+        ) {
             CandidateScoreDispatch::Grouped(grouped) => {
-                assert_eq!(grouped.reranktid, tuple.reranktid);
-                assert_eq!(grouped.search_code, tuple.search_code.as_slice());
-                assert_eq!(grouped.binary_words, tuple.binary_words.as_slice());
+                assert_eq!(
+                    grouped.shape,
+                    GroupedScoreShape {
+                        binary_word_count: 1,
+                        search_code_len: 2,
+                        rerank_code_len: 96,
+                    }
+                );
+                assert_eq!(grouped.input.reranktid, tuple.reranktid);
+                assert_eq!(grouped.input.search_code, tuple.search_code.as_slice());
+                assert_eq!(grouped.input.binary_words, tuple.binary_words.as_slice());
             }
             CandidateScoreDispatch::Exact(_) => {
                 panic!("exact-unavailable grouped tuples should dispatch through grouped input")
@@ -3477,7 +3547,11 @@ mod tests {
             CachedBinaryWords::from_vec(tuple.binary_words.clone()),
         );
 
-        match candidate_score_dispatch(&cached, LoadedElementState::None) {
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::ScalarV1 { code_len: tuple.code.len() },
+            &cached,
+            LoadedElementState::None,
+        ) {
             CandidateScoreDispatch::Exact(LoadedElementState::None) => {}
             CandidateScoreDispatch::Exact(_) => {
                 panic!("scalar fallback dispatch should preserve the original exact loaded state")
