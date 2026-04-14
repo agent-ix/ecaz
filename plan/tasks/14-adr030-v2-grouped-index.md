@@ -41,11 +41,11 @@ odds than the current scalar-code format.
 
 - [x] **Design checkpoint.** Record the v2 architecture, intended query pipeline, versioning
   story, and the "do not retry current-format grouped reinterpretation" decision.
-- [ ] **Feasibility spike.** Extend the offline study harness with true grouped `PQ4` codes on
+- [x] **Feasibility spike.** Extend the offline study harness with true grouped `PQ4` codes on
   transformed data, measuring `SRHT` first and adding an `OPQ` comparison only if needed.
-- [ ] **Metadata and tuple contract.** Version the metadata page; define transform descriptors,
+- [x] **Metadata and tuple contract.** Version the metadata page; define transform descriptors,
   codebook payload serialization, hot search tuple layout, and cold rerank payload layout.
-- [ ] **Build-path training slice.** Train grouped codebooks, emit grouped search codes, emit
+- [x] **Build-path training slice.** Train grouped codebooks, emit grouped search codes, emit
   binary sidecars, and emit the chosen cold rerank payload in a v2 build path.
 - [ ] **Runtime search slice.** Add grouped LUT preparation and a grouped FastScan scorer on the
   hot payload, initially without broad planner/runtime rewiring.
@@ -53,6 +53,52 @@ odds than the current scalar-code format.
   with explicit survivor budgets and measurement seams.
 - [ ] **Migration and rollout.** Keep v1 readable as-is, build new indexes as v2, and document the
   rebuild requirement plus mixed-version behavior.
+
+## Feedback-Driven Reordering
+
+Reviewer feedback through packets `310-333` does not change the v2 architecture. It does change the
+recommended order of work.
+
+### Immediate next lane
+
+Keep moving toward the real grouped scorer, but interleave the highest-risk correctness gaps before
+the scorer lane gets too far ahead of the storage/runtime contract.
+
+1. **Shared grouped encoder / packing contract**
+   - collapse duplicate grouped-code packing from `src/am/build.rs` and
+     `src/bin/approx_score_study.rs` into one shared module, or add a strong cross-path equality
+     test first
+   - make grouped training determinism explicit so corpus-scale regressions can be tested
+2. **Insert / vacuum format safety**
+   - add explicit grouped-v2 rejection in `src/am/insert.rs`
+   - add explicit grouped-v2 rejection or grouped-aware decode in `src/am/vacuum.rs`
+   - do not rely on `build_source_column` being unset as the only protection
+3. **Cold rerank fetch smoke path**
+   - add the first `reranktid -> cold tuple` read seam before the full scorer lands
+   - validate cross-page hot/cold linkage directly
+4. **Grouped scorer implementation**
+   - land the real grouped scorer only after the helper seams are stable and the encoder contract
+     is no longer duplicated
+
+### Before lifting the experimental gate
+
+The following are now explicit gate-lift blockers:
+
+- insert path grouped-v2 safety
+- vacuum path grouped-v2 safety
+- shared grouped encoder or cross-path packing proof
+- cold rerank fetch path
+- stronger scan-open metadata validation
+- grouped hot-path no-allocation accessors in `graph.rs`
+- explicit end-to-end recall measurement for `binary -> grouped -> rerank`
+
+### Still advisory, but should not be forgotten
+
+- rename or clarify `bits` vs rerank-bit semantics in v2 metadata
+- document that the experimental env var is build-time only, not a kill switch for already-built
+  grouped-v2 indexes
+- emit an operator-facing log line when experimental v2 build mode is used
+- record raw-page validation behavior explicitly: always-on for v2 builds, abort on mismatch
 
 ## Owns
 

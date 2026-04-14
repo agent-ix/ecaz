@@ -115,6 +115,65 @@ Concretely:
 Only after that feasibility spike is positive should ADR-030 move into persisted layout and runtime
 integration slices.
 
+## 2026-04-14 Sequencing Update From Review Feedback
+
+Reviewer feedback on packets `310-333` does not materially change the ADR-030 v2 design. It does
+clarify what has to be interleaved before grouped-v2 can move from "experimental build lane" to a
+real query path.
+
+### What stays the same
+
+The intended steady-state architecture remains:
+
+1. transformed grouped `PQ4` search code
+2. hot binary sidecar
+3. cold higher-fidelity rerank payload
+4. query pipeline of `binary prefilter -> grouped FastScan -> tiny rerank`
+
+### What changes in sequencing
+
+Do not treat the remaining work as "finish scorer, then clean up safety items later."
+
+Interleave the following before grouped-v2 leaves the experimental gate:
+
+1. **Shared grouped encoder contract**
+   - remove or prove equivalent the duplicate grouped-code packing paths in `build.rs` and
+     `approx_score_study.rs`
+   - make grouped training determinism explicit enough for regression checks
+2. **Insert/vacuum format safety**
+   - add explicit grouped-v2 rejection or grouped-aware handling in `src/am/insert.rs`
+   - add explicit grouped-v2 rejection or grouped-aware handling in `src/am/vacuum.rs`
+3. **Cold rerank fetch**
+   - add a real `reranktid -> cold tuple` read seam before claiming the hot/cold split is complete
+4. **Stronger metadata/runtime validation**
+   - validate required grouped-v2 metadata fields at scan-open
+   - preserve the current scan-side rejection point until the grouped scorer is intentionally
+     enabled
+5. **End-to-end quality measurement**
+   - re-measure the full `binary -> grouped -> rerank` path on real data before any gate-lift
+     decision
+
+### Explicit gate-lift blockers
+
+Grouped-v2 must not leave the experimental build gate until all of the following exist:
+
+- grouped scorer on real scan inputs
+- cold rerank fetch
+- end-to-end recall/latency measurement on the full pipeline
+- insert-path grouped-v2 safety
+- vacuum-path grouped-v2 safety
+- shared grouped encoder contract or equivalent cross-path proof
+
+### Advisory follow-ups
+
+These are lower urgency than the blockers above, but are still valid review outcomes:
+
+- clarify metadata naming around `bits` vs rerank bit-width semantics
+- document that `TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD` is a build-time gate, not a kill switch
+- keep raw-page validation always-on for v2 builds and fail builds loudly on mismatch
+- remove helper-path allocations from grouped hot-path tuple accessors before grouped scoring is
+  enabled
+
 ## Context
 
 ### The per-dimension scoring bottleneck
