@@ -101,6 +101,14 @@ pub(crate) struct GroupedGraphElement {
     pub search_code: Vec<u8>,
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedRerankPayload {
+    pub tid: page::ItemPointer,
+    pub gamma: f32,
+    pub code: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphNeighbors {
     pub tid: page::ItemPointer,
@@ -297,6 +305,46 @@ where
                 f(GraphTupleRef::GroupedHot(tuple))
             })
         },
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    rerank_tid: page::ItemPointer,
+    layout: GroupedGraphLayout,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqRerankTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+            Ok(f(page::TqRerankTupleRef::decode(
+                tuple_bytes,
+                layout.rerank_code_len,
+            )?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_rerank_payload(
+    index_relation: pg_sys::Relation,
+    rerank_tid: page::ItemPointer,
+    layout: GroupedGraphLayout,
+) -> GroupedRerankPayload {
+    let rerank = unsafe {
+        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+            page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len)
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"));
+    GroupedRerankPayload {
+        tid: rerank_tid,
+        gamma: rerank.gamma,
+        code: rerank.code,
     }
 }
 

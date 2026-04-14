@@ -2926,6 +2926,77 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_graph_reads_load_cold_rerank_payload() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_rerank_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_rerank_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_rerank_reads_idx ON tqhnsw_grouped_v2_rerank_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_rerank_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::GroupedV2(layout) => layout,
+            am::graph::GraphStorageDescriptor::ScalarV1 { .. } => {
+                panic!("experimental grouped-v2 build should not decode as scalar storage")
+            }
+        };
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "test_grouped_v2_graph_reads_load_cold_rerank_payload")
+        };
+        let entry = unsafe {
+            am::graph::load_grouped_graph_element(index_relation, metadata.entry_point, layout)
+        };
+        let rerank = unsafe {
+            am::graph::load_grouped_rerank_payload(index_relation, entry.reranktid, layout)
+        };
+
+        assert_eq!(rerank.tid, entry.reranktid);
+        assert_eq!(rerank.code.len(), layout.rerank_code_len);
+        assert!(rerank.gamma.is_finite());
+        assert!(
+            rerank.code.iter().any(|byte| *byte != 0),
+            "cold rerank payload should contain a non-empty scalar code",
+        );
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
     #[should_panic(
         expected = "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet"
     )]
