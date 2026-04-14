@@ -540,6 +540,100 @@ pub(super) fn stage_v2_grouped_build_payload(
     }
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct V2GroupedStagedChain {
+    pub(super) data_pages: page::DataPageChain,
+    pub(super) hot_tids: Vec<page::ItemPointer>,
+    pub(super) rerank_tids: Vec<page::ItemPointer>,
+    pub(super) neighbor_tids: Vec<page::ItemPointer>,
+}
+
+pub(super) fn stage_v2_grouped_page_chain(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    grouped_search_codes: &[Vec<u8>],
+) -> Result<V2GroupedStagedChain, String> {
+    if state.heap_tuples.len() != graph_nodes.len() || state.heap_tuples.len() != grouped_search_codes.len()
+    {
+        return Err(format!(
+            "staged v2 inputs length mismatch: tuples={} graph_nodes={} grouped_search_codes={}",
+            state.heap_tuples.len(),
+            graph_nodes.len(),
+            grouped_search_codes.len()
+        ));
+    }
+
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let persisted_binary_quantizer = ProdQuantizer::cached(dimensions as usize, bits, seed);
+
+    let mut data_pages = page::DataPageChain::new(state.page_size);
+    let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut rerank_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
+
+    for ((tuple, graph_node), grouped_search_code) in state
+        .heap_tuples
+        .iter()
+        .zip(graph_nodes.iter())
+        .zip(grouped_search_codes.iter())
+    {
+        let slot_count = graph_node.neighbor_slots.len();
+        let placeholder_neighbor = page::TqNeighborTuple {
+            count: slot_count as u16,
+            tids: vec![page::ItemPointer::INVALID; slot_count],
+        };
+        let neighbor_tid = data_pages.insert_neighbor(&placeholder_neighbor)?;
+        let rerank_tid = data_pages.insert_rerank(&page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        })?;
+        let payload = stage_v2_grouped_build_payload(
+            tuple,
+            graph_node.level,
+            neighbor_tid,
+            rerank_tid,
+            grouped_search_code.clone(),
+            &persisted_binary_quantizer,
+        );
+        let hot_tid = data_pages.insert_grouped_hot(&payload.hot)?;
+
+        hot_tids.push(hot_tid);
+        rerank_tids.push(rerank_tid);
+        neighbor_tids.push(neighbor_tid);
+    }
+
+    for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
+        let neighbor_refs = graph_nodes[idx]
+            .neighbor_slots
+            .iter()
+            .map(|neighbor_idx| {
+                neighbor_idx
+                    .map(|ni| hot_tids[ni])
+                    .unwrap_or(page::ItemPointer::INVALID)
+            })
+            .collect::<Vec<_>>();
+
+        data_pages.update_neighbor(
+            neighbor_tid,
+            &page::TqNeighborTuple {
+                count: neighbor_refs.len() as u16,
+                tids: neighbor_refs,
+            },
+        )?;
+    }
+
+    Ok(V2GroupedStagedChain {
+        data_pages,
+        hot_tids,
+        rerank_tids,
+        neighbor_tids,
+    })
+}
+
 #[derive(Debug, Clone, Copy)]
 struct BuildCodeDistance {
     dimensions: usize,
@@ -1461,5 +1555,91 @@ mod tests {
         assert!(payload.hot.binary_words.is_empty());
         assert_eq!(payload.hot.search_code, vec![0xAB]);
         assert_eq!(payload.rerank.code, tuple.code);
+    }
+
+    #[test]
+    fn stage_v2_grouped_page_chain_links_hot_neighbor_and_rerank_tuples() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                }],
+                dimensions: 1536,
+                bits,
+                seed,
+                gamma: 0.5,
+                code: encoded_code(&vec![1.0; 1536], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 2,
+                }],
+                dimensions: 1536,
+                bits,
+                seed,
+                gamma: 0.25,
+                code: encoded_code(&vec![0.5; 1536], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: None,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(1536),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let graph_nodes = vec![
+            HnswBuildNode {
+                level: 1,
+                neighbor_slots: vec![Some(1)],
+                score_neighbors: vec![1],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0)],
+                score_neighbors: vec![0],
+            },
+        ];
+        let grouped_search_codes = vec![vec![0x12, 0x34], vec![0x56, 0x78]];
+
+        let staged =
+            stage_v2_grouped_page_chain(&state, &graph_nodes, &grouped_search_codes).unwrap();
+
+        assert_eq!(staged.hot_tids.len(), 2);
+        assert_eq!(staged.rerank_tids.len(), 2);
+        assert_eq!(staged.neighbor_tids.len(), 2);
+
+        let hot0 = staged
+            .data_pages
+            .read_grouped_hot(staged.hot_tids[0], 24, 2)
+            .unwrap();
+        let rerank0 = staged
+            .data_pages
+            .read_rerank(staged.rerank_tids[0], tuples[0].code.len())
+            .unwrap();
+        let neighbors0 = staged
+            .data_pages
+            .read_neighbor(staged.neighbor_tids[0])
+            .unwrap();
+
+        assert_eq!(hot0.search_code, grouped_search_codes[0]);
+        assert_eq!(hot0.reranktid, staged.rerank_tids[0]);
+        assert_eq!(rerank0.code, tuples[0].code);
+        assert_eq!(neighbors0.tids[0], staged.hot_tids[1]);
     }
 }
