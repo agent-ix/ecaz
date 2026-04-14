@@ -646,6 +646,23 @@ pub(super) fn stage_v2_grouped_page_chain(
     })
 }
 
+pub(super) fn stage_v2_grouped_page_chain_from_source(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<V2GroupedStagedChain, String> {
+    let model = train_build_grouped_pq_model(state, group_size, train_size, kmeans_iters)?;
+    let grouped_search_codes = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| derive_grouped_search_code_from_source(tuple, &model))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    stage_v2_grouped_page_chain(state, graph_nodes, &grouped_search_codes)
+}
+
 pub(super) fn train_build_grouped_pq_model(
     state: &BuildState,
     group_size: usize,
@@ -1958,5 +1975,75 @@ mod tests {
 
         let error = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap_err();
         assert!(error.contains("source vectors"));
+    }
+
+    #[test]
+    fn stage_v2_grouped_page_chain_from_source_derives_codes_and_links_pages() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.1 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let graph_nodes = (0..16)
+            .map(|i| HnswBuildNode {
+                level: (i % 3) as u8,
+                neighbor_slots: vec![Some((i + 1) % 16)],
+                score_neighbors: vec![(i + 1) % 16],
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let staged =
+            stage_v2_grouped_page_chain_from_source(&state, &graph_nodes, 4, 16, 3).unwrap();
+
+        assert_eq!(staged.hot_tids.len(), 16);
+        let first_hot = staged
+            .data_pages
+            .read_grouped_hot(staged.hot_tids[0], 0, 2)
+            .unwrap();
+        let first_rerank = staged
+            .data_pages
+            .read_rerank(staged.rerank_tids[0], tuples[0].code.len())
+            .unwrap();
+        let first_neighbor = staged
+            .data_pages
+            .read_neighbor(staged.neighbor_tids[0])
+            .unwrap();
+
+        assert_eq!(first_hot.reranktid, staged.rerank_tids[0]);
+        assert_eq!(first_rerank.code, tuples[0].code);
+        assert_eq!(first_neighbor.tids[0], staged.hot_tids[1]);
+        assert_eq!(first_hot.search_code.len(), 2);
+        assert!(first_hot.binary_words.is_empty());
     }
 }
