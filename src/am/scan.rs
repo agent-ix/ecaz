@@ -248,17 +248,17 @@ pub(super) struct CachedGraphElement {
 }
 
 impl CachedGraphElement {
-    fn from_tuple_ref(
+    fn from_graph_tuple_ref(
         tid: page::ItemPointer,
-        element: page::TqElementTupleRef<'_>,
+        element: graph::GraphTupleRef<'_>,
         binary_words: CachedBinaryWords,
     ) -> Self {
         Self {
             tid,
-            level: element.level,
-            deleted: element.deleted,
-            heaptids: CachedHeapTids::from_iter(element.heaptids()),
-            neighbortid: element.neighbortid,
+            level: element.level(),
+            deleted: element.deleted(),
+            heaptids: CachedHeapTids::from_iter(element.collect_heaptids()),
+            neighbortid: element.neighbortid(),
             binary_words,
         }
     }
@@ -441,7 +441,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
-            validate_runtime_scan_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+            let graph_storage =
+                validate_runtime_scan_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -466,6 +467,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             } else {
                 crate::code_len(metadata.dimensions as usize, metadata.bits)
             };
+            opaque.scan_graph_storage = graph_storage;
             opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
@@ -552,9 +554,11 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
     }
 }
 
-fn validate_runtime_scan_format(metadata: &page::MetadataPage) -> Result<(), String> {
+fn validate_runtime_scan_format(
+    metadata: &page::MetadataPage,
+) -> Result<graph::GraphStorageDescriptor, String> {
     match graph::GraphStorageDescriptor::from_metadata(metadata)? {
-        graph::GraphStorageDescriptor::ScalarV1 { .. } => Ok(()),
+        descriptor @ graph::GraphStorageDescriptor::ScalarV1 { .. } => Ok(descriptor),
         graph::GraphStorageDescriptor::GroupedV2(_) => {
             Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned())
         }
@@ -843,45 +847,51 @@ unsafe fn cached_graph_element(
     let binary_query_active = binary_sign_query(opaque_ref).is_some();
     let mut loaded_state = LoadedElementState::None;
     let element = Arc::new(unsafe {
-        graph::with_graph_element_tuple(
+        graph::with_graph_storage_tuple(
             index_relation,
             element_tid,
-            opaque_ref.scan_code_len,
+            opaque_ref.scan_graph_storage,
             |element| {
-                let live_element = !element.deleted && element.heaptid_count() > 0;
+                let live_element = !element.deleted() && element.heaptid_count() > 0;
                 let binary_words = if binary_query_active {
                     if !super::options::force_binary_derivation() && element.binary_word_count() > 0
                     {
-                        CachedBinaryWords::from_iter(
-                            element.binary_word_count(),
-                            element.binary_words(),
-                        )
+                        CachedBinaryWords::from_vec(element.collect_binary_words())
                     } else {
-                        let quantizer = &*opaque_ref.cached_quantizer;
-                        CachedBinaryWords::from_vec(
-                            quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code),
-                        )
+                        match element.exact_payload() {
+                            Some((_gamma, code_bytes)) => {
+                                let quantizer = &*opaque_ref.cached_quantizer;
+                                CachedBinaryWords::from_vec(
+                                    quantizer.binary_sign_words_from_packed_no_qjl_4bit(code_bytes),
+                                )
+                            }
+                            None => CachedBinaryWords::empty(),
+                        }
                     }
                 } else {
                     CachedBinaryWords::empty()
                 };
 
                 if live_element {
-                    loaded_state = if binary_query_active {
-                        LoadedElementState::ExactPayload(LoadedElementScoreInput {
-                            gamma: element.gamma,
-                            code_bytes: element.code.to_vec(),
-                        })
-                    } else {
-                        LoadedElementState::ExactScore(score_and_cache_scan_element(
-                            opaque_ref,
-                            element_tid,
-                            element.gamma,
-                            element.code,
-                        ))
+                    loaded_state = match element.exact_payload() {
+                        Some((gamma, code_bytes)) if binary_query_active => {
+                            LoadedElementState::ExactPayload(LoadedElementScoreInput {
+                                gamma,
+                                code_bytes: code_bytes.to_vec(),
+                            })
+                        }
+                        Some((gamma, code_bytes)) => {
+                            LoadedElementState::ExactScore(score_and_cache_scan_element(
+                                opaque_ref,
+                                element_tid,
+                                gamma,
+                                code_bytes,
+                            ))
+                        }
+                        None => LoadedElementState::None,
                     };
                 }
-                CachedGraphElement::from_tuple_ref(element_tid, element, binary_words)
+                CachedGraphElement::from_graph_tuple_ref(element_tid, element, binary_words)
             },
         )
     });
@@ -895,6 +905,10 @@ unsafe fn cached_graph_element(
     debug_assert!(
         element.deleted
             || element.heaptids.is_empty()
+            || matches!(
+                opaque_ref.scan_graph_storage,
+                graph::GraphStorageDescriptor::GroupedV2(_)
+            )
             || !matches!(loaded_state, LoadedElementState::None),
         "live graph elements should populate exact-score or binary-prefilter state on load"
     );
@@ -908,19 +922,22 @@ unsafe fn score_cached_graph_element_from_storage(
 ) -> f32 {
     let opaque_ref = unsafe { &mut *opaque };
     unsafe {
-        graph::with_graph_element_tuple(
+        graph::with_graph_storage_tuple(
             index_relation,
             element_tid,
-            opaque_ref.scan_code_len,
+            opaque_ref.scan_graph_storage,
             |element| {
-                if element.deleted || element.heaptid_count() == 0 {
+                if element.deleted() || element.heaptid_count() == 0 {
                     pgrx::error!(
                         "tqhnsw cannot exact-score dead or heapless graph element {}:{}",
                         element_tid.block_number,
                         element_tid.offset_number
                     );
                 }
-                score_and_cache_scan_element(opaque_ref, element_tid, element.gamma, element.code)
+                let (gamma, code_bytes) = element
+                    .exact_payload()
+                    .unwrap_or_else(|| pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}"));
+                score_and_cache_scan_element(opaque_ref, element_tid, gamma, code_bytes)
             },
         )
     }
@@ -2464,6 +2481,7 @@ pub(super) struct TqScanOpaque {
     pub(super) scan_bits: u8,
     pub(super) scan_seed: u64,
     pub(super) scan_code_len: usize,
+    pub(super) scan_graph_storage: graph::GraphStorageDescriptor,
     pub(super) scan_block_count: u32,
     pub(super) bootstrap_frontier_limit: usize,
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
@@ -2502,6 +2520,7 @@ impl Default for TqScanOpaque {
             scan_bits: 0,
             scan_seed: 0,
             scan_code_len: 0,
+            scan_graph_storage: graph::GraphStorageDescriptor::ScalarV1 { code_len: 0 },
             scan_block_count: 0,
             bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
             visited_tids: ptr::null_mut(),
@@ -3201,6 +3220,39 @@ mod tests {
         assert!(
             opaque.cached_quantizer.is_null(),
             "freeing scan prepared-query state should release the cached quantizer too"
+        );
+    }
+
+    #[test]
+    fn cached_graph_element_from_grouped_tuple_ref_keeps_header_and_binary_words() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(9, 1), tid(9, 2)],
+            neighbortid: tid(5, 4),
+            reranktid: tid(5, 5),
+            binary_words: vec![0x55AA55AA55AA55AA],
+            search_code: vec![0x21, 0x43],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(7, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(cached.tid, tid(7, 3));
+        assert_eq!(cached.level, tuple.level);
+        assert!(!cached.deleted);
+        assert_eq!(cached.heaptids.as_slice(), tuple.heaptids.as_slice());
+        assert_eq!(cached.neighbortid, tuple.neighbortid);
+        assert_eq!(
+            cached.binary_words.as_slice(),
+            tuple.binary_words.as_slice()
         );
     }
 

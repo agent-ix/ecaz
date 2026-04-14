@@ -115,6 +115,64 @@ pub(crate) enum GraphTupleRef<'a> {
     GroupedHot(page::TqGroupedHotTupleRef<'a>),
 }
 
+impl<'a> GraphTupleRef<'a> {
+    pub(crate) fn level(self) -> u8 {
+        match self {
+            Self::Scalar(tuple) => tuple.level,
+            Self::GroupedHot(tuple) => tuple.level,
+        }
+    }
+
+    pub(crate) fn deleted(self) -> bool {
+        match self {
+            Self::Scalar(tuple) => tuple.deleted,
+            Self::GroupedHot(tuple) => tuple.deleted,
+        }
+    }
+
+    pub(crate) fn heaptid_count(self) -> usize {
+        match self {
+            Self::Scalar(tuple) => tuple.heaptid_count(),
+            Self::GroupedHot(tuple) => tuple.heaptid_count(),
+        }
+    }
+
+    pub(crate) fn collect_heaptids(self) -> Vec<page::ItemPointer> {
+        match self {
+            Self::Scalar(tuple) => tuple.collect_heaptids(),
+            Self::GroupedHot(tuple) => tuple.collect_heaptids(),
+        }
+    }
+
+    pub(crate) fn neighbortid(self) -> page::ItemPointer {
+        match self {
+            Self::Scalar(tuple) => tuple.neighbortid,
+            Self::GroupedHot(tuple) => tuple.neighbortid,
+        }
+    }
+
+    pub(crate) fn binary_word_count(self) -> usize {
+        match self {
+            Self::Scalar(tuple) => tuple.binary_word_count(),
+            Self::GroupedHot(tuple) => tuple.collect_binary_words().len(),
+        }
+    }
+
+    pub(crate) fn collect_binary_words(self) -> Vec<u64> {
+        match self {
+            Self::Scalar(tuple) => tuple.collect_binary_words(),
+            Self::GroupedHot(tuple) => tuple.collect_binary_words(),
+        }
+    }
+
+    pub(crate) fn exact_payload(self) -> Option<(f32, &'a [u8])> {
+        match self {
+            Self::Scalar(tuple) => Some((tuple.gamma, tuple.code)),
+            Self::GroupedHot(_) => None,
+        }
+    }
+}
+
 pub(crate) unsafe fn load_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
