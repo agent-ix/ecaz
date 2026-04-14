@@ -7,8 +7,9 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tqvector::bench_api::{
-    grouped_pq_nibble, grouped_pq_score_f32 as shared_grouped_pq_score_f32,
-    pack_grouped_pq_nibbles, pad_input, srht, ProdQuantizer,
+    build_grouped_pq_lut_f32 as shared_build_grouped_pq_lut_f32, grouped_pq_nibble,
+    grouped_pq_score_f32 as shared_grouped_pq_score_f32, pack_grouped_pq_nibbles, pad_input, srht,
+    ProdQuantizer,
 };
 
 const DIM: usize = 1536;
@@ -861,24 +862,19 @@ fn prepare_grouped_pq_query(
     rotated_query: &[f32],
     model: &GroupedPqModel,
 ) -> GroupedPqPreparedQuery {
-    let mut lut_f32 = vec![0.0_f32; model.group_count * 16];
+    let flat_codebooks = model
+        .codebooks
+        .iter()
+        .flat_map(|codebook| codebook.iter().copied())
+        .collect::<Vec<_>>();
+    let mut lut_f32 =
+        shared_build_grouped_pq_lut_f32(rotated_query, &flat_codebooks, model.group_size);
     let mut lut_u8 = vec![0_u8; model.group_count * 16];
     let mut row_bias = vec![0.0_f32; model.group_count];
     let mut row_scale = vec![0.0_f32; model.group_count];
 
     for group_index in 0..model.group_count {
-        let start = group_index * model.group_size;
-        let end = start + model.group_size;
-        let query_group = &rotated_query[start..end];
-        let codebook = &model.codebooks[group_index];
         let row = &mut lut_f32[group_index * 16..(group_index + 1) * 16];
-
-        for (centroid_index, slot) in row.iter_mut().enumerate().take(16) {
-            *slot = inner_product(
-                query_group,
-                centroid_slice(codebook, centroid_index, model.group_size),
-            );
-        }
 
         let row_min = row
             .iter()
@@ -907,7 +903,11 @@ fn prepare_grouped_pq_query(
 }
 
 fn grouped_pq_score_f32(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {
-    shared_grouped_pq_score_f32(&prepared.lut_f32, prepared.row_bias.len(), &code.packed_nibbles)
+    shared_grouped_pq_score_f32(
+        &prepared.lut_f32,
+        prepared.row_bias.len(),
+        &code.packed_nibbles,
+    )
 }
 
 fn grouped_pq_score_u8(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) -> f32 {

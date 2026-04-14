@@ -332,9 +332,7 @@ struct GroupedScoreShape {
 }
 
 impl GroupedScoreShape {
-    fn from_scan_graph_storage(
-        scan_graph_storage: graph::GraphStorageDescriptor,
-    ) -> Option<Self> {
+    fn from_scan_graph_storage(scan_graph_storage: graph::GraphStorageDescriptor) -> Option<Self> {
         match scan_graph_storage {
             graph::GraphStorageDescriptor::ScalarV1 { .. } => None,
             graph::GraphStorageDescriptor::GroupedV2(layout) => Some(Self {
@@ -1198,10 +1196,13 @@ fn candidate_score_dispatch<'a>(
 ) -> CandidateScoreDispatch<'a> {
     match loaded_state {
         LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(
-            grouped_score_context_from_scan_state(scan_graph_storage, element)
-                .unwrap_or_else(|| {
-                    panic!("exact-unavailable grouped score dispatch requires grouped score context")
-                }),
+            grouped_score_context_from_scan_state(scan_graph_storage, element).unwrap_or_else(
+                || {
+                    panic!(
+                        "exact-unavailable grouped score dispatch requires grouped score context"
+                    )
+                },
+            ),
         ),
         other => CandidateScoreDispatch::Exact(other),
     }
@@ -1214,8 +1215,8 @@ unsafe fn score_grouped_candidate_context(
 ) -> f32 {
     let _payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
         .unwrap_or_else(|| {
-        panic!("grouped score helper requires metadata-aligned grouped payload view")
-    });
+            panic!("grouped score helper requires metadata-aligned grouped payload view")
+        });
     let _score = unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &_payload) };
     pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
 }
@@ -1247,8 +1248,9 @@ unsafe fn cached_graph_element_and_score(
     if element.deleted || element.heaptids.is_empty() {
         return (element, None);
     }
-    let score =
-        unsafe { score_cached_graph_element_dispatch(index_relation, opaque, &element, loaded_state) };
+    let score = unsafe {
+        score_cached_graph_element_dispatch(index_relation, opaque, &element, loaded_state)
+    };
     (element, Some(score))
 }
 
@@ -3579,13 +3581,13 @@ mod tests {
 
     #[test]
     fn grouped_score_shape_uses_grouped_scan_layout() {
-        let shape = GroupedScoreShape::from_scan_graph_storage(graph::GraphStorageDescriptor::GroupedV2(
-            graph::GroupedGraphLayout {
+        let shape = GroupedScoreShape::from_scan_graph_storage(
+            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
                 binary_word_count: 24,
                 search_code_len: 48,
                 rerank_code_len: 768,
-            },
-        ))
+            }),
+        )
         .expect("grouped scan storage should produce grouped score shape");
 
         assert_eq!(
@@ -3627,7 +3629,9 @@ mod tests {
             }),
             &cached,
         )
-        .expect("grouped scan state and grouped cached element should produce grouped score context");
+        .expect(
+            "grouped scan state and grouped cached element should produce grouped score context",
+        );
 
         assert_eq!(context.element_tid, tid(15, 4));
         assert_eq!(
@@ -3640,7 +3644,10 @@ mod tests {
         );
         assert_eq!(context.call.input.reranktid, tuple.reranktid);
         assert_eq!(context.call.input.search_code, tuple.search_code.as_slice());
-        assert_eq!(context.call.input.binary_words, tuple.binary_words.as_slice());
+        assert_eq!(
+            context.call.input.binary_words,
+            tuple.binary_words.as_slice()
+        );
     }
 
     #[test]
@@ -3715,7 +3722,10 @@ mod tests {
                 );
                 assert_eq!(grouped.call.input.reranktid, tuple.reranktid);
                 assert_eq!(grouped.call.input.search_code, tuple.search_code.as_slice());
-                assert_eq!(grouped.call.input.binary_words, tuple.binary_words.as_slice());
+                assert_eq!(
+                    grouped.call.input.binary_words,
+                    tuple.binary_words.as_slice()
+                );
             }
             CandidateScoreDispatch::Exact(_) => {
                 panic!("exact-unavailable grouped tuples should dispatch through grouped input")
@@ -3741,8 +3751,8 @@ mod tests {
             },
         };
 
-        let payload =
-            grouped_score_payload_view(grouped).expect("metadata-aligned grouped context should produce grouped payload view");
+        let payload = grouped_score_payload_view(grouped)
+            .expect("metadata-aligned grouped context should produce grouped payload view");
 
         assert_eq!(payload.element_tid, tid(20, 4));
         assert_eq!(payload.reranktid, tid(20, 3));
@@ -3854,7 +3864,8 @@ mod tests {
         };
 
         let observed = score_grouped_rerank_payload_result(&quantizer, &prepared, &payload);
-        let expected = -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
+        let expected =
+            -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
 
         assert_eq!(observed, expected);
     }
@@ -3881,7 +3892,9 @@ mod tests {
         );
 
         match candidate_score_dispatch(
-            graph::GraphStorageDescriptor::ScalarV1 { code_len: tuple.code.len() },
+            graph::GraphStorageDescriptor::ScalarV1 {
+                code_len: tuple.code.len(),
+            },
             &cached,
             LoadedElementState::None,
         ) {
@@ -3915,6 +3928,7 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 1,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(1, 2),
         };
 
         let error = validate_runtime_scan_format(&metadata).unwrap_err();

@@ -1446,13 +1446,20 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 1,
             search_subvector_dim: 16,
+            grouped_codebook_head: page::ItemPointer {
+                block_number: 1,
+                offset_number: 2,
+            },
             ..scalar_v1_metadata()
         }
     }
 
     #[test]
     fn validate_vacuum_storage_format_accepts_scalar_v1() {
-        assert_eq!(validate_vacuum_storage_format(&scalar_v1_metadata()), Ok(()));
+        assert_eq!(
+            validate_vacuum_storage_format(&scalar_v1_metadata()),
+            Ok(())
+        );
     }
 
     #[test]

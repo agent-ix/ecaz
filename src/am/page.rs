@@ -12,12 +12,14 @@ pub const TQ_ELEMENT_TAG: u8 = 0x01;
 pub const TQ_NEIGHBOR_TAG: u8 = 0x02;
 pub const TQ_GROUPED_HOT_TAG: u8 = 0x03;
 pub const TQ_RERANK_TAG: u8 = 0x04;
+pub const TQ_GROUPED_CODEBOOK_TAG: u8 = 0x05;
 pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
 pub const FIRST_DATA_BLOCK_NUMBER: u32 = 1;
 const LEGACY_METADATA_BYTES: usize = 2 + 2 + ITEM_POINTER_BYTES + 2 + 1 + 1 + 8 + 8;
-const METADATA_BYTES: usize = LEGACY_METADATA_BYTES + 2 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
+const METADATA_BYTES: usize =
+    LEGACY_METADATA_BYTES + 2 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + ITEM_POINTER_BYTES;
 
 const fn align_up(value: usize, alignment: usize) -> usize {
     let remainder = value % alignment;
@@ -150,6 +152,7 @@ pub struct MetadataPage {
     pub rerank_codec_kind: RerankCodecKind,
     pub search_subvector_count: u16,
     pub search_subvector_dim: u16,
+    pub grouped_codebook_head: ItemPointer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,6 +208,7 @@ impl MetadataPage {
             rerank_codec_kind: RerankCodecKind::None,
             search_subvector_count: 0,
             search_subvector_dim: 0,
+            grouped_codebook_head: ItemPointer::INVALID,
         }
     }
 
@@ -226,6 +230,7 @@ impl MetadataPage {
         out.push(self.rerank_codec_kind as u8);
         out.extend_from_slice(&self.search_subvector_count.to_le_bytes());
         out.extend_from_slice(&self.search_subvector_dim.to_le_bytes());
+        self.grouped_codebook_head.encode_into(&mut out);
         out
     }
 
@@ -280,6 +285,7 @@ impl MetadataPage {
                     .try_into()
                     .expect("search subvector dim bytes"),
             ),
+            grouped_codebook_head: ItemPointer::decode(&input[41..47])?,
         })
     }
 
@@ -413,6 +419,20 @@ pub struct TqRerankTuple {
 pub struct TqRerankTupleRef<'a> {
     pub gamma: f32,
     pub code: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqGroupedCodebookTuple {
+    pub group_index: u16,
+    pub nexttid: ItemPointer,
+    pub centroids: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TqGroupedCodebookTupleRef<'a> {
+    pub group_index: u16,
+    pub nexttid: ItemPointer,
+    centroid_bytes: &'a [u8],
 }
 
 impl<'a> TqElementTupleRef<'a> {
@@ -759,6 +779,63 @@ impl TqRerankTuple {
     }
 }
 
+impl<'a> TqGroupedCodebookTupleRef<'a> {
+    pub fn decode(input: &'a [u8], centroid_count: usize) -> Result<Self, String> {
+        let expected_len = TqGroupedCodebookTuple::encoded_len(centroid_count);
+        if input.len() != expected_len {
+            return Err(format!(
+                "grouped codebook tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_GROUPED_CODEBOOK_TAG {
+            return Err(format!("invalid grouped codebook tuple tag: {}", input[0]));
+        }
+
+        Ok(Self {
+            group_index: u16::from_le_bytes(input[1..3].try_into().expect("group index bytes")),
+            nexttid: ItemPointer::decode(&input[3..3 + ITEM_POINTER_BYTES])?,
+            centroid_bytes: &input[3 + ITEM_POINTER_BYTES..],
+        })
+    }
+
+    pub fn centroids(&self) -> impl Iterator<Item = f32> + '_ {
+        self.centroid_bytes
+            .chunks_exact(size_of::<f32>())
+            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("validated f32 chunk")))
+    }
+
+    pub fn collect_centroids(&self) -> Vec<f32> {
+        self.centroids().collect()
+    }
+}
+
+impl TqGroupedCodebookTuple {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(Self::encoded_len(self.centroids.len()));
+        out.push(TQ_GROUPED_CODEBOOK_TAG);
+        out.extend_from_slice(&self.group_index.to_le_bytes());
+        self.nexttid.encode_into(&mut out);
+        for centroid in &self.centroids {
+            out.extend_from_slice(&centroid.to_le_bytes());
+        }
+        out
+    }
+
+    pub fn decode(input: &[u8], centroid_count: usize) -> Result<Self, String> {
+        let codebook = TqGroupedCodebookTupleRef::decode(input, centroid_count)?;
+        Ok(Self {
+            group_index: codebook.group_index,
+            nexttid: codebook.nexttid,
+            centroids: codebook.collect_centroids(),
+        })
+    }
+
+    pub fn encoded_len(centroid_count: usize) -> usize {
+        1 + 2 + ITEM_POINTER_BYTES + centroid_count * size_of::<f32>()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TqNeighborTuple {
     pub count: u16,
@@ -962,10 +1039,7 @@ impl DataPage {
         TqNeighborTuple::decode(self.raw_tuple(tid)?)
     }
 
-    pub fn insert_grouped_hot(
-        &mut self,
-        tuple: &TqGroupedHotTuple,
-    ) -> Result<ItemPointer, String> {
+    pub fn insert_grouped_hot(&mut self, tuple: &TqGroupedHotTuple) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
@@ -984,6 +1058,21 @@ impl DataPage {
 
     pub fn read_rerank(&self, tid: ItemPointer, code_len: usize) -> Result<TqRerankTuple, String> {
         TqRerankTuple::decode(self.raw_tuple(tid)?, code_len)
+    }
+
+    pub fn insert_grouped_codebook(
+        &mut self,
+        tuple: &TqGroupedCodebookTuple,
+    ) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode())
+    }
+
+    pub fn read_grouped_codebook(
+        &self,
+        tid: ItemPointer,
+        centroid_count: usize,
+    ) -> Result<TqGroupedCodebookTuple, String> {
+        TqGroupedCodebookTuple::decode(self.raw_tuple(tid)?, centroid_count)
     }
 
     pub fn update_element(
@@ -1010,10 +1099,14 @@ impl DataPage {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
 
-    pub fn update_rerank(
+    pub fn update_rerank(&mut self, tid: ItemPointer, tuple: &TqRerankTuple) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode())
+    }
+
+    pub fn update_grouped_codebook(
         &mut self,
         tid: ItemPointer,
-        tuple: &TqRerankTuple,
+        tuple: &TqGroupedCodebookTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode())
     }
@@ -1093,14 +1186,18 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
-    pub fn insert_grouped_hot(
-        &mut self,
-        tuple: &TqGroupedHotTuple,
-    ) -> Result<ItemPointer, String> {
+    pub fn insert_grouped_hot(&mut self, tuple: &TqGroupedHotTuple) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
     pub fn insert_rerank(&mut self, tuple: &TqRerankTuple) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode())
+    }
+
+    pub fn insert_grouped_codebook(
+        &mut self,
+        tuple: &TqGroupedCodebookTuple,
+    ) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode())
     }
 
@@ -1137,6 +1234,16 @@ impl DataPageChain {
             .read_rerank(tid, code_len)
     }
 
+    pub fn read_grouped_codebook(
+        &self,
+        tid: ItemPointer,
+        centroid_count: usize,
+    ) -> Result<TqGroupedCodebookTuple, String> {
+        self.get_page(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .read_grouped_codebook(tid, centroid_count)
+    }
+
     pub fn update_element(
         &mut self,
         tid: ItemPointer,
@@ -1167,14 +1274,20 @@ impl DataPageChain {
             .update_grouped_hot(tid, tuple)
     }
 
-    pub fn update_rerank(
-        &mut self,
-        tid: ItemPointer,
-        tuple: &TqRerankTuple,
-    ) -> Result<(), String> {
+    pub fn update_rerank(&mut self, tid: ItemPointer, tuple: &TqRerankTuple) -> Result<(), String> {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .update_rerank(tid, tuple)
+    }
+
+    pub fn update_grouped_codebook(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqGroupedCodebookTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_grouped_codebook(tid, tuple)
     }
 }
 
@@ -1271,6 +1384,7 @@ mod tests {
         assert_eq!(decoded.transform_kind, TransformKind::Srht);
         assert_eq!(decoded.search_codec_kind, SearchCodecKind::ScalarQuantized);
         assert_eq!(decoded.payload_flags, 0);
+        assert_eq!(decoded.grouped_codebook_head, ItemPointer::INVALID);
     }
 
     #[test]
@@ -1286,7 +1400,10 @@ mod tests {
             inserted_since_rebuild: 0,
             persisted_binary_sidecar: false,
         });
-        assert_eq!(v1.graph_storage_format().unwrap(), GraphStorageFormat::ScalarV1);
+        assert_eq!(
+            v1.graph_storage_format().unwrap(),
+            GraphStorageFormat::ScalarV1
+        );
 
         let v2 = MetadataPage {
             m: 8,
@@ -1305,8 +1422,12 @@ mod tests {
             rerank_codec_kind: RerankCodecKind::ScalarQuantized,
             search_subvector_count: 1,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(1, 2),
         };
-        assert_eq!(v2.graph_storage_format().unwrap(), GraphStorageFormat::GroupedV2);
+        assert_eq!(
+            v2.graph_storage_format().unwrap(),
+            GraphStorageFormat::GroupedV2
+        );
     }
 
     #[test]
@@ -1425,6 +1546,19 @@ mod tests {
     }
 
     #[test]
+    fn grouped_codebook_tuple_roundtrip() {
+        let tuple = TqGroupedCodebookTuple {
+            group_index: 7,
+            nexttid: tid(20, 4),
+            centroids: vec![0.25, -0.5, 1.25, 2.0],
+        };
+
+        let encoded = tuple.encode();
+        let decoded = TqGroupedCodebookTuple::decode(&encoded, 4).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
     fn grouped_hot_tuple_page_roundtrip() {
         let tuple = TqGroupedHotTuple {
             level: 2,
@@ -1452,6 +1586,20 @@ mod tests {
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let tuple_tid = page.insert_rerank(&tuple).unwrap();
         let decoded = page.read_rerank(tuple_tid, 32).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn grouped_codebook_tuple_page_roundtrip() {
+        let tuple = TqGroupedCodebookTuple {
+            group_index: 3,
+            nexttid: tid(20, 5),
+            centroids: vec![0.1; 64],
+        };
+
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+        let tuple_tid = page.insert_grouped_codebook(&tuple).unwrap();
+        let decoded = page.read_grouped_codebook(tuple_tid, 64).unwrap();
         assert_eq!(decoded, tuple);
     }
 
@@ -1564,6 +1712,33 @@ mod tests {
         assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
         let decoded = chain.read_rerank(last_tid, 900).unwrap();
         assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn page_chain_extends_for_multiple_grouped_codebook_tuples() {
+        let tuple = TqGroupedCodebookTuple {
+            group_index: 0,
+            nexttid: ItemPointer::INVALID,
+            centroids: vec![0.125; 512],
+        };
+
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let mut last_tid = ItemPointer::INVALID;
+        for group_index in 0..20 {
+            last_tid = chain
+                .insert_grouped_codebook(&TqGroupedCodebookTuple {
+                    group_index,
+                    nexttid: ItemPointer::INVALID,
+                    centroids: tuple.centroids.clone(),
+                })
+                .unwrap();
+        }
+
+        assert!(chain.pages().len() > 1);
+        assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
+        let decoded = chain.read_grouped_codebook(last_tid, 512).unwrap();
+        assert_eq!(decoded.group_index, 19);
+        assert_eq!(decoded.centroids, tuple.centroids);
     }
 
     // --- Miri tests ---

@@ -39,7 +39,8 @@ pub mod bench_api {
     // Codebook
     pub use crate::quant::codebook::{beta_pdf, lloyd_max};
     pub use crate::quant::grouped_pq::{
-        grouped_pq_nibble, grouped_pq_score_f32, pack_grouped_pq_nibbles,
+        build_grouped_pq_lut_f32, grouped_pq_nibble, grouped_pq_score_f32, pack_grouped_pq_nibbles,
+        GROUPED_PQ_CENTROIDS,
     };
 
     // MSE
@@ -2804,10 +2805,22 @@ mod tests {
             .iter()
             .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
             .count();
+        let grouped_codebook_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
 
         assert_eq!(grouped_hot_tids.len(), 16);
         assert_eq!(rerank_count, 16);
         assert_eq!(neighbor_count, 16);
+        assert_eq!(
+            grouped_codebook_count,
+            metadata.search_subvector_count as usize
+        );
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
         assert!(!page_tuples
             .iter()
             .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)));
@@ -2978,7 +2991,10 @@ mod tests {
         };
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "test_grouped_v2_graph_reads_load_cold_rerank_payload")
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_grouped_v2_graph_reads_load_cold_rerank_payload",
+            )
         };
         let entry = unsafe {
             am::graph::load_grouped_graph_element(index_relation, metadata.entry_point, layout)
@@ -2993,6 +3009,103 @@ mod tests {
         assert!(
             rerank.code.iter().any(|byte| *byte != 0),
             "cold rerank payload should contain a non-empty scalar code",
+        );
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_graph_reads_load_persisted_codebooks() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_codebook_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 43 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_codebook_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_codebook_reads_idx ON tqhnsw_grouped_v2_codebook_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_codebook_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_grouped_v2_graph_reads_load_persisted_codebooks",
+            )
+        };
+        let model = unsafe { am::graph::load_grouped_codebook_model(index_relation, &metadata) };
+
+        assert_eq!(model.head_tid, metadata.grouped_codebook_head);
+        assert_eq!(model.group_count, metadata.search_subvector_count as usize);
+        assert_eq!(model.group_size, metadata.search_subvector_dim as usize);
+        assert_eq!(
+            model.flat_codebooks.len(),
+            model.group_count * model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS
+        );
+        assert!(
+            model.flat_codebooks.iter().all(|value| value.is_finite()),
+            "persisted grouped codebooks should decode as finite f32 values",
+        );
+
+        let head = unsafe {
+            am::graph::with_grouped_codebook_tuple(
+                index_relation,
+                model.head_tid,
+                model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS,
+                |tuple| (tuple.group_index, tuple.nexttid),
+            )
+        };
+        assert_eq!(head.0, 0);
+        if model.group_count == 1 {
+            assert_eq!(head.1, am::page::ItemPointer::INVALID);
+        } else {
+            assert_ne!(head.1, am::page::ItemPointer::INVALID);
+        }
+
+        let query = vec![0.5_f32; model.group_count * model.group_size];
+        let lut = crate::quant::grouped_pq::build_grouped_pq_lut_f32(
+            &query,
+            &model.flat_codebooks,
+            model.group_size,
+        );
+        assert_eq!(
+            lut.len(),
+            model.group_count * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS
         );
 
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };

@@ -10,7 +10,10 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::quant::{grouped_pq::pack_grouped_pq_nibbles, prod::ProdQuantizer};
+use crate::quant::{
+    grouped_pq::{pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS},
+    prod::ProdQuantizer,
+};
 
 use super::{options, page, shared, wal, P_NEW};
 
@@ -561,6 +564,7 @@ pub(super) struct V2GroupedBuildPlan {
     pub(super) staged_chain: V2GroupedStagedChain,
     pub(super) entry_point: page::ItemPointer,
     pub(super) max_level: u8,
+    pub(super) grouped_model: BuildGroupedPqModel,
 }
 
 #[derive(Debug, Clone)]
@@ -671,7 +675,7 @@ pub(super) fn stage_v2_grouped_page_chain_from_source(
     group_size: usize,
     train_size: usize,
     kmeans_iters: usize,
-) -> Result<V2GroupedStagedChain, String> {
+) -> Result<(V2GroupedStagedChain, BuildGroupedPqModel), String> {
     let model = train_build_grouped_pq_model(state, group_size, train_size, kmeans_iters)?;
     let grouped_search_codes = state
         .heap_tuples
@@ -679,7 +683,10 @@ pub(super) fn stage_v2_grouped_page_chain_from_source(
         .map(|tuple| derive_grouped_search_code_from_source(tuple, &model))
         .collect::<Result<Vec<_>, _>>()?;
 
-    stage_v2_grouped_page_chain(state, graph_nodes, &grouped_search_codes)
+    Ok((
+        stage_v2_grouped_page_chain(state, graph_nodes, &grouped_search_codes)?,
+        model,
+    ))
 }
 
 pub(super) fn plan_v2_grouped_source_build(
@@ -689,7 +696,7 @@ pub(super) fn plan_v2_grouped_source_build(
     kmeans_iters: usize,
 ) -> Result<V2GroupedBuildPlan, String> {
     let graph_nodes = build_hnsw_graph(state);
-    let staged_chain = stage_v2_grouped_page_chain_from_source(
+    let (staged_chain, grouped_model) = stage_v2_grouped_page_chain_from_source(
         state,
         &graph_nodes,
         group_size,
@@ -704,7 +711,57 @@ pub(super) fn plan_v2_grouped_source_build(
         staged_chain,
         entry_point,
         max_level,
+        grouped_model,
     })
+}
+
+fn stage_v2_grouped_codebook_tuples(
+    data_pages: &mut page::DataPageChain,
+    model: &BuildGroupedPqModel,
+) -> Result<page::ItemPointer, String> {
+    let centroid_count = model.group_size * GROUPED_PQ_CENTROIDS;
+    let mut codebook_tids = Vec::with_capacity(model.group_count);
+
+    for (group_index, codebook) in model.codebooks.iter().enumerate() {
+        if codebook.len() != centroid_count {
+            return Err(format!(
+                "grouped codebook {} length mismatch: got {}, expected {}",
+                group_index,
+                codebook.len(),
+                centroid_count
+            ));
+        }
+        codebook_tids.push(
+            data_pages.insert_grouped_codebook(&page::TqGroupedCodebookTuple {
+                group_index: u16::try_from(group_index).map_err(|_| {
+                    format!("grouped codebook index {group_index} does not fit in u16")
+                })?,
+                nexttid: page::ItemPointer::INVALID,
+                centroids: codebook.clone(),
+            })?,
+        );
+    }
+
+    for (group_index, tid) in codebook_tids
+        .iter()
+        .copied()
+        .enumerate()
+        .take(codebook_tids.len().saturating_sub(1))
+    {
+        data_pages.update_grouped_codebook(
+            tid,
+            &page::TqGroupedCodebookTuple {
+                group_index: u16::try_from(group_index).expect("validated group index fits in u16"),
+                nexttid: codebook_tids[group_index + 1],
+                centroids: model.codebooks[group_index].clone(),
+            },
+        )?;
+    }
+
+    codebook_tids
+        .first()
+        .copied()
+        .ok_or_else(|| "grouped codebook staging requires at least one codebook".to_owned())
 }
 
 pub(super) fn train_build_grouped_pq_model(
@@ -1013,9 +1070,12 @@ pub(super) fn grouped_v2_flush_output(
     if persisted_binary_sidecar_word_count(dimensions, bits, seed) > 0 {
         payload_flags |= page::PAYLOAD_FLAG_BINARY_SIDECAR;
     }
+    let mut data_pages = plan.staged_chain.data_pages.clone();
+    let grouped_codebook_head =
+        stage_v2_grouped_codebook_tuples(&mut data_pages, &plan.grouped_model)?;
 
     Ok(BuildFlushOutput {
-        data_pages: plan.staged_chain.data_pages.clone(),
+        data_pages,
         metadata: page::MetadataPage {
             m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
             ef_construction: u16::try_from(state.options.ef_construction)
@@ -1034,6 +1094,7 @@ pub(super) fn grouped_v2_flush_output(
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count,
             search_subvector_dim,
+            grouped_codebook_head,
         },
     })
 }
@@ -2148,10 +2209,11 @@ mod tests {
             seed: Some(seed),
         };
 
-        let staged =
+        let (staged, model) =
             stage_v2_grouped_page_chain_from_source(&state, &graph_nodes, 4, 16, 3).unwrap();
 
         assert_eq!(staged.hot_tids.len(), 16);
+        assert_eq!(model.group_count, 4);
         let first_hot = staged
             .data_pages
             .read_grouped_hot(staged.hot_tids[0], 0, 2)
@@ -2216,6 +2278,35 @@ mod tests {
         assert_eq!(plan.staged_chain.hot_tids.len(), 16);
         assert_ne!(plan.entry_point, page::ItemPointer::INVALID);
         assert!(usize::from(plan.max_level) < 16);
+        assert_eq!(plan.grouped_model.group_count, 4);
+    }
+
+    #[test]
+    fn stage_v2_grouped_codebook_tuples_links_groups_in_order() {
+        let mut data_pages = page::DataPageChain::new(pg_sys::BLCKSZ as usize);
+        let model = BuildGroupedPqModel {
+            codebooks: vec![vec![0.1; 64], vec![0.2; 64], vec![0.3; 64], vec![0.4; 64]],
+            group_count: 4,
+            group_size: 4,
+            transform_dim: 16,
+            signs: vec![1.0; 16],
+        };
+
+        let head_tid = stage_v2_grouped_codebook_tuples(&mut data_pages, &model).unwrap();
+        let first = data_pages.read_grouped_codebook(head_tid, 64).unwrap();
+        let second = data_pages.read_grouped_codebook(first.nexttid, 64).unwrap();
+        let third = data_pages
+            .read_grouped_codebook(second.nexttid, 64)
+            .unwrap();
+        let fourth = data_pages.read_grouped_codebook(third.nexttid, 64).unwrap();
+
+        assert_eq!(first.group_index, 0);
+        assert_eq!(second.group_index, 1);
+        assert_eq!(third.group_index, 2);
+        assert_eq!(fourth.group_index, 3);
+        assert_eq!(fourth.nexttid, page::ItemPointer::INVALID);
+        assert_eq!(first.centroids, vec![0.1; 64]);
+        assert_eq!(fourth.centroids, vec![0.4; 64]);
     }
 
     #[test]
@@ -2276,6 +2367,10 @@ mod tests {
         assert_eq!(output.metadata.search_bits, 4);
         assert_eq!(output.metadata.search_subvector_count, 4);
         assert_eq!(output.metadata.search_subvector_dim, 4);
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
         assert_eq!(
             output.metadata.payload_flags,
             page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
@@ -2290,6 +2385,7 @@ mod tests {
         assert!(tuple_tags.contains(&page::TQ_GROUPED_HOT_TAG));
         assert!(tuple_tags.contains(&page::TQ_RERANK_TAG));
         assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
+        assert!(tuple_tags.contains(&page::TQ_GROUPED_CODEBOOK_TAG));
         assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
     }
 
@@ -2342,6 +2438,10 @@ mod tests {
         assert_eq!(
             output.metadata.search_subvector_dim,
             ADR030_EXPERIMENTAL_GROUP_SIZE as u16
+        );
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
         );
     }
 }

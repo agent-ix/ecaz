@@ -1257,6 +1257,7 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 1,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(1, 2),
         };
 
         assert_eq!(

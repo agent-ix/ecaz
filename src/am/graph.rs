@@ -6,6 +6,7 @@ use hashbrown::HashSet;
 use pgrx::pg_sys;
 
 use super::{page, search};
+use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GroupedGraphLayout {
@@ -39,7 +40,7 @@ impl GraphStorageDescriptor {
                 }
                 if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
                     return Err(
-                        "grouped-v2 metadata must advertise cold rerank payloads".to_owned(),
+                        "grouped-v2 metadata must advertise cold rerank payloads".to_owned()
                     );
                 }
                 if metadata.search_codec_kind != page::SearchCodecKind::GroupedPq {
@@ -64,6 +65,12 @@ impl GraphStorageDescriptor {
                         "unsupported grouped-v2 rerank codec: {:?}",
                         metadata.rerank_codec_kind
                     ));
+                }
+                if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
+                    return Err(
+                        "grouped-v2 metadata must advertise a persisted grouped codebook chain"
+                            .to_owned(),
+                    );
                 }
                 let binary_word_count =
                     if metadata.payload_flags & page::PAYLOAD_FLAG_BINARY_SIDECAR != 0
@@ -118,6 +125,15 @@ pub(crate) struct GroupedRerankPayload {
     pub tid: page::ItemPointer,
     pub gamma: f32,
     pub code: Vec<u8>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedCodebookModel {
+    pub head_tid: page::ItemPointer,
+    pub group_count: usize,
+    pub group_size: usize,
+    pub flat_codebooks: Vec<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,6 +372,92 @@ pub(crate) unsafe fn load_grouped_rerank_payload(
         tid: rerank_tid,
         gamma: rerank.gamma,
         code: rerank.code,
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    codebook_tid: page::ItemPointer,
+    centroid_count: usize,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(
+            index_relation,
+            codebook_tid,
+            "grouped codebook",
+            |tuple_bytes| {
+                Ok(f(page::TqGroupedCodebookTupleRef::decode(
+                    tuple_bytes,
+                    centroid_count,
+                )?))
+            },
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped codebook tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_codebook_model(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> GroupedCodebookModel {
+    let group_count = usize::from(metadata.search_subvector_count);
+    let group_size = usize::from(metadata.search_subvector_dim);
+    if group_count == 0 || group_size == 0 {
+        pgrx::error!("tqhnsw grouped codebook load requires non-zero grouped search shape");
+    }
+    if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
+        pgrx::error!("tqhnsw grouped-v2 metadata is missing a grouped codebook head pointer");
+    }
+
+    let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
+    let mut next_tid = metadata.grouped_codebook_head;
+    let mut flat_codebooks = Vec::with_capacity(group_count * centroid_count);
+
+    for expected_group_index in 0..group_count {
+        if next_tid == page::ItemPointer::INVALID {
+            pgrx::error!(
+                "tqhnsw grouped codebook chain ended early at group {} of {}",
+                expected_group_index,
+                group_count
+            );
+        }
+        let codebook = unsafe {
+            with_grouped_codebook_tuple(index_relation, next_tid, centroid_count, |tuple| {
+                page::TqGroupedCodebookTuple {
+                    group_index: tuple.group_index,
+                    nexttid: tuple.nexttid,
+                    centroids: tuple.collect_centroids(),
+                }
+            })
+        };
+        if usize::from(codebook.group_index) != expected_group_index {
+            pgrx::error!(
+                "tqhnsw grouped codebook order mismatch: got group {}, expected {}",
+                codebook.group_index,
+                expected_group_index
+            );
+        }
+        flat_codebooks.extend(codebook.centroids);
+        next_tid = codebook.nexttid;
+    }
+
+    if next_tid != page::ItemPointer::INVALID {
+        pgrx::error!(
+            "tqhnsw grouped codebook chain contains trailing tuples beyond metadata shape"
+        );
+    }
+
+    GroupedCodebookModel {
+        head_tid: metadata.grouped_codebook_head,
+        group_count,
+        group_size,
+        flat_codebooks,
     }
 }
 
@@ -1136,6 +1238,7 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(2, 1),
         };
 
         assert_eq!(
@@ -1167,6 +1270,7 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(2, 1),
         };
 
         assert_eq!(
@@ -1194,11 +1298,41 @@ mod tests {
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
+            grouped_codebook_head: tid(2, 1),
         };
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata),
             Err("grouped-v2 metadata must advertise cold rerank payloads".to_owned())
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_grouped_v2_missing_codebook_head() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 96,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+            grouped_codebook_head: page::ItemPointer::INVALID,
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("grouped-v2 metadata must advertise a persisted grouped codebook chain".to_owned())
         );
     }
 
