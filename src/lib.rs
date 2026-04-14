@@ -733,6 +733,37 @@ pub mod pg_test {
 #[pg_schema]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env-var test lock should not be poisoned")
+    }
     #[cfg(test)]
     use hnsw_rs::prelude::{AnnT, Distance, Hnsw};
     use rand::Rng;
@@ -2670,6 +2701,118 @@ mod tests {
         assert!(elements
             .iter()
             .all(|(_, element)| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
+    fn test_experimental_grouped_v2_source_build_writes_grouped_pages() {
+        let _lock = env_var_test_lock();
+        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 11 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_source_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_source_build_idx ON tqhnsw_grouped_v2_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_grouped_v2_source_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
+        assert_eq!(
+            metadata.search_codec_kind,
+            am::page::SearchCodecKind::GroupedPq
+        );
+        assert_eq!(
+            metadata.rerank_codec_kind,
+            am::page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(
+            metadata.payload_flags & am::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            am::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+        );
+        assert_eq!(
+            metadata.payload_flags & am::page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            am::page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+        assert_eq!(metadata.dimensions, 16);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_eq!(metadata.search_bits, 4);
+        assert_eq!(metadata.search_subvector_count, 1);
+        assert_eq!(metadata.search_subvector_dim, 16);
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let grouped_hot_tids = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+
+        assert_eq!(grouped_hot_tids.len(), 16);
+        assert_eq!(rerank_count, 16);
+        assert_eq!(neighbor_count, 16);
+        assert!(
+            !page_tuples
+                .iter()
+                .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+        );
+        assert!(
+            grouped_hot_tids.contains(&metadata.entry_point),
+            "entry point should identify a grouped hot tuple under the experimental ADR-030 v2 build gate"
+        );
     }
 
     #[pg_test]
