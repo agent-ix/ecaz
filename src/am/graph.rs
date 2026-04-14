@@ -196,7 +196,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn binary_word_count(self) -> usize {
         match self {
             Self::Scalar(tuple) => tuple.binary_word_count(),
-            Self::GroupedHot(tuple) => tuple.collect_binary_words().len(),
+            Self::GroupedHot(tuple) => tuple.binary_word_count(),
         }
     }
 

@@ -3160,6 +3160,99 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_ordered_scan_runtime_gate_smoke() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_enabled (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_enabled VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_enabled_idx ON tqhnsw_grouped_v2_runtime_enabled USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_grouped_v2_runtime_enabled \
+                     ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                              0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+                     LIMIT 3",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+            "grouped-v2 runtime smoke test should route through tqhnsw when the scan gate is enabled: {plan}"
+        );
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM tqhnsw_grouped_v2_runtime_enabled \
+                     ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                              0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+                     LIMIT 3",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed when the grouped runtime gate is enabled")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(ordered_ids.len(), 3);
+        assert!(
+            ordered_ids.windows(2).all(|pair| pair[0] != pair[1]),
+            "grouped-v2 runtime smoke test should emit distinct ids"
+        );
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (

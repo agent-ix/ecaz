@@ -71,6 +71,15 @@ pub fn build_grouped_pq_lut_f32(
 }
 
 pub fn grouped_pq_score_f32(lut_f32: &[f32], group_count: usize, packed_nibbles: &[u8]) -> f32 {
+    debug_assert!(
+        packed_nibbles.len() >= group_count.div_ceil(2),
+        "grouped PQ packed nibble length {} is too short for group count {}",
+        packed_nibbles.len(),
+        group_count
+    );
+    // This scalar reference uses row-major `[group][centroid]` layout. Future SIMD
+    // scorers can repack LUT bytes internally, but they should agree with this
+    // stable logical layout and score on the same grouped-search codes.
     (0..group_count)
         .map(|group_index| {
             let centroid_index = grouped_pq_nibble(packed_nibbles, group_index);

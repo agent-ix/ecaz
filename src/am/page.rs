@@ -668,6 +668,10 @@ impl<'a> TqGroupedHotTupleRef<'a> {
             .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk")))
     }
 
+    pub fn binary_word_count(&self) -> usize {
+        self.binary_word_bytes.len() / size_of::<u64>()
+    }
+
     pub fn collect_binary_words(&self) -> Vec<u64> {
         self.binary_words().collect()
     }

@@ -6,6 +6,7 @@ use std::time::Instant;
 use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
+use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 
 use super::explain::TqExplainCounters;
@@ -18,6 +19,7 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
+const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
 const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
     "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet";
 
@@ -356,6 +358,14 @@ struct GroupedScoreContext<'a> {
     call: GroupedScoreCall<'a>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PreparedGroupedScanQuery {
+    group_count: usize,
+    search_code_len: usize,
+    lut_f32: Vec<f32>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GroupedScorePayloadView<'a> {
     element_tid: page::ItemPointer,
@@ -365,6 +375,7 @@ struct GroupedScorePayloadView<'a> {
     rerank_code_len: usize,
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 struct GroupedScoreRerankPayload<'a> {
     element_tid: page::ItemPointer,
@@ -603,6 +614,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_started = Instant::now();
             store_scan_prepared_query(opaque, &query, &metadata);
+            store_grouped_scan_query((*scan).indexRelation, opaque, &metadata);
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_elapsed_us = u64::try_from(prepare_started.elapsed().as_micros())
                 .expect("timing should fit in u64");
@@ -664,10 +676,18 @@ fn validate_runtime_scan_format(
 ) -> Result<graph::GraphStorageDescriptor, String> {
     match graph::GraphStorageDescriptor::from_metadata(metadata)? {
         descriptor @ graph::GraphStorageDescriptor::ScalarV1 { .. } => Ok(descriptor),
-        graph::GraphStorageDescriptor::GroupedV2(_) => {
-            Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned())
+        descriptor @ graph::GraphStorageDescriptor::GroupedV2(_) => {
+            if experimental_grouped_v2_scan_enabled() {
+                Ok(descriptor)
+            } else {
+                Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned())
+            }
         }
     }
+}
+
+fn experimental_grouped_v2_scan_enabled() -> bool {
+    std::env::var_os(ADR030_EXPERIMENTAL_SCAN_ENV).is_some()
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -791,6 +811,10 @@ fn store_scan_prepared_query(
 }
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
+    if !opaque.grouped_query.is_null() {
+        drop(unsafe { Box::from_raw(opaque.grouped_query) });
+        opaque.grouped_query = ptr::null_mut();
+    }
     if !opaque.prepared_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.prepared_query) });
         opaque.prepared_query = ptr::null_mut();
@@ -802,6 +826,67 @@ fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
     if !opaque.cached_quantizer.is_null() {
         drop(unsafe { Arc::from_raw(opaque.cached_quantizer) });
         opaque.cached_quantizer = ptr::null();
+    }
+}
+
+fn build_prepared_grouped_scan_query(
+    prepared_query: &PreparedQuery,
+    model: &graph::GroupedCodebookModel,
+) -> PreparedGroupedScanQuery {
+    let expected_rotated_len = model.group_count * model.group_size;
+    assert_eq!(
+        prepared_query.rotated.len(),
+        expected_rotated_len,
+        "grouped scan prepared query length mismatch: got {}, expected {}",
+        prepared_query.rotated.len(),
+        expected_rotated_len
+    );
+
+    PreparedGroupedScanQuery {
+        group_count: model.group_count,
+        search_code_len: model.group_count.div_ceil(2),
+        lut_f32: build_grouped_pq_lut_f32(
+            &prepared_query.rotated,
+            &model.flat_codebooks,
+            model.group_size,
+        ),
+    }
+}
+
+unsafe fn load_grouped_scan_query(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    prepared_query: &PreparedQuery,
+) -> PreparedGroupedScanQuery {
+    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+    build_prepared_grouped_scan_query(prepared_query, &model)
+}
+
+unsafe fn store_grouped_scan_query(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    metadata: &page::MetadataPage,
+) {
+    if !matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::GroupedV2(_)
+    ) {
+        return;
+    }
+    if opaque.prepared_query.is_null() {
+        pgrx::error!("tqhnsw grouped-v2 scan cannot prepare grouped query state without a query");
+    }
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let grouped_prepared =
+        unsafe { load_grouped_scan_query(index_relation, metadata, prepared_query) };
+    opaque.grouped_query = Box::into_raw(Box::new(grouped_prepared));
+}
+
+fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery> {
+    if opaque.grouped_query.is_null() {
+        None
+    } else {
+        Some(unsafe { &*opaque.grouped_query })
     }
 }
 
@@ -1108,6 +1193,14 @@ fn grouped_score_context_from_scan_state<'a>(
     })
 }
 
+fn grouped_score_search_code(grouped: GroupedScoreContext<'_>) -> Option<&[u8]> {
+    if grouped.call.input.search_code.len() != grouped.call.shape.search_code_len {
+        return None;
+    }
+    Some(grouped.call.input.search_code)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 fn grouped_score_payload_view<'a>(
     grouped: GroupedScoreContext<'a>,
 ) -> Option<GroupedScorePayloadView<'a>> {
@@ -1126,6 +1219,7 @@ fn grouped_score_payload_view<'a>(
     })
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 fn grouped_score_rerank_payload<'a>(
     payload: GroupedScorePayloadView<'a>,
     rerank: graph::GroupedRerankPayload,
@@ -1146,6 +1240,7 @@ fn grouped_score_rerank_payload<'a>(
     })
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 unsafe fn load_grouped_score_rerank_payload<'a>(
     index_relation: pg_sys::Relation,
     grouped: GroupedScoreContext<'a>,
@@ -1165,14 +1260,17 @@ unsafe fn load_grouped_score_rerank_payload<'a>(
     grouped_score_rerank_payload(payload, rerank)
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 fn score_grouped_rerank_payload_result(
     quantizer: &ProdQuantizer,
     prepared_query: &PreparedQuery,
     payload: &GroupedScoreRerankPayload<'_>,
 ) -> f32 {
+    // Negate inner product to produce distance, matching the scalar exact-score path.
     -quantizer.score_ip_from_parts(prepared_query, payload.rerank_gamma, &payload.rerank_code)
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 unsafe fn score_grouped_rerank_payload_from_scan_state(
     opaque: *mut TqScanOpaque,
     payload: &GroupedScoreRerankPayload<'_>,
@@ -1189,21 +1287,53 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
 }
 
+fn score_grouped_search_code_result(
+    prepared_query: &PreparedGroupedScanQuery,
+    search_code: &[u8],
+) -> f32 {
+    debug_assert_eq!(
+        search_code.len(),
+        prepared_query.search_code_len,
+        "grouped search-code length {} should match prepared grouped query width {}",
+        search_code.len(),
+        prepared_query.search_code_len
+    );
+    -grouped_pq_score_f32(
+        &prepared_query.lut_f32,
+        prepared_query.group_count,
+        search_code,
+    )
+}
+
+unsafe fn score_grouped_search_code_from_scan_state(
+    opaque: *mut TqScanOpaque,
+    search_code: &[u8],
+) -> f32 {
+    let opaque = unsafe { &*opaque };
+    let prepared_query = grouped_scan_query(opaque)
+        .unwrap_or_else(|| pgrx::error!("tqhnsw grouped-v2 scan is missing grouped query state"));
+    score_grouped_search_code_result(prepared_query, search_code)
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
     loaded_state: LoadedElementState,
 ) -> CandidateScoreDispatch<'a> {
     match loaded_state {
-        LoadedElementState::ExactUnavailable => CandidateScoreDispatch::Grouped(
-            grouped_score_context_from_scan_state(scan_graph_storage, element).unwrap_or_else(
-                || {
-                    panic!(
-                        "exact-unavailable grouped score dispatch requires grouped score context"
-                    )
-                },
-            ),
-        ),
+        LoadedElementState::ExactUnavailable | LoadedElementState::None
+            if grouped_score_context_from_scan_state(scan_graph_storage, element).is_some() =>
+        {
+            CandidateScoreDispatch::Grouped(
+                grouped_score_context_from_scan_state(scan_graph_storage, element).unwrap_or_else(
+                    || {
+                        panic!(
+                            "grouped score dispatch requires grouped score context for grouped payloads"
+                        )
+                    },
+                ),
+            )
+        }
         other => CandidateScoreDispatch::Exact(other),
     }
 }
@@ -1213,12 +1343,11 @@ unsafe fn score_grouped_candidate_context(
     opaque: *mut TqScanOpaque,
     grouped: GroupedScoreContext<'_>,
 ) -> f32 {
-    let _payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
-        .unwrap_or_else(|| {
-            panic!("grouped score helper requires metadata-aligned grouped payload view")
-        });
-    let _score = unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &_payload) };
-    pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
+    let _ = index_relation;
+    let search_code = grouped_score_search_code(grouped).unwrap_or_else(|| {
+        panic!("grouped approximate scoring requires metadata-aligned grouped search codes")
+    });
+    unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) }
 }
 
 unsafe fn score_cached_graph_element_dispatch(
@@ -2733,6 +2862,7 @@ pub(super) struct TqScanOpaque {
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
+    pub(super) grouped_query: *mut PreparedGroupedScanQuery,
     pub(super) binary_sign_query: *mut BinarySignNoQjl4BitQuery,
     pub(super) cached_quantizer: *const ProdQuantizer,
     pub(super) scan_dimensions: u16,
@@ -2772,6 +2902,7 @@ impl Default for TqScanOpaque {
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
+            grouped_query: ptr::null_mut(),
             binary_sign_query: ptr::null_mut(),
             cached_quantizer: ptr::null(),
             scan_dimensions: 0,
@@ -3468,6 +3599,10 @@ mod tests {
             "storing a prepared query should retain the prepared-query payload"
         );
         assert!(
+            opaque.grouped_query.is_null(),
+            "scalar scan state should not allocate grouped query preparation"
+        );
+        assert!(
             !opaque.cached_quantizer.is_null(),
             "storing a prepared query should retain the quantizer used to score future elements"
         );
@@ -3477,6 +3612,10 @@ mod tests {
         assert!(
             opaque.prepared_query.is_null(),
             "freeing scan prepared-query state should release the prepared query payload"
+        );
+        assert!(
+            opaque.grouped_query.is_null(),
+            "freeing scan prepared-query state should release grouped query preparation too"
         );
         assert!(
             opaque.cached_quantizer.is_null(),
@@ -3734,6 +3873,47 @@ mod tests {
     }
 
     #[test]
+    fn candidate_score_dispatch_uses_grouped_input_for_cached_grouped_hit() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(12, 1)],
+            neighbortid: tid(12, 2),
+            reranktid: tid(12, 3),
+            binary_words: vec![0xAABBCCDD00112233],
+            search_code: vec![0xAB, 0xCD],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(12, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+                binary_word_count: 1,
+                search_code_len: 2,
+                rerank_code_len: 96,
+            }),
+            &cached,
+            LoadedElementState::None,
+        ) {
+            CandidateScoreDispatch::Grouped(grouped) => {
+                assert_eq!(grouped.element_tid, tid(12, 4));
+                assert_eq!(grouped.call.input.reranktid, tuple.reranktid);
+                assert_eq!(grouped.call.input.search_code, tuple.search_code.as_slice());
+            }
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("cached grouped tuples should keep grouped score dispatch on cache hits")
+            }
+        }
+    }
+
+    #[test]
     fn grouped_score_payload_view_preserves_context_fields() {
         let grouped = GroupedScoreContext {
             element_tid: tid(20, 4),
@@ -3765,6 +3945,30 @@ mod tests {
     }
 
     #[test]
+    fn grouped_score_search_code_preserves_metadata_aligned_search_codes() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(20, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 3,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(20, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(
+            grouped_score_search_code(grouped),
+            Some(&[0x10, 0x32, 0x54][..])
+        );
+    }
+
+    #[test]
     fn grouped_score_payload_view_rejects_shape_mismatch() {
         let grouped = GroupedScoreContext {
             element_tid: tid(21, 4),
@@ -3783,6 +3987,27 @@ mod tests {
         };
 
         assert_eq!(grouped_score_payload_view(grouped), None);
+    }
+
+    #[test]
+    fn grouped_score_search_code_rejects_search_code_shape_mismatch() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(21, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 4,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(21, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(grouped_score_search_code(grouped), None);
     }
 
     #[test]
@@ -3868,6 +4093,66 @@ mod tests {
             -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
 
         assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn build_prepared_grouped_scan_query_uses_persisted_codebooks() {
+        let prepared = PreparedQuery {
+            lut: Vec::new(),
+            rotated: vec![1.0_f32, 2.0, 3.0, 4.0],
+            sq: Vec::new(),
+            qjl_scale: 0.0,
+        };
+        let model = graph::GroupedCodebookModel {
+            head_tid: page::ItemPointer::INVALID,
+            group_count: 2,
+            group_size: 2,
+            flat_codebooks: vec![
+                1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0, 7.0, 0.0, 8.0, 0.0,
+                9.0, 0.0, 10.0, 0.0, 11.0, 0.0, 12.0, 0.0, 13.0, 0.0, 14.0, 0.0, 15.0, 0.0, 16.0,
+                0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0, 7.0, 0.0,
+                8.0, 0.0, 9.0, 0.0, 10.0, 0.0, 11.0, 0.0, 12.0, 0.0, 13.0, 0.0, 14.0, 0.0, 15.0,
+                0.0, 16.0,
+            ],
+        };
+
+        let grouped = build_prepared_grouped_scan_query(&prepared, &model);
+
+        assert_eq!(grouped.group_count, 2);
+        assert_eq!(grouped.search_code_len, 1);
+        assert_eq!(grouped.lut_f32.len(), 32);
+        assert_eq!(grouped.lut_f32[0], 1.0);
+        assert_eq!(grouped.lut_f32[1], 2.0);
+        assert_eq!(grouped.lut_f32[15], 16.0);
+        assert_eq!(grouped.lut_f32[16], 4.0);
+        assert_eq!(grouped.lut_f32[17], 8.0);
+        assert_eq!(grouped.lut_f32[31], 64.0);
+    }
+
+    #[test]
+    fn score_grouped_search_code_result_negates_shared_grouped_pq_score() {
+        let prepared = PreparedGroupedScanQuery {
+            group_count: 3,
+            search_code_len: 2,
+            lut_f32: {
+                let mut lut = vec![0.0_f32; 3 * 16];
+                lut[1] = 1.5;
+                lut[16 + 3] = -0.25;
+                lut[32 + 2] = 2.0;
+                lut
+            },
+        };
+        let search_code = &[0x31, 0x02];
+
+        let observed = score_grouped_search_code_result(&prepared, search_code);
+        let expected = -crate::quant::grouped_pq::grouped_pq_score_f32(
+            &prepared.lut_f32,
+            prepared.group_count,
+            search_code,
+        );
+
+        assert_eq!(observed, expected);
+        assert_eq!(observed, -3.25);
     }
 
     #[test]
