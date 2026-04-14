@@ -6,6 +6,9 @@ use std::ptr;
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
 use crate::quant::prod::ProdQuantizer;
 
@@ -548,6 +551,15 @@ pub(super) struct V2GroupedStagedChain {
     pub(super) neighbor_tids: Vec<page::ItemPointer>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct BuildGroupedPqModel {
+    pub(super) codebooks: Vec<Vec<f32>>,
+    pub(super) group_count: usize,
+    pub(super) group_size: usize,
+    pub(super) transform_dim: usize,
+    pub(super) signs: Vec<f32>,
+}
+
 pub(super) fn stage_v2_grouped_page_chain(
     state: &BuildState,
     graph_nodes: &[HnswBuildNode],
@@ -632,6 +644,228 @@ pub(super) fn stage_v2_grouped_page_chain(
         rerank_tids,
         neighbor_tids,
     })
+}
+
+pub(super) fn train_build_grouped_pq_model(
+    state: &BuildState,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<BuildGroupedPqModel, String> {
+    let dimensions = usize::from(
+        state
+            .dimensions
+            .expect("non-empty build should record dimensions"),
+    );
+    let seed = state.seed.expect("non-empty build should record seed");
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions);
+    if transform_dim % group_size != 0 {
+        return Err(format!(
+            "transform dim {transform_dim} is not divisible by group_size {group_size}"
+        ));
+    }
+
+    let signs = crate::quant::rotation::sign_vector(transform_dim, seed);
+    let source_vectors = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            tuple.source_vector
+                .as_ref()
+                .ok_or_else(|| "grouped build model requires source vectors".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if source_vectors.len() < 16 {
+        return Err(format!(
+            "grouped build model needs at least 16 source vectors, got {}",
+            source_vectors.len()
+        ));
+    }
+
+    let transformed = source_vectors
+        .iter()
+        .map(|vector| crate::quant::rotation::srht_padded(vector, &signs))
+        .collect::<Vec<_>>();
+    let group_count = transform_dim / group_size;
+    let sample_count = train_size.min(transformed.len());
+    let sample_indices = sample_indices(transformed.len(), sample_count, seed ^ 0xA5A5_5A5A_DEAD_BEEF);
+    let mut codebooks = Vec::with_capacity(group_count);
+
+    for group_index in 0..group_count {
+        let mut samples = Vec::with_capacity(sample_count * group_size);
+        for &sample_index in &sample_indices {
+            let start = group_index * group_size;
+            let end = start + group_size;
+            samples.extend_from_slice(&transformed[sample_index][start..end]);
+        }
+        codebooks.push(train_group_codebook(
+            &samples,
+            group_size,
+            kmeans_iters,
+            seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        )?);
+    }
+
+    Ok(BuildGroupedPqModel {
+        codebooks,
+        group_count,
+        group_size,
+        transform_dim,
+        signs,
+    })
+}
+
+pub(super) fn derive_grouped_search_code_from_source(
+    tuple: &BuildTuple,
+    model: &BuildGroupedPqModel,
+) -> Result<Vec<u8>, String> {
+    let source = tuple
+        .source_vector
+        .as_ref()
+        .ok_or_else(|| "grouped search code derivation requires source vector".to_owned())?;
+    let rotated = crate::quant::rotation::srht_padded(source, &model.signs);
+    Ok(encode_grouped_pq(&rotated, model))
+}
+
+fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
+    if sample_count >= len {
+        return (0..len).collect();
+    }
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut indices = (0..len).collect::<Vec<_>>();
+    for i in 0..sample_count {
+        let swap_index = rng.gen_range(i..len);
+        indices.swap(i, swap_index);
+    }
+    indices.truncate(sample_count);
+    indices
+}
+
+fn train_group_codebook(
+    samples: &[f32],
+    group_size: usize,
+    kmeans_iters: usize,
+    seed: u64,
+) -> Result<Vec<f32>, String> {
+    const CENTROIDS: usize = 16;
+
+    let sample_count = samples.len() / group_size;
+    if sample_count < CENTROIDS {
+        return Err(format!(
+            "need at least {CENTROIDS} samples for grouped codebook, got {sample_count}"
+        ));
+    }
+
+    let init_indices = sample_indices(sample_count, CENTROIDS, seed);
+    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
+    for (centroid_index, sample_index) in init_indices.into_iter().enumerate() {
+        let sample = sample_slice(samples, sample_index, group_size);
+        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
+    }
+
+    let mut assignments = vec![0usize; sample_count];
+    let mut sums = vec![0.0_f32; CENTROIDS * group_size];
+    let mut counts = [0usize; CENTROIDS];
+
+    for _ in 0..kmeans_iters {
+        sums.fill(0.0);
+        counts.fill(0);
+
+        for (sample_index, assignment) in assignments.iter_mut().enumerate() {
+            let sample = sample_slice(samples, sample_index, group_size);
+            let centroid_index = nearest_centroid(sample, &centroids, group_size);
+            *assignment = centroid_index;
+            counts[centroid_index] += 1;
+            let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
+            for (dst, value) in centroid_sum.iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
+
+        for (centroid_index, &count) in counts.iter().enumerate() {
+            if count == 0 {
+                let fallback_sample = sample_slice(
+                    samples,
+                    (seed as usize + centroid_index) % sample_count,
+                    group_size,
+                );
+                centroid_slice_mut(&mut centroids, centroid_index, group_size)
+                    .copy_from_slice(fallback_sample);
+                continue;
+            }
+
+            let inv_count = (count as f32).recip();
+            let centroid_sum = centroid_slice(&sums, centroid_index, group_size);
+            let centroid = centroid_slice_mut(&mut centroids, centroid_index, group_size);
+            for (dst, value) in centroid.iter_mut().zip(centroid_sum.iter()) {
+                *dst = *value * inv_count;
+            }
+        }
+    }
+
+    Ok(centroids)
+}
+
+fn encode_grouped_pq(vector: &[f32], model: &BuildGroupedPqModel) -> Vec<u8> {
+    let mut packed_nibbles = vec![0_u8; model.group_count.div_ceil(2)];
+    for group_index in 0..model.group_count {
+        let start = group_index * model.group_size;
+        let end = start + model.group_size;
+        let centroid_index = nearest_centroid(
+            &vector[start..end],
+            &model.codebooks[group_index],
+            model.group_size,
+        ) as u8;
+        if group_index % 2 == 0 {
+            packed_nibbles[group_index / 2] = centroid_index;
+        } else {
+            packed_nibbles[group_index / 2] |= centroid_index << 4;
+        }
+    }
+    packed_nibbles
+}
+
+fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
+    let mut best_index = 0usize;
+    let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
+    for centroid_index in 1..(centroids.len() / group_size) {
+        let distance = squared_l2(sample, centroid_slice(centroids, centroid_index, group_size));
+        if distance < best_distance {
+            best_distance = distance;
+            best_index = centroid_index;
+        }
+    }
+    best_index
+}
+
+fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| {
+            let delta = left - right;
+            delta * delta
+        })
+        .sum()
+}
+
+fn sample_slice(samples: &[f32], sample_index: usize, group_size: usize) -> &[f32] {
+    let start = sample_index * group_size;
+    &samples[start..start + group_size]
+}
+
+fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -> &[f32] {
+    let start = centroid_index * group_size;
+    &centroids[start..start + group_size]
+}
+
+fn centroid_slice_mut(
+    centroids: &mut [f32],
+    centroid_index: usize,
+    group_size: usize,
+) -> &mut [f32] {
+    let start = centroid_index * group_size;
+    &mut centroids[start..start + group_size]
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1641,5 +1875,88 @@ mod tests {
         assert_eq!(hot0.reranktid, staged.rerank_tids[0]);
         assert_eq!(rerank0.code, tuples[0].code);
         assert_eq!(neighbors0.tids[0], staged.hot_tids[1]);
+    }
+
+    #[test]
+    fn grouped_build_model_trains_and_derives_codes_from_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: (i + 1) as u16,
+                }],
+                dimensions: 16,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0xAA; 8],
+                source_vector: Some(
+                    (0..16)
+                        .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                        .collect(),
+                ),
+                source_count: 1,
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let model = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap();
+        assert_eq!(model.group_size, 4);
+        assert_eq!(model.group_count, 4);
+
+        let code = derive_grouped_search_code_from_source(&tuples[0], &model).unwrap();
+        assert_eq!(code.len(), model.group_count.div_ceil(2));
+    }
+
+    #[test]
+    fn grouped_build_model_requires_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: None,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 16,
+            heap_tuples: (0..16)
+                .map(|i| BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0xAA; 8],
+                    source_vector: None,
+                    source_count: 0,
+                })
+                .collect(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let error = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap_err();
+        assert!(error.contains("source vectors"));
     }
 }
