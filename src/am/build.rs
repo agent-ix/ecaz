@@ -558,6 +558,12 @@ pub(super) struct V2GroupedBuildPlan {
     pub(super) max_level: u8,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct BuildFlushOutput {
+    pub(super) data_pages: page::DataPageChain,
+    pub(super) metadata: page::MetadataPage,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct BuildGroupedPqModel {
     pub(super) codebooks: Vec<Vec<f32>>,
@@ -962,6 +968,61 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+    let output = current_format_flush_output(state);
+    unsafe { flush_build_output(index_relation, &output) };
+}
+
+pub(super) fn grouped_v2_flush_output(
+    state: &BuildState,
+    plan: &V2GroupedBuildPlan,
+    group_size: usize,
+) -> Result<BuildFlushOutput, String> {
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
+    if transform_dim % group_size != 0 {
+        return Err(format!(
+            "transform dim {transform_dim} is not divisible by group_size {group_size}"
+        ));
+    }
+    let search_subvector_count = u16::try_from(transform_dim / group_size)
+        .map_err(|_| "grouped search subvector count does not fit into u16".to_owned())?;
+    let search_subvector_dim = u16::try_from(group_size)
+        .map_err(|_| "grouped search subvector dim does not fit into u16".to_owned())?;
+    let mut payload_flags =
+        page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD;
+    if persisted_binary_sidecar_word_count(dimensions, bits, seed) > 0 {
+        payload_flags |= page::PAYLOAD_FLAG_BINARY_SIDECAR;
+    }
+
+    Ok(BuildFlushOutput {
+        data_pages: plan.staged_chain.data_pages.clone(),
+        metadata: page::MetadataPage {
+            m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(state.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point: plan.entry_point,
+            dimensions,
+            bits,
+            max_level: plan.max_level,
+            seed,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count,
+            search_subvector_dim,
+        },
+    })
+}
+
+fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -977,8 +1038,6 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     );
     let write_persisted_binary = persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported();
 
-    // Phase 1: Insert placeholder neighbor then element for each node.
-    // Writing them back-to-back co-locates them on the same page.
     for (idx, tuple) in state.heap_tuples.iter().enumerate() {
         let slot_count = graph_nodes[idx].neighbor_slots.len();
         let placeholder_neighbor = page::TqNeighborTuple {
@@ -1010,7 +1069,6 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
         neighbor_tids.push(neighbor_tid);
     }
 
-    // Phase 2: Fill in neighbor references now that all element TIDs are known.
     for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
         let neighbor_refs = graph_nodes[idx]
             .neighbor_slots
@@ -1038,26 +1096,27 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
     let seed = state.seed.expect("non-empty build should record seed");
 
-    unsafe { write_data_pages(index_relation, &data_pages) };
-    unsafe {
-        shared::initialize_metadata_page(
-            index_relation,
-            page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
-                m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
-                ef_construction: u16::try_from(state.options.ef_construction)
-                    .expect("validated ef_construction should fit into u16"),
-                entry_point,
-                dimensions,
-                bits,
-                max_level,
-                seed,
-                inserted_since_rebuild: 0,
-                persisted_binary_sidecar: persisted_binary_sidecar_word_count(
-                    dimensions, bits, seed,
-                ) > 0,
-            }),
-        )
-    };
+    BuildFlushOutput {
+        data_pages,
+        metadata: page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(state.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point,
+            dimensions,
+            bits,
+            max_level,
+            seed,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed)
+                > 0,
+        }),
+    }
+}
+
+unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
+    unsafe { write_data_pages(index_relation, &output.data_pages) };
+    unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
 }
 
 pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
@@ -2123,5 +2182,77 @@ mod tests {
         assert_eq!(plan.staged_chain.hot_tids.len(), 16);
         assert_ne!(plan.entry_point, page::ItemPointer::INVALID);
         assert!(usize::from(plan.max_level) < 16);
+    }
+
+    #[test]
+    fn grouped_v2_flush_output_marks_grouped_metadata_and_pages() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
+        let output = grouped_v2_flush_output(&state, &plan, 4).unwrap();
+
+        assert_eq!(output.metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(output.metadata.transform_kind, page::TransformKind::Srht);
+        assert_eq!(
+            output.metadata.search_codec_kind,
+            page::SearchCodecKind::GroupedPq
+        );
+        assert_eq!(
+            output.metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(output.metadata.search_bits, 4);
+        assert_eq!(output.metadata.search_subvector_count, 4);
+        assert_eq!(output.metadata.search_subvector_dim, 4);
+        assert_eq!(
+            output.metadata.payload_flags,
+            page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+
+        let tuple_tags = output
+            .data_pages
+            .pages()
+            .iter()
+            .flat_map(|page| page.tuples().iter().map(|tuple| tuple[0]))
+            .collect::<Vec<_>>();
+        assert!(tuple_tags.contains(&page::TQ_GROUPED_HOT_TAG));
+        assert!(tuple_tags.contains(&page::TQ_RERANK_TAG));
+        assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
+        assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
     }
 }
