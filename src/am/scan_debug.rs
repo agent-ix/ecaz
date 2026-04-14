@@ -732,8 +732,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
         i64::try_from(rescan_debug_profile.candidate_score_elapsed_us)
             .expect("timing should fit in i64"),
         i32::try_from(rescan_debug_profile.score_cache_hits).expect("counter should fit in i32"),
-        i32::try_from(rescan_debug_profile.score_cache_misses)
-            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.score_cache_misses).expect("counter should fit in i32"),
     )
 }
 
@@ -1574,6 +1573,36 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> Vec<(HeapTidCoords, f32, Option<f32>)> {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let score = debug_scan_orderby_score(scan)
+            .expect("graph-first scan should publish an order-by score for emitted tuples");
+        let comparison_score = debug_current_result_comparison_score(scan);
+        tids.push((heap_tid, score, comparison_score));
+    }
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_exhaustion_state(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -1705,6 +1734,14 @@ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 
         f32::from_datum(*(*scan).xs_orderbyvals, false)
     }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_comparison_score_valid
+        .then_some(opaque.last_emitted_comparison_score)
 }
 
 #[cfg(any(test, feature = "pg_test"))]

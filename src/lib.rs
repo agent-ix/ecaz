@@ -3253,6 +3253,115 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_runtime_captures_exact_rerank_comparison_scores() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_compare (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_compare VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_compare_idx ON tqhnsw_grouped_v2_runtime_compare USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_grouped_v2_runtime_compare_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
+            1.6,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let exact_scores = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
+                            split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number,
+                            embedding <#> {query_literal} AS exact_score
+                         FROM tqhnsw_grouped_v2_runtime_compare"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("exact grouped rerank comparison query should succeed")
+                .map(|row| {
+                    let block_number = row["block_number"]
+                        .value::<i32>()
+                        .expect("block number should decode")
+                        .expect("block number should be non-null");
+                    let offset_number = row["offset_number"]
+                        .value::<i16>()
+                        .expect("offset number should decode")
+                        .expect("offset number should be non-null");
+                    let exact_score = row["exact_score"]
+                        .value::<f32>()
+                        .expect("exact score should decode")
+                        .expect("exact score should be non-null");
+                    (
+                        (
+                            u32::try_from(block_number)
+                                .expect("block number should be non-negative"),
+                            u16::try_from(offset_number)
+                                .expect("offset number should be positive"),
+                        ),
+                        exact_score,
+                    )
+                })
+                .collect::<HashMap<_, _>>()
+        });
+
+        assert!(
+            !observed.is_empty(),
+            "grouped-v2 runtime comparison path should emit at least one ordered result"
+        );
+        for (heap_tid, _approx_score, comparison_score) in observed {
+            let comparison_score = comparison_score.expect(
+                "grouped-v2 emitted results should carry an exact rerank comparison score",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact SQL score");
+            assert_eq!(
+                comparison_score, expected,
+                "grouped-v2 comparison score should match the operator-facing exact <#> score for the emitted tuple"
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
             "CREATE TABLE tqhnsw_duplicate_source_build (

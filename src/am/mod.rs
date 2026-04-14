@@ -81,6 +81,7 @@ pub(crate) use self::scan_debug::{
     debug_gettuple_exhaustion_state, debug_gettuple_orderby_score,
     debug_gettuple_orderby_score_lifecycle, debug_gettuple_rescan_after_exhaustion,
     debug_gettuple_rescan_after_partial, debug_gettuple_scan_heap_tids,
+    debug_gettuple_scan_heap_tids_with_score_comparisons,
     debug_gettuple_scan_heap_tids_with_scores, debug_gettuple_without_rescan,
     debug_layer0_reachable_live_element_tids, debug_layer_oracle_k_carrydown_scan_heap_tids,
     debug_layer_oracle_k_seed_layer0_neighbor_heap_tids,

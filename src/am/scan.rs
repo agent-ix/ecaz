@@ -894,6 +894,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
+    clear_last_emitted_comparison_score(opaque);
     clear_scan_candidate_state(opaque);
     reset_scan_graph_cache(opaque);
     reset_scan_score_cache(opaque);
@@ -1315,6 +1316,22 @@ unsafe fn score_grouped_search_code_from_scan_state(
     score_grouped_search_code_result(prepared_query, search_code)
 }
 
+unsafe fn grouped_candidate_rerank_comparison_score(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+) -> Option<f32> {
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
+    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+        .unwrap_or_else(|| {
+            pgrx::error!(
+                "tqhnsw grouped-v2 result rerank comparison requires metadata-aligned cold payload"
+            )
+        });
+    Some(unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &payload) })
+}
+
 fn candidate_score_dispatch<'a>(
     scan_graph_storage: graph::GraphStorageDescriptor,
     element: &'a CachedGraphElement,
@@ -1562,6 +1579,7 @@ unsafe fn cached_upper_layer_seed_candidate(
 struct PendingScanOutput {
     heap_tid: page::ItemPointer,
     score: f32,
+    comparison_score: Option<f32>,
 }
 
 struct GraphTraversalCursor<'a> {
@@ -1597,13 +1615,8 @@ impl<'a> GraphTraversalCursor<'a> {
         self.result_state.take_pending_output()
     }
 
-    fn emit_prefetched_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+    fn emit_prefetched_output(&mut self) -> Option<PendingScanOutput> {
         self.take_pending_output()
-            .map(|output| {
-                emit_scan_output(scan, output);
-                true
-            })
-            .unwrap_or(false)
     }
 
     unsafe fn prefetch_next(
@@ -1661,13 +1674,8 @@ impl<'a> LinearFallbackCursor<'a> {
         self.result_state.take_pending_output()
     }
 
-    fn emit_pending_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+    fn emit_pending_output(&mut self) -> Option<PendingScanOutput> {
         self.take_pending_output()
-            .map(|output| {
-                emit_scan_output(scan, output);
-                true
-            })
-            .unwrap_or(false)
     }
 
     fn advance_after_emit(&mut self) {
@@ -1676,18 +1684,14 @@ impl<'a> LinearFallbackCursor<'a> {
         }
     }
 
-    fn emit_materialized_output(
-        &mut self,
-        scan: pg_sys::IndexScanDesc,
-        selected: SelectedScanResult,
-    ) -> bool {
+    fn emit_materialized_output(&mut self, selected: SelectedScanResult) -> Option<PendingScanOutput> {
         self.materialize(selected);
-        let emitted = self.emit_pending_output(scan);
+        let emitted = self.emit_pending_output();
         debug_assert!(
-            emitted,
+            emitted.is_some(),
             "linear fallback result materialization should seed pending heap tids before returning true"
         );
-        if emitted {
+        if emitted.is_some() {
             self.advance_after_emit();
         }
         emitted
@@ -1806,13 +1810,23 @@ unsafe fn materialize_graph_result_candidate(
         return None;
     }
 
+    // Keep traversal/output ordering on the grouped approximate score for now, but
+    // capture the cold rerank score alongside emitted results so the next packets
+    // can compare approximate-vs-exact behavior on real scan outputs.
+    let comparison_score = unsafe {
+        grouped_candidate_rerank_comparison_score(index_relation, opaque as *mut TqScanOpaque, &element)
+    };
     opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
-    unsafe { &mut *result_state }.materialize_from_parts(
+    let result_state = unsafe { &mut *result_state };
+    result_state.materialize_from_parts(
         candidate.node,
         candidate.score,
         element.heaptids.as_slice(),
     );
+    if let Some(score) = comparison_score {
+        result_state.set_current_comparison_score(score);
+    }
     Some(())
 }
 
@@ -2449,7 +2463,13 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
-    let emitted = graph_traversal_cursor(opaque).emit_prefetched_output(scan);
+    let emitted = graph_traversal_cursor(opaque)
+        .emit_prefetched_output()
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
@@ -2472,7 +2492,14 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if linear_fallback_cursor(opaque).emit_pending_output(scan) {
+    if linear_fallback_cursor(opaque)
+        .emit_pending_output()
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false)
+    {
         linear_fallback_cursor(opaque).advance_after_emit();
         opaque.explain_counters.record_heap_tid_returned();
         return true;
@@ -2485,7 +2512,13 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     };
 
     mark_emitted_element(opaque, selected.element_tid);
-    let emitted = linear_fallback_cursor(opaque).emit_materialized_output(scan, selected);
+    let emitted = linear_fallback_cursor(opaque)
+        .emit_materialized_output(selected)
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false);
     if emitted {
         opaque.explain_counters.record_heap_tid_returned();
     }
@@ -2643,9 +2676,25 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
-fn emit_scan_output(scan: pg_sys::IndexScanDesc, output: PendingScanOutput) {
+fn clear_last_emitted_comparison_score(opaque: &mut TqScanOpaque) {
+    opaque.last_emitted_comparison_score = 0.0;
+    opaque.last_emitted_comparison_score_valid = false;
+}
+
+fn emit_scan_output(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+    output: PendingScanOutput,
+) {
     set_scan_heap_tid(scan, output.heap_tid);
     set_scan_orderby_score(scan, output.score);
+    match output.comparison_score {
+        Some(score) => {
+            opaque.last_emitted_comparison_score = score;
+            opaque.last_emitted_comparison_score_valid = true;
+        }
+        None => clear_last_emitted_comparison_score(opaque),
+    }
 }
 
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
@@ -2678,6 +2727,8 @@ pub(super) struct CurrentScanResult {
     heap_tid: page::ItemPointer,
     score: f32,
     score_valid: bool,
+    comparison_score: f32,
+    comparison_score_valid: bool,
 }
 
 impl CurrentScanResult {
@@ -2700,6 +2751,14 @@ impl CurrentScanResult {
     pub(super) fn score_valid(&self) -> bool {
         self.score_valid
     }
+
+    pub(super) fn comparison_score(&self) -> f32 {
+        self.comparison_score
+    }
+
+    pub(super) fn comparison_score_valid(&self) -> bool {
+        self.comparison_score_valid
+    }
 }
 
 impl Default for CurrentScanResult {
@@ -2709,6 +2768,8 @@ impl Default for CurrentScanResult {
             heap_tid: page::ItemPointer::INVALID,
             score: 0.0,
             score_valid: false,
+            comparison_score: 0.0,
+            comparison_score_valid: false,
         }
     }
 }
@@ -2767,6 +2828,10 @@ impl ScanResultState {
         Some(PendingScanOutput {
             heap_tid,
             score: self.current.score(),
+            comparison_score: self
+                .current
+                .comparison_score_valid()
+                .then_some(self.current.comparison_score()),
         })
     }
 
@@ -2799,7 +2864,17 @@ impl ScanResultState {
             heap_tid: page::ItemPointer::INVALID,
             score,
             score_valid: true,
+            comparison_score: 0.0,
+            comparison_score_valid: false,
         };
+    }
+
+    fn set_current_comparison_score(&mut self, score: f32) {
+        if self.current.element_tid == page::ItemPointer::INVALID {
+            return;
+        }
+        self.current.comparison_score = score;
+        self.current.comparison_score_valid = true;
     }
 
     fn update_current_heap_tid(&mut self, heap_tid: page::ItemPointer) {
@@ -2888,6 +2963,8 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
+    pub(super) last_emitted_comparison_score: f32,
+    pub(super) last_emitted_comparison_score_valid: bool,
     pub(super) graph_prefetch_state: *mut GraphPrefetchState,
     pub(super) linear_prefetch_state: LinearPrefetchState,
     pub(super) explain_counters: TqExplainCounters,
@@ -2926,6 +3003,8 @@ impl Default for TqScanOpaque {
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
+            last_emitted_comparison_score: 0.0,
+            last_emitted_comparison_score_valid: false,
             graph_prefetch_state: ptr::null_mut(),
             linear_prefetch_state: LinearPrefetchState::new(
                 page::FIRST_DATA_BLOCK_NUMBER,
@@ -3296,6 +3375,7 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                comparison_score: None,
             }),
             "pending output should expose the first heap tid together with the current result score"
         );
@@ -3304,6 +3384,7 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 2),
                 score: -4.0,
+                comparison_score: None,
             }),
             "pending output should preserve score while draining later heap tids from the same result"
         );
@@ -3332,6 +3413,7 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                comparison_score: None,
             }),
             "linear fallback duplicate drain should still emit the first queued heap tid"
         );
@@ -3363,6 +3445,7 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(32, 1),
                 score: -5.0,
+                comparison_score: None,
             }),
             "linear fallback should still emit the final queued heap tid before teardown"
         );
@@ -3573,6 +3656,33 @@ mod tests {
             opaque.result_state.pending_heap_tids()[1],
             tid(31, 2),
             "shared result materialization should retain all supplied heap tids"
+        );
+        assert!(
+            !opaque.result_state.current().comparison_score_valid(),
+            "plain result materialization should leave comparison-score state empty by default"
+        );
+    }
+
+    #[test]
+    fn scan_result_state_comparison_score_tracks_current_result_lifecycle() {
+        let mut state = ScanResultState::default();
+        state.materialize_from_parts(tid(42, 1), -7.0, &[tid(43, 1), tid(43, 2)]);
+
+        assert!(
+            !state.current().comparison_score_valid(),
+            "materializing a result should not implicitly mark comparison score valid"
+        );
+
+        state.set_current_comparison_score(-6.5);
+
+        assert!(state.current().comparison_score_valid());
+        assert_eq!(state.current().comparison_score(), -6.5);
+
+        state.clear_current();
+
+        assert!(
+            !state.current().comparison_score_valid(),
+            "clearing current-result state should also clear any grouped rerank comparison score"
         );
     }
 
