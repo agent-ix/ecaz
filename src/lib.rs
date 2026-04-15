@@ -3411,23 +3411,7 @@ mod tests {
 
     type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
 
-    fn grouped_v2_exact_traversal_runtime_observed_scores(
-        table_name: &str,
-        index_name: &str,
-        scope: Option<&str>,
-    ) -> Vec<DebugScanComparisonRow> {
-        let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = scope.map(|value| {
-            ScopedEnvVar::set(
-                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-                value,
-            )
-        });
-
+    fn create_grouped_v2_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
                 id bigint primary key,
@@ -3459,15 +3443,36 @@ mod tests {
         ))
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
-        let query = vec![
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
+    fn grouped_v2_runtime_query() -> Vec<f32> {
+        vec![
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
             1.52, 1.62,
-        ];
-        unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) }
+        ]
+    }
+
+    fn grouped_v2_exact_traversal_runtime_observed_scores(
+        table_name: &str,
+        index_name: &str,
+        scope: Option<&str>,
+    ) -> Vec<DebugScanComparisonRow> {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _exact_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = scope.map(|value| {
+            ScopedEnvVar::set(
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
+                value,
+            )
+        });
+        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, grouped_v2_runtime_query()) }
     }
 
     #[pg_test]
@@ -3490,6 +3495,263 @@ mod tests {
                 "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar"
             );
         }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_adr030_runtime_settings_reflect_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
+        let _exact_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE", "all");
+        let _limit_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT", "1");
+
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT grouped_build_enabled
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface the grouped build gate",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT grouped_scan_enabled
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface the grouped scan gate",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_scan_window
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("8"),
+            "the runtime settings probe should surface the configured grouped scan window",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT grouped_exact_traversal_enabled
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface the grouped exact traversal gate",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_exact_traversal_scope
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("all"),
+            "the runtime settings probe should surface the grouped exact traversal scope",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_exact_traversal_limit
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("1"),
+            "the runtime settings probe should surface the grouped exact traversal limit",
+        );
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_profile_exact_counters_zero_without_gate() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_profile_approx",
+            "tqhnsw_grouped_v2_runtime_profile_approx_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+
+        assert!(
+            grouped_traversal_approx_score_calls > 0
+                && grouped_traversal_approx_score_elapsed_us >= 0,
+            "grouped approximate scans should surface grouped approximate traversal scoring work",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0),
+            "grouped approximate scans should leave grouped exact traversal counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_runtime_profile_budgeted_exact_counters() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _exact_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT", "1");
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_profile_budgeted_exact",
+            "tqhnsw_grouped_v2_runtime_profile_budgeted_exact_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+
+        assert!(
+            grouped_traversal_approx_score_calls > 0
+                && grouped_traversal_approx_score_elapsed_us >= 0,
+            "budgeted grouped exact traversal should still score grouped approximate candidates first",
+        );
+        assert!(
+            grouped_traversal_exact_score_calls > 0
+                && grouped_traversal_exact_score_elapsed_us >= 0,
+            "budgeted grouped exact traversal should surface exact rescoring work",
+        );
+        assert!(
+            score_cache_hits > 0 && score_cache_misses > 0,
+            "budgeted grouped exact traversal should reuse cached exact scores after the first miss path",
+        );
+        assert!(
+            grouped_traversal_budgeted_expansions > 0
+                && grouped_traversal_budgeted_candidates
+                    >= grouped_traversal_budgeted_exact_candidates,
+            "budgeted grouped exact traversal should report the candidate sets it exact-rescored",
+        );
+        assert!(
+            grouped_traversal_exact_score_calls >= grouped_traversal_budgeted_exact_candidates,
+            "grouped exact traversal should include at least the budgeted exact rescoring calls, even if entry or seed scoring adds more",
+        );
+        assert_eq!(
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_exact_candidates,
+            "limit=1 should exact-rescore one grouped candidate per budgeted expansion",
+        );
     }
 
     #[pg_test]
@@ -8022,6 +8284,13 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert_eq!(
@@ -8071,6 +8340,19 @@ mod tests {
         assert!(
             score_cache_hits >= 0 && score_cache_misses > 0,
             "profiling should surface score-cache counters and at least one first-score miss on a non-empty fixture",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_approx_score_calls,
+                grouped_traversal_approx_score_elapsed_us,
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0, 0, 0),
+            "scalar fixtures should leave grouped traversal counters inert",
         );
         assert!(
             result_count > 0,
@@ -13958,6 +14240,13 @@ mod tests {
             _candidate_score_elapsed_us,
             _score_cache_hits,
             _score_cache_misses,
+            _grouped_traversal_approx_score_calls,
+            _grouped_traversal_approx_score_elapsed_us,
+            _grouped_traversal_exact_score_calls,
+            _grouped_traversal_exact_score_elapsed_us,
+            _grouped_traversal_budgeted_expansions,
+            _grouped_traversal_budgeted_candidates,
+            _grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
@@ -13985,6 +14274,32 @@ mod tests {
             total_heap_tids_returned,
             total_quantizer_cache_hit,
             total_emitted_elements,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_adr030_runtime_settings() -> TableIterator<
+        'static,
+        (
+            name!(grouped_build_enabled, bool),
+            name!(grouped_scan_enabled, bool),
+            name!(grouped_scan_window, Option<String>),
+            name!(grouped_exact_traversal_enabled, bool),
+            name!(grouped_exact_traversal_scope, Option<String>),
+            name!(grouped_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        TableIterator::once((
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD").is_some(),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN").is_some(),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
+                .map(|value| value.to_string_lossy().into_owned()),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL").is_some(),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
+                .map(|value| value.to_string_lossy().into_owned()),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
+                .map(|value| value.to_string_lossy().into_owned()),
         ))
     }
 
@@ -14019,6 +14334,13 @@ mod tests {
             name!(candidate_score_elapsed_us, i64),
             name!(score_cache_hits, i32),
             name!(score_cache_misses, i32),
+            name!(grouped_traversal_approx_score_calls, i32),
+            name!(grouped_traversal_approx_score_elapsed_us, i64),
+            name!(grouped_traversal_exact_score_calls, i32),
+            name!(grouped_traversal_exact_score_elapsed_us, i64),
+            name!(grouped_traversal_budgeted_expansions, i32),
+            name!(grouped_traversal_budgeted_candidates, i32),
+            name!(grouped_traversal_budgeted_exact_candidates, i32),
         ),
     > {
         let index_relation = unsafe {
@@ -14076,6 +14398,13 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
@@ -14102,6 +14431,13 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
         ))
     }
 

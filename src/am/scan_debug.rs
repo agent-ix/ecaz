@@ -307,6 +307,13 @@ type DebugScanProfile = (
     i64,
     i32,
     i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    i32,
+    i32,
+    i32,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -803,6 +810,20 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
             .expect("timing should fit in i64"),
         i32::try_from(rescan_debug_profile.score_cache_hits).expect("counter should fit in i32"),
         i32::try_from(rescan_debug_profile.score_cache_misses).expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_approx_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.grouped_traversal_approx_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_exact_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.grouped_traversal_exact_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_expansions)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_candidates)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_exact_candidates)
+            .expect("counter should fit in i32"),
     )
 }
 
@@ -1825,30 +1846,34 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
         let mut ordered_rows = rows
             .into_iter()
             .enumerate()
-            .map(|(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
-                (
-                    heap_tid,
-                    approx_score,
-                    comparison_score,
-                    approx_rank.unwrap_or_else(|| {
-                        i32::try_from(idx + 1).expect("approx rank should fit in i32")
-                    }),
-                )
-            })
+            .map(
+                |(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+                    (
+                        heap_tid,
+                        approx_score,
+                        comparison_score,
+                        approx_rank.unwrap_or_else(|| {
+                            i32::try_from(idx + 1).expect("approx rank should fit in i32")
+                        }),
+                    )
+                },
+            )
             .collect::<Vec<_>>();
         ordered_rows.sort_by_key(|row| row.3);
         ordered_rows
     } else {
         rows.into_iter()
             .enumerate()
-            .map(|(idx, (heap_tid, approx_score, comparison_score, _approx_rank))| {
-                (
-                    heap_tid,
-                    approx_score,
-                    comparison_score,
-                    i32::try_from(idx + 1).expect("approx rank should fit in i32"),
-                )
-            })
+            .map(
+                |(idx, (heap_tid, approx_score, comparison_score, _approx_rank))| {
+                    (
+                        heap_tid,
+                        approx_score,
+                        comparison_score,
+                        i32::try_from(idx + 1).expect("approx rank should fit in i32"),
+                    )
+                },
+            )
             .collect::<Vec<_>>()
     };
     let mut exact_ranks = vec![None; ordered_rows.len()];
@@ -1856,9 +1881,11 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
         let mut compared_rows = ordered_rows
             .iter()
             .enumerate()
-            .filter_map(|(idx, (_heap_tid, _approx_score, comparison_score, _approx_rank))| {
-                comparison_score.map(|exact_score| (idx, exact_score))
-            })
+            .filter_map(
+                |(idx, (_heap_tid, _approx_score, comparison_score, _approx_rank))| {
+                    comparison_score.map(|exact_score| (idx, exact_score))
+                },
+            )
             .collect::<Vec<_>>();
         compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
             let left_approx_rank = ordered_rows[*left_idx].3;
@@ -1875,18 +1902,20 @@ pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
     ordered_rows
         .into_iter()
         .enumerate()
-        .map(|(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
-            let exact_rank = exact_ranks[idx];
-            let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
-            (
-                heap_tid,
-                approx_rank,
-                approx_score,
-                grouped_results.then_some(comparison_score).flatten(),
-                exact_rank,
-                exact_rank_shift,
-            )
-        })
+        .map(
+            |(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+                let exact_rank = exact_ranks[idx];
+                let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
+                (
+                    heap_tid,
+                    approx_rank,
+                    approx_score,
+                    grouped_results.then_some(comparison_score).flatten(),
+                    exact_rank,
+                    exact_rank_shift,
+                )
+            },
+        )
         .collect()
 }
 
@@ -3158,8 +3187,10 @@ mod tests {
         let observed = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, 1);
 
         assert_eq!(observed.len(), rows.len());
-        for (idx, (heap_tid, approx_rank, windowed_rank, approx_score, comparison_score, _, _, _)) in
-            observed.iter().enumerate()
+        for (
+            idx,
+            (heap_tid, approx_rank, windowed_rank, approx_score, comparison_score, _, _, _),
+        ) in observed.iter().enumerate()
         {
             assert_eq!(*heap_tid, rows[idx].0);
             assert_eq!(*approx_rank, rows[idx].1);
@@ -3181,9 +3212,16 @@ mod tests {
         let observed_approx_ranks = observed
             .iter()
             .map(
-                |(_heap_tid, approx_rank, _windowed_rank, _approx_score, _comparison_score, _, _, _)| {
-                    *approx_rank
-                },
+                |(
+                    _heap_tid,
+                    approx_rank,
+                    _windowed_rank,
+                    _approx_score,
+                    _comparison_score,
+                    _,
+                    _,
+                    _,
+                )| { *approx_rank },
             )
             .collect::<Vec<_>>();
 

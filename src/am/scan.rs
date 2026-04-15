@@ -64,6 +64,13 @@ pub(super) struct ScanDebugProfile {
     pub(super) score_cache_misses: u64,
     pub(super) candidate_score_calls: u64,
     pub(super) candidate_score_elapsed_us: u64,
+    pub(super) grouped_traversal_approx_score_calls: u64,
+    pub(super) grouped_traversal_approx_score_elapsed_us: u64,
+    pub(super) grouped_traversal_exact_score_calls: u64,
+    pub(super) grouped_traversal_exact_score_elapsed_us: u64,
+    pub(super) grouped_traversal_budgeted_expansions: u64,
+    pub(super) grouped_traversal_budgeted_candidates: u64,
+    pub(super) grouped_traversal_budgeted_exact_candidates: u64,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -496,6 +503,50 @@ fn record_candidate_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_candidate_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_approx_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    record_candidate_score_elapsed(opaque, elapsed_us);
+    opaque.debug_profile.grouped_traversal_approx_score_calls += 1;
+    opaque.debug_profile.grouped_traversal_approx_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_approx_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_exact_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_traversal_exact_score_calls += 1;
+    opaque.debug_profile.grouped_traversal_exact_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_exact_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_budget(
+    opaque: &mut TqScanOpaque,
+    candidate_count: usize,
+    exact_candidate_count: usize,
+) {
+    if candidate_count == 0 {
+        return;
+    }
+
+    opaque.debug_profile.grouped_traversal_budgeted_expansions += 1;
+    opaque.debug_profile.grouped_traversal_budgeted_candidates +=
+        u64::try_from(candidate_count).expect("budgeted candidate count should fit in u64");
+    opaque.debug_profile.grouped_traversal_budgeted_exact_candidates +=
+        u64::try_from(exact_candidate_count).expect("budgeted exact candidate count should fit in u64");
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_budget(
+    _opaque: &mut TqScanOpaque,
+    _candidate_count: usize,
+    _exact_candidate_count: usize,
+) {
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_score_cache_hit(opaque: &mut TqScanOpaque) {
@@ -1433,6 +1484,48 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
 }
 
+unsafe fn exact_score_grouped_candidate_context(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    let opaque_ref = unsafe { &mut *opaque };
+    if let Some(score) = cached_scan_element_score(opaque_ref, grouped.element_tid) {
+        record_score_cache_hit(opaque_ref);
+        return score;
+    }
+
+    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw grouped-v2 exact scoring requires metadata-aligned cold payload")
+        });
+    unsafe {
+        score_and_cache_scan_element(
+            opaque_ref,
+            grouped.element_tid,
+            payload.rerank_gamma,
+            &payload.rerank_code,
+        )
+    }
+}
+
+unsafe fn score_grouped_candidate_context_exact(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_traversal_exact_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    score
+}
+
 fn score_grouped_search_code_result(
     prepared_query: &PreparedGroupedScanQuery,
     search_code: &[u8],
@@ -1468,13 +1561,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
 ) -> Option<f32> {
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
-    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
-        .unwrap_or_else(|| {
-            pgrx::error!(
-                "tqhnsw grouped-v2 result rerank comparison requires metadata-aligned cold payload"
-            )
-        });
-    Some(unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &payload) })
+    Some(unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) })
 }
 
 fn candidate_score_dispatch<'a>(
@@ -1515,7 +1602,16 @@ unsafe fn score_grouped_candidate_context_approx(
     let search_code = grouped_score_search_code(grouped).unwrap_or_else(|| {
         panic!("grouped approximate scoring requires metadata-aligned grouped search codes")
     });
-    unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) }
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_traversal_approx_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    score
 }
 
 unsafe fn score_budgeted_grouped_traversal_candidates(
@@ -1531,7 +1627,14 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
         .map(|candidate| candidate.approx_score)
         .collect::<Vec<_>>();
 
-    for exact_idx in grouped_exact_traversal_candidate_indices(&candidates, budget) {
+    let exact_indices = grouped_exact_traversal_candidate_indices(&candidates, budget);
+    record_grouped_traversal_budget(
+        unsafe { &mut *opaque },
+        candidates.len(),
+        exact_indices.len(),
+    );
+
+    for exact_idx in exact_indices {
         let grouped = grouped_score_context_from_scan_state(
             scan_graph_storage,
             &candidates[exact_idx].element,
@@ -1539,14 +1642,8 @@ unsafe fn score_budgeted_grouped_traversal_candidates(
         .unwrap_or_else(|| {
             panic!("budgeted grouped exact traversal requires metadata-aligned grouped payloads")
         });
-        let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
-            .unwrap_or_else(|| {
-                pgrx::error!(
-                    "tqhnsw grouped-v2 traversal scoring requires metadata-aligned cold payload"
-                )
-            });
         final_scores[exact_idx] =
-            unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &payload) };
+            unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
     }
 
     candidates
@@ -1568,13 +1665,7 @@ unsafe fn score_grouped_candidate_context(
         unsafe { (&*opaque).grouped_exact_traversal_mode },
         traversal_layer,
     ) {
-        let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
-            .unwrap_or_else(|| {
-                pgrx::error!(
-                    "tqhnsw grouped-v2 traversal scoring requires metadata-aligned cold payload"
-                )
-            });
-        return unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &payload) };
+        return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
     }
 
     let _ = index_relation;
