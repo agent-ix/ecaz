@@ -27,6 +27,8 @@ const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT";
+const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
 const ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
 const ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW: usize = 16;
 const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
@@ -424,6 +426,13 @@ enum GroupedExactTraversalMode {
     Layer0Only = 2,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedExactTraversalStrategy {
+    Expansion = 0,
+    FrontierHead = 1,
+}
+
 struct BinaryPrefilterCandidate {
     ordinal: usize,
     element: Arc<CachedGraphElement>,
@@ -508,7 +517,9 @@ fn record_candidate_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) 
 fn record_grouped_traversal_approx_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
     record_candidate_score_elapsed(opaque, elapsed_us);
     opaque.debug_profile.grouped_traversal_approx_score_calls += 1;
-    opaque.debug_profile.grouped_traversal_approx_score_elapsed_us += elapsed_us;
+    opaque
+        .debug_profile
+        .grouped_traversal_approx_score_elapsed_us += elapsed_us;
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
@@ -517,7 +528,9 @@ fn record_grouped_traversal_approx_score_elapsed(_opaque: &mut TqScanOpaque, _el
 #[cfg(any(test, feature = "pg_test"))]
 fn record_grouped_traversal_exact_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
     opaque.debug_profile.grouped_traversal_exact_score_calls += 1;
-    opaque.debug_profile.grouped_traversal_exact_score_elapsed_us += elapsed_us;
+    opaque
+        .debug_profile
+        .grouped_traversal_exact_score_elapsed_us += elapsed_us;
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
@@ -536,8 +549,10 @@ fn record_grouped_traversal_budget(
     opaque.debug_profile.grouped_traversal_budgeted_expansions += 1;
     opaque.debug_profile.grouped_traversal_budgeted_candidates +=
         u64::try_from(candidate_count).expect("budgeted candidate count should fit in u64");
-    opaque.debug_profile.grouped_traversal_budgeted_exact_candidates +=
-        u64::try_from(exact_candidate_count).expect("budgeted exact candidate count should fit in u64");
+    opaque
+        .debug_profile
+        .grouped_traversal_budgeted_exact_candidates += u64::try_from(exact_candidate_count)
+        .expect("budgeted exact candidate count should fit in u64");
 }
 
 #[cfg(not(any(test, feature = "pg_test")))]
@@ -685,6 +700,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             } else {
                 GroupedExactTraversalMode::Disabled
             };
+            opaque.grouped_exact_traversal_strategy =
+                if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
+                    GroupedExactTraversalStrategy::Expansion
+                } else {
+                    resolve_grouped_exact_traversal_strategy(opaque.grouped_exact_traversal_mode)
+                };
             opaque.grouped_exact_traversal_limit =
                 if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
                     0
@@ -828,6 +849,31 @@ fn grouped_exact_traversal_enabled_for_layer(mode: GroupedExactTraversalMode, la
     }
 }
 
+fn resolve_grouped_exact_traversal_strategy(
+    mode: GroupedExactTraversalMode,
+) -> GroupedExactTraversalStrategy {
+    let Some(raw_strategy) = std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV)
+    else {
+        return GroupedExactTraversalStrategy::Expansion;
+    };
+
+    match raw_strategy.to_string_lossy().as_ref() {
+        "expansion" => GroupedExactTraversalStrategy::Expansion,
+        "frontier_head" => {
+            if mode != GroupedExactTraversalMode::Layer0Only {
+                pgrx::error!(
+                    "tqhnsw grouped-v2 exact traversal strategy frontier_head requires scope layer0"
+                );
+            }
+            GroupedExactTraversalStrategy::FrontierHead
+        }
+        other => pgrx::error!(
+            "tqhnsw grouped-v2 exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
+            other
+        ),
+    }
+}
+
 fn resolve_grouped_exact_traversal_limit() -> u8 {
     let Some(raw_limit) = std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV) else {
         return 0;
@@ -853,6 +899,9 @@ fn grouped_exact_traversal_candidate_budget_for_layer(
     opaque: &TqScanOpaque,
     layer: u8,
 ) -> Option<usize> {
+    if opaque.grouped_exact_traversal_strategy != GroupedExactTraversalStrategy::Expansion {
+        return None;
+    }
     if !grouped_exact_traversal_enabled_for_layer(opaque.grouped_exact_traversal_mode, layer) {
         return None;
     }
@@ -860,6 +909,20 @@ fn grouped_exact_traversal_candidate_budget_for_layer(
         0 => None,
         limit => Some(usize::from(limit)),
     }
+}
+
+fn grouped_exact_traversal_full_candidate_scoring_for_layer(
+    opaque: &TqScanOpaque,
+    layer: u8,
+) -> bool {
+    opaque.grouped_exact_traversal_strategy == GroupedExactTraversalStrategy::Expansion
+        && opaque.grouped_exact_traversal_limit == 0
+        && grouped_exact_traversal_enabled_for_layer(opaque.grouped_exact_traversal_mode, layer)
+}
+
+fn grouped_exact_traversal_frontier_head_enabled(opaque: &TqScanOpaque) -> bool {
+    opaque.grouped_exact_traversal_strategy == GroupedExactTraversalStrategy::FrontierHead
+        && opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Layer0Only
 }
 
 fn resolve_grouped_live_rerank_window() -> usize {
@@ -1661,8 +1724,8 @@ unsafe fn score_grouped_candidate_context(
     grouped: GroupedScoreContext<'_>,
     traversal_layer: u8,
 ) -> f32 {
-    if grouped_exact_traversal_enabled_for_layer(
-        unsafe { (&*opaque).grouped_exact_traversal_mode },
+    if grouped_exact_traversal_full_candidate_scoring_for_layer(
+        unsafe { &*opaque },
         traversal_layer,
     ) {
         return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
@@ -2257,6 +2320,7 @@ unsafe fn prefetch_next_graph_result_from_frontier(
     }
 
     loop {
+        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
         #[cfg(any(test, feature = "pg_test"))]
         let consume_started = Instant::now();
         let candidate = consume_candidate_frontier_head(opaque);
@@ -2306,6 +2370,7 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
 ) -> bool {
     let active_window = grouped_live_rerank_window(opaque);
     while usize::from(opaque.grouped_live_rerank_buffer_len) < active_window {
+        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
         #[cfg(any(test, feature = "pg_test"))]
         let consume_started = Instant::now();
         let candidate = consume_candidate_frontier_head(opaque);
@@ -2501,7 +2566,6 @@ type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
 static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState =
     VisibleCandidateFrontierState::empty();
 
-#[cfg(any(test, feature = "pg_test"))]
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
@@ -2800,7 +2864,6 @@ fn seed_discovered_candidates(
     );
 }
 
-#[cfg(any(test, feature = "pg_test"))]
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     let candidates = visible_frontier_ref(opaque)
         .iter()
@@ -2857,6 +2920,64 @@ fn consume_candidate_frontier_head(
     with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
         visible_frontier.consume_best(expansion)
     })
+}
+
+unsafe fn refine_grouped_frontier_head_exact(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) {
+    if !grouped_exact_traversal_frontier_head_enabled(opaque) {
+        return;
+    }
+
+    loop {
+        let candidate = with_visible_frontier_mut_and_bootstrap_expansion(
+            opaque,
+            |visible_frontier, expansion| visible_frontier.best_candidate(expansion),
+        );
+        let Some(candidate) = candidate else {
+            return;
+        };
+        if cached_scan_element_score(opaque, candidate.node).is_some() {
+            return;
+        }
+
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        let (element, loaded_state) =
+            unsafe { cached_graph_element(index_relation, opaque_ptr, candidate.node) };
+        if element.deleted || element.heaptids.is_empty() {
+            return;
+        }
+
+        let exact_score =
+            match candidate_score_dispatch(opaque.scan_graph_storage, &element, loaded_state) {
+                CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+                    exact_score_cached_graph_element(
+                        index_relation,
+                        opaque_ptr,
+                        element.tid,
+                        loaded_state,
+                    )
+                },
+                CandidateScoreDispatch::Grouped(grouped) => unsafe {
+                    score_grouped_candidate_context_exact(index_relation, opaque_ptr, grouped)
+                },
+            };
+        let updated = search::BeamCandidate {
+            score: exact_score,
+            ..candidate
+        };
+        let replaced =
+            with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, _| {
+                visible_frontier.replace_candidate(updated)
+            });
+        if !replaced {
+            return;
+        }
+
+        reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
+        seed_existing_frontier_into_expansion(opaque);
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3685,6 +3806,7 @@ pub(super) struct TqScanOpaque {
     grouped_live_rerank_buffer_len: u8,
     grouped_live_rerank_window: u8,
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
+    grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
     grouped_live_rerank_next_approx_rank: i32,
     pub(super) last_emitted_approx_score: f32,
@@ -3736,6 +3858,7 @@ impl Default for TqScanOpaque {
             grouped_live_rerank_buffer_len: 0,
             grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,
             grouped_live_rerank_next_approx_rank: 1,
             last_emitted_approx_score: 0.0,
@@ -4723,6 +4846,7 @@ mod tests {
     fn grouped_exact_traversal_candidate_budget_requires_enabled_layer() {
         let mut opaque = TqScanOpaque {
             grouped_exact_traversal_mode: GroupedExactTraversalMode::AllLayers,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 4,
             ..TqScanOpaque::default()
         };
@@ -4744,6 +4868,34 @@ mod tests {
             grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
             None
         );
+        opaque.grouped_exact_traversal_strategy = GroupedExactTraversalStrategy::FrontierHead;
+        opaque.grouped_exact_traversal_limit = 4;
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn grouped_exact_traversal_full_candidate_scoring_requires_expansion_strategy_without_limit() {
+        let mut opaque = TqScanOpaque {
+            grouped_exact_traversal_mode: GroupedExactTraversalMode::AllLayers,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
+            grouped_exact_traversal_limit: 0,
+            ..TqScanOpaque::default()
+        };
+        assert!(grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
+        opaque.grouped_exact_traversal_limit = 2;
+        assert!(!grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
+        opaque.grouped_exact_traversal_limit = 0;
+        opaque.grouped_exact_traversal_strategy = GroupedExactTraversalStrategy::FrontierHead;
+        assert!(!grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
     }
 
     #[test]

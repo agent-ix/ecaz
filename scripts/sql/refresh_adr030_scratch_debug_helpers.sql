@@ -60,15 +60,18 @@ BEGIN
         module_path
     );
 
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_adr030_runtime_settings"()';
+
     EXECUTE format(
         $fmt$
-        CREATE OR REPLACE FUNCTION tests."tqhnsw_debug_adr030_runtime_settings"()
+        CREATE FUNCTION tests."tqhnsw_debug_adr030_runtime_settings"()
         RETURNS TABLE (
             grouped_build_enabled boolean,
             grouped_scan_enabled boolean,
             grouped_scan_window text,
             grouped_exact_traversal_enabled boolean,
             grouped_exact_traversal_scope text,
+            grouped_exact_traversal_strategy text,
             grouped_exact_traversal_limit text
         )
         LANGUAGE c

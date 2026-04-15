@@ -7,6 +7,7 @@ Usage:
   scripts/restart_adr030_scratch.sh \
       [--window 16] \
       [--exact-scope all|layer0] \
+      [--exact-strategy expansion|frontier_head] \
       [--exact-limit N] \
       [--pgrx-home /tmp/tqvector_pgrx_home]
 
@@ -24,6 +25,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 window="16"
 exact_enabled=0
 exact_scope="all"
+exact_strategy="expansion"
 exact_limit=""
 pgrx_home="${PGRX_HOME:-/tmp/tqvector_pgrx_home}"
 
@@ -41,6 +43,11 @@ while [[ $# -gt 0 ]]; do
         --exact-limit)
             exact_enabled=1
             exact_limit="$2"
+            shift 2
+            ;;
+        --exact-strategy)
+            exact_enabled=1
+            exact_strategy="$2"
             shift 2
             ;;
         --pgrx-home)
@@ -81,6 +88,7 @@ printf '[scratch] pgrx_home=%s\n' "${pgrx_home}"
 printf '[scratch] window=%s\n' "${window}"
 if [[ "${exact_enabled}" -eq 1 ]]; then
     printf '[scratch] exact_scope=%s\n' "${exact_scope}"
+    printf '[scratch] exact_strategy=%s\n' "${exact_strategy}"
     if [[ -n "${exact_limit}" ]]; then
         printf '[scratch] exact_limit=%s\n' "${exact_limit}"
     else
@@ -97,6 +105,7 @@ export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
 if [[ "${exact_enabled}" -eq 1 ]]; then
     export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL=1
     export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE="${exact_scope}"
+    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY="${exact_strategy}"
     if [[ -n "${exact_limit}" ]]; then
         export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT="${exact_limit}"
     else
@@ -105,6 +114,7 @@ if [[ "${exact_enabled}" -eq 1 ]]; then
 else
     unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL 2>/dev/null || true
     unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE 2>/dev/null || true
+    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY 2>/dev/null || true
     unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
 fi
 
