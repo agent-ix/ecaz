@@ -14,7 +14,8 @@ Usage:
       --index-name <index> \
       [--bits N] [--seed N] [--ef-search csv] [--query-limit N] \
       [--result-limit K] [--project-attnum N] [--cache-state LABEL] \
-      [--warmup-passes N] [--output FILE]
+      [--warmup-passes N] [--session-mode MODE] [--timing-mode MODE] \
+      [--output FILE]
 
 Options:
   --corpus-table  tqvector corpus table to scan. Must expose:
@@ -37,6 +38,16 @@ Options:
                   unspecified.
   --warmup-passes Number of full query-set warmup passes before timing each
                   ef_search cell. Default: 0.
+  --session-mode Session reuse mode for the full SQL timing leg:
+                  per-query (default) opens one psql/backend per timed query.
+                  per-cell runs all warmup + timed queries for the cell in a
+                  single backend session.
+  --timing-mode  How to time the full SQL leg:
+                  explain (default) uses per-query EXPLAIN (ANALYZE, FORMAT
+                  JSON).
+                  plain-server runs the plain ordered query and measures it
+                  with server-side clock_timestamp() around a MATERIALIZED
+                  subquery.
   --output        Append per-cell summary lines to FILE in addition to stdout.
   -h, --help      Show this message and exit.
 
@@ -60,6 +71,8 @@ RESULT_LIMIT="10"
 PROJECT_ATTNUM="1"
 CACHE_STATE="unspecified"
 WARMUP_PASSES="0"
+SESSION_MODE="per-query"
+TIMING_MODE="explain"
 OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
@@ -86,6 +99,10 @@ while [[ $# -gt 0 ]]; do
       CACHE_STATE="$2"; shift 2 ;;
     --warmup-passes)
       WARMUP_PASSES="$2"; shift 2 ;;
+    --session-mode)
+      SESSION_MODE="$2"; shift 2 ;;
+    --timing-mode)
+      TIMING_MODE="$2"; shift 2 ;;
     --output)
       OUTPUT_FILE="$2"; shift 2 ;;
     -h|--help)
@@ -213,6 +230,14 @@ if [[ ! "$WARMUP_PASSES" =~ ^[0-9]+$ ]]; then
   echo "invalid warmup pass count: $WARMUP_PASSES" >&2
   exit 2
 fi
+if [[ "$SESSION_MODE" != "per-query" && "$SESSION_MODE" != "per-cell" ]]; then
+  echo "invalid session mode: $SESSION_MODE (expected per-query or per-cell)" >&2
+  exit 2
+fi
+if [[ "$TIMING_MODE" != "explain" && "$TIMING_MODE" != "plain-server" ]]; then
+  echo "invalid timing mode: $TIMING_MODE (expected explain or plain-server)" >&2
+  exit 2
+fi
 
 IFS=',' read -r -a ef_list <<< "$EF_SEARCH_CSV"
 for ef in "${ef_list[@]}"; do
@@ -257,6 +282,8 @@ fi
 if [[ "$WARMUP_PASSES" != "0" ]]; then
   echo "warmup passes: $WARMUP_PASSES"
 fi
+echo "session mode: $SESSION_MODE"
+echo "timing mode:  $TIMING_MODE"
 print_real_corpus_env_banner
 echo
 
@@ -272,12 +299,13 @@ if [[ -n "$QUERY_LIMIT" ]]; then
 fi
 
 queries_tsv="$(mktemp -t tqv_overhead_queries.XXXXXX.tsv)"
+sql_cell_file="$(mktemp -t tqv_overhead_sql_cell.XXXXXX.sql)"
 sql_results_file="$(mktemp -t tqv_overhead_sql.XXXXXX.txt)"
 encode_results_file="$(mktemp -t tqv_overhead_encode.XXXXXX.txt)"
 profile_rows_file="$(mktemp -t tqv_overhead_profile.XXXXXX.tsv)"
 hot_path_rows_file="$(mktemp -t tqv_overhead_hot.XXXXXX.tsv)"
 heap_fetch_rows_file="$(mktemp -t tqv_overhead_heap.XXXXXX.tsv)"
-trap 'rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"' EXIT
+trap 'rm -f "$queries_tsv" "$sql_cell_file" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"' EXIT
 
 query_select="SELECT source FROM ${QUERY_TABLE} ORDER BY id"
 if [[ -n "$QUERY_LIMIT" ]]; then
@@ -304,32 +332,106 @@ for ef in "${ef_list[@]}"; do
   verify_expected_index_plan "$CORPUS_TABLE" "$probe_query" "$RESULT_LIMIT" "$ef" "$INDEX_NAME"
 
   : > "$sql_results_file"
+  : > "$sql_cell_file"
   : > "$encode_results_file"
 
-  if (( WARMUP_PASSES > 0 )); then
-    for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
-      echo "[warmup] ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
-      while IFS= read -r query_line; do
-        [[ -z "$query_line" ]] && continue
-        "$PSQL_BIN" -X -A -t -q > /dev/null <<SQL
+  if [[ "$SESSION_MODE" == "per-cell" ]]; then
+    if (( WARMUP_PASSES > 0 )); then
+      printf '\\o /dev/null\n' >> "$sql_cell_file"
+      for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
+        echo "[warmup] ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
+        while IFS= read -r query_line; do
+          [[ -z "$query_line" ]] && continue
+          cat >> "$sql_cell_file" <<SQL
 SET tqhnsw.ef_search = ${ef};
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${RESULT_LIMIT};
 SQL
-      done < "$queries_tsv"
-    done
-  fi
+        done < "$queries_tsv"
+      done
+      printf '\\o\n' >> "$sql_cell_file"
+    fi
 
-  while IFS= read -r query_line; do
-    [[ -z "$query_line" ]] && continue
-    "$PSQL_BIN" -X -A -t -q <<SQL >> "$sql_results_file"
+    while IFS= read -r query_line; do
+      [[ -z "$query_line" ]] && continue
+      if [[ "$TIMING_MODE" == "explain" ]]; then
+        cat >> "$sql_cell_file" <<SQL
 SET tqhnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${RESULT_LIMIT};
 SQL
+      else
+        cat >> "$sql_cell_file" <<SQL
+SET tqhnsw.ef_search = ${ef};
+WITH started AS (
+  SELECT clock_timestamp() AS t0
+),
+measured AS MATERIALIZED (
+  SELECT id FROM ${CORPUS_TABLE}
+  ORDER BY embedding <#> '${query_line}'::real[]
+  LIMIT ${RESULT_LIMIT}
+),
+finished AS (
+  SELECT clock_timestamp() AS t1, count(*) AS rows_seen FROM measured
+)
+SELECT extract(epoch FROM (finished.t1 - started.t0)) * 1000.0
+FROM started, finished;
+SQL
+      fi
+    done < "$queries_tsv"
+    "$PSQL_BIN" -X -A -t -q -f "$sql_cell_file" > "$sql_results_file"
+  else
+    if (( WARMUP_PASSES > 0 )); then
+      for ((warmup_pass = 1; warmup_pass <= WARMUP_PASSES; warmup_pass++)); do
+        echo "[warmup] ef_search=${ef} pass ${warmup_pass}/${WARMUP_PASSES}" >&2
+        while IFS= read -r query_line; do
+          [[ -z "$query_line" ]] && continue
+          "$PSQL_BIN" -X -A -t -q > /dev/null <<SQL
+SET tqhnsw.ef_search = ${ef};
+SELECT id FROM ${CORPUS_TABLE}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${RESULT_LIMIT};
+SQL
+        done < "$queries_tsv"
+      done
+    fi
+
+    while IFS= read -r query_line; do
+      [[ -z "$query_line" ]] && continue
+      if [[ "$TIMING_MODE" == "explain" ]]; then
+        "$PSQL_BIN" -X -A -t -q <<SQL >> "$sql_results_file"
+SET tqhnsw.ef_search = ${ef};
+EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
+SELECT id FROM ${CORPUS_TABLE}
+ORDER BY embedding <#> '${query_line}'::real[]
+LIMIT ${RESULT_LIMIT};
+SQL
+      else
+        "$PSQL_BIN" -X -A -t -q <<SQL >> "$sql_results_file"
+SET tqhnsw.ef_search = ${ef};
+WITH started AS (
+  SELECT clock_timestamp() AS t0
+),
+measured AS MATERIALIZED (
+  SELECT id FROM ${CORPUS_TABLE}
+  ORDER BY embedding <#> '${query_line}'::real[]
+  LIMIT ${RESULT_LIMIT}
+),
+finished AS (
+  SELECT clock_timestamp() AS t1, count(*) AS rows_seen FROM measured
+)
+SELECT extract(epoch FROM (finished.t1 - started.t0)) * 1000.0
+FROM started, finished;
+SQL
+      fi
+    done < "$queries_tsv"
+  fi
+
+  while IFS= read -r query_line; do
+    [[ -z "$query_line" ]] && continue
     "$PSQL_BIN" -X -A -t -q <<SQL >> "$encode_results_file"
 WITH started AS (
   SELECT clock_timestamp() AS t0
@@ -413,7 +515,8 @@ SQL
     "$hot_path_rows_file" \
     "$heap_fetch_rows_file" \
     "$ef" \
-    "$OUTPUT_FILE" <<'PY'
+    "$OUTPUT_FILE" \
+    "$TIMING_MODE" <<'PY'
 import json
 import statistics
 import sys
@@ -427,6 +530,7 @@ import sys
     heap_fetch_rows_path,
     ef_str,
     output_path,
+    timing_mode,
 ) = sys.argv[1:]
 
 
@@ -478,7 +582,10 @@ def parse_tsv_rows(path: str, width: int) -> list[list[float]]:
     return rows
 
 
-sql_times_ms = parse_explain_times(sql_results_path)
+if timing_mode == "explain":
+    sql_times_ms = parse_explain_times(sql_results_path)
+else:
+    sql_times_ms = parse_float_lines(sql_results_path)
 encode_times_ms = parse_float_lines(encode_results_path)
 profile_rows = parse_tsv_rows(profile_rows_path, 5)
 hot_path_rows = parse_tsv_rows(hot_path_rows_path, 6)
@@ -580,5 +687,5 @@ if output_path:
 PY
 done
 
-rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"
+rm -f "$queries_tsv" "$sql_cell_file" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"
 trap - EXIT

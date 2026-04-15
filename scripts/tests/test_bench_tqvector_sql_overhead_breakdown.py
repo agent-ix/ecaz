@@ -41,6 +41,24 @@ def extract_ef(sql: str) -> int | None:
     return None
 
 
+def strip_output_redirect(stmt: str) -> str:
+    normalized = " ".join(stmt.split())
+    if normalized == "\\o":
+        return ""
+    if normalized.startswith("\\o "):
+        rest = normalized[3:].lstrip()
+        if not rest:
+            return ""
+        first = rest.split(None, 1)[0].upper()
+        if first in {"SET", "SELECT", "WITH", "EXPLAIN"}:
+            return rest
+        parts = rest.split(None, 1)
+        if len(parts) == 2:
+            return parts[1]
+        return ""
+    return normalized
+
+
 def log_event(kind: str, ef: int | None) -> None:
     log_path = os.environ.get("TQV_FAKE_PSQL_LOG")
     if not log_path:
@@ -77,7 +95,9 @@ if len(statements) > 1:
     current_ef = None
     outputs = []
     for stmt in statements:
-        normalized_stmt = " ".join(stmt.split())
+        normalized_stmt = strip_output_redirect(stmt)
+        if not normalized_stmt:
+            continue
         if normalized_stmt.startswith("SET tqhnsw.ef_search ="):
             current_ef = extract_ef(stmt)
         elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized_stmt:
@@ -92,6 +112,14 @@ if len(statements) > 1:
             ef = current_ef or 0
             log_event("measure_encode", ef)
             outputs.append("0.75")
+        elif (
+            "WITH started AS" in normalized_stmt
+            and "encode_to_tqvector(" not in normalized_stmt
+            and f"SELECT id FROM {corpus_table}" in normalized_stmt
+        ):
+            ef = current_ef or 0
+            log_event("measure_sql_plain", ef)
+            outputs.append(str(float(100 + ef)))
         elif "tests.tqhnsw_debug_scan_profile_limited" in normalized_stmt:
             ef = current_ef or 0
             log_event("profile", ef)
@@ -152,6 +180,14 @@ elif "encode_to_tqvector(" in normalized:
     ef = extract_ef(sql) or 0
     log_event("measure_encode", ef)
     print("0.75")
+elif (
+    "WITH started AS" in normalized
+    and "encode_to_tqvector(" not in normalized
+    and f"SELECT id FROM {corpus_table}" in normalized
+):
+    ef = extract_ef(sql) or 0
+    log_event("measure_sql_plain", ef)
+    print(str(float(100 + ef)))
 elif "tests.tqhnsw_debug_scan_profile_limited" in normalized:
     ef = extract_ef(sql) or 0
     log_event("profile", ef)
@@ -192,6 +228,8 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         fallback_ef: str | None,
         warmup_passes: str | None = None,
         log_file: Path | None = None,
+        session_mode: str | None = None,
+        timing_mode: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         summary_file = self.tmp_dir / "summary.txt"
         env = os.environ.copy()
@@ -232,6 +270,10 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         ]
         if warmup_passes is not None:
             args.extend(["--warmup-passes", warmup_passes])
+        if session_mode is not None:
+            args.extend(["--session-mode", session_mode])
+        if timing_mode is not None:
+            args.extend(["--timing-mode", timing_mode])
 
         return subprocess.run(
             args,
@@ -286,6 +328,27 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         self.assertIn("profile:40", events)
         self.assertIn("hot_path:40", events)
         self.assertIn("heap_fetch:40", events)
+
+    def test_breakdown_supports_per_cell_plain_server_sql_timing(self) -> None:
+        log_file = self.tmp_dir / "plain_events.log"
+        result = self._run_bench(
+            ef_search="40",
+            fallback_ef=None,
+            log_file=log_file,
+            session_mode="per-cell",
+            timing_mode="plain-server",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary_lines = (self.tmp_dir / "summary.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(summary_lines), 1, summary_lines)
+        self.assertIn("ef_search=40", summary_lines[0])
+        self.assertIn("sql_mean=140.000ms", summary_lines[0])
+        self.assertIn("executor_like_total_mean=3.100ms", summary_lines[0])
+
+        events = log_file.read_text(encoding="utf-8").splitlines()
+        self.assertIn("plan:40", events)
+        self.assertIn("measure_sql_plain:40", events)
 
 
 if __name__ == "__main__":
