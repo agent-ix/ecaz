@@ -317,6 +317,9 @@ type DebugScanProfile = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugScanHeapFetchProfile = (i64, i64, i64, i64, i64, i32, i32, i32);
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -836,6 +839,137 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
             .expect("counter should fit in i32"),
         i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_exact_candidates)
             .expect("counter should fit in i32"),
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    result_limit: usize,
+    project_attnum: Option<i32>,
+) -> DebugScanHeapFetchProfile {
+    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("debug heap-fetch profile could not resolve heap relation for index {index_oid}");
+    }
+
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let mut registered_snapshot = ptr::null_mut();
+    let mut pushed_registered_snapshot = false;
+    let snapshot = {
+        let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if active_snapshot.is_null() {
+            registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+            unsafe { pg_sys::PushActiveSnapshot(registered_snapshot) };
+            pushed_registered_snapshot = true;
+            registered_snapshot
+        } else {
+            active_snapshot
+        }
+    };
+
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        unsafe {
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug heap-fetch profile failed to allocate tuple slot");
+    }
+
+    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
+    if scan.is_null() {
+        unsafe {
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug heap-fetch profile failed to begin index scan");
+    }
+
+    let total_started = Instant::now();
+    let rescan_started = Instant::now();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
+        .expect("rescan timing should fit in i64");
+
+    let emit_started = Instant::now();
+    let mut result_count = 0_i32;
+    let mut slot_fetch_count = 0_i32;
+    let mut projected_count = 0_i32;
+    let mut slot_fetch_elapsed_us = 0_i64;
+    let mut projection_elapsed_us = 0_i64;
+    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit {
+        let slot_fetch_started = Instant::now();
+        let found = unsafe {
+            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
+        };
+        slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
+            .expect("slot-fetch timing should fit in i64");
+        if !found {
+            break;
+        }
+
+        result_count += 1;
+        slot_fetch_count += 1;
+        if let Some(attnum) = project_attnum {
+            let projection_started = Instant::now();
+            let mut isnull = false;
+            let _ = unsafe { pg_sys::slot_getattr(slot, attnum, &mut isnull) };
+            projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
+                .expect("projection timing should fit in i64");
+            projected_count += 1;
+        }
+        unsafe {
+            pg_sys::ExecClearTuple(slot);
+        }
+    }
+    let emit_elapsed_us =
+        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let total_elapsed_us =
+        i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
+
+    unsafe {
+        pg_sys::index_endscan(scan);
+        pg_sys::ExecDropSingleTupleTableSlot(slot);
+        if pushed_registered_snapshot {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(registered_snapshot);
+        }
+        pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+    }
+
+    (
+        rescan_elapsed_us,
+        emit_elapsed_us,
+        total_elapsed_us,
+        slot_fetch_elapsed_us,
+        projection_elapsed_us,
+        result_count,
+        slot_fetch_count,
+        projected_count,
     )
 }
 

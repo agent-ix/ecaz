@@ -13,8 +13,8 @@ Usage:
       --query-table <table> \
       --index-name <index> \
       [--bits N] [--seed N] [--ef-search csv] [--query-limit N] \
-      [--result-limit K] [--cache-state LABEL] [--warmup-passes N] \
-      [--output FILE]
+      [--result-limit K] [--project-attnum N] [--cache-state LABEL] \
+      [--warmup-passes N] [--output FILE]
 
 Options:
   --corpus-table  tqvector corpus table to scan. Must expose:
@@ -30,6 +30,9 @@ Options:
                   all rows in --query-table.
   --result-limit  Ordered scan limit used for SQL and limited internal scan
                   profiling. Default: 10.
+  --project-attnum
+                  Heap attribute number to project during the executor-like
+                  slot-fetch profile. Default: 1.
   --cache-state   Free-form label recorded in the stdout banner. Default:
                   unspecified.
   --warmup-passes Number of full query-set warmup passes before timing each
@@ -39,9 +42,10 @@ Options:
 
 Notes:
   - Requires tests.tqhnsw_debug_scan_profile_limited(...) and
-    tests.tqhnsw_debug_scan_hot_path_profile(...). On the scratch cluster,
-    refresh them with scripts/refresh_adr030_scratch_debug_helpers.sh after a
-    new pg_test install.
+    tests.tqhnsw_debug_scan_hot_path_profile(...) and
+    tests.tqhnsw_debug_scan_heap_fetch_profile(...). On the scratch cluster,
+    refresh them with scripts/refresh_adr030_scratch_debug_helpers.sh after
+    a new pg_test install.
 USAGE
 }
 
@@ -53,6 +57,7 @@ SEED="42"
 EF_SEARCH_CSV="40,64,128,320"
 QUERY_LIMIT=""
 RESULT_LIMIT="10"
+PROJECT_ATTNUM="1"
 CACHE_STATE="unspecified"
 WARMUP_PASSES="0"
 OUTPUT_FILE=""
@@ -75,6 +80,8 @@ while [[ $# -gt 0 ]]; do
       QUERY_LIMIT="$2"; shift 2 ;;
     --result-limit)
       RESULT_LIMIT="$2"; shift 2 ;;
+    --project-attnum)
+      PROJECT_ATTNUM="$2"; shift 2 ;;
     --cache-state)
       CACHE_STATE="$2"; shift 2 ;;
     --warmup-passes)
@@ -198,6 +205,10 @@ if [[ ! "$RESULT_LIMIT" =~ ^[0-9]+$ ]]; then
   echo "invalid result limit: $RESULT_LIMIT" >&2
   exit 2
 fi
+if [[ ! "$PROJECT_ATTNUM" =~ ^[0-9]+$ ]]; then
+  echo "invalid project attnum: $PROJECT_ATTNUM" >&2
+  exit 2
+fi
 if [[ ! "$WARMUP_PASSES" =~ ^[0-9]+$ ]]; then
   echo "invalid warmup pass count: $WARMUP_PASSES" >&2
   exit 2
@@ -223,6 +234,9 @@ require_regprocedure \
 require_regprocedure \
   "tests.tqhnsw_debug_scan_hot_path_profile(oid,real[])" \
   "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
+require_regprocedure \
+  "tests.tqhnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)" \
+  "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
 
 echo "=== tqvector SQL overhead breakdown ==="
 echo "Database:     ${PGDATABASE:-(libpq default)}"
@@ -233,6 +247,7 @@ echo "bits:         $BITS"
 echo "seed:         $SEED"
 echo "ef_search:    $EF_SEARCH_CSV"
 echo "result limit: $RESULT_LIMIT"
+echo "project attnum: $PROJECT_ATTNUM"
 if [[ -n "$QUERY_LIMIT" ]]; then
   echo "query limit:  $QUERY_LIMIT"
 fi
@@ -261,7 +276,8 @@ sql_results_file="$(mktemp -t tqv_overhead_sql.XXXXXX.txt)"
 encode_results_file="$(mktemp -t tqv_overhead_encode.XXXXXX.txt)"
 profile_rows_file="$(mktemp -t tqv_overhead_profile.XXXXXX.tsv)"
 hot_path_rows_file="$(mktemp -t tqv_overhead_hot.XXXXXX.tsv)"
-trap 'rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file"' EXIT
+heap_fetch_rows_file="$(mktemp -t tqv_overhead_heap.XXXXXX.tsv)"
+trap 'rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"' EXIT
 
 query_select="SELECT source FROM ${QUERY_TABLE} ORDER BY id"
 if [[ -n "$QUERY_LIMIT" ]]; then
@@ -367,11 +383,35 @@ CROSS JOIN LATERAL tests.tqhnsw_debug_scan_hot_path_profile(
 ) AS p;
 SQL
 
+  "$PSQL_BIN" -X -A -F $'\t' -t -q <<SQL > "$heap_fetch_rows_file"
+SET tqhnsw.ef_search = ${ef};
+SELECT
+  p.rescan_elapsed_us,
+  p.emit_elapsed_us,
+  p.total_elapsed_us,
+  p.slot_fetch_elapsed_us,
+  p.projection_elapsed_us,
+  p.result_count,
+  p.slot_fetch_count,
+  p.projected_count
+FROM (
+  SELECT source FROM ${QUERY_TABLE} ORDER BY id
+  LIMIT ${query_count}
+) AS q
+CROSS JOIN LATERAL tests.tqhnsw_debug_scan_heap_fetch_profile(
+  '${INDEX_NAME}'::regclass::oid,
+  q.source,
+  ${RESULT_LIMIT},
+  ${PROJECT_ATTNUM}
+) AS p;
+SQL
+
   python3 - \
     "$sql_results_file" \
     "$encode_results_file" \
     "$profile_rows_file" \
     "$hot_path_rows_file" \
+    "$heap_fetch_rows_file" \
     "$ef" \
     "$OUTPUT_FILE" <<'PY'
 import json
@@ -379,7 +419,15 @@ import statistics
 import sys
 
 
-sql_results_path, encode_results_path, profile_rows_path, hot_path_rows_path, ef_str, output_path = sys.argv[1:]
+(
+    sql_results_path,
+    encode_results_path,
+    profile_rows_path,
+    hot_path_rows_path,
+    heap_fetch_rows_path,
+    ef_str,
+    output_path,
+) = sys.argv[1:]
 
 
 def parse_explain_times(path: str) -> list[float]:
@@ -434,6 +482,7 @@ sql_times_ms = parse_explain_times(sql_results_path)
 encode_times_ms = parse_float_lines(encode_results_path)
 profile_rows = parse_tsv_rows(profile_rows_path, 5)
 hot_path_rows = parse_tsv_rows(hot_path_rows_path, 6)
+heap_fetch_rows = parse_tsv_rows(heap_fetch_rows_path, 8)
 
 if not sql_times_ms:
     raise SystemExit("no SQL timings parsed")
@@ -443,13 +492,21 @@ if not profile_rows:
     raise SystemExit("no limited scan-profile rows parsed")
 if not hot_path_rows:
     raise SystemExit("no hot-path rows parsed")
+if not heap_fetch_rows:
+    raise SystemExit("no heap-fetch rows parsed")
 
 expected_n = len(sql_times_ms)
-if len(encode_times_ms) != expected_n or len(profile_rows) != expected_n or len(hot_path_rows) != expected_n:
+if (
+    len(encode_times_ms) != expected_n
+    or len(profile_rows) != expected_n
+    or len(hot_path_rows) != expected_n
+    or len(heap_fetch_rows) != expected_n
+):
     raise SystemExit(
         "measurement row-count mismatch: "
         f"sql={len(sql_times_ms)} encode={len(encode_times_ms)} "
-        f"profile={len(profile_rows)} hot={len(hot_path_rows)}"
+        f"profile={len(profile_rows)} hot={len(hot_path_rows)} "
+        f"heap={len(heap_fetch_rows)}"
     )
 
 
@@ -474,7 +531,17 @@ prepare_query_mean_ms = mean_column(hot_path_rows, 2, scale=1000.0)
 frontier_consume_mean_ms = mean_column(hot_path_rows, 3, scale=1000.0)
 graph_materialize_mean_ms = mean_column(hot_path_rows, 4, scale=1000.0)
 candidate_score_mean_ms = mean_column(hot_path_rows, 5, scale=1000.0)
+slot_fetch_rescan_mean_ms = mean_column(heap_fetch_rows, 0, scale=1000.0)
+slot_fetch_emit_mean_ms = mean_column(heap_fetch_rows, 1, scale=1000.0)
+executor_like_total_mean_ms = mean_column(heap_fetch_rows, 2, scale=1000.0)
+slot_fetch_total_mean_ms = mean_column(heap_fetch_rows, 3, scale=1000.0)
+projection_mean_ms = mean_column(heap_fetch_rows, 4, scale=1000.0)
+slot_fetch_result_count_mean = mean_column(heap_fetch_rows, 5)
+slot_fetch_count_mean = mean_column(heap_fetch_rows, 6)
+projected_count_mean = mean_column(heap_fetch_rows, 7)
+executor_like_over_internal_ms = executor_like_total_mean_ms - internal_total_mean_ms
 residual_sql_over_internal_ms = sql_mean_ms - internal_total_mean_ms
+residual_sql_over_executor_like_ms = sql_mean_ms - executor_like_total_mean_ms
 residual_after_encode_ms = residual_sql_over_internal_ms - encode_mean_ms
 
 line = (
@@ -491,9 +558,19 @@ line = (
     f"frontier_mean={frontier_consume_mean_ms:.3f}ms "
     f"graph_materialize_mean={graph_materialize_mean_ms:.3f}ms "
     f"candidate_score_mean={candidate_score_mean_ms:.3f}ms "
+    f"executor_like_total_mean={executor_like_total_mean_ms:.3f}ms "
+    f"slot_fetch_total_mean={slot_fetch_total_mean_ms:.3f}ms "
+    f"projection_mean={projection_mean_ms:.3f}ms "
+    f"slot_fetch_rescan_mean={slot_fetch_rescan_mean_ms:.3f}ms "
+    f"slot_fetch_emit_mean={slot_fetch_emit_mean_ms:.3f}ms "
     f"limited_results_mean={limited_result_count_mean:.2f} "
     f"limited_heap_tids_mean={limited_heap_tids_mean:.2f} "
+    f"slot_fetch_results_mean={slot_fetch_result_count_mean:.2f} "
+    f"slot_fetch_count_mean={slot_fetch_count_mean:.2f} "
+    f"projected_count_mean={projected_count_mean:.2f} "
+    f"executor_like_over_internal={executor_like_over_internal_ms:.3f}ms "
     f"residual_sql_over_internal={residual_sql_over_internal_ms:.3f}ms "
+    f"residual_sql_over_executor_like={residual_sql_over_executor_like_ms:.3f}ms "
     f"residual_after_encode={residual_after_encode_ms:.3f}ms"
 )
 print(line)
@@ -503,5 +580,5 @@ if output_path:
 PY
 done
 
-rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file"
+rm -f "$queries_tsv" "$sql_results_file" "$encode_results_file" "$profile_rows_file" "$hot_path_rows_file" "$heap_fetch_rows_file"
 trap - EXIT

@@ -100,6 +100,31 @@ BEGIN
         module_path
     );
 
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_heap_fetch_profile"(oid, real[], integer, integer)';
+
+    EXECUTE format(
+        $fmt$
+        CREATE FUNCTION tests."tqhnsw_debug_scan_heap_fetch_profile"(
+            index_oid oid,
+            query real[],
+            limit_count integer,
+            project_attnum integer
+        ) RETURNS TABLE (
+            rescan_elapsed_us bigint,
+            emit_elapsed_us bigint,
+            total_elapsed_us bigint,
+            slot_fetch_elapsed_us bigint,
+            projection_elapsed_us bigint,
+            result_count integer,
+            slot_fetch_count integer,
+            projected_count integer
+        )
+        LANGUAGE c STRICT
+        AS %L, 'tqhnsw_debug_scan_heap_fetch_profile_wrapper'
+        $fmt$,
+        module_path
+    );
+
     EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_adr030_runtime_settings"()';
 
     EXECUTE format(

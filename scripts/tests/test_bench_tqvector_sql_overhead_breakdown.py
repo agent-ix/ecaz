@@ -100,6 +100,10 @@ if len(statements) > 1:
             ef = current_ef or 0
             log_event("hot_path", ef)
             outputs.append("1800\\t25\\t30\\t900\\t120\\t450")
+        elif "tests.tqhnsw_debug_scan_heap_fetch_profile" in normalized_stmt:
+            ef = current_ef or 0
+            log_event("heap_fetch", ef)
+            outputs.append("2100\\t700\\t3100\\t700\\t200\\t10\\t10\\t10")
         elif f"SELECT id FROM {corpus_table}" in normalized_stmt:
             ef = current_ef or 0
             log_event("warmup", ef)
@@ -134,6 +138,8 @@ elif "to_regprocedure('tests.tqhnsw_debug_scan_profile_limited(oid,real[],intege
     print("t")
 elif "to_regprocedure('tests.tqhnsw_debug_scan_hot_path_profile(oid,real[])')" in normalized:
     print("t")
+elif "to_regprocedure('tests.tqhnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)')" in normalized:
+    print("t")
 elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized:
     ef = extract_ef(sql) or 0
     log_event("measure_sql", ef)
@@ -154,6 +160,10 @@ elif "tests.tqhnsw_debug_scan_hot_path_profile" in normalized:
     ef = extract_ef(sql) or 0
     log_event("hot_path", ef)
     print("1800\\t25\\t30\\t900\\t120\\t450")
+elif "tests.tqhnsw_debug_scan_heap_fetch_profile" in normalized:
+    ef = extract_ef(sql) or 0
+    log_event("heap_fetch", ef)
+    print("2100\\t700\\t3100\\t700\\t200\\t10\\t10\\t10")
 elif f"SELECT id FROM {corpus_table}" in normalized:
     ef = extract_ef(sql) or 0
     log_event("warmup", ef)
@@ -260,7 +270,12 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         self.assertIn("sql_mean=140.000ms", summary_lines[0])
         self.assertIn("encode_mean=0.750ms", summary_lines[0])
         self.assertIn("internal_total_mean=2.600ms", summary_lines[0])
+        self.assertIn("executor_like_total_mean=3.100ms", summary_lines[0])
+        self.assertIn("slot_fetch_total_mean=0.700ms", summary_lines[0])
+        self.assertIn("projection_mean=0.200ms", summary_lines[0])
+        self.assertIn("executor_like_over_internal=0.500ms", summary_lines[0])
         self.assertIn("residual_sql_over_internal=137.400ms", summary_lines[0])
+        self.assertIn("residual_sql_over_executor_like=136.900ms", summary_lines[0])
         self.assertIn("residual_after_encode=136.650ms", summary_lines[0])
 
         events = log_file.read_text(encoding="utf-8").splitlines()
@@ -270,6 +285,7 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         self.assertIn("measure_encode:0", events)
         self.assertIn("profile:40", events)
         self.assertIn("hot_path:40", events)
+        self.assertIn("heap_fetch:40", events)
 
 
 if __name__ == "__main__":

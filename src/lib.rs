@@ -8773,6 +8773,71 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_scan_heap_fetch_profile_projects_rows() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_heap_fetch_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_heap_fetch_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_heap_fetch_fixture_idx \
+             ON tqhnsw_debug_scan_heap_fetch_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (result_count, slot_fetch_count, projected_count) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT result_count, slot_fetch_count, projected_count
+                     FROM tests.tqhnsw_debug_scan_heap_fetch_profile(
+                         'tqhnsw_debug_scan_heap_fetch_fixture_idx'::regclass::oid,
+                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                         2,
+                         1
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("heap-fetch profile query should succeed")
+                .next()
+                .expect("heap-fetch profile query should return one row");
+            (
+                row["result_count"]
+                    .value::<i32>()
+                    .expect("result count should decode")
+                    .expect("result count should be non-null"),
+                row["slot_fetch_count"]
+                    .value::<i32>()
+                    .expect("slot fetch count should decode")
+                    .expect("slot fetch count should be non-null"),
+                row["projected_count"]
+                    .value::<i32>()
+                    .expect("projected count should decode")
+                    .expect("projected count should be non-null"),
+            )
+        });
+
+        assert_eq!(result_count, 2, "helper should stop after the requested row limit");
+        assert_eq!(
+            slot_fetch_count, 2,
+            "helper should fetch one visible heap tuple into the slot for each returned row on this simple fixture",
+        );
+        assert_eq!(
+            projected_count, 2,
+            "helper should project the requested heap attribute for each fetched row",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_reachable_live_count_matches_admin_snapshot() {
         Spi::run(
             "CREATE TABLE tqhnsw_debug_reachable_live_fixture \
@@ -14803,6 +14868,70 @@ mod tests {
             total_heap_tids_returned,
             total_quantizer_cache_hit,
             total_emitted_elements,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_heap_fetch_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+        project_attnum: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(slot_fetch_elapsed_us, i64),
+            name!(projection_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(slot_fetch_count, i32),
+            name!(projected_count, i32),
+        ),
+    > {
+        if limit_count < 0 {
+            pgrx::error!("limit_count must be non-negative");
+        }
+        if project_attnum < 0 {
+            pgrx::error!("project_attnum must be non-negative");
+        }
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_heap_fetch_profile")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
+        ) = unsafe {
+            am::debug_profile_ordered_scan_with_heap_fetch(
+                index_oid,
+                query,
+                usize::try_from(limit_count).expect("limit count should fit in usize"),
+                (project_attnum > 0).then_some(project_attnum),
+            )
+        };
+
+        TableIterator::once((
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
         ))
     }
 
