@@ -21,6 +21,8 @@ const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
 const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
 const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
+const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
 const ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
 const ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW: usize = 16;
 const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
@@ -606,6 +608,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 u8::try_from(ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW)
                     .expect("default grouped live rerank window should fit in u8")
             };
+            opaque.grouped_exact_traversal = matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::GroupedV2(_)
+            ) && resolve_grouped_exact_traversal_enabled();
             opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
@@ -710,6 +716,14 @@ fn validate_runtime_scan_format(
 
 fn experimental_grouped_v2_scan_enabled() -> bool {
     std::env::var_os(ADR030_EXPERIMENTAL_SCAN_ENV).is_some()
+}
+
+fn experimental_grouped_v2_exact_traversal_enabled() -> bool {
+    std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV).is_some()
+}
+
+fn resolve_grouped_exact_traversal_enabled() -> bool {
+    experimental_grouped_v2_exact_traversal_enabled()
 }
 
 fn resolve_grouped_live_rerank_window() -> usize {
@@ -1401,6 +1415,16 @@ unsafe fn score_grouped_candidate_context(
     opaque: *mut TqScanOpaque,
     grouped: GroupedScoreContext<'_>,
 ) -> f32 {
+    if unsafe { (&*opaque).grouped_exact_traversal } {
+        let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "tqhnsw grouped-v2 traversal scoring requires metadata-aligned cold payload"
+                )
+            });
+        return unsafe { score_grouped_rerank_payload_from_scan_state(opaque, &payload) };
+    }
+
     let _ = index_relation;
     let search_code = grouped_score_search_code(grouped).unwrap_or_else(|| {
         panic!("grouped approximate scoring requires metadata-aligned grouped search codes")
@@ -3312,6 +3336,7 @@ pub(super) struct TqScanOpaque {
         [BufferedGroupedScanResult; ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
     grouped_live_rerank_buffer_len: u8,
     grouped_live_rerank_window: u8,
+    grouped_exact_traversal: bool,
     grouped_live_rerank_next_approx_rank: i32,
     pub(super) last_emitted_approx_score: f32,
     pub(super) last_emitted_approx_score_valid: bool,
@@ -3361,6 +3386,7 @@ impl Default for TqScanOpaque {
                 ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
             grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
+            grouped_exact_traversal: false,
             grouped_live_rerank_next_approx_rank: 1,
             last_emitted_approx_score: 0.0,
             last_emitted_approx_score_valid: false,
