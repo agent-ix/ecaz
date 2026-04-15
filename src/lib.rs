@@ -3508,6 +3508,10 @@ mod tests {
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
+        let _score_mode_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
+            "binary",
+        );
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = ScopedEnvVar::set(
@@ -3550,6 +3554,16 @@ mod tests {
             .as_deref(),
             Some("8"),
             "the runtime settings probe should surface the configured grouped scan window",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_scan_score_mode
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("binary"),
+            "the runtime settings probe should surface the configured grouped traversal score mode",
         );
         assert_eq!(
             Spi::get_one::<bool>(
@@ -3673,6 +3687,95 @@ mod tests {
             ),
             (0, 0, 0, 0, 0),
             "grouped approximate scans should leave grouped exact traversal counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_binary_score_mode_bypasses_grouped_pq_scoring() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _score_mode_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
+            "binary",
+        );
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_profile_binary_score_mode",
+            "tqhnsw_grouped_v2_runtime_profile_binary_score_mode_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+
+        assert!(
+            result_count > 0,
+            "binary grouped traversal score mode should still emit ordered results",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_approx_score_calls,
+                grouped_traversal_approx_score_elapsed_us,
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0, 0, 0),
+            "binary grouped traversal score mode should bypass grouped PQ scoring and leave exact-traversal counters inert without the exact gate",
         );
     }
 
@@ -3878,6 +3981,26 @@ mod tests {
             (0, 0, 0),
             "frontier-head grouped exact traversal should not use the per-expansion budget path",
         );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw grouped-v2 traversal score mode must be one of [pq, binary], got \"bogus\""
+    )]
+    fn test_grouped_v2_traversal_score_mode_rejects_invalid_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _score_mode_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
+            "bogus",
+        );
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_invalid_score_mode",
+            "tqhnsw_grouped_v2_runtime_invalid_score_mode_idx",
+        );
+
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
     }
 
     #[pg_test]
@@ -14470,6 +14593,7 @@ mod tests {
             name!(grouped_build_enabled, bool),
             name!(grouped_scan_enabled, bool),
             name!(grouped_scan_window, Option<String>),
+            name!(grouped_scan_score_mode, Option<String>),
             name!(grouped_exact_traversal_enabled, bool),
             name!(grouped_exact_traversal_scope, Option<String>),
             name!(grouped_exact_traversal_strategy, Option<String>),
@@ -14480,6 +14604,8 @@ mod tests {
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
+                .map(|value| value.to_string_lossy().into_owned()),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")

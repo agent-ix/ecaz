@@ -21,6 +21,8 @@ const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
 const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
 const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
+const ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
@@ -433,6 +435,13 @@ enum GroupedExactTraversalStrategy {
     FrontierHead = 1,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedTraversalScoreMode {
+    GroupedPq = 0,
+    Binary = 1,
+}
+
 struct BinaryPrefilterCandidate {
     ordinal: usize,
     element: Arc<CachedGraphElement>,
@@ -692,6 +701,14 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 u8::try_from(ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW)
                     .expect("default grouped live rerank window should fit in u8")
             };
+            opaque.grouped_traversal_score_mode = if matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::GroupedV2(_)
+            ) {
+                resolve_grouped_traversal_score_mode()
+            } else {
+                GroupedTraversalScoreMode::GroupedPq
+            };
             opaque.grouped_exact_traversal_mode = if matches!(
                 opaque.scan_graph_storage,
                 graph::GraphStorageDescriptor::GroupedV2(_)
@@ -820,6 +837,25 @@ fn experimental_grouped_v2_scan_enabled() -> bool {
 
 fn experimental_grouped_v2_exact_traversal_enabled() -> bool {
     std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV).is_some()
+}
+
+fn resolve_grouped_traversal_score_mode() -> GroupedTraversalScoreMode {
+    let Some(raw_mode) = std::env::var_os(ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV) else {
+        return GroupedTraversalScoreMode::GroupedPq;
+    };
+
+    match raw_mode.to_string_lossy().as_ref() {
+        "pq" => GroupedTraversalScoreMode::GroupedPq,
+        "binary" => GroupedTraversalScoreMode::Binary,
+        other => pgrx::error!(
+            "tqhnsw grouped-v2 traversal score mode must be one of [pq, binary], got {:?}",
+            other
+        ),
+    }
+}
+
+fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
+    opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
 }
 
 fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
@@ -1055,14 +1091,21 @@ fn store_scan_prepared_query(
         metadata.seed,
     );
     let prepared = quantizer.prepare_ip_query(query);
-    let binary_prepared = (!super::options::disable_binary_prefilter()
-        && quantizer.binary_sign_no_qjl_4bit_supported())
-    .then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
+    let binary_query_requested = quantizer.binary_sign_no_qjl_4bit_supported()
+        && (grouped_binary_traversal_score_enabled(opaque)
+            || !super::options::disable_binary_prefilter());
+    let binary_prepared =
+        binary_query_requested.then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
     opaque.binary_sign_query = binary_prepared
         .map(|prepared| Box::into_raw(Box::new(prepared)))
         .unwrap_or(ptr::null_mut());
     opaque.cached_quantizer = Arc::into_raw(quantizer);
+    if grouped_binary_traversal_score_enabled(opaque) && opaque.binary_sign_query.is_null() {
+        pgrx::error!(
+            "tqhnsw grouped-v2 binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
+        );
+    }
     if cache_hit {
         opaque.explain_counters.record_quantizer_cache_hit();
     }
@@ -1677,6 +1720,23 @@ unsafe fn score_grouped_candidate_context_approx(
     score
 }
 
+unsafe fn score_grouped_candidate_context_binary(
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    assert_eq!(
+        grouped.call.input.binary_words.len(),
+        grouped.call.shape.binary_word_count,
+        "grouped binary traversal scoring requires metadata-aligned binary sidecars",
+    );
+    let opaque = unsafe { &*opaque };
+    let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
+        pgrx::error!("tqhnsw grouped-v2 binary traversal scoring requires a prepared binary query")
+    });
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
+}
+
 unsafe fn score_budgeted_grouped_traversal_candidates(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
@@ -1724,14 +1784,16 @@ unsafe fn score_grouped_candidate_context(
     grouped: GroupedScoreContext<'_>,
     traversal_layer: u8,
 ) -> f32 {
-    if grouped_exact_traversal_full_candidate_scoring_for_layer(
-        unsafe { &*opaque },
-        traversal_layer,
-    ) {
+    let opaque_ref = unsafe { &*opaque };
+    if grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer) {
         return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
     }
 
     let _ = index_relation;
+    if grouped_binary_traversal_score_enabled(opaque_ref) {
+        return unsafe { score_grouped_candidate_context_binary(opaque, grouped) };
+    }
+
     unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
 }
 
@@ -1987,15 +2049,27 @@ where
             CandidateScoreDispatch::Grouped(grouped) => {
                 if let Some(grouped_candidates) = grouped_candidates.as_mut() {
                     let approx_score =
-                        unsafe { score_grouped_candidate_context_approx(opaque, grouped) };
+                        if grouped_binary_traversal_score_enabled(unsafe { &*opaque }) {
+                            candidate.approx_score
+                        } else {
+                            unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
+                        };
                     grouped_candidates.push(GroupedTraversalCandidate {
                         ordinal: candidate.ordinal,
                         element: candidate.element,
                         approx_score,
                     });
                 } else {
-                    let score = unsafe {
-                        score_grouped_candidate_context(index_relation, opaque, grouped, layer)
+                    let score = if grouped_binary_traversal_score_enabled(unsafe { &*opaque })
+                        && !grouped_exact_traversal_full_candidate_scoring_for_layer(
+                            unsafe { &*opaque },
+                            layer,
+                        ) {
+                        candidate.approx_score
+                    } else {
+                        unsafe {
+                            score_grouped_candidate_context(index_relation, opaque, grouped, layer)
+                        }
                     };
                     candidates.push(search::BeamCandidate::with_source(
                         candidate.element.tid,
@@ -3805,6 +3879,7 @@ pub(super) struct TqScanOpaque {
         [BufferedGroupedScanResult; ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
     grouped_live_rerank_buffer_len: u8,
     grouped_live_rerank_window: u8,
+    grouped_traversal_score_mode: GroupedTraversalScoreMode,
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
     grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
@@ -3857,6 +3932,7 @@ impl Default for TqScanOpaque {
                 ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
             grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
+            grouped_traversal_score_mode: GroupedTraversalScoreMode::GroupedPq,
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
             grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,

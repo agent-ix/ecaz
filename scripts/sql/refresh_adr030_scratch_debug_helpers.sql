@@ -69,6 +69,7 @@ BEGIN
             grouped_build_enabled boolean,
             grouped_scan_enabled boolean,
             grouped_scan_window text,
+            grouped_scan_score_mode text,
             grouped_exact_traversal_enabled boolean,
             grouped_exact_traversal_scope text,
             grouped_exact_traversal_strategy text,
