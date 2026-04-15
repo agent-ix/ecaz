@@ -685,6 +685,15 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugScanProfile {
+    unsafe { debug_profile_ordered_scan_with_limit(index_oid, query, None) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    result_limit: Option<usize>,
+) -> DebugScanProfile {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
@@ -716,7 +725,10 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
 
     let emit_started = Instant::now();
     let mut result_count = 0_i32;
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    let result_limit = result_limit.unwrap_or(usize::MAX);
+    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit
+        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+    {
         result_count += 1;
     }
     let emit_elapsed_us =

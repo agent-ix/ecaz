@@ -8694,6 +8694,85 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_scan_profile_limit_stops_early() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_profile_limited_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_profile_limited_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_profile_limited_fixture_idx \
+             ON tqhnsw_debug_scan_profile_limited_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let full_result_count = Spi::get_one::<i32>(
+            "SELECT tests.tqhnsw_debug_scan_result_count(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+             )",
+        )
+        .expect("full result-count query should succeed")
+        .expect("full result-count query should return a row");
+        let limited_result_count = Spi::get_one::<i32>(
+            "SELECT result_count
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited profile query should succeed")
+        .expect("limited profile query should return a row");
+        let limited_heap_tids_returned = Spi::get_one::<i32>(
+            "SELECT total_heap_tids_returned
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited heap-tid query should succeed")
+        .expect("limited heap-tid query should return a row");
+        let limited_final_phase = Spi::get_one::<String>(
+            "SELECT final_phase
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited final-phase query should succeed")
+        .expect("limited final-phase query should return a row");
+
+        assert!(
+            full_result_count > 1,
+            "fixture should expose more than one ordered result so the limit meaningfully truncates the scan",
+        );
+        assert_eq!(
+            limited_result_count, 1,
+            "limited scan profile should stop after the requested number of emitted results",
+        );
+        assert_eq!(
+            limited_heap_tids_returned, 1,
+            "limited scan profile should report only the emitted heap TIDs it actually returned",
+        );
+        assert_ne!(
+            limited_final_phase, "exhausted",
+            "stopping early should preserve a non-exhausted execution phase",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_reachable_live_count_matches_admin_snapshot() {
         Spi::run(
             "CREATE TABLE tqhnsw_debug_reachable_live_fixture \
@@ -14561,6 +14640,143 @@ mod tests {
             _grouped_traversal_budgeted_candidates,
             _grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
+
+        TableIterator::once((
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_profile_limited(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(rescan_phase, String),
+            name!(rescan_current_result, bool),
+            name!(rescan_ordered_slots, i32),
+            name!(rescan_pending_heap_tids, i32),
+            name!(rescan_visited_elements, i32),
+            name!(rescan_expanded_sources, i32),
+            name!(rescan_emitted_elements, i32),
+            name!(rescan_bootstrap_expansions, i32),
+            name!(rescan_bootstrap_pages_read, i32),
+            name!(rescan_quantizer_cache_hit, bool),
+            name!(result_count, i32),
+            name!(final_phase, String),
+            name!(final_ordered_slots, i32),
+            name!(total_bootstrap_expansions, i32),
+            name!(total_bootstrap_pages_read, i32),
+            name!(total_linear_pages_read, i32),
+            name!(total_elements_scored, i32),
+            name!(total_elements_skipped, i32),
+            name!(total_heap_tids_returned, i32),
+            name!(total_quantizer_cache_hit, bool),
+            name!(total_emitted_elements, i32),
+        ),
+    > {
+        if limit_count < 0 {
+            pgrx::error!("limit_count must be non-negative");
+        }
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_profile_limited")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            _grouped_traversal_approx_score_calls,
+            _grouped_traversal_approx_score_elapsed_us,
+            _grouped_traversal_exact_score_calls,
+            _grouped_traversal_exact_score_elapsed_us,
+            _grouped_traversal_budgeted_expansions,
+            _grouped_traversal_budgeted_candidates,
+            _grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe {
+            am::debug_profile_ordered_scan_with_limit(
+                index_oid,
+                query,
+                Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
+            )
+        };
 
         TableIterator::once((
             rescan_elapsed_us,

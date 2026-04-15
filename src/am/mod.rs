@@ -89,6 +89,7 @@ pub(crate) use self::scan_debug::{
     debug_layer_oracle_k_carrydown_scan_heap_tids,
     debug_layer_oracle_k_seed_layer0_neighbor_heap_tids,
     debug_materialize_bootstrap_candidate_result, debug_profile_ordered_scan,
+    debug_profile_ordered_scan_with_limit,
     debug_rescan_candidate_frontier, debug_rescan_entry_candidate_state, debug_rescan_null_query,
     debug_rescan_overwrites_query_dimensions, debug_rescan_query_dimensions,
     debug_rescan_successor_candidate_state, debug_rescan_with_index_qual,

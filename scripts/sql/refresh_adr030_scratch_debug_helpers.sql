@@ -15,6 +15,46 @@ BEGIN
         RAISE EXCEPTION 'could not resolve tqvector module path from existing tests schema wrappers';
     END IF;
 
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_profile_limited"(oid, real[], integer)';
+
+    EXECUTE format(
+        $fmt$
+        CREATE FUNCTION tests."tqhnsw_debug_scan_profile_limited"(
+            index_oid oid,
+            query real[],
+            limit_count integer
+        ) RETURNS TABLE (
+            rescan_elapsed_us bigint,
+            emit_elapsed_us bigint,
+            total_elapsed_us bigint,
+            rescan_phase text,
+            rescan_current_result boolean,
+            rescan_ordered_slots integer,
+            rescan_pending_heap_tids integer,
+            rescan_visited_elements integer,
+            rescan_expanded_sources integer,
+            rescan_emitted_elements integer,
+            rescan_bootstrap_expansions integer,
+            rescan_bootstrap_pages_read integer,
+            rescan_quantizer_cache_hit boolean,
+            result_count integer,
+            final_phase text,
+            final_ordered_slots integer,
+            total_bootstrap_expansions integer,
+            total_bootstrap_pages_read integer,
+            total_linear_pages_read integer,
+            total_elements_scored integer,
+            total_elements_skipped integer,
+            total_heap_tids_returned integer,
+            total_quantizer_cache_hit boolean,
+            total_emitted_elements integer
+        )
+        LANGUAGE c STRICT
+        AS %L, 'tqhnsw_debug_scan_profile_limited_wrapper'
+        $fmt$,
+        module_path
+    );
+
     EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_hot_path_profile"(oid, real[])';
 
     EXECUTE format(
