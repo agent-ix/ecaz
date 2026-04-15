@@ -37,7 +37,12 @@ Usage:
 Options (real-corpus mode):
   --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
                  (e.g. tqhnsw_real_10k, tqhnsw_real_50k). The script reads
-                 <prefix>_corpus, <prefix>_queries, and <prefix>_m{N}_idx.
+                 <prefix>_corpus, <prefix>_queries, and <prefix>_m{N}_idx
+                 unless explicit overrides are provided below.
+  --corpus-table Explicit corpus table/view to scan instead of <prefix>_corpus.
+  --query-table  Explicit query table to read instead of <prefix>_queries.
+  --index-name   Explicit index name to require/build against instead of
+                 <prefix>_m{N}_idx. Requires exactly one effective --m.
   --m            HNSW m value to bench. May be repeated. Default: 8.
                  Each value must already have been built by load_real_corpus.py
                  as <prefix>_m{N}_idx.
@@ -72,6 +77,9 @@ USAGE
 # Argument parsing
 # ---------------------------------------------------------------------------
 PREFIX=""
+CORPUS_TABLE_OVERRIDE=""
+QUERY_TABLE_OVERRIDE=""
+INDEX_NAME_OVERRIDE=""
 PREFIX_M_LIST=()
 EF_SEARCH_CSV=""
 QUERY_LIMIT=""
@@ -85,6 +93,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --prefix)
       PREFIX="$2"; shift 2 ;;
+    --corpus-table)
+      CORPUS_TABLE_OVERRIDE="$2"; shift 2 ;;
+    --query-table)
+      QUERY_TABLE_OVERRIDE="$2"; shift 2 ;;
+    --index-name)
+      INDEX_NAME_OVERRIDE="$2"; shift 2 ;;
     --m)
       PREFIX_M_LIST+=("$2"); shift 2 ;;
     --ef-search)
@@ -186,8 +200,24 @@ run_real_corpus_bench() {
     echo "invalid prefix: $prefix" >&2
     exit 2
   fi
+  if [[ -n "$CORPUS_TABLE_OVERRIDE" && ! "$CORPUS_TABLE_OVERRIDE" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "invalid corpus table: $CORPUS_TABLE_OVERRIDE" >&2
+    exit 2
+  fi
+  if [[ -n "$QUERY_TABLE_OVERRIDE" && ! "$QUERY_TABLE_OVERRIDE" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "invalid query table: $QUERY_TABLE_OVERRIDE" >&2
+    exit 2
+  fi
+  if [[ -n "$INDEX_NAME_OVERRIDE" && ! "$INDEX_NAME_OVERRIDE" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+    echo "invalid index name: $INDEX_NAME_OVERRIDE" >&2
+    exit 2
+  fi
   if [[ ${#PREFIX_M_LIST[@]} -eq 0 ]]; then
     PREFIX_M_LIST=(8)
+  fi
+  if [[ -n "$INDEX_NAME_OVERRIDE" && ${#PREFIX_M_LIST[@]} -ne 1 ]]; then
+    echo "--index-name requires exactly one effective --m value" >&2
+    exit 2
   fi
   if [[ -z "$EF_SEARCH_CSV" ]]; then
     EF_SEARCH_CSV="40,64,100,128,160,200"
@@ -222,8 +252,8 @@ run_real_corpus_bench() {
     fi
   done
 
-  local corpus_table="${prefix}_corpus"
-  local query_table="${prefix}_queries"
+  local corpus_table="${CORPUS_TABLE_OVERRIDE:-${prefix}_corpus}"
+  local query_table="${QUERY_TABLE_OVERRIDE:-${prefix}_queries}"
   local k="${K:-10}"
 
   echo "=== tqvector SQL latency (real corpus) ==="
@@ -231,6 +261,9 @@ run_real_corpus_bench() {
   echo "Corpus table: $corpus_table"
   echo "Query table:  $query_table"
   echo "m values:     ${PREFIX_M_LIST[*]}"
+  if [[ -n "$INDEX_NAME_OVERRIDE" ]]; then
+    echo "index override: $INDEX_NAME_OVERRIDE"
+  fi
   echo "ef_search:    $EF_SEARCH_CSV"
   echo "top-k:        $k"
   if [[ -n "$QUERY_LIMIT" ]]; then
@@ -288,7 +321,7 @@ run_real_corpus_bench() {
   results_file="$(mktemp -t tqv_latency_real.XXXXXX.txt)"
 
   for m in "${PREFIX_M_LIST[@]}"; do
-    local index_name="${prefix}_m${m}_idx"
+    local index_name="${INDEX_NAME_OVERRIDE:-${prefix}_m${m}_idx}"
     local exists
     exists=$("$PSQL_BIN" -X -A -t -q -c "SELECT to_regclass('${index_name}') IS NOT NULL;")
     if [[ "$exists" != "t" ]]; then

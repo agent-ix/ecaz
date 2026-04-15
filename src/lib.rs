@@ -3254,7 +3254,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 16, got 0"
+        expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 64, got 0"
     )]
     fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
@@ -5414,6 +5414,11 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_live_window_respects_window_env() {
         assert_grouped_v2_runtime_live_window_matches_windowed_simulation(8, true);
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_runtime_live_window_supports_higher_window_env() {
+        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(32, true);
     }
 
     #[pg_test]
