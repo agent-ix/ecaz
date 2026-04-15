@@ -22,7 +22,7 @@ dhat-heap = ["dhat"]
 
 [dependencies]
 pgrx = "0.17"
-hnsw_rs = "0.3.4"
+hnsw_rs = { path = "vendor/hnsw_rs" }
 hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"

@@ -507,7 +507,7 @@ unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct HnswBuildNode {
     pub(super) level: u8,
     pub(super) neighbor_slots: Vec<Option<usize>>,
@@ -1245,12 +1245,13 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         state.page_size,
     );
     let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
-    let hnsw = Hnsw::new(
+    let hnsw = Hnsw::new_with_seed(
         m,
         state.heap_tuples.len(),
         max_layer,
         usize::try_from(state.options.ef_construction)
             .expect("validated ef_construction should be non-negative"),
+        deterministic_hnsw_build_seed(state, 0x5343_414c_4152_5f31),
         BuildCodeDistance::new(dimensions, bits, seed),
     );
 
@@ -1302,12 +1303,13 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
                 .sum::<f32>()
         })
         .fold(0.0_f32, f32::max);
-    let hnsw = Hnsw::new(
+    let hnsw = Hnsw::new_with_seed(
         m,
         state.heap_tuples.len(),
         max_layer,
         usize::try_from(state.options.ef_construction)
             .expect("validated ef_construction should be non-negative"),
+        deterministic_hnsw_build_seed(state, 0x534f_5552_4345_5f31),
         BuildVectorDistance { score_offset },
     );
 
@@ -1345,6 +1347,33 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
 
 fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
     vec![None; page::neighbor_slots(level, m as u16)]
+}
+
+fn deterministic_hnsw_build_seed(state: &BuildState, domain_tag: u64) -> u64 {
+    let base_seed = state.seed.expect("non-empty build should record seed");
+    let dimensions = u64::from(
+        state
+            .dimensions
+            .expect("non-empty build should record dimensions"),
+    );
+    let bits = u64::from(state.bits.expect("non-empty build should record bits"));
+    let tuple_count =
+        u64::try_from(state.heap_tuples.len()).expect("tuple count should fit into u64");
+    let build_hash = base_seed
+        ^ domain_tag
+        ^ dimensions.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ bits.wrapping_mul(0xA24B_AED4_963E_E407)
+        ^ (state.options.m as u64).wrapping_mul(0x94D0_49BB_1331_11EB)
+        ^ (state.options.ef_construction as u64).wrapping_mul(0xD134_2543_DE82_EF95)
+        ^ tuple_count.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    splitmix64(build_hash)
+}
+
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1769,6 +1798,138 @@ mod tests {
                 .iter()
                 .all(|neighbor_slot| neighbor_slot.is_none())
         }));
+    }
+
+    #[test]
+    fn hnsw_graph_build_is_deterministic_for_scalar_codes() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: None,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let first = build_hnsw_graph(&state);
+        let second = build_hnsw_graph(&state);
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn hnsw_graph_build_is_deterministic_for_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x12, 0x34],
+                source_vector: Some(vec![1.0, 0.0, 0.5, -1.0]),
+                source_count: 1,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x56, 0x78],
+                source_vector: Some(vec![0.0, 1.0, 0.25, -0.5]),
+                source_count: 1,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x9A, 0xBC],
+                source_vector: Some(vec![-1.0, 0.5, 0.0, 1.0]),
+                source_count: 1,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let first = build_hnsw_graph(&state);
+        let second = build_hnsw_graph(&state);
+
+        assert_eq!(first, second);
     }
 
     #[test]
