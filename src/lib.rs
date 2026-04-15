@@ -3253,7 +3253,9 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 16, got 0")]
+    #[should_panic(
+        expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 16, got 0"
+    )]
     fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
@@ -3407,16 +3409,106 @@ mod tests {
         }
     }
 
-    #[pg_test]
-    fn test_grouped_v2_exact_traversal_runtime_emits_exact_scores() {
+    type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
+
+    fn grouped_v2_exact_traversal_runtime_observed_scores(
+        table_name: &str,
+        index_name: &str,
+        scope: Option<&str>,
+    ) -> Vec<DebugScanComparisonRow> {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = scope.map(|value| {
+            ScopedEnvVar::set(
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
+                value,
+            )
+        });
+
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let query = vec![
+            0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
+            1.52, 1.62,
+        ];
+        unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) }
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_exact_traversal_emits_exact_scores() {
+        let observed = grouped_v2_exact_traversal_runtime_observed_scores(
+            "tqhnsw_grouped_v2_runtime_exact_traversal",
+            "tqhnsw_grouped_v2_runtime_exact_traversal_idx",
+            None,
+        );
+
+        assert!(
+            !observed.is_empty(),
+            "exact grouped traversal runtime should still emit ordered results"
+        );
+        for (_heap_tid, emitted_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score
+                .expect("exact grouped traversal runtime should still attach comparison scores");
+            assert_eq!(
+                emitted_score, comparison_score,
+                "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar"
+            );
+        }
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw grouped-v2 exact traversal scope must be one of [all, layer0], got \"bogus\""
+    )]
+    fn test_grouped_v2_exact_traversal_rejects_invalid_scope_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _exact_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
+            "bogus",
+        );
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_exact_traversal (
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_exact_scope (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3434,43 +3526,80 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_exact_traversal VALUES \
+                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_exact_scope VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_exact_traversal_idx ON tqhnsw_grouped_v2_runtime_exact_traversal USING tqhnsw \
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_scope_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_scope USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
         )
         .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
-        let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_exact_traversal_idx'::regclass::oid",
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_exact_scope \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
         )
-        .expect("SPI query should succeed")
-        .expect("index oid should exist");
-        let query = vec![
-            0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32,
-            1.42, 1.52, 1.62,
-        ];
-        let observed = unsafe {
-            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query)
-        };
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped exact traversal scope");
+    }
 
-        assert!(
-            !observed.is_empty(),
-            "exact grouped traversal runtime should still emit ordered results"
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw grouped-v2 exact traversal limit must be a positive integer, got bogus"
+    )]
+    fn test_grouped_v2_exact_traversal_rejects_invalid_limit_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _exact_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
+            "bogus",
         );
-        for (_heap_tid, emitted_score, comparison_score, _approx_rank) in observed {
-            let comparison_score = comparison_score
-                .expect("exact grouped traversal runtime should still attach comparison scores");
-            assert_eq!(
-                emitted_score, comparison_score,
-                "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar"
-            );
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_exact_limit (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 43 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_exact_limit VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
         }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_limit_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_limit USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_exact_limit \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped exact traversal limit");
     }
 
     #[pg_test]
@@ -3525,9 +3654,11 @@ mod tests {
 
         let compared_rows = observed
             .iter()
-            .filter_map(|(_heap_tid, approx_score, comparison_score, _approx_rank)| {
-                comparison_score.map(|exact_score| (*approx_score, exact_score))
-            })
+            .filter_map(
+                |(_heap_tid, approx_score, comparison_score, _approx_rank)| {
+                    comparison_score.map(|exact_score| (*approx_score, exact_score))
+                },
+            )
             .collect::<Vec<_>>();
         let expected_emitted_result_count =
             i32::try_from(observed.len()).expect("emitted result count should fit in i32");
@@ -3790,7 +3921,10 @@ mod tests {
             .iter()
             .enumerate()
             .map(
-                |(idx, ((block_number, offset_number), approx_score, comparison_score, approx_rank))| {
+                |(
+                    idx,
+                    ((block_number, offset_number), approx_score, comparison_score, approx_rank),
+                )| {
                     (
                         idx,
                         *block_number,
@@ -3808,9 +3942,19 @@ mod tests {
         let mut compared_rows = ordered_observed
             .iter()
             .enumerate()
-            .filter_map(|(idx, (_live_idx, _block_number, _offset_number, _approx_score, comparison_score, _approx_rank))| {
-                comparison_score.map(|exact_score| (idx, exact_score))
-            })
+            .filter_map(
+                |(
+                    idx,
+                    (
+                        _live_idx,
+                        _block_number,
+                        _offset_number,
+                        _approx_score,
+                        comparison_score,
+                        _approx_rank,
+                    ),
+                )| { comparison_score.map(|exact_score| (idx, exact_score)) },
+            )
             .collect::<Vec<_>>();
         compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
             let left_approx_rank = ordered_observed[*left_idx].5;
@@ -3827,7 +3971,17 @@ mod tests {
             .iter()
             .enumerate()
             .map(
-                |(idx, (_live_idx, block_number, offset_number, approx_score, comparison_score, approx_rank))| {
+                |(
+                    idx,
+                    (
+                        _live_idx,
+                        block_number,
+                        offset_number,
+                        approx_score,
+                        comparison_score,
+                        approx_rank,
+                    ),
+                )| {
                     let exact_rank = expected_exact_ranks[idx];
                     let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
                     (
@@ -4600,12 +4754,11 @@ mod tests {
                 let windowed_rows = unsafe {
                     am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), window_size)
                 };
-                if !windowed_rows
-                    .iter()
-                    .any(|(_heap_tid, approx_rank, windowed_rank, _, _, _, _, _)| {
+                if !windowed_rows.iter().any(
+                    |(_heap_tid, approx_rank, windowed_rank, _, _, _, _, _)| {
                         approx_rank != windowed_rank
-                    })
-                {
+                    },
+                ) {
                     return None;
                 }
 
@@ -4664,9 +4817,13 @@ mod tests {
         );
 
         let mut live_rows_sorted_by_approx_rank = live_rows.clone();
-        live_rows_sorted_by_approx_rank.sort_by_key(|(_heap_tid, _approx_score, _comparison_score, approx_rank)| {
-            approx_rank.expect("grouped live results should preserve baseline approximate rank sidecars")
-        });
+        live_rows_sorted_by_approx_rank.sort_by_key(
+            |(_heap_tid, _approx_score, _comparison_score, approx_rank)| {
+                approx_rank.expect(
+                    "grouped live results should preserve baseline approximate rank sidecars",
+                )
+            },
+        );
         let preserved_approx_order = live_rows_sorted_by_approx_rank
             .iter()
             .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
