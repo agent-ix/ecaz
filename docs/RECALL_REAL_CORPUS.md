@@ -170,7 +170,9 @@ The `<prefix>_corpus.embedding` column is populated as
 
 The tqhnsw indexes are created via the existing `build_source_column = 'source'`
 path so the graph is built on raw `source` vectors rather than re-decoded
-quantized values:
+quantized values.
+
+Legacy/default loader runs keep the historical index names:
 
 ```sql
 CREATE INDEX <prefix>_m8_idx ON <prefix>_corpus
@@ -180,6 +182,30 @@ WITH (m = 8, ef_construction = 128, build_source_column = 'source');
 CREATE INDEX <prefix>_m16_idx ON <prefix>_corpus
 USING tqhnsw (embedding tqvector_ip_ops)
 WITH (m = 16, ef_construction = 128, build_source_column = 'source');
+```
+
+To keep both first-class formats side by side on the same staged corpus, rerun
+the loader with an explicit `--storage-format`. That creates a coexisting index
+family while reusing the same `<prefix>_corpus` / `<prefix>_queries` tables:
+
+```sql
+CREATE INDEX <prefix>_turboquant_m8_idx ON <prefix>_corpus
+USING tqhnsw (embedding tqvector_ip_ops)
+WITH (
+    m = 8,
+    ef_construction = 128,
+    build_source_column = 'source',
+    storage_format = 'turboquant'
+);
+
+CREATE INDEX <prefix>_pq_fastscan_m8_idx ON <prefix>_corpus
+USING tqhnsw (embedding tqvector_ip_ops)
+WITH (
+    m = 8,
+    ef_construction = 128,
+    build_source_column = 'source',
+    storage_format = 'pq_fastscan'
+);
 ```
 
 ## How to Use
@@ -223,6 +249,28 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
        --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
        --m 8 16
    ```
+   That preserves the legacy `<prefix>_m{N}_idx` names. To stage both
+   first-class formats on the same corpus without rebuilding the tables, rerun
+   the loader with explicit storage formats:
+   ```bash
+   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+       --prefix tqhnsw_real_50k \
+       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
+       --m 8 16 \
+       --storage-format turboquant
+
+   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+       --prefix tqhnsw_real_50k \
+       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
+       --m 8 16 \
+       --storage-format pq_fastscan
+   ```
+   Those runs reuse the existing `<prefix>_corpus` / `<prefix>_queries` tables
+   and create coexisting index families:
+   - `<prefix>_turboquant_m8_idx`, `<prefix>_turboquant_m16_idx`
+   - `<prefix>_pq_fastscan_m8_idx`, `<prefix>_pq_fastscan_m16_idx`
    If a sibling `tqhnsw_real_50k_manifest.json` exists, the loader verifies it
    automatically before loading. You can also pass `--manifest-file` explicitly.
    For the repo-local scratch `pg17` cluster, use
@@ -236,6 +284,15 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
        'tqhnsw_real_50k_corpus',
        'tqhnsw_real_50k_queries',
        'tqhnsw_real_50k'
+   );
+   ```
+   The third argument is the fixture/index prefix, not the table prefix. For a
+   coexisting explicit format family, pass the suffixed index prefix instead:
+   ```sql
+   SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report(
+       'tqhnsw_real_50k_corpus',
+       'tqhnsw_real_50k_queries',
+       'tqhnsw_real_50k_pq_fastscan'
    );
    ```
    This emits one row per A4 configuration:
@@ -252,6 +309,16 @@ WITH (m = 16, ef_construction = 128, build_source_column = 'source');
        'tqhnsw_real_50k_corpus',
        'tqhnsw_real_50k_queries',
        'tqhnsw_real_50k_m8_idx',
+       8,
+       128
+   );
+   ```
+   For an explicit format family, swap only the index name:
+   ```sql
+   SELECT * FROM tqhnsw_graph_scan_recall_external_summary(
+       'tqhnsw_real_50k_corpus',
+       'tqhnsw_real_50k_queries',
+       'tqhnsw_real_50k_pq_fastscan_m8_idx',
        8,
        128
    );
@@ -372,17 +439,18 @@ The first real-corpus run is documented in
 
 ## Reusing the Loaded Tables for NFR-001 Latency
 
-The same `<prefix>_corpus`, `<prefix>_queries`, and `<prefix>_m{N}_idx`
+The same `<prefix>_corpus`, `<prefix>_queries`, and either the legacy
+`<prefix>_m{N}_idx` or explicit-format `<prefix>_<storage_format>_m{N}_idx`
 artifacts produced by `scripts/load_real_corpus.py` for the A4 recall lane
-also serve the `NFR-001` query-latency lane: load and bench are decoupled,
-so once the loader has built the tables and indexes there is no second
-load step. The raw reporting surface is `scripts/bench_sql_latency.sh`, but
+also serve the `NFR-001` query-latency lane: load and bench are decoupled, so
+once the loader has built the tables and indexes there is no second load step.
+The raw reporting surface is `scripts/bench_sql_latency.sh`, but
 durable `NFR-001` artifacts should go through the planner-verified launcher
 `scripts/bench_sql_latency_verified.sh`, which first checks a representative
 `EXPLAIN` plan and refuses to run unless the planner selects the expected
-`<prefix>_m{N}_idx`. The verified launcher currently accepts one effective
-`m` per invocation so the chosen index is unambiguous. A worked example
-against the already-loaded `tqhnsw_real_10k` fixture:
+index. The verified launcher currently accepts one effective `m` per invocation
+so the chosen index is unambiguous. A worked example against the already-loaded
+`tqhnsw_real_10k` fixture:
 
 ```bash
 scripts/bench_sql_latency_verified_scratch.sh \

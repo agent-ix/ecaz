@@ -45,6 +45,7 @@ DEFAULT_SEED = 42
 DEFAULT_EF_CONSTRUCTION = 128
 UNIT_NORM_TOLERANCE = 0.05
 SQL_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+VALID_STORAGE_FORMATS = frozenset(("turboquant", "pq_fastscan"))
 
 
 @dataclass
@@ -96,6 +97,60 @@ def _validate_ident(name: str, label: str) -> str:
             f"{label} {name!r} must match [a-zA-Z_][a-zA-Z0-9_]* (no quoting allowed)"
         )
     return name
+
+
+def _validate_storage_format(raw_value: str) -> str:
+    if raw_value not in VALID_STORAGE_FORMATS:
+        allowed = ", ".join(sorted(VALID_STORAGE_FORMATS))
+        raise argparse.ArgumentTypeError(
+            f"storage format {raw_value!r} must be one of: {allowed}"
+        )
+    return raw_value
+
+
+def _index_prefix(prefix: str, storage_format: str | None) -> str:
+    if storage_format is None:
+        return prefix
+    return f"{prefix}_{storage_format}"
+
+
+def _index_name(index_prefix: str, m: int) -> str:
+    return f"{index_prefix}_m{m}_idx"
+
+
+def _expected_index_reloptions(
+    m: int, ef_construction: int, storage_format: str | None
+) -> list[str]:
+    reloptions = [
+        f"m={m}",
+        f"ef_construction={ef_construction}",
+        "build_source_column=source",
+    ]
+    if storage_format is not None:
+        reloptions.append(f"storage_format={storage_format}")
+    return reloptions
+
+
+def _build_index_sql(
+    corpus_table: str,
+    index_name: str,
+    m: int,
+    ef_construction: int,
+    storage_format: str | None,
+) -> str:
+    with_options = [
+        f"m = {m}",
+        f"ef_construction = {ef_construction}",
+        "build_source_column = 'source'",
+    ]
+    if storage_format is not None:
+        with_options.append(f"storage_format = '{storage_format}'")
+    joined_options = ", ".join(with_options)
+    return (
+        f"CREATE INDEX {index_name} ON {corpus_table}\n"
+        "        USING tqhnsw (embedding tqvector_ip_ops)\n"
+        f"        WITH ({joined_options})"
+    )
 
 
 def _resolve_psql_bin() -> str:
@@ -152,15 +207,19 @@ def _table_row_count(database: str, table: str) -> int:
 
 
 def _index_exists_with_options(
-    database: str, index: str, m: int, ef_construction: int
+    database: str,
+    index: str,
+    m: int,
+    ef_construction: int,
+    storage_format: str | None,
 ) -> bool:
-    expected_m = f"m={m}"
-    expected_ef = f"ef_construction={ef_construction}"
-    expected_src = "build_source_column=source"
+    expected_reloptions = "', '".join(
+        _expected_index_reloptions(m, ef_construction, storage_format)
+    )
     sql = (
         "SELECT EXISTS (SELECT 1 FROM pg_class "
         f"WHERE relname = '{index}' AND relkind = 'i' "
-        f"AND reloptions @> ARRAY['{expected_m}', '{expected_ef}', '{expected_src}'])"
+        f"AND reloptions @> ARRAY['{expected_reloptions}'])"
     )
     return _psql(database, sql, capture=True).lower() == "t"
 
@@ -457,25 +516,29 @@ def _ensure_index(
     index_name: str,
     m: int,
     ef_construction: int,
+    storage_format: str | None,
 ) -> None:
-    if _index_exists_with_options(database, index_name, m, ef_construction):
+    if _index_exists_with_options(database, index_name, m, ef_construction, storage_format):
         print(
-            f"[loader] {index_name} already exists with m={m} ef_construction={ef_construction}; skipping rebuild",
+            f"[loader] {index_name} already exists with m={m} ef_construction={ef_construction}"
+            + (
+                f" storage_format={storage_format}; skipping rebuild"
+                if storage_format is not None
+                else "; skipping rebuild"
+            ),
             file=sys.stderr,
         )
         return
     print(
-        f"[loader] building {index_name} (m={m}, ef_construction={ef_construction}) ...",
+        f"[loader] building {index_name} (m={m}, ef_construction={ef_construction}"
+        + (
+            f", storage_format={storage_format}) ..."
+            if storage_format is not None
+            else ") ..."
+        ),
         file=sys.stderr,
     )
-    _psql(
-        database,
-        f"""
-        CREATE INDEX {index_name} ON {corpus_table}
-        USING tqhnsw (embedding tqvector_ip_ops)
-        WITH (m = {m}, ef_construction = {ef_construction}, build_source_column = 'source')
-        """,
-    )
+    _psql(database, _build_index_sql(corpus_table, index_name, m, ef_construction, storage_format))
 
 
 def main() -> int:
@@ -539,6 +602,14 @@ def main() -> int:
         action="store_true",
         help="Continue after manifest verification fails, logging a warning instead of aborting.",
     )
+    parser.add_argument(
+        "--storage-format",
+        type=_validate_storage_format,
+        help=(
+            "Optional tqhnsw storage format reloption. When set, the loader builds "
+            "coexisting format-specific indexes named <prefix>_<storage_format>_m{N}_idx."
+        ),
+    )
 
     args = parser.parse_args()
     m_values = [8, 16]
@@ -560,6 +631,8 @@ def main() -> int:
 
     corpus_table = f"{prefix}_corpus"
     queries_table = f"{prefix}_queries"
+    storage_format = args.storage_format
+    index_prefix = _index_prefix(prefix, storage_format)
     manifest_path = args.manifest_file or _derive_manifest_path(
         args.corpus_file, args.queries_file
     )
@@ -596,13 +669,14 @@ def main() -> int:
             args.dim,
         )
         for m_value in m_values:
-            index_name = f"{prefix}_m{m_value}_idx"
+            index_name = _index_name(index_prefix, m_value)
             _ensure_index(
                 args.database,
                 corpus_table,
                 index_name,
                 m_value,
                 args.ef_construction,
+                storage_format,
             )
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -610,7 +684,8 @@ def main() -> int:
 
     print(
         f"[loader] done. corpus={corpus_table} ({corpus_rows} rows), "
-        f"queries={queries_table} ({query_rows} rows), m={m_values}",
+        f"queries={queries_table} ({query_rows} rows), index_prefix={index_prefix}, "
+        f"storage_format={storage_format or 'default'}, m={m_values}",
         file=sys.stderr,
     )
     return 0
