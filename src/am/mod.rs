@@ -34,6 +34,12 @@ pub(crate) fn register_gucs() {
     options::register_gucs();
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::scan::{
+    PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW, PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME,
+    PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME,
+};
+
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> shared::IndexCostSnapshot {

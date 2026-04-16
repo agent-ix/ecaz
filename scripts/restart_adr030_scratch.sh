@@ -5,7 +5,7 @@ usage() {
     cat <<'EOF'
 Usage:
   scripts/restart_adr030_scratch.sh \
-      [--window 16] \
+      [--window 64] \
       [--grouped-score-mode pq|binary] \
       [--rerank-mode quantized|heap_f32] \
       [--rerank-source-column source_raw] \
@@ -26,8 +26,8 @@ EOF
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
-window="16"
-grouped_score_mode="pq"
+window="64"
+grouped_score_mode="binary"
 rerank_mode="quantized"
 rerank_source_column=""
 exact_enabled=0

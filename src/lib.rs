@@ -4063,6 +4063,51 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_runtime_settings_surface_effective_defaults() {
+        let _lock = env_var_test_lock();
+
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_scan_window
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("64"),
+            "the runtime settings probe should surface the effective default pq_fastscan scan window",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_traversal_score_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("binary"),
+            "the runtime settings probe should surface the effective default pq_fastscan traversal score mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("quantized"),
+            "the runtime settings probe should surface the effective default pq_fastscan rerank mode",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pq_fastscan_exact_traversal_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(false),
+            "the runtime settings probe should surface that exact traversal stays disabled by default",
+        );
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
         let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
         let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
@@ -16654,47 +16699,56 @@ mod tests {
     }
 
     fn current_pq_fastscan_runtime_settings() -> PqFastScanRuntimeSettings {
+        let env_string = |canonical: &str, legacy: &str| {
+            std::env::var_os(canonical)
+                .or_else(|| std::env::var_os(legacy))
+                .map(|value| value.to_string_lossy().into_owned())
+        };
         PqFastScanRuntimeSettings {
             build_enabled: true,
             scan_enabled: true,
-            scan_window: std::env::var_os("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW")
-                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW"))
-                .map(|value| value.to_string_lossy().into_owned()),
-            traversal_score_mode: std::env::var_os("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            rerank_mode: std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_MODE")
-                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE"))
-                .map(|value| value.to_string_lossy().into_owned()),
-            rerank_source_column: std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
+            scan_window: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW",
+                )
+                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW.to_string()),
+            ),
+            traversal_score_mode: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
+                )
+                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME.to_owned()),
+            ),
+            rerank_mode: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_RERANK_MODE",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
+                )
+                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME.to_owned()),
+            ),
+            rerank_source_column: env_string(
+                "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+            ),
             exact_traversal_enabled: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
                 .or_else(|| {
                     std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL")
                 })
                 .is_some(),
-            exact_traversal_scope: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            exact_traversal_strategy: std::env::var_os(
+            exact_traversal_scope: env_string(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
+            ),
+            exact_traversal_strategy: env_string(
                 "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY",
-            )
-            .or_else(|| {
-                std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY")
-            })
-            .map(|value| value.to_string_lossy().into_owned()),
-            exact_traversal_limit: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
+            ),
+            exact_traversal_limit: env_string(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
+            ),
         }
     }
 

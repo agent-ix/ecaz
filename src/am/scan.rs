@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
-use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
+use pgrx::{FromDatum, IntoDatum, PgBox, pg_sys};
 
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
@@ -45,8 +45,10 @@ const PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY";
 const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
-const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
+pub(crate) const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 64;
 const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
+pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
+pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "quantized";
 const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
     "tqhnsw PqFastScan exact scoring requires the cold rerank payload path";
 
@@ -780,7 +782,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 opaque.scan_graph_storage,
                 graph::GraphStorageDescriptor::PqFastScan(_)
             ) {
-                resolve_grouped_traversal_score_mode()
+                resolve_grouped_traversal_score_mode(opaque.scan_graph_storage)
             } else {
                 GroupedTraversalScoreMode::GroupedPq
             };
@@ -908,12 +910,22 @@ fn pq_fastscan_exact_traversal_enabled() -> bool {
     .is_some()
 }
 
-fn resolve_grouped_traversal_score_mode() -> GroupedTraversalScoreMode {
+fn resolve_grouped_traversal_score_mode(
+    graph_storage: graph::GraphStorageDescriptor,
+) -> GroupedTraversalScoreMode {
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV,
     ) else {
-        return GroupedTraversalScoreMode::GroupedPq;
+        return match graph_storage {
+            graph::GraphStorageDescriptor::PqFastScan(layout) if layout.binary_word_count > 0 => {
+                GroupedTraversalScoreMode::Binary
+            }
+            graph::GraphStorageDescriptor::PqFastScan(_) => GroupedTraversalScoreMode::GroupedPq,
+            graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                GroupedTraversalScoreMode::GroupedPq
+            }
+        };
     };
 
     match raw_mode.to_string_lossy().as_ref() {
@@ -4293,7 +4305,7 @@ impl Default for TqScanOpaque {
                 PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
             grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u8,
-            grouped_traversal_score_mode: GroupedTraversalScoreMode::GroupedPq,
+            grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
             grouped_rerank_mode: GroupedRerankMode::Quantized,
             grouped_heap_rerank_relation: ptr::null_mut(),
             grouped_heap_rerank_relation_owned: false,
@@ -6016,10 +6028,10 @@ mod tests {
 
         assert_eq!(
             visited,
-            vec![(first_valid.block_number, first_valid.offset_number), (
-                second_valid.block_number,
-                second_valid.offset_number
-            )],
+            vec![
+                (first_valid.block_number, first_valid.offset_number),
+                (second_valid.block_number, second_valid.offset_number)
+            ],
             "collection should skip INVALID neighbors and continue through live candidates in order"
         );
         assert_eq!(
