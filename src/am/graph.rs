@@ -251,6 +251,32 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
+pub(crate) unsafe fn load_exact_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+) -> GraphElement {
+    match storage {
+        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+            load_graph_element(index_relation, element_tid, code_len)
+        },
+        GraphStorageDescriptor::PqFastScan(layout) => {
+            let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
+            let rerank =
+                unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+            GraphElement {
+                tid: hot.tid,
+                level: hot.level,
+                deleted: hot.deleted,
+                heaptids: hot.heaptids,
+                gamma: rerank.gamma,
+                neighbortid: hot.neighbortid,
+                code: rerank.code,
+            }
+        }
+    }
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 pub(crate) unsafe fn load_grouped_graph_element(
     index_relation: pg_sys::Relation,
@@ -540,6 +566,16 @@ pub(crate) unsafe fn load_graph_adjacency(
     (element, neighbors)
 }
 
+pub(crate) unsafe fn load_exact_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+) -> (GraphElement, GraphNeighbors) {
+    let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
+    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    (element, neighbors)
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 pub(crate) unsafe fn load_grouped_graph_adjacency(
     index_relation: pg_sys::Relation,
@@ -599,6 +635,31 @@ where
     }
 }
 
+pub(crate) unsafe fn load_layer0_successor_candidates_with_storage<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    unsafe {
+        load_successor_candidates_for_layer_with_storage(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            0,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    }
+}
+
 pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
@@ -622,6 +683,36 @@ where
                 m,
                 layer,
                 |_| true,
+                &mut score_candidate,
+            )
+        },
+    )
+}
+
+pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    mut score_candidate: ScoreFn,
+) -> search::BeamCandidate<page::ItemPointer>
+where
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let entry_element =
+        unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };
+    let mut keep_all = |_| true;
+    greedy_descend_with_successors(
+        entry_candidate,
+        entry_element.level,
+        |source_tid, layer| unsafe {
+            load_successor_candidates_for_layer_with_storage(
+                index_relation,
+                source_tid,
+                storage,
+                m,
+                layer,
+                &mut keep_all,
                 &mut score_candidate,
             )
         },
@@ -680,6 +771,32 @@ where
     })
 }
 
+pub(crate) unsafe fn search_layer0_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates_with_storage(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
 pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
@@ -700,6 +817,34 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
+            layer,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
+pub(crate) unsafe fn search_layer_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_successor_candidates_for_layer_with_storage(
+            index_relation,
+            source_tid,
+            storage,
             m,
             layer,
             &mut keep_neighbor_tid,
@@ -1134,6 +1279,40 @@ where
             }
         },
     );
+
+    candidates
+}
+
+unsafe fn load_successor_candidates_for_layer_with_storage<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    keep_neighbor_tid: &mut KeepFn,
+    score_candidate: &mut ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let (element, neighbors) =
+        unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };
+    let valid_neighbor_tids =
+        valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer);
+    let mut candidates = Vec::with_capacity(valid_neighbor_tids.len());
+
+    for neighbor_tid in valid_neighbor_tids {
+        if !keep_neighbor_tid(neighbor_tid) {
+            continue;
+        }
+
+        let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };
+        let Some(score) = score_candidate(&neighbor) else {
+            continue;
+        };
+        candidates.push(search::BeamCandidate::new(neighbor_tid, score));
+    }
 
     candidates
 }

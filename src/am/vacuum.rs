@@ -1,9 +1,8 @@
 use std::{collections::HashSet, ffi::c_void, ptr};
 
-use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
+use pgrx::{PgBox, itemptr::item_pointer_set_all, pg_sys};
 
 use super::{graph, options, page, search, shared, source, wal};
-use crate::quant::prod::payload_len;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
@@ -168,6 +167,13 @@ impl VacuumSearchMetric {
 }
 
 impl VacuumFormatAdapter {
+    fn graph_storage(self) -> graph::GraphStorageDescriptor {
+        match self {
+            Self::TurboQuant { code_len } => graph::GraphStorageDescriptor::TurboQuant { code_len },
+            Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
+        }
+    }
+
     fn pass1_code_len(self) -> usize {
         match self {
             Self::TurboQuant { code_len } => code_len,
@@ -199,7 +205,12 @@ impl VacuumFormatAdapter {
     ) {
         match self {
             Self::TurboQuant { .. } => unsafe {
-                repair_turboquant_graph_connections(index_relation, heap_relation, deleted_tids)
+                repair_turboquant_graph_connections(
+                    index_relation,
+                    heap_relation,
+                    self.graph_storage(),
+                    deleted_tids,
+                )
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
@@ -265,7 +276,7 @@ struct LinearRepairPlanner<'a> {
 #[derive(Debug, Clone, Copy)]
 struct RepairSearchPlanner<'a> {
     metadata: &'a page::MetadataPage,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     source: &'a graph::GraphElement,
     layer: u8,
     deleted_tids: &'a HashSet<page::ItemPointer>,
@@ -574,6 +585,7 @@ unsafe fn apply_page_pass1_updates(
 unsafe fn repair_turboquant_graph_connections(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &[page::ItemPointer],
 ) {
     if deleted_tids.is_empty() {
@@ -582,9 +594,12 @@ unsafe fn repair_turboquant_graph_connections(
 
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
     let mut metric = unsafe { VacuumSearchMetric::for_relation(index_relation, heap_relation) };
-    let code_len = payload_len(usize::from(metadata.dimensions), metadata.bits)
-        .checked_sub(4)
-        .expect("payload length should include gamma");
+    let code_len = match storage {
+        graph::GraphStorageDescriptor::TurboQuant { code_len } => code_len,
+        graph::GraphStorageDescriptor::PqFastScan(_) => {
+            pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
+        }
+    };
     let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
     let repair_requests =
         unsafe { collect_repair_requests(index_relation, code_len, metadata.m, &deleted_tids) };
@@ -594,7 +609,7 @@ unsafe fn repair_turboquant_graph_connections(
             index_relation,
             &metadata,
             &mut metric,
-            code_len,
+            storage,
             &deleted_tids,
             &repair_requests,
         )
@@ -791,7 +806,7 @@ unsafe fn plan_repair_replacements(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     metric: &mut VacuumSearchMetric,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &HashSet<page::ItemPointer>,
     requests: &[LayerRepairRequest],
 ) -> Vec<LayerRepairPlan> {
@@ -802,7 +817,7 @@ unsafe fn plan_repair_replacements(
                 index_relation,
                 metadata,
                 metric,
-                code_len,
+                storage,
                 deleted_tids,
                 request,
             )
@@ -819,11 +834,12 @@ unsafe fn plan_repair_replacement(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
     metric: &mut VacuumSearchMetric,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
 ) -> Option<LayerRepairPlan> {
-    let source = unsafe { graph::load_graph_element(index_relation, request.source_tid, code_len) };
+    let source =
+        unsafe { graph::load_exact_graph_element(index_relation, request.source_tid, storage) };
     if source.deleted
         || source.heaptids.is_empty()
         || source.neighbortid != request.neighbor_tid
@@ -856,7 +872,7 @@ unsafe fn plan_repair_replacement(
     let existing_set = existing_layer.iter().copied().collect::<HashSet<_>>();
     let planner = RepairSearchPlanner {
         metadata,
-        code_len,
+        storage,
         source: &source,
         layer: request.layer,
         deleted_tids,
@@ -867,20 +883,31 @@ unsafe fn plan_repair_replacement(
     let replacements =
         unsafe { search_repair_candidates_for_layer(index_relation, metric, &planner) };
     let mut replacements = replacements;
-    if replacements.len() < free_slots {
-        let linear_planner = LinearRepairPlanner {
+    let linear_planner = match storage {
+        graph::GraphStorageDescriptor::TurboQuant { code_len } => Some(LinearRepairPlanner {
             metadata,
             code_len,
             source: &source,
             deleted_tids,
             existing_set: &existing_set,
             layer: request.layer,
+        }),
+        graph::GraphStorageDescriptor::PqFastScan(_) => None,
+    };
+    if replacements.len() < free_slots {
+        let Some(linear_planner) = linear_planner.as_ref() else {
+            return (!replacements.is_empty()).then_some(LayerRepairPlan {
+                neighbor_tid: source.neighbortid,
+                source_level: source.level,
+                layer: request.layer,
+                replacement_tids: replacements,
+            });
         };
         unsafe {
             top_up_repair_replacements_from_linear_scan(
                 index_relation,
                 metric,
-                &linear_planner,
+                linear_planner,
                 &mut replacements,
                 free_slots,
             )
@@ -906,13 +933,19 @@ unsafe fn search_repair_candidates_for_layer(
     let mut seeds = Vec::new();
 
     if let Some(entry_candidate) = unsafe {
-        load_vacuum_entry_candidate(index_relation, planner.metadata, metric, planner.source)
+        load_vacuum_entry_candidate(
+            index_relation,
+            planner.metadata,
+            planner.storage,
+            metric,
+            planner.source,
+        )
     } {
         if planner.layer == 0 {
             seeds.push(unsafe {
-                graph::greedy_descend_from_entry(
+                graph::greedy_descend_from_entry_with_storage(
                     index_relation,
-                    planner.code_len,
+                    planner.storage,
                     usize::from(planner.metadata.m),
                     entry_candidate,
                     |neighbor| {
@@ -924,9 +957,9 @@ unsafe fn search_repair_candidates_for_layer(
             let mut upper_seeds = vec![entry_candidate];
             for current_layer in (planner.layer..=planner.metadata.max_level).rev() {
                 upper_seeds = unsafe {
-                    graph::search_layer_result_candidates(
+                    graph::search_layer_result_candidates_with_storage(
                         index_relation,
-                        planner.code_len,
+                        planner.storage,
                         usize::from(planner.metadata.m),
                         current_layer,
                         repair_ef_construction(planner.metadata),
@@ -946,7 +979,7 @@ unsafe fn search_repair_candidates_for_layer(
     }
 
     seeds.extend(planner.existing_layer.iter().filter_map(|tid| unsafe {
-        let element = graph::load_graph_element(index_relation, *tid, planner.code_len);
+        let element = graph::load_exact_graph_element(index_relation, *tid, planner.storage);
         metric
             .score_graph_element(planner.metadata, planner.source, &element)
             .map(|score| search::BeamCandidate::new(*tid, score))
@@ -958,9 +991,9 @@ unsafe fn search_repair_candidates_for_layer(
 
     let candidates = if planner.layer == 0 {
         unsafe {
-            graph::search_layer0_result_candidates(
+            graph::search_layer0_result_candidates_with_storage(
                 index_relation,
-                planner.code_len,
+                planner.storage,
                 usize::from(planner.metadata.m),
                 repair_ef_construction(planner.metadata),
                 seeds,
@@ -973,9 +1006,9 @@ unsafe fn search_repair_candidates_for_layer(
         }
     } else {
         unsafe {
-            graph::search_layer_result_candidates(
+            graph::search_layer_result_candidates_with_storage(
                 index_relation,
-                planner.code_len,
+                planner.storage,
                 usize::from(planner.metadata.m),
                 planner.layer,
                 repair_ef_construction(planner.metadata),
@@ -1005,6 +1038,7 @@ unsafe fn search_repair_candidates_for_layer(
 unsafe fn load_vacuum_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    storage: graph::GraphStorageDescriptor,
     metric: &mut VacuumSearchMetric,
     source_element: &graph::GraphElement,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
@@ -1012,13 +1046,8 @@ unsafe fn load_vacuum_entry_candidate(
         return None;
     }
 
-    let entry = unsafe {
-        graph::load_graph_element(
-            index_relation,
-            metadata.entry_point,
-            source_element.code.len(),
-        )
-    };
+    let entry =
+        unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
     let entry_score = unsafe { metric.score_graph_element(metadata, source_element, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }

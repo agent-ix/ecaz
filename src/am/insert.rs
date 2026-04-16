@@ -247,6 +247,13 @@ enum InsertFormatAdapter {
 }
 
 impl InsertFormatAdapter {
+    fn graph_storage(self) -> graph::GraphStorageDescriptor {
+        match self {
+            Self::TurboQuant { code_len } => graph::GraphStorageDescriptor::TurboQuant { code_len },
+            Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
+        }
+    }
+
     fn initial_code_len(self, tuple: &build::BuildTuple) -> usize {
         match self {
             Self::TurboQuant { code_len } => code_len.max(tuple.code.len()),
@@ -290,21 +297,16 @@ impl InsertFormatAdapter {
         insert_level: u8,
         m: u16,
     ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
-        match self {
-            Self::TurboQuant { .. } => unsafe {
-                discover_insert_forward_neighbor_slots(
-                    index_relation,
-                    metadata,
-                    tuple,
-                    metric,
-                    insert_level,
-                    m,
-                )
-            },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
-            }
+        unsafe {
+            discover_insert_forward_neighbor_slots(
+                index_relation,
+                metadata,
+                self.graph_storage(),
+                tuple,
+                metric,
+                insert_level,
+                m,
+            )
         }
     }
 
@@ -333,28 +335,21 @@ impl InsertFormatAdapter {
         metadata: &page::MetadataPage,
         tuple: &build::BuildTuple,
         metric: &mut InsertSearchMetric,
-        code_len: usize,
         selections: &[LayerForwardSelection],
         new_element_tid: page::ItemPointer,
         m: u16,
     ) {
-        match self {
-            Self::TurboQuant { .. } => unsafe {
-                add_backlinks_to_forward_neighbors(
-                    index_relation,
-                    metadata,
-                    tuple,
-                    metric,
-                    code_len,
-                    selections,
-                    new_element_tid,
-                    m,
-                )
-            },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
-            }
+        unsafe {
+            add_backlinks_to_forward_neighbors(
+                index_relation,
+                metadata,
+                self.graph_storage(),
+                tuple,
+                metric,
+                selections,
+                new_element_tid,
+                m,
+            )
         }
     }
 }
@@ -525,7 +520,6 @@ unsafe fn run_insert_with_adapter(
         metadata_snapshot,
         tuple,
         metric,
-        code_len,
         &forward_selections,
         element_tid,
         m,
@@ -656,7 +650,7 @@ enum BacklinkMutationOutcome {
 #[derive(Debug, Clone, Copy)]
 struct BacklinkPlanner<'a> {
     metadata: &'a page::MetadataPage,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     new_tuple: &'a build::BuildTuple,
     new_element_tid: page::ItemPointer,
     m: u16,
@@ -665,6 +659,7 @@ struct BacklinkPlanner<'a> {
 unsafe fn discover_insert_forward_neighbor_slots(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    storage: graph::GraphStorageDescriptor,
     tuple: &build::BuildTuple,
     metric: &mut InsertSearchMetric,
     insert_level: u8,
@@ -673,7 +668,7 @@ unsafe fn discover_insert_forward_neighbor_slots(
     let mut slots = empty_insert_neighbor_slots(insert_level, m);
     let mut selections = Vec::new();
     let Some(entry_candidate) =
-        (unsafe { load_insert_entry_candidate(index_relation, metadata, tuple, metric) })
+        (unsafe { load_insert_entry_candidate(index_relation, metadata, storage, tuple, metric) })
     else {
         return (slots, selections);
     };
@@ -683,6 +678,7 @@ unsafe fn discover_insert_forward_neighbor_slots(
         populate_upper_layer_forward_slots(
             index_relation,
             metadata,
+            storage,
             tuple,
             metric,
             insert_level,
@@ -693,18 +689,18 @@ unsafe fn discover_insert_forward_neighbor_slots(
         );
     }
     let descended_seed = unsafe {
-        graph::greedy_descend_from_entry(
+        graph::greedy_descend_from_entry_with_storage(
             index_relation,
-            tuple.code.len(),
+            storage,
             m_usize,
             entry_candidate,
             |neighbor| metric.score_new_tuple_against_element(metadata, tuple, neighbor),
         )
     };
     let layer0_candidates = unsafe {
-        graph::search_layer0_result_candidates(
+        graph::search_layer0_result_candidates_with_storage(
             index_relation,
-            tuple.code.len(),
+            storage,
             m_usize,
             insert_ef_construction(metadata),
             [descended_seed],
@@ -721,6 +717,7 @@ unsafe fn discover_insert_forward_neighbor_slots(
 unsafe fn load_insert_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    storage: graph::GraphStorageDescriptor,
     tuple: &build::BuildTuple,
     metric: &mut InsertSearchMetric,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
@@ -728,9 +725,8 @@ unsafe fn load_insert_entry_candidate(
         return None;
     }
 
-    let entry = unsafe {
-        graph::load_graph_element(index_relation, metadata.entry_point, tuple.code.len())
-    };
+    let entry =
+        unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
     let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
@@ -759,6 +755,7 @@ fn score_insert_graph_element(
 unsafe fn populate_upper_layer_forward_slots(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    storage: graph::GraphStorageDescriptor,
     tuple: &build::BuildTuple,
     metric: &mut InsertSearchMetric,
     insert_level: u8,
@@ -774,9 +771,9 @@ unsafe fn populate_upper_layer_forward_slots(
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=metadata.max_level).rev() {
         seeds = unsafe {
-            graph::search_layer_result_candidates(
+            graph::search_layer_result_candidates_with_storage(
                 index_relation,
-                tuple.code.len(),
+                storage,
                 m,
                 current_layer,
                 insert_ef_construction(metadata),
@@ -820,16 +817,16 @@ fn write_layer_forward_candidates(
 unsafe fn add_backlinks_to_forward_neighbors(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    storage: graph::GraphStorageDescriptor,
     new_tuple: &build::BuildTuple,
     metric: &mut InsertSearchMetric,
-    code_len: usize,
     selections: &[LayerForwardSelection],
     new_element_tid: page::ItemPointer,
     m: u16,
 ) {
     let planner = BacklinkPlanner {
         metadata,
-        code_len,
+        storage,
         new_tuple,
         new_element_tid,
         m,
@@ -867,8 +864,11 @@ unsafe fn plan_backlink_mutations(
         .iter()
         .copied()
         .filter_map(|selection| unsafe {
-            let element =
-                graph::load_graph_element(index_relation, selection.element_tid, planner.code_len);
+            let element = graph::load_exact_graph_element(
+                index_relation,
+                selection.element_tid,
+                planner.storage,
+            );
             let neighbors = graph::load_graph_neighbors(index_relation, element.neighbortid);
             plan_backlink_mutation(
                 index_relation,
@@ -1083,7 +1083,7 @@ unsafe fn select_backlink_rewrite_slice(
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| unsafe {
-            let element = graph::load_graph_element(index_relation, tid, planner.code_len);
+            let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
             ScoredBacklinkCandidate {
                 tid,
                 score: metric.score_existing_backlink_candidate(
