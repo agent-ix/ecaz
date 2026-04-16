@@ -320,6 +320,23 @@ type DebugScanProfile = (
 type DebugScanHeapFetchProfile = (i64, i64, i64, i64, i64, i32, i32, i32);
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedRerankProfile = (
+    i64,
+    i64,
+    i64,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    i32,
+    i64,
+    i64,
+    i64,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -851,7 +868,9 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
 ) -> DebugScanHeapFetchProfile {
     let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
     if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("debug heap-fetch profile could not resolve heap relation for index {index_oid}");
+        pgrx::error!(
+            "debug heap-fetch profile could not resolve heap relation for index {index_oid}"
+        );
     }
 
     let heap_relation =
@@ -970,6 +989,70 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
         result_count,
         slot_fetch_count,
         projected_count,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_rerank_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    limit_count: i32,
+) -> DebugGroupedRerankProfile {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let result_limit =
+        usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
+
+    let total_started = Instant::now();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let emit_started = Instant::now();
+    let mut emitted = 0_i32;
+    while usize::try_from(emitted).expect("emitted count should fit in usize") < result_limit
+        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+    {
+        emitted += 1;
+    }
+    let result_count = emitted;
+    let emit_elapsed_us =
+        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let total_elapsed_us =
+        i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let debug_profile = opaque.debug_profile;
+
+    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { pg_sys::IndexScanEnd(scan) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+    (
+        i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
+        i64::try_from(debug_profile.graph_result_materialize_elapsed_us)
+            .expect("timing should fit in i64"),
+        emit_elapsed_us,
+        total_elapsed_us,
+        result_count,
+        i32::try_from(debug_profile.grouped_rerank_quantized_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_quantized_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.grouped_rerank_heap_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_heap_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.grouped_rerank_heap_rows_fetched)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_heap_fetch_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(debug_profile.grouped_rerank_heap_decode_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(debug_profile.grouped_rerank_heap_dot_elapsed_us)
+            .expect("timing should fit in i64"),
     )
 }
 

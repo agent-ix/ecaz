@@ -77,6 +77,14 @@ pub(super) struct ScanDebugProfile {
     pub(super) grouped_traversal_budgeted_expansions: u64,
     pub(super) grouped_traversal_budgeted_candidates: u64,
     pub(super) grouped_traversal_budgeted_exact_candidates: u64,
+    pub(super) grouped_rerank_quantized_score_calls: u64,
+    pub(super) grouped_rerank_quantized_score_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_score_calls: u64,
+    pub(super) grouped_rerank_heap_score_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_rows_fetched: u64,
+    pub(super) grouped_rerank_heap_fetch_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_decode_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_dot_elapsed_us: u64,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -580,6 +588,51 @@ fn record_grouped_traversal_budget(
     _exact_candidate_count: usize,
 ) {
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_quantized_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_quantized_score_calls += 1;
+    opaque
+        .debug_profile
+        .grouped_rerank_quantized_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_quantized_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_score_calls += 1;
+    opaque.debug_profile.grouped_rerank_heap_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_fetch(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_rows_fetched += 1;
+    opaque.debug_profile.grouped_rerank_heap_fetch_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_fetch(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_decode_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_decode_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_decode_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_dot_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_dot_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_dot_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_score_cache_hit(opaque: &mut TqScanOpaque) {
@@ -1796,6 +1849,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     let mut tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
     unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let fetch_started = Instant::now();
     let fetched = unsafe {
         pg_sys::table_tuple_fetch_row_version(
             opaque.grouped_heap_rerank_relation,
@@ -1804,6 +1859,12 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             opaque.grouped_heap_rerank_slot,
         )
     };
+    #[cfg(any(test, feature = "pg_test"))]
+    let fetch_elapsed_us =
+        u64::try_from(fetch_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let fetch_elapsed_us = 0;
+    record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
     if !fetched {
         pgrx::error!(
             "tqhnsw grouped-v2 heap-f32 rerank could not fetch heap tuple at ({},{})",
@@ -1812,6 +1873,8 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         );
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
+    let decode_started = Instant::now();
     let source_datum = unsafe {
         required_slot_datum(
             opaque.grouped_heap_rerank_slot,
@@ -1823,7 +1886,21 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         .unwrap_or_else(|| {
             pgrx::error!("tqhnsw grouped-v2 heap rerank source column must decode to real[]")
         });
+    #[cfg(any(test, feature = "pg_test"))]
+    let decode_elapsed_us =
+        u64::try_from(decode_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let decode_elapsed_us = 0;
+    record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
+    #[cfg(any(test, feature = "pg_test"))]
+    let dot_started = Instant::now();
     let score = negative_inner_product(scan_query_values(opaque), &source);
+    #[cfg(any(test, feature = "pg_test"))]
+    let dot_elapsed_us =
+        u64::try_from(dot_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let dot_elapsed_us = 0;
+    record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
     unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
     score
 }
@@ -1833,6 +1910,8 @@ unsafe fn score_grouped_candidate_heap_rerank(
     element: &CachedGraphElement,
 ) -> Option<f32> {
     let opaque = unsafe { &mut *opaque };
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
     let mut best_score: Option<f32> = None;
     for heap_tid in element.heaptids.as_slice().iter().copied() {
         let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
@@ -1840,6 +1919,14 @@ unsafe fn score_grouped_candidate_heap_rerank(
             Some(current) => current.min(score),
             None => score,
         });
+    }
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    if best_score.is_some() {
+        record_grouped_rerank_heap_score_elapsed(opaque, elapsed_us);
     }
     best_score
 }
@@ -1925,7 +2012,16 @@ unsafe fn grouped_candidate_rerank_comparison_score(
 
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
-    Some(unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) })
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    Some(score)
 }
 
 fn candidate_score_dispatch<'a>(

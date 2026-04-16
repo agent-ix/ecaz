@@ -125,6 +125,36 @@ BEGIN
         module_path
     );
 
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_grouped_rerank_profile"(oid, real[])';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_grouped_rerank_profile"(oid, real[], integer)';
+
+    EXECUTE format(
+        $fmt$
+        CREATE FUNCTION tests."tqhnsw_debug_grouped_rerank_profile"(
+            index_oid oid,
+            query real[],
+            limit_count integer
+        ) RETURNS TABLE (
+            rescan_amrescan_total_elapsed_us bigint,
+            rescan_graph_result_materialize_elapsed_us bigint,
+            emit_elapsed_us bigint,
+            total_elapsed_us bigint,
+            result_count integer,
+            grouped_rerank_quantized_score_calls integer,
+            grouped_rerank_quantized_score_elapsed_us bigint,
+            grouped_rerank_heap_score_calls integer,
+            grouped_rerank_heap_score_elapsed_us bigint,
+            grouped_rerank_heap_rows_fetched integer,
+            grouped_rerank_heap_fetch_elapsed_us bigint,
+            grouped_rerank_heap_decode_elapsed_us bigint,
+            grouped_rerank_heap_dot_elapsed_us bigint
+        )
+        LANGUAGE c STRICT
+        AS %L, 'tqhnsw_debug_grouped_rerank_profile_wrapper'
+        $fmt$,
+        module_path
+    );
+
     EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_adr030_runtime_settings"()';
 
     EXECUTE format(

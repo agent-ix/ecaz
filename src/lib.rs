@@ -3866,6 +3866,110 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_grouped_v2_quantized_rerank_profile_reports_quantized_only() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_quantized_rerank_profile",
+            "tqhnsw_grouped_v2_runtime_quantized_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, grouped_v2_runtime_query(), 10) };
+
+        assert!(
+            result_count > 0,
+            "quantized grouped rerank profile should still emit ordered results",
+        );
+        assert!(
+            grouped_rerank_quantized_score_calls > 0
+                && grouped_rerank_quantized_score_elapsed_us >= 0,
+            "quantized grouped rerank profile should surface quantized comparison work",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_heap_score_calls,
+                grouped_rerank_heap_score_elapsed_us,
+                grouped_rerank_heap_rows_fetched,
+                grouped_rerank_heap_fetch_elapsed_us,
+                grouped_rerank_heap_decode_elapsed_us,
+                grouped_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "quantized grouped rerank profile should leave heap rerank counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_heap_rerank_profile_reports_heap_only() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
+        let _rerank_mode_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
+            "heap_f32",
+        );
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_heap_rerank_profile",
+            "tqhnsw_grouped_v2_runtime_heap_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, grouped_v2_runtime_query(), 10) };
+
+        assert!(
+            result_count > 0,
+            "heap-f32 grouped rerank profile should still emit ordered results",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_quantized_score_calls,
+                grouped_rerank_quantized_score_elapsed_us,
+            ),
+            (0, 0),
+            "heap-f32 grouped rerank profile should bypass quantized rerank counters",
+        );
+        assert!(
+            grouped_rerank_heap_score_calls > 0 && grouped_rerank_heap_score_elapsed_us >= 0,
+            "heap-f32 grouped rerank profile should surface per-element heap rerank work",
+        );
+        assert!(
+            grouped_rerank_heap_rows_fetched >= grouped_rerank_heap_score_calls
+                && grouped_rerank_heap_fetch_elapsed_us >= 0
+                && grouped_rerank_heap_decode_elapsed_us >= 0
+                && grouped_rerank_heap_dot_elapsed_us >= 0,
+            "heap-f32 grouped rerank profile should surface heap fetch, decode, and dot-product work for survivor rows",
+        );
+    }
+
+    #[pg_test]
     fn test_grouped_v2_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
@@ -15212,6 +15316,70 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_rerank_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(grouped_rerank_quantized_score_calls, i32),
+            name!(grouped_rerank_quantized_score_elapsed_us, i64),
+            name!(grouped_rerank_heap_score_calls, i32),
+            name!(grouped_rerank_heap_score_elapsed_us, i64),
+            name!(grouped_rerank_heap_rows_fetched, i32),
+            name!(grouped_rerank_heap_fetch_elapsed_us, i64),
+            name!(grouped_rerank_heap_decode_elapsed_us, i64),
+            name!(grouped_rerank_heap_dot_elapsed_us, i64),
+        ),
+    > {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_rerank_profile")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) };
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
         ))
     }
 
