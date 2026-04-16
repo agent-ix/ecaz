@@ -2113,7 +2113,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_insert_format_adapter_recognizes_grouped_v2() {
+    fn resolve_insert_format_adapter_recognizes_pq_fastscan() {
         let metadata = page::MetadataPage {
             m: 8,
             ef_construction: 64,

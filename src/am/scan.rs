@@ -886,7 +886,7 @@ fn validate_runtime_scan_format(
     graph::GraphStorageDescriptor::from_metadata(metadata)
 }
 
-fn experimental_grouped_v2_exact_traversal_enabled() -> bool {
+fn pq_fastscan_exact_traversal_enabled() -> bool {
     std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV).is_some()
 }
 
@@ -929,7 +929,7 @@ fn grouped_heap_rerank_enabled(opaque: &TqScanOpaque) -> bool {
 }
 
 fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
-    if !experimental_grouped_v2_exact_traversal_enabled() {
+    if !pq_fastscan_exact_traversal_enabled() {
         return GroupedExactTraversalMode::Disabled;
     }
 
@@ -5722,7 +5722,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_runtime_scan_format_accepts_grouped_v2_metadata() {
+    fn validate_runtime_scan_format_accepts_pq_fastscan_metadata() {
         let metadata = page::MetadataPage {
             m: 8,
             ef_construction: 64,

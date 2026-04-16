@@ -2451,7 +2451,7 @@ mod tests {
     }
 
     #[test]
-    fn grouped_v2_flush_output_marks_grouped_metadata_and_pages() {
+    fn pq_fastscan_flush_output_marks_grouped_metadata_and_pages() {
         let seed = 42_u64;
         let bits = 4_u8;
         let tuples = (0..16)

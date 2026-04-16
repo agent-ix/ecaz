@@ -98,8 +98,8 @@ impl RerankCodecKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphStorageFormat {
-    ScalarV1,
-    GroupedV2,
+    TurboQuant,
+    PqFastScan,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -171,8 +171,8 @@ pub struct CurrentFormatMetadata {
 impl MetadataPage {
     pub fn graph_storage_format(&self) -> Result<GraphStorageFormat, String> {
         match self.format_version {
-            INDEX_FORMAT_V1_SCALAR => Ok(GraphStorageFormat::ScalarV1),
-            INDEX_FORMAT_V2_GROUPED => Ok(GraphStorageFormat::GroupedV2),
+            INDEX_FORMAT_V1_SCALAR => Ok(GraphStorageFormat::TurboQuant),
+            INDEX_FORMAT_V2_GROUPED => Ok(GraphStorageFormat::PqFastScan),
             other => Err(format!("unsupported metadata format version: {other}")),
         }
     }
@@ -1406,7 +1406,7 @@ mod tests {
         });
         assert_eq!(
             v1.graph_storage_format().unwrap(),
-            GraphStorageFormat::ScalarV1
+            GraphStorageFormat::TurboQuant
         );
 
         let v2 = MetadataPage {
@@ -1430,7 +1430,7 @@ mod tests {
         };
         assert_eq!(
             v2.graph_storage_format().unwrap(),
-            GraphStorageFormat::GroupedV2
+            GraphStorageFormat::PqFastScan
         );
     }
 

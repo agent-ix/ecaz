@@ -1776,7 +1776,7 @@ mod tests {
         })
     }
 
-    fn grouped_v2_metadata() -> page::MetadataPage {
+    fn pq_fastscan_metadata() -> page::MetadataPage {
         page::MetadataPage {
             format_version: page::INDEX_FORMAT_V2_GROUPED,
             transform_kind: page::TransformKind::Srht,
@@ -1806,9 +1806,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_vacuum_format_adapter_recognizes_grouped_v2() {
+    fn resolve_vacuum_format_adapter_recognizes_pq_fastscan() {
         assert_eq!(
-            resolve_vacuum_format_adapter(&grouped_v2_metadata()),
+            resolve_vacuum_format_adapter(&pq_fastscan_metadata()),
             Ok(VacuumFormatAdapter::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,

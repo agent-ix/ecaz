@@ -24,14 +24,14 @@ pub(crate) enum GraphStorageDescriptor {
 impl GraphStorageDescriptor {
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
         match metadata.graph_storage_format()? {
-            page::GraphStorageFormat::ScalarV1 => Ok(Self::TurboQuant {
+            page::GraphStorageFormat::TurboQuant => Ok(Self::TurboQuant {
                 code_len: if metadata.dimensions == 0 {
                     0
                 } else {
                     crate::code_len(metadata.dimensions as usize, metadata.bits)
                 },
             }),
-            page::GraphStorageFormat::GroupedV2 => {
+            page::GraphStorageFormat::PqFastScan => {
                 if metadata.dimensions == 0 {
                     return Ok(Self::PqFastScan(PqFastScanLayout {
                         binary_word_count: 0,
@@ -1407,7 +1407,7 @@ mod tests {
         }
     }
 
-    fn grouped_v2_metadata() -> page::MetadataPage {
+    fn pq_fastscan_metadata() -> page::MetadataPage {
         page::MetadataPage {
             m: 8,
             ef_construction: 40,
@@ -1461,7 +1461,7 @@ mod tests {
                 | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            ..grouped_v2_metadata()
+            ..pq_fastscan_metadata()
         };
 
         assert_eq!(
@@ -1482,7 +1482,7 @@ mod tests {
             search_subvector_count: 0,
             search_subvector_dim: 0,
             grouped_codebook_head: page::ItemPointer::INVALID,
-            ..grouped_v2_metadata()
+            ..pq_fastscan_metadata()
         };
 
         assert_eq!(
@@ -1496,13 +1496,13 @@ mod tests {
     }
 
     #[test]
-    fn graph_storage_descriptor_rejects_grouped_v2_missing_grouped_payload_flag() {
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_grouped_payload_flag() {
         let metadata = page::MetadataPage {
             dimensions: 96,
             payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            ..grouped_v2_metadata()
+            ..pq_fastscan_metadata()
         };
 
         assert_eq!(
@@ -1512,13 +1512,13 @@ mod tests {
     }
 
     #[test]
-    fn graph_storage_descriptor_rejects_grouped_v2_missing_cold_rerank_flag() {
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_cold_rerank_flag() {
         let metadata = page::MetadataPage {
             dimensions: 96,
             payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            ..grouped_v2_metadata()
+            ..pq_fastscan_metadata()
         };
 
         assert_eq!(
@@ -1528,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn graph_storage_descriptor_rejects_grouped_v2_missing_codebook_head() {
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_codebook_head() {
         let metadata = page::MetadataPage {
             dimensions: 96,
             payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
@@ -1536,7 +1536,7 @@ mod tests {
             search_subvector_count: 6,
             search_subvector_dim: 16,
             grouped_codebook_head: page::ItemPointer::INVALID,
-            ..grouped_v2_metadata()
+            ..pq_fastscan_metadata()
         };
 
         assert_eq!(
@@ -1827,7 +1827,7 @@ mod tests {
 
     #[test]
     fn derive_grouped_search_code_from_source_uses_persisted_codebook_shape() {
-        let metadata = grouped_v2_metadata();
+        let metadata = pq_fastscan_metadata();
         let model = GroupedCodebookModel {
             head_tid: tid(2, 1),
             group_count: 2,
@@ -1859,7 +1859,7 @@ mod tests {
     #[test]
     fn derive_grouped_search_code_from_source_rejects_dimension_mismatch() {
         let error = derive_grouped_search_code_from_source(
-            &grouped_v2_metadata(),
+            &pq_fastscan_metadata(),
             &GroupedCodebookModel {
                 head_tid: tid(2, 1),
                 group_count: 2,
