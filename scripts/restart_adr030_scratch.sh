@@ -124,29 +124,29 @@ else
     printf '[scratch] exact_scope=disabled\n'
 fi
 
-export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
-export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE="${grouped_score_mode}"
-export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE="${rerank_mode}"
+export TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW="${window}"
+export TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE="${grouped_score_mode}"
+export TQVECTOR_PQ_FASTSCAN_RERANK_MODE="${rerank_mode}"
 if [[ -n "${rerank_source_column}" ]]; then
-    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN="${rerank_source_column}"
+    export TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN="${rerank_source_column}"
 else
-    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN 2>/dev/null || true
+    unset TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN 2>/dev/null || true
 fi
 
 if [[ "${exact_enabled}" -eq 1 ]]; then
-    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL=1
-    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE="${exact_scope}"
-    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY="${exact_strategy}"
+    export TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL=1
+    export TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE="${exact_scope}"
+    export TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY="${exact_strategy}"
     if [[ -n "${exact_limit}" ]]; then
-        export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT="${exact_limit}"
+        export TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT="${exact_limit}"
     else
-        unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
+        unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
     fi
 else
-    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL 2>/dev/null || true
-    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE 2>/dev/null || true
-    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY 2>/dev/null || true
-    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
+    unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL 2>/dev/null || true
+    unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE 2>/dev/null || true
+    unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY 2>/dev/null || true
+    unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
 fi
 
 export PGRX_HOME="${pgrx_home}"

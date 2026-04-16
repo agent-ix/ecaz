@@ -3576,7 +3576,7 @@ mod tests {
     )]
     fn test_pq_fastscan_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
-        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "0");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "0");
 
         Spi::run(
             "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_window (
@@ -3827,14 +3827,9 @@ mod tests {
         scope: Option<&str>,
     ) -> Vec<DebugScanComparisonRow> {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = scope.map(|value| {
-            ScopedEnvVar::set(
-                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-                value,
-            )
-        });
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = scope
+            .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", value));
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
         unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(
@@ -3851,16 +3846,9 @@ mod tests {
         include_source_raw: bool,
     ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
-        let _rerank_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
-            "heap_f32",
-        );
-        let _source_guard = rerank_source_column.map(|value| {
-            ScopedEnvVar::set(
-                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
-                value,
-            )
-        });
+        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _source_guard = rerank_source_column
+            .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", value));
         let index_oid = if include_source_raw {
             create_pq_fastscan_runtime_fixture_with_source_raw(table_name, index_name)
         } else {
@@ -4592,10 +4580,8 @@ mod tests {
     )]
     fn test_pq_fastscan_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _score_mode_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
-            "bogus",
-        );
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "bogus");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_invalid_score_mode",
             "tqhnsw_pq_fastscan_runtime_invalid_score_mode_idx",
@@ -4610,8 +4596,7 @@ mod tests {
     )]
     fn test_pq_fastscan_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _rerank_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
+        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "bogus");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode",
             "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
@@ -4626,12 +4611,8 @@ mod tests {
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-            "bogus",
-        );
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "bogus");
 
         Spi::run(
             "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_scope (
@@ -4679,16 +4660,11 @@ mod tests {
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-            "layer0",
-        );
-        let _strategy_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
-            "bogus",
-        );
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "layer0");
+        let _strategy_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY", "bogus");
 
         Spi::run(
             "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_strategy (
@@ -4736,12 +4712,8 @@ mod tests {
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _limit_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
-            "bogus",
-        );
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "bogus");
 
         Spi::run(
             "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_limit (
@@ -5856,9 +5828,8 @@ mod tests {
     ) {
         let _lock = env_var_test_lock();
         let window_value = window_size.to_string();
-        let _window_guard = configure_window_env.then(|| {
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", &window_value)
-        });
+        let _window_guard = configure_window_env
+            .then(|| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", &window_value));
 
         Spi::run(
             "CREATE TABLE tqhnsw_pq_fastscan_runtime_live_window (
@@ -16328,20 +16299,43 @@ mod tests {
         TableIterator::once((
             true,
             true,
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW")
+                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW"))
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
+                })
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_MODE")
+                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE"))
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
+                })
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL").is_some(),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL")
+                })
+                .is_some(),
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
+                })
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY")
+                .or_else(|| {
+                    std::env::var_os(
+                        "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
+                    )
+                })
                 .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
+            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
+                })
                 .map(|value| value.to_string_lossy().into_owned()),
         ))
     }

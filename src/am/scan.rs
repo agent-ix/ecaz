@@ -20,20 +20,30 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
-const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
-const ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
+const PQ_FASTSCAN_SCAN_WINDOW_ENV: &str = "TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW";
+const LEGACY_ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
+const PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE";
+const LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
-const ADR030_EXPERIMENTAL_RERANK_MODE_ENV: &str =
+const PQ_FASTSCAN_RERANK_MODE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_RERANK_MODE";
+const LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE";
-const ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV: &str =
+const PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV: &str = "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN";
+const LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN";
-const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
+const PQ_FASTSCAN_EXACT_TRAVERSAL_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
-const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
+const PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE";
-const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV: &str =
+const PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT";
-const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
+const PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
+    "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
 const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
 const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
@@ -886,12 +896,23 @@ fn validate_runtime_scan_format(
     graph::GraphStorageDescriptor::from_metadata(metadata)
 }
 
+fn pq_fastscan_env_var(canonical: &str, legacy: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(canonical).or_else(|| std::env::var_os(legacy))
+}
+
 fn pq_fastscan_exact_traversal_enabled() -> bool {
-    std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV).is_some()
+    pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV,
+    )
+    .is_some()
 }
 
 fn resolve_grouped_traversal_score_mode() -> GroupedTraversalScoreMode {
-    let Some(raw_mode) = std::env::var_os(ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV) else {
+    let Some(raw_mode) = pq_fastscan_env_var(
+        PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV,
+    ) else {
         return GroupedTraversalScoreMode::GroupedPq;
     };
 
@@ -910,7 +931,10 @@ fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
 }
 
 fn resolve_grouped_rerank_mode() -> GroupedRerankMode {
-    let Some(raw_mode) = std::env::var_os(ADR030_EXPERIMENTAL_RERANK_MODE_ENV) else {
+    let Some(raw_mode) = pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_MODE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
+    ) else {
         return GroupedRerankMode::Quantized;
     };
 
@@ -933,7 +957,10 @@ fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
         return GroupedExactTraversalMode::Disabled;
     }
 
-    let Some(raw_scope) = std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV) else {
+    let Some(raw_scope) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV,
+    ) else {
         return GroupedExactTraversalMode::AllLayers;
     };
 
@@ -958,8 +985,10 @@ fn grouped_exact_traversal_enabled_for_layer(mode: GroupedExactTraversalMode, la
 fn resolve_grouped_exact_traversal_strategy(
     mode: GroupedExactTraversalMode,
 ) -> GroupedExactTraversalStrategy {
-    let Some(raw_strategy) = std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV)
-    else {
+    let Some(raw_strategy) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV,
+    ) else {
         return GroupedExactTraversalStrategy::Expansion;
     };
 
@@ -981,7 +1010,10 @@ fn resolve_grouped_exact_traversal_strategy(
 }
 
 fn resolve_grouped_exact_traversal_limit() -> u8 {
-    let Some(raw_limit) = std::env::var_os(ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV) else {
+    let Some(raw_limit) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV,
+    ) else {
         return 0;
     };
 
@@ -1032,7 +1064,10 @@ fn grouped_exact_traversal_frontier_head_enabled(opaque: &TqScanOpaque) -> bool 
 }
 
 fn resolve_grouped_live_rerank_window() -> usize {
-    let Some(raw_window) = std::env::var_os(ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV) else {
+    let Some(raw_window) = pq_fastscan_env_var(
+        PQ_FASTSCAN_SCAN_WINDOW_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV,
+    ) else {
         return PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW;
     };
 
@@ -1129,10 +1164,13 @@ unsafe fn configure_grouped_heap_rerank_state(
         return;
     }
 
-    let source_column_override = std::env::var_os(ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV)
-        .map(|value| value.to_string_lossy().into_owned());
+    let source_column_override = pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
+    )
+    .map(|value| value.to_string_lossy().into_owned());
     let source_label = if source_column_override.is_some() {
-        ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
     } else {
         "build_source_column"
     };
@@ -1140,7 +1178,7 @@ unsafe fn configure_grouped_heap_rerank_state(
         index_options.build_source_column.clone().unwrap_or_else(|| {
             pgrx::error!(
                 "tqhnsw PqFastScan heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
-                ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV
+                PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
             )
         })
     });
