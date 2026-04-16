@@ -7444,6 +7444,197 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_vacuum_source_backed_repair_prefers_source_candidate() {
+        let table_name = "tqhnsw_vacuum_source_metric";
+        let index_name = "tqhnsw_vacuum_source_metric_idx";
+
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        let mut source_by_id = HashMap::new();
+        for id in 1_i64..=8_i64 {
+            let theta = 0.18_f32 * id as f32;
+            let reverse_theta = 0.18_f32 * (9 - id) as f32;
+            let source = vec![
+                theta.cos(),
+                theta.sin(),
+                (theta * 0.5).cos(),
+                (theta * 0.5).sin(),
+            ];
+            let embedding = [
+                reverse_theta.cos(),
+                reverse_theta.sin(),
+                (reverse_theta * 0.5).cos(),
+                (reverse_theta * 0.5).sin(),
+            ];
+            source_by_id.insert(id, source.clone());
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES (
+                    {id},
+                    ARRAY[{source}]::real[],
+                    encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42)
+                )",
+                source = source
+                    .iter()
+                    .map(|value| format!("{value:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                embedding = embedding
+                    .iter()
+                    .map(|value| format!("{value:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ))
+            .expect("seed insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2, build_source_column = 'source')"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+
+        let heap_tid_to_id = (1_i64..=8_i64)
+            .map(|id| (heap_tid_for_row(table_name, id), id))
+            .collect::<HashMap<_, _>>();
+        let case = (1_i64..=8_i64)
+            .find_map(|deleted_row_id| {
+                let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+                let (deleted_element_tid, _) =
+                    find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+
+                elements_before.iter().find_map(|(affected_tid, affected_element)| {
+                    if *affected_tid == deleted_element_tid
+                        || affected_element.deleted
+                        || affected_element.heaptids.is_empty()
+                    {
+                        return None;
+                    }
+
+                    let neighbor = neighbors_before.get(&affected_element.neighbortid).expect(
+                        "live source-backed element should have a persisted neighbor tuple",
+                    );
+                    let layer0 =
+                        layer_neighbor_slice(&neighbor.tids, usize::from(metadata_before.m), 0);
+                    if !layer0.contains(&deleted_element_tid) {
+                        return None;
+                    }
+
+                    let existing_live = layer0
+                        .iter()
+                        .copied()
+                        .filter(|tid| {
+                            *tid != am::page::ItemPointer::INVALID && *tid != deleted_element_tid
+                        })
+                        .collect::<HashSet<_>>();
+                    let affected_row_id = *heap_tid_to_id
+                        .get(
+                            affected_element
+                                .heaptids
+                                .first()
+                                .expect("affected element should keep one representative heap tid"),
+                        )
+                        .expect("affected heap tid should map back to a table row");
+                    let affected_source = source_by_id
+                        .get(&affected_row_id)
+                        .expect("affected row should keep its source vector");
+
+                    let mut ranked = elements_before
+                        .iter()
+                        .filter_map(|(candidate_tid, candidate_element)| {
+                            if *candidate_tid == *affected_tid
+                                || *candidate_tid == deleted_element_tid
+                                || candidate_element.deleted
+                                || candidate_element.heaptids.is_empty()
+                                || existing_live.contains(candidate_tid)
+                            {
+                                return None;
+                            }
+
+                            let candidate_row_id = *heap_tid_to_id
+                                .get(
+                                    candidate_element
+                                        .heaptids
+                                        .first()
+                                        .expect("candidate element should keep one representative heap tid"),
+                                )
+                                .expect("candidate heap tid should map back to a table row");
+                            let candidate_source = source_by_id
+                                .get(&candidate_row_id)
+                                .expect("candidate row should keep its source vector");
+                            Some((
+                                *candidate_tid,
+                                -dot_product(affected_source, candidate_source),
+                                -crate::score_code_inner_product(
+                                    metadata_before.dimensions as usize,
+                                    metadata_before.bits,
+                                    metadata_before.seed,
+                                    &affected_element.code,
+                                    &candidate_element.code,
+                                ),
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    ranked.sort_by(|left, right| {
+                        left.1
+                            .total_cmp(&right.1)
+                            .then_with(|| left.0.block_number.cmp(&right.0.block_number))
+                            .then_with(|| left.0.offset_number.cmp(&right.0.offset_number))
+                    });
+                    let expected_source_best = ranked.first().map(|entry| entry.0)?;
+                    ranked.sort_by(|left, right| {
+                        left.2
+                            .total_cmp(&right.2)
+                            .then_with(|| left.0.block_number.cmp(&right.0.block_number))
+                            .then_with(|| left.0.offset_number.cmp(&right.0.offset_number))
+                    });
+                    let expected_code_best = ranked.first().map(|entry| entry.0)?;
+                    (expected_source_best != expected_code_best).then_some((
+                        deleted_row_id,
+                        deleted_heap_tid,
+                        *affected_tid,
+                        expected_source_best,
+                    ))
+                })
+            })
+            .expect("fixture should expose at least one broken layer-0 edge where source-space and code-space replacement rankings differ");
+
+        Spi::run(&format!("DELETE FROM {table_name} WHERE id = {}", case.0))
+            .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_, affected_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == case.2)
+            .expect("affected element should remain on disk after vacuum repair");
+        let neighbor_after = neighbors_after
+            .get(&affected_after.neighbortid)
+            .expect("affected element should keep a persisted neighbor tuple after repair");
+        let layer0_after =
+            layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+
+        assert!(
+            layer0_after.contains(&case.3),
+            "vacuum source-backed repair should choose the best source-space replacement candidate",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
         Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");

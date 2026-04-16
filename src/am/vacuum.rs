@@ -2,7 +2,7 @@ use std::{collections::HashSet, ffi::c_void, ptr};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
-use super::{graph, page, search, shared, wal};
+use super::{graph, options, page, search, shared, source, wal};
 use crate::quant::prod::payload_len;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
@@ -14,6 +14,157 @@ const ADR030_GROUPED_V2_VACUUM_UNSUPPORTED: &str =
 enum VacuumFormatAdapter {
     TurboQuant { code_len: usize },
     PqFastScan(graph::GroupedGraphLayout),
+}
+
+#[derive(Debug)]
+enum VacuumSearchMetric {
+    Code,
+    Source(VacuumHeapSourceScorer),
+}
+
+#[derive(Debug)]
+struct VacuumHeapSourceScorer {
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attribute: source::SourceAttribute,
+}
+
+impl VacuumHeapSourceScorer {
+    unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+        let source_attribute = unsafe {
+            source::resolve_source_attribute(
+                heap_relation,
+                source_column,
+                "build_source_column",
+                source::SourceTypePolicy::RealArrayOnly,
+            )
+        };
+        let slot = unsafe {
+            source::allocate_heap_slot(
+                heap_relation,
+                "tqhnsw vacuum failed to allocate a heap source slot",
+            )
+        };
+
+        Self {
+            heap_relation,
+            snapshot: std::ptr::addr_of_mut!(pg_sys::SnapshotAnyData),
+            slot,
+            source_attribute,
+        }
+    }
+
+    unsafe fn averaged_source_vector(
+        &mut self,
+        heap_tids: &[page::ItemPointer],
+        label: &str,
+    ) -> Option<Vec<f32>> {
+        let mut representative: Option<Vec<f32>> = None;
+        let mut count = 0usize;
+
+        for heap_tid in heap_tids.iter().copied() {
+            let source = unsafe {
+                source::load_source_from_heap_row(
+                    self.heap_relation,
+                    heap_tid,
+                    self.snapshot,
+                    self.slot,
+                    self.source_attribute,
+                    label,
+                )
+            };
+            match representative.as_mut() {
+                Some(existing) => {
+                    source::average_source_representatives(existing, count, source.as_slice(), 1);
+                    count += 1;
+                }
+                None => {
+                    representative = Some(source.as_slice().to_vec());
+                    count = 1;
+                }
+            }
+            drop(source);
+            unsafe { pg_sys::ExecClearTuple(self.slot) };
+        }
+
+        representative
+    }
+
+    unsafe fn score_graph_element_pair(
+        &mut self,
+        source_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> Option<f32> {
+        if source_element.deleted
+            || source_element.heaptids.is_empty()
+            || candidate_element.deleted
+            || candidate_element.heaptids.is_empty()
+        {
+            return None;
+        }
+
+        let source_vector = unsafe {
+            self.averaged_source_vector(
+                &source_element.heaptids,
+                "vacuum repair source-backed element",
+            )
+        }?;
+        let candidate_vector = unsafe {
+            self.averaged_source_vector(
+                &candidate_element.heaptids,
+                "vacuum repair source-backed candidate",
+            )
+        }?;
+        Some(source::negative_inner_product(
+            &source_vector,
+            &candidate_vector,
+        ))
+    }
+}
+
+impl Drop for VacuumHeapSourceScorer {
+    fn drop(&mut self) {
+        if !self.slot.is_null() {
+            unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+        }
+    }
+}
+
+impl VacuumSearchMetric {
+    unsafe fn for_relation(
+        index_relation: pg_sys::Relation,
+        heap_relation: pg_sys::Relation,
+    ) -> Self {
+        let index_options = unsafe { options::relation_options(index_relation) };
+        match index_options.build_source_column.as_deref() {
+            Some(source_column) => {
+                if heap_relation.is_null() {
+                    pgrx::error!(
+                        "tqhnsw vacuum requires a heap relation for build_source_column indexes"
+                    );
+                }
+                Self::Source(unsafe { VacuumHeapSourceScorer::new(heap_relation, source_column) })
+            }
+            None => Self::Code,
+        }
+    }
+
+    unsafe fn score_graph_element(
+        &mut self,
+        metadata: &page::MetadataPage,
+        source_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> Option<f32> {
+        match self {
+            Self::Code => {
+                score_vacuum_code_element(metadata, &source_element.code, candidate_element)
+            }
+            Self::Source(scorer) => unsafe {
+                scorer.score_graph_element_pair(source_element, candidate_element)
+            },
+        }
+    }
 }
 
 impl VacuumFormatAdapter {
@@ -43,11 +194,12 @@ impl VacuumFormatAdapter {
     unsafe fn repair_graph_connections(
         self,
         index_relation: pg_sys::Relation,
+        heap_relation: pg_sys::Relation,
         deleted_tids: &[page::ItemPointer],
     ) {
         match self {
             Self::TurboQuant { .. } => unsafe {
-                repair_turboquant_graph_connections(index_relation, deleted_tids)
+                repair_turboquant_graph_connections(index_relation, heap_relation, deleted_tids)
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
@@ -104,8 +256,7 @@ struct LayerRepairPlan {
 struct LinearRepairPlanner<'a> {
     metadata: &'a page::MetadataPage,
     code_len: usize,
-    source_tid: page::ItemPointer,
-    source_code: &'a [u8],
+    source: &'a graph::GraphElement,
     deleted_tids: &'a HashSet<page::ItemPointer>,
     existing_set: &'a HashSet<page::ItemPointer>,
     layer: u8,
@@ -145,7 +296,14 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
             let Some(callback) = callback else {
                 return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
             };
-            run_bulkdelete_with_adapter(format, (*info).index, stats, callback, callback_state)
+            run_bulkdelete_with_adapter(
+                format,
+                (*info).index,
+                (*info).heaprel,
+                stats,
+                callback,
+                callback_state,
+            )
         })
     }
 }
@@ -180,6 +338,7 @@ fn resolve_vacuum_format_adapter(
 unsafe fn run_bulkdelete_with_adapter(
     format: VacuumFormatAdapter,
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
@@ -262,7 +421,7 @@ unsafe fn run_bulkdelete_with_adapter(
         finalize_tids.extend(final_plan.finalize_tids);
     }
 
-    unsafe { format.repair_graph_connections(index_relation, &finalize_tids) };
+    unsafe { format.repair_graph_connections(index_relation, heap_relation, &finalize_tids) };
     unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
 
     unsafe {
@@ -414,6 +573,7 @@ unsafe fn apply_page_pass1_updates(
 
 unsafe fn repair_turboquant_graph_connections(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     deleted_tids: &[page::ItemPointer],
 ) {
     if deleted_tids.is_empty() {
@@ -421,6 +581,7 @@ unsafe fn repair_turboquant_graph_connections(
     }
 
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
+    let mut metric = unsafe { VacuumSearchMetric::for_relation(index_relation, heap_relation) };
     let code_len = payload_len(usize::from(metadata.dimensions), metadata.bits)
         .checked_sub(4)
         .expect("payload length should include gamma");
@@ -432,6 +593,7 @@ unsafe fn repair_turboquant_graph_connections(
         plan_repair_replacements(
             index_relation,
             &metadata,
+            &mut metric,
             code_len,
             &deleted_tids,
             &repair_requests,
@@ -628,6 +790,7 @@ unsafe fn unlink_deleted_graph_connections(
 unsafe fn plan_repair_replacements(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    metric: &mut VacuumSearchMetric,
     code_len: usize,
     deleted_tids: &HashSet<page::ItemPointer>,
     requests: &[LayerRepairRequest],
@@ -635,7 +798,14 @@ unsafe fn plan_repair_replacements(
     let mut plans = requests
         .iter()
         .filter_map(|request| unsafe {
-            plan_repair_replacement(index_relation, metadata, code_len, deleted_tids, request)
+            plan_repair_replacement(
+                index_relation,
+                metadata,
+                metric,
+                code_len,
+                deleted_tids,
+                request,
+            )
         })
         .collect::<Vec<_>>();
     plans.sort_unstable_by(|left, right| {
@@ -648,6 +818,7 @@ unsafe fn plan_repair_replacements(
 unsafe fn plan_repair_replacement(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    metric: &mut VacuumSearchMetric,
     code_len: usize,
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
@@ -693,14 +864,14 @@ unsafe fn plan_repair_replacement(
         existing_set: &existing_set,
         target_len: free_slots,
     };
-    let replacements = unsafe { search_repair_candidates_for_layer(index_relation, &planner) };
+    let replacements =
+        unsafe { search_repair_candidates_for_layer(index_relation, metric, &planner) };
     let mut replacements = replacements;
     if replacements.len() < free_slots {
         let linear_planner = LinearRepairPlanner {
             metadata,
             code_len,
-            source_tid: source.tid,
-            source_code: &source.code,
+            source: &source,
             deleted_tids,
             existing_set: &existing_set,
             layer: request.layer,
@@ -708,6 +879,7 @@ unsafe fn plan_repair_replacement(
         unsafe {
             top_up_repair_replacements_from_linear_scan(
                 index_relation,
+                metric,
                 &linear_planner,
                 &mut replacements,
                 free_slots,
@@ -728,12 +900,13 @@ unsafe fn plan_repair_replacement(
 
 unsafe fn search_repair_candidates_for_layer(
     index_relation: pg_sys::Relation,
+    metric: &mut VacuumSearchMetric,
     planner: &RepairSearchPlanner<'_>,
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
     if let Some(entry_candidate) = unsafe {
-        load_vacuum_entry_candidate(index_relation, planner.metadata, &planner.source.code)
+        load_vacuum_entry_candidate(index_relation, planner.metadata, metric, planner.source)
     } {
         if planner.layer == 0 {
             seeds.push(unsafe {
@@ -743,7 +916,7 @@ unsafe fn search_repair_candidates_for_layer(
                     usize::from(planner.metadata.m),
                     entry_candidate,
                     |neighbor| {
-                        score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
+                        metric.score_graph_element(planner.metadata, planner.source, neighbor)
                     },
                 )
             });
@@ -760,11 +933,7 @@ unsafe fn search_repair_candidates_for_layer(
                         upper_seeds,
                         |_| true,
                         |neighbor| {
-                            score_vacuum_graph_element(
-                                planner.metadata,
-                                &planner.source.code,
-                                neighbor,
-                            )
+                            metric.score_graph_element(planner.metadata, planner.source, neighbor)
                         },
                     )
                 };
@@ -778,7 +947,8 @@ unsafe fn search_repair_candidates_for_layer(
 
     seeds.extend(planner.existing_layer.iter().filter_map(|tid| unsafe {
         let element = graph::load_graph_element(index_relation, *tid, planner.code_len);
-        score_vacuum_graph_element(planner.metadata, &planner.source.code, &element)
+        metric
+            .score_graph_element(planner.metadata, planner.source, &element)
             .map(|score| search::BeamCandidate::new(*tid, score))
     }));
     dedup_beam_candidates_by_tid(&mut seeds);
@@ -798,9 +968,7 @@ unsafe fn search_repair_candidates_for_layer(
                     neighbor_tid != planner.source.tid
                         && !planner.deleted_tids.contains(&neighbor_tid)
                 },
-                |neighbor| {
-                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
-                },
+                |neighbor| metric.score_graph_element(planner.metadata, planner.source, neighbor),
             )
         }
     } else {
@@ -816,9 +984,7 @@ unsafe fn search_repair_candidates_for_layer(
                     neighbor_tid != planner.source.tid
                         && !planner.deleted_tids.contains(&neighbor_tid)
                 },
-                |neighbor| {
-                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
-                },
+                |neighbor| metric.score_graph_element(planner.metadata, planner.source, neighbor),
             )
         }
     };
@@ -839,20 +1005,25 @@ unsafe fn search_repair_candidates_for_layer(
 unsafe fn load_vacuum_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    source_code: &[u8],
+    metric: &mut VacuumSearchMetric,
+    source_element: &graph::GraphElement,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     if metadata.entry_point == page::ItemPointer::INVALID {
         return None;
     }
 
     let entry = unsafe {
-        graph::load_graph_element(index_relation, metadata.entry_point, source_code.len())
+        graph::load_graph_element(
+            index_relation,
+            metadata.entry_point,
+            source_element.code.len(),
+        )
     };
-    let entry_score = score_vacuum_graph_element(metadata, source_code, &entry)?;
+    let entry_score = unsafe { metric.score_graph_element(metadata, source_element, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
-fn score_vacuum_graph_element(
+fn score_vacuum_code_element(
     metadata: &page::MetadataPage,
     source_code: &[u8],
     element: &graph::GraphElement,
@@ -884,6 +1055,7 @@ fn dedup_beam_candidates_by_tid(candidates: &mut Vec<search::BeamCandidate<page:
 
 unsafe fn top_up_repair_replacements_from_linear_scan(
     index_relation: pg_sys::Relation,
+    metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
     replacements: &mut Vec<page::ItemPointer>,
     target_len: usize,
@@ -919,6 +1091,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
                 page_ptr,
                 page_size,
                 block_number,
+                metric,
                 planner,
                 replacements,
                 &mut scored,
@@ -946,6 +1119,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
+    metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
     replacements: &[page::ItemPointer],
     scored: &mut Vec<(page::ItemPointer, f32)>,
@@ -974,7 +1148,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
             block_number,
             offset_number: offset,
         };
-        if tid == planner.source_tid
+        if tid == planner.source.tid
             || planner.deleted_tids.contains(&tid)
             || planner.existing_set.contains(&tid)
             || replacements.contains(&tid)
@@ -990,16 +1164,20 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
-        scored.push((
+        let candidate = graph::GraphElement {
             tid,
-            -crate::score_code_inner_product(
-                planner.metadata.dimensions as usize,
-                planner.metadata.bits,
-                planner.metadata.seed,
-                planner.source_code,
-                &element.code,
-            ),
-        ));
+            level: element.level,
+            deleted: element.deleted,
+            heaptids: element.heaptids,
+            gamma: element.gamma,
+            neighbortid: element.neighbortid,
+            code: element.code,
+        };
+        if let Some(score) =
+            unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
+        {
+            scored.push((tid, score));
+        }
     }
 }
 
