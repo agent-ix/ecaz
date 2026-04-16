@@ -2996,6 +2996,63 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_pq_fastscan_small_dim_build_derives_group_size() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_small_dim_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=8 {
+            let source = (0..8)
+                .map(|dim| format!("{:.6}", (((id * 11 + dim) as f32) * 0.08).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..8)
+                .map(|dim| format!("{:.6}", (((id * 5 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_small_dim_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_small_dim_build_idx ON tqhnsw_pq_fastscan_small_dim_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("small-dimension index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_small_dim_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let grouped_codebook_count = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.search_subvector_dim, 8);
+        assert_eq!(metadata.search_subvector_count, 1);
+        assert_eq!(grouped_codebook_count, 1);
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_turboquant_storage_format_build_writes_scalar_pages() {
         let _lock = env_var_test_lock();
 

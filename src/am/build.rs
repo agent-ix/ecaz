@@ -17,7 +17,7 @@ use crate::quant::{
 
 use super::{options, page, shared, source, wal, P_NEW};
 
-const PQ_FASTSCAN_DEFAULT_GROUP_SIZE: usize = 16;
+const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
 const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
 
@@ -1063,17 +1063,26 @@ pub(super) fn default_pq_fastscan_flush_output(
     if state.options.build_source_column.is_none() {
         return Err("tqhnsw pq_fastscan build currently requires build_source_column".to_owned());
     }
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let group_size = default_pq_fastscan_group_size(dimensions);
     let train_size = state
         .heap_tuples
         .len()
         .min(PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE);
     let plan = plan_v2_grouped_source_build(
         state,
-        PQ_FASTSCAN_DEFAULT_GROUP_SIZE,
+        group_size,
         train_size,
         PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
     )?;
-    pq_fastscan_flush_output(state, &plan, PQ_FASTSCAN_DEFAULT_GROUP_SIZE)
+    pq_fastscan_flush_output(state, &plan, group_size)
+}
+
+fn default_pq_fastscan_group_size(dimensions: u16) -> usize {
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
+    transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
 }
 
 fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
@@ -2655,8 +2664,58 @@ mod tests {
         assert_eq!(output.metadata.search_subvector_count, 1);
         assert_eq!(
             output.metadata.search_subvector_dim,
-            PQ_FASTSCAN_DEFAULT_GROUP_SIZE as u16
+            PQ_FASTSCAN_TARGET_GROUP_SIZE as u16
         );
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
+    }
+
+    #[test]
+    fn default_pq_fastscan_flush_output_derives_small_dimension_group_size() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..8)
+            .map(|i| {
+                let source = (0..8)
+                    .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 8,
+                    bits,
+                    seed,
+                    gamma: 0.03 * i as f32,
+                    code: vec![i as u8; 4],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(8),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = default_pq_fastscan_flush_output(&state).unwrap();
+
+        assert_eq!(output.metadata.search_subvector_count, 1);
+        assert_eq!(output.metadata.search_subvector_dim, 8);
         assert_ne!(
             output.metadata.grouped_codebook_head,
             page::ItemPointer::INVALID
