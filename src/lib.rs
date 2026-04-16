@@ -4417,6 +4417,112 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let index_name = "tqhnsw_pq_fastscan_rerank_profile_sql_surface_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_rerank_profile_sql_surface",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
+        let (
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            result_count,
+                            pq_fastscan_rerank_quantized_score_calls,
+                            pq_fastscan_rerank_quantized_score_elapsed_us,
+                            pq_fastscan_rerank_heap_score_calls,
+                            pq_fastscan_rerank_heap_score_elapsed_us,
+                            pq_fastscan_rerank_heap_rows_fetched,
+                            pq_fastscan_rerank_heap_fetch_elapsed_us,
+                            pq_fastscan_rerank_heap_decode_elapsed_us,
+                            pq_fastscan_rerank_heap_dot_elapsed_us
+                         FROM tests.tqhnsw_debug_pq_fastscan_rerank_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal},
+                            10
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("pq fastscan rerank profile query should succeed")
+                .next()
+                .expect("pq fastscan rerank profile should return one row");
+            (
+                row["result_count"]
+                    .value::<i32>()
+                    .expect("result count should decode")
+                    .expect("result count should be non-null"),
+                row["pq_fastscan_rerank_quantized_score_calls"]
+                    .value::<i32>()
+                    .expect("quantized score call count should decode")
+                    .expect("quantized score call count should be non-null"),
+                row["pq_fastscan_rerank_quantized_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("quantized score elapsed should decode")
+                    .expect("quantized score elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_score_calls"]
+                    .value::<i32>()
+                    .expect("heap score call count should decode")
+                    .expect("heap score call count should be non-null"),
+                row["pq_fastscan_rerank_heap_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap score elapsed should decode")
+                    .expect("heap score elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_rows_fetched"]
+                    .value::<i32>()
+                    .expect("heap rows fetched should decode")
+                    .expect("heap rows fetched should be non-null"),
+                row["pq_fastscan_rerank_heap_fetch_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap fetch elapsed should decode")
+                    .expect("heap fetch elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_decode_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap decode elapsed should decode")
+                    .expect("heap decode elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_dot_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap dot elapsed should decode")
+                    .expect("heap dot elapsed should be non-null"),
+            )
+        });
+
+        assert!(result_count > 0);
+        assert!(
+            pq_fastscan_rerank_quantized_score_calls > 0
+                && pq_fastscan_rerank_quantized_score_elapsed_us >= 0,
+            "canonical pq fastscan rerank profile should surface quantized rerank work",
+        );
+        assert_eq!(
+            (
+                pq_fastscan_rerank_heap_score_calls,
+                pq_fastscan_rerank_heap_score_elapsed_us,
+                pq_fastscan_rerank_heap_rows_fetched,
+                pq_fastscan_rerank_heap_fetch_elapsed_us,
+                pq_fastscan_rerank_heap_decode_elapsed_us,
+                pq_fastscan_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "canonical pq fastscan rerank profile should leave heap rerank counters inert in the default quantized mode",
+        );
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
         let _exact_guard =
@@ -4513,6 +4619,119 @@ mod tests {
         assert_eq!(
             grouped_traversal_budgeted_expansions, grouped_traversal_budgeted_exact_candidates,
             "limit=1 should exact-rescore one grouped candidate per budgeted expansion",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_pq_fastscan_scan_hot_path_profile_sql_surface() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
+        let index_name = "tqhnsw_pq_fastscan_hot_path_profile_sql_surface_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_hot_path_profile_sql_surface",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
+        let (
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            score_cache_hits,
+                            score_cache_misses,
+                            pq_fastscan_traversal_approx_score_calls,
+                            pq_fastscan_traversal_approx_score_elapsed_us,
+                            pq_fastscan_traversal_exact_score_calls,
+                            pq_fastscan_traversal_exact_score_elapsed_us,
+                            pq_fastscan_traversal_budgeted_expansions,
+                            pq_fastscan_traversal_budgeted_candidates,
+                            pq_fastscan_traversal_budgeted_exact_candidates
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("pq fastscan hot path profile query should succeed")
+                .next()
+                .expect("pq fastscan hot path profile should return one row");
+            (
+                row["score_cache_hits"]
+                    .value::<i32>()
+                    .expect("score cache hits should decode")
+                    .expect("score cache hits should be non-null"),
+                row["score_cache_misses"]
+                    .value::<i32>()
+                    .expect("score cache misses should decode")
+                    .expect("score cache misses should be non-null"),
+                row["pq_fastscan_traversal_approx_score_calls"]
+                    .value::<i32>()
+                    .expect("approx score call count should decode")
+                    .expect("approx score call count should be non-null"),
+                row["pq_fastscan_traversal_approx_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("approx score elapsed should decode")
+                    .expect("approx score elapsed should be non-null"),
+                row["pq_fastscan_traversal_exact_score_calls"]
+                    .value::<i32>()
+                    .expect("exact score call count should decode")
+                    .expect("exact score call count should be non-null"),
+                row["pq_fastscan_traversal_exact_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("exact score elapsed should decode")
+                    .expect("exact score elapsed should be non-null"),
+                row["pq_fastscan_traversal_budgeted_expansions"]
+                    .value::<i32>()
+                    .expect("budgeted expansion count should decode")
+                    .expect("budgeted expansion count should be non-null"),
+                row["pq_fastscan_traversal_budgeted_candidates"]
+                    .value::<i32>()
+                    .expect("budgeted candidate count should decode")
+                    .expect("budgeted candidate count should be non-null"),
+                row["pq_fastscan_traversal_budgeted_exact_candidates"]
+                    .value::<i32>()
+                    .expect("budgeted exact candidate count should decode")
+                    .expect("budgeted exact candidate count should be non-null"),
+            )
+        });
+
+        assert!(
+            pq_fastscan_traversal_approx_score_calls > 0
+                && pq_fastscan_traversal_approx_score_elapsed_us >= 0,
+            "canonical pq fastscan hot path profile should surface approximate traversal scoring",
+        );
+        assert!(
+            pq_fastscan_traversal_exact_score_calls > 0
+                && pq_fastscan_traversal_exact_score_elapsed_us >= 0,
+            "canonical pq fastscan hot path profile should surface exact traversal rescoring",
+        );
+        assert!(
+            score_cache_hits >= 0 && score_cache_misses > 0,
+            "canonical pq fastscan hot path profile should surface exact-score cache activity",
+        );
+        assert!(
+            pq_fastscan_traversal_budgeted_expansions > 0
+                && pq_fastscan_traversal_budgeted_candidates
+                    >= pq_fastscan_traversal_budgeted_exact_candidates,
+            "canonical pq fastscan hot path profile should report the budgeted exact traversal candidate sets",
+        );
+        assert!(
+            pq_fastscan_traversal_exact_score_calls
+                >= pq_fastscan_traversal_budgeted_exact_candidates,
+            "canonical pq fastscan hot path profile should include at least the budgeted exact rescoring calls",
         );
     }
 
@@ -16606,6 +16825,53 @@ mod tests {
     type PqFastScanScanComparisonRowValues =
         (i64, i32, i32, f32, Option<f32>, Option<i32>, Option<i32>);
     type PqFastScanScanComparisonSummaryValues = (i32, i32, i32, i32, f64, f32, f64);
+    type DebugScanHotPathProfileValues = (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i32,
+        i32,
+    );
+    type PqFastScanRerankProfileValues = (
+        i64,
+        i64,
+        i64,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i64,
+        i64,
+        i64,
+    );
 
     fn pq_fastscan_scan_order_drift_summary_values(
         index_oid: pg_sys::Oid,
@@ -16692,53 +16958,10 @@ mod tests {
         unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) }
     }
 
-    #[pg_extern]
-    #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_hot_path_profile(
+    fn debug_scan_hot_path_profile_values(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
-    ) -> TableIterator<
-        'static,
-        (
-            name!(rescan_amrescan_total_elapsed_us, i64),
-            name!(rescan_query_decode_elapsed_us, i64),
-            name!(rescan_scan_setup_elapsed_us, i64),
-            name!(rescan_store_query_elapsed_us, i64),
-            name!(rescan_prepare_query_elapsed_us, i64),
-            name!(rescan_reset_state_elapsed_us, i64),
-            name!(rescan_initialize_entry_elapsed_us, i64),
-            name!(rescan_upper_layer_seed_elapsed_us, i64),
-            name!(rescan_layer0_seed_elapsed_us, i64),
-            name!(rescan_stage_ordered_results_elapsed_us, i64),
-            name!(rescan_initial_prefetch_elapsed_us, i64),
-            name!(rescan_frontier_consume_elapsed_us, i64),
-            name!(rescan_graph_result_materialize_elapsed_us, i64),
-            name!(graph_element_cache_hits, i32),
-            name!(graph_element_cache_misses, i32),
-            name!(graph_element_load_elapsed_us, i64),
-            name!(graph_neighbor_cache_hits, i32),
-            name!(graph_neighbor_cache_misses, i32),
-            name!(graph_neighbor_load_elapsed_us, i64),
-            name!(candidate_score_calls, i32),
-            name!(candidate_score_elapsed_us, i64),
-            name!(score_cache_hits, i32),
-            name!(score_cache_misses, i32),
-            name!(grouped_traversal_approx_score_calls, i32),
-            name!(grouped_traversal_approx_score_elapsed_us, i64),
-            name!(grouped_traversal_exact_score_calls, i32),
-            name!(grouped_traversal_exact_score_elapsed_us, i64),
-            name!(grouped_traversal_budgeted_expansions, i32),
-            name!(grouped_traversal_budgeted_candidates, i32),
-            name!(grouped_traversal_budgeted_exact_candidates, i32),
-        ),
-    > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
-
+    ) -> DebugScanHotPathProfileValues {
         let (
             _rescan_elapsed_us,
             _emit_elapsed_us,
@@ -16796,6 +17019,123 @@ mod tests {
             grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
+        (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        )
+    }
+
+    fn pq_fastscan_rerank_profile_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> PqFastScanRerankProfileValues {
+        unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) }
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_hot_path_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_query_decode_elapsed_us, i64),
+            name!(rescan_scan_setup_elapsed_us, i64),
+            name!(rescan_store_query_elapsed_us, i64),
+            name!(rescan_prepare_query_elapsed_us, i64),
+            name!(rescan_reset_state_elapsed_us, i64),
+            name!(rescan_initialize_entry_elapsed_us, i64),
+            name!(rescan_upper_layer_seed_elapsed_us, i64),
+            name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(rescan_stage_ordered_results_elapsed_us, i64),
+            name!(rescan_initial_prefetch_elapsed_us, i64),
+            name!(rescan_frontier_consume_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(graph_element_cache_hits, i32),
+            name!(graph_element_cache_misses, i32),
+            name!(graph_element_load_elapsed_us, i64),
+            name!(graph_neighbor_cache_hits, i32),
+            name!(graph_neighbor_cache_misses, i32),
+            name!(graph_neighbor_load_elapsed_us, i64),
+            name!(candidate_score_calls, i32),
+            name!(candidate_score_elapsed_us, i64),
+            name!(score_cache_hits, i32),
+            name!(score_cache_misses, i32),
+            name!(grouped_traversal_approx_score_calls, i32),
+            name!(grouped_traversal_approx_score_elapsed_us, i64),
+            name!(grouped_traversal_exact_score_calls, i32),
+            name!(grouped_traversal_exact_score_elapsed_us, i64),
+            name!(grouped_traversal_budgeted_expansions, i32),
+            name!(grouped_traversal_budgeted_candidates, i32),
+            name!(grouped_traversal_budgeted_exact_candidates, i32),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = debug_scan_hot_path_profile_values(index_oid, query);
+
         TableIterator::once((
             rescan_amrescan_total_elapsed_us,
             rescan_query_decode_elapsed_us,
@@ -16832,6 +17172,177 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_query_decode_elapsed_us, i64),
+            name!(rescan_scan_setup_elapsed_us, i64),
+            name!(rescan_store_query_elapsed_us, i64),
+            name!(rescan_prepare_query_elapsed_us, i64),
+            name!(rescan_reset_state_elapsed_us, i64),
+            name!(rescan_initialize_entry_elapsed_us, i64),
+            name!(rescan_upper_layer_seed_elapsed_us, i64),
+            name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(rescan_stage_ordered_results_elapsed_us, i64),
+            name!(rescan_initial_prefetch_elapsed_us, i64),
+            name!(rescan_frontier_consume_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(graph_element_cache_hits, i32),
+            name!(graph_element_cache_misses, i32),
+            name!(graph_element_load_elapsed_us, i64),
+            name!(graph_neighbor_cache_hits, i32),
+            name!(graph_neighbor_cache_misses, i32),
+            name!(graph_neighbor_load_elapsed_us, i64),
+            name!(candidate_score_calls, i32),
+            name!(candidate_score_elapsed_us, i64),
+            name!(score_cache_hits, i32),
+            name!(score_cache_misses, i32),
+            name!(pq_fastscan_traversal_approx_score_calls, i32),
+            name!(pq_fastscan_traversal_approx_score_elapsed_us, i64),
+            name!(pq_fastscan_traversal_exact_score_calls, i32),
+            name!(pq_fastscan_traversal_exact_score_elapsed_us, i64),
+            name!(pq_fastscan_traversal_budgeted_expansions, i32),
+            name!(pq_fastscan_traversal_budgeted_candidates, i32),
+            name!(pq_fastscan_traversal_budgeted_exact_candidates, i32),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile",
+        );
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ) = debug_scan_hot_path_profile_values(index_oid, query);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_rerank_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(pq_fastscan_rerank_quantized_score_calls, i32),
+            name!(pq_fastscan_rerank_quantized_score_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_score_calls, i32),
+            name!(pq_fastscan_rerank_heap_score_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_rows_fetched, i32),
+            name!(pq_fastscan_rerank_heap_fetch_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_decode_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_dot_elapsed_us, i64),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_pq_fastscan_rerank_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ) = pq_fastscan_rerank_profile_values(index_oid, query, limit_count);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_grouped_rerank_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
@@ -16854,12 +17365,7 @@ mod tests {
             name!(grouped_rerank_heap_dot_elapsed_us, i64),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_rerank_profile")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_rerank_profile");
 
         let (
             rescan_amrescan_total_elapsed_us,
@@ -16875,7 +17381,7 @@ mod tests {
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) };
+        ) = pq_fastscan_rerank_profile_values(index_oid, query, limit_count);
 
         TableIterator::once((
             rescan_amrescan_total_elapsed_us,
