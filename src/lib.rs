@@ -3484,7 +3484,7 @@ mod tests {
         bytes
     }
 
-    fn create_grouped_v2_runtime_fixture_internal(
+    fn create_pq_fastscan_runtime_fixture_internal(
         table_name: &str,
         index_name: &str,
         include_source_raw: bool,
@@ -3539,39 +3539,39 @@ mod tests {
             .expect("index oid should exist")
     }
 
-    fn create_grouped_v2_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
-        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false, 6)
+    fn create_pq_fastscan_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, 6)
     }
 
-    fn create_grouped_v2_runtime_fixture_with_source_raw(
+    fn create_pq_fastscan_runtime_fixture_with_source_raw(
         table_name: &str,
         index_name: &str,
     ) -> pg_sys::Oid {
-        create_grouped_v2_runtime_fixture_internal(table_name, index_name, true, 6)
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, true, 6)
     }
 
-    fn create_grouped_v2_runtime_fixture_with_m(
+    fn create_pq_fastscan_runtime_fixture_with_m(
         table_name: &str,
         index_name: &str,
         m: i32,
     ) -> pg_sys::Oid {
-        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false, m)
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m)
     }
 
-    fn grouped_v2_runtime_query() -> Vec<f32> {
+    fn pq_fastscan_runtime_query() -> Vec<f32> {
         vec![
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
             1.52, 1.62,
         ]
     }
 
-    fn grouped_v2_runtime_source(id: i64) -> Vec<f32> {
+    fn pq_fastscan_runtime_source(id: i64) -> Vec<f32> {
         (0..16)
             .map(|dim| (((id * 41 + dim) as f32) * 0.03).cos())
             .collect()
     }
 
-    fn grouped_v2_exact_traversal_runtime_observed_scores(
+    fn pq_fastscan_exact_traversal_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
         scope: Option<&str>,
@@ -3585,16 +3585,16 @@ mod tests {
                 value,
             )
         });
-        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
         unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                 index_oid,
-                grouped_v2_runtime_query(),
+                pq_fastscan_runtime_query(),
             )
         }
     }
 
-    fn grouped_v2_heap_rerank_runtime_observed_scores(
+    fn pq_fastscan_heap_rerank_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
         rerank_source_column: Option<&str>,
@@ -3612,18 +3612,18 @@ mod tests {
             )
         });
         let index_oid = if include_source_raw {
-            create_grouped_v2_runtime_fixture_with_source_raw(table_name, index_name)
+            create_pq_fastscan_runtime_fixture_with_source_raw(table_name, index_name)
         } else {
-            create_grouped_v2_runtime_fixture(table_name, index_name)
+            create_pq_fastscan_runtime_fixture(table_name, index_name)
         };
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                 index_oid,
-                grouped_v2_runtime_query(),
+                pq_fastscan_runtime_query(),
             )
         };
         let emitted_scores = unsafe {
-            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, grouped_v2_runtime_query())
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
         }
         .into_iter()
         .collect::<HashMap<_, _>>();
@@ -3632,7 +3632,7 @@ mod tests {
 
     #[pg_test]
     fn test_grouped_v2_exact_traversal_emits_exact_scores() {
-        let observed = grouped_v2_exact_traversal_runtime_observed_scores(
+        let observed = pq_fastscan_exact_traversal_runtime_observed_scores(
             "tqhnsw_grouped_v2_runtime_exact_traversal",
             "tqhnsw_grouped_v2_runtime_exact_traversal_idx",
             None,
@@ -3787,14 +3787,14 @@ mod tests {
         let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank";
         let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_idx";
         let (observed, emitted_scores) =
-            grouped_v2_heap_rerank_runtime_observed_scores(table_name, index_name, None, false);
-        let query = grouped_v2_runtime_query();
+            pq_fastscan_heap_rerank_runtime_observed_scores(table_name, index_name, None, false);
+        let query = pq_fastscan_runtime_query();
         let exact_scores = (1..=16)
             .map(|id| {
                 let heap_tid = heap_tid_for_row(table_name, id);
                 (
                     (heap_tid.block_number, heap_tid.offset_number),
-                    -dot_product(&query, &grouped_v2_runtime_source(id)),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -3826,19 +3826,19 @@ mod tests {
     fn test_grouped_v2_heap_rerank_bytea_source_emits_exact_scores() {
         let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea";
         let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea_idx";
-        let (observed, emitted_scores) = grouped_v2_heap_rerank_runtime_observed_scores(
+        let (observed, emitted_scores) = pq_fastscan_heap_rerank_runtime_observed_scores(
             table_name,
             index_name,
             Some("source_raw"),
             true,
         );
-        let query = grouped_v2_runtime_query();
+        let query = pq_fastscan_runtime_query();
         let exact_scores = (1..=16)
             .map(|id| {
                 let heap_tid = heap_tid_for_row(table_name, id);
                 (
                     (heap_tid.block_number, heap_tid.offset_number),
-                    -dot_product(&query, &grouped_v2_runtime_source(id)),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
                 )
             })
             .collect::<HashMap<_, _>>();
@@ -3870,7 +3870,7 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_profile_exact_counters_zero_without_gate() {
         let _lock = env_var_test_lock();
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_approx",
             "tqhnsw_grouped_v2_runtime_profile_approx_idx",
         );
@@ -3929,7 +3929,7 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -3956,7 +3956,7 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "binary",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_binary_score_mode",
             "tqhnsw_grouped_v2_runtime_profile_binary_score_mode_idx",
         );
@@ -4015,7 +4015,7 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
 
         assert!(
             result_count > 0,
@@ -4040,7 +4040,7 @@ mod tests {
     fn test_grouped_v2_quantized_rerank_profile_reports_quantized_only() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_quantized_rerank_profile",
             "tqhnsw_grouped_v2_runtime_quantized_rerank_profile_idx",
         );
@@ -4058,7 +4058,7 @@ mod tests {
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, grouped_v2_runtime_query(), 10) };
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10) };
 
         assert!(
             result_count > 0,
@@ -4091,7 +4091,7 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
             "heap_f32",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_heap_rerank_profile",
             "tqhnsw_grouped_v2_runtime_heap_rerank_profile_idx",
         );
@@ -4109,7 +4109,7 @@ mod tests {
             grouped_rerank_heap_fetch_elapsed_us,
             grouped_rerank_heap_decode_elapsed_us,
             grouped_rerank_heap_dot_elapsed_us,
-        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, grouped_v2_runtime_query(), 10) };
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10) };
 
         assert!(
             result_count > 0,
@@ -4145,7 +4145,7 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
             "1",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_budgeted_exact",
             "tqhnsw_grouped_v2_runtime_profile_budgeted_exact_idx",
         );
@@ -4204,7 +4204,7 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -4249,7 +4249,7 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
             "frontier_head",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_frontier_head_exact",
             "tqhnsw_grouped_v2_runtime_profile_frontier_head_exact_idx",
         );
@@ -4308,7 +4308,7 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
 
         assert!(
             grouped_traversal_approx_score_calls > 0
@@ -4346,12 +4346,12 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "bogus",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_invalid_score_mode",
             "tqhnsw_grouped_v2_runtime_invalid_score_mode_idx",
         );
 
-        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
     }
 
     #[pg_test]
@@ -4362,12 +4362,12 @@ mod tests {
         let _lock = env_var_test_lock();
         let _rerank_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_invalid_rerank_mode",
             "tqhnsw_grouped_v2_runtime_invalid_rerank_mode_idx",
         );
 
-        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
     }
 
     #[pg_test]
@@ -5600,7 +5600,7 @@ mod tests {
         }
     }
 
-    fn assert_grouped_v2_runtime_live_window_matches_windowed_simulation(
+    fn assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(
         window_size: i32,
         configure_window_env: bool,
     ) {
@@ -5759,17 +5759,17 @@ mod tests {
 
     #[pg_test]
     fn test_grouped_v2_runtime_live_window_matches_windowed_simulation() {
-        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(4, false);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(4, false);
     }
 
     #[pg_test]
     fn test_grouped_v2_runtime_live_window_respects_window_env() {
-        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(8, true);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(8, true);
     }
 
     #[pg_test]
     fn test_grouped_v2_runtime_live_window_supports_higher_window_env() {
-        assert_grouped_v2_runtime_live_window_matches_windowed_simulation(32, true);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(32, true);
     }
 
     #[pg_test]
@@ -7682,7 +7682,7 @@ mod tests {
     fn test_tqhnsw_vacuum_stats_accepts_pq_fastscan_index() {
         let _lock = env_var_test_lock();
 
-        let index_oid = create_grouped_v2_runtime_fixture(
+        let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_vacuum_grouped_stats",
             "tqhnsw_vacuum_grouped_stats_idx",
         );
@@ -7789,7 +7789,7 @@ mod tests {
 
         let table_name = "tqhnsw_vacuum_grouped_pass2_unlink";
         let index_name = "tqhnsw_vacuum_grouped_pass2_unlink_idx";
-        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
         let (_metadata_before, _layout_before, elements_before, neighbors_before) =
             decode_grouped_index_elements_and_neighbors(index_oid);
         let (deleted_row_id, deleted_heap_tid, deleted_element_tid) = (1..=16_i64)
@@ -7842,7 +7842,7 @@ mod tests {
 
         let table_name = "tqhnsw_vacuum_grouped_pass2_replace";
         let index_name = "tqhnsw_vacuum_grouped_pass2_replace_idx";
-        let index_oid = create_grouped_v2_runtime_fixture_with_m(table_name, index_name, 2);
+        let index_oid = create_pq_fastscan_runtime_fixture_with_m(table_name, index_name, 2);
         let (metadata_before, _layout_before, elements_before, neighbors_before) =
             decode_grouped_index_elements_and_neighbors(index_oid);
         let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
