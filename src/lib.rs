@@ -922,14 +922,23 @@ mod tests {
         parse_ctid(&ctid)
     }
 
-    fn decode_index_elements_and_neighbors(
-        index_oid: pg_sys::Oid,
-        code_len: usize,
-    ) -> (
+    type ScalarElementsAndNeighbors = (
         am::page::MetadataPage,
         Vec<(am::page::ItemPointer, am::page::TqElementTuple)>,
         HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
-    ) {
+    );
+
+    type GroupedElementsAndNeighbors = (
+        am::page::MetadataPage,
+        am::graph::PqFastScanLayout,
+        Vec<(am::page::ItemPointer, am::page::TqGroupedHotTuple)>,
+        HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+    );
+
+    fn decode_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+        code_len: usize,
+    ) -> ScalarElementsAndNeighbors {
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let mut elements = Vec::new();
         let mut neighbors = HashMap::new();
@@ -964,6 +973,53 @@ mod tests {
         (metadata, elements, neighbors)
     }
 
+    fn decode_grouped_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+    ) -> GroupedElementsAndNeighbors {
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("grouped decode helper requires a PqFastScan index")
+            }
+        };
+        let mut elements = Vec::new();
+        let mut neighbors = HashMap::new();
+
+        for page in data_pages {
+            for (idx, tuple) in page.tuples.iter().enumerate() {
+                let tid = am::page::ItemPointer {
+                    block_number: page.block_number,
+                    offset_number: u16::try_from(idx + 1)
+                        .expect("page tuple offset should fit in u16"),
+                };
+                match tuple.first().copied() {
+                    Some(am::page::TQ_GROUPED_HOT_TAG) => {
+                        elements.push((
+                            tid,
+                            am::page::TqGroupedHotTuple::decode(
+                                tuple,
+                                layout.binary_word_count,
+                                layout.search_code_len,
+                            )
+                            .expect("grouped hot tuple should decode"),
+                        ));
+                    }
+                    Some(am::page::TQ_NEIGHBOR_TAG) => {
+                        neighbors.insert(
+                            tid,
+                            am::page::TqNeighborTuple::decode(tuple)
+                                .expect("neighbor tuple should decode"),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        (metadata, layout, elements, neighbors)
+    }
+
     fn find_element_for_heap_tid(
         elements: &[(am::page::ItemPointer, am::page::TqElementTuple)],
         heap_tid: am::page::ItemPointer,
@@ -972,6 +1028,17 @@ mod tests {
             .iter()
             .find(|(_, element)| element.heaptids.contains(&heap_tid))
             .expect("element should be discoverable by heap tid");
+        (*element_tid, element)
+    }
+
+    fn find_grouped_element_for_heap_tid(
+        elements: &[(am::page::ItemPointer, am::page::TqGroupedHotTuple)],
+        heap_tid: am::page::ItemPointer,
+    ) -> (am::page::ItemPointer, &am::page::TqGroupedHotTuple) {
+        let (element_tid, element) = elements
+            .iter()
+            .find(|(_, element)| element.heaptids.contains(&heap_tid))
+            .expect("grouped element should be discoverable by heap tid");
         (*element_tid, element)
     }
 
@@ -7603,12 +7670,33 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw vacuum does not support PqFastScan indexes yet")]
-    fn test_tqhnsw_vacuum_rejects_grouped_v2_index() {
+    fn test_tqhnsw_vacuum_stats_accepts_pq_fastscan_index() {
+        let _lock = env_var_test_lock();
+
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_vacuum_grouped_stats",
+            "tqhnsw_vacuum_grouped_stats_idx",
+        );
+
+        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
+        let (_metadata, _layout, elements, _neighbors) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(
+            stats.num_index_tuples,
+            elements.len() as f64,
+            "vacuum stats should count live grouped hot tuples for PqFastScan indexes",
+        );
+        assert_eq!(elements.len(), 16);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_compacts_pq_fastscan_duplicates() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_grouped_v2_reject (
+            "CREATE TABLE tqhnsw_vacuum_pass1_grouped_duplicates (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -7620,29 +7708,123 @@ mod tests {
                 .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.05).cos()))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let embedding = (0..16)
-                .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.04).sin()))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let embedding = if id == 2 {
+                (0..16)
+                    .map(|dim| format!("{:.6}", (((37 + dim) as f32) * 0.04).sin()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                (0..16)
+                    .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.04).sin()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_vacuum_grouped_v2_reject VALUES \
+                "INSERT INTO tqhnsw_vacuum_pass1_grouped_duplicates VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_grouped_v2_reject_idx ON tqhnsw_vacuum_grouped_v2_reject USING tqhnsw \
+            "CREATE INDEX tqhnsw_vacuum_pass1_grouped_duplicates_idx ON tqhnsw_vacuum_pass1_grouped_duplicates USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
+        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 2);
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_vacuum_grouped_v2_reject_idx'::regclass::oid",
+            "SELECT 'tqhnsw_vacuum_pass1_grouped_duplicates_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
+        let (_metadata_before, _layout_before, elements_before, _neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_duplicate_tid_before, duplicate_before) =
+            find_grouped_element_for_heap_tid(&elements_before, survivor_heap_tid);
+        assert!(
+            duplicate_before.heaptids.contains(&deleted_heap_tid),
+            "fixture should build a grouped hot tuple with both duplicate heap tids",
+        );
 
-        let _ = unsafe { am::debug_vacuum_stats(index_oid) };
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
+            .expect("delete should succeed");
+
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata_after, _layout_after, elements_after, _neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_duplicate_tid_after, duplicate_after) =
+            find_grouped_element_for_heap_tid(&elements_after, survivor_heap_tid);
+
+        assert_eq!(
+            duplicate_after.heaptids,
+            vec![survivor_heap_tid],
+            "pass 1 should compact the grouped hot tuple to the surviving heap tid",
+        );
+        assert!(
+            elements_after
+                .iter()
+                .all(|(_, element)| !element.heaptids.contains(&deleted_heap_tid)),
+            "pass 1 should remove the deleted heap tid from every grouped hot tuple",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(
+            stats.num_index_tuples, 15.0,
+            "amvacuumcleanup should report the remaining live grouped hot tuple count",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_unlinks_pq_fastscan_refs() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_vacuum_grouped_pass2_unlink";
+        let index_name = "tqhnsw_vacuum_grouped_pass2_unlink_idx";
+        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        let (_metadata_before, _layout_before, elements_before, neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid) = (1..=16_i64)
+            .find_map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                let (element_tid, _element) =
+                    find_grouped_element_for_heap_tid(&elements_before, heap_tid);
+                (count_neighbor_refs(&neighbors_before, element_tid) > 0).then_some((
+                    id,
+                    heap_tid,
+                    element_tid,
+                ))
+            })
+            .expect(
+                "fixture should expose at least one grouped hot tuple with inbound neighbor refs",
+            );
+
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (_metadata_after, _layout_after, elements_after, neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_, deleted_element_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == deleted_element_tid)
+            .expect("deleted grouped hot tuple should remain on disk after vacuum");
+
+        assert!(
+            deleted_element_after.deleted,
+            "vacuum should finalize a fully dead grouped hot tuple after repair",
+        );
+        assert!(
+            deleted_element_after.heaptids.is_empty(),
+            "vacuum should leave the finalized grouped hot tuple with no surviving heap tids",
+        );
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "pass 2 should remove every persisted neighbor ref to the deleted grouped hot tuple",
+        );
     }
 
     #[pg_test]

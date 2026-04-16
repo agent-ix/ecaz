@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use super::{options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
+use super::{graph, options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
 
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
@@ -146,9 +146,8 @@ pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
     let metadata = unsafe { read_metadata_page(index_relation) };
-    let code_len = crate::quant::prod::payload_len(usize::from(metadata.dimensions), metadata.bits)
-        .checked_sub(4)
-        .expect("payload length should include gamma");
+    let storage = graph::GraphStorageDescriptor::from_metadata(&metadata)
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -185,13 +184,36 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
 
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                let element =
-                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                        pgrx::error!("tqhnsw failed to decode element tuple while counting: {e}")
-                    });
-                if !element.deleted && !element.heaptids.is_empty() {
-                    count += 1;
+            match storage {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
+                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "tqhnsw failed to decode element tuple while counting: {e}"
+                                )
+                            });
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
+                        }
+                    }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
+                        let element = page::TqGroupedHotTuple::decode(
+                            tuple_bytes,
+                            layout.binary_word_count,
+                            layout.search_code_len,
+                        )
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "tqhnsw failed to decode grouped hot tuple while counting: {e}"
+                            )
+                        });
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
+                        }
+                    }
                 }
             }
         }

@@ -1,13 +1,10 @@
 use std::{collections::HashSet, ffi::c_void, ptr};
 
-use pgrx::{PgBox, itemptr::item_pointer_set_all, pg_sys};
+use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::{graph, options, page, search, shared, source, wal};
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
-
-const PQ_FASTSCAN_VACUUM_UNSUPPORTED: &str =
-    "tqhnsw vacuum does not support PqFastScan indexes yet";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VacuumFormatAdapter {
@@ -174,27 +171,13 @@ impl VacuumFormatAdapter {
         }
     }
 
-    fn pass1_code_len(self) -> usize {
-        match self {
-            Self::TurboQuant { code_len } => code_len,
-            Self::PqFastScan(layout) => layout.search_code_len,
-        }
-    }
-
     unsafe fn vacuum_cleanup(
         self,
         index_relation: pg_sys::Relation,
         stats: *mut pg_sys::IndexBulkDeleteResult,
     ) -> *mut pg_sys::IndexBulkDeleteResult {
-        match self {
-            Self::TurboQuant { .. } => unsafe {
-                shared::tqhnsw_noop_vacuum_stats(index_relation, stats)
-            },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
-            }
-        }
+        let _ = self;
+        unsafe { shared::tqhnsw_noop_vacuum_stats(index_relation, stats) }
     }
 
     unsafe fn repair_graph_connections(
@@ -203,19 +186,13 @@ impl VacuumFormatAdapter {
         heap_relation: pg_sys::Relation,
         deleted_tids: &[page::ItemPointer],
     ) {
-        match self {
-            Self::TurboQuant { .. } => unsafe {
-                repair_turboquant_graph_connections(
-                    index_relation,
-                    heap_relation,
-                    self.graph_storage(),
-                    deleted_tids,
-                )
-            },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
-            }
+        unsafe {
+            repair_graph_connections_with_storage(
+                index_relation,
+                heap_relation,
+                self.graph_storage(),
+                deleted_tids,
+            )
         }
     }
 
@@ -224,22 +201,26 @@ impl VacuumFormatAdapter {
         index_relation: pg_sys::Relation,
         deleted_tids: &[page::ItemPointer],
     ) {
-        match self {
-            Self::TurboQuant { code_len } => unsafe {
-                finalize_turboquant_fully_dead_elements(index_relation, code_len, deleted_tids)
-            },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
-            }
+        unsafe {
+            finalize_fully_dead_elements_with_storage(
+                index_relation,
+                self.graph_storage(),
+                deleted_tids,
+            )
         }
     }
 }
 
 #[derive(Debug, Clone)]
-struct ElementVacuumUpdate {
-    tid: page::ItemPointer,
-    tuple: page::TqElementTuple,
+enum ElementVacuumUpdate {
+    TurboQuant {
+        tid: page::ItemPointer,
+        tuple: page::TqElementTuple,
+    },
+    PqFastScanHot {
+        tid: page::ItemPointer,
+        tuple: page::TqGroupedHotTuple,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -354,7 +335,7 @@ unsafe fn run_bulkdelete_with_adapter(
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    let code_len = format.pass1_code_len();
+    let storage = format.graph_storage();
     let stats = if stats.is_null() {
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
@@ -390,7 +371,7 @@ unsafe fn run_bulkdelete_with_adapter(
                 share_page_ptr,
                 share_page_size,
                 block_number,
-                code_len,
+                storage,
                 callback,
                 callback_state,
             )
@@ -422,7 +403,7 @@ unsafe fn run_bulkdelete_with_adapter(
                 index_relation,
                 exclusive_buffer,
                 block_number,
-                code_len,
+                storage,
                 callback,
                 callback_state,
             )
@@ -448,7 +429,7 @@ unsafe fn rewrite_page_pass1(
     index_relation: pg_sys::Relation,
     buffer: pg_sys::Buffer,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> PagePass1Plan {
@@ -460,7 +441,7 @@ unsafe fn rewrite_page_pass1(
             page_ptr,
             page_size,
             block_number,
-            code_len,
+            storage,
             callback,
             callback_state,
         )
@@ -484,7 +465,7 @@ unsafe fn plan_page_pass1(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> PagePass1Plan {
@@ -505,37 +486,77 @@ unsafe fn plan_page_pass1(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-            continue;
-        }
 
         let tid = page::ItemPointer {
             block_number,
             offset_number: offset,
         };
-        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode vacuum element tuple: {e}"));
-        let starting_len = element.heaptids.len();
-        element
-            .heaptids
-            .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
-        let removed = starting_len.saturating_sub(element.heaptids.len());
+        match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode vacuum element tuple: {e}")
+                    });
+                let starting_len = element.heaptids.len();
+                element.heaptids.retain(|heap_tid| unsafe {
+                    !heap_tid_is_dead(*heap_tid, callback, callback_state)
+                });
+                let removed = starting_len.saturating_sub(element.heaptids.len());
 
-        if !element.deleted && !element.heaptids.is_empty() {
-            plan.live_elements += 1;
-        }
-        if !element.deleted && element.heaptids.is_empty() {
-            plan.finalize_tids.push(tid);
-        }
-        if removed == 0 {
-            continue;
-        }
+                if !element.deleted && !element.heaptids.is_empty() {
+                    plan.live_elements += 1;
+                }
+                if !element.deleted && element.heaptids.is_empty() {
+                    plan.finalize_tids.push(tid);
+                }
+                if removed == 0 {
+                    continue;
+                }
 
-        plan.removed_heap_tids += removed;
-        plan.updates.push(ElementVacuumUpdate {
-            tid,
-            tuple: element,
-        });
+                plan.removed_heap_tids += removed;
+                plan.updates.push(ElementVacuumUpdate::TurboQuant {
+                    tid,
+                    tuple: element,
+                });
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let mut element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode vacuum grouped hot tuple: {e}")
+                });
+                let starting_len = element.heaptids.len();
+                element.heaptids.retain(|heap_tid| unsafe {
+                    !heap_tid_is_dead(*heap_tid, callback, callback_state)
+                });
+                let removed = starting_len.saturating_sub(element.heaptids.len());
+
+                if !element.deleted && !element.heaptids.is_empty() {
+                    plan.live_elements += 1;
+                }
+                if !element.deleted && element.heaptids.is_empty() {
+                    plan.finalize_tids.push(tid);
+                }
+                if removed == 0 {
+                    continue;
+                }
+
+                plan.removed_heap_tids += removed;
+                plan.updates.push(ElementVacuumUpdate::PqFastScanHot {
+                    tid,
+                    tuple: element,
+                });
+            }
+        }
     }
 
     plan
@@ -548,12 +569,16 @@ unsafe fn apply_page_pass1_updates(
     updates: &[ElementVacuumUpdate],
 ) {
     for update in updates {
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, update.tid.offset_number) };
+        let tid = match update {
+            ElementVacuumUpdate::TurboQuant { tid, .. }
+            | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
+        };
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
                 "tqhnsw vacuum element tuple slot {}/{} is unused",
-                update.tid.block_number,
-                update.tid.offset_number
+                tid.block_number,
+                tid.offset_number
             );
         }
 
@@ -563,10 +588,16 @@ unsafe fn apply_page_pass1_updates(
             pgrx::error!("tqhnsw found invalid vacuum rewrite bounds on block {block_number}");
         }
 
-        let encoded = update
-            .tuple
-            .encode()
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}"));
+        let encoded = match update {
+            ElementVacuumUpdate::TurboQuant { tuple, .. } => tuple.encode().unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}")
+            }),
+            ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
+                tuple.encode().unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to encode vacuum grouped hot tuple: {e}")
+                })
+            }
+        };
         if encoded.len() != tuple_len {
             pgrx::error!(
                 "tqhnsw vacuum element tuple size changed from {} to {} on block {}",
@@ -582,7 +613,7 @@ unsafe fn apply_page_pass1_updates(
     }
 }
 
-unsafe fn repair_turboquant_graph_connections(
+unsafe fn repair_graph_connections_with_storage(
     index_relation: pg_sys::Relation,
     heap_relation: pg_sys::Relation,
     storage: graph::GraphStorageDescriptor,
@@ -594,15 +625,9 @@ unsafe fn repair_turboquant_graph_connections(
 
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
     let mut metric = unsafe { VacuumSearchMetric::for_relation(index_relation, heap_relation) };
-    let code_len = match storage {
-        graph::GraphStorageDescriptor::TurboQuant { code_len } => code_len,
-        graph::GraphStorageDescriptor::PqFastScan(_) => {
-            pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
-        }
-    };
     let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
     let repair_requests =
-        unsafe { collect_repair_requests(index_relation, code_len, metadata.m, &deleted_tids) };
+        unsafe { collect_repair_requests(index_relation, storage, metadata.m, &deleted_tids) };
     unsafe { unlink_deleted_graph_connections(index_relation, &deleted_tids) };
     let repair_plans = unsafe {
         plan_repair_replacements(
@@ -619,7 +644,7 @@ unsafe fn repair_turboquant_graph_connections(
 
 unsafe fn collect_repair_requests(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) -> Vec<LayerRepairRequest> {
@@ -651,7 +676,7 @@ unsafe fn collect_repair_requests(
                 page_ptr,
                 page_size,
                 block_number,
-                code_len,
+                storage,
                 m,
                 deleted_tids,
                 &mut requests,
@@ -674,7 +699,7 @@ unsafe fn collect_repair_requests_on_page(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
     requests: &mut Vec<LayerRepairRequest>,
@@ -697,36 +722,56 @@ unsafe fn collect_repair_requests_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+        let (level, deleted, heaptids_empty, neighbortid) = match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
+                    });
+                (
+                    element.level,
+                    element.deleted,
+                    element.heaptids.is_empty(),
+                    element.neighbortid,
+                )
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode repair-request grouped hot tuple: {e}")
+                });
+                (
+                    element.level,
+                    element.deleted,
+                    element.heaptids.is_empty(),
+                    element.neighbortid,
+                )
+            }
+        };
+        if deleted || heaptids_empty || neighbortid == page::ItemPointer::INVALID {
             continue;
         }
 
-        let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
-        });
-        if element.deleted
-            || element.heaptids.is_empty()
-            || element.neighbortid == page::ItemPointer::INVALID
-        {
-            continue;
-        }
-
-        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, element.neighbortid) };
+        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
         let source_tid = page::ItemPointer {
             block_number,
             offset_number: offset,
         };
-        for layer in 0..=element.level {
-            if layer_slice_contains_deleted_ref(
-                &neighbors.tids,
-                element.level,
-                m,
-                layer,
-                deleted_tids,
-            ) {
+        for layer in 0..=level {
+            if layer_slice_contains_deleted_ref(&neighbors.tids, level, m, layer, deleted_tids) {
                 requests.push(LayerRepairRequest {
                     source_tid,
-                    neighbor_tid: element.neighbortid,
+                    neighbor_tid: neighbortid,
                     layer,
                 });
             }
@@ -1512,9 +1557,9 @@ unsafe fn apply_page_pass2_updates(
     }
 }
 
-unsafe fn finalize_turboquant_fully_dead_elements(
+unsafe fn finalize_fully_dead_elements_with_storage(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
 ) {
     if tids.is_empty() {
@@ -1534,10 +1579,10 @@ unsafe fn finalize_turboquant_fully_dead_elements(
         }
 
         unsafe {
-            finalize_fully_dead_elements_on_page(
+            finalize_fully_dead_elements_on_page_with_storage(
                 index_relation,
                 block_number,
-                code_len,
+                storage,
                 &tids[start..end],
             )
         };
@@ -1545,10 +1590,10 @@ unsafe fn finalize_turboquant_fully_dead_elements(
     }
 }
 
-unsafe fn finalize_fully_dead_elements_on_page(
+unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     index_relation: pg_sys::Relation,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
 ) {
     let buffer = unsafe {
@@ -1587,18 +1632,42 @@ unsafe fn finalize_fully_dead_elements_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
-        });
-        if element.deleted || !element.heaptids.is_empty() {
-            continue;
-        }
+        match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
+                    });
+                if element.deleted || !element.heaptids.is_empty() {
+                    continue;
+                }
 
-        element.deleted = true;
-        updates.push(ElementVacuumUpdate {
-            tid: *tid,
-            tuple: element,
-        });
+                element.deleted = true;
+                updates.push(ElementVacuumUpdate::TurboQuant {
+                    tid: *tid,
+                    tuple: element,
+                });
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                let mut element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode finalize grouped hot tuple: {e}")
+                });
+                if element.deleted || !element.heaptids.is_empty() {
+                    continue;
+                }
+
+                element.deleted = true;
+                updates.push(ElementVacuumUpdate::PqFastScanHot {
+                    tid: *tid,
+                    tuple: element,
+                });
+            }
+        }
     }
 
     if updates.is_empty() {
