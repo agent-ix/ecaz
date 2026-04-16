@@ -7,10 +7,8 @@ use super::{build, graph, options, page, search, shared, source, wal};
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
-const PQ_FASTSCAN_INSERT_UNSUPPORTED: &str =
-    "tqhnsw aminsert does not support PqFastScan indexes yet";
-const PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED: &str =
-    "tqhnsw aminsert requires a prebuilt PqFastScan index with persisted grouped codebooks";
+const PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE: &str =
+    "tqhnsw PqFastScan metadata is missing persisted grouped codebooks";
 
 #[derive(Debug)]
 enum InsertSearchMetric {
@@ -457,7 +455,35 @@ unsafe fn run_insert_with_adapter(
     // duplicate scan is degenerate on an effectively empty index.
     if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
         if matches!(format, InsertFormatAdapter::PqFastScan(_)) {
-            pgrx::error!("{PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED}");
+            let bootstrapped = unsafe {
+                shared::with_locked_metadata_page(index_relation, |metadata| {
+                    if metadata.dimensions != 0 || metadata.bits != 0 {
+                        return false;
+                    }
+
+                    let output = bootstrap_empty_pq_fastscan_flush_output(index_relation, tuple);
+                    build::write_data_pages(index_relation, &output.data_pages);
+                    *metadata = output.metadata;
+                    true
+                })
+            };
+            if bootstrapped {
+                return false;
+            }
+
+            let refreshed_metadata = unsafe { shared::read_metadata_page(index_relation) };
+            return unsafe {
+                run_insert_with_adapter(
+                    format,
+                    index_relation,
+                    heap_relation,
+                    heap_tid,
+                    tuple,
+                    metric,
+                    &refreshed_metadata,
+                    m,
+                )
+            };
         }
         shared::with_locked_metadata_page(index_relation, |metadata| {
             if metadata.dimensions == 0 && metadata.bits == 0 {
@@ -1474,7 +1500,7 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
         || metadata.search_subvector_count == 0
         || metadata.search_subvector_dim == 0
     {
-        pgrx::error!("{PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED}");
+        pgrx::error!("{PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE}");
     }
     let source_vector = tuple.source_vector.as_deref().unwrap_or_else(|| {
         pgrx::error!("tqhnsw PqFastScan live insert requires build_source_column source data")
@@ -1493,6 +1519,25 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
         );
     }
     search_code
+}
+
+unsafe fn bootstrap_empty_pq_fastscan_flush_output(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+) -> build::BuildFlushOutput {
+    let options = unsafe { options::relation_options(index_relation) };
+    let state = build::BuildState {
+        options,
+        page_size: pg_sys::BLCKSZ as usize,
+        scanned_tuples: tuple.heap_tids.len(),
+        heap_tuples: vec![tuple.clone()],
+        dimensions: Some(tuple.dimensions),
+        bits: Some(tuple.bits),
+        seed: Some(tuple.seed),
+    };
+
+    build::default_pq_fastscan_flush_output(&state)
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to bootstrap empty PqFastScan index: {e}"))
 }
 
 unsafe fn append_pq_fastscan_tuple(

@@ -2903,6 +2903,99 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_pq_fastscan_small_source_build_writes_grouped_pages() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_small_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=4 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.05).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 7 + dim) as f32) * 0.04).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_small_source_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_small_source_build_idx ON tqhnsw_pq_fastscan_small_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("small-table index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_small_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let grouped_hot_tids = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+        let grouped_codebook_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(grouped_hot_tids.len(), 4);
+        assert_eq!(rerank_count, 4);
+        assert_eq!(neighbor_count, 4);
+        assert_eq!(
+            grouped_codebook_count,
+            metadata.search_subvector_count as usize
+        );
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+        assert!(
+            grouped_hot_tids.contains(&metadata.entry_point),
+            "small-cardinality PqFastScan build should still pick a grouped hot tuple entry point",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_turboquant_storage_format_build_writes_scalar_pages() {
         let _lock = env_var_test_lock();
 
@@ -7484,14 +7577,15 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(
-        expected = "tqhnsw aminsert requires a prebuilt PqFastScan index with persisted grouped codebooks"
-    )]
-    fn test_tqhnsw_insert_rejects_empty_pq_fastscan_index() {
+    fn test_tqhnsw_insert_bootstraps_empty_pq_fastscan_index() {
         let _lock = env_var_test_lock();
+        let inserted_query = vec![
+            0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
+            -0.2,
+        ];
 
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_empty_pq_fastscan_reject (
+            "CREATE TABLE tqhnsw_insert_empty_pq_fastscan_bootstrap (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -7499,12 +7593,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_empty_pq_fastscan_reject_idx ON tqhnsw_insert_empty_pq_fastscan_reject USING tqhnsw \
+            "CREATE INDEX tqhnsw_insert_empty_pq_fastscan_bootstrap_idx ON tqhnsw_insert_empty_pq_fastscan_bootstrap USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_empty_pq_fastscan_reject VALUES
+            "INSERT INTO tqhnsw_insert_empty_pq_fastscan_bootstrap VALUES
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
@@ -7515,7 +7609,39 @@ mod tests {
                   42
               ))",
         )
-        .expect("insert should fail");
+        .expect("empty-index bootstrap insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_empty_pq_fastscan_bootstrap_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_metadata, layout, elements, neighbors) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        assert_eq!(elements.len(), 1);
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(elements[0].1.search_code.len(), layout.search_code_len);
+        assert_eq!(elements[0].1.binary_words.len(), layout.binary_word_count);
+        assert!(
+            elements[0].1.reranktid != am::page::ItemPointer::INVALID,
+            "empty-index bootstrap should persist a rerank tuple",
+        );
+
+        let ctid_to_id = ctid_id_map("tqhnsw_insert_empty_pq_fastscan_bootstrap");
+        let observed_ids =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query) }
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("bootstrap scan heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
+        assert_eq!(
+            observed_ids,
+            vec![17],
+            "bootstrap-created PqFastScan index should emit the inserted row in ordered scan",
+        );
     }
 
     #[pg_test]

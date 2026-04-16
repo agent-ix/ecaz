@@ -764,12 +764,6 @@ pub(super) fn train_build_grouped_pq_model(
                 .ok_or_else(|| "grouped build model requires source vectors".to_owned())
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if source_vectors.len() < 16 {
-        return Err(format!(
-            "grouped build model needs at least 16 source vectors, got {}",
-            source_vectors.len()
-        ));
-    }
 
     let transformed = source_vectors
         .iter()
@@ -848,9 +842,15 @@ fn train_group_codebook(
     const CENTROIDS: usize = 16;
 
     let sample_count = samples.len() / group_size;
+    if sample_count == 0 {
+        return Err("grouped codebook training requires at least one sample".to_owned());
+    }
     if sample_count < CENTROIDS {
-        return Err(format!(
-            "need at least {CENTROIDS} samples for grouped codebook, got {sample_count}"
+        return Ok(seed_group_codebook_from_small_samples(
+            samples,
+            group_size,
+            sample_count,
+            seed,
         ));
     }
 
@@ -902,6 +902,23 @@ fn train_group_codebook(
     }
 
     Ok(centroids)
+}
+
+fn seed_group_codebook_from_small_samples(
+    samples: &[f32],
+    group_size: usize,
+    sample_count: usize,
+    seed: u64,
+) -> Vec<f32> {
+    const CENTROIDS: usize = 16;
+
+    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
+    for centroid_index in 0..CENTROIDS {
+        let sample_index = (seed as usize + centroid_index) % sample_count;
+        let sample = sample_slice(samples, sample_index, group_size);
+        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
+    }
+    centroids
 }
 
 fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
@@ -1040,7 +1057,9 @@ pub(super) fn pq_fastscan_flush_output(
     })
 }
 
-fn default_pq_fastscan_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+pub(super) fn default_pq_fastscan_flush_output(
+    state: &BuildState,
+) -> Result<BuildFlushOutput, String> {
     if state.options.build_source_column.is_none() {
         return Err("tqhnsw pq_fastscan build currently requires build_source_column".to_owned());
     }
@@ -1543,7 +1562,10 @@ fn entry_point_score(
         .sum()
 }
 
-unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
+pub(super) unsafe fn write_data_pages(
+    index_relation: pg_sys::Relation,
+    data_pages: &page::DataPageChain,
+) {
     for staged_page in data_pages.pages() {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
@@ -2300,6 +2322,59 @@ mod tests {
 
         let error = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap_err();
         assert!(error.contains("source vectors"));
+    }
+
+    #[test]
+    fn grouped_build_model_supports_low_cardinality_source_sets() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..3)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 13 + dim) as f32 * 0.11).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let model = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap();
+        assert_eq!(model.group_size, 4);
+        assert_eq!(model.group_count, 4);
+        assert_eq!(model.codebooks.len(), 4);
+        assert!(model
+            .codebooks
+            .iter()
+            .all(|codebook| codebook.len() == 4 * GROUPED_PQ_CENTROIDS));
+
+        let code = derive_grouped_search_code_from_source(&tuples[0], &model).unwrap();
+        assert_eq!(code.len(), model.group_count.div_ceil(2));
     }
 
     #[test]
