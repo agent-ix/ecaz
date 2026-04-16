@@ -123,7 +123,6 @@ else
     printf '[scratch] exact_scope=disabled\n'
 fi
 
-export TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE="${grouped_score_mode}"

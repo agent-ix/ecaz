@@ -2710,7 +2710,6 @@ mod tests {
     #[pg_test]
     fn test_experimental_grouped_v2_source_build_writes_grouped_pages() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_source_build (
@@ -2739,7 +2738,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_source_build_idx ON tqhnsw_grouped_v2_source_build USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -2748,9 +2747,15 @@ mod tests {
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_grouped_v2_source_build_idx'::regclass",
+        )
+        .expect("SPI query should succeed")
+        .expect("reloptions should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
 
+        assert!(reloptions.contains(&"storage_format=pq_fastscan".to_string()));
         assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
         assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
         assert_eq!(
@@ -2833,7 +2838,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_graph_reads_load_entry_and_neighbors() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_graph_reads (
@@ -2862,7 +2866,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_graph_reads_idx ON tqhnsw_grouped_v2_graph_reads USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -2943,7 +2947,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_graph_reads_load_cold_rerank_payload() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_rerank_reads (
@@ -2972,7 +2975,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_rerank_reads_idx ON tqhnsw_grouped_v2_rerank_reads USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -3017,7 +3020,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_graph_reads_load_persisted_codebooks() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_codebook_reads (
@@ -3046,7 +3048,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_codebook_reads_idx ON tqhnsw_grouped_v2_codebook_reads USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -3117,7 +3119,6 @@ mod tests {
     )]
     fn test_experimental_grouped_v2_ordered_scan_rejects_runtime() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_reject (
@@ -3146,7 +3147,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_reject_idx ON tqhnsw_grouped_v2_runtime_reject USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -3162,7 +3163,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_ordered_scan_runtime_gate_smoke() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -3192,7 +3192,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_enabled_idx ON tqhnsw_grouped_v2_runtime_enabled USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -3258,7 +3258,6 @@ mod tests {
     )]
     fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "0");
 
@@ -3289,7 +3288,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_window_idx ON tqhnsw_grouped_v2_runtime_invalid_window USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -3305,7 +3304,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_captures_exact_rerank_comparison_scores() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -3335,7 +3333,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_compare_idx ON tqhnsw_grouped_v2_runtime_compare USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -3465,7 +3463,7 @@ mod tests {
 
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')"
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
 
@@ -3504,7 +3502,6 @@ mod tests {
         scope: Option<&str>,
     ) -> Vec<DebugScanComparisonRow> {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -3530,7 +3527,6 @@ mod tests {
         include_source_raw: bool,
     ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _rerank_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
@@ -3584,9 +3580,8 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_adr030_runtime_settings_reflect_env() {
+    fn test_tqhnsw_debug_runtime_settings_reflect_controls() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let _score_mode_guard = ScopedEnvVar::set(
@@ -3623,7 +3618,7 @@ mod tests {
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
-            "the runtime settings probe should surface the grouped build gate",
+            "the runtime settings probe should surface that grouped build selection is always available via reloptions",
         );
         assert_eq!(
             Spi::get_one::<bool>(
@@ -3803,7 +3798,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_profile_exact_counters_zero_without_gate() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let index_oid = create_grouped_v2_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_approx",
@@ -3887,7 +3881,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_binary_score_mode_bypasses_grouped_pq_scoring() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
@@ -3976,7 +3969,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_quantized_rerank_profile_reports_quantized_only() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let index_oid = create_grouped_v2_runtime_fixture(
@@ -4025,7 +4017,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_heap_rerank_profile_reports_heap_only() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let _rerank_mode_guard = ScopedEnvVar::set(
@@ -4080,7 +4071,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4182,7 +4172,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4287,7 +4276,6 @@ mod tests {
     )]
     fn test_grouped_v2_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
@@ -4307,7 +4295,6 @@ mod tests {
     )]
     fn test_grouped_v2_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _rerank_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
@@ -4325,7 +4312,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4361,7 +4347,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_scope_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_scope USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -4380,7 +4366,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4420,7 +4405,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_strategy_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_strategy USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -4439,7 +4424,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4475,7 +4459,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_limit_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_limit USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
@@ -4491,7 +4475,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_comparison_summary_matches_emitted_rows() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -4521,7 +4504,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_summary_idx ON tqhnsw_grouped_v2_runtime_summary USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -4756,7 +4739,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_comparison_rows_report_exact_ranks() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -4786,7 +4768,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_comparison_rows_idx ON tqhnsw_grouped_v2_runtime_comparison_rows USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -5033,7 +5015,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_order_drift_summary_matches_rows() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -5063,7 +5044,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_order_drift_summary_idx ON tqhnsw_grouped_v2_runtime_order_drift_summary USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -5396,7 +5377,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_windowed_rows_match_simulation() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -5426,7 +5406,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_rows_idx ON tqhnsw_grouped_v2_runtime_windowed_rows USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -5568,7 +5548,6 @@ mod tests {
         configure_window_env: bool,
     ) {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let window_value = window_size.to_string();
         let _window_guard = configure_window_env.then(|| {
@@ -5614,7 +5593,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_live_window_idx ON tqhnsw_grouped_v2_runtime_live_window USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -5835,7 +5814,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_windowed_summary_matches_rows() {
         let _lock = env_var_test_lock();
-        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
         let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
@@ -5865,7 +5843,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_summary_idx ON tqhnsw_grouped_v2_runtime_windowed_summary USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -7354,7 +7332,6 @@ mod tests {
     #[should_panic(expected = "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet")]
     fn test_tqhnsw_insert_rejects_grouped_v2_index() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_insert_grouped_v2_reject (
@@ -7381,7 +7358,7 @@ mod tests {
         }
         Spi::run(
             "CREATE INDEX tqhnsw_insert_grouped_v2_reject_idx ON tqhnsw_insert_grouped_v2_reject USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run(
@@ -7403,7 +7380,6 @@ mod tests {
     #[should_panic(expected = "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet")]
     fn test_tqhnsw_vacuum_rejects_grouped_v2_index() {
         let _lock = env_var_test_lock();
-        let _guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_vacuum_grouped_v2_reject (
@@ -7430,7 +7406,7 @@ mod tests {
         }
         Spi::run(
             "CREATE INDEX tqhnsw_vacuum_grouped_v2_reject_idx ON tqhnsw_vacuum_grouped_v2_reject USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
@@ -15488,7 +15464,7 @@ mod tests {
         ),
     > {
         TableIterator::once((
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD").is_some(),
+            true,
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
                 .map(|value| value.to_string_lossy().into_owned()),

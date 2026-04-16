@@ -32,6 +32,13 @@ impl GraphStorageDescriptor {
                 },
             }),
             page::GraphStorageFormat::GroupedV2 => {
+                if metadata.dimensions == 0 {
+                    return Ok(Self::GroupedV2(GroupedGraphLayout {
+                        binary_word_count: 0,
+                        search_code_len: 0,
+                        rerank_code_len: 0,
+                    }));
+                }
                 if metadata.payload_flags & page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE == 0 {
                     return Err(
                         "grouped-v2 metadata must advertise grouped search-code payloads"
@@ -1284,6 +1291,27 @@ mod tests {
                 binary_word_count: 0,
                 search_code_len: 3,
                 rerank_code_len: crate::code_len(96, 4),
+            })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_accepts_empty_grouped_metadata() {
+        let metadata = page::MetadataPage {
+            dimensions: 0,
+            bits: 0,
+            search_subvector_count: 0,
+            search_subvector_dim: 0,
+            grouped_codebook_head: page::ItemPointer::INVALID,
+            ..grouped_v2_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::GroupedV2(GroupedGraphLayout {
+                binary_word_count: 0,
+                search_code_len: 0,
+                rerank_code_len: 0,
             })
         );
     }

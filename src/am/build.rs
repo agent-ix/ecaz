@@ -17,10 +17,9 @@ use crate::quant::{
 
 use super::{options, page, shared, source, wal, P_NEW};
 
-const ADR030_EXPERIMENTAL_GROUP_SIZE: usize = 16;
-const ADR030_EXPERIMENTAL_MAX_TRAIN_SIZE: usize = 1024;
-const ADR030_EXPERIMENTAL_KMEANS_ITERS: usize = 8;
-const ADR030_EXPERIMENTAL_BUILD_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD";
+const PQ_FASTSCAN_DEFAULT_GROUP_SIZE: usize = 16;
+const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
+const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
 
 #[derive(Debug, Clone)]
 pub(super) struct BuildTuple {
@@ -134,18 +133,45 @@ impl BuildState {
     }
 
     pub(super) fn initial_metadata(&self) -> page::MetadataPage {
-        page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
-            m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
-            ef_construction: u16::try_from(self.options.ef_construction)
-                .expect("validated ef_construction should fit into u16"),
-            entry_point: page::ItemPointer::INVALID,
-            dimensions: 0,
-            bits: 0,
-            max_level: 0,
-            seed: 0,
-            inserted_since_rebuild: 0,
-            persisted_binary_sidecar: false,
-        })
+        let m = u16::try_from(self.options.m).expect("validated m should fit into u16");
+        let ef_construction = u16::try_from(self.options.ef_construction)
+            .expect("validated ef_construction should fit into u16");
+
+        match self.options.storage_format {
+            options::StorageFormat::TurboQuant => {
+                page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+                    m,
+                    ef_construction,
+                    entry_point: page::ItemPointer::INVALID,
+                    dimensions: 0,
+                    bits: 0,
+                    max_level: 0,
+                    seed: 0,
+                    inserted_since_rebuild: 0,
+                    persisted_binary_sidecar: false,
+                })
+            }
+            options::StorageFormat::PqFastScan => page::MetadataPage {
+                m,
+                ef_construction,
+                entry_point: page::ItemPointer::INVALID,
+                dimensions: 0,
+                bits: 0,
+                max_level: 0,
+                seed: 0,
+                inserted_since_rebuild: 0,
+                format_version: page::INDEX_FORMAT_V2_GROUPED,
+                transform_kind: page::TransformKind::Srht,
+                search_codec_kind: page::SearchCodecKind::GroupedPq,
+                payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                    | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+                search_bits: 4,
+                rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+                search_subvector_count: 0,
+                search_subvector_dim: 0,
+                grouped_codebook_head: page::ItemPointer::INVALID,
+            },
+        }
     }
 
     pub(super) fn push(&mut self, tuple: BuildTuple) {
@@ -952,18 +978,15 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
-    let output = if experimental_grouped_v2_build_enabled()
-        && state.options.build_source_column.is_some()
-    {
-        experimental_grouped_v2_flush_output(state)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw experimental ADR-030 v2 build failed: {e}"))
-    } else {
-        current_format_flush_output(state)
+    let output = match state.options.storage_format {
+        options::StorageFormat::TurboQuant => current_format_flush_output(state),
+        options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw pq_fastscan build failed: {e}")),
     };
     unsafe { flush_build_output(index_relation, &output) };
 }
 
-pub(super) fn grouped_v2_flush_output(
+pub(super) fn pq_fastscan_flush_output(
     state: &BuildState,
     plan: &V2GroupedBuildPlan,
     group_size: usize,
@@ -1017,22 +1040,21 @@ pub(super) fn grouped_v2_flush_output(
     })
 }
 
-fn experimental_grouped_v2_build_enabled() -> bool {
-    std::env::var_os(ADR030_EXPERIMENTAL_BUILD_ENV).is_some()
-}
-
-fn experimental_grouped_v2_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+fn default_pq_fastscan_flush_output(state: &BuildState) -> Result<BuildFlushOutput, String> {
+    if state.options.build_source_column.is_none() {
+        return Err("tqhnsw pq_fastscan build currently requires build_source_column".to_owned());
+    }
     let train_size = state
         .heap_tuples
         .len()
-        .min(ADR030_EXPERIMENTAL_MAX_TRAIN_SIZE);
+        .min(PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE);
     let plan = plan_v2_grouped_source_build(
         state,
-        ADR030_EXPERIMENTAL_GROUP_SIZE,
+        PQ_FASTSCAN_DEFAULT_GROUP_SIZE,
         train_size,
-        ADR030_EXPERIMENTAL_KMEANS_ITERS,
+        PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
     )?;
-    grouped_v2_flush_output(state, &plan, ADR030_EXPERIMENTAL_GROUP_SIZE)
+    pq_fastscan_flush_output(state, &plan, PQ_FASTSCAN_DEFAULT_GROUP_SIZE)
 }
 
 fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
@@ -1581,6 +1603,36 @@ mod tests {
     }
 
     #[test]
+    fn initial_metadata_uses_grouped_format_for_pq_fastscan_indexes() {
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 8,
+                ef_construction: 64,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        };
+
+        let metadata = state.initial_metadata();
+        assert_eq!(metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.search_codec_kind, page::SearchCodecKind::GroupedPq);
+        assert_eq!(
+            metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(metadata.search_subvector_count, 0);
+        assert_eq!(metadata.search_subvector_dim, 0);
+        assert_eq!(metadata.grouped_codebook_head, page::ItemPointer::INVALID);
+    }
+
+    #[test]
     fn scored_neighbor_graph_prefers_similarity_over_insert_order() {
         let seed = 42_u64;
         let bits = 8_u8;
@@ -1631,6 +1683,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1698,6 +1751,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1769,6 +1823,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1835,6 +1890,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1860,6 +1916,7 @@ mod tests {
                 ef_construction: 64,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -2111,6 +2168,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2188,6 +2246,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2215,6 +2274,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 16,
@@ -2279,6 +2339,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2343,6 +2404,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2418,6 +2480,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2428,7 +2491,7 @@ mod tests {
         };
 
         let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
-        let output = grouped_v2_flush_output(&state, &plan, 4).unwrap();
+        let output = pq_fastscan_flush_output(&state, &plan, 4).unwrap();
 
         assert_eq!(
             output.metadata.format_version,
@@ -2469,7 +2532,7 @@ mod tests {
     }
 
     #[test]
-    fn experimental_grouped_v2_flush_output_uses_default_v2_parameters() {
+    fn default_pq_fastscan_flush_output_uses_default_v2_parameters() {
         let seed = 42_u64;
         let bits = 4_u8;
         let tuples = (0..16)
@@ -2498,6 +2561,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
@@ -2507,7 +2571,7 @@ mod tests {
             seed: Some(seed),
         };
 
-        let output = experimental_grouped_v2_flush_output(&state).unwrap();
+        let output = default_pq_fastscan_flush_output(&state).unwrap();
 
         assert_eq!(
             output.metadata.format_version,
@@ -2516,7 +2580,7 @@ mod tests {
         assert_eq!(output.metadata.search_subvector_count, 1);
         assert_eq!(
             output.metadata.search_subvector_dim,
-            ADR030_EXPERIMENTAL_GROUP_SIZE as u16
+            PQ_FASTSCAN_DEFAULT_GROUP_SIZE as u16
         );
         assert_ne!(
             output.metadata.grouped_codebook_head,
