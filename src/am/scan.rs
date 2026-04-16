@@ -20,7 +20,6 @@ const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
-const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN";
 const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
 const ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
@@ -38,8 +37,8 @@ const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
 const ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
 const ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW: usize = 64;
-const ADR030_GROUPED_V2_SCAN_UNSUPPORTED: &str =
-    "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet";
+const GROUPED_EXACT_SCORE_UNAVAILABLE: &str =
+    "tqhnsw grouped exact scoring requires the grouped cold rerank payload path";
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -884,20 +883,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
 fn validate_runtime_scan_format(
     metadata: &page::MetadataPage,
 ) -> Result<graph::GraphStorageDescriptor, String> {
-    match graph::GraphStorageDescriptor::from_metadata(metadata)? {
-        descriptor @ graph::GraphStorageDescriptor::ScalarV1 { .. } => Ok(descriptor),
-        descriptor @ graph::GraphStorageDescriptor::GroupedV2(_) => {
-            if experimental_grouped_v2_scan_enabled() {
-                Ok(descriptor)
-            } else {
-                Err(ADR030_GROUPED_V2_SCAN_UNSUPPORTED.to_owned())
-            }
-        }
-    }
-}
-
-fn experimental_grouped_v2_scan_enabled() -> bool {
-    std::env::var_os(ADR030_EXPERIMENTAL_SCAN_ENV).is_some()
+    graph::GraphStorageDescriptor::from_metadata(metadata)
 }
 
 fn experimental_grouped_v2_exact_traversal_enabled() -> bool {
@@ -1647,7 +1633,7 @@ unsafe fn score_cached_graph_element_from_storage(
                 }
                 let (gamma, code_bytes) = element
                     .exact_payload()
-                    .unwrap_or_else(|| pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}"));
+                    .unwrap_or_else(|| pgrx::error!("{GROUPED_EXACT_SCORE_UNAVAILABLE}"));
                 score_and_cache_scan_element(opaque_ref, element_tid, gamma, code_bytes)
             },
         )
@@ -1677,7 +1663,7 @@ unsafe fn exact_score_cached_graph_element(
             }
         }
         LoadedElementState::ExactUnavailable => {
-            pgrx::error!("{ADR030_GROUPED_V2_SCAN_UNSUPPORTED}")
+            pgrx::error!("{GROUPED_EXACT_SCORE_UNAVAILABLE}")
         }
         LoadedElementState::None => {
             let opaque_ref = unsafe { &mut *opaque };
@@ -5734,7 +5720,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_runtime_scan_format_rejects_grouped_v2_metadata() {
+    fn validate_runtime_scan_format_accepts_grouped_v2_metadata() {
         let metadata = page::MetadataPage {
             m: 8,
             ef_construction: 64,
@@ -5756,8 +5742,14 @@ mod tests {
             grouped_codebook_head: tid(1, 2),
         };
 
-        let error = validate_runtime_scan_format(&metadata).unwrap_err();
-        assert_eq!(error, ADR030_GROUPED_V2_SCAN_UNSUPPORTED);
+        assert_eq!(
+            validate_runtime_scan_format(&metadata).unwrap(),
+            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+                binary_word_count: 0,
+                search_code_len: 1,
+                rerank_code_len: crate::code_len(16, 4),
+            })
+        );
     }
 
     #[test]

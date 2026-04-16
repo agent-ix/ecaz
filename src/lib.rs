@@ -3114,10 +3114,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(
-        expected = "tqhnsw scan runtime does not support ADR-030 grouped-v2 indexes yet"
-    )]
-    fn test_experimental_grouped_v2_ordered_scan_rejects_runtime() {
+    fn test_grouped_v2_ordered_scan_smoke() {
         let _lock = env_var_test_lock();
 
         Spi::run(
@@ -3152,18 +3149,22 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
-        let _ = Spi::get_one::<i64>(
+        let observed = Spi::get_one::<i64>(
             "SELECT id FROM tqhnsw_grouped_v2_runtime_reject \
              ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                       0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
              LIMIT 1",
+        )
+        .expect("ordered SELECT should succeed");
+        assert!(
+            observed.is_some(),
+            "grouped ordered scans should emit at least one row without a scan gate",
         );
     }
 
     #[pg_test]
-    fn test_grouped_v2_ordered_scan_runtime_gate_smoke() {
+    fn test_grouped_v2_ordered_scan_plan_smoke() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_enabled (
@@ -3258,7 +3259,6 @@ mod tests {
     )]
     fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "0");
 
         Spi::run(
@@ -3304,7 +3304,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_captures_exact_rerank_comparison_scores() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_compare (
@@ -3502,7 +3501,6 @@ mod tests {
         scope: Option<&str>,
     ) -> Vec<DebugScanComparisonRow> {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = scope.map(|value| {
@@ -3527,7 +3525,6 @@ mod tests {
         include_source_raw: bool,
     ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _rerank_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
             "heap_f32",
@@ -3582,7 +3579,6 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_debug_runtime_settings_reflect_controls() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
@@ -3627,7 +3623,7 @@ mod tests {
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
-            "the runtime settings probe should surface the grouped scan gate",
+            "the runtime settings probe should surface that grouped scan selection is always available",
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -3798,7 +3794,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_profile_exact_counters_zero_without_gate() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let index_oid = create_grouped_v2_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_profile_approx",
             "tqhnsw_grouped_v2_runtime_profile_approx_idx",
@@ -3881,7 +3876,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_binary_score_mode_bypasses_grouped_pq_scoring() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "binary",
@@ -3969,7 +3963,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_quantized_rerank_profile_reports_quantized_only() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let index_oid = create_grouped_v2_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_quantized_rerank_profile",
@@ -4017,7 +4010,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_heap_rerank_profile_reports_heap_only() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let _rerank_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
@@ -4071,7 +4063,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _limit_guard = ScopedEnvVar::set(
@@ -4172,7 +4163,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = ScopedEnvVar::set(
@@ -4276,7 +4266,6 @@ mod tests {
     )]
     fn test_grouped_v2_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "bogus",
@@ -4295,7 +4284,6 @@ mod tests {
     )]
     fn test_grouped_v2_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _rerank_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
         let index_oid = create_grouped_v2_runtime_fixture(
@@ -4312,7 +4300,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = ScopedEnvVar::set(
@@ -4366,7 +4353,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = ScopedEnvVar::set(
@@ -4424,7 +4410,6 @@ mod tests {
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
         let _limit_guard = ScopedEnvVar::set(
@@ -4475,7 +4460,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_comparison_summary_matches_emitted_rows() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_summary (
@@ -4739,7 +4723,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_runtime_comparison_rows_report_exact_ranks() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_comparison_rows (
@@ -5015,7 +4998,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_order_drift_summary_matches_rows() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_order_drift_summary (
@@ -5377,7 +5359,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_windowed_rows_match_simulation() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_rows (
@@ -5548,7 +5529,6 @@ mod tests {
         configure_window_env: bool,
     ) {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
         let window_value = window_size.to_string();
         let _window_guard = configure_window_env.then(|| {
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", &window_value)
@@ -5814,7 +5794,6 @@ mod tests {
     #[pg_test]
     fn test_grouped_v2_windowed_summary_matches_rows() {
         let _lock = env_var_test_lock();
-        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
 
         Spi::run(
             "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_summary (
@@ -15465,7 +15444,7 @@ mod tests {
     > {
         TableIterator::once((
             true,
-            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN").is_some(),
+            true,
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")

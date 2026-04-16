@@ -15,7 +15,8 @@ Usage:
       [--pgrx-home /tmp/tqvector_pgrx_home]
 
 Notes:
-  - Always enables the ADR-030 grouped build and scan gates.
+  - PqFastScan build/scan selection is now driven by index reloptions
+    (`WITH (storage_format = 'pq_fastscan')`), not a process-wide gate.
   - Enables exact traversal automatically when either `--exact-scope` or
     `--exact-limit` is provided.
   - Restarts the existing scratch postmaster if one is already running.
@@ -123,7 +124,6 @@ else
     printf '[scratch] exact_scope=disabled\n'
 fi
 
-export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE="${grouped_score_mode}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE="${rerank_mode}"
