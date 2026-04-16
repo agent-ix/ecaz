@@ -7298,10 +7298,9 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw aminsert does not support build_source_column indexes yet")]
-    fn test_tqhnsw_insert_rejects_build_source_column_index() {
+    fn test_tqhnsw_insert_supports_build_source_column_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_source_reject (
+            "CREATE TABLE tqhnsw_insert_source_live (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -7309,20 +7308,46 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_reject VALUES
-             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42))",
+            "INSERT INTO tqhnsw_insert_source_live VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ARRAY[0.8, 0.2, 0.3, -0.6], encode_to_tqvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
-        .expect("seed insert should succeed");
+        .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_source_reject_idx ON tqhnsw_insert_source_reject USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+            "CREATE INDEX tqhnsw_insert_source_live_idx ON tqhnsw_insert_source_live USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', m = 2)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_reject VALUES
-             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42))",
+            "INSERT INTO tqhnsw_insert_source_live VALUES
+             (4, ARRAY[0.7, 0.3, 0.2, -0.4], encode_to_tqvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
-        .expect("insert should fail");
+        .expect("live insert should succeed on build_source_column indexes");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_source_live_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_source_live", 4);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_element_tid, inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+
+        assert!(
+            metadata.inserted_since_rebuild > 0,
+            "live inserts should still advance drift tracking on build_source_column indexes",
+        );
+        assert!(!inserted_element.deleted);
+        assert!(
+            inserted_element.neighbortid != am::page::ItemPointer::INVALID,
+            "live insert should persist a neighbor tuple for the new element",
+        );
+        let neighbors = neighbors
+            .get(&inserted_element.neighbortid)
+            .expect("newly inserted source-backed element should keep a neighbor tuple");
+        assert_eq!(neighbors.count as usize, neighbors.tids.len());
     }
 
     #[pg_test]

@@ -2,13 +2,243 @@ use std::{cmp::Ordering, ptr};
 
 use pgrx::pg_sys;
 
-use super::{build, graph, options, page, search, shared, wal};
+use super::{build, graph, options, page, search, shared, source, wal};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const ADR030_GROUPED_V2_INSERT_UNSUPPORTED: &str =
     "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet";
+
+#[derive(Debug)]
+enum InsertSearchMetric {
+    Code,
+    Source(InsertHeapSourceScorer),
+}
+
+#[derive(Debug)]
+struct InsertHeapSourceScorer {
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attribute: source::SourceAttribute,
+}
+
+impl InsertHeapSourceScorer {
+    unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+        let source_attribute = unsafe {
+            source::resolve_source_attribute(
+                heap_relation,
+                source_column,
+                "build_source_column",
+                source::SourceTypePolicy::RealArrayOnly,
+            )
+        };
+        let slot = unsafe {
+            source::allocate_heap_slot(
+                heap_relation,
+                "tqhnsw aminsert failed to allocate a heap source slot",
+            )
+        };
+
+        Self {
+            heap_relation,
+            snapshot: std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData),
+            slot,
+            source_attribute,
+        }
+    }
+
+    unsafe fn load_source_vector(&mut self, heap_tid: page::ItemPointer, label: &str) -> Vec<f32> {
+        let source = unsafe {
+            source::load_source_from_heap_row(
+                self.heap_relation,
+                heap_tid,
+                self.snapshot,
+                self.slot,
+                self.source_attribute,
+                label,
+            )
+        };
+        let vector = source.as_slice().to_vec();
+        drop(source);
+        unsafe { pg_sys::ExecClearTuple(self.slot) };
+        vector
+    }
+
+    unsafe fn averaged_source_vector(
+        &mut self,
+        heap_tids: &[page::ItemPointer],
+        label: &str,
+    ) -> Option<Vec<f32>> {
+        let mut representative: Option<Vec<f32>> = None;
+        let mut count = 0usize;
+
+        for heap_tid in heap_tids.iter().copied() {
+            let source = unsafe {
+                source::load_source_from_heap_row(
+                    self.heap_relation,
+                    heap_tid,
+                    self.snapshot,
+                    self.slot,
+                    self.source_attribute,
+                    label,
+                )
+            };
+            match representative.as_mut() {
+                Some(existing) => {
+                    source::average_source_representatives(existing, count, source.as_slice(), 1);
+                    count += 1;
+                }
+                None => {
+                    representative = Some(source.as_slice().to_vec());
+                    count = 1;
+                }
+            }
+            drop(source);
+            unsafe { pg_sys::ExecClearTuple(self.slot) };
+        }
+
+        representative
+    }
+
+    unsafe fn score_element_against_query(
+        &mut self,
+        query_source: &[f32],
+        element: &graph::GraphElement,
+    ) -> Option<f32> {
+        if element.deleted || element.heaptids.is_empty() {
+            return None;
+        }
+
+        let element_source = unsafe {
+            self.averaged_source_vector(&element.heaptids, "live insert source graph element")
+        }?;
+        Some(source::negative_inner_product(
+            query_source,
+            &element_source,
+        ))
+    }
+
+    unsafe fn score_existing_backlink_candidate(
+        &mut self,
+        target_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> f32 {
+        let target_source = unsafe {
+            self.averaged_source_vector(
+                &target_element.heaptids,
+                "live insert backlink target source vector",
+            )
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw live insert backlink target is missing source data")
+        });
+        let candidate_source = unsafe {
+            self.averaged_source_vector(
+                &candidate_element.heaptids,
+                "live insert backlink candidate source vector",
+            )
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw live insert backlink candidate is missing source data")
+        });
+        source::negative_inner_product(&target_source, &candidate_source)
+    }
+
+    fn score_new_backlink_candidate(
+        &mut self,
+        target_element: &graph::GraphElement,
+        new_tuple: &build::BuildTuple,
+    ) -> f32 {
+        let target_source = unsafe {
+            self.averaged_source_vector(
+                &target_element.heaptids,
+                "live insert backlink target source vector",
+            )
+        }
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw live insert backlink target is missing source data")
+        });
+        let new_source = new_tuple.source_vector.as_deref().unwrap_or_else(|| {
+            pgrx::error!("tqhnsw live insert source scoring requires source data")
+        });
+        source::negative_inner_product(&target_source, new_source)
+    }
+}
+
+impl Drop for InsertHeapSourceScorer {
+    fn drop(&mut self) {
+        if !self.slot.is_null() {
+            unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+        }
+    }
+}
+
+impl InsertSearchMetric {
+    unsafe fn from_tuple(
+        heap_relation: pg_sys::Relation,
+        source_column: Option<&str>,
+        tuple: &build::BuildTuple,
+    ) -> Self {
+        match source_column {
+            Some(source_column) => {
+                if tuple.source_vector.is_none() {
+                    pgrx::error!("tqhnsw live insert source scoring requires source data");
+                }
+                Self::Source(unsafe { InsertHeapSourceScorer::new(heap_relation, source_column) })
+            }
+            None => Self::Code,
+        }
+    }
+
+    unsafe fn score_new_tuple_against_element(
+        &mut self,
+        metadata: &page::MetadataPage,
+        tuple: &build::BuildTuple,
+        element: &graph::GraphElement,
+    ) -> Option<f32> {
+        match self {
+            Self::Code => score_insert_graph_element(metadata, &tuple.code, element),
+            Self::Source(scorer) => unsafe {
+                scorer.score_element_against_query(
+                    tuple.source_vector.as_deref().unwrap_or_else(|| {
+                        pgrx::error!("tqhnsw live insert source scoring requires source data")
+                    }),
+                    element,
+                )
+            },
+        }
+    }
+
+    unsafe fn score_existing_backlink_candidate(
+        &mut self,
+        metadata: &page::MetadataPage,
+        target_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> f32 {
+        match self {
+            Self::Code => {
+                score_backlink_candidate(metadata, &target_element.code, &candidate_element.code)
+            }
+            Self::Source(scorer) => unsafe {
+                scorer.score_existing_backlink_candidate(target_element, candidate_element)
+            },
+        }
+    }
+
+    unsafe fn score_new_backlink_candidate(
+        &mut self,
+        metadata: &page::MetadataPage,
+        target_element: &graph::GraphElement,
+        new_tuple: &build::BuildTuple,
+    ) -> f32 {
+        match self {
+            Self::Code => score_backlink_candidate(metadata, &target_element.code, &new_tuple.code),
+            Self::Source(scorer) => scorer.score_new_backlink_candidate(target_element, new_tuple),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InsertFormatAdapter {
@@ -56,6 +286,7 @@ impl InsertFormatAdapter {
         index_relation: pg_sys::Relation,
         metadata: &page::MetadataPage,
         tuple: &build::BuildTuple,
+        metric: &mut InsertSearchMetric,
         insert_level: u8,
         m: u16,
     ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
@@ -64,7 +295,8 @@ impl InsertFormatAdapter {
                 discover_insert_forward_neighbor_slots(
                     index_relation,
                     metadata,
-                    &tuple.code,
+                    tuple,
+                    metric,
                     insert_level,
                     m,
                 )
@@ -94,11 +326,13 @@ impl InsertFormatAdapter {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn add_backlinks(
         self,
         index_relation: pg_sys::Relation,
         metadata: &page::MetadataPage,
         tuple: &build::BuildTuple,
+        metric: &mut InsertSearchMetric,
         code_len: usize,
         selections: &[LayerForwardSelection],
         new_element_tid: page::ItemPointer,
@@ -109,8 +343,9 @@ impl InsertFormatAdapter {
                 add_backlinks_to_forward_neighbors(
                     index_relation,
                     metadata,
+                    tuple,
+                    metric,
                     code_len,
-                    &tuple.code,
                     selections,
                     new_element_tid,
                     m,
@@ -137,17 +372,27 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let heap_tid = shared::decode_heap_tid(heap_tid);
-            let tuple = build::build_heap_tuple(values, isnull, heap_tid);
             let options = options::relation_options(index_relation);
             let metadata_snapshot = shared::read_metadata_page(index_relation);
-
             let format = resolve_insert_format_adapter(&metadata_snapshot)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-            if let Some(source_column) = options.build_source_column {
-                pgrx::error!(
-                    "tqhnsw aminsert does not support build_source_column indexes yet: {source_column}"
-                );
+            let tuple;
+            let mut metric;
+            if let Some(source_column) = options.build_source_column.as_deref() {
+                if values.is_null() || isnull.is_null() {
+                    pgrx::error!("tqhnsw aminsert received null tuple value arrays");
+                }
+                if *isnull {
+                    pgrx::error!("tqhnsw does not support NULL indexed values");
+                }
+                let mut source_scorer = InsertHeapSourceScorer::new(heap_relation, source_column);
+                let source_vector = source_scorer
+                    .load_source_vector(heap_tid, "tqhnsw live insert build_source_column");
+                tuple = build::build_heap_tuple_with_source(*values, heap_tid, source_vector);
+                metric = InsertSearchMetric::Source(source_scorer);
+            } else {
+                tuple = build::build_heap_tuple(values, isnull, heap_tid);
+                metric = InsertSearchMetric::from_tuple(heap_relation, None, &tuple);
             }
             run_insert_with_adapter(
                 format,
@@ -155,6 +400,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 heap_relation,
                 heap_tid,
                 &tuple,
+                &mut metric,
                 &metadata_snapshot,
                 u16::try_from(options.m).expect("validated m should fit in u16"),
             )
@@ -181,6 +427,7 @@ unsafe fn run_insert_with_adapter(
     heap_relation: pg_sys::Relation,
     heap_tid: page::ItemPointer,
     tuple: &build::BuildTuple,
+    metric: &mut InsertSearchMetric,
     metadata_snapshot: &page::MetadataPage,
     m: u16,
 ) -> bool {
@@ -267,6 +514,7 @@ unsafe fn run_insert_with_adapter(
         index_relation,
         metadata_snapshot,
         tuple,
+        metric,
         insert_level,
         m,
     );
@@ -276,6 +524,7 @@ unsafe fn run_insert_with_adapter(
         index_relation,
         metadata_snapshot,
         tuple,
+        metric,
         code_len,
         &forward_selections,
         element_tid,
@@ -408,7 +657,7 @@ enum BacklinkMutationOutcome {
 struct BacklinkPlanner<'a> {
     metadata: &'a page::MetadataPage,
     code_len: usize,
-    new_code: &'a [u8],
+    new_tuple: &'a build::BuildTuple,
     new_element_tid: page::ItemPointer,
     m: u16,
 }
@@ -416,14 +665,15 @@ struct BacklinkPlanner<'a> {
 unsafe fn discover_insert_forward_neighbor_slots(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    code: &[u8],
+    tuple: &build::BuildTuple,
+    metric: &mut InsertSearchMetric,
     insert_level: u8,
     m: u16,
 ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
     let mut slots = empty_insert_neighbor_slots(insert_level, m);
     let mut selections = Vec::new();
     let Some(entry_candidate) =
-        (unsafe { load_insert_entry_candidate(index_relation, metadata, code) })
+        (unsafe { load_insert_entry_candidate(index_relation, metadata, tuple, metric) })
     else {
         return (slots, selections);
     };
@@ -433,7 +683,8 @@ unsafe fn discover_insert_forward_neighbor_slots(
         populate_upper_layer_forward_slots(
             index_relation,
             metadata,
-            code,
+            tuple,
+            metric,
             insert_level,
             m_usize,
             entry_candidate,
@@ -444,21 +695,21 @@ unsafe fn discover_insert_forward_neighbor_slots(
     let descended_seed = unsafe {
         graph::greedy_descend_from_entry(
             index_relation,
-            code.len(),
+            tuple.code.len(),
             m_usize,
             entry_candidate,
-            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+            |neighbor| metric.score_new_tuple_against_element(metadata, tuple, neighbor),
         )
     };
     let layer0_candidates = unsafe {
         graph::search_layer0_result_candidates(
             index_relation,
-            code.len(),
+            tuple.code.len(),
             m_usize,
             insert_ef_construction(metadata),
             [descended_seed],
             |_| true,
-            |neighbor| score_insert_graph_element(metadata, code, neighbor),
+            |neighbor| metric.score_new_tuple_against_element(metadata, tuple, neighbor),
         )
     };
 
@@ -470,15 +721,17 @@ unsafe fn discover_insert_forward_neighbor_slots(
 unsafe fn load_insert_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    code: &[u8],
+    tuple: &build::BuildTuple,
+    metric: &mut InsertSearchMetric,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     if metadata.entry_point == page::ItemPointer::INVALID {
         return None;
     }
 
-    let entry =
-        unsafe { graph::load_graph_element(index_relation, metadata.entry_point, code.len()) };
-    let entry_score = score_insert_graph_element(metadata, code, &entry)?;
+    let entry = unsafe {
+        graph::load_graph_element(index_relation, metadata.entry_point, tuple.code.len())
+    };
+    let entry_score = unsafe { metric.score_new_tuple_against_element(metadata, tuple, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
@@ -502,10 +755,12 @@ fn score_insert_graph_element(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn populate_upper_layer_forward_slots(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    code: &[u8],
+    tuple: &build::BuildTuple,
+    metric: &mut InsertSearchMetric,
     insert_level: u8,
     m: usize,
     entry_candidate: search::BeamCandidate<page::ItemPointer>,
@@ -521,13 +776,13 @@ unsafe fn populate_upper_layer_forward_slots(
         seeds = unsafe {
             graph::search_layer_result_candidates(
                 index_relation,
-                code.len(),
+                tuple.code.len(),
                 m,
                 current_layer,
                 insert_ef_construction(metadata),
                 seeds,
                 |_| true,
-                |neighbor| score_insert_graph_element(metadata, code, neighbor),
+                |neighbor| metric.score_new_tuple_against_element(metadata, tuple, neighbor),
             )
         };
         if current_layer <= insert_level {
@@ -565,8 +820,9 @@ fn write_layer_forward_candidates(
 unsafe fn add_backlinks_to_forward_neighbors(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
+    new_tuple: &build::BuildTuple,
+    metric: &mut InsertSearchMetric,
     code_len: usize,
-    new_code: &[u8],
     selections: &[LayerForwardSelection],
     new_element_tid: page::ItemPointer,
     m: u16,
@@ -574,7 +830,7 @@ unsafe fn add_backlinks_to_forward_neighbors(
     let planner = BacklinkPlanner {
         metadata,
         code_len,
-        new_code,
+        new_tuple,
         new_element_tid,
         m,
     };
@@ -590,7 +846,8 @@ unsafe fn add_backlinks_to_forward_neighbors(
             break;
         }
 
-        let mutations = unsafe { plan_backlink_mutations(index_relation, &planner, &pending) };
+        let mutations =
+            unsafe { plan_backlink_mutations(index_relation, &planner, metric, &pending) };
         if mutations.is_empty() {
             break;
         }
@@ -603,6 +860,7 @@ unsafe fn add_backlinks_to_forward_neighbors(
 unsafe fn plan_backlink_mutations(
     index_relation: pg_sys::Relation,
     planner: &BacklinkPlanner<'_>,
+    metric: &mut InsertSearchMetric,
     selections: &[LayerForwardSelection],
 ) -> Vec<BacklinkMutation> {
     let mut mutations = selections
@@ -615,6 +873,7 @@ unsafe fn plan_backlink_mutations(
             plan_backlink_mutation(
                 index_relation,
                 planner,
+                metric,
                 &element,
                 &neighbors,
                 selection.layer,
@@ -775,6 +1034,7 @@ unsafe fn add_backlinks_on_page(
 unsafe fn plan_backlink_mutation(
     index_relation: pg_sys::Relation,
     planner: &BacklinkPlanner<'_>,
+    metric: &mut InsertSearchMetric,
     target_element: &graph::GraphElement,
     target_neighbors: &graph::GraphNeighbors,
     layer: u8,
@@ -796,15 +1056,7 @@ unsafe fn plan_backlink_mutation(
     }
 
     let replacement_slice = unsafe {
-        select_backlink_rewrite_slice(
-            index_relation,
-            planner.metadata,
-            planner.code_len,
-            &target_element.code,
-            layer_slice,
-            planner.new_element_tid,
-            planner.new_code,
-        )
+        select_backlink_rewrite_slice(index_relation, planner, metric, target_element, layer_slice)
     };
     replacement_slice
         .contains(&planner.new_element_tid)
@@ -821,29 +1073,33 @@ unsafe fn plan_backlink_mutation(
 
 unsafe fn select_backlink_rewrite_slice(
     index_relation: pg_sys::Relation,
-    metadata: &page::MetadataPage,
-    code_len: usize,
-    target_code: &[u8],
+    planner: &BacklinkPlanner<'_>,
+    metric: &mut InsertSearchMetric,
+    target_element: &graph::GraphElement,
     existing_slice: &[page::ItemPointer],
-    new_element_tid: page::ItemPointer,
-    new_code: &[u8],
 ) -> Vec<page::ItemPointer> {
     let mut candidates = existing_slice
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| unsafe {
-            let element = graph::load_graph_element(index_relation, tid, code_len);
+            let element = graph::load_graph_element(index_relation, tid, planner.code_len);
             ScoredBacklinkCandidate {
                 tid,
-                score: score_backlink_candidate(metadata, target_code, &element.code),
+                score: metric.score_existing_backlink_candidate(
+                    planner.metadata,
+                    target_element,
+                    &element,
+                ),
                 is_new: false,
             }
         })
         .collect::<Vec<_>>();
     candidates.push(ScoredBacklinkCandidate {
-        tid: new_element_tid,
-        score: score_backlink_candidate(metadata, target_code, new_code),
+        tid: planner.new_element_tid,
+        score: unsafe {
+            metric.score_new_backlink_candidate(planner.metadata, target_element, planner.new_tuple)
+        },
         is_new: true,
     });
     candidates.sort_unstable_by(|left, right| {

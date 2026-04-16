@@ -12,6 +12,7 @@ mod scan;
 mod scan_debug;
 mod search;
 mod shared;
+mod source;
 mod stats;
 mod stream;
 mod vacuum;

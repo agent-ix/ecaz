@@ -1,11 +1,10 @@
-use std::ffi::c_int;
 use std::ptr;
 use std::sync::Arc;
 #[cfg(any(test, feature = "pg_test"))]
 use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
-use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgTupleDesc};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
@@ -14,6 +13,7 @@ use super::explain::TqExplainCounters;
 use super::graph;
 use super::page;
 use super::search;
+use super::source;
 use super::stream::{GraphPrefetchState, LinearPrefetchState};
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
@@ -1100,37 +1100,6 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapsho
     (registered_snapshot, true)
 }
 
-unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: &str) -> i32 {
-    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
-        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
-    });
-    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
-    let attnum = i32::from(attnum);
-    if attnum <= 0 {
-        pgrx::error!(
-            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
-            source_column.to_string_lossy()
-        );
-    }
-    attnum
-}
-
-unsafe fn resolve_source_attribute(
-    heap_relation: pg_sys::Relation,
-    source_column: &str,
-    source_label: &str,
-) -> (i32, pg_sys::Oid) {
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
-    let att = tuple_desc
-        .get(source_attnum as usize - 1)
-        .expect("resolved scan source attribute should exist");
-    if att.attisdropped {
-        pgrx::error!("tqhnsw {source_label} \"{source_column}\" references a dropped column");
-    }
-    (source_attnum, att.atttypid)
-}
-
 unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
     if !opaque.grouped_heap_rerank_slot.is_null() {
         unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.grouped_heap_rerank_slot) };
@@ -1191,40 +1160,29 @@ unsafe fn configure_grouped_heap_rerank_state(
     });
     let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
     let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
-    let (source_attnum, source_type_oid) =
-        unsafe { resolve_source_attribute(heap_relation, &source_column, source_label) };
-    if source_type_oid != pg_sys::FLOAT4ARRAYOID && source_type_oid != pg_sys::BYTEAOID {
-        pgrx::error!(
-            "tqhnsw {source_label} \"{source_column}\" must be real[] or bytea for grouped-v2 heap-f32 rerank, got type oid {}",
-            u32::from(source_type_oid)
-        );
-    }
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
+    let source_attribute = unsafe {
+        source::resolve_source_attribute(
+            heap_relation,
+            &source_column,
+            source_label,
+            source::SourceTypePolicy::RealArrayOrBytea,
         )
     };
-    if slot.is_null() {
-        if snapshot_owned {
-            unsafe { pg_sys::UnregisterSnapshot(snapshot) };
-        }
-        if heap_relation_owned {
-            unsafe {
-                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
-            };
-        }
-        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank failed to allocate a heap tuple slot");
-    }
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "tqhnsw grouped-v2 heap-f32 rerank failed to allocate a heap tuple slot",
+        )
+    };
 
     opaque.grouped_heap_rerank_relation = heap_relation;
     opaque.grouped_heap_rerank_relation_owned = heap_relation_owned;
     opaque.grouped_heap_rerank_snapshot = snapshot;
     opaque.grouped_heap_rerank_snapshot_owned = snapshot_owned;
     opaque.grouped_heap_rerank_slot = slot;
-    opaque.grouped_heap_rerank_source_attnum =
-        i16::try_from(source_attnum).expect("heap rerank source attnum should fit in i16");
-    opaque.grouped_heap_rerank_source_type_oid = source_type_oid;
+    opaque.grouped_heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
+        .expect("heap rerank source attnum should fit in i16");
+    opaque.grouped_heap_rerank_source_type_oid = source_attribute.type_oid;
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -1325,211 +1283,6 @@ unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
         opaque.query_values = ptr::null_mut();
     }
     opaque.query_dimensions = 0;
-}
-
-unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> pg_sys::Datum {
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        pgrx::error!("tqhnsw does not support NULL {label}");
-    }
-    unsafe { *(*slot).tts_values.add(attr_index) }
-}
-
-struct FlatFloat4ArrayRef {
-    array_ptr: *mut pg_sys::ArrayType,
-    owned: bool,
-    data_ptr: *const f32,
-    len: usize,
-}
-
-impl FlatFloat4ArrayRef {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        if datum.is_null() {
-            pgrx::error!("tqhnsw does not support NULL {label}");
-        }
-
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("tqhnsw could not detoast {label}");
-        }
-        let array_ptr = varlena.cast::<pg_sys::ArrayType>();
-        let owned = !ptr::eq(varlena, original);
-
-        let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
-            Ok(value) => value,
-            Err(_) => pgrx::error!("tqhnsw {label} must be a one-dimensional real[]"),
-        };
-        if ndim != 1 {
-            pgrx::error!("tqhnsw {label} must be a one-dimensional real[]");
-        }
-        if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {
-            pgrx::error!("tqhnsw {label} must be a real[]");
-        }
-        if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
-            pgrx::error!("tqhnsw {label} arrays must not contain NULL elements");
-        }
-
-        let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
-        let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })
-            .expect("flat float4 array length should fit in usize");
-        let data_ptr = unsafe {
-            array_ptr
-                .cast::<u8>()
-                .add(flat_array_data_offset(array_ptr, ndim))
-                .cast::<f32>()
-        };
-        if (data_ptr as usize) % std::mem::align_of::<f32>() != 0 {
-            pgrx::error!("tqhnsw {label} data pointer is not aligned for float4 access");
-        }
-
-        Self {
-            array_ptr,
-            owned,
-            data_ptr,
-            len,
-        }
-    }
-
-    fn as_slice(&self) -> &[f32] {
-        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
-    }
-}
-
-impl Drop for FlatFloat4ArrayRef {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.array_ptr.cast()) };
-        }
-    }
-}
-
-struct FlatFloat4ByteaRef {
-    varlena_ptr: *mut pg_sys::varlena,
-    owned: bool,
-    data_ptr: *const f32,
-    len: usize,
-}
-
-impl FlatFloat4ByteaRef {
-    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
-        if datum.is_null() {
-            pgrx::error!("tqhnsw does not support NULL {label}");
-        }
-
-        let original = datum
-            .cast_mut_ptr::<std::ffi::c_void>()
-            .cast::<pg_sys::varlena>();
-        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
-        if varlena.is_null() {
-            pgrx::error!("tqhnsw could not detoast {label}");
-        }
-        let owned = !ptr::eq(varlena, original);
-        let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) };
-        if bytes.len() % std::mem::size_of::<f32>() != 0 {
-            pgrx::error!("tqhnsw {label} bytea payload length must be a multiple of 4 bytes");
-        }
-        let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
-        if !prefix.is_empty() || !suffix.is_empty() {
-            pgrx::error!("tqhnsw {label} bytea payload is not aligned for float4 access");
-        }
-
-        Self {
-            varlena_ptr: varlena,
-            owned,
-            data_ptr: body.as_ptr(),
-            len: body.len(),
-        }
-    }
-
-    fn as_slice(&self) -> &[f32] {
-        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
-    }
-}
-
-impl Drop for FlatFloat4ByteaRef {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { pg_sys::pfree(self.varlena_ptr.cast()) };
-        }
-    }
-}
-
-enum FlatFloat4SourceRef {
-    Array(FlatFloat4ArrayRef),
-    Bytea(FlatFloat4ByteaRef),
-}
-
-impl FlatFloat4SourceRef {
-    unsafe fn from_datum(datum: pg_sys::Datum, type_oid: pg_sys::Oid, label: &str) -> Self {
-        match type_oid {
-            pg_sys::FLOAT4ARRAYOID => {
-                Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
-            }
-            pg_sys::BYTEAOID => Self::Bytea(unsafe { FlatFloat4ByteaRef::from_datum(datum, label) }),
-            _ => pgrx::error!(
-                "tqhnsw {label} must be real[] or bytea for grouped-v2 heap-f32 rerank, got type oid {}",
-                u32::from(type_oid)
-            ),
-        }
-    }
-
-    fn as_slice(&self) -> &[f32] {
-        match self {
-            Self::Array(array) => array.as_slice(),
-            Self::Bytea(bytea) => bytea.as_slice(),
-        }
-    }
-}
-
-unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {
-    unsafe {
-        array_ptr
-            .cast::<u8>()
-            .add(std::mem::size_of::<pg_sys::ArrayType>())
-            .cast::<c_int>()
-    }
-}
-
-fn maxaligned_size(len: usize) -> usize {
-    let align =
-        usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit in usize");
-    (len + align - 1) & !(align - 1)
-}
-
-unsafe fn flat_array_data_offset(array_ptr: *const pg_sys::ArrayType, ndim: usize) -> usize {
-    let dataoffset = unsafe { (*array_ptr).dataoffset };
-    if dataoffset != 0 {
-        usize::try_from(dataoffset).expect("flat float4 array dataoffset should fit in usize")
-    } else {
-        maxaligned_size(
-            std::mem::size_of::<pg_sys::ArrayType>() + (2 * ndim * std::mem::size_of::<c_int>()),
-        )
-    }
-}
-
-fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
-    if query.len() != source.len() {
-        pgrx::error!(
-            "tqhnsw grouped-v2 heap-f32 rerank source vector dimension mismatch: query dim {}, source dim {}",
-            query.len(),
-            source.len()
-        );
-    }
-    -query
-        .iter()
-        .zip(source)
-        .map(|(left, right)| left * right)
-        .sum::<f32>()
 }
 
 fn store_scan_prepared_query(
@@ -2059,17 +1812,19 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank is missing heap fetch state");
     }
 
-    let mut tid = pg_sys::ItemPointerData::default();
-    pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
-    unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    let source_attribute = source::SourceAttribute {
+        attnum: i32::from(opaque.grouped_heap_rerank_source_attnum),
+        type_oid: opaque.grouped_heap_rerank_source_type_oid,
+    };
     #[cfg(any(test, feature = "pg_test"))]
     let fetch_started = Instant::now();
-    let fetched = unsafe {
-        pg_sys::table_tuple_fetch_row_version(
+    unsafe {
+        source::fetch_heap_row_version(
             opaque.grouped_heap_rerank_relation,
-            &mut tid,
+            heap_tid,
             opaque.grouped_heap_rerank_snapshot,
             opaque.grouped_heap_rerank_slot,
+            "grouped-v2 heap rerank source vector",
         )
     };
     #[cfg(any(test, feature = "pg_test"))]
@@ -2078,27 +1833,16 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     #[cfg(not(any(test, feature = "pg_test")))]
     let fetch_elapsed_us = 0;
     record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
-    if !fetched {
-        pgrx::error!(
-            "tqhnsw grouped-v2 heap-f32 rerank could not fetch heap tuple at ({},{})",
-            heap_tid.block_number,
-            heap_tid.offset_number
-        );
-    }
-
     #[cfg(any(test, feature = "pg_test"))]
     let decode_started = Instant::now();
-    let source_datum = unsafe {
-        required_slot_datum(
-            opaque.grouped_heap_rerank_slot,
-            i32::from(opaque.grouped_heap_rerank_source_attnum),
-            "grouped-v2 heap rerank source vector",
-        )
-    };
     let source = unsafe {
-        FlatFloat4SourceRef::from_datum(
-            source_datum,
-            opaque.grouped_heap_rerank_source_type_oid,
+        source::FlatFloat4SourceRef::from_datum(
+            source::required_slot_datum(
+                opaque.grouped_heap_rerank_slot,
+                source_attribute.attnum,
+                "grouped-v2 heap rerank source vector",
+            ),
+            source_attribute.type_oid,
             "grouped-v2 heap rerank source vector",
         )
     };
@@ -2110,7 +1854,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
     #[cfg(any(test, feature = "pg_test"))]
     let dot_started = Instant::now();
-    let score = negative_inner_product(scan_query_values(opaque), source.as_slice());
+    let score = source::negative_inner_product(scan_query_values(opaque), source.as_slice());
     #[cfg(any(test, feature = "pg_test"))]
     let dot_elapsed_us =
         u64::try_from(dot_started.elapsed().as_micros()).expect("timing should fit in u64");

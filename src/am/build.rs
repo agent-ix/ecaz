@@ -5,7 +5,7 @@ use std::ptr;
 
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox};
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -15,7 +15,7 @@ use crate::quant::{
     prod::ProdQuantizer,
 };
 
-use super::{options, page, shared, wal, P_NEW};
+use super::{options, page, shared, source, wal, P_NEW};
 
 const ADR030_EXPERIMENTAL_GROUP_SIZE: usize = 16;
 const ADR030_EXPERIMENTAL_MAX_TRAIN_SIZE: usize = 1024;
@@ -60,24 +60,6 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
             let tuple = build_heap_tuple(values, isnull, heap_tid);
             state.push(tuple);
         })
-    }
-}
-
-pub(super) fn average_source_representatives(
-    existing: &mut [f32],
-    existing_count: usize,
-    incoming: &[f32],
-    incoming_count: usize,
-) {
-    assert_eq!(existing.len(), incoming.len());
-    assert!(existing_count > 0);
-    assert!(incoming_count > 0);
-
-    let total_count = existing_count + incoming_count;
-    for (existing_value, incoming_value) in existing.iter_mut().zip(incoming.iter()) {
-        *existing_value = ((*existing_value * existing_count as f32)
-            + (*incoming_value * incoming_count as f32))
-            / total_count as f32;
     }
 }
 
@@ -228,7 +210,7 @@ impl BuildState {
                             tuple_source.len()
                         );
                     }
-                    average_source_representatives(
+                    source::average_source_representatives(
                         existing_source,
                         existing.source_count,
                         &tuple_source,
@@ -304,7 +286,7 @@ pub(super) unsafe fn build_heap_tuple(
     }
 }
 
-unsafe fn build_heap_tuple_with_source(
+pub(super) unsafe fn build_heap_tuple_with_source(
     vector_datum: pg_sys::Datum,
     heap_tid: page::ItemPointer,
     source_vector: Vec<f32>,
@@ -364,30 +346,21 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         .clone()
         .expect("source scan should only run when build_source_column is configured");
     let index_attnum = unsafe { source_build_index_attnum(index_info) };
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, &source_column) };
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
-    let att = tuple_desc
-        .get(source_attnum as usize - 1)
-        .expect("resolved build source attribute should exist");
-    if att.attisdropped {
-        pgrx::error!("tqhnsw build_source_column \"{source_column}\" references a dropped column");
-    }
-    if att.atttypid != pg_sys::FLOAT4ARRAYOID {
-        pgrx::error!(
-            "tqhnsw build_source_column \"{source_column}\" must be real[], got type oid {}",
-            u32::from(att.atttypid)
-        );
-    }
-
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
+    let source_attribute = unsafe {
+        source::resolve_source_attribute(
+            heap_relation,
+            &source_column,
+            "build_source_column",
+            source::SourceTypePolicy::RealArrayOnly,
         )
     };
-    if slot.is_null() {
-        pgrx::error!("tqhnsw ambuild failed to allocate heap scan slot");
-    }
+
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "tqhnsw ambuild failed to allocate heap scan slot",
+        )
+    };
 
     let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     unsafe { pg_sys::PushActiveSnapshot(snapshot) };
@@ -419,9 +392,10 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         scanned_tuples += 1.0;
         let heap_tid = unsafe { decode_slot_tid(slot) };
         let vector_datum =
-            unsafe { required_slot_datum(slot, index_attnum, "indexed tqvector column") };
-        let source_datum =
-            unsafe { required_slot_datum(slot, source_attnum, "tqhnsw build_source_column") };
+            unsafe { source::required_slot_datum(slot, index_attnum, "indexed tqvector column") };
+        let source_datum = unsafe {
+            source::required_slot_datum(slot, source_attribute.attnum, "tqhnsw build_source_column")
+        };
         let source_vector = unsafe {
             Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
         }
@@ -464,21 +438,6 @@ unsafe fn source_build_index_attnum(index_info: *mut pg_sys::IndexInfo) -> i32 {
     attnum
 }
 
-unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: &str) -> i32 {
-    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
-        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
-    });
-    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
-    let attnum = i32::from(attnum);
-    if attnum <= 0 {
-        pgrx::error!(
-            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
-            source_column.to_string_lossy()
-        );
-    }
-    attnum
-}
-
 unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
     let heap_tid = unsafe { (*slot).tts_tid };
     let tid = pg_sys::ItemPointerData {
@@ -490,21 +449,6 @@ unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointe
         block_number,
         offset_number,
     }
-}
-
-unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> pg_sys::Datum {
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        pgrx::error!("tqhnsw does not support NULL {label}");
-    }
-    unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2036,10 +1980,10 @@ mod tests {
     #[test]
     fn average_source_representative_weights_by_duplicate_count() {
         let mut representative = vec![1.0, 0.0];
-        average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
+        source::average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
         assert_eq!(representative, vec![0.5, 0.5]);
 
-        average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
+        source::average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
         assert_eq!(representative, vec![0.75, 0.75]);
     }
 
