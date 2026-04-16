@@ -4898,13 +4898,13 @@ mod tests {
                     &format!(
                         "SELECT
                             emitted_result_count,
-                            grouped_result_count,
+                            pq_fastscan_result_count,
                             compared_result_count,
                             missing_comparison_count,
                             mean_abs_score_delta,
                             max_abs_score_delta,
                             mean_signed_score_delta
-                         FROM tests.tqhnsw_debug_grouped_scan_comparison_summary(
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
                             'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
@@ -4920,7 +4920,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -5003,13 +5003,13 @@ mod tests {
                 .select(
                     "SELECT
                         emitted_result_count,
-                        grouped_result_count,
+                        pq_fastscan_result_count,
                         compared_result_count,
                         missing_comparison_count,
                         mean_abs_score_delta,
                         max_abs_score_delta,
                         mean_signed_score_delta
-                     FROM tests.tqhnsw_debug_grouped_scan_comparison_summary(
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
                         'tqhnsw_scalar_runtime_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )",
@@ -5024,7 +5024,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -5201,7 +5201,7 @@ mod tests {
                             comparison_score,
                             exact_rank,
                             exact_rank_shift
-                         FROM tests.tqhnsw_debug_grouped_scan_comparison_rows(
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
                             'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid,
                             {query_literal}
                          )
@@ -5292,7 +5292,7 @@ mod tests {
                         comparison_score,
                         exact_rank,
                         exact_rank_shift
-                     FROM tests.tqhnsw_debug_grouped_scan_comparison_rows(
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
                         'tqhnsw_scalar_runtime_comparison_rows_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )
@@ -5461,7 +5461,7 @@ mod tests {
                     &format!(
                         "SELECT
                             emitted_result_count,
-                            grouped_result_count,
+                            pq_fastscan_result_count,
                             compared_result_count,
                             mean_abs_rank_shift,
                             max_abs_rank_shift,
@@ -5472,7 +5472,7 @@ mod tests {
                             window_2_contains_exact_best,
                             window_4_contains_exact_best,
                             window_8_contains_exact_best
-                         FROM tests.tqhnsw_debug_grouped_scan_order_drift_summary(
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
                             'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
@@ -5488,7 +5488,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -5611,7 +5611,7 @@ mod tests {
                 .select(
                     "SELECT
                         emitted_result_count,
-                        grouped_result_count,
+                        pq_fastscan_result_count,
                         compared_result_count,
                         mean_abs_rank_shift,
                         max_abs_rank_shift,
@@ -5622,7 +5622,7 @@ mod tests {
                         window_2_contains_exact_best,
                         window_4_contains_exact_best,
                         window_8_contains_exact_best
-                     FROM tests.tqhnsw_debug_grouped_scan_order_drift_summary(
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
                         'tqhnsw_scalar_runtime_order_drift_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )",
@@ -5637,7 +5637,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -5800,7 +5800,7 @@ mod tests {
                             exact_rank,
                             exact_rank_shift,
                             windowed_rank_shift
-                         FROM tests.tqhnsw_debug_grouped_scan_windowed_rows(
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
                             'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid,
                             {query_literal},
                             4
@@ -6070,7 +6070,7 @@ mod tests {
                         exact_rank,
                         exact_rank_shift,
                         windowed_rank_shift
-                     FROM tests.tqhnsw_debug_grouped_scan_windowed_rows(
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
                         'tqhnsw_scalar_runtime_windowed_rows_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                         4
@@ -6302,7 +6302,7 @@ mod tests {
                     &format!(
                         "SELECT
                             emitted_result_count,
-                            grouped_result_count,
+                            pq_fastscan_result_count,
                             compared_result_count,
                             window_size,
                             exact_best_approx_rank,
@@ -6315,7 +6315,7 @@ mod tests {
                             max_abs_rank_shift_after,
                             spearman_rank_correlation_before,
                             spearman_rank_correlation_after
-                         FROM tests.tqhnsw_debug_grouped_scan_windowed_summary(
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
                             'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid,
                             {query_literal},
                             4
@@ -6332,7 +6332,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -6473,7 +6473,7 @@ mod tests {
                 .select(
                     "SELECT
                         emitted_result_count,
-                        grouped_result_count,
+                        pq_fastscan_result_count,
                         compared_result_count,
                         window_size,
                         exact_best_approx_rank,
@@ -6486,7 +6486,7 @@ mod tests {
                         max_abs_rank_shift_after,
                         spearman_rank_correlation_before,
                         spearman_rank_correlation_after
-                     FROM tests.tqhnsw_debug_grouped_scan_windowed_summary(
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
                         'tqhnsw_scalar_runtime_windowed_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                         4
@@ -6502,7 +6502,7 @@ mod tests {
                     .value::<i32>()
                     .expect("emitted result count should decode")
                     .expect("emitted result count should be non-null"),
-                row["grouped_result_count"]
+                row["pq_fastscan_result_count"]
                     .value::<i32>()
                     .expect("grouped result count should decode")
                     .expect("grouped result count should be non-null"),
@@ -16555,6 +16555,143 @@ mod tests {
         ))
     }
 
+    fn validate_debug_index(index_oid: pg_sys::Oid, helper_name: &'static str) {
+        let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, helper_name) };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+    }
+
+    type PqFastScanScanOrderDriftSummaryValues = (
+        i32,
+        i32,
+        i32,
+        f64,
+        i32,
+        f64,
+        Option<i32>,
+        Option<i32>,
+        bool,
+        bool,
+        bool,
+        bool,
+    );
+    type PqFastScanScanWindowedRowValues = (
+        i64,
+        i32,
+        i32,
+        i32,
+        f32,
+        Option<f32>,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+    );
+    type PqFastScanScanWindowedSummaryValues = (
+        i32,
+        i32,
+        i32,
+        i32,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+        f64,
+        f64,
+        i32,
+        i32,
+        f64,
+        f64,
+    );
+    type PqFastScanScanComparisonRowValues =
+        (i64, i32, i32, f32, Option<f32>, Option<i32>, Option<i32>);
+    type PqFastScanScanComparisonSummaryValues = (i32, i32, i32, i32, f64, f32, f64);
+
+    fn pq_fastscan_scan_order_drift_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> PqFastScanScanOrderDriftSummaryValues {
+        unsafe { am::debug_grouped_scan_order_drift_summary(index_oid, query) }
+    }
+
+    fn pq_fastscan_scan_windowed_rows_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> Vec<PqFastScanScanWindowedRowValues> {
+        unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query, window_size) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    windowed_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                    windowed_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        windowed_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                        windowed_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+    }
+
+    fn pq_fastscan_scan_windowed_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> PqFastScanScanWindowedSummaryValues {
+        unsafe { am::debug_grouped_scan_windowed_summary(index_oid, query, window_size) }
+    }
+
+    fn pq_fastscan_scan_comparison_rows_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> Vec<PqFastScanScanComparisonRowValues> {
+        unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+    }
+
+    fn pq_fastscan_scan_comparison_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> PqFastScanScanComparisonSummaryValues {
+        unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) }
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_scan_hot_path_profile(
@@ -16791,6 +16928,64 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(mean_abs_rank_shift, f64),
+            name!(max_abs_rank_shift, i32),
+            name!(spearman_rank_correlation, f64),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(window_1_contains_exact_best, bool),
+            name!(window_2_contains_exact_best, bool),
+            name!(window_4_contains_exact_best, bool),
+            name!(window_8_contains_exact_best, bool),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = pq_fastscan_scan_order_drift_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_grouped_scan_order_drift_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
@@ -16811,15 +17006,10 @@ mod tests {
             name!(window_8_contains_exact_best, bool),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(
-                index_oid,
-                "tests.tqhnsw_debug_grouped_scan_order_drift_summary",
-            )
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_order_drift_summary",
+        );
 
         let (
             emitted_result_count,
@@ -16834,7 +17024,7 @@ mod tests {
             window_2_contains_exact_best,
             window_4_contains_exact_best,
             window_8_contains_exact_best,
-        ) = unsafe { am::debug_grouped_scan_order_drift_summary(index_oid, query) };
+        ) = pq_fastscan_scan_order_drift_summary_values(index_oid, query);
 
         TableIterator::once((
             emitted_result_count,
@@ -16849,6 +17039,37 @@ mod tests {
             window_2_contains_exact_best,
             window_4_contains_exact_best,
             window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_windowed_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(windowed_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+            name!(windowed_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows",
+        );
+        TableIterator::new(pq_fastscan_scan_windowed_rows_values(
+            index_oid,
+            query,
+            window_size,
         ))
     }
 
@@ -16872,41 +17093,77 @@ mod tests {
             name!(windowed_rank_shift, Option<i32>),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_windowed_rows")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_windowed_rows");
+        TableIterator::new(pq_fastscan_scan_windowed_rows_values(
+            index_oid,
+            query,
+            window_size,
+        ))
+    }
 
-        let rows = unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query, window_size) }
-            .into_iter()
-            .map(
-                |(
-                    (block_number, offset_number),
-                    approx_rank,
-                    windowed_rank,
-                    approx_score,
-                    comparison_score,
-                    exact_rank,
-                    exact_rank_shift,
-                    windowed_rank_shift,
-                )| {
-                    (
-                        i64::from(block_number),
-                        i32::from(offset_number),
-                        approx_rank,
-                        windowed_rank,
-                        approx_score,
-                        comparison_score,
-                        exact_rank,
-                        exact_rank_shift,
-                        windowed_rank_shift,
-                    )
-                },
-            )
-            .collect::<Vec<_>>();
-        TableIterator::new(rows)
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_windowed_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(window_size, i32),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_best_windowed_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(exact_top4_max_windowed_rank, Option<i32>),
+            name!(mean_abs_rank_shift_before, f64),
+            name!(mean_abs_rank_shift_after, f64),
+            name!(max_abs_rank_shift_before, i32),
+            name!(max_abs_rank_shift_after, i32),
+            name!(spearman_rank_correlation_before, f64),
+            name!(spearman_rank_correlation_after, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ) = pq_fastscan_scan_windowed_summary_values(index_oid, query, window_size);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ))
     }
 
     #[pg_extern]
@@ -16934,15 +17191,10 @@ mod tests {
             name!(spearman_rank_correlation_after, f64),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(
-                index_oid,
-                "tests.tqhnsw_debug_grouped_scan_windowed_summary",
-            )
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_windowed_summary",
+        );
 
         let (
             emitted_result_count,
@@ -16959,7 +17211,7 @@ mod tests {
             max_abs_rank_shift_after,
             spearman_rank_correlation_before,
             spearman_rank_correlation_after,
-        ) = unsafe { am::debug_grouped_scan_windowed_summary(index_oid, query, window_size) };
+        ) = pq_fastscan_scan_windowed_summary_values(index_oid, query, window_size);
 
         TableIterator::once((
             emitted_result_count,
@@ -16981,6 +17233,30 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_comparison_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows",
+        );
+        TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_grouped_scan_comparison_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
@@ -16996,37 +17272,51 @@ mod tests {
             name!(exact_rank_shift, Option<i32>),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_rows")
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_rows");
+        TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
+    }
 
-        let rows = unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query) }
-            .into_iter()
-            .map(
-                |(
-                    (block_number, offset_number),
-                    approx_rank,
-                    approx_score,
-                    comparison_score,
-                    exact_rank,
-                    exact_rank_shift,
-                )| {
-                    (
-                        i64::from(block_number),
-                        i32::from(offset_number),
-                        approx_rank,
-                        approx_score,
-                        comparison_score,
-                        exact_rank,
-                        exact_rank_shift,
-                    )
-                },
-            )
-            .collect::<Vec<_>>();
-        TableIterator::new(rows)
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_comparison_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(missing_comparison_count, i32),
+            name!(mean_abs_score_delta, f64),
+            name!(max_abs_score_delta, f32),
+            name!(mean_signed_score_delta, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = pq_fastscan_scan_comparison_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ))
     }
 
     #[pg_extern]
@@ -17046,15 +17336,10 @@ mod tests {
             name!(mean_signed_score_delta, f64),
         ),
     > {
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(
-                index_oid,
-                "tests.tqhnsw_debug_grouped_scan_comparison_summary",
-            )
-        };
-        unsafe {
-            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
-        }
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_comparison_summary",
+        );
 
         let (
             emitted_result_count,
@@ -17064,7 +17349,7 @@ mod tests {
             mean_abs_score_delta,
             max_abs_score_delta,
             mean_signed_score_delta,
-        ) = unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) };
+        ) = pq_fastscan_scan_comparison_summary_values(index_oid, query);
 
         TableIterator::once((
             emitted_result_count,
