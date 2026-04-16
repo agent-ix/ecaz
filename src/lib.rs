@@ -4232,10 +4232,8 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_binary_score_mode_bypasses_grouped_pq_scoring() {
         let _lock = env_var_test_lock();
-        let _score_mode_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
-            "binary",
-        );
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode",
             "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
@@ -4319,7 +4317,7 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_quantized_rerank_profile_quantized_only() {
         let _lock = env_var_test_lock();
-        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
@@ -4366,11 +4364,8 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_heap_rerank_profile_reports_heap_only() {
         let _lock = env_var_test_lock();
-        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
-        let _rerank_mode_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
-            "heap_f32",
-        );
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_heap_rerank_profile",
             "tqhnsw_pq_fastscan_runtime_heap_rerank_profile_idx",
@@ -4525,12 +4520,8 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _limit_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
-            "1",
-        );
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact",
             "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact_idx",
@@ -4738,14 +4729,11 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-            "layer0",
-        );
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "layer0");
         let _strategy_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
+            "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY",
             "frontier_head",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
