@@ -3808,6 +3808,35 @@ mod tests {
         create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m)
     }
 
+    fn create_turboquant_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let embedding = format_recall_vector_sql_literal(&runtime_fixture_embedding(id));
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, encode_to_tqvector({embedding}, 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
     fn pq_fastscan_runtime_query() -> Vec<f32> {
         vec![
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
@@ -3815,9 +3844,38 @@ mod tests {
         ]
     }
 
+    fn runtime_fixture_embedding(id: i64) -> Vec<f32> {
+        (0..16)
+            .map(|dim| (((id * 29 + dim) as f32) * 0.02).sin())
+            .collect()
+    }
+
     fn pq_fastscan_runtime_source(id: i64) -> Vec<f32> {
         (0..16)
             .map(|dim| (((id * 41 + dim) as f32) * 0.03).cos())
+            .collect()
+    }
+
+    fn observed_heap_tids_for_query(index_oid: pg_sys::Oid, query: Vec<f32>) -> Vec<(u32, u16)> {
+        unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query) }
+            .into_iter()
+            .map(|(heap_tid, _score)| heap_tid)
+            .collect()
+    }
+
+    fn observed_ids_for_query(
+        index_oid: pg_sys::Oid,
+        table_name: &str,
+        query: Vec<f32>,
+    ) -> Vec<usize> {
+        let ctid_to_id = ctid_id_map(table_name);
+        observed_heap_tids_for_query(index_oid, query)
+            .into_iter()
+            .map(|heap_tid| {
+                *ctid_to_id
+                    .get(&heap_tid)
+                    .expect("observed heap tid should map back to a table row")
+            })
             .collect()
     }
 
@@ -8249,6 +8307,118 @@ mod tests {
         assert!(
             replacement_filled,
             "grouped vacuum replacement should fill at least one broken layer-0 edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_turboquant_reloption_round_trip() {
+        let table_name = "tqhnsw_turboquant_reloption_round_trip";
+        let index_name = "tqhnsw_turboquant_reloption_round_trip_idx";
+        let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "explicit turboquant reloption should still rank a row first for its own embedding",
+        );
+
+        let inserted_row_id = 17_i64;
+        let inserted_embedding = runtime_fixture_embedding(inserted_row_id);
+        let inserted_embedding_sql = format_recall_vector_sql_literal(&inserted_embedding);
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             ({inserted_row_id}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("live insert should succeed on an explicit turboquant index");
+
+        let observed_after_insert =
+            observed_ids_for_query(index_oid, table_name, inserted_embedding.clone());
+        assert_eq!(
+            observed_after_insert.first().copied(),
+            Some(usize::try_from(inserted_row_id).expect("inserted row id should fit in usize")),
+            "explicit turboquant reloption should surface the live-inserted row in ordered scan",
+        );
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "vacuumed turboquant reloption index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuumed turboquant reloption index should no longer emit the deleted row",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pq_fastscan_reloption_round_trip() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_pq_fastscan_reloption_round_trip";
+        let index_name = "tqhnsw_pq_fastscan_reloption_round_trip_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "explicit pq_fastscan reloption should still rank a row first for its own embedding",
+        );
+
+        let inserted_row_id = 17_i64;
+        let inserted_source_sql =
+            format_recall_vector_sql_literal(&pq_fastscan_runtime_source(inserted_row_id));
+        let inserted_embedding = runtime_fixture_embedding(inserted_row_id);
+        let inserted_embedding_sql = format_recall_vector_sql_literal(&inserted_embedding);
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             ({inserted_row_id}, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("live insert should succeed on an explicit pq_fastscan index");
+
+        let observed_after_insert =
+            observed_ids_for_query(index_oid, table_name, inserted_embedding.clone());
+        assert_eq!(
+            observed_after_insert.first().copied(),
+            Some(usize::try_from(inserted_row_id).expect("inserted row id should fit in usize")),
+            "explicit pq_fastscan reloption should surface the live-inserted row in ordered scan",
+        );
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "vacuumed pq_fastscan reloption index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuumed pq_fastscan reloption index should no longer emit the deleted row",
         );
     }
 
