@@ -247,7 +247,7 @@ struct LayerRepairPlan {
 #[derive(Debug, Clone, Copy)]
 struct LinearRepairPlanner<'a> {
     metadata: &'a page::MetadataPage,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     source: &'a graph::GraphElement,
     deleted_tids: &'a HashSet<page::ItemPointer>,
     existing_set: &'a HashSet<page::ItemPointer>,
@@ -928,31 +928,20 @@ unsafe fn plan_repair_replacement(
     let replacements =
         unsafe { search_repair_candidates_for_layer(index_relation, metric, &planner) };
     let mut replacements = replacements;
-    let linear_planner = match storage {
-        graph::GraphStorageDescriptor::TurboQuant { code_len } => Some(LinearRepairPlanner {
-            metadata,
-            code_len,
-            source: &source,
-            deleted_tids,
-            existing_set: &existing_set,
-            layer: request.layer,
-        }),
-        graph::GraphStorageDescriptor::PqFastScan(_) => None,
+    let linear_planner = LinearRepairPlanner {
+        metadata,
+        storage,
+        source: &source,
+        deleted_tids,
+        existing_set: &existing_set,
+        layer: request.layer,
     };
     if replacements.len() < free_slots {
-        let Some(linear_planner) = linear_planner.as_ref() else {
-            return (!replacements.is_empty()).then_some(LayerRepairPlan {
-                neighbor_tid: source.neighbortid,
-                source_level: source.level,
-                layer: request.layer,
-                replacement_tids: replacements,
-            });
-        };
         unsafe {
             top_up_repair_replacements_from_linear_scan(
                 index_relation,
                 metric,
-                linear_planner,
+                &linear_planner,
                 &mut replacements,
                 free_slots,
             )
@@ -1162,6 +1151,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         unsafe {
             collect_linear_repair_candidates_on_page(
+                index_relation,
                 page_ptr,
                 page_size,
                 block_number,
@@ -1190,6 +1180,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
 }
 
 unsafe fn collect_linear_repair_candidates_on_page(
+    index_relation: pg_sys::Relation,
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
@@ -1214,10 +1205,6 @@ unsafe fn collect_linear_repair_candidates_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-            continue;
-        }
-
         let tid = page::ItemPointer {
             block_number,
             offset_number: offset,
@@ -1230,28 +1217,112 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
-        let element =
-            page::TqElementTuple::decode(tuple_bytes, planner.code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
-            });
-        if element.deleted || element.heaptids.is_empty() || element.level < planner.layer {
+        let candidate = match planner.storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
+                    });
+                graph::GraphElement {
+                    tid,
+                    level: element.level,
+                    deleted: element.deleted,
+                    heaptids: element.heaptids,
+                    gamma: element.gamma,
+                    neighbortid: element.neighbortid,
+                    code: element.code,
+                }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode linear-repair grouped hot tuple: {e}")
+                });
+                let rerank = unsafe {
+                    load_grouped_rerank_payload_for_linear_repair_candidate(
+                        index_relation,
+                        page_ptr,
+                        page_size,
+                        block_number,
+                        element.reranktid,
+                        layout,
+                    )
+                };
+                graph::GraphElement {
+                    tid,
+                    level: element.level,
+                    deleted: element.deleted,
+                    heaptids: element.heaptids,
+                    gamma: rerank.gamma,
+                    neighbortid: element.neighbortid,
+                    code: rerank.code,
+                }
+            }
+        };
+        if candidate.deleted || candidate.heaptids.is_empty() || candidate.level < planner.layer {
             continue;
         }
 
-        let candidate = graph::GraphElement {
-            tid,
-            level: element.level,
-            deleted: element.deleted,
-            heaptids: element.heaptids,
-            gamma: element.gamma,
-            neighbortid: element.neighbortid,
-            code: element.code,
-        };
         if let Some(score) =
             unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
         {
             scored.push((tid, score));
         }
+    }
+}
+
+unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
+    index_relation: pg_sys::Relation,
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: u32,
+    rerank_tid: page::ItemPointer,
+    layout: graph::PqFastScanLayout,
+) -> graph::GroupedRerankPayload {
+    if rerank_tid == page::ItemPointer::INVALID {
+        pgrx::error!("tqhnsw linear-repair grouped candidate is missing a rerank payload tid");
+    }
+
+    if rerank_tid.block_number != block_number {
+        return unsafe { graph::load_grouped_rerank_payload(index_relation, rerank_tid, layout) };
+    }
+
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, rerank_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "tqhnsw linear-repair rerank tuple slot {}/{} is unused",
+            rerank_tid.block_number,
+            rerank_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "tqhnsw found invalid linear-repair rerank tuple bounds on block {block_number}"
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let rerank =
+        page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode linear-repair rerank tuple: {e}")
+        });
+    graph::GroupedRerankPayload {
+        tid: rerank_tid,
+        gamma: rerank.gamma,
+        code: rerank.code,
     }
 }
 

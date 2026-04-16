@@ -3488,6 +3488,7 @@ mod tests {
         table_name: &str,
         index_name: &str,
         include_source_raw: bool,
+        m: i32,
     ) -> pg_sys::Oid {
         let source_raw_column = if include_source_raw {
             ",\n                source_raw bytea"
@@ -3529,7 +3530,7 @@ mod tests {
 
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
+             (embedding tqvector_ip_ops) WITH (m = {m}, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
 
@@ -3539,14 +3540,22 @@ mod tests {
     }
 
     fn create_grouped_v2_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
-        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false)
+        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false, 6)
     }
 
     fn create_grouped_v2_runtime_fixture_with_source_raw(
         table_name: &str,
         index_name: &str,
     ) -> pg_sys::Oid {
-        create_grouped_v2_runtime_fixture_internal(table_name, index_name, true)
+        create_grouped_v2_runtime_fixture_internal(table_name, index_name, true, 6)
+    }
+
+    fn create_grouped_v2_runtime_fixture_with_m(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+    ) -> pg_sys::Oid {
+        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false, m)
     }
 
     fn grouped_v2_runtime_query() -> Vec<f32> {
@@ -7824,6 +7833,108 @@ mod tests {
             count_neighbor_refs(&neighbors_after, deleted_element_tid),
             0,
             "pass 2 should remove every persisted neighbor ref to the deleted grouped hot tuple",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_replaces_pq_fastscan_layer0_edges() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_vacuum_grouped_pass2_replace";
+        let index_name = "tqhnsw_vacuum_grouped_pass2_replace_idx";
+        let index_oid = create_grouped_v2_runtime_fixture_with_m(table_name, index_name, 2);
+        let (metadata_before, _layout_before, elements_before, neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=16_i64)
+                .find_map(|id| {
+                    let deleted_heap_tid = heap_tid_for_row(table_name, id);
+                    let (deleted_element_tid, _deleted_element) =
+                        find_grouped_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live grouped element should have a persisted neighbor tuple");
+                            let layer0 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                0,
+                            );
+                            layer0.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer0
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable grouped row with a live inbound layer-0 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, _layout_after, elements_after, neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live grouped element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live grouped element should keep a persisted neighbor tuple");
+            let layer0_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+            let surviving_after = layer0_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "grouped vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "grouped vacuum replacement should fill at least one broken layer-0 edge with a new live candidate",
         );
     }
 
