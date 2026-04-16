@@ -7308,12 +7308,46 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw aminsert does not support PqFastScan indexes yet")]
-    fn test_tqhnsw_insert_rejects_grouped_v2_index() {
+    #[should_panic(
+        expected = "tqhnsw aminsert requires a prebuilt PqFastScan index with persisted grouped codebooks"
+    )]
+    fn test_tqhnsw_insert_rejects_empty_pq_fastscan_index() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_grouped_v2_reject (
+            "CREATE TABLE tqhnsw_insert_empty_pq_fastscan_reject (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_empty_pq_fastscan_reject_idx ON tqhnsw_insert_empty_pq_fastscan_reject USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_empty_pq_fastscan_reject VALUES
+             (17,
+              ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+                    0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
+              encode_to_tqvector(
+                  ARRAY[0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5,
+                        0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2]::real[],
+                  4,
+                  42
+              ))",
+        )
+        .expect("insert should fail");
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_appends_to_built_pq_fastscan_index() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_pq_fastscan_live (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -7330,18 +7364,55 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_grouped_v2_reject VALUES \
+                "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_grouped_v2_reject_idx ON tqhnsw_insert_grouped_v2_reject USING tqhnsw \
+            "CREATE INDEX tqhnsw_insert_pq_fastscan_live_idx ON tqhnsw_insert_pq_fastscan_live USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_pq_fastscan_live_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_before_block_count, before_metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let before_page_tuples = before_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let before_grouped_hot_tids = before_page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let before_rerank_count = before_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let before_neighbor_count = before_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+
         Spi::run(
-            "INSERT INTO tqhnsw_insert_grouped_v2_reject VALUES
+            "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
@@ -7352,7 +7423,183 @@ mod tests {
                   42
               ))",
         )
-        .expect("insert should fail");
+        .expect("insert should succeed on a built PqFastScan index");
+
+        let (_after_block_count, after_metadata, after_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let after_page_tuples = after_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let after_grouped_hot_tids = after_page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let after_rerank_count = after_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let after_neighbor_count = after_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+
+        assert_eq!(
+            after_metadata.inserted_since_rebuild,
+            before_metadata.inserted_since_rebuild + 1
+        );
+        assert_eq!(
+            after_grouped_hot_tids.len(),
+            before_grouped_hot_tids.len() + 1
+        );
+        assert_eq!(after_rerank_count, before_rerank_count + 1);
+        assert_eq!(after_neighbor_count, before_neighbor_count + 1);
+        assert!(
+            !after_page_tuples
+                .iter()
+                .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)),
+            "PqFastScan live insert should keep writing grouped hot tuples, not scalar element tuples",
+        );
+
+        let new_hot_tid = after_grouped_hot_tids
+            .iter()
+            .copied()
+            .find(|tid| !before_grouped_hot_tids.contains(tid))
+            .expect("live insert should add exactly one grouped hot tuple");
+        let layout =
+            match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
+                am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+                am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                    panic!("PqFastScan insert test should still decode as PqFastScan storage")
+                }
+            };
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_tqhnsw_insert_appends_to_built_pq_fastscan_index",
+            )
+        };
+        let new_hot =
+            unsafe { am::graph::load_grouped_graph_element(index_relation, new_hot_tid, layout) };
+        let rerank = unsafe {
+            am::graph::load_grouped_rerank_payload(index_relation, new_hot.reranktid, layout)
+        };
+        assert!(!new_hot.deleted);
+        assert_eq!(new_hot.heaptids.len(), 1);
+        assert_eq!(new_hot.search_code.len(), layout.search_code_len);
+        assert_eq!(new_hot.binary_words.len(), layout.binary_word_count);
+        assert_ne!(new_hot.neighbortid, am::page::ItemPointer::INVALID);
+        assert_ne!(new_hot.reranktid, am::page::ItemPointer::INVALID);
+        assert_eq!(rerank.code.len(), layout.rerank_code_len);
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_coalesces_duplicate_vectors_for_pq_fastscan() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_duplicate_pq_fastscan (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_duplicate_pq_fastscan_idx ON tqhnsw_insert_duplicate_pq_fastscan USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_duplicate_pq_fastscan_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_before_block_count, _before_metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let before_tuple_count = before_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan
+             SELECT 17, source, embedding
+               FROM tqhnsw_insert_duplicate_pq_fastscan
+              WHERE id = 1",
+        )
+        .expect("duplicate insert should succeed on a built PqFastScan index");
+
+        let (_after_block_count, after_metadata, after_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let after_tuple_count = after_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+        assert_eq!(
+            after_tuple_count, before_tuple_count,
+            "duplicate PqFastScan insert should not add new hot/rerank/neighbor tuples",
+        );
+
+        let layout =
+            match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
+                am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+                am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                    panic!("PqFastScan duplicate test should still decode as PqFastScan storage")
+                }
+            };
+        let grouped_hot = after_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG))
+            .map(|tuple| {
+                am::page::TqGroupedHotTuple::decode(
+                    tuple,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .expect("grouped hot tuple should decode")
+            })
+            .collect::<Vec<_>>();
+        let mut heaptid_counts = grouped_hot
+            .iter()
+            .map(|element| element.heaptids.len())
+            .collect::<Vec<_>>();
+        heaptid_counts.sort_unstable();
+        assert_eq!(heaptid_counts[heaptid_counts.len() - 1], 2);
+        assert_eq!(
+            heaptid_counts.iter().filter(|count| **count == 1).count(),
+            grouped_hot.len() - 1
+        );
     }
 
     #[pg_test]

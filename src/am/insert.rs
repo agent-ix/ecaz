@@ -9,6 +9,8 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const PQ_FASTSCAN_INSERT_UNSUPPORTED: &str =
     "tqhnsw aminsert does not support PqFastScan indexes yet";
+const PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED: &str =
+    "tqhnsw aminsert requires a prebuilt PqFastScan index with persisted grouped codebooks";
 
 #[derive(Debug)]
 enum InsertSearchMetric {
@@ -281,10 +283,9 @@ impl InsertFormatAdapter {
                     &tuple.code,
                 )
             },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
-            }
+            Self::PqFastScan(layout) => unsafe {
+                find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
+            },
         }
     }
 
@@ -313,6 +314,7 @@ impl InsertFormatAdapter {
     unsafe fn append_node(
         self,
         index_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
         tuple: &build::BuildTuple,
         level: u8,
         neighbor_tids: &[page::ItemPointer],
@@ -321,10 +323,32 @@ impl InsertFormatAdapter {
             Self::TurboQuant { .. } => unsafe {
                 append_heap_tuple(index_relation, tuple, level, neighbor_tids)
             },
-            Self::PqFastScan(layout) => {
-                let _ = layout;
-                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
-            }
+            Self::PqFastScan(layout) => unsafe {
+                append_pq_fastscan_tuple(
+                    index_relation,
+                    metadata,
+                    tuple,
+                    level,
+                    neighbor_tids,
+                    layout,
+                )
+            },
+        }
+    }
+
+    unsafe fn coalesce_duplicate(
+        self,
+        index_relation: pg_sys::Relation,
+        element_tid: page::ItemPointer,
+        heap_tid: page::ItemPointer,
+    ) {
+        match self {
+            Self::TurboQuant { code_len } => unsafe {
+                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
+            },
+            Self::PqFastScan(layout) => unsafe {
+                coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
+            },
         }
     }
 
@@ -432,6 +456,9 @@ unsafe fn run_insert_with_adapter(
     // old exclusive path because shape init atomicity still matters, and the
     // duplicate scan is degenerate on an effectively empty index.
     if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
+        if matches!(format, InsertFormatAdapter::PqFastScan(_)) {
+            pgrx::error!("{PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED}");
+        }
         shared::with_locked_metadata_page(index_relation, |metadata| {
             if metadata.dimensions == 0 && metadata.bits == 0 {
                 metadata.dimensions = tuple.dimensions;
@@ -455,14 +482,19 @@ unsafe fn run_insert_with_adapter(
             if let Some(element_tid) =
                 format.find_duplicate(index_relation, heap_relation, metadata, tuple, code_len)
             {
-                coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+                format.coalesce_duplicate(index_relation, element_tid, heap_tid);
                 return;
             }
 
             let insert_level = choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
             let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
-            let element_tid =
-                format.append_node(index_relation, tuple, insert_level, &forward_neighbor_slots);
+            let element_tid = format.append_node(
+                index_relation,
+                metadata,
+                tuple,
+                insert_level,
+                &forward_neighbor_slots,
+            );
             metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
             if metadata.entry_point == page::ItemPointer::INVALID {
                 metadata.entry_point = element_tid;
@@ -500,7 +532,7 @@ unsafe fn run_insert_with_adapter(
         tuple,
         code_len,
     ) {
-        coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+        format.coalesce_duplicate(index_relation, element_tid, heap_tid);
         return false;
     }
 
@@ -513,8 +545,13 @@ unsafe fn run_insert_with_adapter(
         insert_level,
         m,
     );
-    let element_tid =
-        format.append_node(index_relation, tuple, insert_level, &forward_neighbor_slots);
+    let element_tid = format.append_node(
+        index_relation,
+        metadata_snapshot,
+        tuple,
+        insert_level,
+        &forward_neighbor_slots,
+    );
     format.add_backlinks(
         index_relation,
         metadata_snapshot,
@@ -1427,6 +1464,315 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 }
 
+unsafe fn derive_pq_fastscan_search_code_for_insert(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    tuple: &build::BuildTuple,
+    layout: graph::PqFastScanLayout,
+) -> Vec<u8> {
+    if metadata.grouped_codebook_head == page::ItemPointer::INVALID
+        || metadata.search_subvector_count == 0
+        || metadata.search_subvector_dim == 0
+    {
+        pgrx::error!("{PQ_FASTSCAN_EMPTY_INSERT_UNSUPPORTED}");
+    }
+    let source_vector = tuple.source_vector.as_deref().unwrap_or_else(|| {
+        pgrx::error!("tqhnsw PqFastScan live insert requires build_source_column source data")
+    });
+    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+    let search_code =
+        graph::derive_grouped_search_code_from_source(metadata, &model, source_vector)
+            .unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to derive PqFastScan search code: {e}")
+            });
+    if search_code.len() != layout.search_code_len {
+        pgrx::error!(
+            "tqhnsw derived PqFastScan search code len {} does not match metadata layout {}",
+            search_code.len(),
+            layout.search_code_len
+        );
+    }
+    search_code
+}
+
+unsafe fn append_pq_fastscan_tuple(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_tids: &[page::ItemPointer],
+    layout: graph::PqFastScanLayout,
+) -> page::ItemPointer {
+    let search_code = unsafe {
+        derive_pq_fastscan_search_code_for_insert(index_relation, metadata, tuple, layout)
+    };
+    let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
+        tuple.dimensions as usize,
+        tuple.bits,
+        tuple.seed,
+    );
+    let placeholder_payload = build::stage_v2_grouped_build_payload(
+        tuple,
+        level,
+        page::ItemPointer::INVALID,
+        page::ItemPointer::INVALID,
+        search_code.clone(),
+        &persisted_binary_quantizer,
+    );
+    if placeholder_payload.hot.binary_words.len() != layout.binary_word_count {
+        pgrx::error!(
+            "tqhnsw derived PqFastScan binary sidecar len {} does not match metadata layout {}",
+            placeholder_payload.hot.binary_words.len(),
+            layout.binary_word_count
+        );
+    }
+
+    let neighbor_payload = page::TqNeighborTuple {
+        count: u16::try_from(neighbor_tids.len()).expect("neighbor slot count should fit in u16"),
+        tids: neighbor_tids.to_vec(),
+    }
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode grouped neighbor tuple: {e}"));
+    let rerank_payload = placeholder_payload.rerank.encode();
+    let hot_tuple_len =
+        page::TqGroupedHotTuple::encoded_len(layout.binary_word_count, search_code.len());
+    let required_bytes = page::raw_tuple_storage_bytes(neighbor_payload.len())
+        + page::raw_tuple_storage_bytes(rerank_payload.len())
+        + page::raw_tuple_storage_bytes(hot_tuple_len);
+
+    let mut staged_page =
+        page::DataPage::new(page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+    staged_page
+        .insert_raw_tuple(neighbor_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to stage PqFastScan aminsert neighbor tuple: {e}")
+        });
+    staged_page
+        .insert_raw_tuple(rerank_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to stage PqFastScan aminsert rerank tuple: {e}")
+        });
+    if !staged_page.can_fit_raw_tuple(hot_tuple_len) {
+        pgrx::error!(
+            "tqhnsw aminsert does not yet support PqFastScan tuples that require more than one fresh data page"
+        );
+    }
+
+    let existing_blocks = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
+        existing_blocks - 1
+    } else {
+        P_NEW
+    };
+    let read_mode = if target_block == P_NEW {
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+    } else {
+        pg_sys::ReadBufferMode::RBM_NORMAL
+    };
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            target_block,
+            read_mode,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to allocate PqFastScan data buffer for aminsert");
+    }
+
+    if target_block != P_NEW {
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    if target_block == P_NEW {
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+    } else {
+        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+        if free_space < required_bytes {
+            std::mem::drop(wal_txn);
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            return unsafe {
+                append_pq_fastscan_tuple_to_new_page(
+                    index_relation,
+                    tuple,
+                    level,
+                    &neighbor_payload,
+                    &rerank_payload,
+                    search_code,
+                )
+            };
+        }
+    }
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let neighbor_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            neighbor_payload.as_ptr().cast_mut().cast(),
+            neighbor_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if neighbor_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write PqFastScan neighbor tuple during aminsert");
+    }
+    let rerank_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            rerank_payload.as_ptr().cast_mut().cast(),
+            rerank_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if rerank_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write PqFastScan rerank tuple during aminsert");
+    }
+
+    let payload = build::stage_v2_grouped_build_payload(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        search_code,
+        &persisted_binary_quantizer,
+    );
+    let hot_payload = payload
+        .hot
+        .encode()
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode PqFastScan hot tuple: {e}"));
+    let hot_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            hot_payload.as_ptr().cast_mut().cast(),
+            hot_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if hot_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write PqFastScan hot tuple during aminsert");
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
+unsafe fn append_pq_fastscan_tuple_to_new_page(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_payload: &[u8],
+    rerank_payload: &[u8],
+    search_code: Vec<u8>,
+) -> page::ItemPointer {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to allocate fallback PqFastScan data buffer for aminsert");
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let neighbor_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            neighbor_payload.as_ptr().cast_mut().cast(),
+            neighbor_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if neighbor_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write fallback PqFastScan neighbor tuple during aminsert");
+    }
+    let rerank_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            rerank_payload.as_ptr().cast_mut().cast(),
+            rerank_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if rerank_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write fallback PqFastScan rerank tuple during aminsert");
+    }
+
+    let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
+        tuple.dimensions as usize,
+        tuple.bits,
+        tuple.seed,
+    );
+    let hot_payload = build::stage_v2_grouped_build_payload(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        search_code,
+        &persisted_binary_quantizer,
+    )
+    .hot
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode fallback PqFastScan hot tuple: {e}"));
+    let hot_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            hot_payload.as_ptr().cast_mut().cast(),
+            hot_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if hot_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write fallback PqFastScan hot tuple during aminsert");
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
 unsafe fn find_duplicate_element_tid(
     index_relation: pg_sys::Relation,
     _heap_relation: pg_sys::Relation,
@@ -1501,6 +1847,84 @@ unsafe fn find_duplicate_element_tid(
     None
 }
 
+unsafe fn find_duplicate_grouped_element_tid(
+    index_relation: pg_sys::Relation,
+    gamma: f32,
+    code: &[u8],
+    layout: graph::PqFastScanLayout,
+) -> Option<page::ItemPointer> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        return None;
+    }
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = shared::page_line_pointer_count(page_ptr);
+
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                pgrx::error!(
+                    "tqhnsw found invalid grouped tuple bounds while scanning block {block_number}"
+                );
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                continue;
+            }
+
+            let element = page::TqGroupedHotTuple::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to decode candidate grouped duplicate tuple: {e}")
+            });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            let rerank = unsafe {
+                graph::load_grouped_rerank_payload(index_relation, element.reranktid, layout)
+            };
+            if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Some(page::ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                });
+            }
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    None
+}
+
 unsafe fn coalesce_duplicate_heap_tid(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
@@ -1563,6 +1987,86 @@ unsafe fn coalesce_duplicate_heap_tid(
     if encoded.len() != tuple_len {
         pgrx::error!(
             "tqhnsw duplicate element tuple size changed from {} to {}",
+            tuple_len,
+            encoded.len()
+        );
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
+unsafe fn coalesce_duplicate_grouped_heap_tid(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: graph::PqFastScanLayout,
+    heap_tid: page::ItemPointer,
+) {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            element_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!(
+            "tqhnsw failed to open duplicate PqFastScan element block {}",
+            element_tid.block_number
+        );
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!("tqhnsw duplicate PqFastScan element tuple slot is unused");
+    }
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "tqhnsw found invalid grouped duplicate tuple bounds on block {}",
+            element_tid.block_number
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let mut element = page::TqGroupedHotTuple::decode(
+        tuple_bytes,
+        layout.binary_word_count,
+        layout.search_code_len,
+    )
+    .unwrap_or_else(|e| {
+        pgrx::error!("tqhnsw failed to decode duplicate PqFastScan element tuple: {e}")
+    });
+    if element.heaptids.contains(&heap_tid) {
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return;
+    }
+    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+        pgrx::error!(
+            "tqhnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+            page::HEAPTID_INLINE_CAPACITY
+        );
+    }
+    element.heaptids.push(heap_tid);
+    let encoded = element.encode().unwrap_or_else(|e| {
+        pgrx::error!("tqhnsw failed to encode coalesced PqFastScan element tuple: {e}")
+    });
+    if encoded.len() != tuple_len {
+        pgrx::error!(
+            "tqhnsw duplicate PqFastScan element tuple size changed from {} to {}",
             tuple_len,
             encoded.len()
         );
