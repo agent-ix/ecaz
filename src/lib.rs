@@ -3455,6 +3455,12 @@ mod tests {
         ]
     }
 
+    fn grouped_v2_runtime_source(id: i64) -> Vec<f32> {
+        (0..16)
+            .map(|dim| (((id * 41 + dim) as f32) * 0.03).cos())
+            .collect()
+    }
+
     fn grouped_v2_exact_traversal_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
@@ -3478,6 +3484,32 @@ mod tests {
                 grouped_v2_runtime_query(),
             )
         }
+    }
+
+    fn grouped_v2_heap_rerank_runtime_observed_scores(
+        table_name: &str,
+        index_name: &str,
+    ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _rerank_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
+            "heap_f32",
+        );
+        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                index_oid,
+                grouped_v2_runtime_query(),
+            )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, grouped_v2_runtime_query())
+        }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        (observed, emitted_scores)
     }
 
     #[pg_test]
@@ -3511,6 +3543,10 @@ mod tests {
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "binary",
+        );
+        let _rerank_mode_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
+            "heap_f32",
         );
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -3566,6 +3602,16 @@ mod tests {
             "the runtime settings probe should surface the configured grouped traversal score mode",
         );
         assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_scan_rerank_mode
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("heap_f32"),
+            "the runtime settings probe should surface the configured grouped rerank mode",
+        );
+        assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT grouped_exact_traversal_enabled
                  FROM tests.tqhnsw_debug_adr030_runtime_settings()"
@@ -3604,6 +3650,46 @@ mod tests {
             Some("1"),
             "the runtime settings probe should surface the grouped exact traversal limit",
         );
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_heap_rerank_emits_heap_exact_scores() {
+        let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank";
+        let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_idx";
+        let (observed, emitted_scores) =
+            grouped_v2_heap_rerank_runtime_observed_scores(table_name, index_name);
+        let query = grouped_v2_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &grouped_v2_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "grouped-v2 heap rerank should still emit ordered results"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score
+                .expect("grouped-v2 heap rerank should attach exact heap comparison scores");
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_eq!(
+                comparison_score, expected,
+                "grouped-v2 heap rerank comparison score should match the raw heap f32 inner product"
+            );
+            assert_eq!(
+                emitted_scores.get(&heap_tid).copied(),
+                Some(expected),
+                "grouped-v2 heap rerank should emit the exact heap comparison score as the order-by score",
+            );
+        }
     }
 
     #[pg_test]
@@ -3998,6 +4084,24 @@ mod tests {
         let index_oid = create_grouped_v2_runtime_fixture(
             "tqhnsw_grouped_v2_runtime_invalid_score_mode",
             "tqhnsw_grouped_v2_runtime_invalid_score_mode_idx",
+        );
+
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw grouped-v2 rerank mode must be one of [quantized, heap_f32], got \"bogus\""
+    )]
+    fn test_grouped_v2_rerank_mode_rejects_invalid_env() {
+        let _lock = env_var_test_lock();
+        let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
+        let _scan_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN", "1");
+        let _rerank_guard =
+            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
+        let index_oid = create_grouped_v2_runtime_fixture(
+            "tqhnsw_grouped_v2_runtime_invalid_rerank_mode",
+            "tqhnsw_grouped_v2_runtime_invalid_rerank_mode_idx",
         );
 
         let _ = unsafe { am::debug_profile_ordered_scan(index_oid, grouped_v2_runtime_query()) };
@@ -8826,7 +8930,10 @@ mod tests {
             )
         });
 
-        assert_eq!(result_count, 2, "helper should stop after the requested row limit");
+        assert_eq!(
+            result_count, 2,
+            "helper should stop after the requested row limit"
+        );
         assert_eq!(
             slot_fetch_count, 2,
             "helper should fetch one visible heap tuple into the slot for each returned row on this simple fixture",
@@ -14944,6 +15051,7 @@ mod tests {
             name!(grouped_scan_enabled, bool),
             name!(grouped_scan_window, Option<String>),
             name!(grouped_scan_score_mode, Option<String>),
+            name!(grouped_scan_rerank_mode, Option<String>),
             name!(grouped_exact_traversal_enabled, bool),
             name!(grouped_exact_traversal_scope, Option<String>),
             name!(grouped_exact_traversal_strategy, Option<String>),
@@ -14956,6 +15064,8 @@ mod tests {
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
+                .map(|value| value.to_string_lossy().into_owned()),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")

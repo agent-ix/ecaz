@@ -23,6 +23,8 @@ const ADR030_EXPERIMENTAL_SCAN_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN
 const ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str = "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
 const ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
+const ADR030_EXPERIMENTAL_RERANK_MODE_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
@@ -442,6 +444,13 @@ enum GroupedTraversalScoreMode {
     Binary = 1,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedRerankMode {
+    Quantized = 0,
+    HeapF32 = 1,
+}
+
 struct BinaryPrefilterCandidate {
     ordinal: usize,
     element: Arc<CachedGraphElement>,
@@ -679,6 +688,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             (*scan).xs_orderbyvals = ptr::null_mut();
             (*scan).xs_orderbynulls = ptr::null_mut();
 
+            let index_options = super::options::relation_options((*scan).indexRelation);
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
@@ -729,13 +739,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 } else {
                     resolve_grouped_exact_traversal_limit()
                 };
+            configure_grouped_heap_rerank_state(scan, opaque, &index_options);
             opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
-            let scan_tuning = super::options::resolve_scan_tuning(
-                &super::options::relation_options((*scan).indexRelation),
-            );
+            let scan_tuning = super::options::resolve_scan_tuning(&index_options);
             opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
                 .expect("ef_search should fit in usize")
                 .max(1);
@@ -856,6 +865,25 @@ fn resolve_grouped_traversal_score_mode() -> GroupedTraversalScoreMode {
 
 fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
     opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
+}
+
+fn resolve_grouped_rerank_mode() -> GroupedRerankMode {
+    let Some(raw_mode) = std::env::var_os(ADR030_EXPERIMENTAL_RERANK_MODE_ENV) else {
+        return GroupedRerankMode::Quantized;
+    };
+
+    match raw_mode.to_string_lossy().as_ref() {
+        "quantized" => GroupedRerankMode::Quantized,
+        "heap_f32" => GroupedRerankMode::HeapF32,
+        other => pgrx::error!(
+            "tqhnsw grouped-v2 rerank mode must be one of [quantized, heap_f32], got {:?}",
+            other
+        ),
+    }
+}
+
+fn grouped_heap_rerank_enabled(opaque: &TqScanOpaque) -> bool {
+    opaque.grouped_rerank_mode == GroupedRerankMode::HeapF32
 }
 
 fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
@@ -984,6 +1012,130 @@ fn resolve_grouped_live_rerank_window() -> usize {
     parsed_window
 }
 
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+    if !unsafe { (*scan).heapRelation }.is_null() {
+        return (unsafe { (*scan).heapRelation }, false);
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank could not resolve heap relation");
+    }
+    (
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+        true,
+    )
+}
+
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+    if !unsafe { (*scan).xs_snapshot }.is_null() {
+        return (unsafe { (*scan).xs_snapshot }, false);
+    }
+
+    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if !active_snapshot.is_null() {
+        return (active_snapshot, false);
+    }
+
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank could not resolve an active snapshot");
+    }
+    (registered_snapshot, true)
+}
+
+unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: &str) -> i32 {
+    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
+        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
+    });
+    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
+    let attnum = i32::from(attnum);
+    if attnum <= 0 {
+        pgrx::error!(
+            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
+            source_column.to_string_lossy()
+        );
+    }
+    attnum
+}
+
+unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
+    if !opaque.grouped_heap_rerank_slot.is_null() {
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.grouped_heap_rerank_slot) };
+        opaque.grouped_heap_rerank_slot = ptr::null_mut();
+    }
+    if opaque.grouped_heap_rerank_snapshot_owned && !opaque.grouped_heap_rerank_snapshot.is_null() {
+        unsafe { pg_sys::UnregisterSnapshot(opaque.grouped_heap_rerank_snapshot) };
+    }
+    opaque.grouped_heap_rerank_snapshot = ptr::null_mut();
+    opaque.grouped_heap_rerank_snapshot_owned = false;
+    if opaque.grouped_heap_rerank_relation_owned && !opaque.grouped_heap_rerank_relation.is_null() {
+        unsafe {
+            pg_sys::table_close(
+                opaque.grouped_heap_rerank_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+    }
+    opaque.grouped_heap_rerank_relation = ptr::null_mut();
+    opaque.grouped_heap_rerank_relation_owned = false;
+    opaque.grouped_heap_rerank_source_attnum = 0;
+}
+
+unsafe fn configure_grouped_heap_rerank_state(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+    index_options: &super::options::TqHnswOptions,
+) {
+    unsafe { free_grouped_heap_rerank_state(opaque) };
+    opaque.grouped_rerank_mode = if matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::GroupedV2(_)
+    ) {
+        resolve_grouped_rerank_mode()
+    } else {
+        GroupedRerankMode::Quantized
+    };
+
+    if !grouped_heap_rerank_enabled(opaque) {
+        return;
+    }
+
+    let source_column = index_options.build_source_column.as_deref().unwrap_or_else(|| {
+        pgrx::error!(
+            "tqhnsw grouped-v2 heap-f32 rerank requires build_source_column to name a raw real[] heap column"
+        )
+    });
+    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
+    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        if snapshot_owned {
+            unsafe { pg_sys::UnregisterSnapshot(snapshot) };
+        }
+        if heap_relation_owned {
+            unsafe {
+                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
+        }
+        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank failed to allocate a heap tuple slot");
+    }
+
+    opaque.grouped_heap_rerank_relation = heap_relation;
+    opaque.grouped_heap_rerank_relation_owned = heap_relation_owned;
+    opaque.grouped_heap_rerank_snapshot = snapshot;
+    opaque.grouped_heap_rerank_snapshot_owned = snapshot_owned;
+    opaque.grouped_heap_rerank_slot = slot;
+    opaque.grouped_heap_rerank_source_attnum =
+        i16::try_from(source_attnum).expect("heap rerank source attnum should fit in i16");
+}
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
@@ -1044,6 +1196,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
                 free_scan_emitted_set(opaque);
                 free_scan_prepared_query(opaque);
                 free_scan_query(opaque);
+                free_grouped_heap_rerank_state(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
             }
@@ -1067,12 +1220,50 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
     opaque.query_values = query_values;
 }
 
+fn scan_query_values(opaque: &TqScanOpaque) -> &[f32] {
+    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
+        pgrx::error!("tqhnsw scan state is missing raw query values");
+    }
+
+    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
+}
+
 unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
     if !opaque.query_values.is_null() {
         unsafe { pg_sys::pfree(opaque.query_values.cast()) };
         opaque.query_values = ptr::null_mut();
     }
     opaque.query_dimensions = 0;
+}
+
+unsafe fn required_slot_datum(
+    slot: *mut pg_sys::TupleTableSlot,
+    attnum: i32,
+    label: &str,
+) -> pg_sys::Datum {
+    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
+        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
+    }
+    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
+    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
+        pgrx::error!("tqhnsw does not support NULL {label}");
+    }
+    unsafe { *(*slot).tts_values.add(attr_index) }
+}
+
+fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
+    if query.len() != source.len() {
+        pgrx::error!(
+            "tqhnsw grouped-v2 heap-f32 rerank source vector dimension mismatch: query dim {}, source dim {}",
+            query.len(),
+            source.len()
+        );
+    }
+    -query
+        .iter()
+        .zip(source)
+        .map(|(left, right)| left * right)
+        .sum::<f32>()
 }
 
 fn store_scan_prepared_query(
@@ -1590,6 +1781,69 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
     score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
 }
 
+unsafe fn score_grouped_heap_source_from_scan_state(
+    opaque: &mut TqScanOpaque,
+    heap_tid: page::ItemPointer,
+) -> f32 {
+    if opaque.grouped_heap_rerank_relation.is_null()
+        || opaque.grouped_heap_rerank_snapshot.is_null()
+        || opaque.grouped_heap_rerank_slot.is_null()
+        || opaque.grouped_heap_rerank_source_attnum <= 0
+    {
+        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank is missing heap fetch state");
+    }
+
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(&mut tid, heap_tid.block_number, heap_tid.offset_number);
+    unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    let fetched = unsafe {
+        pg_sys::table_tuple_fetch_row_version(
+            opaque.grouped_heap_rerank_relation,
+            &mut tid,
+            opaque.grouped_heap_rerank_snapshot,
+            opaque.grouped_heap_rerank_slot,
+        )
+    };
+    if !fetched {
+        pgrx::error!(
+            "tqhnsw grouped-v2 heap-f32 rerank could not fetch heap tuple at ({},{})",
+            heap_tid.block_number,
+            heap_tid.offset_number
+        );
+    }
+
+    let source_datum = unsafe {
+        required_slot_datum(
+            opaque.grouped_heap_rerank_slot,
+            i32::from(opaque.grouped_heap_rerank_source_attnum),
+            "grouped-v2 heap rerank source vector",
+        )
+    };
+    let source = Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw grouped-v2 heap rerank source column must decode to real[]")
+        });
+    let score = negative_inner_product(scan_query_values(opaque), &source);
+    unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    score
+}
+
+unsafe fn score_grouped_candidate_heap_rerank(
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+) -> Option<f32> {
+    let opaque = unsafe { &mut *opaque };
+    let mut best_score: Option<f32> = None;
+    for heap_tid in element.heaptids.as_slice().iter().copied() {
+        let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
+        best_score = Some(match best_score {
+            Some(current) => current.min(score),
+            None => score,
+        });
+    }
+    best_score
+}
+
 unsafe fn exact_score_grouped_candidate_context(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
@@ -1665,6 +1919,10 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     opaque: *mut TqScanOpaque,
     element: &CachedGraphElement,
 ) -> Option<f32> {
+    if grouped_heap_rerank_enabled(unsafe { &*opaque }) {
+        return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
+    }
+
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
     Some(unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) })
@@ -2375,6 +2633,17 @@ fn pop_best_buffered_grouped_scan_result(
     Some(selected)
 }
 
+fn grouped_live_rerank_output_score(
+    opaque: &TqScanOpaque,
+    buffered: &BufferedGroupedScanResult,
+) -> f32 {
+    if grouped_heap_rerank_enabled(opaque) {
+        buffered.comparison_score.unwrap_or(buffered.approx_score)
+    } else {
+        buffered.approx_score
+    }
+}
+
 unsafe fn prefetch_next_graph_result_from_frontier(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -2476,10 +2745,11 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
     };
 
     mark_emitted_element(opaque, buffered.element_tid);
+    let output_score = grouped_live_rerank_output_score(opaque, &buffered);
     let result_state = unsafe { &mut *result_state };
     result_state.materialize_with_details(
         buffered.element_tid,
-        buffered.approx_score,
+        output_score,
         Some(buffered.approx_score),
         Some(buffered.approx_rank_base),
         buffered.comparison_score,
@@ -3880,6 +4150,13 @@ pub(super) struct TqScanOpaque {
     grouped_live_rerank_buffer_len: u8,
     grouped_live_rerank_window: u8,
     grouped_traversal_score_mode: GroupedTraversalScoreMode,
+    grouped_rerank_mode: GroupedRerankMode,
+    grouped_heap_rerank_relation: pg_sys::Relation,
+    grouped_heap_rerank_relation_owned: bool,
+    grouped_heap_rerank_snapshot: pg_sys::Snapshot,
+    grouped_heap_rerank_snapshot_owned: bool,
+    grouped_heap_rerank_slot: *mut pg_sys::TupleTableSlot,
+    grouped_heap_rerank_source_attnum: i16,
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
     grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
@@ -3933,6 +4210,13 @@ impl Default for TqScanOpaque {
             grouped_live_rerank_buffer_len: 0,
             grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
             grouped_traversal_score_mode: GroupedTraversalScoreMode::GroupedPq,
+            grouped_rerank_mode: GroupedRerankMode::Quantized,
+            grouped_heap_rerank_relation: ptr::null_mut(),
+            grouped_heap_rerank_relation_owned: false,
+            grouped_heap_rerank_snapshot: ptr::null_mut(),
+            grouped_heap_rerank_snapshot_owned: false,
+            grouped_heap_rerank_slot: ptr::null_mut(),
+            grouped_heap_rerank_source_attnum: 0,
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
             grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,

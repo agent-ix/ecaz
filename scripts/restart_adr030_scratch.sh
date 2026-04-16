@@ -7,6 +7,7 @@ Usage:
   scripts/restart_adr030_scratch.sh \
       [--window 16] \
       [--grouped-score-mode pq|binary] \
+      [--rerank-mode quantized|heap_f32] \
       [--exact-scope all|layer0] \
       [--exact-strategy expansion|frontier_head] \
       [--exact-limit N] \
@@ -25,6 +26,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
 window="16"
 grouped_score_mode="pq"
+rerank_mode="quantized"
 exact_enabled=0
 exact_scope="all"
 exact_strategy="expansion"
@@ -39,6 +41,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --grouped-score-mode)
             grouped_score_mode="$2"
+            shift 2
+            ;;
+        --rerank-mode)
+            rerank_mode="$2"
             shift 2
             ;;
         --exact-scope)
@@ -93,6 +99,7 @@ printf '[scratch] repo=%s\n' "${repo_root}"
 printf '[scratch] pgrx_home=%s\n' "${pgrx_home}"
 printf '[scratch] window=%s\n' "${window}"
 printf '[scratch] grouped_score_mode=%s\n' "${grouped_score_mode}"
+printf '[scratch] rerank_mode=%s\n' "${rerank_mode}"
 if [[ "${exact_enabled}" -eq 1 ]]; then
     printf '[scratch] exact_scope=%s\n' "${exact_scope}"
     printf '[scratch] exact_strategy=%s\n' "${exact_strategy}"
@@ -109,6 +116,7 @@ export TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE="${grouped_score_mode}"
+export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE="${rerank_mode}"
 
 if [[ "${exact_enabled}" -eq 1 ]]; then
     export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL=1
