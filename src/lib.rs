@@ -3951,130 +3951,114 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_debug_runtime_settings_reflect_controls() {
         let _lock = env_var_test_lock();
-        let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
-        let _score_mode_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
-            "binary",
-        );
-        let _rerank_mode_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
-            "heap_f32",
-        );
-        let _rerank_source_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
-            "source_raw",
-        );
-        let _exact_guard =
-            ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
-        let _scope_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
-            "all",
-        );
-        let _strategy_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
-            "expansion",
-        );
-        let _limit_guard = ScopedEnvVar::set(
-            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
-            "1",
-        );
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _rerank_source_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", "source_raw");
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "all");
+        let _strategy_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY", "expansion");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
 
         assert_eq!(
             Spi::get_one::<bool>(
-                "SELECT grouped_build_enabled
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_build_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
-            "the runtime settings probe should surface that grouped build selection is always available via reloptions",
+            "the runtime settings probe should surface that pq_fastscan build selection is always available via reloptions",
         );
         assert_eq!(
             Spi::get_one::<bool>(
-                "SELECT grouped_scan_enabled
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_scan_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
-            "the runtime settings probe should surface that grouped scan selection is always available",
+            "the runtime settings probe should surface that pq_fastscan scan selection is always available",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_scan_window
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_scan_window
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("8"),
-            "the runtime settings probe should surface the configured grouped scan window",
+            "the runtime settings probe should surface the configured pq_fastscan scan window",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_scan_score_mode
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_traversal_score_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("binary"),
-            "the runtime settings probe should surface the configured grouped traversal score mode",
+            "the runtime settings probe should surface the configured pq_fastscan traversal score mode",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_scan_rerank_mode
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_rerank_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("heap_f32"),
-            "the runtime settings probe should surface the configured grouped rerank mode",
+            "the runtime settings probe should surface the configured pq_fastscan rerank mode",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_scan_rerank_source_column
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_rerank_source_column
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("source_raw"),
-            "the runtime settings probe should surface the configured grouped rerank source column",
+            "the runtime settings probe should surface the configured pq_fastscan rerank source column",
         );
         assert_eq!(
             Spi::get_one::<bool>(
-                "SELECT grouped_exact_traversal_enabled
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_exact_traversal_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
-            "the runtime settings probe should surface the grouped exact traversal gate",
+            "the runtime settings probe should surface the pq_fastscan exact traversal gate",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_exact_traversal_scope
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_exact_traversal_scope
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("all"),
-            "the runtime settings probe should surface the grouped exact traversal scope",
+            "the runtime settings probe should surface the pq_fastscan exact traversal scope",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_exact_traversal_strategy
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_exact_traversal_strategy
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("expansion"),
-            "the runtime settings probe should surface the grouped exact traversal strategy",
+            "the runtime settings probe should surface the pq_fastscan exact traversal strategy",
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT grouped_exact_traversal_limit
-                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+                "SELECT pq_fastscan_exact_traversal_limit
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
             Some("1"),
-            "the runtime settings probe should surface the grouped exact traversal limit",
+            "the runtime settings probe should surface the pq_fastscan exact traversal limit",
         );
     }
 
@@ -16449,6 +16433,96 @@ mod tests {
         ))
     }
 
+    struct PqFastScanRuntimeSettings {
+        build_enabled: bool,
+        scan_enabled: bool,
+        scan_window: Option<String>,
+        traversal_score_mode: Option<String>,
+        rerank_mode: Option<String>,
+        rerank_source_column: Option<String>,
+        exact_traversal_enabled: bool,
+        exact_traversal_scope: Option<String>,
+        exact_traversal_strategy: Option<String>,
+        exact_traversal_limit: Option<String>,
+    }
+
+    fn current_pq_fastscan_runtime_settings() -> PqFastScanRuntimeSettings {
+        PqFastScanRuntimeSettings {
+            build_enabled: true,
+            scan_enabled: true,
+            scan_window: std::env::var_os("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW")
+                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW"))
+                .map(|value| value.to_string_lossy().into_owned()),
+            traversal_score_mode: std::env::var_os("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
+                })
+                .map(|value| value.to_string_lossy().into_owned()),
+            rerank_mode: std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_MODE")
+                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE"))
+                .map(|value| value.to_string_lossy().into_owned()),
+            rerank_source_column: std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
+                })
+                .map(|value| value.to_string_lossy().into_owned()),
+            exact_traversal_enabled: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL")
+                })
+                .is_some(),
+            exact_traversal_scope: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
+                })
+                .map(|value| value.to_string_lossy().into_owned()),
+            exact_traversal_strategy: std::env::var_os(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY",
+            )
+            .or_else(|| {
+                std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY")
+            })
+            .map(|value| value.to_string_lossy().into_owned()),
+            exact_traversal_limit: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
+                })
+                .map(|value| value.to_string_lossy().into_owned()),
+        }
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_runtime_settings() -> TableIterator<
+        'static,
+        (
+            name!(pq_fastscan_build_enabled, bool),
+            name!(pq_fastscan_scan_enabled, bool),
+            name!(pq_fastscan_scan_window, Option<String>),
+            name!(pq_fastscan_traversal_score_mode, Option<String>),
+            name!(pq_fastscan_rerank_mode, Option<String>),
+            name!(pq_fastscan_rerank_source_column, Option<String>),
+            name!(pq_fastscan_exact_traversal_enabled, bool),
+            name!(pq_fastscan_exact_traversal_scope, Option<String>),
+            name!(pq_fastscan_exact_traversal_strategy, Option<String>),
+            name!(pq_fastscan_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        let settings = current_pq_fastscan_runtime_settings();
+        TableIterator::once((
+            settings.build_enabled,
+            settings.scan_enabled,
+            settings.scan_window,
+            settings.traversal_score_mode,
+            settings.rerank_mode,
+            settings.rerank_source_column,
+            settings.exact_traversal_enabled,
+            settings.exact_traversal_scope,
+            settings.exact_traversal_strategy,
+            settings.exact_traversal_limit,
+        ))
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_adr030_runtime_settings() -> TableIterator<
@@ -16466,47 +16540,18 @@ mod tests {
             name!(grouped_exact_traversal_limit, Option<String>),
         ),
     > {
+        let settings = current_pq_fastscan_runtime_settings();
         TableIterator::once((
-            true,
-            true,
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW")
-                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW"))
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_MODE")
-                .or_else(|| std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE"))
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL")
-                })
-                .is_some(),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY")
-                .or_else(|| {
-                    std::env::var_os(
-                        "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
-                    )
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
-            std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT")
-                .or_else(|| {
-                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT")
-                })
-                .map(|value| value.to_string_lossy().into_owned()),
+            settings.build_enabled,
+            settings.scan_enabled,
+            settings.scan_window,
+            settings.traversal_score_mode,
+            settings.rerank_mode,
+            settings.rerank_source_column,
+            settings.exact_traversal_enabled,
+            settings.exact_traversal_scope,
+            settings.exact_traversal_strategy,
+            settings.exact_traversal_limit,
         ))
     }
 
