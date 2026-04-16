@@ -1,3 +1,4 @@
+use std::ffi::c_int;
 use std::ptr;
 use std::sync::Arc;
 #[cfg(any(test, feature = "pg_test"))]
@@ -1304,6 +1305,103 @@ unsafe fn required_slot_datum(
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
 
+struct FlatFloat4ArrayRef {
+    array_ptr: *mut pg_sys::ArrayType,
+    owned: bool,
+    data_ptr: *const f32,
+    len: usize,
+}
+
+impl FlatFloat4ArrayRef {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+        if datum.is_null() {
+            pgrx::error!("tqhnsw does not support NULL {label}");
+        }
+
+        let original = datum
+            .cast_mut_ptr::<std::ffi::c_void>()
+            .cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+        if varlena.is_null() {
+            pgrx::error!("tqhnsw could not detoast {label}");
+        }
+        let array_ptr = varlena.cast::<pg_sys::ArrayType>();
+        let owned = !ptr::eq(varlena, original);
+
+        let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
+            Ok(value) => value,
+            Err(_) => pgrx::error!("tqhnsw {label} must be a one-dimensional real[]"),
+        };
+        if ndim != 1 {
+            pgrx::error!("tqhnsw {label} must be a one-dimensional real[]");
+        }
+        if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {
+            pgrx::error!("tqhnsw {label} must be a real[]");
+        }
+        if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
+            pgrx::error!("tqhnsw {label} arrays must not contain NULL elements");
+        }
+
+        let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
+        let len = usize::try_from(unsafe { pg_sys::ArrayGetNItems((*array_ptr).ndim, dims_ptr) })
+            .expect("flat float4 array length should fit in usize");
+        let data_ptr = unsafe {
+            array_ptr
+                .cast::<u8>()
+                .add(flat_array_data_offset(array_ptr, ndim))
+                .cast::<f32>()
+        };
+        if (data_ptr as usize) % std::mem::align_of::<f32>() != 0 {
+            pgrx::error!("tqhnsw {label} data pointer is not aligned for float4 access");
+        }
+
+        Self {
+            array_ptr,
+            owned,
+            data_ptr,
+            len,
+        }
+    }
+
+    fn as_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+    }
+}
+
+impl Drop for FlatFloat4ArrayRef {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.array_ptr.cast()) };
+        }
+    }
+}
+
+unsafe fn flat_array_dims_ptr(array_ptr: *const pg_sys::ArrayType) -> *const c_int {
+    unsafe {
+        array_ptr
+            .cast::<u8>()
+            .add(std::mem::size_of::<pg_sys::ArrayType>())
+            .cast::<c_int>()
+    }
+}
+
+fn maxaligned_size(len: usize) -> usize {
+    let align =
+        usize::try_from(pg_sys::MAXIMUM_ALIGNOF).expect("MAXIMUM_ALIGNOF should fit in usize");
+    (len + align - 1) & !(align - 1)
+}
+
+unsafe fn flat_array_data_offset(array_ptr: *const pg_sys::ArrayType, ndim: usize) -> usize {
+    let dataoffset = unsafe { (*array_ptr).dataoffset };
+    if dataoffset != 0 {
+        usize::try_from(dataoffset).expect("flat float4 array dataoffset should fit in usize")
+    } else {
+        maxaligned_size(
+            std::mem::size_of::<pg_sys::ArrayType>() + (2 * ndim * std::mem::size_of::<c_int>()),
+        )
+    }
+}
+
 fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
     if query.len() != source.len() {
         pgrx::error!(
@@ -1882,10 +1980,9 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             "grouped-v2 heap rerank source vector",
         )
     };
-    let source = Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
-        .unwrap_or_else(|| {
-            pgrx::error!("tqhnsw grouped-v2 heap rerank source column must decode to real[]")
-        });
+    let source = unsafe {
+        FlatFloat4ArrayRef::from_datum(source_datum, "grouped-v2 heap rerank source vector")
+    };
     #[cfg(any(test, feature = "pg_test"))]
     let decode_elapsed_us =
         u64::try_from(decode_started.elapsed().as_micros()).expect("timing should fit in u64");
@@ -1894,13 +1991,14 @@ unsafe fn score_grouped_heap_source_from_scan_state(
     record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
     #[cfg(any(test, feature = "pg_test"))]
     let dot_started = Instant::now();
-    let score = negative_inner_product(scan_query_values(opaque), &source);
+    let score = negative_inner_product(scan_query_values(opaque), source.as_slice());
     #[cfg(any(test, feature = "pg_test"))]
     let dot_elapsed_us =
         u64::try_from(dot_started.elapsed().as_micros()).expect("timing should fit in u64");
     #[cfg(not(any(test, feature = "pg_test")))]
     let dot_elapsed_us = 0;
     record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
+    drop(source);
     unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
     score
 }
