@@ -20,7 +20,10 @@ fn main() {
 
     println!("backend={}", simd_backend());
     println!("iterations={iterations}");
-    println!("warmup_iterations={}", iterations.clamp(1, WARMUP_ITERATIONS));
+    println!(
+        "warmup_iterations={}",
+        iterations.clamp(1, WARMUP_ITERATIONS)
+    );
 
     run_fwht_bench(1_024, iterations);
     run_fwht_bench(2_048, iterations);

@@ -210,8 +210,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
         pgrx::pgrx_extern_c_guard(|| {
             let index_info = (*path).indexinfo;
             let index_oid = (*index_info).indexoid;
-            let index_relation =
-                pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
+            let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
             let estimate = compute_amcostestimate(index_relation);
             pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
 
@@ -228,10 +227,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     let relation_options = unsafe { super::options::relation_options(index_relation) };
     let tuning = super::options::resolve_scan_tuning(&relation_options);
     let block_count = unsafe {
-        pg_sys::RelationGetNumberOfBlocksInFork(
-            index_relation,
-            pg_sys::ForkNumber::MAIN_FORKNUM,
-        )
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
     let index_pages = f64::from(block_count);
     // Block 0 is always the metadata page; an index with no data pages still
@@ -264,9 +260,8 @@ mod tests {
     use super::{
         amgettreeheight_callback_value, amtranslatecmptype_callback, amtranslatestrategy_callback,
         estimate_planner_cost, metadata_fallback_tree_height, strategy_translation_snapshot,
-        LUT_CPU_DIMENSION_SCALE, PlannerCompareType, PlannerCostConstants,
-        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
-        StrategyTranslationSnapshot,
+        PlannerCompareType, PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs,
+        PlannerTreeHeightInput, StrategyTranslationSnapshot, LUT_CPU_DIMENSION_SCALE,
     };
 
     fn default_constants() -> PlannerCostConstants {

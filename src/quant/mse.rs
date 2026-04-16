@@ -123,9 +123,8 @@ mod tests {
         // to on the (1536, 4) production case.
         let mut rng = ChaCha8Rng::seed_from_u64(0xC0DECAFE);
         for _ in 0..200 {
-            let codebook_vec: Vec<f32> = (0..16)
-                .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
-                .collect();
+            let codebook_vec: Vec<f32> =
+                (0..16).map(|_| rng.gen_range(-1.0_f32..1.0_f32)).collect();
             let codebook_16: [f32; 16] = codebook_vec
                 .as_slice()
                 .try_into()
@@ -148,9 +147,7 @@ mod tests {
         // unrolled path for a 16-element codebook and produces the
         // same indices as the explicit branchless scan would.
         let mut rng = ChaCha8Rng::seed_from_u64(7);
-        let codebook: Vec<f32> = (0..16)
-            .map(|_| rng.gen_range(-1.0_f32..1.0_f32))
-            .collect();
+        let codebook: Vec<f32> = (0..16).map(|_| rng.gen_range(-1.0_f32..1.0_f32)).collect();
         let rotated: Vec<f32> = (0..1536)
             .map(|_| rng.gen_range(-1.5_f32..1.5_f32))
             .collect();
