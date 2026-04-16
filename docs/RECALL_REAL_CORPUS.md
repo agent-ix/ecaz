@@ -231,7 +231,9 @@ WITH (
        --m 8 --m 16
    ```
    That wrapper runs the canonical converter first, then calls
-   `scripts/load_real_corpus_scratch.sh` on the emitted TSVs.
+   `scripts/load_real_corpus_scratch.sh` on the emitted TSVs. To build an
+   explicit coexisting family instead of the legacy default names, append
+   `--storage-format turboquant` or `--storage-format pq_fastscan`.
 2. Install the `pg_test` build of the extension before running the SQL
    recall surfaces from `psql`:
    ```bash
@@ -449,12 +451,15 @@ durable `NFR-001` artifacts should go through the planner-verified launcher
 `scripts/bench_sql_latency_verified.sh`, which first checks a representative
 `EXPLAIN` plan and refuses to run unless the planner selects the expected
 index. The verified launcher currently accepts one effective `m` per invocation
-so the chosen index is unambiguous. A worked example against the already-loaded
+so the chosen index is unambiguous. With no extra flag it derives the legacy
+`<prefix>_m{N}_idx` name; with `--storage-format pq_fastscan` it derives
+`<prefix>_pq_fastscan_m{N}_idx`. A worked example against the already-loaded
 `tqhnsw_real_10k` fixture:
 
 ```bash
 scripts/bench_sql_latency_verified_scratch.sh \
     --prefix tqhnsw_real_10k \
+    --storage-format pq_fastscan \
     --m 8 \
     --ef-search 40,64,100,128,160,200 \
     --cache-state cold \

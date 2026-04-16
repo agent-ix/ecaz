@@ -179,13 +179,17 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
         corpus_table: str | None = None,
         query_table: str | None = None,
         index_name: str | None = None,
+        storage_format: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         summary_file = self.tmp_dir / "summary.txt"
         env = os.environ.copy()
         env["TQV_PSQL_BIN"] = str(self.fake_psql)
         env["TQV_FAKE_PSQL_CORPUS_TABLE"] = corpus_table or "tqhnsw_real_test_corpus"
         env["TQV_FAKE_PSQL_QUERY_TABLE"] = query_table or "tqhnsw_real_test_queries"
-        env["TQV_FAKE_PSQL_EXPECTED_INDEX"] = index_name or "tqhnsw_real_test_m8_idx"
+        expected_index = index_name or "tqhnsw_real_test_m8_idx"
+        if storage_format is not None and index_name is None:
+            expected_index = f"tqhnsw_real_test_{storage_format}_m8_idx"
+        env["TQV_FAKE_PSQL_EXPECTED_INDEX"] = expected_index
         if fallback_ef is not None:
             env["TQV_FAKE_PSQL_FALLBACK_EF"] = fallback_ef
         else:
@@ -214,6 +218,8 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
             args.extend(["--query-table", query_table])
         if index_name is not None:
             args.extend(["--index-name", index_name])
+        if storage_format is not None:
+            args.extend(["--storage-format", storage_format])
         if warmup_passes is not None:
             args.extend(["--warmup-passes", warmup_passes])
         if session_mode is not None:
@@ -295,6 +301,28 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
         )
         self.assertIn(
             "[verified] planner uses tqhnsw_real_test_grouped_m8_idx at ef_search=64",
+            result.stderr,
+        )
+
+        lines = summary_file.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("ef_search=64", lines[0])
+
+    def test_verified_launcher_derives_explicit_storage_format_index_name(self) -> None:
+        summary_file = self.tmp_dir / "summary.txt"
+        result = self._run_verified(
+            ef_search="64",
+            fallback_ef=None,
+            storage_format="pq_fastscan",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "[verified] requiring planner use tqhnsw_real_test_pq_fastscan_m8_idx for every measured cell",
+            result.stderr,
+        )
+        self.assertIn(
+            "[verified] planner uses tqhnsw_real_test_pq_fastscan_m8_idx at ef_search=64",
             result.stderr,
         )
 
