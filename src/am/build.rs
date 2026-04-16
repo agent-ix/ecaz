@@ -11,7 +11,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::quant::{
-    grouped_pq::{pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS},
+    grouped_pq::{encode_grouped_pq, nearest_centroid_l2, GROUPED_PQ_CENTROIDS},
     prod::ProdQuantizer,
 };
 
@@ -847,7 +847,11 @@ pub(super) fn derive_grouped_search_code_from_source(
         .as_ref()
         .ok_or_else(|| "grouped search code derivation requires source vector".to_owned())?;
     let rotated = crate::quant::rotation::srht_padded(source, &model.signs);
-    Ok(encode_grouped_pq(&rotated, model))
+    Ok(encode_grouped_pq(
+        &rotated,
+        model.codebooks.iter().map(Vec::as_slice),
+        model.group_size,
+    ))
 }
 
 fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
@@ -897,7 +901,7 @@ fn train_group_codebook(
 
         for (sample_index, assignment) in assignments.iter_mut().enumerate() {
             let sample = sample_slice(samples, sample_index, group_size);
-            let centroid_index = nearest_centroid(sample, &centroids, group_size);
+            let centroid_index = nearest_centroid_l2(sample, &centroids, group_size);
             *assignment = centroid_index;
             counts[centroid_index] += 1;
             let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
@@ -928,36 +932,6 @@ fn train_group_codebook(
     }
 
     Ok(centroids)
-}
-
-fn encode_grouped_pq(vector: &[f32], model: &BuildGroupedPqModel) -> Vec<u8> {
-    let mut centroid_indices = vec![0_u8; model.group_count];
-    for (group_index, centroid_index) in centroid_indices.iter_mut().enumerate() {
-        let start = group_index * model.group_size;
-        let end = start + model.group_size;
-        *centroid_index = nearest_centroid(
-            &vector[start..end],
-            &model.codebooks[group_index],
-            model.group_size,
-        ) as u8;
-    }
-    pack_grouped_pq_nibbles(&centroid_indices)
-}
-
-fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
-    let mut best_index = 0usize;
-    let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
-    for centroid_index in 1..(centroids.len() / group_size) {
-        let distance = squared_l2(
-            sample,
-            centroid_slice(centroids, centroid_index, group_size),
-        );
-        if distance < best_distance {
-            best_distance = distance;
-            best_index = centroid_index;
-        }
-    }
-    best_index
 }
 
 fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {

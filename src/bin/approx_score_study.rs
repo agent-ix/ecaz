@@ -7,9 +7,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tqvector::bench_api::{
-    build_grouped_pq_lut_f32 as shared_build_grouped_pq_lut_f32, grouped_pq_nibble,
-    grouped_pq_score_f32 as shared_grouped_pq_score_f32, pack_grouped_pq_nibbles, pad_input, srht,
-    ProdQuantizer,
+    build_grouped_pq_lut_f32 as shared_build_grouped_pq_lut_f32,
+    encode_grouped_pq as shared_encode_grouped_pq, grouped_pq_nibble,
+    grouped_pq_score_f32 as shared_grouped_pq_score_f32,
+    nearest_centroid_l2 as shared_nearest_centroid_l2, pad_input, srht, ProdQuantizer,
 };
 
 const DIM: usize = 1536;
@@ -808,7 +809,7 @@ fn train_group_codebook(
 
         for (sample_index, assignment) in assignments.iter_mut().enumerate() {
             let sample = sample_slice(samples, sample_index, group_size);
-            let centroid_index = nearest_centroid(sample, &centroids, group_size);
+            let centroid_index = shared_nearest_centroid_l2(sample, &centroids, group_size);
             *assignment = centroid_index;
             counts[centroid_index] += 1;
             let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
@@ -842,19 +843,12 @@ fn train_group_codebook(
 }
 
 fn encode_grouped_pq(vector: &[f32], model: &GroupedPqModel) -> GroupedPqCode {
-    let mut centroid_indices = vec![0_u8; model.group_count];
-    for (group_index, centroid_index) in centroid_indices.iter_mut().enumerate() {
-        let start = group_index * model.group_size;
-        let end = start + model.group_size;
-        *centroid_index = nearest_centroid(
-            &vector[start..end],
-            &model.codebooks[group_index],
-            model.group_size,
-        ) as u8;
-    }
-
     GroupedPqCode {
-        packed_nibbles: pack_grouped_pq_nibbles(&centroid_indices),
+        packed_nibbles: shared_encode_grouped_pq(
+            vector,
+            model.codebooks.iter().map(Vec::as_slice),
+            model.group_size,
+        ),
     }
 }
 
@@ -917,34 +911,6 @@ fn grouped_pq_score_u8(prepared: &GroupedPqPreparedQuery, code: &GroupedPqCode) 
             prepared.row_bias[group_index]
                 + prepared.row_scale[group_index]
                     * prepared.lut_u8[group_index * 16 + centroid_index] as f32
-        })
-        .sum()
-}
-
-fn nearest_centroid(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
-    let mut best_index = 0usize;
-    let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
-
-    for centroid_index in 1..(centroids.len() / group_size) {
-        let distance = squared_l2(
-            sample,
-            centroid_slice(centroids, centroid_index, group_size),
-        );
-        if distance < best_distance {
-            best_distance = distance;
-            best_index = centroid_index;
-        }
-    }
-
-    best_index
-}
-
-fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
-    lhs.iter()
-        .zip(rhs.iter())
-        .map(|(left, right)| {
-            let delta = left - right;
-            delta * delta
         })
         .sum()
 }

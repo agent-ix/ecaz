@@ -25,6 +25,70 @@ pub fn grouped_pq_nibble(packed_nibbles: &[u8], group_index: usize) -> usize {
     }
 }
 
+pub fn nearest_centroid_l2(sample: &[f32], centroids: &[f32], group_size: usize) -> usize {
+    assert!(group_size > 0, "grouped PQ group size must be positive");
+    assert_eq!(
+        sample.len(),
+        group_size,
+        "grouped PQ sample length {} must match group size {}",
+        sample.len(),
+        group_size
+    );
+    assert_eq!(
+        centroids.len() % group_size,
+        0,
+        "grouped PQ centroid length {} must be divisible by group size {}",
+        centroids.len(),
+        group_size
+    );
+    assert_eq!(
+        centroids.len() / group_size,
+        GROUPED_PQ_CENTROIDS,
+        "grouped PQ centroid count mismatch: got {}, expected {}",
+        centroids.len() / group_size,
+        GROUPED_PQ_CENTROIDS
+    );
+
+    let mut best_index = 0usize;
+    let mut best_distance = squared_l2(sample, centroid_slice(centroids, 0, group_size));
+    for centroid_index in 1..GROUPED_PQ_CENTROIDS {
+        let distance = squared_l2(
+            sample,
+            centroid_slice(centroids, centroid_index, group_size),
+        );
+        if distance < best_distance {
+            best_distance = distance;
+            best_index = centroid_index;
+        }
+    }
+    best_index
+}
+
+pub fn encode_grouped_pq<'a, I>(vector: &[f32], codebooks: I, group_size: usize) -> Vec<u8>
+where
+    I: IntoIterator<Item = &'a [f32]>,
+{
+    assert!(group_size > 0, "grouped PQ group size must be positive");
+    let codebooks = codebooks.into_iter().collect::<Vec<_>>();
+    assert_eq!(
+        vector.len(),
+        codebooks.len() * group_size,
+        "grouped PQ vector length {} must match {} codebook groups of size {}",
+        vector.len(),
+        codebooks.len(),
+        group_size
+    );
+
+    let mut centroid_indices = vec![0_u8; codebooks.len()];
+    for (group_index, centroid_index) in centroid_indices.iter_mut().enumerate() {
+        let start = group_index * group_size;
+        let end = start + group_size;
+        *centroid_index =
+            nearest_centroid_l2(&vector[start..end], codebooks[group_index], group_size) as u8;
+    }
+    pack_grouped_pq_nibbles(&centroid_indices)
+}
+
 pub fn build_grouped_pq_lut_f32(
     rotated_query: &[f32],
     flat_codebooks: &[f32],
@@ -88,11 +152,26 @@ pub fn grouped_pq_score_f32(lut_f32: &[f32], group_count: usize, packed_nibbles:
         .sum()
 }
 
+fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| {
+            let delta = left - right;
+            delta * delta
+        })
+        .sum()
+}
+
+fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -> &[f32] {
+    let start = centroid_index * group_size;
+    &centroids[start..start + group_size]
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_grouped_pq_lut_f32, grouped_pq_nibble, grouped_pq_score_f32, pack_grouped_pq_nibbles,
-        GROUPED_PQ_CENTROIDS,
+        build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_nibble, grouped_pq_score_f32,
+        nearest_centroid_l2, pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS,
     };
 
     #[test]
@@ -151,5 +230,50 @@ mod tests {
         assert_eq!(lut[16], 4.0);
         assert_eq!(lut[17], 8.0);
         assert_eq!(lut[31], 64.0);
+    }
+
+    #[test]
+    fn nearest_centroid_l2_prefers_lowest_distance() {
+        let centroids = vec![
+            -1.0, -1.0, // 0
+            1.0, 1.0, // 1
+            4.0, 4.0, // 2
+            9.0, 9.0, // 3
+            20.0, 20.0, // 4
+            21.0, 21.0, // 5
+            22.0, 22.0, // 6
+            23.0, 23.0, // 7
+            24.0, 24.0, // 8
+            25.0, 25.0, // 9
+            26.0, 26.0, // 10
+            27.0, 27.0, // 11
+            28.0, 28.0, // 12
+            29.0, 29.0, // 13
+            30.0, 30.0, // 14
+            31.0, 31.0, // 15
+        ];
+
+        assert_eq!(nearest_centroid_l2(&[1.5, 1.5], &centroids, 2), 1);
+    }
+
+    #[test]
+    fn encode_grouped_pq_packs_nibbles_from_shared_codebooks() {
+        let codebooks = [
+            &[
+                -1.0, 0.0, 0.0, 1.0, 10.0, 10.0, 10.0, 10.0, 20.0, 20.0, 20.0, 20.0, 30.0, 30.0,
+                30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0, 60.0, 60.0, 60.0, 60.0,
+                70.0, 70.0, 70.0, 70.0,
+            ][..],
+            &[
+                10.0, 10.0, 10.0, 10.0, -2.0, 0.0, 0.0, 2.0, 20.0, 20.0, 20.0, 20.0, 30.0, 30.0,
+                30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0, 60.0, 60.0, 60.0, 60.0,
+                70.0, 70.0, 70.0, 70.0,
+            ][..],
+        ];
+
+        let packed = encode_grouped_pq(&[1.0, 1.0, -2.0, -2.0], codebooks, 2);
+        assert_eq!(packed, vec![0x21]);
+        assert_eq!(grouped_pq_nibble(&packed, 0), 1);
+        assert_eq!(grouped_pq_nibble(&packed, 1), 2);
     }
 }

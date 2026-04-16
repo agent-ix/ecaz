@@ -4,12 +4,74 @@ use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
 use super::{graph, page, search, shared, wal};
 use crate::quant::prod::payload_len;
-
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
 const ADR030_GROUPED_V2_VACUUM_UNSUPPORTED: &str =
     "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VacuumFormatAdapter {
+    TurboQuant { code_len: usize },
+    PqFastScan(graph::GroupedGraphLayout),
+}
+
+impl VacuumFormatAdapter {
+    fn pass1_code_len(self) -> usize {
+        match self {
+            Self::TurboQuant { code_len } => code_len,
+            Self::PqFastScan(layout) => layout.search_code_len,
+        }
+    }
+
+    unsafe fn vacuum_cleanup(
+        self,
+        index_relation: pg_sys::Relation,
+        stats: *mut pg_sys::IndexBulkDeleteResult,
+    ) -> *mut pg_sys::IndexBulkDeleteResult {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                shared::tqhnsw_noop_vacuum_stats(index_relation, stats)
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+            }
+        }
+    }
+
+    unsafe fn repair_graph_connections(
+        self,
+        index_relation: pg_sys::Relation,
+        deleted_tids: &[page::ItemPointer],
+    ) {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                repair_turboquant_graph_connections(index_relation, deleted_tids)
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+            }
+        }
+    }
+
+    unsafe fn finalize_fully_dead_elements(
+        self,
+        index_relation: pg_sys::Relation,
+        deleted_tids: &[page::ItemPointer],
+    ) {
+        match self {
+            Self::TurboQuant { code_len } => unsafe {
+                finalize_turboquant_fully_dead_elements(index_relation, code_len, deleted_tids)
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct ElementVacuumUpdate {
@@ -78,11 +140,12 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
-            validate_vacuum_storage_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+            let format =
+                resolve_vacuum_format_adapter(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
             let Some(callback) = callback else {
                 return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
             };
-            run_pass1_vacuum((*info).index, stats, callback, callback_state)
+            run_bulkdelete_with_adapter(format, (*info).index, stats, callback, callback_state)
         })
     }
 }
@@ -94,28 +157,34 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
-            validate_vacuum_storage_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
-            shared::tqhnsw_noop_vacuum_stats((*info).index, stats)
+            let format =
+                resolve_vacuum_format_adapter(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+            format.vacuum_cleanup((*info).index, stats)
         })
     }
 }
 
-fn validate_vacuum_storage_format(metadata: &page::MetadataPage) -> Result<(), String> {
-    match metadata.graph_storage_format() {
-        Ok(page::GraphStorageFormat::ScalarV1) => Ok(()),
-        Ok(page::GraphStorageFormat::GroupedV2) => {
-            Err(ADR030_GROUPED_V2_VACUUM_UNSUPPORTED.to_owned())
+fn resolve_vacuum_format_adapter(
+    metadata: &page::MetadataPage,
+) -> Result<VacuumFormatAdapter, String> {
+    match graph::GraphStorageDescriptor::from_metadata(metadata)? {
+        graph::GraphStorageDescriptor::ScalarV1 { code_len } => {
+            Ok(VacuumFormatAdapter::TurboQuant { code_len })
         }
-        Err(e) => Err(e),
+        graph::GraphStorageDescriptor::GroupedV2(layout) => {
+            Ok(VacuumFormatAdapter::PqFastScan(layout))
+        }
     }
 }
 
-unsafe fn run_pass1_vacuum(
+unsafe fn run_bulkdelete_with_adapter(
+    format: VacuumFormatAdapter,
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    let code_len = format.pass1_code_len();
     let stats = if stats.is_null() {
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
@@ -124,10 +193,6 @@ unsafe fn run_pass1_vacuum(
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
-    let metadata = unsafe { shared::read_metadata_page(index_relation) };
-    let code_len = payload_len(usize::from(metadata.dimensions), metadata.bits)
-        .checked_sub(4)
-        .expect("payload length should include gamma");
 
     let mut live_elements = 0_usize;
     let mut removed_heap_tids = 0_usize;
@@ -197,8 +262,8 @@ unsafe fn run_pass1_vacuum(
         finalize_tids.extend(final_plan.finalize_tids);
     }
 
-    unsafe { repair_graph_connections(index_relation, &finalize_tids) };
-    unsafe { finalize_fully_dead_elements(index_relation, code_len, &finalize_tids) };
+    unsafe { format.repair_graph_connections(index_relation, &finalize_tids) };
+    unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
 
     unsafe {
         (*stats).num_pages = block_count;
@@ -347,7 +412,7 @@ unsafe fn apply_page_pass1_updates(
     }
 }
 
-unsafe fn repair_graph_connections(
+unsafe fn repair_turboquant_graph_connections(
     index_relation: pg_sys::Relation,
     deleted_tids: &[page::ItemPointer],
 ) {
@@ -1240,7 +1305,7 @@ unsafe fn apply_page_pass2_updates(
     }
 }
 
-unsafe fn finalize_fully_dead_elements(
+unsafe fn finalize_turboquant_fully_dead_elements(
     index_relation: pg_sys::Relation,
     code_len: usize,
     tids: &[page::ItemPointer],
@@ -1455,18 +1520,24 @@ mod tests {
     }
 
     #[test]
-    fn validate_vacuum_storage_format_accepts_scalar_v1() {
+    fn resolve_vacuum_format_adapter_accepts_scalar_v1() {
         assert_eq!(
-            validate_vacuum_storage_format(&scalar_v1_metadata()),
-            Ok(())
+            resolve_vacuum_format_adapter(&scalar_v1_metadata()),
+            Ok(VacuumFormatAdapter::TurboQuant {
+                code_len: crate::code_len(16, 4),
+            })
         );
     }
 
     #[test]
-    fn validate_vacuum_storage_format_rejects_grouped_v2() {
+    fn resolve_vacuum_format_adapter_recognizes_grouped_v2() {
         assert_eq!(
-            validate_vacuum_storage_format(&grouped_v2_metadata()),
-            Err(ADR030_GROUPED_V2_VACUUM_UNSUPPORTED.to_owned())
+            resolve_vacuum_format_adapter(&grouped_v2_metadata()),
+            Ok(VacuumFormatAdapter::PqFastScan(graph::GroupedGraphLayout {
+                binary_word_count: 0,
+                search_code_len: 1,
+                rerank_code_len: crate::code_len(16, 4),
+            }))
         );
     }
 }

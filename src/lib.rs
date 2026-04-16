@@ -39,8 +39,8 @@ pub mod bench_api {
     // Codebook
     pub use crate::quant::codebook::{beta_pdf, lloyd_max};
     pub use crate::quant::grouped_pq::{
-        build_grouped_pq_lut_f32, grouped_pq_nibble, grouped_pq_score_f32, pack_grouped_pq_nibbles,
-        GROUPED_PQ_CENTROIDS,
+        build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_nibble, grouped_pq_score_f32,
+        nearest_centroid_l2, pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS,
     };
 
     // MSE

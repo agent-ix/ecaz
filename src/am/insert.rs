@@ -10,6 +10,120 @@ const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 const ADR030_GROUPED_V2_INSERT_UNSUPPORTED: &str =
     "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InsertFormatAdapter {
+    TurboQuant { code_len: usize },
+    PqFastScan(graph::GroupedGraphLayout),
+}
+
+impl InsertFormatAdapter {
+    fn initial_code_len(self, tuple: &build::BuildTuple) -> usize {
+        match self {
+            Self::TurboQuant { code_len } => code_len.max(tuple.code.len()),
+            Self::PqFastScan(_) => tuple.code.len(),
+        }
+    }
+
+    unsafe fn find_duplicate(
+        self,
+        index_relation: pg_sys::Relation,
+        heap_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
+        tuple: &build::BuildTuple,
+        code_len: usize,
+    ) -> Option<page::ItemPointer> {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                find_duplicate_element_tid(
+                    index_relation,
+                    heap_relation,
+                    metadata.dimensions,
+                    metadata.bits,
+                    tuple.gamma,
+                    code_len,
+                    &tuple.code,
+                )
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+            }
+        }
+    }
+
+    unsafe fn discover_forward_neighbors(
+        self,
+        index_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
+        tuple: &build::BuildTuple,
+        insert_level: u8,
+        m: u16,
+    ) -> (Vec<page::ItemPointer>, Vec<LayerForwardSelection>) {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                discover_insert_forward_neighbor_slots(
+                    index_relation,
+                    metadata,
+                    &tuple.code,
+                    insert_level,
+                    m,
+                )
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+            }
+        }
+    }
+
+    unsafe fn append_node(
+        self,
+        index_relation: pg_sys::Relation,
+        tuple: &build::BuildTuple,
+        level: u8,
+        neighbor_tids: &[page::ItemPointer],
+    ) -> page::ItemPointer {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                append_heap_tuple(index_relation, tuple, level, neighbor_tids)
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+            }
+        }
+    }
+
+    unsafe fn add_backlinks(
+        self,
+        index_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
+        tuple: &build::BuildTuple,
+        code_len: usize,
+        selections: &[LayerForwardSelection],
+        new_element_tid: page::ItemPointer,
+        m: u16,
+    ) {
+        match self {
+            Self::TurboQuant { .. } => unsafe {
+                add_backlinks_to_forward_neighbors(
+                    index_relation,
+                    metadata,
+                    code_len,
+                    &tuple.code,
+                    selections,
+                    new_element_tid,
+                    m,
+                )
+            },
+            Self::PqFastScan(layout) => {
+                let _ = layout;
+                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+            }
+        }
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     index_relation: pg_sys::Relation,
     values: *mut pg_sys::Datum,
@@ -25,11 +139,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = shared::decode_heap_tid(heap_tid);
             let tuple = build::build_heap_tuple(values, isnull, heap_tid);
             let options = options::relation_options(index_relation);
-            let m = u16::try_from(options.m).expect("validated m should fit in u16");
-            let code_len = tuple.code.len();
             let metadata_snapshot = shared::read_metadata_page(index_relation);
 
-            validate_insert_storage_format(&metadata_snapshot)
+            let format = resolve_insert_format_adapter(&metadata_snapshot)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
 
             if let Some(source_column) = options.build_source_column {
@@ -37,154 +149,154 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                     "tqhnsw aminsert does not support build_source_column indexes yet: {source_column}"
                 );
             }
+            run_insert_with_adapter(
+                format,
+                index_relation,
+                heap_relation,
+                heap_tid,
+                &tuple,
+                &metadata_snapshot,
+                u16::try_from(options.m).expect("validated m should fit in u16"),
+            )
+        })
+    }
+}
 
-            // First-insert path: shape has never been initialized. Keep this on the
-            // old exclusive path because shape init atomicity still matters, and the
-            // duplicate scan is degenerate on an effectively empty index.
-            if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
-                shared::with_locked_metadata_page(index_relation, |metadata| {
-                    if metadata.dimensions == 0 && metadata.bits == 0 {
-                        metadata.dimensions = tuple.dimensions;
-                        metadata.bits = tuple.bits;
-                        metadata.seed = tuple.seed;
-                    } else if tuple.dimensions != metadata.dimensions
-                        || tuple.bits != metadata.bits
-                        || tuple.seed != metadata.seed
-                    {
-                        pgrx::error!(
-                            "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
-                            metadata.dimensions,
-                            metadata.bits,
-                            metadata.seed,
-                            tuple.dimensions,
-                            tuple.bits,
-                            tuple.seed
-                        );
-                    }
+fn resolve_insert_format_adapter(
+    metadata: &page::MetadataPage,
+) -> Result<InsertFormatAdapter, String> {
+    match graph::GraphStorageDescriptor::from_metadata(metadata)? {
+        graph::GraphStorageDescriptor::ScalarV1 { code_len } => {
+            Ok(InsertFormatAdapter::TurboQuant { code_len })
+        }
+        graph::GraphStorageDescriptor::GroupedV2(layout) => {
+            Ok(InsertFormatAdapter::PqFastScan(layout))
+        }
+    }
+}
 
-                    if let Some(element_tid) = find_duplicate_element_tid(
-                        index_relation,
-                        heap_relation,
-                        metadata.dimensions,
-                        metadata.bits,
-                        tuple.gamma,
-                        code_len,
-                        &tuple.code,
-                    ) {
-                        coalesce_duplicate_heap_tid(
-                            index_relation,
-                            element_tid,
-                            code_len,
-                            heap_tid,
-                        );
-                        return;
-                    }
+unsafe fn run_insert_with_adapter(
+    format: InsertFormatAdapter,
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    heap_tid: page::ItemPointer,
+    tuple: &build::BuildTuple,
+    metadata_snapshot: &page::MetadataPage,
+    m: u16,
+) -> bool {
+    let code_len = format.initial_code_len(tuple);
 
-                    let insert_level =
-                        choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
-                    let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
-                    let element_tid = append_heap_tuple(
-                        index_relation,
-                        &tuple,
-                        insert_level,
-                        &forward_neighbor_slots,
-                    );
-                    metadata.inserted_since_rebuild =
-                        metadata.inserted_since_rebuild.saturating_add(1);
-                    if metadata.entry_point == page::ItemPointer::INVALID {
-                        metadata.entry_point = element_tid;
-                        metadata.max_level = insert_level;
-                    }
-                });
-                return false;
-            }
-
-            // Fast path: shape is known. Those fields are write-once after
-            // initialization, so the SHARE-read snapshot is authoritative here.
-            if tuple.dimensions != metadata_snapshot.dimensions
-                || tuple.bits != metadata_snapshot.bits
-                || tuple.seed != metadata_snapshot.seed
+    // First-insert path: shape has never been initialized. Keep this on the
+    // old exclusive path because shape init atomicity still matters, and the
+    // duplicate scan is degenerate on an effectively empty index.
+    if metadata_snapshot.dimensions == 0 && metadata_snapshot.bits == 0 {
+        shared::with_locked_metadata_page(index_relation, |metadata| {
+            if metadata.dimensions == 0 && metadata.bits == 0 {
+                metadata.dimensions = tuple.dimensions;
+                metadata.bits = tuple.bits;
+                metadata.seed = tuple.seed;
+            } else if tuple.dimensions != metadata.dimensions
+                || tuple.bits != metadata.bits
+                || tuple.seed != metadata.seed
             {
                 pgrx::error!(
                     "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
-                    metadata_snapshot.dimensions,
-                    metadata_snapshot.bits,
-                    metadata_snapshot.seed,
+                    metadata.dimensions,
+                    metadata.bits,
+                    metadata.seed,
                     tuple.dimensions,
                     tuple.bits,
                     tuple.seed
                 );
             }
 
-            // Duplicate scan runs with only SHARE locks on individual data pages.
-            // A concurrent insert that commits the same code between this scan and
-            // our append may double-insert; that rare race is acceptable here in
-            // exchange for removing the metadata-page serialization point.
-            if let Some(element_tid) = find_duplicate_element_tid(
-                index_relation,
-                heap_relation,
-                metadata_snapshot.dimensions,
-                metadata_snapshot.bits,
-                tuple.gamma,
-                code_len,
-                &tuple.code,
-            ) {
+            if let Some(element_tid) =
+                format.find_duplicate(index_relation, heap_relation, metadata, tuple, code_len)
+            {
                 coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
-                return false;
+                return;
             }
 
-            let insert_level =
-                choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
-            let (forward_neighbor_slots, forward_selections) =
-                discover_insert_forward_neighbor_slots(
-                    index_relation,
-                    &metadata_snapshot,
-                    &tuple.code,
-                    insert_level,
-                    m,
-                );
-            let element_tid = append_heap_tuple(
-                index_relation,
-                &tuple,
-                insert_level,
-                &forward_neighbor_slots,
-            );
-            add_backlinks_to_forward_neighbors(
-                index_relation,
-                &metadata_snapshot,
-                code_len,
-                &tuple.code,
-                &forward_selections,
-                element_tid,
-                m,
-            );
-
-            // Successful live inserts now always advance the metadata-resident
-            // drift counter, so every new-node append takes one final metadata
-            // write phase after all data-page writes are complete. Entry-point
-            // repair/promotion piggybacks on that same lock scope.
-            shared::with_locked_metadata_page(index_relation, |metadata| {
-                metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
-                if metadata.entry_point == page::ItemPointer::INVALID
-                    || insert_level > metadata.max_level
-                {
-                    // Metadata must always advertise a live element at
-                    // metadata.max_level. The new tuple is already appended, so
-                    // repair/promotion happens only after append commits.
-                    metadata.entry_point = element_tid;
-                    metadata.max_level = insert_level;
-                }
-            });
-            false
-        })
+            let insert_level = choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
+            let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
+            let element_tid =
+                format.append_node(index_relation, tuple, insert_level, &forward_neighbor_slots);
+            metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
+            if metadata.entry_point == page::ItemPointer::INVALID {
+                metadata.entry_point = element_tid;
+                metadata.max_level = insert_level;
+            }
+        });
+        return false;
     }
-}
 
-fn validate_insert_storage_format(metadata: &page::MetadataPage) -> Result<(), String> {
-    match metadata.graph_storage_format()? {
-        page::GraphStorageFormat::ScalarV1 => Ok(()),
-        page::GraphStorageFormat::GroupedV2 => Err(ADR030_GROUPED_V2_INSERT_UNSUPPORTED.to_owned()),
+    // Fast path: shape is known. Those fields are write-once after
+    // initialization, so the SHARE-read snapshot is authoritative here.
+    if tuple.dimensions != metadata_snapshot.dimensions
+        || tuple.bits != metadata_snapshot.bits
+        || tuple.seed != metadata_snapshot.seed
+    {
+        pgrx::error!(
+            "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+            metadata_snapshot.dimensions,
+            metadata_snapshot.bits,
+            metadata_snapshot.seed,
+            tuple.dimensions,
+            tuple.bits,
+            tuple.seed
+        );
     }
+
+    // Duplicate scan runs with only SHARE locks on individual data pages.
+    // A concurrent insert that commits the same code between this scan and
+    // our append may double-insert; that rare race is acceptable here in
+    // exchange for removing the metadata-page serialization point.
+    if let Some(element_tid) = format.find_duplicate(
+        index_relation,
+        heap_relation,
+        metadata_snapshot,
+        tuple,
+        code_len,
+    ) {
+        coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid);
+        return false;
+    }
+
+    let insert_level = choose_insert_level(m, metadata_snapshot.seed, heap_tid, tuple.code.len());
+    let (forward_neighbor_slots, forward_selections) = format.discover_forward_neighbors(
+        index_relation,
+        metadata_snapshot,
+        tuple,
+        insert_level,
+        m,
+    );
+    let element_tid =
+        format.append_node(index_relation, tuple, insert_level, &forward_neighbor_slots);
+    format.add_backlinks(
+        index_relation,
+        metadata_snapshot,
+        tuple,
+        code_len,
+        &forward_selections,
+        element_tid,
+        m,
+    );
+
+    // Successful live inserts now always advance the metadata-resident
+    // drift counter, so every new-node append takes one final metadata
+    // write phase after all data-page writes are complete. Entry-point
+    // repair/promotion piggybacks on that same lock scope.
+    shared::with_locked_metadata_page(index_relation, |metadata| {
+        metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
+        if metadata.entry_point == page::ItemPointer::INVALID || insert_level > metadata.max_level {
+            // Metadata must always advertise a live element at
+            // metadata.max_level. The new tuple is already appended, so
+            // repair/promotion happens only after append commits.
+            metadata.entry_point = element_tid;
+            metadata.max_level = insert_level;
+        }
+    });
+    false
 }
 
 fn choose_insert_level(m: u16, seed: u64, heap_tid: page::ItemPointer, code_len: usize) -> u8 {
@@ -1219,9 +1331,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_insert_storage_format_accepts_scalar_v1() {
+    fn resolve_insert_format_adapter_accepts_scalar_v1() {
         assert_eq!(
-            validate_insert_storage_format(&page::MetadataPage::current_v1_scalar(
+            resolve_insert_format_adapter(&page::MetadataPage::current_v1_scalar(
                 page::CurrentFormatMetadata {
                     m: 8,
                     ef_construction: 64,
@@ -1234,12 +1346,14 @@ mod tests {
                     persisted_binary_sidecar: false,
                 },
             )),
-            Ok(())
+            Ok(InsertFormatAdapter::TurboQuant {
+                code_len: crate::code_len(16, 4),
+            })
         );
     }
 
     #[test]
-    fn validate_insert_storage_format_rejects_grouped_v2() {
+    fn resolve_insert_format_adapter_recognizes_grouped_v2() {
         let metadata = page::MetadataPage {
             m: 8,
             ef_construction: 64,
@@ -1252,7 +1366,8 @@ mod tests {
             format_version: page::INDEX_FORMAT_V2_GROUPED,
             transform_kind: page::TransformKind::Srht,
             search_codec_kind: page::SearchCodecKind::GroupedPq,
-            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
             search_bits: 4,
             rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 1,
@@ -1261,8 +1376,12 @@ mod tests {
         };
 
         assert_eq!(
-            validate_insert_storage_format(&metadata),
-            Err(ADR030_GROUPED_V2_INSERT_UNSUPPORTED.to_owned())
+            resolve_insert_format_adapter(&metadata),
+            Ok(InsertFormatAdapter::PqFastScan(graph::GroupedGraphLayout {
+                binary_word_count: 0,
+                search_code_len: 1,
+                rerank_code_len: crate::code_len(16, 4),
+            }))
         );
     }
 

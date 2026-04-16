@@ -461,6 +461,32 @@ pub(crate) unsafe fn load_grouped_codebook_model(
     }
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) fn derive_grouped_search_code_from_source(
+    metadata: &page::MetadataPage,
+    model: &GroupedCodebookModel,
+    source_vector: &[f32],
+) -> Result<Vec<u8>, String> {
+    if source_vector.len() != metadata.dimensions as usize {
+        return Err(format!(
+            "grouped search code source dimension mismatch: source dim {} vs tqvector dim {}",
+            source_vector.len(),
+            metadata.dimensions
+        ));
+    }
+
+    let transform_dim = model.group_count * model.group_size;
+    let signs = crate::quant::rotation::sign_vector(transform_dim, metadata.seed);
+    let rotated = crate::quant::rotation::srht_padded(source_vector, &signs);
+    Ok(crate::quant::grouped_pq::encode_grouped_pq(
+        &rotated,
+        model
+            .flat_codebooks
+            .chunks_exact(GROUPED_PQ_CENTROIDS * model.group_size),
+        model.group_size,
+    ))
+}
+
 pub(crate) unsafe fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
@@ -1195,6 +1221,29 @@ mod tests {
         }
     }
 
+    fn grouped_v2_metadata() -> page::MetadataPage {
+        page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 4,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 2,
+            search_subvector_dim: 2,
+            grouped_codebook_head: tid(2, 1),
+        }
+    }
+
     #[test]
     fn graph_storage_descriptor_uses_scalar_code_len_for_v1_metadata() {
         let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
@@ -1220,25 +1269,13 @@ mod tests {
     #[test]
     fn graph_storage_descriptor_uses_grouped_lengths_for_v2_metadata() {
         let metadata = page::MetadataPage {
-            m: 8,
-            ef_construction: 40,
-            entry_point: page::ItemPointer::INVALID,
             dimensions: 96,
-            bits: 4,
-            max_level: 0,
-            seed: 42,
-            inserted_since_rebuild: 0,
-            format_version: page::INDEX_FORMAT_V2_GROUPED,
-            transform_kind: page::TransformKind::Srht,
-            search_codec_kind: page::SearchCodecKind::GroupedPq,
             payload_flags: page::PAYLOAD_FLAG_BINARY_SIDECAR
                 | page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
                 | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-            search_bits: 4,
-            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            grouped_codebook_head: tid(2, 1),
+            ..grouped_v2_metadata()
         };
 
         assert_eq!(
@@ -1254,23 +1291,11 @@ mod tests {
     #[test]
     fn graph_storage_descriptor_rejects_grouped_v2_missing_grouped_payload_flag() {
         let metadata = page::MetadataPage {
-            m: 8,
-            ef_construction: 40,
-            entry_point: page::ItemPointer::INVALID,
             dimensions: 96,
-            bits: 4,
-            max_level: 0,
-            seed: 42,
-            inserted_since_rebuild: 0,
-            format_version: page::INDEX_FORMAT_V2_GROUPED,
-            transform_kind: page::TransformKind::Srht,
-            search_codec_kind: page::SearchCodecKind::GroupedPq,
             payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-            search_bits: 4,
-            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            grouped_codebook_head: tid(2, 1),
+            ..grouped_v2_metadata()
         };
 
         assert_eq!(
@@ -1282,23 +1307,11 @@ mod tests {
     #[test]
     fn graph_storage_descriptor_rejects_grouped_v2_missing_cold_rerank_flag() {
         let metadata = page::MetadataPage {
-            m: 8,
-            ef_construction: 40,
-            entry_point: page::ItemPointer::INVALID,
             dimensions: 96,
-            bits: 4,
-            max_level: 0,
-            seed: 42,
-            inserted_since_rebuild: 0,
-            format_version: page::INDEX_FORMAT_V2_GROUPED,
-            transform_kind: page::TransformKind::Srht,
-            search_codec_kind: page::SearchCodecKind::GroupedPq,
             payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
-            search_bits: 4,
-            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
-            grouped_codebook_head: tid(2, 1),
+            ..grouped_v2_metadata()
         };
 
         assert_eq!(
@@ -1310,24 +1323,13 @@ mod tests {
     #[test]
     fn graph_storage_descriptor_rejects_grouped_v2_missing_codebook_head() {
         let metadata = page::MetadataPage {
-            m: 8,
-            ef_construction: 40,
-            entry_point: page::ItemPointer::INVALID,
             dimensions: 96,
-            bits: 4,
-            max_level: 0,
-            seed: 42,
-            inserted_since_rebuild: 0,
-            format_version: page::INDEX_FORMAT_V2_GROUPED,
-            transform_kind: page::TransformKind::Srht,
-            search_codec_kind: page::SearchCodecKind::GroupedPq,
             payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
                 | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
-            search_bits: 4,
-            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
             search_subvector_count: 6,
             search_subvector_dim: 16,
             grouped_codebook_head: page::ItemPointer::INVALID,
+            ..grouped_v2_metadata()
         };
 
         assert_eq!(
@@ -1613,6 +1615,57 @@ mod tests {
                 search::BeamCandidate::with_source(grandchild_tid, 0.05, child_tid),
             ],
             "visible-seed expansion should drop the original seeds and keep only newly discovered candidates in traversal order",
+        );
+    }
+
+    #[test]
+    fn derive_grouped_search_code_from_source_uses_persisted_codebook_shape() {
+        let metadata = grouped_v2_metadata();
+        let model = GroupedCodebookModel {
+            head_tid: tid(2, 1),
+            group_count: 2,
+            group_size: 2,
+            flat_codebooks: vec![
+                -1.0, 0.0, 0.0, 1.0, 10.0, 10.0, 10.0, 10.0, 20.0, 20.0, 20.0, 20.0, 30.0, 30.0,
+                30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0, 60.0, 60.0, 60.0, 60.0,
+                70.0, 70.0, 70.0, 70.0, 10.0, 10.0, 10.0, 10.0, -2.0, 0.0, 0.0, 2.0, 20.0, 20.0,
+                20.0, 20.0, 30.0, 30.0, 30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0,
+                60.0, 60.0, 60.0, 60.0, 70.0, 70.0, 70.0, 70.0,
+            ],
+        };
+        let source = vec![1.0, 1.0, -2.0, -2.0];
+        let rotated = crate::quant::rotation::srht_padded(
+            &source,
+            &crate::quant::rotation::sign_vector(4, metadata.seed),
+        );
+
+        let observed = derive_grouped_search_code_from_source(&metadata, &model, &source).unwrap();
+        let expected = crate::quant::grouped_pq::encode_grouped_pq(
+            &rotated,
+            model.flat_codebooks.chunks_exact(2 * GROUPED_PQ_CENTROIDS),
+            2,
+        );
+
+        assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn derive_grouped_search_code_from_source_rejects_dimension_mismatch() {
+        let error = derive_grouped_search_code_from_source(
+            &grouped_v2_metadata(),
+            &GroupedCodebookModel {
+                head_tid: tid(2, 1),
+                group_count: 2,
+                group_size: 2,
+                flat_codebooks: vec![0.0; 2 * GROUPED_PQ_CENTROIDS * 2],
+            },
+            &[1.0, 2.0, 3.0],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "grouped search code source dimension mismatch: source dim 3 vs tqvector dim 4"
         );
     }
 }
