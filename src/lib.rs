@@ -17953,10 +17953,32 @@ mod tests {
         );
     }
 
-    /// Helper that materializes the external corpus / query / index layout
+    fn external_recall_index_prefix(prefix: &str, storage_format: Option<&str>) -> String {
+        match storage_format {
+            Some(storage_format) => format!("{prefix}_{storage_format}"),
+            None => prefix.to_string(),
+        }
+    }
+
+    fn external_recall_index_name(prefix: &str, storage_format: Option<&str>, m: i32) -> String {
+        format!(
+            "{}_m{m}_idx",
+            external_recall_index_prefix(prefix, storage_format)
+        )
+    }
+
+    fn external_recall_storage_format_clause(storage_format: Option<&str>) -> String {
+        match storage_format {
+            Some(storage_format) => format!(", storage_format = '{storage_format}'"),
+            None => String::new(),
+        }
+    }
+
+    /// Helper that materializes the external corpus / query table layout
     /// described in `docs/RECALL_REAL_CORPUS.md` for a small synthetic dataset.
-    /// Used by the external-probe smoke test below.
-    fn create_external_recall_smoke_fixture(prefix: &str, corpus_size: usize, query_count: usize) {
+    /// Index families are created separately so the smoke test can attach
+    /// multiple storage formats to the same staged tables.
+    fn create_external_recall_smoke_tables(prefix: &str, corpus_size: usize, query_count: usize) {
         let corpus_table = format!("{prefix}_corpus");
         let queries_table = format!("{prefix}_queries");
 
@@ -18021,38 +18043,29 @@ mod tests {
             "INSERT INTO {queries_table} (id, source) VALUES {query_values}"
         ))
         .expect("smoke fixture query batch insert should succeed");
+    }
 
+    fn create_external_recall_smoke_indexes(prefix: &str, storage_format: Option<&str>) {
+        let corpus_table = format!("{prefix}_corpus");
+        let storage_format_clause = external_recall_storage_format_clause(storage_format);
         for m in [8_i32, 16_i32] {
-            let index_name = format!("{prefix}_m{m}_idx");
+            let index_name = external_recall_index_name(prefix, storage_format, m);
             Spi::run(&format!(
                 "CREATE INDEX {index_name} ON {corpus_table} \
                  USING tqhnsw (embedding tqvector_ip_ops) \
                  WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION}, \
-                       build_source_column = 'source')"
+                       build_source_column = 'source'{storage_format_clause})"
             ))
             .expect("smoke fixture index create should succeed");
         }
     }
 
-    #[pg_test]
-    // Ignored because it requires the `pg_test` cargo feature and a scratch
-    // pgrx test cluster to run, not because of long seeding. Seeding is
-    // batched in `create_external_recall_smoke_fixture`; the remaining
-    // wall-clock cost lives in the probe / gate phases below, which are
-    // out of scope for the seeding fix.
-    #[ignore]
-    fn test_tqhnsw_graph_scan_recall_external_smoke_500() {
-        // Smoke test for the external corpus / query / index probe path. The
-        // real DBpedia corpus is staged out-of-band by
-        // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
-        // dataset that the loader's schema accepts so we can exercise the
-        // Rust probe surface end-to-end.
-        let prefix = "tqhnsw_recall_external_smoke";
-        create_external_recall_smoke_fixture(prefix, 500, 25);
-
+    fn assert_external_recall_smoke_probe(prefix: &str, storage_format: Option<&str>) {
         let corpus_table = format!("{prefix}_corpus");
         let queries_table = format!("{prefix}_queries");
-        let m8_index = format!("{prefix}_m8_idx");
+        let index_prefix = external_recall_index_prefix(prefix, storage_format);
+        let m8_index = external_recall_index_name(prefix, storage_format, 8);
+        let storage_label = storage_format.unwrap_or("default");
 
         let summary = probe_graph_scan_recall_external_summary_for_relation(
             &corpus_table,
@@ -18077,7 +18090,7 @@ mod tests {
         ) = summary;
 
         println!(
-            "external smoke 500: m={m} ef={ef_search} corpus={corpus_rows} queries={query_count} \
+            "external smoke 500 ({storage_label}): m={m} ef={ef_search} corpus={corpus_rows} queries={query_count} \
              graph@10={graph_recall_at_10:.4} graph@100={graph_recall_at_100:.4} \
              ndcg@10={ndcg_at_10:.4} mae={mean_abs_score_error:.6} \
              spearman={spearman_rho_at_10:.4} exact@10={exact_quantized_recall_at_10:.4} \
@@ -18088,12 +18101,6 @@ mod tests {
         assert_eq!(ef_search, 128);
         assert_eq!(corpus_rows, 500);
         assert_eq!(query_count, 25);
-        // The smoke fixture is uniformly random in 1536 dimensions; tqvector
-        // recall is dominated by the quantizer noise floor in this regime.
-        // We don't assert a specific recall — just that the path returns a
-        // sane fraction in [0, 1] and doesn't blow up. The real recall gate
-        // is `tqhnsw_graph_scan_recall_external_gate_report` against the
-        // staged DBpedia corpus.
         assert!((0.0..=1.0).contains(&graph_recall_at_10));
         assert!((0.0..=1.0).contains(&graph_recall_at_100));
         assert!((0.0..=1.0).contains(&exact_quantized_recall_at_10));
@@ -18101,8 +18108,6 @@ mod tests {
         assert!(ndcg_at_10 >= 0.0);
         assert!(mean_abs_score_error >= 0.0);
 
-        // Reusability: rerunning against the same loaded tables and index
-        // produces an identical row.
         let summary_two = probe_graph_scan_recall_external_summary_for_relation(
             &corpus_table,
             &queries_table,
@@ -18112,16 +18117,15 @@ mod tests {
         );
         assert_eq!(
             summary, summary_two,
-            "external recall summary should be deterministic across reruns"
+            "external recall summary should be deterministic across reruns for {storage_label}"
         );
 
-        // Gate report wrapper: covers all four NFR-003 A4 configurations
-        // against the m=8 and m=16 indexes built by the smoke fixture.
-        let gate = run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, prefix);
+        let gate =
+            run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, &index_prefix);
         assert_eq!(
             gate.len(),
             RECALL_GATE_CONFIGS.len(),
-            "gate report should emit one row per A4 config"
+            "gate report should emit one row per A4 config for {storage_label}"
         );
         for ((m, ef_search, recall, target, passed), expected) in
             gate.iter().zip(RECALL_GATE_CONFIGS.iter())
@@ -18130,12 +18134,34 @@ mod tests {
             assert_eq!(*ef_search, expected.1);
             assert_eq!(*target, expected.2);
             assert!((0.0..=1.0).contains(recall));
-            // Targetless rows always pass; gated rows are only asserted to
-            // be deterministic, not to clear the gate on synthetic data.
             if expected.2.is_none() {
                 assert!(*passed);
             }
         }
+    }
+
+    #[pg_test]
+    // Ignored because it requires the `pg_test` cargo feature and a scratch
+    // pgrx test cluster to run, not because of long seeding. Seeding is
+    // batched in `create_external_recall_smoke_tables`; the remaining
+    // wall-clock cost lives in the probe / gate phases below.
+    #[ignore]
+    fn test_tqhnsw_recall_external_smoke_500_formats() {
+        // Smoke test for the external corpus / query / index probe path. The
+        // real DBpedia corpus is staged out-of-band by
+        // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
+        // dataset that the loader's schema accepts so we can exercise the
+        // Rust probe surface end-to-end, including coexisting explicit
+        // storage-format index families on one shared corpus/query table pair.
+        let prefix = "tqhnsw_recall_external_smoke";
+        create_external_recall_smoke_tables(prefix, 500, 25);
+        create_external_recall_smoke_indexes(prefix, None);
+        create_external_recall_smoke_indexes(prefix, Some("turboquant"));
+        create_external_recall_smoke_indexes(prefix, Some("pq_fastscan"));
+
+        assert_external_recall_smoke_probe(prefix, None);
+        assert_external_recall_smoke_probe(prefix, Some("turboquant"));
+        assert_external_recall_smoke_probe(prefix, Some("pq_fastscan"));
     }
 
     #[cfg(test)]
