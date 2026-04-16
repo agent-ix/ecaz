@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn storage_format_reloption_rejects_unknown_values() {
-        let error = StorageFormat::parse_reloption("grouped-v2").unwrap_err();
+        let error = StorageFormat::parse_reloption("legacy_format").unwrap_err();
         assert!(error.contains("storage_format"));
         assert!(error.contains("turboquant"));
         assert!(error.contains("pq_fastscan"));

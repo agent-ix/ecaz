@@ -3004,11 +3004,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_graph_reads_load_entry_and_neighbors() {
+    fn test_pq_fastscan_graph_reads_load_entry_and_neighbors() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_graph_reads (
+            "CREATE TABLE tqhnsw_pq_fastscan_graph_reads (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3026,20 +3026,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_graph_reads VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_graph_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_graph_reads_idx ON tqhnsw_grouped_v2_graph_reads USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_graph_reads_idx ON tqhnsw_pq_fastscan_graph_reads USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_graph_reads_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_graph_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3053,7 +3053,7 @@ mod tests {
         };
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "test_experimental_grouped_v2_graph_reads")
+            open_valid_tqhnsw_index(index_oid, "test_pq_fastscan_graph_reads")
         };
 
         unsafe {
@@ -3113,11 +3113,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_graph_reads_load_cold_rerank_payload() {
+    fn test_pq_fastscan_graph_reads_load_cold_rerank_payload() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_rerank_reads (
+            "CREATE TABLE tqhnsw_pq_fastscan_rerank_reads (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3135,20 +3135,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_rerank_reads VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_rerank_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_rerank_reads_idx ON tqhnsw_grouped_v2_rerank_reads USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_rerank_reads_idx ON tqhnsw_pq_fastscan_rerank_reads USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_rerank_reads_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_rerank_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3164,7 +3164,7 @@ mod tests {
         let index_relation = unsafe {
             open_valid_tqhnsw_index(
                 index_oid,
-                "test_grouped_v2_graph_reads_load_cold_rerank_payload",
+                "test_pq_fastscan_graph_reads_load_cold_rerank_payload",
             )
         };
         let entry = unsafe {
@@ -3186,11 +3186,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_graph_reads_load_persisted_codebooks() {
+    fn test_pq_fastscan_graph_reads_load_persisted_codebooks() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_codebook_reads (
+            "CREATE TABLE tqhnsw_pq_fastscan_codebook_reads (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3208,20 +3208,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_codebook_reads VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_codebook_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_codebook_reads_idx ON tqhnsw_grouped_v2_codebook_reads USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_codebook_reads_idx ON tqhnsw_pq_fastscan_codebook_reads USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_codebook_reads_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_codebook_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3235,7 +3235,7 @@ mod tests {
         let index_relation = unsafe {
             open_valid_tqhnsw_index(
                 index_oid,
-                "test_grouped_v2_graph_reads_load_persisted_codebooks",
+                "test_pq_fastscan_graph_reads_load_persisted_codebooks",
             )
         };
         let model = unsafe { am::graph::load_grouped_codebook_model(index_relation, &metadata) };
@@ -3282,11 +3282,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_ordered_scan_smoke() {
+    fn test_pq_fastscan_ordered_scan_smoke() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_reject (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_reject (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3304,21 +3304,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_reject VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_reject VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_reject_idx ON tqhnsw_grouped_v2_runtime_reject USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_reject_idx ON tqhnsw_pq_fastscan_runtime_reject USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let observed = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_grouped_v2_runtime_reject \
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_reject \
              ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                       0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
              LIMIT 1",
@@ -3331,11 +3331,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_ordered_scan_plan_smoke() {
+    fn test_pq_fastscan_ordered_scan_plan_smoke() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_enabled (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_enabled (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3353,14 +3353,14 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_enabled VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_enabled VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_enabled_idx ON tqhnsw_grouped_v2_runtime_enabled USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_enabled_idx ON tqhnsw_pq_fastscan_runtime_enabled USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
@@ -3370,7 +3370,7 @@ mod tests {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_grouped_v2_runtime_enabled \
+                     SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
                      ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                               0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
                      LIMIT 3",
@@ -3397,7 +3397,7 @@ mod tests {
         let ordered_ids = Spi::connect(|client| {
             client
                 .select(
-                    "SELECT id FROM tqhnsw_grouped_v2_runtime_enabled \
+                    "SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
                      ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                               0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
                      LIMIT 3",
@@ -3425,12 +3425,12 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan live rerank window must be between 1 and 64, got 0"
     )]
-    fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
+    fn test_pq_fastscan_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "0");
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_window (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_window (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3448,21 +3448,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_window VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_window VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_window_idx ON tqhnsw_grouped_v2_runtime_invalid_window USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_window_idx ON tqhnsw_pq_fastscan_runtime_invalid_window USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_window \
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_window \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -3470,11 +3470,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_captures_exact_rerank_comparison_scores() {
+    fn test_pq_fastscan_runtime_captures_rerank_scores() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_compare (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_compare (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3492,20 +3492,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_compare VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_compare VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_compare_idx ON tqhnsw_grouped_v2_runtime_compare USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_compare_idx ON tqhnsw_pq_fastscan_runtime_compare USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_compare_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_compare_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3524,7 +3524,7 @@ mod tests {
                             split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                             split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number,
                             embedding <#> {query_literal} AS exact_score
-                         FROM tqhnsw_grouped_v2_runtime_compare"
+                         FROM tqhnsw_pq_fastscan_runtime_compare"
                     ),
                     None,
                     &[],
@@ -3732,10 +3732,10 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_exact_traversal_emits_exact_scores() {
+    fn test_pq_fastscan_exact_traversal_emits_exact_scores() {
         let observed = pq_fastscan_exact_traversal_runtime_observed_scores(
-            "tqhnsw_grouped_v2_runtime_exact_traversal",
-            "tqhnsw_grouped_v2_runtime_exact_traversal_idx",
+            "tqhnsw_pq_fastscan_runtime_exact_traversal",
+            "tqhnsw_pq_fastscan_runtime_exact_traversal_idx",
             None,
         );
 
@@ -3884,9 +3884,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_heap_rerank_emits_heap_exact_scores() {
-        let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank";
-        let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_idx";
+    fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
+        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
         let (observed, emitted_scores) =
             pq_fastscan_heap_rerank_runtime_observed_scores(table_name, index_name, None, false);
         let query = pq_fastscan_runtime_query();
@@ -3924,9 +3924,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_heap_rerank_bytea_source_emits_exact_scores() {
-        let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea";
-        let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea_idx";
+    fn test_pq_fastscan_heap_rerank_bytea_source_emits_exact_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea";
+        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea_idx";
         let (observed, emitted_scores) = pq_fastscan_heap_rerank_runtime_observed_scores(
             table_name,
             index_name,
@@ -3969,11 +3969,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_profile_exact_counters_zero_without_gate() {
+    fn test_pq_fastscan_profile_exact_counters_zero_without_gate() {
         let _lock = env_var_test_lock();
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_profile_approx",
-            "tqhnsw_grouped_v2_runtime_profile_approx_idx",
+            "tqhnsw_pq_fastscan_runtime_profile_approx",
+            "tqhnsw_pq_fastscan_runtime_profile_approx_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -4051,15 +4051,15 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_binary_score_mode_bypasses_grouped_pq_scoring() {
+    fn test_pq_fastscan_binary_score_mode_bypasses_grouped_pq_scoring() {
         let _lock = env_var_test_lock();
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "binary",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_profile_binary_score_mode",
-            "tqhnsw_grouped_v2_runtime_profile_binary_score_mode_idx",
+            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode",
+            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -4138,12 +4138,12 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_quantized_rerank_profile_reports_quantized_only() {
+    fn test_pq_fastscan_quantized_rerank_profile_quantized_only() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_quantized_rerank_profile",
-            "tqhnsw_grouped_v2_runtime_quantized_rerank_profile_idx",
+            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
+            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -4185,7 +4185,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_heap_rerank_profile_reports_heap_only() {
+    fn test_pq_fastscan_heap_rerank_profile_reports_heap_only() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW", "8");
         let _rerank_mode_guard = ScopedEnvVar::set(
@@ -4193,8 +4193,8 @@ mod tests {
             "heap_f32",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_heap_rerank_profile",
-            "tqhnsw_grouped_v2_runtime_heap_rerank_profile_idx",
+            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile",
+            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -4238,7 +4238,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_profile_budgeted_exact_counters() {
+    fn test_pq_fastscan_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4247,8 +4247,8 @@ mod tests {
             "1",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_profile_budgeted_exact",
-            "tqhnsw_grouped_v2_runtime_profile_budgeted_exact_idx",
+            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact",
+            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -4338,7 +4338,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_profile_frontier_head_exact_counters() {
+    fn test_pq_fastscan_runtime_profile_frontier_head_exact_counters() {
         let _lock = env_var_test_lock();
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4351,8 +4351,8 @@ mod tests {
             "frontier_head",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_profile_frontier_head_exact",
-            "tqhnsw_grouped_v2_runtime_profile_frontier_head_exact_idx",
+            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact",
+            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -4441,15 +4441,15 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got \"bogus\""
     )]
-    fn test_grouped_v2_traversal_score_mode_rejects_invalid_env() {
+    fn test_pq_fastscan_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
         let _score_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
             "bogus",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_invalid_score_mode",
-            "tqhnsw_grouped_v2_runtime_invalid_score_mode_idx",
+            "tqhnsw_pq_fastscan_runtime_invalid_score_mode",
+            "tqhnsw_pq_fastscan_runtime_invalid_score_mode_idx",
         );
 
         let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
@@ -4459,13 +4459,13 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got \"bogus\""
     )]
-    fn test_grouped_v2_rerank_mode_rejects_invalid_env() {
+    fn test_pq_fastscan_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
         let _rerank_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE", "bogus");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_grouped_v2_runtime_invalid_rerank_mode",
-            "tqhnsw_grouped_v2_runtime_invalid_rerank_mode_idx",
+            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode",
+            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
         );
 
         let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
@@ -4475,7 +4475,7 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got \"bogus\""
     )]
-    fn test_grouped_v2_exact_traversal_rejects_invalid_scope_env() {
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4485,7 +4485,7 @@ mod tests {
         );
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_exact_scope (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_scope (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -4503,21 +4503,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_exact_scope VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_scope VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_scope_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_scope USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_scope_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_scope USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_exact_scope \
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_scope \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -4528,7 +4528,7 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
     )]
-    fn test_grouped_v2_exact_traversal_rejects_invalid_strategy_env() {
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4542,7 +4542,7 @@ mod tests {
         );
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_exact_strategy (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_strategy (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -4560,21 +4560,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_exact_strategy VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_strategy VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_strategy_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_strategy USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_strategy_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_strategy USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_exact_strategy \
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_strategy \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -4585,7 +4585,7 @@ mod tests {
     #[should_panic(
         expected = "tqhnsw PqFastScan exact traversal limit must be a positive integer, got bogus"
     )]
-    fn test_grouped_v2_exact_traversal_rejects_invalid_limit_env() {
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -4595,7 +4595,7 @@ mod tests {
         );
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_invalid_exact_limit (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_limit (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -4613,21 +4613,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_invalid_exact_limit VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_limit VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_invalid_exact_limit_idx ON tqhnsw_grouped_v2_runtime_invalid_exact_limit USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_limit_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_limit USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_grouped_v2_runtime_invalid_exact_limit \
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_limit \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -4635,11 +4635,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_comparison_summary_matches_emitted_rows() {
+    fn test_pq_fastscan_comparison_summary_matches_rows() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_summary (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_summary (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -4657,20 +4657,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_summary VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_summary_idx ON tqhnsw_grouped_v2_runtime_summary USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_summary_idx ON tqhnsw_pq_fastscan_runtime_summary USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_summary_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -4742,7 +4742,7 @@ mod tests {
                             max_abs_score_delta,
                             mean_signed_score_delta
                          FROM tests.tqhnsw_debug_grouped_scan_comparison_summary(
-                            'tqhnsw_grouped_v2_runtime_summary_idx'::regclass::oid,
+                            'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
                     ),
@@ -4898,11 +4898,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_comparison_rows_report_exact_ranks() {
+    fn test_pq_fastscan_runtime_comparison_rows_report_exact_ranks() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_comparison_rows (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_comparison_rows (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -4920,20 +4920,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_comparison_rows VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_comparison_rows VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_comparison_rows_idx ON tqhnsw_grouped_v2_runtime_comparison_rows USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_comparison_rows_idx ON tqhnsw_pq_fastscan_runtime_comparison_rows USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_comparison_rows_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -5039,7 +5039,7 @@ mod tests {
                             exact_rank,
                             exact_rank_shift
                          FROM tests.tqhnsw_debug_grouped_scan_comparison_rows(
-                            'tqhnsw_grouped_v2_runtime_comparison_rows_idx'::regclass::oid,
+                            'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid,
                             {query_literal}
                          )
                          ORDER BY approx_rank"
@@ -5173,11 +5173,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_order_drift_summary_matches_rows() {
+    fn test_pq_fastscan_order_drift_summary_matches_rows() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_order_drift_summary (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_order_drift_summary (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -5195,20 +5195,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_order_drift_summary VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_order_drift_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_order_drift_summary_idx ON tqhnsw_grouped_v2_runtime_order_drift_summary USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_order_drift_summary_idx ON tqhnsw_pq_fastscan_runtime_order_drift_summary USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_order_drift_summary_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -5310,7 +5310,7 @@ mod tests {
                             window_4_contains_exact_best,
                             window_8_contains_exact_best
                          FROM tests.tqhnsw_debug_grouped_scan_order_drift_summary(
-                            'tqhnsw_grouped_v2_runtime_order_drift_summary_idx'::regclass::oid,
+                            'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
                     ),
@@ -5534,11 +5534,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_windowed_rows_match_simulation() {
+    fn test_pq_fastscan_windowed_rows_match_simulation() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_rows (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_rows (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -5556,20 +5556,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_windowed_rows VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_rows VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_rows_idx ON tqhnsw_grouped_v2_runtime_windowed_rows USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_rows_idx ON tqhnsw_pq_fastscan_runtime_windowed_rows USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_windowed_rows_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -5638,7 +5638,7 @@ mod tests {
                             exact_rank_shift,
                             windowed_rank_shift
                          FROM tests.tqhnsw_debug_grouped_scan_windowed_rows(
-                            'tqhnsw_grouped_v2_runtime_windowed_rows_idx'::regclass::oid,
+                            'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid,
                             {query_literal},
                             4
                          )
@@ -5712,7 +5712,7 @@ mod tests {
         });
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_live_window (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_live_window (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -5742,20 +5742,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_live_window VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_live_window VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_live_window_idx ON tqhnsw_grouped_v2_runtime_live_window USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_live_window_idx ON tqhnsw_pq_fastscan_runtime_live_window USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_live_window_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_live_window_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -5859,17 +5859,17 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_live_window_matches_windowed_simulation() {
+    fn test_pq_fastscan_live_window_matches_simulation() {
         assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(4, false);
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_live_window_respects_window_env() {
+    fn test_pq_fastscan_runtime_live_window_respects_window_env() {
         assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(8, true);
     }
 
     #[pg_test]
-    fn test_grouped_v2_runtime_live_window_supports_higher_window_env() {
+    fn test_pq_fastscan_runtime_live_window_supports_higher_window_env() {
         assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(32, true);
     }
 
@@ -5969,11 +5969,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_grouped_v2_windowed_summary_matches_rows() {
+    fn test_pq_fastscan_windowed_summary_matches_rows() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_runtime_windowed_summary (
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_summary (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -5991,20 +5991,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_runtime_windowed_summary VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_runtime_windowed_summary_idx ON tqhnsw_grouped_v2_runtime_windowed_summary USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_summary_idx ON tqhnsw_pq_fastscan_runtime_windowed_summary USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_runtime_windowed_summary_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -6154,7 +6154,7 @@ mod tests {
                             spearman_rank_correlation_before,
                             spearman_rank_correlation_after
                          FROM tests.tqhnsw_debug_grouped_scan_windowed_summary(
-                            'tqhnsw_grouped_v2_runtime_windowed_summary_idx'::regclass::oid,
+                            'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid,
                             {query_literal},
                             4
                          )"
