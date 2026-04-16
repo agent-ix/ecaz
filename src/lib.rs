@@ -2775,11 +2775,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_experimental_grouped_v2_source_build_writes_grouped_pages() {
+    fn test_tqhnsw_pq_fastscan_source_build_writes_grouped_pages() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_grouped_v2_source_build (
+            "CREATE TABLE tqhnsw_pq_fastscan_source_build (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -2797,25 +2797,25 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_grouped_v2_source_build VALUES \
+                "INSERT INTO tqhnsw_pq_fastscan_source_build VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_grouped_v2_source_build_idx ON tqhnsw_grouped_v2_source_build USING tqhnsw \
+            "CREATE INDEX tqhnsw_pq_fastscan_source_build_idx ON tqhnsw_pq_fastscan_source_build USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_grouped_v2_source_build_idx'::regclass::oid",
+            "SELECT 'tqhnsw_pq_fastscan_source_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let reloptions = Spi::get_one::<Vec<String>>(
-            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_grouped_v2_source_build_idx'::regclass",
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_pq_fastscan_source_build_idx'::regclass",
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
@@ -2898,8 +2898,109 @@ mod tests {
             .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)));
         assert!(
             grouped_hot_tids.contains(&metadata.entry_point),
-            "entry point should identify a grouped hot tuple under the experimental ADR-030 v2 build gate"
+            "entry point should identify a grouped hot tuple for a PqFastScan build"
         );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_turboquant_storage_format_build_writes_scalar_pages() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_turboquant_storage_build (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 7 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_turboquant_storage_build VALUES \
+                 ({id}, encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_turboquant_storage_build_idx ON tqhnsw_turboquant_storage_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_turboquant_storage_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_turboquant_storage_build_idx'::regclass",
+        )
+        .expect("SPI query should succeed")
+        .expect("reloptions should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (decoded_metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(16, 4));
+
+        assert_eq!(decoded_metadata, metadata);
+        assert!(reloptions.contains(&"storage_format=turboquant".to_string()));
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V1_SCALAR);
+        assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
+        assert_eq!(
+            metadata.search_codec_kind,
+            am::page::SearchCodecKind::ScalarQuantized
+        );
+        assert_eq!(metadata.rerank_codec_kind, am::page::RerankCodecKind::None);
+        assert_eq!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+        assert_eq!(metadata.search_subvector_count, 0);
+        assert_eq!(metadata.search_subvector_dim, 0);
+        assert_eq!(elements.len(), 16);
+        assert_eq!(neighbors.len(), 16);
+        assert!(
+            elements.iter().any(|(tid, _)| *tid == metadata.entry_point),
+            "entry point should identify a scalar element tuple for a TurboQuant build",
+        );
+        assert!(elements
+            .iter()
+            .all(|(_, element)| element.heaptids.len() == 1));
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .collect::<Vec<_>>();
+        let scalar_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+        let grouped_hot_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG))
+            .count();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let codebook_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(scalar_count, 16);
+        assert_eq!(neighbor_count, 16);
+        assert_eq!(grouped_hot_count, 0);
+        assert_eq!(rerank_count, 0);
+        assert_eq!(codebook_count, 0);
     }
 
     #[pg_test]
