@@ -36,6 +36,13 @@ pub(super) enum StorageFormat {
 impl StorageFormat {
     pub(super) const DEFAULT: Self = Self::TurboQuant;
 
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::TurboQuant => "turboquant",
+            Self::PqFastScan => "pq_fastscan",
+        }
+    }
+
     fn parse_reloption(raw: &str) -> Result<Self, String> {
         match raw {
             "turboquant" => Ok(Self::TurboQuant),

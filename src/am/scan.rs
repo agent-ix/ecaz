@@ -740,8 +740,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
-            let graph_storage =
-                validate_runtime_scan_format(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
+            let graph_storage = validate_runtime_scan_format((*scan).indexRelation, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -893,9 +893,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
 }
 
 fn validate_runtime_scan_format(
+    index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<graph::GraphStorageDescriptor, String> {
-    graph::GraphStorageDescriptor::from_metadata(metadata)
+    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
 }
 
 fn pq_fastscan_env_var(canonical: &str, legacy: &str) -> Option<std::ffi::OsString> {
@@ -5795,7 +5796,7 @@ mod tests {
         };
 
         assert_eq!(
-            validate_runtime_scan_format(&metadata).unwrap(),
+            graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
             graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,

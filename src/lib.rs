@@ -8601,6 +8601,30 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_requires_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_guard";
+        let index_name = "tqhnsw_storage_format_reindex_guard_idx";
+        let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let query = format_recall_vector_sql_literal(&runtime_fixture_embedding(1));
+        let _ = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query} \
+             LIMIT 1"
+        ))
+        .expect("ordered scan should reach amrescan before rejecting a storage-format mismatch");
+    }
+
+    #[pg_test]
     fn test_tqhnsw_pq_fastscan_reloption_round_trip() {
         let _lock = env_var_test_lock();
 

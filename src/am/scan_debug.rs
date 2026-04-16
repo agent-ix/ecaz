@@ -1930,7 +1930,8 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let grouped_results = matches!(
-        graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap_or_else(|e| {
+        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
+            .unwrap_or_else(|e| {
             pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")
         }),
         graph::GraphStorageDescriptor::PqFastScan(_)

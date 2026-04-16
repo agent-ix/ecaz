@@ -5,7 +5,7 @@ use std::ptr;
 use hashbrown::HashSet;
 use pgrx::pg_sys;
 
-use super::{page, search};
+use super::{options, page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +22,23 @@ pub(crate) enum GraphStorageDescriptor {
 }
 
 impl GraphStorageDescriptor {
+    pub(crate) unsafe fn from_index_relation(
+        index_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
+    ) -> Result<Self, String> {
+        let descriptor = Self::from_metadata(metadata)?;
+        let expected = unsafe { options::relation_options(index_relation) }.storage_format;
+        if descriptor.matches_storage_format(expected) {
+            return Ok(descriptor);
+        }
+
+        Err(format!(
+            "tqhnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
+            expected.as_str(),
+            descriptor.storage_format_name(),
+        ))
+    }
+
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
         match metadata.graph_storage_format()? {
             page::GraphStorageFormat::TurboQuant => Ok(Self::TurboQuant {
@@ -99,6 +116,21 @@ impl GraphStorageDescriptor {
                 }))
             }
         }
+    }
+
+    fn storage_format_name(self) -> &'static str {
+        match self {
+            Self::TurboQuant { .. } => options::StorageFormat::TurboQuant.as_str(),
+            Self::PqFastScan(_) => options::StorageFormat::PqFastScan.as_str(),
+        }
+    }
+
+    fn matches_storage_format(self, storage_format: options::StorageFormat) -> bool {
+        matches!(
+            (self, storage_format),
+            (Self::TurboQuant { .. }, options::StorageFormat::TurboQuant)
+                | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
+        )
     }
 }
 

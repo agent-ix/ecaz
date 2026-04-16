@@ -146,7 +146,7 @@ pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
 
 pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> usize {
     let metadata = unsafe { read_metadata_page(index_relation) };
-    let storage = graph::GraphStorageDescriptor::from_metadata(&metadata)
+    let storage = unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)

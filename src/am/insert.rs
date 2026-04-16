@@ -391,7 +391,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             let heap_tid = shared::decode_heap_tid(heap_tid);
             let options = options::relation_options(index_relation);
             let metadata_snapshot = shared::read_metadata_page(index_relation);
-            let format = resolve_insert_format_adapter(&metadata_snapshot)
+            let format = resolve_insert_format_adapter(index_relation, &metadata_snapshot)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let tuple;
             let mut metric;
@@ -426,9 +426,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
 }
 
 fn resolve_insert_format_adapter(
+    index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
 ) -> Result<InsertFormatAdapter, String> {
-    match graph::GraphStorageDescriptor::from_metadata(metadata)? {
+    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(InsertFormatAdapter::TurboQuant { code_len })
         }
@@ -2137,23 +2138,30 @@ mod tests {
 
     #[test]
     fn resolve_insert_format_adapter_accepts_scalar_v1() {
+        let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 64,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        });
+        let format = match graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                InsertFormatAdapter::TurboQuant { code_len }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                InsertFormatAdapter::PqFastScan(layout)
+            }
+        };
         assert_eq!(
-            resolve_insert_format_adapter(&page::MetadataPage::current_v1_scalar(
-                page::CurrentFormatMetadata {
-                    m: 8,
-                    ef_construction: 64,
-                    entry_point: page::ItemPointer::INVALID,
-                    dimensions: 16,
-                    bits: 4,
-                    max_level: 0,
-                    seed: 42,
-                    inserted_since_rebuild: 0,
-                    persisted_binary_sidecar: false,
-                },
-            )),
-            Ok(InsertFormatAdapter::TurboQuant {
+            format,
+            InsertFormatAdapter::TurboQuant {
                 code_len: crate::code_len(16, 4),
-            })
+            }
         );
     }
 
@@ -2179,14 +2187,22 @@ mod tests {
             search_subvector_dim: 16,
             grouped_codebook_head: tid(1, 2),
         };
+        let format = match graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                InsertFormatAdapter::TurboQuant { code_len }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                InsertFormatAdapter::PqFastScan(layout)
+            }
+        };
 
         assert_eq!(
-            resolve_insert_format_adapter(&metadata),
-            Ok(InsertFormatAdapter::PqFastScan(graph::PqFastScanLayout {
+            format,
+            InsertFormatAdapter::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,
                 rerank_code_len: crate::code_len(16, 4),
-            }))
+            })
         );
     }
 
