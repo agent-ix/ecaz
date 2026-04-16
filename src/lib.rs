@@ -3411,11 +3411,29 @@ mod tests {
 
     type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
 
-    fn create_grouped_v2_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+    #[pg_extern]
+    fn tqhnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn create_grouped_v2_runtime_fixture_internal(
+        table_name: &str,
+        index_name: &str,
+        include_source_raw: bool,
+    ) -> pg_sys::Oid {
+        let source_raw_column = if include_source_raw {
+            ",\n                source_raw bytea"
+        } else {
+            ""
+        };
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
                 id bigint primary key,
-                source real[],
+                source real[]{source_raw_column},
                 embedding tqvector
             )"
         ))
@@ -3430,11 +3448,19 @@ mod tests {
                 .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.02).sin()))
                 .collect::<Vec<_>>()
                 .join(", ");
-            Spi::run(&format!(
-                "INSERT INTO {table_name} VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
-            ))
-            .expect("insert should succeed");
+            let insert_sql = if include_source_raw {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, ARRAY[{source}]::real[], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[{source}]::real[]), \
+                     encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                )
+            };
+            Spi::run(&insert_sql).expect("insert should succeed");
         }
 
         Spi::run(&format!(
@@ -3446,6 +3472,17 @@ mod tests {
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn create_grouped_v2_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_grouped_v2_runtime_fixture_internal(table_name, index_name, false)
+    }
+
+    fn create_grouped_v2_runtime_fixture_with_source_raw(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_grouped_v2_runtime_fixture_internal(table_name, index_name, true)
     }
 
     fn grouped_v2_runtime_query() -> Vec<f32> {
@@ -3489,6 +3526,8 @@ mod tests {
     fn grouped_v2_heap_rerank_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
+        rerank_source_column: Option<&str>,
+        include_source_raw: bool,
     ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
         let _build_guard = ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD", "1");
@@ -3497,7 +3536,17 @@ mod tests {
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
             "heap_f32",
         );
-        let index_oid = create_grouped_v2_runtime_fixture(table_name, index_name);
+        let _source_guard = rerank_source_column.map(|value| {
+            ScopedEnvVar::set(
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+                value,
+            )
+        });
+        let index_oid = if include_source_raw {
+            create_grouped_v2_runtime_fixture_with_source_raw(table_name, index_name)
+        } else {
+            create_grouped_v2_runtime_fixture(table_name, index_name)
+        };
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                 index_oid,
@@ -3547,6 +3596,10 @@ mod tests {
         let _rerank_mode_guard = ScopedEnvVar::set(
             "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
             "heap_f32",
+        );
+        let _rerank_source_guard = ScopedEnvVar::set(
+            "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+            "source_raw",
         );
         let _exact_guard =
             ScopedEnvVar::set("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL", "1");
@@ -3612,6 +3665,16 @@ mod tests {
             "the runtime settings probe should surface the configured grouped rerank mode",
         );
         assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT grouped_scan_rerank_source_column
+                 FROM tests.tqhnsw_debug_adr030_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("source_raw"),
+            "the runtime settings probe should surface the configured grouped rerank source column",
+        );
+        assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT grouped_exact_traversal_enabled
                  FROM tests.tqhnsw_debug_adr030_runtime_settings()"
@@ -3657,7 +3720,7 @@ mod tests {
         let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank";
         let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_idx";
         let (observed, emitted_scores) =
-            grouped_v2_heap_rerank_runtime_observed_scores(table_name, index_name);
+            grouped_v2_heap_rerank_runtime_observed_scores(table_name, index_name, None, false);
         let query = grouped_v2_runtime_query();
         let exact_scores = (1..=16)
             .map(|id| {
@@ -3688,6 +3751,51 @@ mod tests {
                 emitted_scores.get(&heap_tid).copied(),
                 Some(expected),
                 "grouped-v2 heap rerank should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_grouped_v2_heap_rerank_bytea_source_emits_exact_scores() {
+        let table_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea";
+        let index_name = "tqhnsw_grouped_v2_runtime_heap_rerank_bytea_idx";
+        let (observed, emitted_scores) = grouped_v2_heap_rerank_runtime_observed_scores(
+            table_name,
+            index_name,
+            Some("source_raw"),
+            true,
+        );
+        let query = grouped_v2_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &grouped_v2_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "grouped-v2 heap rerank should still emit ordered results with a bytea source override"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "grouped-v2 heap rerank with a bytea source override should attach exact heap comparison scores",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_eq!(
+                comparison_score, expected,
+                "grouped-v2 heap rerank bytea comparison score should match the raw heap f32 inner product"
+            );
+            assert_eq!(
+                emitted_scores.get(&heap_tid).copied(),
+                Some(expected),
+                "grouped-v2 heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
             );
         }
     }
@@ -15156,6 +15264,7 @@ mod tests {
             name!(grouped_scan_window, Option<String>),
             name!(grouped_scan_score_mode, Option<String>),
             name!(grouped_scan_rerank_mode, Option<String>),
+            name!(grouped_scan_rerank_source_column, Option<String>),
             name!(grouped_exact_traversal_enabled, bool),
             name!(grouped_exact_traversal_scope, Option<String>),
             name!(grouped_exact_traversal_strategy, Option<String>),
@@ -15170,6 +15279,8 @@ mod tests {
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE")
+                .map(|value| value.to_string_lossy().into_owned()),
+            std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN")
                 .map(|value| value.to_string_lossy().into_owned()),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL").is_some(),
             std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE")

@@ -8,6 +8,7 @@ Usage:
       [--window 16] \
       [--grouped-score-mode pq|binary] \
       [--rerank-mode quantized|heap_f32] \
+      [--rerank-source-column source_raw] \
       [--exact-scope all|layer0] \
       [--exact-strategy expansion|frontier_head] \
       [--exact-limit N] \
@@ -27,6 +28,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 window="16"
 grouped_score_mode="pq"
 rerank_mode="quantized"
+rerank_source_column=""
 exact_enabled=0
 exact_scope="all"
 exact_strategy="expansion"
@@ -45,6 +47,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --rerank-mode)
             rerank_mode="$2"
+            shift 2
+            ;;
+        --rerank-source-column)
+            rerank_source_column="$2"
             shift 2
             ;;
         --exact-scope)
@@ -100,6 +106,11 @@ printf '[scratch] pgrx_home=%s\n' "${pgrx_home}"
 printf '[scratch] window=%s\n' "${window}"
 printf '[scratch] grouped_score_mode=%s\n' "${grouped_score_mode}"
 printf '[scratch] rerank_mode=%s\n' "${rerank_mode}"
+if [[ -n "${rerank_source_column}" ]]; then
+    printf '[scratch] rerank_source_column=%s\n' "${rerank_source_column}"
+else
+    printf '[scratch] rerank_source_column=build_source_column\n'
+fi
 if [[ "${exact_enabled}" -eq 1 ]]; then
     printf '[scratch] exact_scope=%s\n' "${exact_scope}"
     printf '[scratch] exact_strategy=%s\n' "${exact_strategy}"
@@ -117,6 +128,11 @@ export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN=1
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW="${window}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE="${grouped_score_mode}"
 export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE="${rerank_mode}"
+if [[ -n "${rerank_source_column}" ]]; then
+    export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN="${rerank_source_column}"
+else
+    unset TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN 2>/dev/null || true
+fi
 
 if [[ "${exact_enabled}" -eq 1 ]]; then
     export TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL=1

@@ -155,6 +155,18 @@ BEGIN
         module_path
     );
 
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_pack_f32_bytea"(real[])';
+
+    EXECUTE format(
+        $fmt$
+        CREATE FUNCTION tests."tqhnsw_debug_pack_f32_bytea"(real[])
+        RETURNS bytea
+        LANGUAGE c STRICT
+        AS %L, 'tqhnsw_debug_pack_f32_bytea_wrapper'
+        $fmt$,
+        module_path
+    );
+
     EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_adr030_runtime_settings"()';
 
     EXECUTE format(
@@ -166,6 +178,7 @@ BEGIN
             grouped_scan_window text,
             grouped_scan_score_mode text,
             grouped_scan_rerank_mode text,
+            grouped_scan_rerank_source_column text,
             grouped_exact_traversal_enabled boolean,
             grouped_exact_traversal_scope text,
             grouped_exact_traversal_strategy text,

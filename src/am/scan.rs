@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
-use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, PgTupleDesc};
 
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
@@ -26,6 +26,8 @@ const ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
 const ADR030_EXPERIMENTAL_RERANK_MODE_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE";
+const ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
@@ -1113,6 +1115,22 @@ unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: 
     attnum
 }
 
+unsafe fn resolve_source_attribute(
+    heap_relation: pg_sys::Relation,
+    source_column: &str,
+    source_label: &str,
+) -> (i32, pg_sys::Oid) {
+    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
+    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let att = tuple_desc
+        .get(source_attnum as usize - 1)
+        .expect("resolved scan source attribute should exist");
+    if att.attisdropped {
+        pgrx::error!("tqhnsw {source_label} \"{source_column}\" references a dropped column");
+    }
+    (source_attnum, att.atttypid)
+}
+
 unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
     if !opaque.grouped_heap_rerank_slot.is_null() {
         unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.grouped_heap_rerank_slot) };
@@ -1134,6 +1152,7 @@ unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
     opaque.grouped_heap_rerank_relation = ptr::null_mut();
     opaque.grouped_heap_rerank_relation_owned = false;
     opaque.grouped_heap_rerank_source_attnum = 0;
+    opaque.grouped_heap_rerank_source_type_oid = pg_sys::InvalidOid;
 }
 
 unsafe fn configure_grouped_heap_rerank_state(
@@ -1155,14 +1174,31 @@ unsafe fn configure_grouped_heap_rerank_state(
         return;
     }
 
-    let source_column = index_options.build_source_column.as_deref().unwrap_or_else(|| {
-        pgrx::error!(
-            "tqhnsw grouped-v2 heap-f32 rerank requires build_source_column to name a raw real[] heap column"
-        )
+    let source_column_override = std::env::var_os(ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV)
+        .map(|value| value.to_string_lossy().into_owned());
+    let source_label = if source_column_override.is_some() {
+        ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV
+    } else {
+        "build_source_column"
+    };
+    let source_column = source_column_override.unwrap_or_else(|| {
+        index_options.build_source_column.clone().unwrap_or_else(|| {
+            pgrx::error!(
+                "tqhnsw grouped-v2 heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
+                ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV
+            )
+        })
     });
     let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
     let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
+    let (source_attnum, source_type_oid) =
+        unsafe { resolve_source_attribute(heap_relation, &source_column, source_label) };
+    if source_type_oid != pg_sys::FLOAT4ARRAYOID && source_type_oid != pg_sys::BYTEAOID {
+        pgrx::error!(
+            "tqhnsw {source_label} \"{source_column}\" must be real[] or bytea for grouped-v2 heap-f32 rerank, got type oid {}",
+            u32::from(source_type_oid)
+        );
+    }
     let slot = unsafe {
         pg_sys::MakeSingleTupleTableSlot(
             (*heap_relation).rd_att,
@@ -1188,6 +1224,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     opaque.grouped_heap_rerank_slot = slot;
     opaque.grouped_heap_rerank_source_attnum =
         i16::try_from(source_attnum).expect("heap rerank source attnum should fit in i16");
+    opaque.grouped_heap_rerank_source_type_oid = source_type_oid;
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -1372,6 +1409,84 @@ impl Drop for FlatFloat4ArrayRef {
     fn drop(&mut self) {
         if self.owned {
             unsafe { pg_sys::pfree(self.array_ptr.cast()) };
+        }
+    }
+}
+
+struct FlatFloat4ByteaRef {
+    varlena_ptr: *mut pg_sys::varlena,
+    owned: bool,
+    data_ptr: *const f32,
+    len: usize,
+}
+
+impl FlatFloat4ByteaRef {
+    unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
+        if datum.is_null() {
+            pgrx::error!("tqhnsw does not support NULL {label}");
+        }
+
+        let original = datum
+            .cast_mut_ptr::<std::ffi::c_void>()
+            .cast::<pg_sys::varlena>();
+        let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
+        if varlena.is_null() {
+            pgrx::error!("tqhnsw could not detoast {label}");
+        }
+        let owned = !ptr::eq(varlena, original);
+        let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) };
+        if bytes.len() % std::mem::size_of::<f32>() != 0 {
+            pgrx::error!("tqhnsw {label} bytea payload length must be a multiple of 4 bytes");
+        }
+        let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
+        if !prefix.is_empty() || !suffix.is_empty() {
+            pgrx::error!("tqhnsw {label} bytea payload is not aligned for float4 access");
+        }
+
+        Self {
+            varlena_ptr: varlena,
+            owned,
+            data_ptr: body.as_ptr(),
+            len: body.len(),
+        }
+    }
+
+    fn as_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.data_ptr, self.len) }
+    }
+}
+
+impl Drop for FlatFloat4ByteaRef {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { pg_sys::pfree(self.varlena_ptr.cast()) };
+        }
+    }
+}
+
+enum FlatFloat4SourceRef {
+    Array(FlatFloat4ArrayRef),
+    Bytea(FlatFloat4ByteaRef),
+}
+
+impl FlatFloat4SourceRef {
+    unsafe fn from_datum(datum: pg_sys::Datum, type_oid: pg_sys::Oid, label: &str) -> Self {
+        match type_oid {
+            pg_sys::FLOAT4ARRAYOID => {
+                Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
+            }
+            pg_sys::BYTEAOID => Self::Bytea(unsafe { FlatFloat4ByteaRef::from_datum(datum, label) }),
+            _ => pgrx::error!(
+                "tqhnsw {label} must be real[] or bytea for grouped-v2 heap-f32 rerank, got type oid {}",
+                u32::from(type_oid)
+            ),
+        }
+    }
+
+    fn as_slice(&self) -> &[f32] {
+        match self {
+            Self::Array(array) => array.as_slice(),
+            Self::Bytea(bytea) => bytea.as_slice(),
         }
     }
 }
@@ -1981,7 +2096,11 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         )
     };
     let source = unsafe {
-        FlatFloat4ArrayRef::from_datum(source_datum, "grouped-v2 heap rerank source vector")
+        FlatFloat4SourceRef::from_datum(
+            source_datum,
+            opaque.grouped_heap_rerank_source_type_oid,
+            "grouped-v2 heap rerank source vector",
+        )
     };
     #[cfg(any(test, feature = "pg_test"))]
     let decode_elapsed_us =
@@ -4351,6 +4470,7 @@ pub(super) struct TqScanOpaque {
     grouped_heap_rerank_snapshot_owned: bool,
     grouped_heap_rerank_slot: *mut pg_sys::TupleTableSlot,
     grouped_heap_rerank_source_attnum: i16,
+    grouped_heap_rerank_source_type_oid: pg_sys::Oid,
     grouped_exact_traversal_mode: GroupedExactTraversalMode,
     grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
     grouped_exact_traversal_limit: u8,
@@ -4411,6 +4531,7 @@ impl Default for TqScanOpaque {
             grouped_heap_rerank_snapshot_owned: false,
             grouped_heap_rerank_slot: ptr::null_mut(),
             grouped_heap_rerank_source_attnum: 0,
+            grouped_heap_rerank_source_type_oid: pg_sys::InvalidOid,
             grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
             grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
             grouped_exact_traversal_limit: 0,
