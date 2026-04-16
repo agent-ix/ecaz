@@ -3052,9 +3052,8 @@ mod tests {
             }
         };
 
-        let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "test_pq_fastscan_graph_reads")
-        };
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "test_pq_fastscan_graph_reads") };
 
         unsafe {
             am::graph::with_graph_storage_tuple(
@@ -7522,6 +7521,10 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_insert_appends_to_built_pq_fastscan_index() {
         let _lock = env_var_test_lock();
+        let inserted_query = vec![
+            0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
+            -0.2,
+        ];
 
         Spi::run(
             "CREATE TABLE tqhnsw_insert_pq_fastscan_live (
@@ -7681,6 +7684,23 @@ mod tests {
         assert_ne!(new_hot.reranktid, am::page::ItemPointer::INVALID);
         assert_eq!(rerank.code.len(), layout.rerank_code_len);
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+        let ctid_to_id = ctid_id_map("tqhnsw_insert_pq_fastscan_live");
+        let observed_ids = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone())
+        }
+        .into_iter()
+        .map(|(heap_tid, _score)| {
+            *ctid_to_id
+                .get(&heap_tid)
+                .expect("inserted-row query heap tid should map back to a table row")
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            observed_ids.first().copied(),
+            Some(17),
+            "querying the inserted embedding should rank the new PqFastScan row first",
+        );
     }
 
     #[pg_test]
@@ -7907,6 +7927,25 @@ mod tests {
             .expect(
                 "fixture should expose at least one grouped hot tuple with inbound neighbor refs",
             );
+        let deleted_query = (0_i64..16_i64)
+            .map(|dim| (((deleted_row_id * 29 + dim) as f32) * 0.02).sin())
+            .collect::<Vec<_>>();
+        let ctid_to_id = ctid_id_map(table_name);
+        let observed_before_ids = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone())
+        }
+        .into_iter()
+        .map(|(heap_tid, _score)| {
+            *ctid_to_id
+                .get(&heap_tid)
+                .expect("pre-vacuum heap tid should map back to a table row")
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            observed_before_ids.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "before vacuum, querying the deleted row's embedding should rank that row first",
+        );
 
         Spi::run(&format!(
             "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
@@ -7934,6 +7973,26 @@ mod tests {
             count_neighbor_refs(&neighbors_after, deleted_element_tid),
             0,
             "pass 2 should remove every persisted neighbor ref to the deleted grouped hot tuple",
+        );
+
+        let observed_after_ids =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query) }
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("post-vacuum heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
+        assert!(
+            !observed_after_ids.is_empty(),
+            "vacuumed PqFastScan index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_ids.contains(
+                &usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")
+            ),
+            "vacuumed PqFastScan scan results should no longer surface the deleted row",
         );
     }
 
