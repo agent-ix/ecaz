@@ -7,8 +7,8 @@ use super::{build, graph, options, page, search, shared, source, wal};
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
 const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
-const ADR030_GROUPED_V2_INSERT_UNSUPPORTED: &str =
-    "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet";
+const PQ_FASTSCAN_INSERT_UNSUPPORTED: &str =
+    "tqhnsw aminsert does not support PqFastScan indexes yet";
 
 #[derive(Debug)]
 enum InsertSearchMetric {
@@ -243,7 +243,7 @@ impl InsertSearchMetric {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InsertFormatAdapter {
     TurboQuant { code_len: usize },
-    PqFastScan(graph::GroupedGraphLayout),
+    PqFastScan(graph::PqFastScanLayout),
 }
 
 impl InsertFormatAdapter {
@@ -276,7 +276,7 @@ impl InsertFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
             }
         }
     }
@@ -303,7 +303,7 @@ impl InsertFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
             }
         }
     }
@@ -321,7 +321,7 @@ impl InsertFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
             }
         }
     }
@@ -353,7 +353,7 @@ impl InsertFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_INSERT_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_INSERT_UNSUPPORTED}")
             }
         }
     }
@@ -412,10 +412,10 @@ fn resolve_insert_format_adapter(
     metadata: &page::MetadataPage,
 ) -> Result<InsertFormatAdapter, String> {
     match graph::GraphStorageDescriptor::from_metadata(metadata)? {
-        graph::GraphStorageDescriptor::ScalarV1 { code_len } => {
+        graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(InsertFormatAdapter::TurboQuant { code_len })
         }
-        graph::GraphStorageDescriptor::GroupedV2(layout) => {
+        graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(InsertFormatAdapter::PqFastScan(layout))
         }
     }
@@ -1633,7 +1633,7 @@ mod tests {
 
         assert_eq!(
             resolve_insert_format_adapter(&metadata),
-            Ok(InsertFormatAdapter::PqFastScan(graph::GroupedGraphLayout {
+            Ok(InsertFormatAdapter::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,
                 rerank_code_len: crate::code_len(16, 4),

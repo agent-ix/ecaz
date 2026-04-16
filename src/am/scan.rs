@@ -35,10 +35,10 @@ const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT";
 const ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
-const ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
-const ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW: usize = 64;
-const GROUPED_EXACT_SCORE_UNAVAILABLE: &str =
-    "tqhnsw grouped exact scoring requires the grouped cold rerank payload path";
+const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 4;
+const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
+const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
+    "tqhnsw PqFastScan exact scoring requires the cold rerank payload path";
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -377,8 +377,8 @@ struct GroupedScoreShape {
 impl GroupedScoreShape {
     fn from_scan_graph_storage(scan_graph_storage: graph::GraphStorageDescriptor) -> Option<Self> {
         match scan_graph_storage {
-            graph::GraphStorageDescriptor::ScalarV1 { .. } => None,
-            graph::GraphStorageDescriptor::GroupedV2(layout) => Some(Self {
+            graph::GraphStorageDescriptor::TurboQuant { .. } => None,
+            graph::GraphStorageDescriptor::PqFastScan(layout) => Some(Self {
                 binary_word_count: layout.binary_word_count,
                 search_code_len: layout.search_code_len,
                 rerank_code_len: layout.rerank_code_len,
@@ -758,17 +758,17 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             opaque.scan_graph_storage = graph_storage;
             opaque.grouped_live_rerank_window = if matches!(
                 opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::GroupedV2(_)
+                graph::GraphStorageDescriptor::PqFastScan(_)
             ) {
                 u8::try_from(resolve_grouped_live_rerank_window())
                     .expect("grouped live rerank window should fit in u8")
             } else {
-                u8::try_from(ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW)
+                u8::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
                     .expect("default grouped live rerank window should fit in u8")
             };
             opaque.grouped_traversal_score_mode = if matches!(
                 opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::GroupedV2(_)
+                graph::GraphStorageDescriptor::PqFastScan(_)
             ) {
                 resolve_grouped_traversal_score_mode()
             } else {
@@ -776,7 +776,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             };
             opaque.grouped_exact_traversal_mode = if matches!(
                 opaque.scan_graph_storage,
-                graph::GraphStorageDescriptor::GroupedV2(_)
+                graph::GraphStorageDescriptor::PqFastScan(_)
             ) {
                 resolve_grouped_exact_traversal_mode()
             } else {
@@ -899,7 +899,7 @@ fn resolve_grouped_traversal_score_mode() -> GroupedTraversalScoreMode {
         "pq" => GroupedTraversalScoreMode::GroupedPq,
         "binary" => GroupedTraversalScoreMode::Binary,
         other => pgrx::error!(
-            "tqhnsw grouped-v2 traversal score mode must be one of [pq, binary], got {:?}",
+            "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got {:?}",
             other
         ),
     }
@@ -918,7 +918,7 @@ fn resolve_grouped_rerank_mode() -> GroupedRerankMode {
         "quantized" => GroupedRerankMode::Quantized,
         "heap_f32" => GroupedRerankMode::HeapF32,
         other => pgrx::error!(
-            "tqhnsw grouped-v2 rerank mode must be one of [quantized, heap_f32], got {:?}",
+            "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got {:?}",
             other
         ),
     }
@@ -941,7 +941,7 @@ fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
         "all" => GroupedExactTraversalMode::AllLayers,
         "layer0" => GroupedExactTraversalMode::Layer0Only,
         other => pgrx::error!(
-            "tqhnsw grouped-v2 exact traversal scope must be one of [all, layer0], got {:?}",
+            "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got {:?}",
             other
         ),
     }
@@ -968,13 +968,13 @@ fn resolve_grouped_exact_traversal_strategy(
         "frontier_head" => {
             if mode != GroupedExactTraversalMode::Layer0Only {
                 pgrx::error!(
-                    "tqhnsw grouped-v2 exact traversal strategy frontier_head requires scope layer0"
+                    "tqhnsw PqFastScan exact traversal strategy frontier_head requires scope layer0"
                 );
             }
             GroupedExactTraversalStrategy::FrontierHead
         }
         other => pgrx::error!(
-            "tqhnsw grouped-v2 exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
+            "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
             other
         ),
     }
@@ -988,13 +988,13 @@ fn resolve_grouped_exact_traversal_limit() -> u8 {
     let raw_limit = raw_limit.to_string_lossy();
     let parsed_limit = raw_limit.parse::<u8>().unwrap_or_else(|_| {
         pgrx::error!(
-            "tqhnsw grouped-v2 exact traversal limit must be a positive integer, got {}",
+            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
             raw_limit
         )
     });
     if parsed_limit == 0 {
         pgrx::error!(
-            "tqhnsw grouped-v2 exact traversal limit must be a positive integer, got {}",
+            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
             raw_limit
         );
     }
@@ -1033,21 +1033,21 @@ fn grouped_exact_traversal_frontier_head_enabled(opaque: &TqScanOpaque) -> bool 
 
 fn resolve_grouped_live_rerank_window() -> usize {
     let Some(raw_window) = std::env::var_os(ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV) else {
-        return ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW;
+        return PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW;
     };
 
     let raw_window = raw_window.to_string_lossy();
     let parsed_window = raw_window.parse::<usize>().unwrap_or_else(|_| {
         pgrx::error!(
-            "tqhnsw grouped-v2 live rerank window must be an integer between 1 and {}, got {:?}",
-            ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW,
+            "tqhnsw PqFastScan live rerank window must be an integer between 1 and {}, got {:?}",
+            PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
             raw_window
         )
     });
-    if !(1..=ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW).contains(&parsed_window) {
+    if !(1..=PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW).contains(&parsed_window) {
         pgrx::error!(
-            "tqhnsw grouped-v2 live rerank window must be between 1 and {}, got {}",
-            ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW,
+            "tqhnsw PqFastScan live rerank window must be between 1 and {}, got {}",
+            PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
             parsed_window
         );
     }
@@ -1061,7 +1061,7 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Re
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank could not resolve heap relation");
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve heap relation");
     }
     (
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
@@ -1081,7 +1081,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapsho
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
-        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank could not resolve an active snapshot");
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve an active snapshot");
     }
     (registered_snapshot, true)
 }
@@ -1118,7 +1118,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     unsafe { free_grouped_heap_rerank_state(opaque) };
     opaque.grouped_rerank_mode = if matches!(
         opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::GroupedV2(_)
+        graph::GraphStorageDescriptor::PqFastScan(_)
     ) {
         resolve_grouped_rerank_mode()
     } else {
@@ -1139,7 +1139,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     let source_column = source_column_override.unwrap_or_else(|| {
         index_options.build_source_column.clone().unwrap_or_else(|| {
             pgrx::error!(
-                "tqhnsw grouped-v2 heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
+                "tqhnsw PqFastScan heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
                 ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV
             )
         })
@@ -1157,7 +1157,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     let slot = unsafe {
         source::allocate_heap_slot(
             heap_relation,
-            "tqhnsw grouped-v2 heap-f32 rerank failed to allocate a heap tuple slot",
+            "tqhnsw PqFastScan heap-f32 rerank failed to allocate a heap tuple slot",
         )
     };
 
@@ -1299,7 +1299,7 @@ fn store_scan_prepared_query(
     opaque.cached_quantizer = Arc::into_raw(quantizer);
     if grouped_binary_traversal_score_enabled(opaque) && opaque.binary_sign_query.is_null() {
         pgrx::error!(
-            "tqhnsw grouped-v2 binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
+            "tqhnsw PqFastScan binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
         );
     }
     if cache_hit {
@@ -1366,12 +1366,14 @@ unsafe fn store_grouped_scan_query(
 ) {
     if !matches!(
         opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::GroupedV2(_)
+        graph::GraphStorageDescriptor::PqFastScan(_)
     ) {
         return;
     }
     if opaque.prepared_query.is_null() {
-        pgrx::error!("tqhnsw grouped-v2 scan cannot prepare grouped query state without a query");
+        pgrx::error!(
+            "tqhnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
+        );
     }
     let prepared_query = unsafe { &*opaque.prepared_query };
     let grouped_prepared =
@@ -1633,7 +1635,7 @@ unsafe fn score_cached_graph_element_from_storage(
                 }
                 let (gamma, code_bytes) = element
                     .exact_payload()
-                    .unwrap_or_else(|| pgrx::error!("{GROUPED_EXACT_SCORE_UNAVAILABLE}"));
+                    .unwrap_or_else(|| pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}"));
                 score_and_cache_scan_element(opaque_ref, element_tid, gamma, code_bytes)
             },
         )
@@ -1663,7 +1665,7 @@ unsafe fn exact_score_cached_graph_element(
             }
         }
         LoadedElementState::ExactUnavailable => {
-            pgrx::error!("{GROUPED_EXACT_SCORE_UNAVAILABLE}")
+            pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}")
         }
         LoadedElementState::None => {
             let opaque_ref = unsafe { &mut *opaque };
@@ -1749,7 +1751,7 @@ unsafe fn load_grouped_score_rerank_payload<'a>(
         graph::load_grouped_rerank_payload(
             index_relation,
             payload.reranktid,
-            graph::GroupedGraphLayout {
+            graph::PqFastScanLayout {
                 binary_word_count: payload.binary_words.len(),
                 search_code_len: payload.search_code.len(),
                 rerank_code_len: payload.rerank_code_len,
@@ -1795,7 +1797,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         || opaque.grouped_heap_rerank_slot.is_null()
         || opaque.grouped_heap_rerank_source_attnum <= 0
     {
-        pgrx::error!("tqhnsw grouped-v2 heap-f32 rerank is missing heap fetch state");
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank is missing heap fetch state");
     }
 
     let source_attribute = source::SourceAttribute {
@@ -1810,7 +1812,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             heap_tid,
             opaque.grouped_heap_rerank_snapshot,
             opaque.grouped_heap_rerank_slot,
-            "grouped-v2 heap rerank source vector",
+            "PqFastScan heap rerank source vector",
         )
     };
     #[cfg(any(test, feature = "pg_test"))]
@@ -1826,10 +1828,10 @@ unsafe fn score_grouped_heap_source_from_scan_state(
             source::required_slot_datum(
                 opaque.grouped_heap_rerank_slot,
                 source_attribute.attnum,
-                "grouped-v2 heap rerank source vector",
+                "PqFastScan heap rerank source vector",
             ),
             source_attribute.type_oid,
-            "grouped-v2 heap rerank source vector",
+            "PqFastScan heap rerank source vector",
         )
     };
     #[cfg(any(test, feature = "pg_test"))]
@@ -1891,7 +1893,7 @@ unsafe fn exact_score_grouped_candidate_context(
 
     let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
         .unwrap_or_else(|| {
-            pgrx::error!("tqhnsw grouped-v2 exact scoring requires metadata-aligned cold payload")
+            pgrx::error!("tqhnsw PqFastScan exact scoring requires metadata-aligned cold payload")
         });
     unsafe {
         score_and_cache_scan_element(
@@ -1943,8 +1945,9 @@ unsafe fn score_grouped_search_code_from_scan_state(
     search_code: &[u8],
 ) -> f32 {
     let opaque = unsafe { &*opaque };
-    let prepared_query = grouped_scan_query(opaque)
-        .unwrap_or_else(|| pgrx::error!("tqhnsw grouped-v2 scan is missing grouped query state"));
+    let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
+        pgrx::error!("tqhnsw PqFastScan scan is missing PqFastScan query state")
+    });
     score_grouped_search_code_result(prepared_query, search_code)
 }
 
@@ -2032,7 +2035,7 @@ unsafe fn score_grouped_candidate_context_binary(
     );
     let opaque = unsafe { &*opaque };
     let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
-        pgrx::error!("tqhnsw grouped-v2 binary traversal scoring requires a prepared binary query")
+        pgrx::error!("tqhnsw PqFastScan binary traversal scoring requires a prepared binary query")
     });
     let quantizer = unsafe { &*opaque.cached_quantizer };
     -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
@@ -2614,7 +2617,7 @@ fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
 fn grouped_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
     matches!(
         opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::GroupedV2(_)
+        graph::GraphStorageDescriptor::PqFastScan(_)
     )
 }
 
@@ -4188,8 +4191,7 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
-    grouped_live_rerank_buffer:
-        [BufferedGroupedScanResult; ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
+    grouped_live_rerank_buffer: [BufferedGroupedScanResult; PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
     grouped_live_rerank_buffer_len: u8,
     grouped_live_rerank_window: u8,
     grouped_traversal_score_mode: GroupedTraversalScoreMode,
@@ -4233,7 +4235,7 @@ impl Default for TqScanOpaque {
             scan_bits: 0,
             scan_seed: 0,
             scan_code_len: 0,
-            scan_graph_storage: graph::GraphStorageDescriptor::ScalarV1 { code_len: 0 },
+            scan_graph_storage: graph::GraphStorageDescriptor::TurboQuant { code_len: 0 },
             scan_block_count: 0,
             bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
             visited_tids: ptr::null_mut(),
@@ -4250,9 +4252,9 @@ impl Default for TqScanOpaque {
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
             grouped_live_rerank_buffer: [BufferedGroupedScanResult::default();
-                ADR030_GROUPED_V2_MAX_LIVE_RERANK_WINDOW],
+                PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
             grouped_live_rerank_buffer_len: 0,
-            grouped_live_rerank_window: ADR030_GROUPED_V2_DEFAULT_LIVE_RERANK_WINDOW as u8,
+            grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u8,
             grouped_traversal_score_mode: GroupedTraversalScoreMode::GroupedPq,
             grouped_rerank_mode: GroupedRerankMode::Quantized,
             grouped_heap_rerank_relation: ptr::null_mut(),
@@ -5121,7 +5123,7 @@ mod tests {
     #[test]
     fn grouped_score_shape_uses_grouped_scan_layout() {
         let shape = GroupedScoreShape::from_scan_graph_storage(
-            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 24,
                 search_code_len: 48,
                 rerank_code_len: 768,
@@ -5161,7 +5163,7 @@ mod tests {
         );
 
         let context = grouped_score_context_from_scan_state(
-            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 2,
                 search_code_len: 3,
                 rerank_code_len: 96,
@@ -5212,7 +5214,7 @@ mod tests {
 
         assert_eq!(
             grouped_score_context_from_scan_state(
-                graph::GraphStorageDescriptor::ScalarV1 { code_len: 4 },
+                graph::GraphStorageDescriptor::TurboQuant { code_len: 4 },
                 &cached,
             ),
             None
@@ -5367,7 +5369,7 @@ mod tests {
         );
 
         match candidate_score_dispatch(
-            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 1,
                 search_code_len: 2,
                 rerank_code_len: 96,
@@ -5420,7 +5422,7 @@ mod tests {
         );
 
         match candidate_score_dispatch(
-            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 1,
                 search_code_len: 2,
                 rerank_code_len: 96,
@@ -5703,7 +5705,7 @@ mod tests {
         );
 
         match candidate_score_dispatch(
-            graph::GraphStorageDescriptor::ScalarV1 {
+            graph::GraphStorageDescriptor::TurboQuant {
                 code_len: tuple.code.len(),
             },
             &cached,
@@ -5744,7 +5746,7 @@ mod tests {
 
         assert_eq!(
             validate_runtime_scan_format(&metadata).unwrap(),
-            graph::GraphStorageDescriptor::GroupedV2(graph::GroupedGraphLayout {
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,
                 rerank_code_len: crate::code_len(16, 4),

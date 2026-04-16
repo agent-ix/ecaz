@@ -7,13 +7,13 @@ use crate::quant::prod::payload_len;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
-const ADR030_GROUPED_V2_VACUUM_UNSUPPORTED: &str =
-    "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet";
+const PQ_FASTSCAN_VACUUM_UNSUPPORTED: &str =
+    "tqhnsw vacuum does not support PqFastScan indexes yet";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VacuumFormatAdapter {
     TurboQuant { code_len: usize },
-    PqFastScan(graph::GroupedGraphLayout),
+    PqFastScan(graph::PqFastScanLayout),
 }
 
 #[derive(Debug)]
@@ -186,7 +186,7 @@ impl VacuumFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
             }
         }
     }
@@ -203,7 +203,7 @@ impl VacuumFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
             }
         }
     }
@@ -219,7 +219,7 @@ impl VacuumFormatAdapter {
             },
             Self::PqFastScan(layout) => {
                 let _ = layout;
-                pgrx::error!("{ADR030_GROUPED_V2_VACUUM_UNSUPPORTED}")
+                pgrx::error!("{PQ_FASTSCAN_VACUUM_UNSUPPORTED}")
             }
         }
     }
@@ -326,10 +326,10 @@ fn resolve_vacuum_format_adapter(
     metadata: &page::MetadataPage,
 ) -> Result<VacuumFormatAdapter, String> {
     match graph::GraphStorageDescriptor::from_metadata(metadata)? {
-        graph::GraphStorageDescriptor::ScalarV1 { code_len } => {
+        graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(VacuumFormatAdapter::TurboQuant { code_len })
         }
-        graph::GraphStorageDescriptor::GroupedV2(layout) => {
+        graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(VacuumFormatAdapter::PqFastScan(layout))
         }
     }
@@ -1711,7 +1711,7 @@ mod tests {
     fn resolve_vacuum_format_adapter_recognizes_grouped_v2() {
         assert_eq!(
             resolve_vacuum_format_adapter(&grouped_v2_metadata()),
-            Ok(VacuumFormatAdapter::PqFastScan(graph::GroupedGraphLayout {
+            Ok(VacuumFormatAdapter::PqFastScan(graph::PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 1,
                 rerank_code_len: crate::code_len(16, 4),

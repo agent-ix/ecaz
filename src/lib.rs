@@ -2878,9 +2878,9 @@ mod tests {
 
         let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
-            am::graph::GraphStorageDescriptor::GroupedV2(layout) => layout,
-            am::graph::GraphStorageDescriptor::ScalarV1 { .. } => {
-                panic!("experimental grouped-v2 build should not decode as scalar storage")
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("PqFastScan build should not decode as TurboQuant storage")
             }
         };
 
@@ -2892,7 +2892,7 @@ mod tests {
             am::graph::with_graph_storage_tuple(
                 index_relation,
                 metadata.entry_point,
-                am::graph::GraphStorageDescriptor::GroupedV2(layout),
+                am::graph::GraphStorageDescriptor::PqFastScan(layout),
                 |entry| match entry {
                     am::graph::GraphTupleRef::GroupedHot(tuple) => {
                         assert_eq!(tuple.search_code.len(), layout.search_code_len);
@@ -2900,7 +2900,7 @@ mod tests {
                         assert!(tuple.heaptid_count() > 0);
                     }
                     am::graph::GraphTupleRef::Scalar(_) => {
-                        panic!("grouped-v2 entry should decode as grouped-hot tuple")
+                        panic!("PqFastScan entry should decode as grouped-hot tuple")
                     }
                 },
             );
@@ -2987,9 +2987,9 @@ mod tests {
 
         let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
-            am::graph::GraphStorageDescriptor::GroupedV2(layout) => layout,
-            am::graph::GraphStorageDescriptor::ScalarV1 { .. } => {
-                panic!("experimental grouped-v2 build should not decode as scalar storage")
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("PqFastScan build should not decode as TurboQuant storage")
             }
         };
 
@@ -3158,7 +3158,7 @@ mod tests {
         .expect("ordered SELECT should succeed");
         assert!(
             observed.is_some(),
-            "grouped ordered scans should emit at least one row without a scan gate",
+            "PqFastScan ordered scans should emit at least one row",
         );
     }
 
@@ -3223,7 +3223,7 @@ mod tests {
 
         assert!(
             plan.contains("Index Scan") || plan.contains("Index Only Scan"),
-            "grouped-v2 runtime smoke test should route through tqhnsw when the scan gate is enabled: {plan}"
+            "PqFastScan runtime smoke test should route through tqhnsw when PqFastScan storage is selected: {plan}"
         );
 
         let ordered_ids = Spi::connect(|client| {
@@ -3236,7 +3236,7 @@ mod tests {
                     None,
                     &[],
                 )
-                .expect("ordered SELECT should succeed when the grouped runtime gate is enabled")
+                .expect("ordered SELECT should succeed when PqFastScan storage is selected")
                 .map(|row| {
                     row["id"]
                         .value::<i64>()
@@ -3249,13 +3249,13 @@ mod tests {
         assert_eq!(ordered_ids.len(), 3);
         assert!(
             ordered_ids.windows(2).all(|pair| pair[0] != pair[1]),
-            "grouped-v2 runtime smoke test should emit distinct ids"
+            "PqFastScan runtime smoke test should emit distinct ids"
         );
     }
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 live rerank window must be between 1 and 64, got 0"
+        expected = "tqhnsw PqFastScan live rerank window must be between 1 and 64, got 0"
     )]
     fn test_grouped_v2_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
@@ -3390,18 +3390,18 @@ mod tests {
 
         assert!(
             !observed.is_empty(),
-            "grouped-v2 runtime comparison path should emit at least one ordered result"
+            "PqFastScan runtime comparison path should emit at least one ordered result"
         );
         for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
             let comparison_score = comparison_score
-                .expect("grouped-v2 emitted results should carry an exact rerank comparison score");
+                .expect("PqFastScan emitted results should carry an exact rerank comparison score");
             let expected = exact_scores
                 .get(&heap_tid)
                 .copied()
                 .expect("every emitted heap tid should map back to an exact SQL score");
             assert_eq!(
                 comparison_score, expected,
-                "grouped-v2 comparison score should match the operator-facing exact <#> score for the emitted tuple"
+                "PqFastScan comparison score should match the operator-facing exact <#> score for the emitted tuple"
             );
         }
     }
@@ -3725,23 +3725,23 @@ mod tests {
 
         assert!(
             !observed.is_empty(),
-            "grouped-v2 heap rerank should still emit ordered results"
+            "PqFastScan heap rerank should still emit ordered results"
         );
         for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
             let comparison_score = comparison_score
-                .expect("grouped-v2 heap rerank should attach exact heap comparison scores");
+                .expect("PqFastScan heap rerank should attach exact heap comparison scores");
             let expected = exact_scores
                 .get(&heap_tid)
                 .copied()
                 .expect("every emitted heap tid should map back to an exact heap score");
             assert_eq!(
                 comparison_score, expected,
-                "grouped-v2 heap rerank comparison score should match the raw heap f32 inner product"
+                "PqFastScan heap rerank comparison score should match the raw heap f32 inner product"
             );
             assert_eq!(
                 emitted_scores.get(&heap_tid).copied(),
                 Some(expected),
-                "grouped-v2 heap rerank should emit the exact heap comparison score as the order-by score",
+                "PqFastScan heap rerank should emit the exact heap comparison score as the order-by score",
             );
         }
     }
@@ -3769,11 +3769,11 @@ mod tests {
 
         assert!(
             !observed.is_empty(),
-            "grouped-v2 heap rerank should still emit ordered results with a bytea source override"
+            "PqFastScan heap rerank should still emit ordered results with a bytea source override"
         );
         for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
             let comparison_score = comparison_score.expect(
-                "grouped-v2 heap rerank with a bytea source override should attach exact heap comparison scores",
+                "PqFastScan heap rerank with a bytea source override should attach exact heap comparison scores",
             );
             let expected = exact_scores
                 .get(&heap_tid)
@@ -3781,12 +3781,12 @@ mod tests {
                 .expect("every emitted heap tid should map back to an exact heap score");
             assert_eq!(
                 comparison_score, expected,
-                "grouped-v2 heap rerank bytea comparison score should match the raw heap f32 inner product"
+                "PqFastScan heap rerank bytea comparison score should match the raw heap f32 inner product"
             );
             assert_eq!(
                 emitted_scores.get(&heap_tid).copied(),
                 Some(expected),
-                "grouped-v2 heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
+                "PqFastScan heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
             );
         }
     }
@@ -4262,7 +4262,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 traversal score mode must be one of [pq, binary], got \"bogus\""
+        expected = "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got \"bogus\""
     )]
     fn test_grouped_v2_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
@@ -4280,7 +4280,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 rerank mode must be one of [quantized, heap_f32], got \"bogus\""
+        expected = "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got \"bogus\""
     )]
     fn test_grouped_v2_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
@@ -4296,7 +4296,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 exact traversal scope must be one of [all, layer0], got \"bogus\""
+        expected = "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got \"bogus\""
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
@@ -4349,7 +4349,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
+        expected = "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
@@ -4406,7 +4406,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped-v2 exact traversal limit must be a positive integer, got bogus"
+        expected = "tqhnsw PqFastScan exact traversal limit must be a positive integer, got bogus"
     )]
     fn test_grouped_v2_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
@@ -7308,7 +7308,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw aminsert does not support ADR-030 grouped-v2 indexes yet")]
+    #[should_panic(expected = "tqhnsw aminsert does not support PqFastScan indexes yet")]
     fn test_tqhnsw_insert_rejects_grouped_v2_index() {
         let _lock = env_var_test_lock();
 
@@ -7356,7 +7356,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw vacuum does not support ADR-030 grouped-v2 indexes yet")]
+    #[should_panic(expected = "tqhnsw vacuum does not support PqFastScan indexes yet")]
     fn test_tqhnsw_vacuum_rejects_grouped_v2_index() {
         let _lock = env_var_test_lock();
 

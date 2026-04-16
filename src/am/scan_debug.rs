@@ -1933,7 +1933,7 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
         graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap_or_else(|e| {
             pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")
         }),
-        graph::GraphStorageDescriptor::GroupedV2(_)
+        graph::GraphStorageDescriptor::PqFastScan(_)
     );
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     grouped_results

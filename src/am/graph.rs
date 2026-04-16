@@ -9,7 +9,7 @@ use super::{page, search};
 use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct GroupedGraphLayout {
+pub(crate) struct PqFastScanLayout {
     pub binary_word_count: usize,
     pub search_code_len: usize,
     pub rerank_code_len: usize,
@@ -17,14 +17,14 @@ pub(crate) struct GroupedGraphLayout {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GraphStorageDescriptor {
-    ScalarV1 { code_len: usize },
-    GroupedV2(GroupedGraphLayout),
+    TurboQuant { code_len: usize },
+    PqFastScan(PqFastScanLayout),
 }
 
 impl GraphStorageDescriptor {
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
         match metadata.graph_storage_format()? {
-            page::GraphStorageFormat::ScalarV1 => Ok(Self::ScalarV1 {
+            page::GraphStorageFormat::ScalarV1 => Ok(Self::TurboQuant {
                 code_len: if metadata.dimensions == 0 {
                     0
                 } else {
@@ -33,7 +33,7 @@ impl GraphStorageDescriptor {
             }),
             page::GraphStorageFormat::GroupedV2 => {
                 if metadata.dimensions == 0 {
-                    return Ok(Self::GroupedV2(GroupedGraphLayout {
+                    return Ok(Self::PqFastScan(PqFastScanLayout {
                         binary_word_count: 0,
                         search_code_len: 0,
                         rerank_code_len: 0,
@@ -41,41 +41,41 @@ impl GraphStorageDescriptor {
                 }
                 if metadata.payload_flags & page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE == 0 {
                     return Err(
-                        "grouped-v2 metadata must advertise grouped search-code payloads"
+                        "PqFastScan metadata must advertise grouped search-code payloads"
                             .to_owned(),
                     );
                 }
                 if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
                     return Err(
-                        "grouped-v2 metadata must advertise cold rerank payloads".to_owned()
+                        "PqFastScan metadata must advertise cold rerank payloads".to_owned()
                     );
                 }
                 if metadata.search_codec_kind != page::SearchCodecKind::GroupedPq {
                     return Err(format!(
-                        "unsupported grouped-v2 search codec: {:?}",
+                        "unsupported PqFastScan search codec: {:?}",
                         metadata.search_codec_kind
                     ));
                 }
                 if metadata.search_bits != 4 {
                     return Err(format!(
-                        "unsupported grouped-v2 search bits: {}",
+                        "unsupported PqFastScan search bits: {}",
                         metadata.search_bits
                     ));
                 }
                 if metadata.search_subvector_count == 0 || metadata.search_subvector_dim == 0 {
                     return Err(
-                        "grouped-v2 metadata must record non-zero grouped search shape".to_owned(),
+                        "PqFastScan metadata must record non-zero grouped search shape".to_owned(),
                     );
                 }
                 if metadata.rerank_codec_kind != page::RerankCodecKind::ScalarQuantized {
                     return Err(format!(
-                        "unsupported grouped-v2 rerank codec: {:?}",
+                        "unsupported PqFastScan rerank codec: {:?}",
                         metadata.rerank_codec_kind
                     ));
                 }
                 if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
                     return Err(
-                        "grouped-v2 metadata must advertise a persisted grouped codebook chain"
+                        "PqFastScan metadata must advertise a persisted grouped codebook chain"
                             .to_owned(),
                     );
                 }
@@ -92,7 +92,7 @@ impl GraphStorageDescriptor {
                     } else {
                         0
                     };
-                Ok(Self::GroupedV2(GroupedGraphLayout {
+                Ok(Self::PqFastScan(PqFastScanLayout {
                     binary_word_count,
                     search_code_len: usize::from(metadata.search_subvector_count).div_ceil(2),
                     rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
@@ -255,7 +255,7 @@ pub(crate) unsafe fn load_graph_element(
 pub(crate) unsafe fn load_grouped_graph_element(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
-    layout: GroupedGraphLayout,
+    layout: PqFastScanLayout,
 ) -> GroupedGraphElement {
     let element = unsafe {
         read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
@@ -300,7 +300,7 @@ where
 pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
-    layout: GroupedGraphLayout,
+    layout: PqFastScanLayout,
     f: F,
 ) -> R
 where
@@ -329,12 +329,12 @@ where
     F: FnOnce(GraphTupleRef<'_>) -> R,
 {
     match storage {
-        GraphStorageDescriptor::ScalarV1 { code_len } => unsafe {
+        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
             with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
                 f(GraphTupleRef::Scalar(tuple))
             })
         },
-        GraphStorageDescriptor::GroupedV2(layout) => unsafe {
+        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::GroupedHot(tuple))
             })
@@ -346,7 +346,7 @@ where
 pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
-    layout: GroupedGraphLayout,
+    layout: PqFastScanLayout,
     f: F,
 ) -> R
 where
@@ -367,7 +367,7 @@ where
 pub(crate) unsafe fn load_grouped_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
-    layout: GroupedGraphLayout,
+    layout: PqFastScanLayout,
 ) -> GroupedRerankPayload {
     let rerank = unsafe {
         read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
@@ -419,7 +419,7 @@ pub(crate) unsafe fn load_grouped_codebook_model(
         pgrx::error!("tqhnsw grouped codebook load requires non-zero grouped search shape");
     }
     if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
-        pgrx::error!("tqhnsw grouped-v2 metadata is missing a grouped codebook head pointer");
+        pgrx::error!("tqhnsw PqFastScan metadata is missing a grouped codebook head pointer");
     }
 
     let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
@@ -544,7 +544,7 @@ pub(crate) unsafe fn load_graph_adjacency(
 pub(crate) unsafe fn load_grouped_graph_adjacency(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
-    layout: GroupedGraphLayout,
+    layout: PqFastScanLayout,
 ) -> (GroupedGraphElement, GraphNeighbors) {
     let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
@@ -1267,7 +1267,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
-            GraphStorageDescriptor::ScalarV1 {
+            GraphStorageDescriptor::TurboQuant {
                 code_len: crate::code_len(16, 4)
             }
         );
@@ -1287,7 +1287,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
-            GraphStorageDescriptor::GroupedV2(GroupedGraphLayout {
+            GraphStorageDescriptor::PqFastScan(PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 3,
                 rerank_code_len: crate::code_len(96, 4),
@@ -1308,7 +1308,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
-            GraphStorageDescriptor::GroupedV2(GroupedGraphLayout {
+            GraphStorageDescriptor::PqFastScan(PqFastScanLayout {
                 binary_word_count: 0,
                 search_code_len: 0,
                 rerank_code_len: 0,
@@ -1328,7 +1328,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata),
-            Err("grouped-v2 metadata must advertise grouped search-code payloads".to_owned())
+            Err("PqFastScan metadata must advertise grouped search-code payloads".to_owned())
         );
     }
 
@@ -1344,7 +1344,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata),
-            Err("grouped-v2 metadata must advertise cold rerank payloads".to_owned())
+            Err("PqFastScan metadata must advertise cold rerank payloads".to_owned())
         );
     }
 
@@ -1362,7 +1362,7 @@ mod tests {
 
         assert_eq!(
             GraphStorageDescriptor::from_metadata(&metadata),
-            Err("grouped-v2 metadata must advertise a persisted grouped codebook chain".to_owned())
+            Err("PqFastScan metadata must advertise a persisted grouped codebook chain".to_owned())
         );
     }
 
