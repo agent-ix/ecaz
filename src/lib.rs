@@ -8796,6 +8796,51 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_rejects_insert_until_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_insert_guard";
+        let index_name = "tqhnsw_storage_format_reindex_insert_guard_idx";
+        let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        let inserted_embedding_sql = format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("insert should reach aminsert before rejecting a storage-format mismatch");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_rejects_vacuum_until_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard";
+        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_idx";
+        let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+    }
+
+    #[pg_test]
     fn test_tqhnsw_pq_fastscan_reloption_round_trip() {
         let _lock = env_var_test_lock();
 
