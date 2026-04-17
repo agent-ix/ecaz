@@ -1049,8 +1049,10 @@ fn resolve_grouped_traversal_score_mode(
 }
 
 fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
-    matches!(opaque.scan_graph_storage, graph::GraphStorageDescriptor::PqFastScan(_))
-        && opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
+    matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    ) && opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
 }
 
 fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
@@ -6555,6 +6557,36 @@ mod tests {
             default_grouped_rerank_mode_resolution(&options),
             PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn,
             "source-less defaults should explain that quantized came from the missing build_source_column"
+        );
+    }
+
+    #[test]
+    fn grouped_binary_traversal_score_gate_requires_pq_fastscan_storage() {
+        let mut opaque = TqScanOpaque {
+            grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
+            scan_graph_storage: graph::GraphStorageDescriptor::TurboQuant { code_len: 64 },
+            ..TqScanOpaque::default()
+        };
+        assert!(
+            !grouped_binary_traversal_score_enabled(&opaque),
+            "binary traversal score mode should stay off for non-pq_fastscan storage even when the mode is binary",
+        );
+
+        opaque.scan_graph_storage =
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            });
+        assert!(
+            grouped_binary_traversal_score_enabled(&opaque),
+            "binary traversal score mode should activate for pq_fastscan layouts when the mode is binary",
+        );
+
+        opaque.grouped_traversal_score_mode = GroupedTraversalScoreMode::GroupedPq;
+        assert!(
+            !grouped_binary_traversal_score_enabled(&opaque),
+            "grouped-pq traversal mode should disable the binary traversal gate even for pq_fastscan layouts",
         );
     }
 }

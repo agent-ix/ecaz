@@ -787,6 +787,7 @@ mod tests {
     const RECALL_EF_CONSTRUCTION: i32 = 128;
     const RECALL_INSERT_BATCH_SIZE: usize = 32;
     const PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT: i32 = ((RECALL_DIM as i32) + 63) / 64;
+    const SCORE_ASSERT_EPSILON: f32 = 1e-5;
     const RECALL_GATE_CONFIGS: [(i32, i32, Option<f32>); 4] = [
         (8, 40, None),
         (8, 128, Some(0.89_f32)),
@@ -876,7 +877,7 @@ mod tests {
 
     fn assert_f32_close(observed: f32, expected: f32, label: &str) {
         assert!(
-            (observed - expected).abs() <= 1e-5,
+            (observed - expected).abs() <= SCORE_ASSERT_EPSILON,
             "{label}: observed {observed}, expected {expected}",
         );
     }
@@ -3707,8 +3708,7 @@ mod tests {
     }
 
     type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
-    type DebugGroupedComparisonRow =
-        ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
+    type DebugGroupedComparisonRow = ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
 
     #[pg_extern]
     fn tqhnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
@@ -3828,10 +3828,19 @@ mod tests {
             .expect("index oid should exist")
     }
 
-    fn create_turboquant_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+    fn create_turboquant_runtime_fixture_internal(
+        table_name: &str,
+        index_name: &str,
+        include_source: bool,
+    ) -> pg_sys::Oid {
+        let source_column = if include_source {
+            ",\n                source real[]"
+        } else {
+            ""
+        };
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
-                id bigint primary key,
+                id bigint primary key{source_column},
                 embedding tqvector
             )"
         ))
@@ -3839,22 +3848,46 @@ mod tests {
 
         for id in 1..=16 {
             let embedding = format_recall_vector_sql_literal(&runtime_fixture_embedding(id));
-            Spi::run(&format!(
-                "INSERT INTO {table_name} VALUES \
-                 ({id}, encode_to_tqvector({embedding}, 4, 42))"
-            ))
-            .expect("insert should succeed");
+            let insert_sql = if include_source {
+                let source = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(id));
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            };
+            Spi::run(&insert_sql).expect("insert should succeed");
         }
 
+        let build_source_column = if include_source {
+            ", build_source_column = 'source'"
+        } else {
+            ""
+        };
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')"
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}, storage_format = 'turboquant')"
         ))
         .expect("index creation should succeed");
 
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn create_turboquant_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_turboquant_runtime_fixture_internal(table_name, index_name, false)
+    }
+
+    fn create_turboquant_runtime_fixture_with_source(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_turboquant_runtime_fixture_internal(table_name, index_name, true)
     }
 
     fn pq_fastscan_runtime_query() -> Vec<f32> {
@@ -3868,8 +3901,7 @@ mod tests {
         (0..RECALL_DIM)
             .map(|dim| {
                 let dim = dim as i64;
-                (((dim * 17 + 5) as f32) * 0.0013).sin()
-                    + (((dim * 29 + 11) as f32) * 0.0009).cos()
+                (((dim * 17 + 5) as f32) * 0.0013).sin() + (((dim * 29 + 11) as f32) * 0.0009).cos()
             })
             .collect()
     }
@@ -4450,22 +4482,59 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_default_rerank_matches_explicit_heap() {
-        let default_observed = pq_fastscan_rerank_runtime_observed_scores(
+        let _lock = env_var_test_lock();
+        let default_index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_default_rerank_parity",
             "tqhnsw_pq_fastscan_runtime_default_rerank_parity_idx",
-            None,
-            None,
-            false,
-        )
-        .0;
-        let explicit_heap_observed = pq_fastscan_rerank_runtime_observed_scores(
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(default_index_oid, "pq_fastscan_rerank_mode")
+                .as_deref(),
+            Some("heap_f32"),
+            "the default source-backed fixture should resolve to heap_f32 rerank",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                default_index_oid,
+                "pq_fastscan_rerank_mode_resolution",
+            )
+            .as_deref(),
+            Some("default_heap_f32_with_build_source_column"),
+            "the default source-backed fixture should report that heap_f32 came from build_source_column",
+        );
+        let default_observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                default_index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+
+        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let explicit_index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity",
             "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity_idx",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(explicit_index_oid, "pq_fastscan_rerank_mode")
+                .as_deref(),
             Some("heap_f32"),
-            None,
-            false,
-        )
-        .0;
+            "the explicit heap override fixture should still resolve to heap_f32 rerank",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                explicit_index_oid,
+                "pq_fastscan_rerank_mode_resolution",
+            )
+            .as_deref(),
+            Some("env_override"),
+            "the explicit heap override fixture should report that heap_f32 came from the env override",
+        );
+        let explicit_heap_observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                explicit_index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
 
         let default_scores = default_observed
             .into_iter()
@@ -4745,7 +4814,9 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()) };
+        ) = unsafe {
+            am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query())
+        };
 
         assert!(
             result_count > 0,
@@ -6621,8 +6692,11 @@ mod tests {
                         )| *heap_tid,
                     )
                     .collect::<Vec<_>>();
-                (!require_movement || actual_live_order != baseline_approx_order)
-                    .then_some((query, live_rows, baseline_rows))
+                (!require_movement || actual_live_order != baseline_approx_order).then_some((
+                    query,
+                    live_rows,
+                    baseline_rows,
+                ))
             })
             .expect(if require_movement {
                 "at least one deterministic grouped query should exhibit live window movement"
@@ -9100,6 +9174,148 @@ mod tests {
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
         unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_requires_reindex() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_guard_reverse_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let query = format_recall_vector_sql_literal(&runtime_fixture_embedding(1));
+        let _ = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query} \
+             LIMIT 1"
+        ))
+        .expect("ordered scan should reach amrescan before rejecting the reverse storage-format mismatch");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_rejects_insert() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_insert_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_insert_guard_reverse_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        let inserted_source_sql = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(17));
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect(
+            "insert should reach aminsert before rejecting the reverse storage-format mismatch",
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_rejects_vacuum() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_storage_format_switch_reindex_restores_runtime() {
+        let table_name = "tqhnsw_storage_format_reindex_restores_runtime_paths";
+        let index_name = "tqhnsw_storage_format_reindex_restores_runtime_paths_idx";
+        let index_oid = create_turboquant_runtime_fixture_with_source(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption before REINDEX");
+        Spi::run(&format!("REINDEX INDEX {index_name}"))
+            .expect("REINDEX should rebuild the index to match the new storage format");
+
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(
+            metadata
+                .graph_storage_format()
+                .expect("reindexed metadata should decode"),
+            am::page::GraphStorageFormat::PqFastScan,
+            "REINDEX after a storage_format ALTER should rewrite the on-disk metadata format",
+        );
+
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "reindexed pq_fastscan output should still rank a row first for its own embedding",
+        );
+
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        let inserted_source_sql = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("matching reloption/metadata pairs should accept insert cleanly after REINDEX");
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "reindexed pq_fastscan output should still emit ordered scan results after insert and vacuum",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuum after REINDEX should still remove the deleted heap tid from ordered scan output",
+        );
     }
 
     #[pg_test]
