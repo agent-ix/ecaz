@@ -4340,6 +4340,58 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_pq_fastscan_default_rerank_matches_explicit_heap() {
+        let default_observed = pq_fastscan_rerank_runtime_observed_scores(
+            "tqhnsw_pq_fastscan_runtime_default_rerank_parity",
+            "tqhnsw_pq_fastscan_runtime_default_rerank_parity_idx",
+            None,
+            None,
+            false,
+        )
+        .0;
+        let explicit_heap_observed = pq_fastscan_rerank_runtime_observed_scores(
+            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity",
+            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity_idx",
+            Some("heap_f32"),
+            None,
+            false,
+        )
+        .0;
+
+        let default_scores = default_observed
+            .into_iter()
+            .map(
+                |(_heap_tid, emitted_score, comparison_score, approx_rank)| {
+                    (
+                        emitted_score,
+                        comparison_score
+                            .expect("default heap rerank should emit comparison scores"),
+                        approx_rank,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        let explicit_heap_scores = explicit_heap_observed
+            .into_iter()
+            .map(
+                |(_heap_tid, emitted_score, comparison_score, approx_rank)| {
+                    (
+                        emitted_score,
+                        comparison_score
+                            .expect("explicit heap rerank should emit comparison scores"),
+                        approx_rank,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            default_scores, explicit_heap_scores,
+            "source-backed default rerank should match the explicit heap_f32 override exactly"
+        );
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
         let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
         let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
