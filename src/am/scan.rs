@@ -466,6 +466,48 @@ enum GroupedTraversalScoreMode {
     Binary = 1,
 }
 
+impl GroupedTraversalScoreMode {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::GroupedPq => "pq",
+            Self::Binary => "binary",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PqFastScanTraversalScoreModeResolution {
+    EnvOverride,
+    DefaultBinaryWithBinarySidecar,
+    FallbackGroupedPqMissingBinarySidecar,
+    NonPqFastScanStorage,
+}
+
+impl PqFastScanTraversalScoreModeResolution {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::EnvOverride => "env_override",
+            Self::DefaultBinaryWithBinarySidecar => "default_binary_with_binary_sidecar",
+            Self::FallbackGroupedPqMissingBinarySidecar => {
+                "fallback_grouped_pq_missing_binary_sidecar"
+            }
+            Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PqFastScanTraversalScoreModeDecision {
+    mode: GroupedTraversalScoreMode,
+    pub(crate) resolution: PqFastScanTraversalScoreModeResolution,
+}
+
+impl PqFastScanTraversalScoreModeDecision {
+    pub(crate) const fn mode_name(self) -> &'static str {
+        self.mode.as_str()
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GroupedRerankMode {
@@ -911,32 +953,54 @@ fn pq_fastscan_exact_traversal_enabled() -> bool {
     .is_some()
 }
 
-fn resolve_grouped_traversal_score_mode(
+pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
     graph_storage: graph::GraphStorageDescriptor,
-) -> GroupedTraversalScoreMode {
+) -> PqFastScanTraversalScoreModeDecision {
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV,
     ) else {
         return match graph_storage {
             graph::GraphStorageDescriptor::PqFastScan(layout) if layout.binary_word_count > 0 => {
-                GroupedTraversalScoreMode::Binary
+                PqFastScanTraversalScoreModeDecision {
+                    mode: GroupedTraversalScoreMode::Binary,
+                    resolution:
+                        PqFastScanTraversalScoreModeResolution::DefaultBinaryWithBinarySidecar,
+                }
             }
-            graph::GraphStorageDescriptor::PqFastScan(_) => GroupedTraversalScoreMode::GroupedPq,
+            graph::GraphStorageDescriptor::PqFastScan(_) => PqFastScanTraversalScoreModeDecision {
+                mode: GroupedTraversalScoreMode::GroupedPq,
+                resolution:
+                    PqFastScanTraversalScoreModeResolution::FallbackGroupedPqMissingBinarySidecar,
+            },
             graph::GraphStorageDescriptor::TurboQuant { .. } => {
-                GroupedTraversalScoreMode::GroupedPq
+                PqFastScanTraversalScoreModeDecision {
+                    mode: GroupedTraversalScoreMode::GroupedPq,
+                    resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
+                }
             }
         };
     };
 
-    match raw_mode.to_string_lossy().as_ref() {
+    let mode = match raw_mode.to_string_lossy().as_ref() {
         "pq" => GroupedTraversalScoreMode::GroupedPq,
         "binary" => GroupedTraversalScoreMode::Binary,
         other => pgrx::error!(
             "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got {:?}",
             other
         ),
+    };
+
+    PqFastScanTraversalScoreModeDecision {
+        mode,
+        resolution: PqFastScanTraversalScoreModeResolution::EnvOverride,
     }
+}
+
+fn resolve_grouped_traversal_score_mode(
+    graph_storage: graph::GraphStorageDescriptor,
+) -> GroupedTraversalScoreMode {
+    resolve_pq_fastscan_traversal_score_mode_decision(graph_storage).mode
 }
 
 fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {

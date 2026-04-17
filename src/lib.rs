@@ -3856,6 +3856,20 @@ mod tests {
             .collect()
     }
 
+    fn fetch_pq_fastscan_index_runtime_text(index_oid: pg_sys::Oid, column: &str) -> Option<String> {
+        Spi::get_one::<String>(&format!(
+            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+        ))
+        .expect("index runtime settings probe should succeed")
+    }
+
+    fn fetch_pq_fastscan_index_runtime_i32(index_oid: pg_sys::Oid, column: &str) -> Option<i32> {
+        Spi::get_one::<i32>(&format!(
+            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+        ))
+        .expect("index runtime settings probe should succeed")
+    }
+
     fn observed_heap_tids_for_query(index_oid: pg_sys::Oid, query: Vec<f32>) -> Vec<(u32, u16)> {
         unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query) }
             .into_iter()
@@ -4116,6 +4130,102 @@ mod tests {
             .expect("runtime settings probe should succeed"),
             Some(false),
             "the runtime settings probe should surface that exact traversal stays disabled by default",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_binary_default() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_binary_default",
+            "tqhnsw_pq_fastscan_runtime_settings_binary_default_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("binary"),
+            "the index-aware runtime settings helper should surface the effective traversal mode for a binary-sidecar pq_fastscan index",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("default_binary_with_binary_sidecar"),
+            "the index-aware runtime settings helper should explain when binary traversal comes from the persisted binary sidecar default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(1),
+            "the index-aware runtime settings helper should surface the layout binary word count used to pick the default traversal path",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_binary_fallback() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback",
+            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback_idx",
+        );
+
+        let (_block_count, _m, _ef_construction, mut metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        metadata.payload_flags &= !am::page::PAYLOAD_FLAG_BINARY_SIDECAR;
+        unsafe { am::debug_update_index_metadata(index_oid, metadata) };
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("pq"),
+            "the index-aware runtime settings helper should surface the actual grouped-pq fallback when a pq_fastscan index lacks a persisted binary sidecar",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("fallback_grouped_pq_missing_binary_sidecar"),
+            "the index-aware runtime settings helper should explain when the binary default fell back because the index metadata no longer advertises a binary sidecar",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(0),
+            "the index-aware runtime settings helper should surface that the fallback path came from a zero-word binary layout",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_env_override() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_env_override",
+            "tqhnsw_pq_fastscan_runtime_settings_env_override_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("pq"),
+            "the index-aware runtime settings helper should surface the env-selected traversal mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that an explicit env override won over the layout default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(1),
+            "the index-aware runtime settings helper should still surface the persisted binary layout when an env override changes the selected traversal mode",
         );
     }
 
@@ -16840,6 +16950,50 @@ mod tests {
         }
     }
 
+    struct PqFastScanIndexRuntimeSettings {
+        base: PqFastScanRuntimeSettings,
+        traversal_score_mode_resolution: Option<String>,
+        layout_binary_word_count: Option<i32>,
+    }
+
+    fn current_pq_fastscan_runtime_settings_for_index(
+        index_oid: pg_sys::Oid,
+    ) -> PqFastScanIndexRuntimeSettings {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index")
+        };
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        let storage = unsafe {
+            am::graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let layout = match storage {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                unsafe {
+                    pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                };
+                pgrx::error!(
+                    "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"
+                );
+            }
+        };
+        let traversal = am::resolve_pq_fastscan_traversal_score_mode_decision(storage);
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let mut base = current_pq_fastscan_runtime_settings();
+        base.traversal_score_mode = Some(traversal.mode_name().to_owned());
+
+        PqFastScanIndexRuntimeSettings {
+            base,
+            traversal_score_mode_resolution: Some(traversal.resolution.as_str().to_owned()),
+            layout_binary_word_count: Some(
+                i32::try_from(layout.binary_word_count)
+                    .expect("binary-word count should fit in i32"),
+            ),
+        }
+    }
+
     #[pg_extern]
     #[allow(clippy::type_complexity)]
     fn tqhnsw_debug_pq_fastscan_runtime_settings() -> TableIterator<
@@ -16869,6 +17023,44 @@ mod tests {
             settings.exact_traversal_scope,
             settings.exact_traversal_strategy,
             settings.exact_traversal_limit,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_runtime_settings_for_index(
+        index_oid: pg_sys::Oid,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(pq_fastscan_build_enabled, bool),
+            name!(pq_fastscan_scan_enabled, bool),
+            name!(pq_fastscan_scan_window, Option<String>),
+            name!(pq_fastscan_traversal_score_mode, Option<String>),
+            name!(pq_fastscan_traversal_score_mode_resolution, Option<String>),
+            name!(pq_fastscan_layout_binary_word_count, Option<i32>),
+            name!(pq_fastscan_rerank_mode, Option<String>),
+            name!(pq_fastscan_rerank_source_column, Option<String>),
+            name!(pq_fastscan_exact_traversal_enabled, bool),
+            name!(pq_fastscan_exact_traversal_scope, Option<String>),
+            name!(pq_fastscan_exact_traversal_strategy, Option<String>),
+            name!(pq_fastscan_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        let settings = current_pq_fastscan_runtime_settings_for_index(index_oid);
+        TableIterator::once((
+            settings.base.build_enabled,
+            settings.base.scan_enabled,
+            settings.base.scan_window,
+            settings.base.traversal_score_mode,
+            settings.traversal_score_mode_resolution,
+            settings.layout_binary_word_count,
+            settings.base.rerank_mode,
+            settings.base.rerank_source_column,
+            settings.base.exact_traversal_enabled,
+            settings.base.exact_traversal_scope,
+            settings.base.exact_traversal_strategy,
+            settings.base.exact_traversal_limit,
         ))
     }
 
