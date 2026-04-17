@@ -20,6 +20,8 @@ class ResolveScratchSocketDirTests(unittest.TestCase):
         self.tmp_dir = Path(self._tmp.name)
         self.home_dir = self.tmp_dir / "home"
         self.home_dir.mkdir()
+        self.preferred_dir = self.tmp_dir / "preferred"
+        self.fallback_dir = self.home_dir / ".pgrx"
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -33,6 +35,8 @@ class ResolveScratchSocketDirTests(unittest.TestCase):
         env["HOME"] = str(self.home_dir)
         env["TQV_PG_PORT"] = "28817"
         env["TQV_SCRATCH_TEST_ACCEPT_FILES"] = "1"
+        env["TQV_SCRATCH_TEST_PREFERRED_SOCKET_DIR"] = str(self.preferred_dir)
+        env["TQV_SCRATCH_TEST_FALLBACK_SOCKET_DIR"] = str(self.fallback_dir)
         env.pop("PGHOST", None)
         env.pop("TQV_PG_SOCKET_DIR", None)
         env.update(env_overrides)
@@ -52,14 +56,14 @@ class ResolveScratchSocketDirTests(unittest.TestCase):
         self.assertEqual(result.stderr.strip(), "")
 
     def test_refuses_home_pgrx_fallback_without_override(self) -> None:
-        self._touch_socket_marker(self.home_dir / ".pgrx")
+        self._touch_socket_marker(self.fallback_dir)
 
         result = self._run_helper()
 
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
         self.assertIn("refusing to fall back", result.stderr)
-        self.assertIn(str(self.home_dir / ".pgrx"), result.stderr)
+        self.assertIn(str(self.fallback_dir), result.stderr)
 
     def test_reports_missing_preferred_socket(self) -> None:
         result = self._run_helper()
@@ -67,9 +71,20 @@ class ResolveScratchSocketDirTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout.strip(), "")
         self.assertIn(
-            "scratch wrapper expected socket at /tmp/tqvector_pgrx_home/.s.PGSQL.28817",
+            f"scratch wrapper expected socket at {self.preferred_dir}/.s.PGSQL.28817",
             result.stderr,
         )
+
+    def test_pghost_override_wins_and_warns_when_preferred_socket_exists(self) -> None:
+        self._touch_socket_marker(self.preferred_dir)
+        override_dir = self.tmp_dir / "override"
+
+        result = self._run_helper(PGHOST=str(override_dir))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), str(override_dir))
+        self.assertIn("using PGHOST", result.stderr)
+        self.assertIn(str(self.preferred_dir), result.stderr)
 
 
 if __name__ == "__main__":

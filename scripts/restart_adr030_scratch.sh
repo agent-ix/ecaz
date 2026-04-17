@@ -26,6 +26,10 @@ EOF
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
+# Keep these shell defaults aligned with the current Rust defaults in
+# `src/am/scan.rs`:
+# - `PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW = 64`
+# - `PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME = "binary"`
 window="64"
 grouped_score_mode="binary"
 rerank_mode="heap_f32"

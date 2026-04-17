@@ -2,8 +2,8 @@
 set -euo pipefail
 
 port="${TQV_PG_PORT:-${PGPORT:-28817}}"
-preferred_socket_dir="/tmp/tqvector_pgrx_home"
-fallback_socket_dir="${HOME}/.pgrx"
+preferred_socket_dir="${TQV_SCRATCH_TEST_PREFERRED_SOCKET_DIR:-/tmp/tqvector_pgrx_home}"
+fallback_socket_dir="${TQV_SCRATCH_TEST_FALLBACK_SOCKET_DIR:-${HOME}/.pgrx}"
 socket_name=".s.PGSQL.${port}"
 
 socket_exists() {
@@ -23,6 +23,9 @@ if [[ -n "${TQV_PG_SOCKET_DIR:-}" ]]; then
 fi
 
 if [[ -n "${PGHOST:-}" ]]; then
+    if socket_exists "${preferred_socket_dir}/${socket_name}"; then
+        printf 'scratch wrapper using PGHOST=%s instead of preferred scratch socket %s; unset PGHOST or set TQV_PG_SOCKET_DIR explicitly if the scratch cluster is intended\n' "${PGHOST}" "${preferred_socket_dir}" >&2
+    fi
     printf '%s\n' "${PGHOST}"
     exit 0
 fi
