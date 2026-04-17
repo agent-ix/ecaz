@@ -283,9 +283,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
-            let format =
-                resolve_vacuum_format_adapter((*info).index, &metadata)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let format = resolve_vacuum_format_adapter((*info).index, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             let Some(callback) = callback else {
                 return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
             };
@@ -308,9 +307,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = shared::read_metadata_page((*info).index);
-            let format =
-                resolve_vacuum_format_adapter((*info).index, &metadata)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
+            let format = resolve_vacuum_format_adapter((*info).index, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             format.vacuum_cleanup((*info).index, stats)
         })
     }
@@ -1871,16 +1869,15 @@ mod tests {
 
     #[test]
     fn resolve_vacuum_format_adapter_accepts_scalar_v1() {
-        let format = match graph::GraphStorageDescriptor::from_metadata(&scalar_v1_metadata())
-            .unwrap()
-        {
-            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                VacuumFormatAdapter::TurboQuant { code_len }
-            }
-            graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                VacuumFormatAdapter::PqFastScan(layout)
-            }
-        };
+        let format =
+            match graph::GraphStorageDescriptor::from_metadata(&scalar_v1_metadata()).unwrap() {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    VacuumFormatAdapter::TurboQuant { code_len }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    VacuumFormatAdapter::PqFastScan(layout)
+                }
+            };
         assert_eq!(
             format,
             VacuumFormatAdapter::TurboQuant {
@@ -1891,16 +1888,15 @@ mod tests {
 
     #[test]
     fn resolve_vacuum_format_adapter_recognizes_pq_fastscan() {
-        let format = match graph::GraphStorageDescriptor::from_metadata(&pq_fastscan_metadata())
-            .unwrap()
-        {
-            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                VacuumFormatAdapter::TurboQuant { code_len }
-            }
-            graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                VacuumFormatAdapter::PqFastScan(layout)
-            }
-        };
+        let format =
+            match graph::GraphStorageDescriptor::from_metadata(&pq_fastscan_metadata()).unwrap() {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    VacuumFormatAdapter::TurboQuant { code_len }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    VacuumFormatAdapter::PqFastScan(layout)
+                }
+            };
         assert_eq!(
             format,
             VacuumFormatAdapter::PqFastScan(graph::PqFastScanLayout {
