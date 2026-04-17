@@ -38,6 +38,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.5"
 iai-callgrind = "0.14"
 
+[build-dependencies]
+cc = "1"
+
 [profile.dev]
 panic = "unwind"
 lto = "thin"

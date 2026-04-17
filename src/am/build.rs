@@ -959,19 +959,21 @@ struct BuildCodeDistance {
 }
 
 impl BuildCodeDistance {
-    fn new(dimensions: usize, bits: u8, seed: u64) -> Self {
-        let quantizer = crate::quant::prod::ProdQuantizer::cached(dimensions, bits, seed);
-        let max_abs_centroid = quantizer
-            .codebook
+    fn new(dimensions: usize, bits: u8, seed: u64, tuples: &[BuildTuple]) -> Self {
+        // HNSW expects non-negative distances. Derive the offset from the actual
+        // encoded self-scores so QJL-enabled 4-bit lanes cannot underflow below 0.
+        let score_offset = tuples
             .iter()
-            .map(|value| value.abs())
+            .map(|tuple| {
+                crate::score_code_inner_product(dimensions, bits, seed, &tuple.code, &tuple.code)
+            })
             .fold(0.0_f32, f32::max);
 
         Self {
             dimensions,
             bits,
             seed,
-            score_offset: dimensions as f32 * max_abs_centroid * max_abs_centroid,
+            score_offset,
         }
     }
 }
@@ -1220,7 +1222,7 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         usize::try_from(state.options.ef_construction)
             .expect("validated ef_construction should be non-negative"),
         deterministic_hnsw_build_seed(state, 0x5343_414c_4152_5f31),
-        BuildCodeDistance::new(dimensions, bits, seed),
+        BuildCodeDistance::new(dimensions, bits, seed, &state.heap_tuples),
     );
 
     for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
@@ -1795,6 +1797,57 @@ mod tests {
         let nodes = build_hnsw_graph(&state);
 
         assert_eq!(nodes.len(), 3);
+        assert!(nodes.iter().any(|node| {
+            !node
+                .neighbor_slots
+                .iter()
+                .all(|neighbor_slot| neighbor_slot.is_none())
+        }));
+    }
+
+    #[test]
+    fn hnsw_graph_builds_for_qjl_enabled_scalar_codes() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (1_i64..=16_i64)
+            .map(|id| {
+                let vector = (0_i64..16_i64)
+                    .map(|dim| (((id * 29 + dim) as f32) * 0.02).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: u16::try_from(id).expect("id should fit in u16"),
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: encoded_code(&vector, bits, seed),
+                    source_vector: None,
+                    source_count: 0,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 6,
+                ef_construction: 80,
+                ef_search: 40,
+                build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let nodes = build_hnsw_graph(&state);
+
+        assert_eq!(nodes.len(), 16);
         assert!(nodes.iter().any(|node| {
             !node
                 .neighbor_slots

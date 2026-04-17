@@ -407,6 +407,87 @@ struct DebugGroupedRankMetrics {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+struct DebugHeapBackedScan {
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    scan: pg_sys::IndexScanDesc,
+    registered_snapshot: pg_sys::Snapshot,
+    pushed_registered_snapshot: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_push_latest_snapshot(failure_label: &str) -> pg_sys::Snapshot {
+    unsafe { pg_sys::CommandCounterIncrement() };
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("{failure_label}");
+    }
+    unsafe { pg_sys::PushActiveSnapshot(registered_snapshot) };
+    registered_snapshot
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
+    }
+
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let registered_snapshot = unsafe {
+        debug_push_latest_snapshot("debug scan could not acquire a fresh latest snapshot")
+    };
+    let pushed_registered_snapshot = true;
+    let snapshot = registered_snapshot;
+
+    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
+    if scan.is_null() {
+        unsafe {
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug scan failed to begin heap-backed index scan");
+    }
+
+    DebugHeapBackedScan {
+        index_relation,
+        heap_relation,
+        scan,
+        registered_snapshot,
+        pushed_registered_snapshot,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+    unsafe {
+        pg_sys::index_endscan(state.scan);
+        if state.pushed_registered_snapshot {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(state.registered_snapshot);
+        }
+        pg_sys::index_close(
+            state.index_relation,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+        pg_sys::table_close(
+            state.heap_relation,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -677,9 +758,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -694,9 +774,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
         tids.push((block_number, offset_number));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
 
@@ -714,9 +792,8 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     query: Vec<f32>,
     result_limit: Option<usize>,
 ) -> DebugScanProfile {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -765,9 +842,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
 
     (
         rescan_elapsed_us,
@@ -877,19 +952,11 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let mut registered_snapshot = ptr::null_mut();
-    let mut pushed_registered_snapshot = false;
-    let snapshot = {
-        let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-        if active_snapshot.is_null() {
-            registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
-            unsafe { pg_sys::PushActiveSnapshot(registered_snapshot) };
-            pushed_registered_snapshot = true;
-            registered_snapshot
-        } else {
-            active_snapshot
-        }
+    let registered_snapshot = unsafe {
+        debug_push_latest_snapshot("debug heap-fetch profile could not acquire a fresh latest snapshot")
     };
+    let pushed_registered_snapshot = true;
+    let snapshot = registered_snapshot;
 
     let slot = unsafe {
         pg_sys::MakeSingleTupleTableSlot(
@@ -998,9 +1065,8 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     query: Vec<f32>,
     limit_count: i32,
 ) -> DebugGroupedRerankProfile {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
     let result_limit =
         usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
 
@@ -1026,9 +1092,7 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let debug_profile = opaque.debug_profile;
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
 
     (
         i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
@@ -1868,9 +1932,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1886,9 +1949,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
         tids.push((heap_tid, score));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
 
@@ -1897,9 +1958,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1918,9 +1978,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         tids.push((heap_tid, approx_score, comparison_score, approx_rank));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
 

@@ -1049,7 +1049,8 @@ fn resolve_grouped_traversal_score_mode(
 }
 
 fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
-    opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
+    matches!(opaque.scan_graph_storage, graph::GraphStorageDescriptor::PqFastScan(_))
+        && opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
 }
 
 fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {

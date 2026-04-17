@@ -1803,8 +1803,15 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         )
     };
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_relation = if heap_oid == pg_sys::InvalidOid {
+        ptr::null_mut()
+    } else {
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) }
+    };
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation;
+    info.heaprel = heap_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {
         dead_tids: dead_tids.iter().copied().collect(),
@@ -1822,6 +1829,9 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     let result = unsafe { *stats };
 
     unsafe {
+        if !heap_relation.is_null() {
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
         pg_sys::index_close(
             index_relation,
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,

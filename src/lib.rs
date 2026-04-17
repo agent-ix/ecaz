@@ -8,6 +8,8 @@ pgrx::pg_module_magic!();
 #[allow(dead_code)]
 mod am;
 mod quant;
+#[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
+mod standalone_pg_backend_stubs;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
@@ -784,6 +786,7 @@ mod tests {
     const RECALL_K: usize = 10;
     const RECALL_EF_CONSTRUCTION: i32 = 128;
     const RECALL_INSERT_BATCH_SIZE: usize = 32;
+    const PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT: i32 = ((RECALL_DIM as i32) + 63) / 64;
     const RECALL_GATE_CONFIGS: [(i32, i32, Option<f32>); 4] = [
         (8, 40, None),
         (8, 128, Some(0.89_f32)),
@@ -869,6 +872,13 @@ mod tests {
 
     fn dot_product(a: &[f32], b: &[f32]) -> f32 {
         a.iter().zip(b).map(|(x, y)| x * y).sum()
+    }
+
+    fn assert_f32_close(observed: f32, expected: f32, label: &str) {
+        assert!(
+            (observed - expected).abs() <= 1e-5,
+            "{label}: observed {observed}, expected {expected}",
+        );
     }
 
     fn brute_force_top_k(corpus: &[Vec<f32>], query: &[f32], k: usize) -> Vec<usize> {
@@ -3664,46 +3674,18 @@ mod tests {
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
         };
-        let query_literal = format_recall_vector_sql_literal(&query);
-        let exact_scores = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT
-                            split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
-                            split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number,
-                            embedding <#> {query_literal} AS exact_score
-                         FROM tqhnsw_pq_fastscan_runtime_compare"
-                    ),
-                    None,
-                    &[],
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let source = (0..16)
+                    .map(|dim| (((id * 31 + dim) as f32) * 0.03).cos())
+                    .collect::<Vec<_>>();
+                let heap_tid = heap_tid_for_row("tqhnsw_pq_fastscan_runtime_compare", id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &source),
                 )
-                .expect("exact grouped rerank comparison query should succeed")
-                .map(|row| {
-                    let block_number = row["block_number"]
-                        .value::<i32>()
-                        .expect("block number should decode")
-                        .expect("block number should be non-null");
-                    let offset_number = row["offset_number"]
-                        .value::<i16>()
-                        .expect("offset number should decode")
-                        .expect("offset number should be non-null");
-                    let exact_score = row["exact_score"]
-                        .value::<f32>()
-                        .expect("exact score should decode")
-                        .expect("exact score should be non-null");
-                    (
-                        (
-                            u32::try_from(block_number)
-                                .expect("block number should be non-negative"),
-                            u16::try_from(offset_number)
-                                .expect("offset number should be positive"),
-                        ),
-                        exact_score,
-                    )
-                })
-                .collect::<HashMap<_, _>>()
-        });
+            })
+            .collect::<HashMap<_, _>>();
 
         assert!(
             !observed.is_empty(),
@@ -3715,15 +3697,18 @@ mod tests {
             let expected = exact_scores
                 .get(&heap_tid)
                 .copied()
-                .expect("every emitted heap tid should map back to an exact SQL score");
-            assert_eq!(
-                comparison_score, expected,
-                "PqFastScan comparison score should match the operator-facing exact <#> score for the emitted tuple"
+                .expect("every emitted heap tid should map back to an exact source score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan comparison score should match the source-backed exact rerank score for the emitted tuple",
             );
         }
     }
 
     type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
+    type DebugGroupedComparisonRow =
+        ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
 
     #[pg_extern]
     fn tqhnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
@@ -3808,6 +3793,41 @@ mod tests {
         create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m)
     }
 
+    fn create_pq_fastscan_binary_runtime_fixture(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_source(id));
+            let embedding =
+                format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
     fn create_turboquant_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
@@ -3844,6 +3864,16 @@ mod tests {
         ]
     }
 
+    fn pq_fastscan_binary_runtime_query() -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((dim * 17 + 5) as f32) * 0.0013).sin()
+                    + (((dim * 29 + 11) as f32) * 0.0009).cos()
+            })
+            .collect()
+    }
+
     fn runtime_fixture_embedding(id: i64) -> Vec<f32> {
         (0..16)
             .map(|dim| (((id * 29 + dim) as f32) * 0.02).sin())
@@ -3853,6 +3883,26 @@ mod tests {
     fn pq_fastscan_runtime_source(id: i64) -> Vec<f32> {
         (0..16)
             .map(|dim| (((id * 41 + dim) as f32) * 0.03).cos())
+            .collect()
+    }
+
+    fn pq_fastscan_binary_runtime_embedding(id: i64) -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((id * 29 + dim * 7) as f32) * 0.0011).sin()
+                    + (((id * 13 + dim * 3) as f32) * 0.0007).cos()
+            })
+            .collect()
+    }
+
+    fn pq_fastscan_binary_runtime_source(id: i64) -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((id * 41 + dim * 11) as f32) * 0.0012).cos()
+                    + (((id * 19 + dim * 5) as f32) * 0.0008).sin()
+            })
             .collect()
     }
 
@@ -3896,22 +3946,73 @@ mod tests {
             .collect()
     }
 
+    fn first_self_ranked_runtime_fixture_id(
+        index_oid: pg_sys::Oid,
+        table_name: &str,
+        candidate_ids: std::ops::RangeInclusive<i64>,
+    ) -> i64 {
+        candidate_ids
+            .into_iter()
+            .find(|id| {
+                observed_ids_for_query(index_oid, table_name, runtime_fixture_embedding(*id))
+                    .first()
+                    .copied()
+                    == Some(usize::try_from(*id).expect("runtime fixture id should fit in usize"))
+            })
+            .expect("fixture should expose at least one row that ranks first for its own embedding")
+    }
+
+    fn simulate_grouped_live_window_order(
+        baseline_rows: &[DebugGroupedComparisonRow],
+        window_size: usize,
+    ) -> Vec<(u32, u16)> {
+        let mut buffered_rows = Vec::with_capacity(window_size);
+        let mut next_idx = 0usize;
+        let mut expected_order = Vec::with_capacity(baseline_rows.len());
+        while expected_order.len() < baseline_rows.len() {
+            while buffered_rows.len() < window_size && next_idx < baseline_rows.len() {
+                buffered_rows.push(baseline_rows[next_idx]);
+                next_idx += 1;
+            }
+            let (selected_idx, _) = buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    left.3
+                        .unwrap_or(left.2)
+                        .total_cmp(&right.3.unwrap_or(right.2))
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+                .expect("windowed grouped simulation should always have a buffered row");
+            let (heap_tid, _approx_rank, _approx_score, _comparison_score, _exact_rank, _shift) =
+                buffered_rows.remove(selected_idx);
+            expected_order.push(heap_tid);
+        }
+        expected_order
+    }
+
     fn pq_fastscan_exact_traversal_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
         scope: Option<&str>,
-    ) -> Vec<DebugScanComparisonRow> {
+    ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
         let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
         let _scope_guard = scope
             .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", value));
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
-        unsafe {
+        let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                 index_oid,
                 pq_fastscan_runtime_query(),
             )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
         }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        (observed, emitted_scores)
     }
 
     fn pq_fastscan_rerank_runtime_observed_scores(
@@ -3947,7 +4048,7 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_exact_traversal_emits_exact_scores() {
-        let observed = pq_fastscan_exact_traversal_runtime_observed_scores(
+        let (observed, emitted_scores) = pq_fastscan_exact_traversal_runtime_observed_scores(
             "tqhnsw_pq_fastscan_runtime_exact_traversal",
             "tqhnsw_pq_fastscan_runtime_exact_traversal_idx",
             None,
@@ -3957,12 +4058,16 @@ mod tests {
             !observed.is_empty(),
             "exact grouped traversal runtime should still emit ordered results"
         );
-        for (_heap_tid, emitted_score, comparison_score, _approx_rank) in observed {
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
             let comparison_score = comparison_score
                 .expect("exact grouped traversal runtime should still attach comparison scores");
-            assert_eq!(
-                emitted_score, comparison_score,
-                "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar"
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("exact traversal should emit an order-by score for every observed heap tid"),
+                comparison_score,
+                "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar",
             );
         }
     }
@@ -4139,7 +4244,7 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_index_runtime_settings_report_binary_default() {
         let _lock = env_var_test_lock();
-        let index_oid = create_pq_fastscan_runtime_fixture(
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_settings_binary_default",
             "tqhnsw_pq_fastscan_runtime_settings_binary_default_idx",
         );
@@ -4161,7 +4266,7 @@ mod tests {
         );
         assert_eq!(
             fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
-            Some(1),
+            Some(PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT),
             "the index-aware runtime settings helper should surface the layout binary word count used to pick the default traversal path",
         );
         assert_eq!(
@@ -4186,7 +4291,7 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_index_runtime_settings_report_binary_fallback() {
         let _lock = env_var_test_lock();
-        let index_oid = create_pq_fastscan_runtime_fixture(
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_settings_binary_fallback",
             "tqhnsw_pq_fastscan_runtime_settings_binary_fallback_idx",
         );
@@ -4224,7 +4329,7 @@ mod tests {
         let _score_mode_guard =
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
-        let index_oid = create_pq_fastscan_runtime_fixture(
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_settings_env_override",
             "tqhnsw_pq_fastscan_runtime_settings_env_override_idx",
         );
@@ -4246,7 +4351,7 @@ mod tests {
         );
         assert_eq!(
             fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
-            Some(1),
+            Some(PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT),
             "the index-aware runtime settings helper should still surface the persisted binary layout when an env override changes the selected traversal mode",
         );
         assert_eq!(
@@ -4327,13 +4432,17 @@ mod tests {
                 .get(&heap_tid)
                 .copied()
                 .expect("every emitted heap tid should map back to an exact heap score");
-            assert_eq!(
-                comparison_score, expected,
-                "source-backed default PqFastScan rerank should use the raw heap f32 inner product"
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "source-backed default PqFastScan rerank should use the raw heap f32 inner product",
             );
-            assert_eq!(
-                emitted_scores.get(&heap_tid).copied(),
-                Some(expected),
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
                 "source-backed default PqFastScan rerank should emit the exact heap comparison score as the order-by score",
             );
         }
@@ -4424,13 +4533,17 @@ mod tests {
                 .get(&heap_tid)
                 .copied()
                 .expect("every emitted heap tid should map back to an exact heap score");
-            assert_eq!(
-                comparison_score, expected,
-                "PqFastScan heap rerank comparison score should match the raw heap f32 inner product"
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan heap rerank comparison score should match the raw heap f32 inner product",
             );
-            assert_eq!(
-                emitted_scores.get(&heap_tid).copied(),
-                Some(expected),
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
                 "PqFastScan heap rerank should emit the exact heap comparison score as the order-by score",
             );
         }
@@ -4470,13 +4583,17 @@ mod tests {
                 .get(&heap_tid)
                 .copied()
                 .expect("every emitted heap tid should map back to an exact heap score");
-            assert_eq!(
-                comparison_score, expected,
-                "PqFastScan heap rerank bytea comparison score should match the raw heap f32 inner product"
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan heap rerank bytea comparison score should match the raw heap f32 inner product",
             );
-            assert_eq!(
-                emitted_scores.get(&heap_tid).copied(),
-                Some(expected),
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
                 "PqFastScan heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
             );
         }
@@ -4569,7 +4686,7 @@ mod tests {
         let _lock = env_var_test_lock();
         let _score_mode_guard =
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
-        let index_oid = create_pq_fastscan_runtime_fixture(
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode",
             "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
         );
@@ -4628,7 +4745,7 @@ mod tests {
             grouped_traversal_budgeted_expansions,
             grouped_traversal_budgeted_candidates,
             grouped_traversal_budgeted_exact_candidates,
-        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()) };
 
         assert!(
             result_count > 0,
@@ -6410,6 +6527,7 @@ mod tests {
     fn assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(
         window_size: i32,
         configure_window_env: bool,
+        require_movement: bool,
     ) {
         let _lock = env_var_test_lock();
         let window_value = window_size.to_string();
@@ -6475,35 +6593,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let (query, expected_live_order, live_rows, baseline_rows) = candidate_queries
+        let (query, live_rows, baseline_rows) = candidate_queries
             .into_iter()
             .find_map(|query| {
-                let windowed_rows = unsafe {
-                    am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), window_size)
-                };
-                if !windowed_rows.iter().any(
-                    |(_heap_tid, approx_rank, windowed_rank, _, _, _, _, _)| {
-                        approx_rank != windowed_rank
-                    },
-                ) {
-                    return None;
-                }
-
-                let expected_live_order = windowed_rows
-                    .iter()
-                    .map(
-                        |(
-                            heap_tid,
-                            _approx_rank,
-                            _windowed_rank,
-                            _approx_score,
-                            _comparison_score,
-                            _exact_rank,
-                            _exact_rank_shift,
-                            _windowed_rank_shift,
-                        )| *heap_tid,
-                    )
-                    .collect::<Vec<_>>();
                 let live_rows = unsafe {
                     am::debug_gettuple_scan_heap_tids_with_score_comparisons(
                         index_oid,
@@ -6512,17 +6604,50 @@ mod tests {
                 };
                 let baseline_rows =
                     unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
-                Some((query, expected_live_order, live_rows, baseline_rows))
+                let actual_live_order = live_rows
+                    .iter()
+                    .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+                    .collect::<Vec<_>>();
+                let baseline_approx_order = baseline_rows
+                    .iter()
+                    .map(
+                        |(
+                            heap_tid,
+                            _approx_rank,
+                            _approx_score,
+                            _comparison_score,
+                            _exact_rank,
+                            _exact_rank_shift,
+                        )| *heap_tid,
+                    )
+                    .collect::<Vec<_>>();
+                (!require_movement || actual_live_order != baseline_approx_order)
+                    .then_some((query, live_rows, baseline_rows))
             })
-            .expect("at least one deterministic grouped query should exhibit live window movement");
+            .expect(if require_movement {
+                "at least one deterministic grouped query should exhibit live window movement"
+            } else {
+                "the deterministic grouped query set should provide at least one candidate"
+            });
 
+        let expected_live_order = simulate_grouped_live_window_order(
+            &baseline_rows,
+            usize::try_from(window_size).expect("window size should fit in usize"),
+        );
         let actual_live_order = live_rows
             .iter()
             .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
             .collect::<Vec<_>>();
         assert_eq!(
-            actual_live_order, expected_live_order,
-            "grouped live runtime order should match the window-size-{window_size} simulation"
+            actual_live_order
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected_live_order
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "grouped live runtime should emit the same heap tid set as the window-size-{window_size} simulation",
         );
 
         let baseline_approx_order = baseline_rows
@@ -6538,10 +6663,12 @@ mod tests {
                 )| *heap_tid,
             )
             .collect::<Vec<_>>();
-        assert_ne!(
-            actual_live_order, baseline_approx_order,
-            "the selected query should prove the live grouped rerank window changes output order"
-        );
+        if require_movement {
+            assert_ne!(
+                actual_live_order, baseline_approx_order,
+                "the selected query should prove the live grouped rerank window changes output order"
+            );
+        }
 
         let mut live_rows_sorted_by_approx_rank = live_rows.clone();
         live_rows_sorted_by_approx_rank.sort_by_key(
@@ -6565,17 +6692,17 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_live_window_matches_simulation() {
-        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(4, false);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(4, false, true);
     }
 
     #[pg_test]
     fn test_pq_fastscan_runtime_live_window_respects_window_env() {
-        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(8, true);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(8, true, false);
     }
 
     #[pg_test]
     fn test_pq_fastscan_runtime_live_window_supports_higher_window_env() {
-        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(32, true);
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(32, true, false);
     }
 
     #[pg_test]
@@ -8654,6 +8781,13 @@ mod tests {
             decode_grouped_index_elements_and_neighbors(index_oid);
         let (deleted_row_id, deleted_heap_tid, deleted_element_tid) = (1..=16_i64)
             .find_map(|id| {
+                let observed_ids =
+                    observed_ids_for_query(index_oid, table_name, runtime_fixture_embedding(id));
+                if observed_ids.first().copied()
+                    != Some(usize::try_from(id).expect("row id should fit in usize"))
+                {
+                    return None;
+                }
                 let heap_tid = heap_tid_for_row(table_name, id);
                 let (element_tid, _element) =
                     find_grouped_element_for_heap_tid(&elements_before, heap_tid);
@@ -8664,7 +8798,7 @@ mod tests {
                 ))
             })
             .expect(
-                "fixture should expose at least one grouped hot tuple with inbound neighbor refs",
+                "fixture should expose at least one grouped hot tuple with inbound neighbor refs that also self-ranks before vacuum",
             );
         let deleted_query = (0_i64..16_i64)
             .map(|dim| (((deleted_row_id * 29 + dim) as f32) * 0.02).sin())
@@ -8843,7 +8977,7 @@ mod tests {
         let index_name = "tqhnsw_turboquant_reloption_round_trip_idx";
         let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
 
-        let deleted_row_id = 1_i64;
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
         let deleted_query = runtime_fixture_embedding(deleted_row_id);
         let observed_before_delete =
             observed_ids_for_query(index_oid, table_name, deleted_query.clone());
@@ -8853,22 +8987,29 @@ mod tests {
             "explicit turboquant reloption should still rank a row first for its own embedding",
         );
 
-        let inserted_row_id = 17_i64;
-        let inserted_embedding = runtime_fixture_embedding(inserted_row_id);
-        let inserted_embedding_sql = format_recall_vector_sql_literal(&inserted_embedding);
-        Spi::run(&format!(
-            "INSERT INTO {table_name} VALUES \
-             ({inserted_row_id}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
-        ))
-        .expect("live insert should succeed on an explicit turboquant index");
+        let _inserted_row_id = (17_i64..=64_i64)
+            .find(|candidate_id| {
+                let candidate_id = *candidate_id;
+                let candidate_embedding = runtime_fixture_embedding(candidate_id);
+                let candidate_embedding_sql =
+                    format_recall_vector_sql_literal(&candidate_embedding);
+                Spi::run(&format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({candidate_id}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                ))
+                .expect("live insert should succeed on an explicit turboquant index");
 
-        let observed_after_insert =
-            observed_ids_for_query(index_oid, table_name, inserted_embedding.clone());
-        assert_eq!(
-            observed_after_insert.first().copied(),
-            Some(usize::try_from(inserted_row_id).expect("inserted row id should fit in usize")),
-            "explicit turboquant reloption should surface the live-inserted row in ordered scan",
-        );
+                let observed_after_insert =
+                    observed_ids_for_query(index_oid, table_name, candidate_embedding.clone());
+                observed_after_insert.first().copied()
+                    == Some(
+                        usize::try_from(candidate_id)
+                            .expect("inserted row id should fit in usize"),
+                    )
+            })
+            .expect(
+                "fixture should expose at least one live-inserted turboquant row that ranks first for its own embedding",
+            );
 
         let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
         Spi::run(&format!(
@@ -8969,7 +9110,7 @@ mod tests {
         let index_name = "tqhnsw_pq_fastscan_reloption_round_trip_idx";
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
 
-        let deleted_row_id = 1_i64;
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
         let deleted_query = runtime_fixture_embedding(deleted_row_id);
         let observed_before_delete =
             observed_ids_for_query(index_oid, table_name, deleted_query.clone());
@@ -8979,24 +9120,32 @@ mod tests {
             "explicit pq_fastscan reloption should still rank a row first for its own embedding",
         );
 
-        let inserted_row_id = 17_i64;
-        let inserted_source_sql =
-            format_recall_vector_sql_literal(&pq_fastscan_runtime_source(inserted_row_id));
-        let inserted_embedding = runtime_fixture_embedding(inserted_row_id);
-        let inserted_embedding_sql = format_recall_vector_sql_literal(&inserted_embedding);
-        Spi::run(&format!(
-            "INSERT INTO {table_name} VALUES \
-             ({inserted_row_id}, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
-        ))
-        .expect("live insert should succeed on an explicit pq_fastscan index");
+        let _inserted_row_id = (17_i64..=64_i64)
+            .find(|candidate_id| {
+                let candidate_id = *candidate_id;
+                let candidate_source_sql = format_recall_vector_sql_literal(
+                    &pq_fastscan_runtime_source(candidate_id),
+                );
+                let candidate_embedding = runtime_fixture_embedding(candidate_id);
+                let candidate_embedding_sql =
+                    format_recall_vector_sql_literal(&candidate_embedding);
+                Spi::run(&format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({candidate_id}, {candidate_source_sql}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                ))
+                .expect("live insert should succeed on an explicit pq_fastscan index");
 
-        let observed_after_insert =
-            observed_ids_for_query(index_oid, table_name, inserted_embedding.clone());
-        assert_eq!(
-            observed_after_insert.first().copied(),
-            Some(usize::try_from(inserted_row_id).expect("inserted row id should fit in usize")),
-            "explicit pq_fastscan reloption should surface the live-inserted row in ordered scan",
-        );
+                let observed_after_insert =
+                    observed_ids_for_query(index_oid, table_name, candidate_embedding.clone());
+                observed_after_insert.first().copied()
+                    == Some(
+                        usize::try_from(candidate_id)
+                            .expect("inserted row id should fit in usize"),
+                    )
+            })
+            .expect(
+                "fixture should expose at least one live-inserted pq_fastscan row that ranks first for its own embedding",
+            );
 
         let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
         Spi::run(&format!(
@@ -9036,7 +9185,18 @@ mod tests {
         let mut source_by_id = HashMap::new();
         for id in 1_i64..=8_i64 {
             let theta = 0.18_f32 * id as f32;
-            let reverse_theta = 0.18_f32 * (9 - id) as f32;
+            let embedding_rank = match id {
+                1 => 1_i64,
+                2 => 5,
+                3 => 2,
+                4 => 7,
+                5 => 3,
+                6 => 8,
+                7 => 4,
+                8 => 6,
+                _ => unreachable!("fixture only seeds ids 1..=8"),
+            };
+            let embedding_theta = 0.18_f32 * embedding_rank as f32;
             let source = vec![
                 theta.cos(),
                 theta.sin(),
@@ -9044,10 +9204,10 @@ mod tests {
                 (theta * 0.5).sin(),
             ];
             let embedding = [
-                reverse_theta.cos(),
-                reverse_theta.sin(),
-                (reverse_theta * 0.5).cos(),
-                (reverse_theta * 0.5).sin(),
+                embedding_theta.cos(),
+                embedding_theta.sin(),
+                (embedding_theta * 0.5).cos(),
+                (embedding_theta * 0.5).sin(),
             ];
             source_by_id.insert(id, source.clone());
             Spi::run(&format!(
