@@ -3897,14 +3897,16 @@ mod tests {
         }
     }
 
-    fn pq_fastscan_heap_rerank_runtime_observed_scores(
+    fn pq_fastscan_rerank_runtime_observed_scores(
         table_name: &str,
         index_name: &str,
+        rerank_mode: Option<&str>,
         rerank_source_column: Option<&str>,
         include_source_raw: bool,
     ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
         let _lock = env_var_test_lock();
-        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _rerank_guard =
+            rerank_mode.map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", value));
         let _source_guard = rerank_source_column
             .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", value));
         let index_oid = if include_source_raw {
@@ -4093,8 +4095,18 @@ mod tests {
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
-            Some("quantized"),
+            Some("heap_f32"),
             "the runtime settings probe should surface the effective default pq_fastscan rerank mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_source_column
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("build_source_column"),
+            "the runtime settings probe should surface the source-backed pq_fastscan rerank column label by default",
         );
         assert_eq!(
             Spi::get_one::<bool>(
@@ -4108,11 +4120,57 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_pq_fastscan_default_source_rerank_emits_heap_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank";
+        let index_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank_idx";
+        let (observed, emitted_scores) =
+            pq_fastscan_rerank_runtime_observed_scores(table_name, index_name, None, None, false);
+        let query = pq_fastscan_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "source-backed default PqFastScan rerank should still emit ordered results"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "source-backed default PqFastScan rerank should attach exact heap comparison scores",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_eq!(
+                comparison_score, expected,
+                "source-backed default PqFastScan rerank should use the raw heap f32 inner product"
+            );
+            assert_eq!(
+                emitted_scores.get(&heap_tid).copied(),
+                Some(expected),
+                "source-backed default PqFastScan rerank should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
         let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
         let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
-        let (observed, emitted_scores) =
-            pq_fastscan_heap_rerank_runtime_observed_scores(table_name, index_name, None, false);
+        let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
+            table_name,
+            index_name,
+            Some("heap_f32"),
+            None,
+            false,
+        );
         let query = pq_fastscan_runtime_query();
         let exact_scores = (1..=16)
             .map(|id| {
@@ -4151,9 +4209,10 @@ mod tests {
     fn test_pq_fastscan_heap_rerank_bytea_source_emits_exact_scores() {
         let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea";
         let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea_idx";
-        let (observed, emitted_scores) = pq_fastscan_heap_rerank_runtime_observed_scores(
+        let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
             table_name,
             index_name,
+            Some("heap_f32"),
             Some("source_raw"),
             true,
         );
@@ -4363,6 +4422,8 @@ mod tests {
     fn test_pq_fastscan_quantized_rerank_profile_quantized_only() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _rerank_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
@@ -4544,21 +4605,21 @@ mod tests {
 
         assert!(result_count > 0);
         assert!(
-            pq_fastscan_rerank_quantized_score_calls > 0
-                && pq_fastscan_rerank_quantized_score_elapsed_us >= 0,
-            "canonical pq fastscan rerank profile should surface quantized rerank work",
+            pq_fastscan_rerank_heap_score_calls > 0
+                && pq_fastscan_rerank_heap_score_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_rows_fetched >= pq_fastscan_rerank_heap_score_calls
+                && pq_fastscan_rerank_heap_fetch_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_decode_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_dot_elapsed_us >= 0,
+            "canonical pq fastscan rerank profile should surface heap rerank work on the source-backed default path",
         );
         assert_eq!(
             (
-                pq_fastscan_rerank_heap_score_calls,
-                pq_fastscan_rerank_heap_score_elapsed_us,
-                pq_fastscan_rerank_heap_rows_fetched,
-                pq_fastscan_rerank_heap_fetch_elapsed_us,
-                pq_fastscan_rerank_heap_decode_elapsed_us,
-                pq_fastscan_rerank_heap_dot_elapsed_us,
+                pq_fastscan_rerank_quantized_score_calls,
+                pq_fastscan_rerank_quantized_score_elapsed_us,
             ),
-            (0, 0, 0, 0, 0, 0),
-            "canonical pq fastscan rerank profile should leave heap rerank counters inert in the default quantized mode",
+            (0, 0),
+            "canonical pq fastscan rerank profile should bypass quantized rerank counters on the source-backed default path",
         );
     }
 
@@ -16752,9 +16813,12 @@ mod tests {
                 )
                 .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME.to_owned()),
             ),
-            rerank_source_column: env_string(
-                "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN",
-                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+            rerank_source_column: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+                )
+                .unwrap_or_else(|| "build_source_column".to_owned()),
             ),
             exact_traversal_enabled: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
                 .or_else(|| {

@@ -48,7 +48,7 @@ const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
 pub(crate) const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 64;
 const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
 pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
-pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "quantized";
+pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "heap_f32";
 const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
     "tqhnsw PqFastScan exact scoring requires the cold rerank payload path";
 
@@ -943,12 +943,24 @@ fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
     opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
 }
 
-fn resolve_grouped_rerank_mode() -> GroupedRerankMode {
+fn default_grouped_rerank_mode(
+    index_options: &super::options::TqHnswOptions,
+) -> GroupedRerankMode {
+    if index_options.build_source_column.is_some() {
+        GroupedRerankMode::HeapF32
+    } else {
+        GroupedRerankMode::Quantized
+    }
+}
+
+fn resolve_grouped_rerank_mode(
+    index_options: &super::options::TqHnswOptions,
+) -> GroupedRerankMode {
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_RERANK_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
     ) else {
-        return GroupedRerankMode::Quantized;
+        return default_grouped_rerank_mode(index_options);
     };
 
     match raw_mode.to_string_lossy().as_ref() {
@@ -1168,7 +1180,7 @@ unsafe fn configure_grouped_heap_rerank_state(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::PqFastScan(_)
     ) {
-        resolve_grouped_rerank_mode()
+        resolve_grouped_rerank_mode(index_options)
     } else {
         GroupedRerankMode::Quantized
     };

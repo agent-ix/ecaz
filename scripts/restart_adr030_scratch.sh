@@ -28,7 +28,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
 window="64"
 grouped_score_mode="binary"
-rerank_mode="quantized"
+rerank_mode="heap_f32"
 rerank_source_column=""
 exact_enabled=0
 exact_scope="all"
