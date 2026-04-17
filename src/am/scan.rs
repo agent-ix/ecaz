@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use hashbrown::{HashMap, HashSet};
-use pgrx::{FromDatum, IntoDatum, PgBox, pg_sys};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
@@ -515,6 +515,51 @@ enum GroupedRerankMode {
     HeapF32 = 1,
 }
 
+impl GroupedRerankMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Quantized => "quantized",
+            Self::HeapF32 => "heap_f32",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PqFastScanRerankModeResolution {
+    EnvOverride,
+    DefaultHeapF32WithBuildSourceColumn,
+    DefaultQuantizedMissingBuildSourceColumn,
+    NonPqFastScanStorage,
+}
+
+impl PqFastScanRerankModeResolution {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::EnvOverride => "env_override",
+            Self::DefaultHeapF32WithBuildSourceColumn => {
+                "default_heap_f32_with_build_source_column"
+            }
+            Self::DefaultQuantizedMissingBuildSourceColumn => {
+                "default_quantized_missing_build_source_column"
+            }
+            Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PqFastScanRerankModeDecision {
+    mode: GroupedRerankMode,
+    pub(crate) resolution: PqFastScanRerankModeResolution,
+    pub(crate) source_column: Option<String>,
+}
+
+impl PqFastScanRerankModeDecision {
+    pub(crate) const fn mode_name(&self) -> &'static str {
+        self.mode.as_str()
+    }
+}
+
 struct BinaryPrefilterCandidate {
     ordinal: usize,
     element: Arc<CachedGraphElement>,
@@ -1007,9 +1052,7 @@ fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
     opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
 }
 
-fn default_grouped_rerank_mode(
-    index_options: &super::options::TqHnswOptions,
-) -> GroupedRerankMode {
+fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
     if index_options.build_source_column.is_some() {
         GroupedRerankMode::HeapF32
     } else {
@@ -1017,24 +1060,81 @@ fn default_grouped_rerank_mode(
     }
 }
 
-fn resolve_grouped_rerank_mode(
+fn default_grouped_rerank_mode_resolution(
     index_options: &super::options::TqHnswOptions,
-) -> GroupedRerankMode {
+) -> PqFastScanRerankModeResolution {
+    if index_options.build_source_column.is_some() {
+        PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn
+    } else {
+        PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn
+    }
+}
+
+fn effective_grouped_rerank_source_column(
+    index_options: &super::options::TqHnswOptions,
+    mode: GroupedRerankMode,
+) -> Option<String> {
+    if mode != GroupedRerankMode::HeapF32 {
+        return None;
+    }
+
+    pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
+    )
+    .map(|value| value.to_string_lossy().into_owned())
+    .or_else(|| index_options.build_source_column.clone())
+}
+
+fn resolve_grouped_rerank_mode_decision(
+    index_options: &super::options::TqHnswOptions,
+) -> PqFastScanRerankModeDecision {
     let Some(raw_mode) = pq_fastscan_env_var(
         PQ_FASTSCAN_RERANK_MODE_ENV,
         LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
     ) else {
-        return default_grouped_rerank_mode(index_options);
+        let mode = default_grouped_rerank_mode(index_options);
+        return PqFastScanRerankModeDecision {
+            mode,
+            resolution: default_grouped_rerank_mode_resolution(index_options),
+            source_column: effective_grouped_rerank_source_column(index_options, mode),
+        };
     };
 
-    match raw_mode.to_string_lossy().as_ref() {
+    let mode = match raw_mode.to_string_lossy().as_ref() {
         "quantized" => GroupedRerankMode::Quantized,
         "heap_f32" => GroupedRerankMode::HeapF32,
         other => pgrx::error!(
             "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got {:?}",
             other
         ),
+    };
+
+    PqFastScanRerankModeDecision {
+        mode,
+        resolution: PqFastScanRerankModeResolution::EnvOverride,
+        source_column: effective_grouped_rerank_source_column(index_options, mode),
     }
+}
+
+pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
+    index_relation: pg_sys::Relation,
+    graph_storage: graph::GraphStorageDescriptor,
+) -> PqFastScanRerankModeDecision {
+    if !matches!(graph_storage, graph::GraphStorageDescriptor::PqFastScan(_)) {
+        return PqFastScanRerankModeDecision {
+            mode: GroupedRerankMode::Quantized,
+            resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
+            source_column: None,
+        };
+    }
+
+    let index_options = unsafe { super::options::relation_options(index_relation) };
+    resolve_grouped_rerank_mode_decision(&index_options)
+}
+
+fn resolve_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
+    resolve_grouped_rerank_mode_decision(index_options).mode
 }
 
 fn grouped_heap_rerank_enabled(opaque: &TqScanOpaque) -> bool {
@@ -1240,30 +1340,35 @@ unsafe fn configure_grouped_heap_rerank_state(
     index_options: &super::options::TqHnswOptions,
 ) {
     unsafe { free_grouped_heap_rerank_state(opaque) };
-    opaque.grouped_rerank_mode = if matches!(
+    let rerank = if matches!(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::PqFastScan(_)
     ) {
-        resolve_grouped_rerank_mode(index_options)
+        resolve_grouped_rerank_mode_decision(index_options)
     } else {
-        GroupedRerankMode::Quantized
+        PqFastScanRerankModeDecision {
+            mode: GroupedRerankMode::Quantized,
+            resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
+            source_column: None,
+        }
     };
+    opaque.grouped_rerank_mode = rerank.mode;
 
     if !grouped_heap_rerank_enabled(opaque) {
         return;
     }
 
-    let source_column_override = pq_fastscan_env_var(
+    let source_label = if pq_fastscan_env_var(
         PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV,
         LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
     )
-    .map(|value| value.to_string_lossy().into_owned());
-    let source_label = if source_column_override.is_some() {
+    .is_some()
+    {
         PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
     } else {
         "build_source_column"
     };
-    let source_column = source_column_override.unwrap_or_else(|| {
+    let source_column = rerank.source_column.unwrap_or_else(|| {
         index_options.build_source_column.clone().unwrap_or_else(|| {
             pgrx::error!(
                 "tqhnsw PqFastScan heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
@@ -6405,6 +6510,50 @@ mod tests {
         assert!(
             !expanded_contains_source(&opaque, grandchild_tid),
             "trace seeding should leave deeper discovered candidates available for later refill"
+        );
+    }
+
+    #[test]
+    fn source_backed_default_rerank_resolves_to_heap_f32() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: Some("source".to_owned()),
+            storage_format: super::super::options::StorageFormat::TurboQuant,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::HeapF32,
+            "build_source_column indexes should default PqFastScan rerank to heap_f32"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn,
+            "source-backed PqFastScan defaults should explain that heap_f32 came from build_source_column"
+        );
+    }
+
+    #[test]
+    fn source_less_default_rerank_resolves_to_quantized() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: None,
+            storage_format: super::super::options::StorageFormat::TurboQuant,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::Quantized,
+            "source-less indexes should default PqFastScan rerank to quantized"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn,
+            "source-less defaults should explain that quantized came from the missing build_source_column"
         );
     }
 }

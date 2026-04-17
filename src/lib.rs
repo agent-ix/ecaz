@@ -3856,7 +3856,10 @@ mod tests {
             .collect()
     }
 
-    fn fetch_pq_fastscan_index_runtime_text(index_oid: pg_sys::Oid, column: &str) -> Option<String> {
+    fn fetch_pq_fastscan_index_runtime_text(
+        index_oid: pg_sys::Oid,
+        column: &str,
+    ) -> Option<String> {
         Spi::get_one::<String>(&format!(
             "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
         ))
@@ -4161,6 +4164,23 @@ mod tests {
             Some(1),
             "the index-aware runtime settings helper should surface the layout binary word count used to pick the default traversal path",
         );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "the index-aware runtime settings helper should surface the effective heap_f32 rerank default for source-backed pq_fastscan indexes",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("default_heap_f32_with_build_source_column"),
+            "the index-aware runtime settings helper should explain when heap_f32 rerank came from the persisted build_source_column default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            Some("source"),
+            "the index-aware runtime settings helper should surface the effective rerank source column name",
+        );
     }
 
     #[pg_test]
@@ -4201,7 +4221,9 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_index_runtime_settings_report_env_override() {
         let _lock = env_var_test_lock();
-        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_settings_env_override",
             "tqhnsw_pq_fastscan_runtime_settings_env_override_idx",
@@ -4226,6 +4248,53 @@ mod tests {
             fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
             Some(1),
             "the index-aware runtime settings helper should still surface the persisted binary layout when an env override changes the selected traversal mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("quantized"),
+            "the index-aware runtime settings helper should surface the env-selected rerank mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that an explicit rerank env override won over the source-backed default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            None,
+            "the index-aware runtime settings helper should omit the rerank source column when quantized rerank is selected",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_heap_override() {
+        let _lock = env_var_test_lock();
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _rerank_source_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", "source_raw");
+        let index_oid = create_pq_fastscan_runtime_fixture_with_source_raw(
+            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override",
+            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "the index-aware runtime settings helper should surface the env-selected heap_f32 rerank mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that the heap rerank mode came from an explicit env override",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            Some("source_raw"),
+            "the index-aware runtime settings helper should surface the effective rerank source override column name",
         );
     }
 
@@ -4532,8 +4601,7 @@ mod tests {
     fn test_pq_fastscan_quantized_rerank_profile_quantized_only() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
-        let _rerank_mode_guard =
-            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
         let index_oid = create_pq_fastscan_runtime_fixture(
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
             "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
@@ -8809,7 +8877,8 @@ mod tests {
         ))
         .expect("ALTER INDEX should update the reloption without rewriting the index");
 
-        let inserted_embedding_sql = format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES \
              (17, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
@@ -16959,7 +17028,9 @@ mod tests {
                     "TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE",
                     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
                 )
-                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME.to_owned()),
+                .unwrap_or_else(|| {
+                    crate::am::PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME.to_owned()
+                }),
             ),
             rerank_mode: Some(
                 env_string(
@@ -16998,6 +17069,7 @@ mod tests {
     struct PqFastScanIndexRuntimeSettings {
         base: PqFastScanRuntimeSettings,
         traversal_score_mode_resolution: Option<String>,
+        rerank_mode_resolution: Option<String>,
         layout_binary_word_count: Option<i32>,
     }
 
@@ -17005,7 +17077,10 @@ mod tests {
         index_oid: pg_sys::Oid,
     ) -> PqFastScanIndexRuntimeSettings {
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index")
+            open_valid_tqhnsw_index(
+                index_oid,
+                "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index",
+            )
         };
         let (_block_count, _m, _ef_construction, metadata) =
             unsafe { am::debug_index_metadata(index_oid) };
@@ -17025,13 +17100,18 @@ mod tests {
             }
         };
         let traversal = am::resolve_pq_fastscan_traversal_score_mode_decision(storage);
+        let rerank =
+            unsafe { am::resolve_pq_fastscan_rerank_mode_decision(index_relation, storage) };
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         let mut base = current_pq_fastscan_runtime_settings();
         base.traversal_score_mode = Some(traversal.mode_name().to_owned());
+        base.rerank_mode = Some(rerank.mode_name().to_owned());
+        base.rerank_source_column = rerank.source_column;
 
         PqFastScanIndexRuntimeSettings {
             base,
             traversal_score_mode_resolution: Some(traversal.resolution.as_str().to_owned()),
+            rerank_mode_resolution: Some(rerank.resolution.as_str().to_owned()),
             layout_binary_word_count: Some(
                 i32::try_from(layout.binary_word_count)
                     .expect("binary-word count should fit in i32"),
@@ -17085,6 +17165,7 @@ mod tests {
             name!(pq_fastscan_traversal_score_mode_resolution, Option<String>),
             name!(pq_fastscan_layout_binary_word_count, Option<i32>),
             name!(pq_fastscan_rerank_mode, Option<String>),
+            name!(pq_fastscan_rerank_mode_resolution, Option<String>),
             name!(pq_fastscan_rerank_source_column, Option<String>),
             name!(pq_fastscan_exact_traversal_enabled, bool),
             name!(pq_fastscan_exact_traversal_scope, Option<String>),
@@ -17101,6 +17182,7 @@ mod tests {
             settings.traversal_score_mode_resolution,
             settings.layout_binary_word_count,
             settings.base.rerank_mode,
+            settings.rerank_mode_resolution,
             settings.base.rerank_source_column,
             settings.base.exact_traversal_enabled,
             settings.base.exact_traversal_scope,

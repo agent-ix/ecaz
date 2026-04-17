@@ -36,7 +36,7 @@ pub(crate) fn register_gucs() {
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::scan::{
-    resolve_pq_fastscan_traversal_score_mode_decision,
+    resolve_pq_fastscan_rerank_mode_decision, resolve_pq_fastscan_traversal_score_mode_decision,
     PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW, PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME,
     PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME,
 };
