@@ -4,6 +4,12 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
 use super::{graph, options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct LiveEntryCandidate {
+    pub tid: page::ItemPointer,
+    pub level: u8,
+}
+
 pub(super) unsafe fn initialize_metadata_page(
     index_relation: pg_sys::Relation,
     metadata: page::MetadataPage,
@@ -237,6 +243,145 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     }
 
     count
+}
+
+pub(super) unsafe fn highest_level_live_entry_candidate(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+) -> Option<LiveEntryCandidate> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let mut best_level = None;
+    let mut best = None;
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = page_line_pointer_count(page_ptr);
+
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                pgrx::error!(
+                    "tqhnsw found invalid tuple bounds while selecting a live entry candidate on block {block_number}"
+                );
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            let tid = page::ItemPointer {
+                block_number,
+                offset_number: offset,
+            };
+            let candidate = match storage {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                        None
+                    } else {
+                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
+                                    "tqhnsw failed to decode element tuple while selecting a live entry candidate: {e}"
+                                )
+                            });
+                        (!element.deleted && !element.heaptids.is_empty()).then_some(
+                            LiveEntryCandidate {
+                                tid,
+                                level: element.level,
+                            },
+                        )
+                    }
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                        None
+                    } else {
+                        let element =
+                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                        "tqhnsw failed to decode TurboQuant V3 tuple while selecting a live entry candidate: {e}"
+                                    )
+                                });
+                        (!element.deleted && !element.heaptids.is_empty()).then_some(
+                            LiveEntryCandidate {
+                                tid,
+                                level: element.level,
+                            },
+                        )
+                    }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                        None
+                    } else {
+                        let element = page::TqGroupedHotTuple::decode(
+                            tuple_bytes,
+                            layout.binary_word_count,
+                            layout.search_code_len,
+                        )
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "tqhnsw failed to decode grouped hot tuple while selecting a live entry candidate: {e}"
+                            )
+                        });
+                        (!element.deleted && !element.heaptids.is_empty()).then_some(
+                            LiveEntryCandidate {
+                                tid,
+                                level: element.level,
+                            },
+                        )
+                    }
+                }
+            };
+            if let Some(candidate) = candidate {
+                match best_level {
+                    None => {
+                        best_level = Some(candidate.level);
+                        best = Some(candidate);
+                    }
+                    Some(level) if candidate.level > level => {
+                        best_level = Some(candidate.level);
+                        best = Some(candidate);
+                    }
+                    Some(level)
+                        if candidate.level == level
+                            && match best {
+                                None => true,
+                                Some(existing) => {
+                                    (candidate.tid.block_number, candidate.tid.offset_number)
+                                        < (existing.tid.block_number, existing.tid.offset_number)
+                                }
+                            } =>
+                    {
+                        best = Some(candidate);
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    best
 }
 
 pub(super) unsafe fn page_item_id(page_ptr: *mut u8, offset: u16) -> *const pg_sys::ItemIdData {

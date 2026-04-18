@@ -3618,21 +3618,43 @@ unsafe fn initialize_scan_entry_candidate(
     metadata: &page::MetadataPage,
 ) {
     clear_scan_candidate_state(opaque);
-    if metadata.dimensions == 0 || metadata.entry_point == page::ItemPointer::INVALID {
+    if metadata.dimensions == 0 {
         return;
     }
 
-    let (entry, entry_score) = unsafe {
-        cached_graph_element_and_score(
-            index_relation,
-            opaque,
-            metadata.entry_point,
-            metadata.max_level,
-        )
+    let entry_candidate = if metadata.entry_point != page::ItemPointer::INVALID {
+        let (entry, entry_score) = unsafe {
+            cached_graph_element_and_score(
+                index_relation,
+                opaque,
+                metadata.entry_point,
+                metadata.max_level,
+            )
+        };
+        (!entry.deleted && !entry.heaptids.is_empty()).then_some((entry, entry_score))
+    } else {
+        None
     };
-    if entry.deleted || entry.heaptids.is_empty() {
-        return;
-    }
+    let (entry, entry_score) = match entry_candidate {
+        Some(candidate) => candidate,
+        None => {
+            let Some(fallback) = (unsafe {
+                super::shared::highest_level_live_entry_candidate(
+                    index_relation,
+                    opaque.scan_graph_storage,
+                )
+            }) else {
+                return;
+            };
+            let (entry, entry_score) = unsafe {
+                cached_graph_element_and_score(index_relation, opaque, fallback.tid, fallback.level)
+            };
+            if entry.deleted || entry.heaptids.is_empty() {
+                return;
+            }
+            (entry, entry_score)
+        }
+    };
 
     let entry_candidate = search::BeamCandidate::new(
         entry.tid,

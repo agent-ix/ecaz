@@ -11224,6 +11224,163 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqhnsw_vacuum_repairs_deleted_entry_point_metadata() {
+        let table_name = "tqhnsw_vacuum_entry_repair";
+        let index_name = "tqhnsw_vacuum_entry_repair_idx";
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (id bigint primary key, embedding tqvector)"
+        ))
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
+        ))
+        .expect("seed inserts should succeed");
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops)"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT '{index_name}'::regclass::oid"
+        ))
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (metadata_before, elements_before, _neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let deleted_element_before = elements_before
+            .iter()
+            .find(|(tid, _)| *tid == metadata_before.entry_point)
+            .expect("metadata entry point should identify a live element before vacuum");
+        let deleted_heap_tid = *deleted_element_before
+            .1
+            .heaptids
+            .first()
+            .expect("entry-point element should carry a heap tid");
+
+        let ctid_to_id = ctid_id_map(table_name);
+        let deleted_row_id = *ctid_to_id
+            .get(&(deleted_heap_tid.block_number, deleted_heap_tid.offset_number))
+            .expect("entry-point heap tid should map back to a table row");
+        Spi::run(&format!("DELETE FROM {table_name} WHERE id = {deleted_row_id}"))
+            .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, elements_after, _neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        assert_ne!(
+            metadata_after.entry_point,
+            deleted_element_before.0,
+            "vacuum should replace a deleted metadata entry point instead of leaving it behind",
+        );
+        assert_ne!(
+            metadata_after.entry_point,
+            am::page::ItemPointer::INVALID,
+            "vacuum should keep advertising a live entry point while live elements remain",
+        );
+        let repaired_entry = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == metadata_after.entry_point)
+            .expect("repaired metadata entry point should identify an on-disk element");
+        assert!(
+            !repaired_entry.1.deleted && !repaired_entry.1.heaptids.is_empty(),
+            "repaired metadata entry point should identify a live element",
+        );
+        assert_eq!(
+            repaired_entry.1.level, metadata_after.max_level,
+            "vacuum should keep metadata.max_level aligned with the repaired live entry point",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_scan_falls_back_from_stale_entry_metadata() {
+        fn fixture_query(id: usize) -> Vec<f32> {
+            match id {
+                1 => vec![1.0, 0.0, 0.5, -1.0],
+                2 => vec![0.5, 1.0, -0.5, 0.25],
+                3 => vec![-1.0, 0.5, 0.25, 0.75],
+                4 => vec![0.25, -0.75, 1.0, 0.5],
+                5 => vec![-0.5, -1.0, 0.75, 0.25],
+                other => panic!("unexpected fixture row id {other}"),
+            }
+        }
+
+        let table_name = "tqhnsw_scan_stale_entry_fallback";
+        let index_name = "tqhnsw_scan_stale_entry_fallback_idx";
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (id bigint primary key, embedding tqvector)"
+        ))
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
+        ))
+        .expect("seed inserts should succeed");
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops)"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT '{index_name}'::regclass::oid"
+        ))
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (metadata_before, elements_before, _neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let deleted_element_before = elements_before
+            .iter()
+            .find(|(tid, _)| *tid == metadata_before.entry_point)
+            .expect("metadata entry point should identify a live element before vacuum");
+        let deleted_heap_tid = *deleted_element_before
+            .1
+            .heaptids
+            .first()
+            .expect("entry-point element should carry a heap tid");
+        let deleted_level = deleted_element_before.1.level;
+
+        let ctid_to_id = ctid_id_map(table_name);
+        let deleted_row_id = *ctid_to_id
+            .get(&(deleted_heap_tid.block_number, deleted_heap_tid.offset_number))
+            .expect("entry-point heap tid should map back to a table row");
+        Spi::run(&format!("DELETE FROM {table_name} WHERE id = {deleted_row_id}"))
+            .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (_block_count, _m, _ef_construction, mut stale_metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        stale_metadata.entry_point = deleted_element_before.0;
+        stale_metadata.max_level = deleted_level;
+        unsafe { am::debug_update_index_metadata(index_oid, stale_metadata) };
+
+        let returned =
+            unsafe { am::debug_gettuple_scan_heap_tids(index_oid, fixture_query(deleted_row_id)) };
+        assert!(
+            !returned.is_empty(),
+            "scan should fall back to another live seed when metadata.entry_point is stale and deleted",
+        );
+        assert!(
+            !returned.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "stale entry-point fallback should not re-emit the deleted heap row",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_vacuum_pass2_unlinks_deleted_neighbor_refs() {
         Spi::run(
             "CREATE TABLE tqhnsw_vacuum_pass2_unlink (id bigint primary key, embedding tqvector)",

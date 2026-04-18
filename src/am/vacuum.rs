@@ -427,6 +427,7 @@ unsafe fn run_bulkdelete_with_adapter(
 
     unsafe { format.repair_graph_connections(index_relation, heap_relation, &finalize_tids) };
     unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
+    unsafe { repair_metadata_entry_point_after_vacuum(index_relation, storage, &finalize_tids) };
 
     unsafe {
         (*stats).num_pages = block_count;
@@ -435,6 +436,37 @@ unsafe fn run_bulkdelete_with_adapter(
         (*stats).tuples_removed += removed_heap_tids as f64;
     }
     stats
+}
+
+unsafe fn repair_metadata_entry_point_after_vacuum(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    finalize_tids: &[page::ItemPointer],
+) {
+    if finalize_tids.is_empty() {
+        return;
+    }
+
+    let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
+    let replacement = unsafe { shared::highest_level_live_entry_candidate(index_relation, storage) };
+
+    unsafe {
+        shared::with_locked_metadata_page(index_relation, |metadata| {
+            if metadata.entry_point != page::ItemPointer::INVALID
+                && !finalized.contains(&metadata.entry_point)
+            {
+                return;
+            }
+
+            if let Some(replacement) = replacement {
+                metadata.entry_point = replacement.tid;
+                metadata.max_level = replacement.level;
+            } else {
+                metadata.entry_point = page::ItemPointer::INVALID;
+                metadata.max_level = 0;
+            }
+        })
+    };
 }
 
 unsafe fn rewrite_page_pass1(
