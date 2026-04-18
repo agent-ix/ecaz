@@ -12,6 +12,9 @@ Each review topic is a directory under `review/`:
 
     review/{NN}-{topic}/
       request.md
+      artifacts/
+        manifest.md
+        ...
       feedback/
         {YYYY-MM-DD}-{seq}-{agent}.md
 
@@ -28,6 +31,20 @@ Each review topic is a directory under `review/`:
 - Filename: `{YYYY-MM-DD}-{seq}-{agent}.md`
 - Every feedback file must include frontmatter with `agent`, `role`, `model`, `date`, and `seq` fields.
 - Any agent can leave feedback on any topic.
+
+### Measurement Artifacts
+
+- Any review packet that makes a measurement claim should store the cited raw logs inside that packet's `artifacts/` directory instead of relying only on `tmp/`.
+- Measurement packets should include `artifacts/manifest.md` as the packet-local source of truth for artifact metadata.
+- `manifest.md` should record, for each artifact:
+  - head SHA
+  - packet/topic
+  - lane / fixture / storage format / rerank mode
+  - command used
+  - timestamp
+  - whether the run used isolated one-index-per-table or shared-table surfaces
+  - the key result lines that `request.md` cites
+- `request.md` should summarize the result and point at the packet-local artifact files.
 
 ### Workflow
 
