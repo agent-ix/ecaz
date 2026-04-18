@@ -1,7 +1,7 @@
 # Task 16: TurboQuant Iteration with PqFastScan Learnings
 
 Status: in progress — levers 1–3 landed and were measured; lever-4 / lever-5
-comparison is still open.
+comparison closed in packet `437`, but the serious-lane closure goal is still open.
 
 Follow-on to ADR-032.
 
@@ -88,10 +88,11 @@ the LUT 4x. Composes with tiling.
 - [x] **Measurement packet** comparing TurboQuant-today vs
   TurboQuant-with-levers-1–3 at the same recall target on 50k warm real
   seam. Closed across packets `423`, `426`, `429`, `430`, and `432`.
-- [ ] **Decide** whether to pursue lever 4 (tiled LUT) and/or lever 5
-  (int8 LUT) based on whether levers 1–3 close the gap. Follow-on needs
-  direct measurement data comparing all available options rather than an
-  inference-only closeout.
+- [x] **Decide** whether to pursue lever 4 (tiled LUT) and/or lever 5
+  (int8 LUT) based on whether levers 1–3 close the gap. Closed across packets
+  `433`, `436`, and `437`: lever 4 is real on the live quantized lane but too
+  small on the recall-preserving `heap_f32` lane, while lever 5 is not
+  justified for the task-16 serious-lane goal.
 
 ## Owns
 
@@ -116,7 +117,8 @@ the LUT 4x. Composes with tiling.
 - The recall-preserving serious lane remained dominated by heap rerank/source
   fetch-decode cost in the measurements so far.
 - A packed raw-f32 rerank source helps that serious lane, but the lever-4 /
-  lever-5 comparison is still open and needs direct measurement data.
+  lever-5 live matrix shows lever 4 helps the quantized lane more than lever 5,
+  while neither closes the serious lane.
 
 ## Out of scope
 
