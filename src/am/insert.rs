@@ -243,6 +243,7 @@ impl InsertSearchMetric {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InsertFormatAdapter {
     TurboQuant { code_len: usize },
+    TurboQuantHotCold(graph::TurboQuantHotColdLayout),
     PqFastScan(graph::PqFastScanLayout),
 }
 
@@ -250,6 +251,9 @@ impl InsertFormatAdapter {
     fn graph_storage(self) -> graph::GraphStorageDescriptor {
         match self {
             Self::TurboQuant { code_len } => graph::GraphStorageDescriptor::TurboQuant { code_len },
+            Self::TurboQuantHotCold(layout) => {
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout)
+            }
             Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
         }
     }
@@ -257,6 +261,7 @@ impl InsertFormatAdapter {
     fn initial_code_len(self, tuple: &build::BuildTuple) -> usize {
         match self {
             Self::TurboQuant { code_len } => code_len.max(tuple.code.len()),
+            Self::TurboQuantHotCold(layout) => layout.rerank_code_len.max(tuple.code.len()),
             Self::PqFastScan(_) => tuple.code.len(),
         }
     }
@@ -280,6 +285,9 @@ impl InsertFormatAdapter {
                     code_len,
                     &tuple.code,
                 )
+            },
+            Self::TurboQuantHotCold(layout) => unsafe {
+                find_duplicate_turbo_hot_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
             },
             Self::PqFastScan(layout) => unsafe {
                 find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
@@ -321,6 +329,9 @@ impl InsertFormatAdapter {
             Self::TurboQuant { .. } => unsafe {
                 append_heap_tuple(index_relation, tuple, level, neighbor_tids)
             },
+            Self::TurboQuantHotCold(layout) => unsafe {
+                append_turbo_hot_cold_tuple(index_relation, tuple, level, neighbor_tids, layout)
+            },
             Self::PqFastScan(layout) => unsafe {
                 append_pq_fastscan_tuple(
                     index_relation,
@@ -343,6 +354,9 @@ impl InsertFormatAdapter {
         match self {
             Self::TurboQuant { code_len } => unsafe {
                 coalesce_duplicate_heap_tid(index_relation, element_tid, code_len, heap_tid)
+            },
+            Self::TurboQuantHotCold(layout) => unsafe {
+                coalesce_duplicate_turbo_hot_heap_tid(index_relation, element_tid, layout, heap_tid)
             },
             Self::PqFastScan(layout) => unsafe {
                 coalesce_duplicate_grouped_heap_tid(index_relation, element_tid, layout, heap_tid)
@@ -433,8 +447,43 @@ fn resolve_insert_format_adapter(
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(InsertFormatAdapter::TurboQuant { code_len })
         }
+        graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+            Ok(InsertFormatAdapter::TurboQuantHotCold(layout))
+        }
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(InsertFormatAdapter::PqFastScan(layout))
+        }
+    }
+}
+
+fn initialized_empty_insert_metadata(
+    metadata: &page::MetadataPage,
+    format: InsertFormatAdapter,
+    tuple: &build::BuildTuple,
+) -> page::MetadataPage {
+    let current = page::CurrentFormatMetadata {
+        m: metadata.m,
+        ef_construction: metadata.ef_construction,
+        entry_point: metadata.entry_point,
+        dimensions: tuple.dimensions,
+        bits: tuple.bits,
+        max_level: metadata.max_level,
+        seed: tuple.seed,
+        inserted_since_rebuild: metadata.inserted_since_rebuild,
+        persisted_binary_sidecar: crate::quant::prod::ProdQuantizer::cached(
+            tuple.dimensions as usize,
+            tuple.bits,
+            tuple.seed,
+        )
+        .binary_sign_no_qjl_4bit_supported(),
+    };
+    match format {
+        InsertFormatAdapter::TurboQuant { .. } => page::MetadataPage::current_v1_scalar(current),
+        InsertFormatAdapter::TurboQuantHotCold(_) => {
+            page::MetadataPage::current_v3_turbo_hot_cold(current)
+        }
+        InsertFormatAdapter::PqFastScan(_) => {
+            panic!("empty grouped metadata initialization should use the dedicated bootstrap path")
         }
     }
 }
@@ -488,9 +537,7 @@ unsafe fn run_insert_with_adapter(
         }
         shared::with_locked_metadata_page(index_relation, |metadata| {
             if metadata.dimensions == 0 && metadata.bits == 0 {
-                metadata.dimensions = tuple.dimensions;
-                metadata.bits = tuple.bits;
-                metadata.seed = tuple.seed;
+                *metadata = initialized_empty_insert_metadata(metadata, format, tuple);
             } else if tuple.dimensions != metadata.dimensions
                 || tuple.bits != metadata.bits
                 || tuple.seed != metadata.seed
@@ -506,16 +553,24 @@ unsafe fn run_insert_with_adapter(
                 );
             }
 
+            let active_format = resolve_insert_format_adapter(index_relation, metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if let Some(element_tid) =
-                format.find_duplicate(index_relation, heap_relation, metadata, tuple, code_len)
+                active_format.find_duplicate(
+                    index_relation,
+                    heap_relation,
+                    metadata,
+                    tuple,
+                    code_len,
+                )
             {
-                format.coalesce_duplicate(index_relation, element_tid, heap_tid);
+                active_format.coalesce_duplicate(index_relation, element_tid, heap_tid);
                 return;
             }
 
             let insert_level = choose_insert_level(m, metadata.seed, heap_tid, tuple.code.len());
             let forward_neighbor_slots = empty_insert_neighbor_slots(insert_level, m);
-            let element_tid = format.append_node(
+            let element_tid = active_format.append_node(
                 index_relation,
                 metadata,
                 tuple,
@@ -593,9 +648,17 @@ unsafe fn run_insert_with_adapter(
     // drift counter, so every new-node append takes one final metadata
     // write phase after all data-page writes are complete. Entry-point
     // repair/promotion piggybacks on that same lock scope.
+    let storage = format.graph_storage();
     shared::with_locked_metadata_page(index_relation, |metadata| {
         metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
-        if metadata.entry_point == page::ItemPointer::INVALID || insert_level > metadata.max_level {
+        let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID
+            || {
+                let entry = unsafe {
+                    graph::load_exact_graph_element(index_relation, metadata.entry_point, storage)
+                };
+                entry.deleted || entry.heaptids.is_empty()
+            };
+        if entry_point_needs_repair || insert_level > metadata.max_level {
             // Metadata must always advertise a live element at
             // metadata.max_level. The new tuple is already appended, so
             // repair/promotion happens only after append commits.
@@ -1491,6 +1554,299 @@ unsafe fn append_heap_tuple_to_new_page(
     }
 }
 
+unsafe fn append_turbo_hot_cold_tuple(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_tids: &[page::ItemPointer],
+    layout: graph::TurboQuantHotColdLayout,
+) -> page::ItemPointer {
+    let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
+        tuple.dimensions as usize,
+        tuple.bits,
+        tuple.seed,
+    );
+    let placeholder_payload = build::stage_v3_turbo_hot_build_payload(
+        tuple,
+        level,
+        page::ItemPointer::INVALID,
+        page::ItemPointer::INVALID,
+        &persisted_binary_quantizer,
+    );
+    if placeholder_payload.hot.binary_words.len() != layout.binary_word_count {
+        pgrx::error!(
+            "tqhnsw derived TurboQuant V3 binary sidecar len {} does not match metadata layout {}",
+            placeholder_payload.hot.binary_words.len(),
+            layout.binary_word_count
+        );
+    }
+    if placeholder_payload.rerank.code.len() != layout.rerank_code_len {
+        pgrx::error!(
+            "tqhnsw derived TurboQuant V3 rerank code len {} does not match metadata layout {}",
+            placeholder_payload.rerank.code.len(),
+            layout.rerank_code_len
+        );
+    }
+
+    let neighbor_payload = page::TqNeighborTuple {
+        count: u16::try_from(neighbor_tids.len()).expect("neighbor slot count should fit in u16"),
+        tids: neighbor_tids.to_vec(),
+    }
+    .encode()
+    .unwrap_or_else(|e| {
+        pgrx::error!("tqhnsw failed to encode TurboQuant V3 neighbor tuple: {e}")
+    });
+    let rerank_payload = placeholder_payload.rerank.encode();
+    let hot_tuple_len = page::TqTurboHotTuple::encoded_len(layout.binary_word_count);
+    let required_bytes = page::raw_tuple_storage_bytes(neighbor_payload.len())
+        + page::raw_tuple_storage_bytes(rerank_payload.len())
+        + page::raw_tuple_storage_bytes(hot_tuple_len);
+
+    let mut staged_page =
+        page::DataPage::new(page::FIRST_DATA_BLOCK_NUMBER, pg_sys::BLCKSZ as usize);
+    staged_page
+        .insert_raw_tuple(neighbor_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to stage TurboQuant V3 aminsert neighbor tuple: {e}")
+        });
+    staged_page
+        .insert_raw_tuple(rerank_payload.clone())
+        .unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to stage TurboQuant V3 aminsert rerank tuple: {e}")
+        });
+    if !staged_page.can_fit_raw_tuple(hot_tuple_len) {
+        pgrx::error!(
+            "tqhnsw aminsert does not yet support TurboQuant V3 tuples that require more than one fresh data page"
+        );
+    }
+
+    let existing_blocks = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let target_block = if existing_blocks > page::FIRST_DATA_BLOCK_NUMBER {
+        existing_blocks - 1
+    } else {
+        P_NEW
+    };
+    let read_mode = if target_block == P_NEW {
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+    } else {
+        pg_sys::ReadBufferMode::RBM_NORMAL
+    };
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            target_block,
+            read_mode,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!("tqhnsw failed to allocate TurboQuant V3 data buffer for aminsert");
+    }
+
+    if target_block != P_NEW {
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    if target_block == P_NEW {
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+    } else {
+        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+        if free_space < required_bytes {
+            std::mem::drop(wal_txn);
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            return unsafe {
+                append_turbo_hot_cold_tuple_to_new_page(
+                    index_relation,
+                    tuple,
+                    level,
+                    &neighbor_payload,
+                    &rerank_payload,
+                    layout,
+                )
+            };
+        }
+    }
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let neighbor_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            neighbor_payload.as_ptr().cast_mut().cast(),
+            neighbor_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if neighbor_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write TurboQuant V3 neighbor tuple during aminsert");
+    }
+    let rerank_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            rerank_payload.as_ptr().cast_mut().cast(),
+            rerank_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if rerank_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write TurboQuant V3 rerank tuple during aminsert");
+    }
+
+    let hot_payload = build::stage_v3_turbo_hot_build_payload(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        &persisted_binary_quantizer,
+    )
+    .hot
+    .encode()
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode TurboQuant V3 hot tuple: {e}"));
+    let hot_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            hot_payload.as_ptr().cast_mut().cast(),
+            hot_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if hot_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write TurboQuant V3 hot tuple during aminsert");
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
+unsafe fn append_turbo_hot_cold_tuple_to_new_page(
+    index_relation: pg_sys::Relation,
+    tuple: &build::BuildTuple,
+    level: u8,
+    neighbor_payload: &[u8],
+    rerank_payload: &[u8],
+    layout: graph::TurboQuantHotColdLayout,
+) -> page::ItemPointer {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            P_NEW,
+            pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!(
+            "tqhnsw failed to allocate fallback TurboQuant V3 data buffer for aminsert"
+        );
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let neighbor_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            neighbor_payload.as_ptr().cast_mut().cast(),
+            neighbor_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if neighbor_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!(
+            "tqhnsw failed to write fallback TurboQuant V3 neighbor tuple during aminsert"
+        );
+    }
+    let rerank_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            rerank_payload.as_ptr().cast_mut().cast(),
+            rerank_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if rerank_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!(
+            "tqhnsw failed to write fallback TurboQuant V3 rerank tuple during aminsert"
+        );
+    }
+
+    let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
+        tuple.dimensions as usize,
+        tuple.bits,
+        tuple.seed,
+    );
+    let hot_payload = build::stage_v3_turbo_hot_build_payload(
+        tuple,
+        level,
+        page::ItemPointer {
+            block_number,
+            offset_number: neighbor_offset,
+        },
+        page::ItemPointer {
+            block_number,
+            offset_number: rerank_offset,
+        },
+        &persisted_binary_quantizer,
+    )
+    .hot
+    .encode()
+    .unwrap_or_else(|e| {
+        pgrx::error!("tqhnsw failed to encode fallback TurboQuant V3 hot tuple: {e}")
+    });
+    if hot_payload.len() != page::TqTurboHotTuple::encoded_len(layout.binary_word_count) {
+        pgrx::error!(
+            "tqhnsw fallback TurboQuant V3 hot tuple len {} does not match metadata layout {}",
+            hot_payload.len(),
+            page::TqTurboHotTuple::encoded_len(layout.binary_word_count)
+        );
+    }
+    let hot_offset = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            hot_payload.as_ptr().cast_mut().cast(),
+            hot_payload.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if hot_offset == pg_sys::InvalidOffsetNumber {
+        pgrx::error!("tqhnsw failed to write fallback TurboQuant V3 hot tuple during aminsert");
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    page::ItemPointer {
+        block_number,
+        offset_number: hot_offset,
+    }
+}
+
 unsafe fn derive_pq_fastscan_search_code_for_insert(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
@@ -1893,6 +2249,80 @@ unsafe fn find_duplicate_element_tid(
     None
 }
 
+unsafe fn find_duplicate_turbo_hot_element_tid(
+    index_relation: pg_sys::Relation,
+    gamma: f32,
+    code: &[u8],
+    layout: graph::TurboQuantHotColdLayout,
+) -> Option<page::ItemPointer> {
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        return None;
+    }
+
+    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let line_pointer_count = shared::page_line_pointer_count(page_ptr);
+
+        for offset in 1..=line_pointer_count {
+            let item_id = unsafe { &*shared::page_item_id(page_ptr, offset) };
+            if item_id.lp_flags() == 0 {
+                continue;
+            }
+
+            let tuple_offset = item_id.lp_off() as usize;
+            let tuple_len = item_id.lp_len() as usize;
+            if tuple_offset + tuple_len > page_size {
+                pgrx::error!(
+                    "tqhnsw found invalid TurboQuant V3 tuple bounds while scanning block {block_number}"
+                );
+            }
+
+            let tuple_bytes =
+                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+            if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                continue;
+            }
+
+            let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode candidate TurboQuant V3 tuple: {e}")
+                });
+            if element.deleted || element.heaptids.is_empty() {
+                continue;
+            }
+
+            let rerank = unsafe {
+                graph::load_rerank_payload(index_relation, element.reranktid, layout.rerank_code_len)
+            };
+            if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Some(page::ItemPointer {
+                    block_number,
+                    offset_number: offset,
+                });
+            }
+        }
+
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    None
+}
+
 unsafe fn find_duplicate_grouped_element_tid(
     index_relation: pg_sys::Relation,
     gamma: f32,
@@ -2045,6 +2475,82 @@ unsafe fn coalesce_duplicate_heap_tid(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
+unsafe fn coalesce_duplicate_turbo_hot_heap_tid(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: graph::TurboQuantHotColdLayout,
+    heap_tid: page::ItemPointer,
+) {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            element_tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        pgrx::error!(
+            "tqhnsw failed to open duplicate TurboQuant V3 element block {}",
+            element_tid.block_number
+        );
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) }
+            .cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, element_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!("tqhnsw duplicate TurboQuant V3 tuple slot is unused");
+    }
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "tqhnsw found invalid duplicate TurboQuant V3 tuple bounds on block {}",
+            element_tid.block_number
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let mut element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+        .unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode duplicate TurboQuant V3 tuple: {e}")
+        });
+    if element.heaptids.contains(&heap_tid) {
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        return;
+    }
+    if element.heaptids.len() >= page::HEAPTID_INLINE_CAPACITY {
+        pgrx::error!(
+            "tqhnsw aminsert supports at most {} duplicate heap tids per encoded vector",
+            page::HEAPTID_INLINE_CAPACITY
+        );
+    }
+    element.heaptids.push(heap_tid);
+    let encoded = element.encode().unwrap_or_else(|e| {
+        pgrx::error!("tqhnsw failed to encode coalesced TurboQuant V3 tuple: {e}")
+    });
+    if encoded.len() != tuple_len {
+        pgrx::error!(
+            "tqhnsw duplicate TurboQuant V3 tuple size changed from {} to {}",
+            tuple_len,
+            encoded.len()
+        );
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(encoded.as_ptr(), page_ptr.add(tuple_offset), encoded.len());
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+}
+
 unsafe fn coalesce_duplicate_grouped_heap_tid(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
@@ -2153,6 +2659,9 @@ mod tests {
             graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                 InsertFormatAdapter::TurboQuant { code_len }
             }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                InsertFormatAdapter::TurboQuantHotCold(layout)
+            }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)
             }
@@ -2190,6 +2699,9 @@ mod tests {
         let format = match graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
             graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                 InsertFormatAdapter::TurboQuant { code_len }
+            }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                InsertFormatAdapter::TurboQuantHotCold(layout)
             }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 InsertFormatAdapter::PqFastScan(layout)

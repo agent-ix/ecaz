@@ -139,7 +139,7 @@ impl BuildState {
 
         match self.options.storage_format {
             options::StorageFormat::TurboQuant => {
-                page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+                page::MetadataPage::current_v3_turbo_hot_cold(page::CurrentFormatMetadata {
                     m,
                     ef_construction,
                     entry_point: page::ItemPointer::INVALID,
@@ -184,13 +184,24 @@ impl BuildState {
                 self.dimensions = Some(tuple.dimensions);
                 self.bits = Some(tuple.bits);
                 self.seed = Some(tuple.seed);
-                if page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len_with_binary(
-                    tuple.code.len(),
-                    binary_word_count,
-                )) > self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
-                {
+                let fits_on_page = match self.options.storage_format {
+                    options::StorageFormat::TurboQuant => {
+                        page::raw_tuple_storage_bytes(page::TqTurboHotTuple::encoded_len(
+                            binary_word_count,
+                        )) + page::raw_tuple_storage_bytes(page::TqRerankTuple::encoded_len(
+                            tuple.code.len(),
+                        )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
+                    }
+                    options::StorageFormat::PqFastScan => {
+                        page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len_with_binary(
+                            tuple.code.len(),
+                            binary_word_count,
+                        )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
+                    }
+                };
+                if !fits_on_page {
                     pgrx::error!(
-                        "tqhnsw element tuple for dim {} bits {} does not fit on a page",
+                        "tqhnsw tuple payload for dim {} bits {} does not fit on a page",
                         tuple.dimensions,
                         tuple.bits
                     );
@@ -490,6 +501,12 @@ pub(super) struct V2GroupedBuildPayload {
     pub(super) rerank: page::TqRerankTuple,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct V3TurboHotBuildPayload {
+    pub(super) hot: page::TqTurboHotTuple,
+    pub(super) rerank: page::TqRerankTuple,
+}
+
 pub(super) fn stage_v2_grouped_build_payload(
     tuple: &BuildTuple,
     level: u8,
@@ -513,6 +530,35 @@ pub(super) fn stage_v2_grouped_build_payload(
             reranktid,
             binary_words,
             search_code,
+        },
+        rerank: page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        },
+    }
+}
+
+pub(super) fn stage_v3_turbo_hot_build_payload(
+    tuple: &BuildTuple,
+    level: u8,
+    neighbortid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    persisted_binary_quantizer: &ProdQuantizer,
+) -> V3TurboHotBuildPayload {
+    let binary_words = if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
+        persisted_binary_quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+    } else {
+        Vec::new()
+    };
+
+    V3TurboHotBuildPayload {
+        hot: page::TqTurboHotTuple {
+            level,
+            deleted: false,
+            heaptids: tuple.heap_tids.clone(),
+            neighbortid,
+            reranktid,
+            binary_words,
         },
         rerank: page::TqRerankTuple {
             gamma: tuple.gamma,
@@ -1093,7 +1139,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
         .expect("non-empty build should record dimensions");
     let bits = state.bits.expect("non-empty build should record bits");
     let mut data_pages = page::DataPageChain::new(state.page_size);
-    let mut element_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
     let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
     let graph_nodes = build_hnsw_graph(state);
     let persisted_binary_quantizer = ProdQuantizer::cached(
@@ -1101,7 +1147,6 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
         bits,
         state.seed.expect("non-empty build should record seed"),
     );
-    let write_persisted_binary = persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported();
 
     for (idx, tuple) in state.heap_tuples.iter().enumerate() {
         let slot_count = graph_nodes[idx].neighbor_slots.len();
@@ -1113,24 +1158,24 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             .insert_neighbor(&placeholder_neighbor)
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
 
-        let element_tid = data_pages
-            .insert_element(&page::TqElementTuple {
-                level: graph_nodes[idx].level,
-                deleted: false,
-                heaptids: tuple.heap_tids.clone(),
+        let rerank_tid = data_pages
+            .insert_rerank(&page::TqRerankTuple {
                 gamma: tuple.gamma,
-                neighbortid: neighbor_tid,
                 code: tuple.code.clone(),
-                binary_words: if write_persisted_binary {
-                    persisted_binary_quantizer
-                        .binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
-                } else {
-                    Vec::new()
-                },
             })
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage element tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage rerank tuple: {e}"));
+        let payload = stage_v3_turbo_hot_build_payload(
+            tuple,
+            graph_nodes[idx].level,
+            neighbor_tid,
+            rerank_tid,
+            &persisted_binary_quantizer,
+        );
+        let hot_tid = data_pages
+            .insert_turbo_hot(&payload.hot)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage turbo hot tuple: {e}"));
 
-        element_tids.push(element_tid);
+        hot_tids.push(hot_tid);
         neighbor_tids.push(neighbor_tid);
     }
 
@@ -1140,7 +1185,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             .iter()
             .map(|neighbor_idx| {
                 neighbor_idx
-                    .map(|ni| element_tids[ni])
+                    .map(|ni| hot_tids[ni])
                     .unwrap_or(page::ItemPointer::INVALID)
             })
             .collect::<Vec<_>>();
@@ -1156,14 +1201,14 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to update neighbor tuple: {e}"));
     }
 
-    let entry_point = choose_entry_point(&element_tids, &graph_nodes, state)
+    let entry_point = choose_entry_point(&hot_tids, &graph_nodes, state)
         .unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
     let seed = state.seed.expect("non-empty build should record seed");
 
     BuildFlushOutput {
         data_pages,
-        metadata: page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+        metadata: page::MetadataPage::current_v3_turbo_hot_cold(page::CurrentFormatMetadata {
             m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
             ef_construction: u16::try_from(state.options.ef_construction)
                 .expect("validated ef_construction should fit into u16"),
@@ -1173,8 +1218,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             max_level,
             seed,
             inserted_since_rebuild: 0,
-            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed)
-                > 0,
+            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed) > 0,
         }),
     }
 }

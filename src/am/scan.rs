@@ -392,7 +392,8 @@ struct GroupedScoreShape {
 impl GroupedScoreShape {
     fn from_scan_graph_storage(scan_graph_storage: graph::GraphStorageDescriptor) -> Option<Self> {
         match scan_graph_storage {
-            graph::GraphStorageDescriptor::TurboQuant { .. } => None,
+            graph::GraphStorageDescriptor::TurboQuant { .. }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => None,
             graph::GraphStorageDescriptor::PqFastScan(layout) => Some(Self {
                 binary_word_count: layout.binary_word_count,
                 search_code_len: layout.search_code_len,
@@ -1041,7 +1042,8 @@ pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
                 resolution:
                     PqFastScanTraversalScoreModeResolution::FallbackGroupedPqMissingBinarySidecar,
             },
-            graph::GraphStorageDescriptor::TurboQuant { .. } => {
+            graph::GraphStorageDescriptor::TurboQuant { .. }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_) => {
                 PqFastScanTraversalScoreModeDecision {
                     mode: GroupedTraversalScoreMode::GroupedPq,
                     resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
@@ -1182,6 +1184,7 @@ fn turboquant_binary_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
     matches!(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
     ) && binary_sign_query(opaque).is_some()
 }
 
@@ -1852,12 +1855,20 @@ unsafe fn cached_graph_element(
                 };
 
                 if live_element {
-                    loaded_state = live_loaded_state_from_exact_payload(
-                        opaque_ref,
-                        element_tid,
-                        binary_query_active,
+                    loaded_state = match (
+                        opaque_ref.scan_graph_storage,
                         element.exact_payload(),
-                    );
+                    ) {
+                        (graph::GraphStorageDescriptor::TurboQuantHotCold(_), None) => {
+                            LoadedElementState::None
+                        }
+                        (_, exact_payload) => live_loaded_state_from_exact_payload(
+                            opaque_ref,
+                            element_tid,
+                            binary_query_active,
+                            exact_payload,
+                        ),
+                    };
                 }
                 CachedGraphElement::from_graph_tuple_ref(element_tid, element, binary_words)
             },
@@ -1873,6 +1884,10 @@ unsafe fn cached_graph_element(
     debug_assert!(
         element.deleted
             || element.heaptids.is_empty()
+            || matches!(
+                opaque_ref.scan_graph_storage,
+                graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+            )
             || !matches!(loaded_state, LoadedElementState::None),
         "live graph elements should populate exact-score or binary-prefilter state on load"
     );
@@ -1885,26 +1900,17 @@ unsafe fn score_cached_graph_element_from_storage(
     element_tid: page::ItemPointer,
 ) -> f32 {
     let opaque_ref = unsafe { &mut *opaque };
-    unsafe {
-        graph::with_graph_storage_tuple(
-            index_relation,
-            element_tid,
-            opaque_ref.scan_graph_storage,
-            |element| {
-                if element.deleted() || element.heaptid_count() == 0 {
-                    pgrx::error!(
-                        "tqhnsw cannot exact-score dead or heapless graph element {}:{}",
-                        element_tid.block_number,
-                        element_tid.offset_number
-                    );
-                }
-                let (gamma, code_bytes) = element
-                    .exact_payload()
-                    .unwrap_or_else(|| pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}"));
-                score_and_cache_scan_element(opaque_ref, element_tid, gamma, code_bytes)
-            },
-        )
+    let element = unsafe {
+        graph::load_exact_graph_element(index_relation, element_tid, opaque_ref.scan_graph_storage)
+    };
+    if element.deleted || element.heaptids.is_empty() {
+        pgrx::error!(
+            "tqhnsw cannot exact-score dead or heapless graph element {}:{}",
+            element_tid.block_number,
+            element_tid.offset_number
+        );
     }
+    score_and_cache_scan_element(opaque_ref, element_tid, element.gamma, &element.code)
 }
 
 unsafe fn exact_score_cached_graph_element(
@@ -2229,6 +2235,7 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     if matches!(
         scan_graph_storage,
         graph::GraphStorageDescriptor::TurboQuant { .. }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
     ) {
         #[cfg(any(test, feature = "pg_test"))]
         let started = Instant::now();
@@ -2988,6 +2995,7 @@ fn grouped_live_rerank_output_score(
         || matches!(
             opaque.scan_graph_storage,
             graph::GraphStorageDescriptor::TurboQuant { .. }
+                | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
         )
     {
         buffered.comparison_score.unwrap_or(buffered.approx_score)
@@ -3690,9 +3698,9 @@ unsafe fn refill_candidate_frontier_from_source_into(
         bootstrap_frontier_limit(unsafe { &*opaque_ptr }),
         source_tid,
         |source_tid, max_successor_candidates| unsafe {
-            graph::load_layer0_refill_successors(
+            graph::load_layer0_refill_successors_with_storage(
                 index_relation,
-                (&*opaque_ptr).scan_code_len,
+                (&*opaque_ptr).scan_graph_storage,
                 usize::from((&*opaque_ptr).scan_m),
                 source_tid,
                 max_successor_candidates,
@@ -3724,9 +3732,9 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
         |node| expanded_contains_source(unsafe { &*opaque_ptr }, node),
         |seed_candidates, max_successor_candidates| {
             let expansion_trace = unsafe {
-                graph::expand_layer0_visible_seeds(
+                graph::expand_layer0_visible_seeds_with_storage(
                     index_relation,
-                    (&*opaque_ptr).scan_code_len,
+                    (&*opaque_ptr).scan_graph_storage,
                     usize::from((&*opaque_ptr).scan_m),
                     max_successor_candidates,
                     seed_candidates.iter().copied(),

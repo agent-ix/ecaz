@@ -199,6 +199,20 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                         }
                     }
                 }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
+                        let element =
+                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                                .unwrap_or_else(|e| {
+                                    pgrx::error!(
+                                        "tqhnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                                    )
+                                });
+                        if !element.deleted && !element.heaptids.is_empty() {
+                            count += 1;
+                        }
+                    }
+                }
                 graph::GraphStorageDescriptor::PqFastScan(layout) => {
                     if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
                         let element = page::TqGroupedHotTuple::decode(

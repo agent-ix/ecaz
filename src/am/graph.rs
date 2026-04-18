@@ -16,8 +16,15 @@ pub(crate) struct PqFastScanLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TurboQuantHotColdLayout {
+    pub binary_word_count: usize,
+    pub rerank_code_len: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GraphStorageDescriptor {
     TurboQuant { code_len: usize },
+    TurboQuantHotCold(TurboQuantHotColdLayout),
     PqFastScan(PqFastScanLayout),
 }
 
@@ -41,13 +48,62 @@ impl GraphStorageDescriptor {
 
     pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
         match metadata.graph_storage_format()? {
-            page::GraphStorageFormat::TurboQuant => Ok(Self::TurboQuant {
-                code_len: if metadata.dimensions == 0 {
-                    0
-                } else {
-                    crate::code_len(metadata.dimensions as usize, metadata.bits)
-                },
-            }),
+            page::GraphStorageFormat::TurboQuant => {
+                if metadata.format_version == page::INDEX_FORMAT_V3_TURBO_HOT_COLD {
+                    if metadata.dimensions == 0 {
+                        return Ok(Self::TurboQuantHotCold(TurboQuantHotColdLayout {
+                            binary_word_count: 0,
+                            rerank_code_len: 0,
+                        }));
+                    }
+                    if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
+                        return Err(
+                            "TurboQuant V3 metadata must advertise cold rerank payloads"
+                                .to_owned(),
+                        );
+                    }
+                    if metadata.search_codec_kind != page::SearchCodecKind::ScalarQuantized {
+                        return Err(format!(
+                            "unsupported TurboQuant V3 search codec: {:?}",
+                            metadata.search_codec_kind
+                        ));
+                    }
+                    if metadata.rerank_codec_kind != page::RerankCodecKind::ScalarQuantized {
+                        return Err(format!(
+                            "unsupported TurboQuant V3 rerank codec: {:?}",
+                            metadata.rerank_codec_kind
+                        ));
+                    }
+                    let binary_word_count =
+                        if metadata.payload_flags & page::PAYLOAD_FLAG_BINARY_SIDECAR != 0
+                            && crate::quant::prod::ProdQuantizer::cached(
+                                metadata.dimensions as usize,
+                                metadata.bits,
+                                metadata.seed,
+                            )
+                            .binary_sign_no_qjl_4bit_supported()
+                        {
+                            (metadata.dimensions as usize).div_ceil(64)
+                        } else {
+                            0
+                        };
+                    return Ok(Self::TurboQuantHotCold(TurboQuantHotColdLayout {
+                        binary_word_count,
+                        rerank_code_len: crate::code_len(
+                            metadata.dimensions as usize,
+                            metadata.bits,
+                        ),
+                    }));
+                }
+
+                Ok(Self::TurboQuant {
+                    code_len: if metadata.dimensions == 0 {
+                        0
+                    } else {
+                        crate::code_len(metadata.dimensions as usize, metadata.bits)
+                    },
+                })
+            }
             page::GraphStorageFormat::PqFastScan => {
                 if metadata.dimensions == 0 {
                     return Ok(Self::PqFastScan(PqFastScanLayout {
@@ -120,7 +176,9 @@ impl GraphStorageDescriptor {
 
     fn storage_format_name(self) -> &'static str {
         match self {
-            Self::TurboQuant { .. } => options::StorageFormat::TurboQuant.as_str(),
+            Self::TurboQuant { .. } | Self::TurboQuantHotCold(_) => {
+                options::StorageFormat::TurboQuant.as_str()
+            }
             Self::PqFastScan(_) => options::StorageFormat::PqFastScan.as_str(),
         }
     }
@@ -128,7 +186,10 @@ impl GraphStorageDescriptor {
     fn matches_storage_format(self, storage_format: options::StorageFormat) -> bool {
         matches!(
             (self, storage_format),
-            (Self::TurboQuant { .. }, options::StorageFormat::TurboQuant)
+            (
+                Self::TurboQuant { .. } | Self::TurboQuantHotCold(_),
+                options::StorageFormat::TurboQuant
+            )
                 | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
         )
     }
@@ -186,6 +247,7 @@ pub(crate) struct GraphNeighbors {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum GraphTupleRef<'a> {
     Scalar(page::TqElementTupleRef<'a>),
+    TurboHot(page::TqTurboHotTupleRef<'a>),
     GroupedHot(page::TqGroupedHotTupleRef<'a>),
 }
 
@@ -193,6 +255,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn level(self) -> u8 {
         match self {
             Self::Scalar(tuple) => tuple.level,
+            Self::TurboHot(tuple) => tuple.level,
             Self::GroupedHot(tuple) => tuple.level,
         }
     }
@@ -200,6 +263,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn deleted(self) -> bool {
         match self {
             Self::Scalar(tuple) => tuple.deleted,
+            Self::TurboHot(tuple) => tuple.deleted,
             Self::GroupedHot(tuple) => tuple.deleted,
         }
     }
@@ -207,6 +271,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn heaptid_count(self) -> usize {
         match self {
             Self::Scalar(tuple) => tuple.heaptid_count(),
+            Self::TurboHot(tuple) => tuple.heaptid_count(),
             Self::GroupedHot(tuple) => tuple.heaptid_count(),
         }
     }
@@ -214,6 +279,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn collect_heaptids(self) -> Vec<page::ItemPointer> {
         match self {
             Self::Scalar(tuple) => tuple.collect_heaptids(),
+            Self::TurboHot(tuple) => tuple.collect_heaptids(),
             Self::GroupedHot(tuple) => tuple.collect_heaptids(),
         }
     }
@@ -221,6 +287,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn neighbortid(self) -> page::ItemPointer {
         match self {
             Self::Scalar(tuple) => tuple.neighbortid,
+            Self::TurboHot(tuple) => tuple.neighbortid,
             Self::GroupedHot(tuple) => tuple.neighbortid,
         }
     }
@@ -228,6 +295,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn reranktid(self) -> Option<page::ItemPointer> {
         match self {
             Self::Scalar(_) => None,
+            Self::TurboHot(tuple) => Some(tuple.reranktid),
             Self::GroupedHot(tuple) => Some(tuple.reranktid),
         }
     }
@@ -235,6 +303,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn binary_word_count(self) -> usize {
         match self {
             Self::Scalar(tuple) => tuple.binary_word_count(),
+            Self::TurboHot(tuple) => tuple.binary_word_count(),
             Self::GroupedHot(tuple) => tuple.binary_word_count(),
         }
     }
@@ -242,6 +311,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn collect_binary_words(self) -> Vec<u64> {
         match self {
             Self::Scalar(tuple) => tuple.collect_binary_words(),
+            Self::TurboHot(tuple) => tuple.collect_binary_words(),
             Self::GroupedHot(tuple) => tuple.collect_binary_words(),
         }
     }
@@ -249,6 +319,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn exact_payload(self) -> Option<(f32, &'a [u8])> {
         match self {
             Self::Scalar(tuple) => Some((tuple.gamma, tuple.code)),
+            Self::TurboHot(_) => None,
             Self::GroupedHot(_) => None,
         }
     }
@@ -256,6 +327,7 @@ impl<'a> GraphTupleRef<'a> {
     pub(crate) fn grouped_search_code(self) -> Option<&'a [u8]> {
         match self {
             Self::Scalar(_) => None,
+            Self::TurboHot(_) => None,
             Self::GroupedHot(tuple) => Some(tuple.search_code),
         }
     }
@@ -292,6 +364,25 @@ pub(crate) unsafe fn load_exact_graph_element(
         GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
             load_graph_element(index_relation, element_tid, code_len)
         },
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+            let hot = unsafe {
+                read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                })
+            }
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode turbo hot tuple: {e}"));
+            let rerank =
+                unsafe { load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len) };
+            GraphElement {
+                tid: element_tid,
+                level: hot.level,
+                deleted: hot.deleted,
+                heaptids: hot.heaptids,
+                gamma: rerank.gamma,
+                neighbortid: hot.neighbortid,
+                code: rerank.code,
+            }
+        }
         GraphStorageDescriptor::PqFastScan(layout) => {
             let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
             let rerank =
@@ -354,6 +445,26 @@ where
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"))
 }
 
+pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: TurboQuantHotColdLayout,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqTurboHotTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, element_tid, "turbo hot", |tuple_bytes| {
+            Ok(f(page::TqTurboHotTupleRef::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+            )?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode turbo hot tuple: {e}"))
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
     index_relation: pg_sys::Relation,
@@ -392,6 +503,11 @@ where
                 f(GraphTupleRef::Scalar(tuple))
             })
         },
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+            with_turbo_hot_graph_tuple(index_relation, element_tid, layout, |tuple| {
+                f(GraphTupleRef::TurboHot(tuple))
+            })
+        },
         GraphStorageDescriptor::PqFastScan(layout) => unsafe {
             with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
                 f(GraphTupleRef::GroupedHot(tuple))
@@ -422,22 +538,31 @@ where
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
-pub(crate) unsafe fn load_grouped_rerank_payload(
+pub(crate) unsafe fn load_rerank_payload(
     index_relation: pg_sys::Relation,
     rerank_tid: page::ItemPointer,
-    layout: PqFastScanLayout,
+    rerank_code_len: usize,
 ) -> GroupedRerankPayload {
     let rerank = unsafe {
         read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
-            page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len)
+            page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode rerank tuple: {e}"));
     GroupedRerankPayload {
         tid: rerank_tid,
         gamma: rerank.gamma,
         code: rerank.code,
     }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_rerank_payload(
+    index_relation: pg_sys::Relation,
+    rerank_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+) -> GroupedRerankPayload {
+    unsafe { load_rerank_payload(index_relation, rerank_tid, layout.rerank_code_len) }
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -958,6 +1083,35 @@ where
     })
 }
 
+pub(crate) unsafe fn load_layer0_refill_successors_with_storage<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    source_tid: page::ItemPointer,
+    max_successor_candidates: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    if source_tid == page::ItemPointer::INVALID || max_successor_candidates == 0 {
+        return Vec::new();
+    }
+
+    refill_successors_with_successors(source_tid, max_successor_candidates, |source_tid| unsafe {
+        load_layer0_successor_candidates_with_storage(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
 pub(crate) unsafe fn expand_layer0_visible_seeds<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
@@ -977,6 +1131,32 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
+pub(crate) unsafe fn expand_layer0_visible_seeds_with_storage<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    max_successor_candidates: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Layer0VisibleSeedExpansion
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    expand_visible_seeds_with_successors(max_successor_candidates, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates_with_storage(
+            index_relation,
+            source_tid,
+            storage,
             m,
             &mut keep_neighbor_tid,
             &mut score_candidate,
