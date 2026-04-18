@@ -34,6 +34,13 @@ These task files are the parallel execution breakdown for `tqvector`.
 14. `14-adr030-v2-grouped-index.md` — long-horizon index-v2 grouped search-code redesign (feasibility + metadata contract)
 15. `15-pqfastscan-first-class.md` — executes ADR-032: rename ScalarV1→TurboQuant / GroupedV2→PqFastScan, reloption selector, insert+vacuum parity; blocks merge to `main`
 16. `16-turboquant-iteration.md` — post-task-15 follow-up: port binary prefilter, heap-f32 rerank, and hot/cold payload split from PqFastScan onto TurboQuant
+17. `17-diskann.md` — second access method for 500M–3B-scale disk-resident indexes (owned by a separate agent; ADR-034)
+18. `18-parallel-index-scan.md` — executes ADR-040: `amcanparallel=true`, shared top-K coordinator, per-worker beams, ef_search split with overlap
+19. `19-pg18-completion.md` — executes ADR-016/017: flip PG18 primary-target, activate amgettreeheight / EXPLAIN hook / pgstat-kind / ReadStream, drop PG14–16
+20. `20-opq-rotation.md` — executes ADR-036: OPQ as alternative transform front-end for PqFastScan, +10–20% recall per byte, zero scan-kernel change
+21. `21-simd-modernization.md` — executes ADR-039 + task-08 hot-path follow-up: AVX-512 specializations and ARM SVE/SVE2 backend under existing runtime dispatch
+22. `22-additive-residual-quantization.md` — executes ADR-037: **evaluate-gated** feasibility study of AQ / RVQ as PqFastScan successor; three decision gates, shelf-on-fail OK
+23. `23-lsq-codebook-refinement.md` — executes ADR-038: drop-in k-means replacement, +2–5% recall, no wire format change, low priority fill-in
 
 ## Coordination rules
 

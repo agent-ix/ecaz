@@ -6,6 +6,14 @@ Purpose:
 - Leave focused review requests for another agent to process independently.
 - Keep each request narrow and tied to the current validated state.
 
+Measurement artifact convention:
+- If a packet makes a measurement claim, store the raw logs under
+  `review/{NN}-{topic}/artifacts/`.
+- Add `review/{NN}-{topic}/artifacts/manifest.md` describing the head SHA,
+  lane, command, timestamp, and key cited result lines for each artifact.
+- `request.md` should summarize the claim and point at those packet-local
+  artifacts rather than relying only on `tmp/`.
+
 Validation status at this checkpoint:
 - `cargo test`
 - `cargo pgrx test pg17`
