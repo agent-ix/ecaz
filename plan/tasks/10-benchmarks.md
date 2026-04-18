@@ -1,6 +1,6 @@
 # Task 10: Full Benchmark Suite
 
-Status: **infrastructure complete** — A3/A5/A6 are merged on `main`; the C1 latency surface is now planner-verified, but durable HNSW latency artifacts on `main` remain blocked until the planner can actually choose the requested tqhnsw index
+Status: **infrastructure complete** — A3/A5/A6 are merged on `main`; C1 is now in result-capture mode, starting with trustworthy real-corpus `NFR-001` latency reporting
 
 ## Scope
 
@@ -51,7 +51,7 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 
 ### Open Result-Capture Work
 
-- [ ] **Latency benchmarks (NFR-001).** Capture warm/cold HNSW p50/p99 on the canonical real corpus, plus sequential-scan throughput and artifact metadata. The real-corpus launcher is now planner-verified and supports both cold and backend-reused warm runs (`--warmup-passes`, `--session-mode per-cell`), but the honest `10K` warm surface still misses the spec target and the normative `50K` lane is still pending.
+- [ ] **Latency benchmarks (NFR-001).** Capture warm/cold HNSW p50/p99 on the canonical real corpus, plus sequential-scan throughput and artifact metadata. First slice: harden `bench_sql_latency.sh` real-corpus reporting so `ef_search`, cache state, and host / GUC details are recorded correctly.
 - [ ] **Storage accounting (NFR-002).** Capture `pg_relation_size`, `pg_total_relation_size`, and per-datum sizing against the same real-corpus benchmark surfaces.
 - [ ] **Full recall suite (NFR-003).** Extend beyond the A4 gate into broader `(m, ef)` SQL reporting, post-insert drift checkpoints, post-vacuum recall refresh, and MSE-only vs MSE+QJL ablations.
 - [ ] **BC-001 through BC-016.** Result artifacts now depend on running the scripts against staged benchmark corpora, not on missing scan / insert / vacuum functionality.
@@ -67,7 +67,6 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 - Task 05 / A3 (working graph scan) — **resolved on `main`**
 - Task 06 / A5 (insert-drift observability) — **resolved on `main`**
 - Task 07 / A6 (post-vacuum quality baseline) — **resolved on `main`**
-- Planner-visible tqhnsw index scans are now in hand on `main`; the practical remaining prerequisite for NFR-001 closeout is honest warm/cold artifact capture on the normative `50K` corpus
 - A staged benchmark corpus plus the matching built indexes remain the practical prerequisite for each recorded result artifact
 
 ## Unblocks
@@ -88,6 +87,5 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 ## Notes
 
 - The initial recall gate (Task 05 A4) provides early signal. This task extends that into the full suite.
-- With A5/A6 merged, C1 moved through benchmark-integrity bring-up and into warm/cold reporting plus runtime optimization.
-- The planner-verified launcher now fails fast if the representative plan does not use the requested tqhnsw index, and warm-cache runs should use `--session-mode per-cell` so backend reuse is measured honestly.
+- With A5/A6 merged, C1 should start by making the existing SQL benchmark/reporting surfaces trustworthy and self-describing before recording the first durable artifacts.
 - Pure-Rust recall harness (tests/recall_integration.rs) can run now for quantizer-level recall independent of HNSW graph quality.
