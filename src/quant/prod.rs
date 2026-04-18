@@ -295,6 +295,10 @@ impl ProdQuantizer {
         self.bits == 4 && !qjl_enabled(self.original_dim, self.bits)
     }
 
+    pub fn int8_approx_no_qjl_4bit_supported(&self) -> bool {
+        self.bits == 4 && !qjl_enabled(self.original_dim, self.bits)
+    }
+
     pub fn exact_score_uses_lut(&self) -> bool {
         prepared_query_uses_lut(self.original_dim, self.bits)
     }

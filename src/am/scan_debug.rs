@@ -1198,7 +1198,6 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
     }
 
     let debug_profile = opaque.debug_profile;
-    let quantizer = unsafe { &*opaque.cached_quantizer };
     let rerank_score_calls = debug_profile
         .grouped_rerank_quantized_score_calls
         .saturating_add(debug_profile.grouped_rerank_heap_score_calls);
@@ -1210,6 +1209,9 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
         .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
         .saturating_sub(debug_profile.candidate_score_elapsed_us)
         .saturating_sub(rerank_score_elapsed_us);
+    let exact_score_mode = turboquant_exact_score_mode_name(opaque).to_owned();
+    let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
+    let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
 
     unsafe { debug_end_heap_backed_scan(scan_state) };
 
@@ -1226,9 +1228,9 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
         i64::try_from(debug_profile.candidate_score_elapsed_us).expect("timing should fit in i64"),
         i32::try_from(rerank_score_calls).expect("counter should fit in i32"),
         i64::try_from(rerank_score_elapsed_us).expect("timing should fit in i64"),
-        quantizer.exact_score_mode_name().to_owned(),
-        quantizer.exact_score_uses_lut(),
-        quantizer.exact_score_uses_qjl(),
+        exact_score_mode,
+        exact_score_uses_lut,
+        exact_score_uses_qjl,
     )
 }
 

@@ -5562,6 +5562,131 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_turboquant_scan_stage_profile_int8_mode() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", "int8_approx");
+        let index_name = "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8_idx";
+        let _index_oid = create_turboquant_binary_runtime_fixture(
+            "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_query());
+        let (
+            turboquant_binary_prefilter_score_calls,
+            turboquant_binary_prefilter_survivor_candidates,
+            turboquant_exact_score_calls,
+            turboquant_exact_score_elapsed_us,
+            turboquant_rerank_score_calls,
+            turboquant_rerank_score_elapsed_us,
+            turboquant_exact_score_mode,
+            turboquant_exact_score_uses_lut,
+            turboquant_exact_score_uses_qjl,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            turboquant_binary_prefilter_score_calls,
+                            turboquant_binary_prefilter_survivor_candidates,
+                            turboquant_exact_score_calls,
+                            turboquant_exact_score_elapsed_us,
+                            turboquant_rerank_score_calls,
+                            turboquant_rerank_score_elapsed_us,
+                            turboquant_exact_score_mode,
+                            turboquant_exact_score_uses_lut,
+                            turboquant_exact_score_uses_qjl
+                         FROM tests.tqhnsw_debug_turboquant_scan_stage_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("turboquant scan stage profile query should succeed")
+                .next()
+                .expect("turboquant scan stage profile should return one row");
+            (
+                row["turboquant_binary_prefilter_score_calls"]
+                    .value::<i32>()
+                    .expect("binary prefilter calls should decode")
+                    .expect("binary prefilter calls should be non-null"),
+                row["turboquant_binary_prefilter_survivor_candidates"]
+                    .value::<i32>()
+                    .expect("binary prefilter survivors should decode")
+                    .expect("binary prefilter survivors should be non-null"),
+                row["turboquant_exact_score_calls"]
+                    .value::<i32>()
+                    .expect("exact score calls should decode")
+                    .expect("exact score calls should be non-null"),
+                row["turboquant_exact_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("exact score elapsed should decode")
+                    .expect("exact score elapsed should be non-null"),
+                row["turboquant_rerank_score_calls"]
+                    .value::<i32>()
+                    .expect("rerank calls should decode")
+                    .expect("rerank calls should be non-null"),
+                row["turboquant_rerank_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("rerank elapsed should decode")
+                    .expect("rerank elapsed should be non-null"),
+                row["turboquant_exact_score_mode"]
+                    .value::<String>()
+                    .expect("exact score mode should decode")
+                    .expect("exact score mode should be non-null"),
+                row["turboquant_exact_score_uses_lut"]
+                    .value::<bool>()
+                    .expect("exact score uses lut should decode")
+                    .expect("exact score uses lut should be non-null"),
+                row["turboquant_exact_score_uses_qjl"]
+                    .value::<bool>()
+                    .expect("exact score uses qjl should decode")
+                    .expect("exact score uses qjl should be non-null"),
+            )
+        });
+
+        assert!(
+            turboquant_binary_prefilter_score_calls > 0
+                && turboquant_binary_prefilter_survivor_candidates > 0
+                && turboquant_binary_prefilter_survivor_candidates
+                    <= turboquant_binary_prefilter_score_calls,
+            "turboquant int8 exact-score mode should leave the binary prefilter active",
+        );
+        assert!(
+            turboquant_exact_score_calls >= 0 && turboquant_exact_score_elapsed_us >= 0,
+            "turboquant int8 exact-score mode should keep exact-score counters well-formed",
+        );
+        assert!(
+            turboquant_rerank_score_calls > 0 && turboquant_rerank_score_elapsed_us >= 0,
+            "turboquant int8 exact-score mode should still surface deferred rerank work",
+        );
+        assert_eq!(
+            turboquant_exact_score_mode, "int8_approx_no_qjl_4bit",
+            "the stage profile should expose the opt-in int8 exact-score experiment",
+        );
+        assert!(
+            !turboquant_exact_score_uses_lut && !turboquant_exact_score_uses_qjl,
+            "the int8 exact-score experiment should not claim LUT or QJL work",
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw TurboQuant exact score mode must be one of [exact, int8_approx], got \"bogus\""
+    )]
+    fn test_turboquant_exact_score_mode_rejects_invalid_env() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", "bogus");
+        let index_oid = create_turboquant_binary_runtime_fixture(
+            "tqhnsw_turboquant_invalid_exact_score_mode",
+            "tqhnsw_turboquant_invalid_exact_score_mode_idx",
+        );
+
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query()) };
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_runtime_profile_budgeted_exact_counters() {
         let _lock = env_var_test_lock();
         let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
