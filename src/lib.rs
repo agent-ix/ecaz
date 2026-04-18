@@ -25,8 +25,8 @@ pub mod bench_api {
     // Quantizer core
     pub use crate::quant::prod::{
         mse_code_len, pack_mse_indices, pack_qjl_signs, payload_len, qjl_code_len,
-        unpack_mse_indices, unpack_qjl_signs, EncodedTq, Int8ApproxNoQjl4BitQuery, PreparedQuery,
-        ProdQuantizer,
+        unpack_mse_indices, unpack_qjl_signs, EncodedTq, Int8ApproxNoQjl4BitQuery,
+        PreparedLutNoQjl4BitQuery, PreparedQuery, PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
     };
 
     // Hadamard

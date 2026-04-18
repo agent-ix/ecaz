@@ -34,6 +34,17 @@ pub struct Int8ApproxNoQjl4BitQuery {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct PreparedLutNoQjl4BitQuery {
+    pub lut: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreparedTiledLutNoQjl4BitQuery {
+    pub lut: Vec<f32>,
+    pub tile_size: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct BinarySignNoQjl4BitQuery {
     pub words: Vec<u64>,
 }
@@ -245,6 +256,41 @@ impl ProdQuantizer {
         }
     }
 
+    pub fn prepare_ip_query_lut_no_qjl_4bit(&self, query: &[f32]) -> PreparedLutNoQjl4BitQuery {
+        assert_eq!(
+            query.len(),
+            self.original_dim,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.original_dim
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "explicit LUT query prep requires the no-QJL 4-bit lane"
+        );
+
+        let rotated = rotation::srht_padded(query, &self.signs);
+        PreparedLutNoQjl4BitQuery {
+            lut: build_prepared_query_lut(&rotated[..self.original_dim], &self.codebook, 16),
+        }
+    }
+
+    pub fn prepare_ip_query_tiled_lut_no_qjl_4bit(
+        &self,
+        query: &[f32],
+        tile_size: usize,
+    ) -> PreparedTiledLutNoQjl4BitQuery {
+        assert!(
+            tile_size > 0,
+            "tiled LUT query prep requires a positive tile size"
+        );
+        let prepared = self.prepare_ip_query_lut_no_qjl_4bit(query);
+        PreparedTiledLutNoQjl4BitQuery {
+            lut: prepared.lut,
+            tile_size,
+        }
+    }
+
     pub fn binary_sign_no_qjl_4bit_supported(&self) -> bool {
         self.bits == 4 && !qjl_enabled(self.original_dim, self.bits)
     }
@@ -330,6 +376,38 @@ impl ProdQuantizer {
         let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
         debug_assert!(qjl_packed.is_empty());
         self.score_ip_from_split_parts_int8_approx_no_qjl_4bit(prepared, mse_packed)
+    }
+
+    pub fn score_ip_from_parts_lut_no_qjl_4bit(
+        &self,
+        prepared: &PreparedLutNoQjl4BitQuery,
+        code_bytes: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "explicit LUT scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_ip_from_split_parts_lut_no_qjl_4bit(&prepared.lut, mse_packed)
+    }
+
+    pub fn score_ip_from_parts_tiled_lut_no_qjl_4bit(
+        &self,
+        prepared: &PreparedTiledLutNoQjl4BitQuery,
+        code_bytes: &[u8],
+    ) -> f32 {
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "tiled LUT scoring requires the no-QJL 4-bit lane"
+        );
+        let (mse_packed, qjl_packed) = self.split_code_bytes(code_bytes);
+        debug_assert!(qjl_packed.is_empty());
+        self.score_ip_from_split_parts_tiled_lut_no_qjl_4bit(
+            &prepared.lut,
+            prepared.tile_size,
+            mse_packed,
+        )
     }
 
     fn score_ip_from_split_parts(
@@ -428,6 +506,68 @@ impl ProdQuantizer {
         }
 
         sum as f32 * prepared.score_scale
+    }
+
+    fn score_ip_from_split_parts_lut_no_qjl_4bit(&self, lut: &[f32], mse_packed: &[u8]) -> f32 {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+        debug_assert_eq!(lut.len(), self.original_dim * 16);
+
+        let mut sum = 0.0_f32;
+        let mut dim_index = 0usize;
+
+        for &packed in mse_packed {
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let low_nibble = (packed & 0x0F) as usize;
+            sum += lut[dim_index * 16 + low_nibble];
+            dim_index += 1;
+
+            if dim_index >= self.original_dim {
+                break;
+            }
+
+            let high_nibble = (packed >> 4) as usize;
+            sum += lut[dim_index * 16 + high_nibble];
+            dim_index += 1;
+        }
+
+        sum
+    }
+
+    fn score_ip_from_split_parts_tiled_lut_no_qjl_4bit(
+        &self,
+        lut: &[f32],
+        tile_size: usize,
+        mse_packed: &[u8],
+    ) -> f32 {
+        debug_assert_eq!(self.bits, 4);
+        debug_assert!(!qjl_enabled(self.original_dim, self.bits));
+        debug_assert_eq!(lut.len(), self.original_dim * 16);
+        assert!(
+            tile_size > 0,
+            "tiled LUT scoring requires a positive tile size"
+        );
+
+        let mut sum = 0.0_f32;
+        let mut tile_start = 0usize;
+
+        while tile_start < self.original_dim {
+            let tile_end = (tile_start + tile_size).min(self.original_dim);
+            let tile_lut = &lut[tile_start * 16..tile_end * 16];
+
+            for dim_index in tile_start..tile_end {
+                let centroid_index = mse_index_at(mse_packed, dim_index, 4) as usize;
+                let tile_dim = dim_index - tile_start;
+                sum += tile_lut[tile_dim * 16 + centroid_index];
+            }
+
+            tile_start = tile_end;
+        }
+
+        sum
     }
 
     fn score_ip_from_split_parts_scalar(
@@ -1669,6 +1809,25 @@ mod tests {
     }
 
     #[test]
+    fn quantizer_1536_4bit_supports_explicit_lut_query_prep() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 16);
+        let prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+
+        assert_eq!(prepared.lut.len(), 1536 * 16);
+    }
+
+    #[test]
+    fn quantizer_1536_4bit_supports_tiled_lut_query_prep() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 17);
+        let prepared = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 512);
+
+        assert_eq!(prepared.lut.len(), 1536 * 16);
+        assert_eq!(prepared.tile_size, 512);
+    }
+
+    #[test]
     fn quantizer_1536_4bit_supports_binary_sign_query_prep() {
         let quantizer = ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 14);
@@ -1684,6 +1843,22 @@ mod tests {
         let quantizer = ProdQuantizer::new(32, 4, 42);
         let query = random_unit_vector(32, 13);
         let _ = quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(&query);
+    }
+
+    #[test]
+    #[should_panic(expected = "explicit LUT query prep requires the no-QJL 4-bit lane")]
+    fn explicit_lut_query_prep_rejects_qjl_active_lane() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 22);
+        let _ = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+    }
+
+    #[test]
+    #[should_panic(expected = "explicit LUT query prep requires the no-QJL 4-bit lane")]
+    fn tiled_lut_query_prep_rejects_qjl_active_lane() {
+        let quantizer = ProdQuantizer::new(32, 4, 42);
+        let query = random_unit_vector(32, 23);
+        let _ = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 16);
     }
 
     #[test]
@@ -1733,6 +1908,48 @@ mod tests {
             scored[0].0, 0,
             "approx scorer should rank the identical vector first"
         );
+    }
+
+    #[test]
+    fn explicit_lut_no_qjl_4bit_matches_direct_scoring() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 31);
+        let prepared_exact = quantizer.prepare_ip_query(&query);
+        let prepared_lut = quantizer.prepare_ip_query_lut_no_qjl_4bit(&query);
+
+        for seed in 0..8_u64 {
+            let vector = random_unit_vector(1536, 31 + seed);
+            let encoded = quantizer.encode(&vector);
+            let direct =
+                quantizer.score_ip_from_parts(&prepared_exact, encoded.gamma, &encoded.mse_packed);
+            let lut =
+                quantizer.score_ip_from_parts_lut_no_qjl_4bit(&prepared_lut, &encoded.mse_packed);
+            assert!(
+                (direct - lut).abs() < 1e-6,
+                "explicit LUT scorer should match direct scorer: direct={direct} lut={lut}"
+            );
+        }
+    }
+
+    #[test]
+    fn tiled_lut_no_qjl_4bit_matches_direct_scoring() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 41);
+        let prepared_exact = quantizer.prepare_ip_query(&query);
+        let prepared_tiled = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 512);
+
+        for seed in 0..8_u64 {
+            let vector = random_unit_vector(1536, 41 + seed);
+            let encoded = quantizer.encode(&vector);
+            let direct =
+                quantizer.score_ip_from_parts(&prepared_exact, encoded.gamma, &encoded.mse_packed);
+            let tiled = quantizer
+                .score_ip_from_parts_tiled_lut_no_qjl_4bit(&prepared_tiled, &encoded.mse_packed);
+            assert!(
+                (direct - tiled).abs() < 1e-6,
+                "tiled LUT scorer should match direct scorer: direct={direct} tiled={tiled}"
+            );
+        }
     }
 
     #[test]

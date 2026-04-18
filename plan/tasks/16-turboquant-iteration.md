@@ -1,6 +1,7 @@
 # Task 16: TurboQuant Iteration with PqFastScan Learnings
 
-Status: proposed — **depends on task 15 landing first**.
+Status: in progress — levers 1–3 landed and were measured; lever-4 / lever-5
+comparison is still open.
 
 Follow-on to ADR-032.
 
@@ -64,28 +65,33 @@ the LUT 4x. Composes with tiling.
 
 ## Subtasks
 
-- [ ] **Close the deferred `418` measurement note** with one `50k`
+- [x] **Close the deferred `418` measurement note** with one `50k`
   before/after build-time row for the landed
   `BuildCodeDistance::new(...)` hot-path correction. This is not a task-15
   blocker, but it should be recorded before broader TurboQuant iteration
-  work starts.
-- [ ] **Instrument TurboQuant scan path** for per-stage cost on the 50k
+  work starts. Closed in packet `422`.
+- [x] **Instrument TurboQuant scan path** for per-stage cost on the 50k
   warm real seam (traversal, LUT gather, QJL accumulate, rerank). Baseline
-  numbers land in a measurement packet before any levers are wired.
-- [ ] **Lever 1 — binary prefilter** ahead of TurboQuant scoring.
+  numbers land in a measurement packet before any levers are wired. Closed in
+  packet `423`.
+- [x] **Lever 1 — binary prefilter** ahead of TurboQuant scoring.
   Confirm the sidecar can be built either from existing code bytes or
-  as a persisted payload (ADR-031 already enumerates both).
-- [ ] **Lever 2 — heap-f32 rerank** mode for TurboQuant scans. Reuse the
+  as a persisted payload (ADR-031 already enumerates both). Packet `423`
+  showed this was already active on current head; no new task-16 code landing
+  was required for the lever itself.
+- [x] **Lever 2 — heap-f32 rerank** mode for TurboQuant scans. Reuse the
   heap-fetch infrastructure added for PqFastScan (tuple slot,
-  `grouped_heap_rerank_source_attnum` pattern).
-- [ ] **Lever 3 — hot/cold payload split** for TurboQuant element
+  `grouped_heap_rerank_source_attnum` pattern). Landed in packets `424` / `425`.
+- [x] **Lever 3 — hot/cold payload split** for TurboQuant element
   tuples. Treat as `INDEX_FORMAT_V3` rather than in-place mutation of
-  `INDEX_FORMAT_V1_SCALAR`.
-- [ ] **Measurement packet** comparing TurboQuant-today vs
+  `INDEX_FORMAT_V1_SCALAR`. Landed in packets `427` / `428`.
+- [x] **Measurement packet** comparing TurboQuant-today vs
   TurboQuant-with-levers-1–3 at the same recall target on 50k warm real
-  seam.
+  seam. Closed across packets `423`, `426`, `429`, `430`, and `432`.
 - [ ] **Decide** whether to pursue lever 4 (tiled LUT) and/or lever 5
-  (int8 LUT) based on whether levers 1–3 close the gap.
+  (int8 LUT) based on whether levers 1–3 close the gap. Follow-on needs
+  direct measurement data comparing all available options rather than an
+  inference-only closeout.
 
 ## Owns
 
@@ -103,6 +109,14 @@ the LUT 4x. Composes with tiling.
 - A TurboQuant format that is fast enough to keep as the default for
   most workloads.
 - A clean answer to "when should I pick TurboQuant over PqFastScan?".
+
+## Outcome So Far
+
+- TurboQuant's fast quantized lane improved materially.
+- The recall-preserving serious lane remained dominated by heap rerank/source
+  fetch-decode cost in the measurements so far.
+- A packed raw-f32 rerank source helps that serious lane, but the lever-4 /
+  lever-5 comparison is still open and needs direct measurement data.
 
 ## Out of scope
 
