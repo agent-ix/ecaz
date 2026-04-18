@@ -249,6 +249,28 @@ impl ProdQuantizer {
         self.bits == 4 && !qjl_enabled(self.original_dim, self.bits)
     }
 
+    pub fn exact_score_uses_lut(&self) -> bool {
+        prepared_query_uses_lut(self.original_dim, self.bits)
+    }
+
+    pub fn exact_score_uses_qjl(&self) -> bool {
+        qjl_enabled(self.original_dim, self.bits)
+    }
+
+    pub fn exact_score_mode_name(&self) -> &'static str {
+        if self.bits == 4 && !qjl_enabled(self.original_dim, self.bits) {
+            "mse_no_qjl_4bit"
+        } else if self.exact_score_uses_lut() && self.exact_score_uses_qjl() {
+            "mse_lut_qjl"
+        } else if self.exact_score_uses_lut() {
+            "mse_lut_only"
+        } else if self.exact_score_uses_qjl() {
+            "mse_qjl_only"
+        } else {
+            "mse_scalar_only"
+        }
+    }
+
     pub fn prepare_ip_query_binary_sign_no_qjl_4bit(
         &self,
         query: &[f32],

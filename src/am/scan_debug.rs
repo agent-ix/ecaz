@@ -337,6 +337,22 @@ type DebugGroupedRerankProfile = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
+type DebugTurboQuantScanStageProfile = (
+    i64,
+    i64,
+    i32,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    String,
+    bool,
+    bool,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
 type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1119,6 +1135,63 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
             .expect("timing should fit in i64"),
         i64::try_from(debug_profile.grouped_rerank_heap_dot_elapsed_us)
             .expect("timing should fit in i64"),
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugTurboQuantScanStageProfile {
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    if !matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::TurboQuant { .. }
+    ) {
+        unsafe { debug_end_heap_backed_scan(scan_state) };
+        pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
+    }
+    if opaque.cached_quantizer.is_null() {
+        unsafe { debug_end_heap_backed_scan(scan_state) };
+        pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
+    }
+
+    let debug_profile = opaque.debug_profile;
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    let rerank_score_calls = 0_i32;
+    let rerank_score_elapsed_us = 0_i64;
+    let traversal_residual_elapsed_us = debug_profile
+        .amrescan_total_elapsed_us
+        .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
+        .saturating_sub(debug_profile.candidate_score_elapsed_us);
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+
+    (
+        i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
+        i64::try_from(traversal_residual_elapsed_us).expect("timing should fit in i64"),
+        i32::try_from(debug_profile.binary_prefilter_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.binary_prefilter_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.binary_prefilter_survivor_candidates)
+            .expect("counter should fit in i32"),
+        i32::try_from(debug_profile.candidate_score_calls).expect("counter should fit in i32"),
+        i64::try_from(debug_profile.candidate_score_elapsed_us).expect("timing should fit in i64"),
+        rerank_score_calls,
+        rerank_score_elapsed_us,
+        quantizer.exact_score_mode_name().to_owned(),
+        quantizer.exact_score_uses_lut(),
+        quantizer.exact_score_uses_qjl(),
     )
 }
 

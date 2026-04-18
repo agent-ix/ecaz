@@ -3890,6 +3890,39 @@ mod tests {
         create_turboquant_runtime_fixture_internal(table_name, index_name, true)
     }
 
+    fn create_turboquant_binary_runtime_fixture(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let embedding =
+                format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, encode_to_tqvector({embedding}, 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
     fn pq_fastscan_runtime_query() -> Vec<f32> {
         vec![
             0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
@@ -5038,6 +5071,136 @@ mod tests {
             ),
             (0, 0),
             "canonical pq fastscan rerank profile should bypass quantized rerank counters on the source-backed default path",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_turboquant_scan_stage_profile_sql_surface() {
+        let index_name = "tqhnsw_turboquant_scan_stage_profile_sql_surface_idx";
+        let _index_oid = create_turboquant_binary_runtime_fixture(
+            "tqhnsw_turboquant_scan_stage_profile_sql_surface",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_query());
+        let (
+            rescan_amrescan_total_elapsed_us,
+            turboquant_traversal_residual_elapsed_us,
+            turboquant_binary_prefilter_score_calls,
+            turboquant_binary_prefilter_score_elapsed_us,
+            turboquant_binary_prefilter_survivor_candidates,
+            turboquant_exact_score_calls,
+            turboquant_exact_score_elapsed_us,
+            turboquant_rerank_score_calls,
+            turboquant_rerank_score_elapsed_us,
+            turboquant_exact_score_mode,
+            turboquant_exact_score_uses_lut,
+            turboquant_exact_score_uses_qjl,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            rescan_amrescan_total_elapsed_us,
+                            turboquant_traversal_residual_elapsed_us,
+                            turboquant_binary_prefilter_score_calls,
+                            turboquant_binary_prefilter_score_elapsed_us,
+                            turboquant_binary_prefilter_survivor_candidates,
+                            turboquant_exact_score_calls,
+                            turboquant_exact_score_elapsed_us,
+                            turboquant_rerank_score_calls,
+                            turboquant_rerank_score_elapsed_us,
+                            turboquant_exact_score_mode,
+                            turboquant_exact_score_uses_lut,
+                            turboquant_exact_score_uses_qjl
+                         FROM tests.tqhnsw_debug_turboquant_scan_stage_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("turboquant scan stage profile query should succeed")
+                .next()
+                .expect("turboquant scan stage profile should return one row");
+            (
+                row["rescan_amrescan_total_elapsed_us"]
+                    .value::<i64>()
+                    .expect("rescan elapsed should decode")
+                    .expect("rescan elapsed should be non-null"),
+                row["turboquant_traversal_residual_elapsed_us"]
+                    .value::<i64>()
+                    .expect("traversal residual should decode")
+                    .expect("traversal residual should be non-null"),
+                row["turboquant_binary_prefilter_score_calls"]
+                    .value::<i32>()
+                    .expect("binary prefilter calls should decode")
+                    .expect("binary prefilter calls should be non-null"),
+                row["turboquant_binary_prefilter_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("binary prefilter elapsed should decode")
+                    .expect("binary prefilter elapsed should be non-null"),
+                row["turboquant_binary_prefilter_survivor_candidates"]
+                    .value::<i32>()
+                    .expect("binary prefilter survivors should decode")
+                    .expect("binary prefilter survivors should be non-null"),
+                row["turboquant_exact_score_calls"]
+                    .value::<i32>()
+                    .expect("exact score calls should decode")
+                    .expect("exact score calls should be non-null"),
+                row["turboquant_exact_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("exact score elapsed should decode")
+                    .expect("exact score elapsed should be non-null"),
+                row["turboquant_rerank_score_calls"]
+                    .value::<i32>()
+                    .expect("rerank calls should decode")
+                    .expect("rerank calls should be non-null"),
+                row["turboquant_rerank_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("rerank elapsed should decode")
+                    .expect("rerank elapsed should be non-null"),
+                row["turboquant_exact_score_mode"]
+                    .value::<String>()
+                    .expect("exact score mode should decode")
+                    .expect("exact score mode should be non-null"),
+                row["turboquant_exact_score_uses_lut"]
+                    .value::<bool>()
+                    .expect("exact score uses lut should decode")
+                    .expect("exact score uses lut should be non-null"),
+                row["turboquant_exact_score_uses_qjl"]
+                    .value::<bool>()
+                    .expect("exact score uses qjl should decode")
+                    .expect("exact score uses qjl should be non-null"),
+            )
+        });
+
+        assert!(rescan_amrescan_total_elapsed_us >= 0);
+        assert!(turboquant_traversal_residual_elapsed_us >= 0);
+        assert!(
+            turboquant_binary_prefilter_score_calls > 0
+                && turboquant_binary_prefilter_score_elapsed_us >= 0
+                && turboquant_binary_prefilter_survivor_candidates > 0
+                && turboquant_binary_prefilter_survivor_candidates
+                    <= turboquant_binary_prefilter_score_calls,
+            "turboquant scan stage profile should surface binary-prefilter work on the no-QJL 4-bit lane",
+        );
+        assert!(
+            turboquant_exact_score_calls > 0 && turboquant_exact_score_elapsed_us >= 0,
+            "turboquant scan stage profile should surface exact quantized scoring work",
+        );
+        assert_eq!(
+            (turboquant_rerank_score_calls, turboquant_rerank_score_elapsed_us),
+            (0, 0),
+            "turboquant scan stage profile should report zero rerank work before the heap-rerank lever ships",
+        );
+        assert_eq!(
+            turboquant_exact_score_mode, "mse_no_qjl_4bit",
+            "1536-dim 4-bit turboquant should report the tiled no-QJL exact-score lane",
+        );
+        assert!(
+            !turboquant_exact_score_uses_lut && !turboquant_exact_score_uses_qjl,
+            "the serious turboquant lane should not claim LUT or QJL exact work once the no-QJL path is active",
         );
     }
 
@@ -17749,6 +17912,20 @@ mod tests {
         i64,
         i64,
     );
+    type TurboQuantScanStageProfileValues = (
+        i64,
+        i64,
+        i32,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        String,
+        bool,
+        bool,
+    );
 
     fn pq_fastscan_scan_order_drift_summary_values(
         index_oid: pg_sys::Oid,
@@ -17936,6 +18113,13 @@ mod tests {
         limit_count: i32,
     ) -> PqFastScanRerankProfileValues {
         unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) }
+    }
+
+    fn turboquant_scan_stage_profile_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TurboQuantScanStageProfileValues {
+        unsafe { am::debug_turboquant_scan_stage_profile(index_oid, query) }
     }
 
     #[pg_extern]
@@ -18215,6 +18399,61 @@ mod tests {
             pq_fastscan_rerank_heap_fetch_elapsed_us,
             pq_fastscan_rerank_heap_decode_elapsed_us,
             pq_fastscan_rerank_heap_dot_elapsed_us,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_turboquant_scan_stage_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(turboquant_traversal_residual_elapsed_us, i64),
+            name!(turboquant_binary_prefilter_score_calls, i32),
+            name!(turboquant_binary_prefilter_score_elapsed_us, i64),
+            name!(turboquant_binary_prefilter_survivor_candidates, i32),
+            name!(turboquant_exact_score_calls, i32),
+            name!(turboquant_exact_score_elapsed_us, i64),
+            name!(turboquant_rerank_score_calls, i32),
+            name!(turboquant_rerank_score_elapsed_us, i64),
+            name!(turboquant_exact_score_mode, String),
+            name!(turboquant_exact_score_uses_lut, bool),
+            name!(turboquant_exact_score_uses_qjl, bool),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_turboquant_scan_stage_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            turboquant_traversal_residual_elapsed_us,
+            turboquant_binary_prefilter_score_calls,
+            turboquant_binary_prefilter_score_elapsed_us,
+            turboquant_binary_prefilter_survivor_candidates,
+            turboquant_exact_score_calls,
+            turboquant_exact_score_elapsed_us,
+            turboquant_rerank_score_calls,
+            turboquant_rerank_score_elapsed_us,
+            turboquant_exact_score_mode,
+            turboquant_exact_score_uses_lut,
+            turboquant_exact_score_uses_qjl,
+        ) = turboquant_scan_stage_profile_values(index_oid, query);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            turboquant_traversal_residual_elapsed_us,
+            turboquant_binary_prefilter_score_calls,
+            turboquant_binary_prefilter_score_elapsed_us,
+            turboquant_binary_prefilter_survivor_candidates,
+            turboquant_exact_score_calls,
+            turboquant_exact_score_elapsed_us,
+            turboquant_rerank_score_calls,
+            turboquant_rerank_score_elapsed_us,
+            turboquant_exact_score_mode,
+            turboquant_exact_score_uses_lut,
+            turboquant_exact_score_uses_qjl,
         ))
     }
 

@@ -82,6 +82,9 @@ pub(super) struct ScanDebugProfile {
     pub(super) graph_neighbor_load_elapsed_us: u64,
     pub(super) score_cache_hits: u64,
     pub(super) score_cache_misses: u64,
+    pub(super) binary_prefilter_score_calls: u64,
+    pub(super) binary_prefilter_score_elapsed_us: u64,
+    pub(super) binary_prefilter_survivor_candidates: u64,
     pub(super) candidate_score_calls: u64,
     pub(super) candidate_score_elapsed_us: u64,
     pub(super) grouped_traversal_approx_score_calls: u64,
@@ -630,6 +633,24 @@ fn record_graph_neighbor_cache_miss_load(opaque: &mut TqScanOpaque, elapsed_us: 
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_graph_neighbor_cache_miss_load(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_binary_prefilter_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.binary_prefilter_score_calls += 1;
+    opaque.debug_profile.binary_prefilter_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_binary_prefilter_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_binary_prefilter_survivors(opaque: &mut TqScanOpaque, survivor_count: usize) {
+    opaque.debug_profile.binary_prefilter_survivor_candidates +=
+        u64::try_from(survivor_count).expect("binary prefilter survivor count should fit in u64");
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_binary_prefilter_survivors(_opaque: &mut TqScanOpaque, _survivor_count: usize) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_candidate_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
@@ -2542,10 +2563,18 @@ where
                     return;
                 }
 
+                #[cfg(any(test, feature = "pg_test"))]
+                let binary_started = Instant::now();
                 let approx_score = -quantizer.score_binary_sign_words_no_qjl_4bit(
                     binary_query,
                     neighbor.binary_words.as_slice(),
                 );
+                #[cfg(any(test, feature = "pg_test"))]
+                let binary_elapsed_us = u64::try_from(binary_started.elapsed().as_micros())
+                    .expect("timing should fit in u64");
+                #[cfg(not(any(test, feature = "pg_test")))]
+                let binary_elapsed_us = 0;
+                record_binary_prefilter_score_elapsed(unsafe { &mut *opaque }, binary_elapsed_us);
                 approx_candidates.push(BinaryPrefilterCandidate {
                     ordinal: approx_candidates.len(),
                     element: neighbor,
@@ -2562,6 +2591,7 @@ where
         approx_candidates.truncate(survivor_budget);
         approx_candidates.sort_by_key(|candidate| candidate.ordinal);
     }
+    record_binary_prefilter_survivors(unsafe { &mut *opaque }, approx_candidates.len());
 
     let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(approx_candidates.len()));
     for candidate in approx_candidates {
