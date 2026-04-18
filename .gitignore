@@ -1,3 +1,5 @@
 /target
 /.pgrx
 Cargo.lock
+__pycache__/
+/tmp/
