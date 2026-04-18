@@ -15,6 +15,13 @@ The remaining merge-readiness gap after `420` was evidence packaging:
 
 This packet closes that gap.
 
+The measurement case for landing remains in packets `413` and `414`:
+
+1. `413` captured the same-runtime direct recall/runtime matrix across
+   `10k/50k × turboquant/pq_fastscan × m=8/16 × ef=40..200`
+2. `414` captured the planner-verified warm SQL matrix on isolated explicit-
+   format surfaces, including the bilateral-win `50k, m=16, ef>=128` cell
+
 ## Problem
 
 The branch already had:
@@ -23,6 +30,7 @@ The branch already had:
 2. the source-backed pq-fastscan/runtime/test fixes from `404`, `411`, `417`,
    and `420`
 3. full storage-format guardrail coverage from `403`, `409`, and `420`
+4. the scratch-cluster measurement proof from `413` and `414`
 
 But the review flow still lacked one small packet with the exact green output.
 
@@ -125,3 +133,7 @@ The only remaining tasks are post-merge follow-ups:
 
 1. stand up the Linux/x86_64 `cargo test` PR lane
 2. investigate shared-table planner cross-choosing between sibling indexes
+3. capture a small `50k` before/after build-time row for `418`'s
+   `BuildCodeDistance::new(...)` hot-path correction; correctness is already
+   locked by the current local test surface, but that cost measurement was
+   deferred rather than dropped

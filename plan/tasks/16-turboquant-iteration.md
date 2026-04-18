@@ -64,6 +64,11 @@ the LUT 4x. Composes with tiling.
 
 ## Subtasks
 
+- [ ] **Close the deferred `418` measurement note** with one `50k`
+  before/after build-time row for the landed
+  `BuildCodeDistance::new(...)` hot-path correction. This is not a task-15
+  blocker, but it should be recorded before broader TurboQuant iteration
+  work starts.
 - [ ] **Instrument TurboQuant scan path** for per-stage cost on the 50k
   warm real seam (traversal, LUT gather, QJL accumulate, rerank). Baseline
   numbers land in a measurement packet before any levers are wired.
