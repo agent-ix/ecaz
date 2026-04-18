@@ -8,7 +8,8 @@ use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
 use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{
-    BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedQuery, ProdQuantizer,
+    BinarySignNoQjl4BitQuery, Int8ApproxNoQjl4BitQuery, PreparedLutNoQjl4BitQuery,
+    PreparedQuery, PreparedTiledLutNoQjl4BitQuery, ProdQuantizer,
 };
 
 use super::explain::TqExplainCounters;
@@ -48,6 +49,7 @@ const PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
 const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
     "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
 const TURBOQUANT_EXACT_SCORE_MODE_ENV: &str = "TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE";
+const TURBOQUANT_TILED_LUT_TILE_SIZE: usize = 512;
 pub(crate) const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 64;
 const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
 pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
@@ -519,15 +521,23 @@ impl PqFastScanTraversalScoreModeDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TurboQuantExactScoreMode {
     Exact = 0,
-    Int8Approx = 1,
+    FullLut = 1,
+    TiledLut = 2,
+    Int8Approx = 3,
 }
 
 impl TurboQuantExactScoreMode {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Exact => "exact",
+            Self::FullLut => "full_lut_no_qjl_4bit",
+            Self::TiledLut => "tiled_lut_no_qjl_4bit",
             Self::Int8Approx => "int8_approx_no_qjl_4bit",
         }
+    }
+
+    const fn uses_lut(self) -> bool {
+        matches!(self, Self::FullLut | Self::TiledLut)
     }
 }
 
@@ -1118,21 +1128,23 @@ fn resolve_turboquant_exact_score_mode() -> TurboQuantExactScoreMode {
 
     match raw_mode.to_string_lossy().as_ref() {
         "exact" => TurboQuantExactScoreMode::Exact,
+        "full_lut" => TurboQuantExactScoreMode::FullLut,
+        "tiled_lut" => TurboQuantExactScoreMode::TiledLut,
         "int8_approx" => TurboQuantExactScoreMode::Int8Approx,
         other => pgrx::error!(
-            "tqhnsw TurboQuant exact score mode must be one of [exact, int8_approx], got {:?}",
+            "tqhnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got {:?}",
             other
         ),
     }
 }
 
-fn turboquant_int8_exact_score_enabled(opaque: &TqScanOpaque) -> bool {
+fn turboquant_non_default_exact_score_enabled(opaque: &TqScanOpaque) -> bool {
     turboquant_scan_storage(opaque.scan_graph_storage)
-        && opaque.turboquant_exact_score_mode == TurboQuantExactScoreMode::Int8Approx
+        && opaque.turboquant_exact_score_mode != TurboQuantExactScoreMode::Exact
 }
 
 pub(super) fn turboquant_exact_score_mode_name(opaque: &TqScanOpaque) -> &'static str {
-    if turboquant_int8_exact_score_enabled(opaque) {
+    if turboquant_non_default_exact_score_enabled(opaque) {
         opaque.turboquant_exact_score_mode.as_str()
     } else if opaque.cached_quantizer.is_null() {
         TurboQuantExactScoreMode::Exact.as_str()
@@ -1142,13 +1154,15 @@ pub(super) fn turboquant_exact_score_mode_name(opaque: &TqScanOpaque) -> &'stati
 }
 
 pub(super) fn turboquant_exact_score_uses_lut(opaque: &TqScanOpaque) -> bool {
-    !turboquant_int8_exact_score_enabled(opaque)
-        && !opaque.cached_quantizer.is_null()
-        && unsafe { &*opaque.cached_quantizer }.exact_score_uses_lut()
+    if turboquant_non_default_exact_score_enabled(opaque) {
+        opaque.turboquant_exact_score_mode.uses_lut()
+    } else {
+        !opaque.cached_quantizer.is_null() && unsafe { &*opaque.cached_quantizer }.exact_score_uses_lut()
+    }
 }
 
 pub(super) fn turboquant_exact_score_uses_qjl(opaque: &TqScanOpaque) -> bool {
-    !turboquant_int8_exact_score_enabled(opaque)
+    !turboquant_non_default_exact_score_enabled(opaque)
         && !opaque.cached_quantizer.is_null()
         && unsafe { &*opaque.cached_quantizer }.exact_score_uses_qjl()
 }
@@ -1648,31 +1662,71 @@ fn store_scan_prepared_query(
     } else {
         TurboQuantExactScoreMode::Exact
     };
-    let turboquant_int8_prepared = if turboquant_exact_score_mode == TurboQuantExactScoreMode::Int8Approx
-    {
-        if !quantizer.int8_approx_no_qjl_4bit_supported() {
-            pgrx::error!(
-                "tqhnsw TurboQuant exact score mode int8_approx requires the no-QJL 4-bit lane"
-            );
-        }
-        Some(quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(query))
-    } else {
-        None
-    };
-    opaque.prepared_query = Box::into_raw(Box::new(prepared));
-    opaque.binary_sign_query = binary_prepared
+    let (turboquant_lut_prepared, turboquant_tiled_lut_prepared, turboquant_int8_prepared) =
+        match turboquant_exact_score_mode {
+            TurboQuantExactScoreMode::Exact => (None, None, None),
+            TurboQuantExactScoreMode::FullLut => {
+                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+                    pgrx::error!(
+                        "tqhnsw TurboQuant exact score mode full_lut requires the no-QJL 4-bit lane"
+                    );
+                }
+                (
+                    Some(quantizer.prepare_ip_query_lut_no_qjl_4bit(query)),
+                    None,
+                    None,
+                )
+            }
+            TurboQuantExactScoreMode::TiledLut => {
+                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+                    pgrx::error!(
+                        "tqhnsw TurboQuant exact score mode tiled_lut requires the no-QJL 4-bit lane"
+                    );
+                }
+                (
+                    None,
+                    Some(
+                        quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(
+                            query,
+                            TURBOQUANT_TILED_LUT_TILE_SIZE,
+                        ),
+                    ),
+                    None,
+                )
+            }
+            TurboQuantExactScoreMode::Int8Approx => {
+                if !quantizer.int8_approx_no_qjl_4bit_supported() {
+                    pgrx::error!(
+                        "tqhnsw TurboQuant exact score mode int8_approx requires the no-QJL 4-bit lane"
+                    );
+                }
+                (
+                    None,
+                    None,
+                    Some(quantizer.prepare_ip_query_int8_approx_no_qjl_4bit(query)),
+                )
+            }
+        };
+    opaque.turboquant_lut_query = turboquant_lut_prepared
+        .map(|prepared| Box::into_raw(Box::new(prepared)))
+        .unwrap_or(ptr::null_mut());
+    opaque.turboquant_tiled_lut_query = turboquant_tiled_lut_prepared
         .map(|prepared| Box::into_raw(Box::new(prepared)))
         .unwrap_or(ptr::null_mut());
     opaque.turboquant_int8_query = turboquant_int8_prepared
         .map(|prepared| Box::into_raw(Box::new(prepared)))
         .unwrap_or(ptr::null_mut());
-    opaque.turboquant_exact_score_mode = turboquant_exact_score_mode;
-    opaque.cached_quantizer = Arc::into_raw(quantizer);
+    opaque.prepared_query = Box::into_raw(Box::new(prepared));
+    opaque.binary_sign_query = binary_prepared
+        .map(|prepared| Box::into_raw(Box::new(prepared)))
+        .unwrap_or(ptr::null_mut());
     if grouped_binary_traversal_score_enabled(opaque) && opaque.binary_sign_query.is_null() {
         pgrx::error!(
             "tqhnsw PqFastScan binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
         );
     }
+    opaque.turboquant_exact_score_mode = turboquant_exact_score_mode;
+    opaque.cached_quantizer = Arc::into_raw(quantizer);
     if cache_hit {
         opaque.explain_counters.record_quantizer_cache_hit();
     }
@@ -1690,6 +1744,14 @@ fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
     if !opaque.binary_sign_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.binary_sign_query) });
         opaque.binary_sign_query = ptr::null_mut();
+    }
+    if !opaque.turboquant_lut_query.is_null() {
+        drop(unsafe { Box::from_raw(opaque.turboquant_lut_query) });
+        opaque.turboquant_lut_query = ptr::null_mut();
+    }
+    if !opaque.turboquant_tiled_lut_query.is_null() {
+        drop(unsafe { Box::from_raw(opaque.turboquant_tiled_lut_query) });
+        opaque.turboquant_tiled_lut_query = ptr::null_mut();
     }
     if !opaque.turboquant_int8_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.turboquant_int8_query) });
@@ -4203,12 +4265,35 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
     }
 
     let quantizer = unsafe { &*opaque.cached_quantizer };
-    if turboquant_int8_exact_score_enabled(opaque) {
-        if opaque.turboquant_int8_query.is_null() {
-            pgrx::error!("tqhnsw TurboQuant int8 exact-score mode requires a prepared int8 query");
+    match opaque.turboquant_exact_score_mode {
+        TurboQuantExactScoreMode::Exact => {}
+        TurboQuantExactScoreMode::FullLut => {
+            if opaque.turboquant_lut_query.is_null() {
+                pgrx::error!(
+                    "tqhnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
+                );
+            }
+            let prepared = unsafe { &*opaque.turboquant_lut_query };
+            return -quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, code_bytes);
         }
-        let prepared = unsafe { &*opaque.turboquant_int8_query };
-        return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
+        TurboQuantExactScoreMode::TiledLut => {
+            if opaque.turboquant_tiled_lut_query.is_null() {
+                pgrx::error!(
+                    "tqhnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
+                );
+            }
+            let prepared = unsafe { &*opaque.turboquant_tiled_lut_query };
+            return -quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(prepared, code_bytes);
+        }
+        TurboQuantExactScoreMode::Int8Approx => {
+            if opaque.turboquant_int8_query.is_null() {
+                pgrx::error!(
+                    "tqhnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
+                );
+            }
+            let prepared = unsafe { &*opaque.turboquant_int8_query };
+            return -quantizer.score_ip_from_parts_int8_approx_no_qjl_4bit(prepared, code_bytes);
+        }
     }
     if opaque.prepared_query.is_null() {
         pgrx::error!("tqhnsw scan scoring requires a prepared query");
@@ -4593,6 +4678,8 @@ pub(super) struct TqScanOpaque {
     pub(super) prepared_query: *mut PreparedQuery,
     pub(super) grouped_query: *mut PreparedGroupedScanQuery,
     pub(super) binary_sign_query: *mut BinarySignNoQjl4BitQuery,
+    pub(super) turboquant_lut_query: *mut PreparedLutNoQjl4BitQuery,
+    pub(super) turboquant_tiled_lut_query: *mut PreparedTiledLutNoQjl4BitQuery,
     pub(super) turboquant_int8_query: *mut Int8ApproxNoQjl4BitQuery,
     turboquant_exact_score_mode: TurboQuantExactScoreMode,
     pub(super) cached_quantizer: *const ProdQuantizer,
@@ -4657,6 +4744,8 @@ impl Default for TqScanOpaque {
             prepared_query: ptr::null_mut(),
             grouped_query: ptr::null_mut(),
             binary_sign_query: ptr::null_mut(),
+            turboquant_lut_query: ptr::null_mut(),
+            turboquant_tiled_lut_query: ptr::null_mut(),
             turboquant_int8_query: ptr::null_mut(),
             turboquant_exact_score_mode: TurboQuantExactScoreMode::Exact,
             cached_quantizer: ptr::null(),

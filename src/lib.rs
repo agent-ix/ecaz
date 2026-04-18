@@ -5561,10 +5561,14 @@ mod tests {
         );
     }
 
-    #[pg_test]
-    fn test_turboquant_scan_stage_profile_int8_mode() {
+    fn assert_turboquant_scan_stage_profile_mode(
+        env_value: &str,
+        expected_mode: &str,
+        expected_uses_lut: bool,
+        expected_uses_qjl: bool,
+    ) {
         let _lock = env_var_test_lock();
-        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", "int8_approx");
+        let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", env_value);
         let index_name = "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8_idx";
         let _index_oid = create_turboquant_binary_runtime_fixture(
             "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8",
@@ -5659,21 +5663,52 @@ mod tests {
         );
         assert!(
             turboquant_rerank_score_calls > 0 && turboquant_rerank_score_elapsed_us >= 0,
-            "turboquant int8 exact-score mode should still surface deferred rerank work",
+            "non-default turboquant exact-score modes should still surface deferred rerank work",
         );
         assert_eq!(
-            turboquant_exact_score_mode, "int8_approx_no_qjl_4bit",
-            "the stage profile should expose the opt-in int8 exact-score experiment",
+            turboquant_exact_score_mode, expected_mode,
+            "the stage profile should expose the requested opt-in turboquant exact-score experiment",
         );
         assert!(
-            !turboquant_exact_score_uses_lut && !turboquant_exact_score_uses_qjl,
-            "the int8 exact-score experiment should not claim LUT or QJL work",
+            turboquant_exact_score_uses_lut == expected_uses_lut
+                && turboquant_exact_score_uses_qjl == expected_uses_qjl,
+            "the stage profile should report the expected LUT/QJL shape for the requested turboquant exact-score mode",
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_scan_stage_profile_full_lut_mode() {
+        assert_turboquant_scan_stage_profile_mode(
+            "full_lut",
+            "full_lut_no_qjl_4bit",
+            true,
+            false,
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_scan_stage_profile_tiled_lut_mode() {
+        assert_turboquant_scan_stage_profile_mode(
+            "tiled_lut",
+            "tiled_lut_no_qjl_4bit",
+            true,
+            false,
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_scan_stage_profile_int8_mode() {
+        assert_turboquant_scan_stage_profile_mode(
+            "int8_approx",
+            "int8_approx_no_qjl_4bit",
+            false,
+            false,
         );
     }
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw TurboQuant exact score mode must be one of [exact, int8_approx], got \"bogus\""
+        expected = "tqhnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got \"bogus\""
     )]
     fn test_turboquant_exact_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
