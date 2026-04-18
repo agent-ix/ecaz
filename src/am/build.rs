@@ -70,7 +70,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
-            validate_pq_fastscan_rerank_source_column(heap_relation, &state.options);
+            validate_grouped_rerank_source_column(heap_relation, &state.options);
 
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
@@ -114,10 +114,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sy
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = BuildState::new(index_relation);
-            validate_pq_fastscan_rerank_source_column_for_empty_build(
-                index_relation,
-                &state.options,
-            );
+            validate_grouped_rerank_source_column_for_empty_build(index_relation, &state.options);
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
         })
     }
@@ -275,13 +272,10 @@ impl BuildState {
     }
 }
 
-fn validate_pq_fastscan_rerank_source_column(
+fn validate_grouped_rerank_source_column(
     heap_relation: pg_sys::Relation,
     options: &options::TqHnswOptions,
 ) {
-    if !matches!(options.storage_format, options::StorageFormat::PqFastScan) {
-        return;
-    }
     let Some(source_column) = options.rerank_source_column.as_deref() else {
         return;
     };
@@ -296,13 +290,11 @@ fn validate_pq_fastscan_rerank_source_column(
     };
 }
 
-fn validate_pq_fastscan_rerank_source_column_for_empty_build(
+fn validate_grouped_rerank_source_column_for_empty_build(
     index_relation: pg_sys::Relation,
     options: &options::TqHnswOptions,
 ) {
-    if !matches!(options.storage_format, options::StorageFormat::PqFastScan)
-        || options.rerank_source_column.is_none()
-    {
+    if options.rerank_source_column.is_none() {
         return;
     }
 
@@ -312,7 +304,7 @@ fn validate_pq_fastscan_rerank_source_column_for_empty_build(
     }
     let heap_relation =
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    validate_pq_fastscan_rerank_source_column(heap_relation, options);
+    validate_grouped_rerank_source_column(heap_relation, options);
     unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 }
 

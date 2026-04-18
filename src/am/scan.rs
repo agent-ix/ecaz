@@ -1235,7 +1235,7 @@ fn resolve_grouped_rerank_mode_decision(
         "quantized" => GroupedRerankMode::Quantized,
         "heap_f32" => GroupedRerankMode::HeapF32,
         other => pgrx::error!(
-            "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got {:?}",
+            "tqhnsw grouped rerank mode must be one of [quantized, heap_f32], got {:?}",
             other
         ),
     };
@@ -1423,7 +1423,7 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Re
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve heap relation");
+        pgrx::error!("tqhnsw grouped heap-f32 rerank could not resolve heap relation");
     }
     (
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
@@ -1443,7 +1443,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapsho
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
-        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve an active snapshot");
+        pgrx::error!("tqhnsw grouped heap-f32 rerank could not resolve an active snapshot");
     }
     (registered_snapshot, true)
 }
@@ -1504,7 +1504,7 @@ unsafe fn configure_grouped_heap_rerank_state(
             .or_else(|| index_options.build_source_column.clone())
             .unwrap_or_else(|| {
             pgrx::error!(
-                "tqhnsw PqFastScan heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[] or bytea heap column",
+                "tqhnsw grouped heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[] or bytea heap column",
                 PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
             )
         })
@@ -1522,7 +1522,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     let slot = unsafe {
         source::allocate_heap_slot(
             heap_relation,
-            "tqhnsw PqFastScan heap-f32 rerank failed to allocate a heap tuple slot",
+            "tqhnsw grouped heap-f32 rerank failed to allocate a heap tuple slot",
         )
     };
 
@@ -2235,7 +2235,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         || opaque.grouped_heap_rerank_slot.is_null()
         || opaque.grouped_heap_rerank_source_attnum <= 0
     {
-        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank is missing heap fetch state");
+        pgrx::error!("tqhnsw grouped heap-f32 rerank is missing heap fetch state");
     }
 
     let source_attribute = source::SourceAttribute {

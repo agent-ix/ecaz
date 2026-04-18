@@ -3987,11 +3987,16 @@ mod tests {
         table_name: &str,
         index_name: &str,
         include_source: bool,
+        persisted_rerank_source_column: Option<&str>,
     ) -> pg_sys::Oid {
-        let source_column = if include_source {
-            ",\n                source real[]"
-        } else {
-            ""
+        let include_source_raw = persisted_rerank_source_column.is_some();
+        let source_column = match (include_source, include_source_raw) {
+            (false, false) => "",
+            (true, false) => ",\n                source real[]",
+            (true, true) => ",\n                source real[],\n                source_raw bytea",
+            (false, true) => {
+                panic!("persisted TurboQuant rerank-source fixtures require source real[]")
+            }
         };
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
@@ -4004,18 +4009,27 @@ mod tests {
         for id in 1..=16 {
             let source = include_source
                 .then(|| format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_source(id)));
+            let source_raw = include_source_raw.then(|| {
+                format_recall_vector_sql_literal(&turboquant_binary_runtime_rerank_source(id))
+            });
             let embedding =
                 format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
-            let insert_sql = if let Some(source) = source {
-                format!(
+            let insert_sql = match (source, source_raw) {
+                (Some(source), Some(source_raw)) => format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, {source}, tests.tqhnsw_debug_pack_f32_bytea({source_raw}), encode_to_tqvector({embedding}, 4, 42))"
+                ),
+                (Some(source), None) => format!(
                     "INSERT INTO {table_name} VALUES \
                      ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
-                )
-            } else {
-                format!(
+                ),
+                (None, None) => format!(
                     "INSERT INTO {table_name} VALUES \
                      ({id}, encode_to_tqvector({embedding}, 4, 42))"
-                )
+                ),
+                (None, Some(_)) => unreachable!(
+                    "persisted TurboQuant rerank-source fixtures require source real[]"
+                ),
             };
             Spi::run(&insert_sql).expect("insert should succeed");
         }
@@ -4025,9 +4039,12 @@ mod tests {
         } else {
             ""
         };
+        let rerank_source_column = persisted_rerank_source_column
+            .map(|column| format!(", rerank_source_column = '{column}'"))
+            .unwrap_or_default();
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}, storage_format = 'turboquant')"
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}{rerank_source_column}, storage_format = 'turboquant')"
         ))
         .expect("index creation should succeed");
 
@@ -4037,14 +4054,26 @@ mod tests {
     }
 
     fn create_turboquant_binary_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
-        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, false)
+        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, false, None)
     }
 
     fn create_turboquant_binary_runtime_fixture_with_source(
         table_name: &str,
         index_name: &str,
     ) -> pg_sys::Oid {
-        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, true)
+        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, true, None)
+    }
+
+    fn create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_turboquant_binary_runtime_fixture_internal(
+            table_name,
+            index_name,
+            true,
+            Some("source_raw"),
+        )
     }
 
     fn pq_fastscan_runtime_query() -> Vec<f32> {
@@ -4092,6 +4121,14 @@ mod tests {
                 (((id * 41 + dim * 11) as f32) * 0.0012).cos()
                     + (((id * 19 + dim * 5) as f32) * 0.0008).sin()
             })
+            .collect()
+    }
+
+    fn turboquant_binary_runtime_rerank_source(id: i64) -> Vec<f32> {
+        pq_fastscan_binary_runtime_source(id)
+            .into_iter()
+            .enumerate()
+            .map(|(dim, value)| (-0.5 * value) + (dim as f32 * 0.002) - 0.25)
             .collect()
     }
 
@@ -5323,6 +5360,129 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_turboquant_persisted_rerank_source_default_stays_quantized() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
+            "tqhnsw_tq_persisted_rerank_default_q",
+            "tqhnsw_tq_persisted_rerank_default_q_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe {
+            am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10)
+        };
+
+        assert!(
+            result_count > 0,
+            "persisted-rerank-source turboquant default rerank should still emit ordered results",
+        );
+        assert!(
+            grouped_rerank_quantized_score_calls > 0
+                && grouped_rerank_quantized_score_elapsed_us >= 0,
+            "persisted-rerank-source turboquant default rerank should stay on quantized comparisons",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_heap_score_calls,
+                grouped_rerank_heap_score_elapsed_us,
+                grouped_rerank_heap_rows_fetched,
+                grouped_rerank_heap_fetch_elapsed_us,
+                grouped_rerank_heap_decode_elapsed_us,
+                grouped_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "persisted-rerank-source turboquant default rerank should leave heap rerank counters inert until explicitly overridden",
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_persisted_bytea_rerank_emits_scores() {
+        let _lock = env_var_test_lock();
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let table_name = "tqhnsw_tq_persisted_heap_rerank_bytea";
+        let index_name = "tqhnsw_tq_persisted_heap_rerank_bytea_idx";
+        let index_oid =
+            create_turboquant_binary_runtime_fixture_with_persisted_source_raw(table_name, index_name);
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                index_oid,
+                pq_fastscan_binary_runtime_query(),
+            )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_binary_runtime_query())
+        }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let query = pq_fastscan_binary_runtime_query();
+        let rerank_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &turboquant_binary_runtime_rerank_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let build_source_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_binary_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "TurboQuant heap rerank should still emit ordered results when rerank_source_column persists a bytea source",
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "a persisted TurboQuant bytea rerank_source_column should attach exact heap comparison scores",
+            );
+            let expected = rerank_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact rerank-source score");
+            let build_source_expected = build_source_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact build-source score");
+            assert!(
+                (expected - build_source_expected).abs() > 1.0e-3,
+                "the persisted TurboQuant rerank source should differ materially from build_source_column for emitted rows",
+            );
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "a persisted TurboQuant bytea rerank_source_column should use the raw heap f32 inner product from source_raw",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "a persisted TurboQuant bytea rerank_source_column should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
@@ -6045,7 +6205,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got \"bogus\""
+        expected = "tqhnsw grouped rerank mode must be one of [quantized, heap_f32], got \"bogus\""
     )]
     fn test_pq_fastscan_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
@@ -8092,24 +8252,24 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "rerank_source_column requires storage_format = 'pq_fastscan'")]
-    fn test_pq_fastscan_rerank_source_rejects_non_pq_fastscan_storage() {
+    #[should_panic(expected = "must be real[] or bytea")]
+    fn test_turboquant_rerank_source_rejects_wrong_type() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_rerank_source_storage (
+            "CREATE TABLE tqhnsw_bad_rerank_source_type_turboquant (
                 id bigint primary key,
                 source real[],
-                source_raw bytea,
+                source_raw text,
                 embedding tqvector
             )",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_rerank_source_storage VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[1.0, 0.0, 0.0, 0.0]::real[]), encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+            "INSERT INTO tqhnsw_bad_rerank_source_type_turboquant VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_rerank_source_storage_idx ON tqhnsw_bad_rerank_source_storage USING tqhnsw \
+            "CREATE INDEX tqhnsw_bad_rerank_source_type_turboquant_idx ON tqhnsw_bad_rerank_source_type_turboquant USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'source_raw')",
         )
         .expect("index creation should fail");

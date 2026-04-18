@@ -220,7 +220,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"rerank_source_column\0".as_ptr().cast(),
-                b"Optional heap column name supplying raw real[] or bytea vectors for pq_fastscan heap_f32 rerank.\0"
+                b"Optional heap column name supplying raw real[] or bytea vectors for grouped heap_f32 rerank.\0"
                     .as_ptr()
                     .cast(),
                 ptr::null(),
@@ -301,9 +301,6 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
         }
         None => StorageFormat::DEFAULT,
     };
-    if rerank_source_column.is_some() && storage_format != StorageFormat::PqFastScan {
-        pgrx::error!("tqhnsw rerank_source_column requires storage_format = 'pq_fastscan'");
-    }
 
     TqHnswOptions {
         m: reloptions.m,
