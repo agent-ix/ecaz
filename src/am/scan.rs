@@ -427,6 +427,19 @@ pub(super) struct PreparedGroupedScanQuery {
     lut_f32: Vec<f32>,
 }
 
+impl crate::quant::QueryScorer for PreparedGroupedScanQuery {
+    fn score(&self, search_code: &[u8]) -> f32 {
+        debug_assert_eq!(
+            search_code.len(),
+            self.search_code_len,
+            "grouped search-code length {} should match prepared grouped query width {}",
+            search_code.len(),
+            self.search_code_len,
+        );
+        grouped_pq_score_f32(&self.lut_f32, self.group_count, search_code)
+    }
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GroupedScorePayloadView<'a> {
@@ -2399,18 +2412,11 @@ fn score_grouped_search_code_result(
     prepared_query: &PreparedGroupedScanQuery,
     search_code: &[u8],
 ) -> f32 {
-    debug_assert_eq!(
-        search_code.len(),
-        prepared_query.search_code_len,
-        "grouped search-code length {} should match prepared grouped query width {}",
-        search_code.len(),
-        prepared_query.search_code_len
-    );
-    -grouped_pq_score_f32(
-        &prepared_query.lut_f32,
-        prepared_query.group_count,
-        search_code,
-    )
+    // ADR-041 stage 0: grouped-PQ LUT scoring routes through the
+    // `QueryScorer` trait. The inherent debug_assert on search-code
+    // length lives in the trait impl on `PreparedGroupedScanQuery`.
+    use crate::quant::QueryScorer;
+    -prepared_query.score(search_code)
 }
 
 unsafe fn score_grouped_search_code_from_scan_state(
