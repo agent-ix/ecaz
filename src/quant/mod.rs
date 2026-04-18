@@ -33,6 +33,9 @@ pub mod prod;
 pub mod qjl;
 pub mod rotation;
 mod simd;
+pub mod traits;
+
+pub use traits::{Quantizer, QueryScorer};
 
 pub(crate) fn simd_backend_name() -> &'static str {
     simd::backend_name()
