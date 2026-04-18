@@ -41,3 +41,5 @@ Enforce safety, stability, licensing, and CI verification across the repo.
 ## Notes
 
 - This task should run continuously in parallel with implementation, not as a final cleanup pass.
+- Task-15 merge follow-up owner: Agent 3 (SIMD / CI track).
+- Task-15 merge follow-up target: April 24, 2026 to land a minimal Linux/x86_64 PR gate running `cargo test`; May 1, 2026 to decide whether `cargo pgrx test pg17` should join that lane or remain a separate workstation gate.
