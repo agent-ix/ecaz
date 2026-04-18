@@ -24,7 +24,7 @@ Microsoft's DiskANN and VectorChord cited where their design diverges.
 - Additive/residual quantization (ADR-037) and LSQ refinement
   (ADR-038).
 - Fresh-Vamana delta-graph merging (FreshDiskANN streaming inserts
-  that do not go through ADR-041's full live-insert path).
+  that do not go through ADR-042's full live-insert path).
 - Parallel build. First implementation is single-threaded end to end,
   matching pgvectorscale's default posture.
 
@@ -202,7 +202,7 @@ Cost: `O(S²)` distance evaluations — ~100M at the cap, bounded and
 runs in seconds with FastScan scoring.
 
 Record the medoid TID in the Vamana metadata page. Both scan and
-insert use it as the graph entry point (ADR-041 step 1).
+insert use it as the graph entry point (ADR-042 step 1).
 
 ### Page layout persistence
 
@@ -313,7 +313,7 @@ search I/O is sequential.
 - ADR-030: FastScan Grouped Subvector Scoring.
 - ADR-031: RaBitQ Binary Pre-Filter.
 - ADR-034: DiskANN as Second Access Method.
-- ADR-041: Vamana Live Insert Lock Ordering.
-- ADR-042: Vamana Vacuum Graph Repair Lock Ordering.
+- ADR-042: Vamana Live Insert Lock Ordering.
+- ADR-043: Vamana Vacuum Graph Repair Lock Ordering.
 - Task 15: PqFastScan First-Class (kernel consumed as-is).
 - Task 17: DiskANN Access Method (this doc's execution vehicle).

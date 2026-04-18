@@ -1,24 +1,24 @@
-# Review Request: ADR-042 Vamana Vacuum Graph Repair Lock Ordering
+# Review Request: ADR-043 Vamana Vacuum Graph Repair Lock Ordering
 
 Branch: `adr034-diskann-access-method`
 
 Scope:
-- `spec/adr/ADR-042-vamana-vacuum-lock-ordering.md`
+- `spec/adr/ADR-043-vamana-vacuum-lock-ordering.md`
 
 ## What this slice is
 
-Draft ADR-042 (status: PROPOSED) covering the lock-ordering
+Draft ADR-043 (status: PROPOSED) covering the lock-ordering
 protocol for vacuum-time graph repair on the upcoming
 `tqdiskann` access method. Analog of ADR-027 for HNSW, adapted
 to single-layer Vamana, fixed-`R` neighbor lists, and
 α-aware fill.
 
-No code lands under this slice. ADR-042 must move to ACCEPTED
+No code lands under this slice. ADR-043 must move to ACCEPTED
 before task 17 phase 5 (vacuum implementation) begins.
 
 ## What changed
 
-New file: `spec/adr/ADR-042-vamana-vacuum-lock-ordering.md`.
+New file: `spec/adr/ADR-043-vamana-vacuum-lock-ordering.md`.
 Status PROPOSED.
 
 Decision encodes ten rules:
@@ -47,7 +47,7 @@ Delta from ADR-027:
 
 ## Review focus
 
-- **Fill-only posture (step 5).** ADR-042 takes the same
+- **Fill-only posture (step 5).** ADR-043 takes the same
   stance as ADR-027 step 7 — fill INVALID slots only, no live
   eviction under the page write lock, even when an α-dominated
   live neighbor would be replaced by a planned candidate.
@@ -60,7 +60,7 @@ Delta from ADR-027:
   says cold lock is acquired after the hot lock for the same
   element and released before moving to the next hot page in
   block order. Confirm this doesn't produce lock-chain
-  cycles under concurrent insert (ADR-041 step 5 writes hot
+  cycles under concurrent insert (ADR-042 step 5 writes hot
   pages only, but the new-node append in step 2 may touch the
   cold chain too — is there a hidden ordering conflict?).
 - **Medoid deferral (step 10).** Setting
@@ -71,7 +71,7 @@ Delta from ADR-027:
   metadata flip happens after pass 2 completes, between pass
   2 and pass 3.
 - **Read-only replan (step 8).** Same shape as ADR-027 step 6
-  and ADR-041 step 7. If all three ADRs share this rule, is
+  and ADR-042 step 7. If all three ADRs share this rule, is
   there a case for a shared helper ADR that captures the
   "replan-before-retry across ordered passes" pattern once,
   rather than repeating the decision in every mutation ADR?
@@ -89,9 +89,9 @@ Delta from ADR-027:
   correct, or should fill fall back to nearest-first
   selection (ignoring α) because α cannot be enforced
   without eviction?
-- **Vacuum racing live insert** — ADR-041's stale-target
+- **Vacuum racing live insert** — ADR-042's stale-target
   retry path assumes a planning-pass snapshot may see a
-  neighbor that a concurrent vacuum has unlinked. Does ADR-042
+  neighbor that a concurrent vacuum has unlinked. Does ADR-043
   step 5 leave enough information in the tuple (e.g.,
   INVALID slots, generation counters) for the insert retry
   to detect this, or does the insert side need a separate
@@ -105,24 +105,24 @@ Delta from ADR-027:
 
 - ADR-034 (PROPOSED at review time).
 - ADR-027 (ACCEPTED, reference protocol).
-- ADR-041 (PROPOSED companion — see packet 11002).
+- ADR-042 (PROPOSED companion — see packet 11002).
 
 ## Companion packets
 
 - `review/11001-diskann-task17-plan/` — task 17 plan.
-- `review/11002-adr041-vamana-insert-lock-ordering/` —
-  ADR-041 draft (insert counterpart).
+- `review/11002-adr042-vamana-insert-lock-ordering/` —
+  ADR-042 draft (insert counterpart).
 - `review/11004-diskann-build-algorithm-design/` — build
   design, which describes medoid approximation and supplies
   the rule that step 10 defers to rebuild.
 
-## Definition of ready (for ADR-042 → ACCEPTED)
+## Definition of ready (for ADR-043 → ACCEPTED)
 
 - Reviewer confirms the 10-rule decision covers every write
   path that any phase-5 implementation could take, or lists
   the specific write paths not yet covered.
 - α at fill time is either explicitly enforced or explicitly
   deferred to rebuild.
-- The hot/cold ordering inter-check with ADR-041 is cleared.
+- The hot/cold ordering inter-check with ADR-042 is cleared.
 - Open questions above are resolved or deferred with a
   follow-up ADR number.

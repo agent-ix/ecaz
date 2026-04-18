@@ -26,7 +26,7 @@
 //!
 //! Empty neighbor slots carry `ItemPointer::INVALID`. Neighbor slot
 //! count is always exactly `graph_degree_r` at rest; `neighbor_count`
-//! is the filled prefix (ADR-042 fill-only invariant: no
+//! is the filled prefix (ADR-043 fill-only invariant: no
 //! live-neighbor eviction, so the prefix only grows until VACUUM
 //! unlinks dead TIDs).
 

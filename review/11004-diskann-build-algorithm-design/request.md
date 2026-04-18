@@ -95,18 +95,18 @@ Distance-function choice: negative inner product wrapped as
 - Task 15 (PqFastScan first-class) — landed on `main`, build
   pipeline consumes existing codebook/encoder code.
 - ADR-034 (DiskANN as second AM, PROPOSED).
-- ADR-041, ADR-042 (lock-ordering ADRs, PROPOSED in packets
+- ADR-042, ADR-043 (lock-ordering ADRs, PROPOSED in packets
   11002/11003).
 
 ## Companion packets
 
 - `review/11001-diskann-task17-plan/` — task 17 plan (phase 2
   is the execution vehicle for this design).
-- `review/11002-adr041-vamana-insert-lock-ordering/` —
-  ADR-041 (live insert shares the `RobustPrune` helper that
+- `review/11002-adr042-vamana-insert-lock-ordering/` —
+  ADR-042 (live insert shares the `RobustPrune` helper that
   phase 2 build introduces).
-- `review/11003-adr042-vamana-vacuum-lock-ordering/` —
-  ADR-042 (step 10 defers medoid migration to rebuild, which
+- `review/11003-adr043-vamana-vacuum-lock-ordering/` —
+  ADR-043 (step 10 defers medoid migration to rebuild, which
   reuses the medoid-approximation helper described here).
 
 ## Definition of ready (for design → frozen)

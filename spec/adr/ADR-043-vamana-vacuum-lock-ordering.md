@@ -1,11 +1,11 @@
 ---
-id: ADR-042
+id: ADR-043
 title: "Vamana Vacuum Graph Repair Lock Ordering (tqdiskann)"
 status: PROPOSED
 impact: Affects FR-010 (analog for tqdiskann), ADR-027, ADR-034
 date: 2026-04-18
 ---
-# ADR-042: Vamana Vacuum Graph Repair Lock Ordering
+# ADR-043: Vamana Vacuum Graph Repair Lock Ordering
 
 ## Context
 
@@ -107,7 +107,7 @@ Vamana vacuum graph repair follows this write order:
    page pass without fabricating a replacement, then rerun
    read-only planning for the affected targets before the next
    ordered pass begins. Same retry shape as ADR-027 step 6 and
-   ADR-026 step 7, and identical to ADR-041 step 7 at the insert
+   ADR-026 step 7, and identical to ADR-042 step 7 at the insert
    side.
 
 9. **Pass 3 — finalization.**
@@ -181,11 +181,11 @@ migration deferred to rebuild.
 - ADR-027: Vacuum Graph Repair Lock Ordering (HNSW)
 - ADR-026: Live Insert Backlink Lock Ordering (HNSW)
 - ADR-034: DiskANN as Second Access Method
-- ADR-041: Vamana Live Insert Lock Ordering (tqdiskann)
+- ADR-042: Vamana Live Insert Lock Ordering (tqdiskann)
 - pgvectorscale, `pgvectorscale/src/access_method/vacuum.rs` —
   reference implementation. pgvectorscale's current vacuum is
   simpler than this protocol because it does not support live
-  insert under the same ADR-041-style α-aware repair; that is why
+  insert under the same ADR-042-style α-aware repair; that is why
   this ADR does not port its rules directly.
 - Subramanya et al., *DiskANN: Fast Accurate Billion-Point Nearest
   Neighbor Search on a Single Node*, NeurIPS 2019. `RobustPrune`

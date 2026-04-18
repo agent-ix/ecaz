@@ -22,8 +22,8 @@ actual implementation.
   - Phase 1 — AM skeleton, reloption set, metadata page struct
   - Phase 2 — build pipeline (Vamana α-pruning on PqFastScan codes)
   - Phase 3 — scan
-  - Phase 4 — insert (gated on ADR-041 acceptance)
-  - Phase 5 — vacuum (gated on ADR-042 acceptance)
+  - Phase 4 — insert (gated on ADR-042 acceptance)
+  - Phase 5 — vacuum (gated on ADR-043 acceptance)
   - Phase 6 — cost model and planner opt-in
 
 - Architectural constraints explicitly carried forward from ADR-034
@@ -38,7 +38,7 @@ actual implementation.
 ## Review focus
 
 - Is the phase split sensible? Specifically: does gating phase 4
-  on ADR-041 and phase 5 on ADR-042 make the critical path
+  on ADR-042 and phase 5 on ADR-043 make the critical path
   reviewable, or does splitting insert/vacuum into separate
   ADRs risk drift between the two lock-ordering rules that ought
   to share invariants?
@@ -76,9 +76,9 @@ actual implementation.
 
 ## Companion packets
 
-- `review/11002-adr041-vamana-insert-lock-ordering/` — ADR-041
+- `review/11002-adr042-vamana-insert-lock-ordering/` — ADR-042
   draft.
-- `review/11003-adr042-vamana-vacuum-lock-ordering/` — ADR-042
+- `review/11003-adr043-vamana-vacuum-lock-ordering/` — ADR-043
   draft.
 - `review/11004-diskann-build-algorithm-design/` —
   `plan/design/diskann-build-algorithm.md` draft.

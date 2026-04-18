@@ -1,11 +1,11 @@
 ---
-id: ADR-041
+id: ADR-042
 title: "Vamana Live Insert Lock Ordering (tqdiskann)"
 status: PROPOSED
 impact: Affects FR-016 (analog for tqdiskann), ADR-026, ADR-034
 date: 2026-04-18
 ---
-# ADR-041: Vamana Live Insert Lock Ordering
+# ADR-042: Vamana Live Insert Lock Ordering
 
 ## Context
 
@@ -168,7 +168,7 @@ through a fresh read-only plan, metadata last.
 
 - ADR-026: Live Insert Backlink Lock Ordering (HNSW)
 - ADR-034: DiskANN as Second Access Method
-- ADR-042: Vamana Vacuum Graph Repair Lock Ordering (tqdiskann)
+- ADR-043: Vamana Vacuum Graph Repair Lock Ordering (tqdiskann)
 - pgvectorscale, `pgvectorscale/src/access_method/insert.rs` — reference
   implementation of Vamana live insert with α-pruning under Postgres
   page locks. Known-rough concurrency story per ADR-034 context; this
