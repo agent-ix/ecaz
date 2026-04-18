@@ -49,7 +49,9 @@ class Pg17ScratchPsqlSocketResolutionTests(unittest.TestCase):
         directory.mkdir(parents=True, exist_ok=True)
         (directory / f".s.PGSQL.{port}").touch()
 
-    def _run_wrapper(self, **env_overrides: str) -> subprocess.CompletedProcess[str]:
+    def _run_wrapper(
+        self, *args: str, **env_overrides: str
+    ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["HOME"] = str(self.home_dir)
         env["TQV_PG_PORT"] = "28817"
@@ -61,7 +63,7 @@ class Pg17ScratchPsqlSocketResolutionTests(unittest.TestCase):
         env.pop("TQV_PG_SOCKET_DIR", None)
         env.update(env_overrides)
         return subprocess.run(
-            ["bash", str(WRAPPER), "--sql", "SELECT 1"],
+            ["bash", str(WRAPPER), *args, "--sql", "SELECT 1"],
             cwd=REPO_ROOT,
             env=env,
             text=True,
@@ -82,6 +84,15 @@ class Pg17ScratchPsqlSocketResolutionTests(unittest.TestCase):
 
     def test_wrapper_honors_explicit_socket_override(self) -> None:
         result = self._run_wrapper(TQV_PG_SOCKET_DIR=str(self.override_dir))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.strip(), "")
+        argv = json.loads(self.log_file.read_text(encoding="utf-8"))
+        self.assertEqual(argv[:2], ["-h", str(self.override_dir)])
+        self.assertEqual(argv[-2:], ["-c", "SELECT 1"])
+
+    def test_wrapper_honors_socket_dir_argument(self) -> None:
+        result = self._run_wrapper("--socket-dir", str(self.override_dir))
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr.strip(), "")

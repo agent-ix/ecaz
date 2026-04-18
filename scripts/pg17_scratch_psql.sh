@@ -4,12 +4,12 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/pg17_scratch_psql.sh [--db DB] [--raw] --sql "SELECT 1"
-  scripts/pg17_scratch_psql.sh [--db DB] [--raw] --file path/to/query.sql
-  scripts/pg17_scratch_psql.sh [--db DB] [--raw]
+  scripts/pg17_scratch_psql.sh [--db DB] [--socket-dir DIR] [--port PORT] [--raw] --sql "SELECT 1"
+  scripts/pg17_scratch_psql.sh [--db DB] [--socket-dir DIR] [--port PORT] [--raw] --file path/to/query.sql
+  scripts/pg17_scratch_psql.sh [--db DB] [--socket-dir DIR] [--port PORT] [--raw]
 
 Defaults:
-  socket dir: /tmp/tqvector_pgrx_home
+  socket dir: resolved by scripts/resolve_scratch_socket_dir.sh
   port:       28817
   database:   postgres
   mode:       aligned-off, tuples-only, tab-separated, ON_ERROR_STOP=1
@@ -31,11 +31,20 @@ psql_bin="${TQV_PSQL_BIN:-${pgrx_home}/17.9/pgrx-install/bin/psql}"
 raw_mode=0
 sql=""
 sql_file=""
+socket_dir=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --db)
             database="$2"
+            shift 2
+            ;;
+        --socket-dir)
+            socket_dir="$2"
+            shift 2
+            ;;
+        --port)
+            port="$2"
             shift 2
             ;;
         --raw)
@@ -67,7 +76,9 @@ if [[ -n "$sql" && -n "$sql_file" ]]; then
     exit 2
 fi
 
-if [[ -n "${TQV_PG_SOCKET_DIR:-}" ]]; then
+if [[ -n "$socket_dir" ]]; then
+    :
+elif [[ -n "${TQV_PG_SOCKET_DIR:-}" ]]; then
     socket_dir="${TQV_PG_SOCKET_DIR}"
 elif [[ -n "${PGHOST:-}" ]]; then
     socket_dir="${PGHOST}"

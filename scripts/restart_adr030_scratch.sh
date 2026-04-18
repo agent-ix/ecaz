@@ -9,6 +9,7 @@ Usage:
       [--grouped-score-mode pq|binary] \
       [--rerank-mode quantized|heap_f32] \
       [--rerank-source-column source_raw] \
+      [-e NAME=VALUE]... \
       [--exact-scope all|layer0] \
       [--exact-strategy expansion|frontier_head] \
       [--exact-limit N] \
@@ -39,6 +40,7 @@ exact_scope="all"
 exact_strategy="expansion"
 exact_limit=""
 pgrx_home="${PGRX_HOME:-/tmp/tqvector_pgrx_home}"
+extra_env=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -56,6 +58,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --rerank-source-column)
             rerank_source_column="$2"
+            shift 2
+            ;;
+        -e|--env)
+            extra_env+=("$2")
             shift 2
             ;;
         --exact-scope)
@@ -127,6 +133,9 @@ if [[ "${exact_enabled}" -eq 1 ]]; then
 else
     printf '[scratch] exact_scope=disabled\n'
 fi
+for assignment in "${extra_env[@]}"; do
+    printf '[scratch] extra_env=%s\n' "${assignment}"
+done
 
 export TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW="${window}"
 export TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE="${grouped_score_mode}"
@@ -152,6 +161,20 @@ else
     unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY 2>/dev/null || true
     unset TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT 2>/dev/null || true
 fi
+
+for assignment in "${extra_env[@]}"; do
+    if [[ "${assignment}" != *=* ]]; then
+        echo "--env values must be NAME=VALUE, got: ${assignment}" >&2
+        exit 2
+    fi
+    name="${assignment%%=*}"
+    value="${assignment#*=}"
+    if [[ -z "${name}" ]]; then
+        echo "--env values must include a variable name" >&2
+        exit 2
+    fi
+    export "${name}=${value}"
+done
 
 export PGRX_HOME="${pgrx_home}"
 
