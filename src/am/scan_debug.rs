@@ -953,7 +953,9 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let registered_snapshot = unsafe {
-        debug_push_latest_snapshot("debug heap-fetch profile could not acquire a fresh latest snapshot")
+        debug_push_latest_snapshot(
+            "debug heap-fetch profile could not acquire a fresh latest snapshot",
+        )
     };
     let pushed_registered_snapshot = true;
     let snapshot = registered_snapshot;

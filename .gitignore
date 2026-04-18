@@ -2,3 +2,5 @@
 /.pgrx
 Cargo.lock
 __pycache__/
+.codex
+tmp/

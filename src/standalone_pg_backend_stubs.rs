@@ -1,4 +1,4 @@
-use std::ffi::{CStr, c_char};
+use std::ffi::{c_char, CStr};
 
 #[link(name = "tqvector_pg_test_stubs", kind = "static")]
 unsafe extern "C" {
