@@ -5050,6 +5050,7 @@ mod tests {
     #[pg_test]
     fn test_turboquant_heap_rerank_profile_reports_heap_only() {
         let _lock = env_var_test_lock();
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let index_oid = create_turboquant_binary_runtime_fixture_with_source(
             "tqhnsw_turboquant_runtime_heap_rerank_profile",
             "tqhnsw_turboquant_runtime_heap_rerank_profile_idx",
@@ -5094,6 +5095,54 @@ mod tests {
                 && grouped_rerank_heap_decode_elapsed_us >= 0
                 && grouped_rerank_heap_dot_elapsed_us >= 0,
             "turboquant heap-f32 rerank profile should surface heap fetch, decode, and dot-product work for survivor rows",
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_source_backed_default_rerank_stays_quantized() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_turboquant_binary_runtime_fixture_with_source(
+            "tqhnsw_turboquant_runtime_source_backed_default_quantized",
+            "tqhnsw_turboquant_runtime_source_backed_default_quantized_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe {
+            am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10)
+        };
+
+        assert!(
+            result_count > 0,
+            "source-backed turboquant default rerank should still emit ordered results",
+        );
+        assert!(
+            grouped_rerank_quantized_score_calls > 0
+                && grouped_rerank_quantized_score_elapsed_us >= 0,
+            "source-backed turboquant default rerank should stay on quantized comparisons",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_heap_score_calls,
+                grouped_rerank_heap_score_elapsed_us,
+                grouped_rerank_heap_rows_fetched,
+                grouped_rerank_heap_fetch_elapsed_us,
+                grouped_rerank_heap_decode_elapsed_us,
+                grouped_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "source-backed turboquant default rerank should leave heap rerank counters inert until explicitly overridden",
         );
     }
 

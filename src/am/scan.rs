@@ -532,6 +532,7 @@ pub(crate) enum PqFastScanRerankModeResolution {
     EnvOverride,
     DefaultHeapF32WithBuildSourceColumn,
     DefaultQuantizedMissingBuildSourceColumn,
+    DefaultQuantizedTurboQuantStorage,
     NonPqFastScanStorage,
 }
 
@@ -545,6 +546,7 @@ impl PqFastScanRerankModeResolution {
             Self::DefaultQuantizedMissingBuildSourceColumn => {
                 "default_quantized_missing_build_source_column"
             }
+            Self::DefaultQuantizedTurboQuantStorage => "default_quantized_turboquant_storage",
             Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
         }
     }
@@ -1077,7 +1079,11 @@ fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
 }
 
 fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
-    if index_options.build_source_column.is_some() {
+    if matches!(
+        index_options.storage_format,
+        super::options::StorageFormat::PqFastScan
+    ) && index_options.build_source_column.is_some()
+    {
         GroupedRerankMode::HeapF32
     } else {
         GroupedRerankMode::Quantized
@@ -1087,10 +1093,17 @@ fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) ->
 fn default_grouped_rerank_mode_resolution(
     index_options: &super::options::TqHnswOptions,
 ) -> PqFastScanRerankModeResolution {
-    if index_options.build_source_column.is_some() {
-        PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn
-    } else {
-        PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn
+    match index_options.storage_format {
+        super::options::StorageFormat::PqFastScan => {
+            if index_options.build_source_column.is_some() {
+                PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn
+            } else {
+                PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn
+            }
+        }
+        super::options::StorageFormat::TurboQuant => {
+            PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage
+        }
     }
 }
 
@@ -6575,7 +6588,29 @@ mod tests {
     }
 
     #[test]
-    fn source_backed_default_rerank_resolves_to_heap_f32() {
+    fn source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: Some("source".to_owned()),
+            storage_format: super::super::options::StorageFormat::PqFastScan,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::HeapF32,
+            "source-backed pq_fastscan indexes should default rerank to heap_f32"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn,
+            "source-backed pq_fastscan defaults should explain that heap_f32 came from build_source_column"
+        );
+    }
+
+    #[test]
+    fn source_backed_turboquant_default_rerank_resolves_to_quantized() {
         let options = super::super::options::TqHnswOptions {
             m: super::super::TQHNSW_DEFAULT_M,
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
@@ -6586,35 +6621,35 @@ mod tests {
 
         assert_eq!(
             default_grouped_rerank_mode(&options),
-            GroupedRerankMode::HeapF32,
-            "build_source_column indexes should default PqFastScan rerank to heap_f32"
+            GroupedRerankMode::Quantized,
+            "source-backed turboquant indexes should default rerank to quantized"
         );
         assert_eq!(
             default_grouped_rerank_mode_resolution(&options),
-            PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn,
-            "source-backed PqFastScan defaults should explain that heap_f32 came from build_source_column"
+            PqFastScanRerankModeResolution::DefaultQuantizedTurboQuantStorage,
+            "source-backed turboquant defaults should explain that quantized came from turboquant storage"
         );
     }
 
     #[test]
-    fn source_less_default_rerank_resolves_to_quantized() {
+    fn source_less_pq_fastscan_default_rerank_resolves_to_quantized() {
         let options = super::super::options::TqHnswOptions {
             m: super::super::TQHNSW_DEFAULT_M,
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
             ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
             build_source_column: None,
-            storage_format: super::super::options::StorageFormat::TurboQuant,
+            storage_format: super::super::options::StorageFormat::PqFastScan,
         };
 
         assert_eq!(
             default_grouped_rerank_mode(&options),
             GroupedRerankMode::Quantized,
-            "source-less indexes should default PqFastScan rerank to quantized"
+            "source-less pq_fastscan indexes should default rerank to quantized"
         );
         assert_eq!(
             default_grouped_rerank_mode_resolution(&options),
             PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn,
-            "source-less defaults should explain that quantized came from the missing build_source_column"
+            "source-less pq_fastscan defaults should explain that quantized came from the missing build_source_column"
         );
     }
 
