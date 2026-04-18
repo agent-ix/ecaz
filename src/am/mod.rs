@@ -2,6 +2,7 @@
 
 mod build;
 mod cost;
+mod diskann;
 mod explain;
 pub(crate) mod graph;
 mod insert;

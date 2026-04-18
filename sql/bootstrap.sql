@@ -68,6 +68,11 @@ RETURNS index_am_handler
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqhnsw_handler';
 
+CREATE FUNCTION tqdiskann_handler(internal)
+RETURNS index_am_handler
+LANGUAGE c
+AS 'MODULE_PATHNAME', 'tqdiskann_handler';
+
 CREATE OPERATOR <#> (
     PROCEDURE = tqvector_negative_inner_product,
     LEFTARG = tqvector,
@@ -85,5 +90,12 @@ CREATE ACCESS METHOD tqhnsw TYPE INDEX HANDLER tqhnsw_handler;
 
 CREATE OPERATOR CLASS tqvector_ip_ops
 DEFAULT FOR TYPE tqvector USING tqhnsw AS
+    OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);
+
+CREATE ACCESS METHOD tqdiskann TYPE INDEX HANDLER tqdiskann_handler;
+
+CREATE OPERATOR CLASS tqvector_ip_diskann_ops
+DEFAULT FOR TYPE tqvector USING tqdiskann AS
     OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);

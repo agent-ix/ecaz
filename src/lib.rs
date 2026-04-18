@@ -1748,6 +1748,37 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_tqdiskann_access_method_is_registered() {
+        let amname =
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'tqdiskann'")
+                .expect("SPI query should succeed")
+                .expect("access method should exist");
+        assert_eq!(amname, "tqdiskann");
+    }
+
+    #[pg_test]
+    fn test_tqdiskann_operator_class_is_registered() {
+        let opcname = Spi::get_one::<String>(
+            "SELECT opcname::text FROM pg_opclass WHERE opcname = 'tqvector_ip_diskann_ops'",
+        )
+        .expect("SPI query should succeed")
+        .expect("operator class should exist");
+        assert_eq!(opcname, "tqvector_ip_diskann_ops");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "tqdiskann ambuild is not yet implemented")]
+    fn test_tqdiskann_build_is_unimplemented() {
+        Spi::run("CREATE TABLE tqdiskann_skeleton (id bigint primary key, embedding tqvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqdiskann_skeleton_idx ON tqdiskann_skeleton USING tqdiskann \
+             (embedding tqvector_ip_diskann_ops)",
+        )
+        .expect("CREATE INDEX should surface the unimplemented error");
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE tqhnsw_empty_cost (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
