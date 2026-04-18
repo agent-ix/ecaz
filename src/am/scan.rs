@@ -1165,6 +1165,13 @@ fn grouped_heap_rerank_enabled(opaque: &TqScanOpaque) -> bool {
     opaque.grouped_rerank_mode == GroupedRerankMode::HeapF32
 }
 
+fn turboquant_binary_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
+    matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::TurboQuant { .. }
+    ) && binary_sign_query(opaque).is_some()
+}
+
 fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
     if !pq_fastscan_exact_traversal_enabled() {
         return GroupedExactTraversalMode::Disabled;
@@ -1364,18 +1371,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     index_options: &super::options::TqHnswOptions,
 ) {
     unsafe { free_grouped_heap_rerank_state(opaque) };
-    let rerank = if matches!(
-        opaque.scan_graph_storage,
-        graph::GraphStorageDescriptor::PqFastScan(_)
-    ) {
-        resolve_grouped_rerank_mode_decision(index_options)
-    } else {
-        PqFastScanRerankModeDecision {
-            mode: GroupedRerankMode::Quantized,
-            resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
-            source_column: None,
-        }
-    };
+    let rerank = resolve_grouped_rerank_mode_decision(index_options);
     opaque.grouped_rerank_mode = rerank.mode;
 
     if !grouped_heap_rerank_enabled(opaque) {
@@ -2217,6 +2213,29 @@ unsafe fn grouped_candidate_rerank_comparison_score(
     }
 
     let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    if matches!(
+        scan_graph_storage,
+        graph::GraphStorageDescriptor::TurboQuant { .. }
+    ) {
+        #[cfg(any(test, feature = "pg_test"))]
+        let started = Instant::now();
+        let score = unsafe {
+            exact_score_cached_graph_element(
+                index_relation,
+                opaque,
+                element.tid,
+                LoadedElementState::None,
+            )
+        };
+        #[cfg(any(test, feature = "pg_test"))]
+        let elapsed_us =
+            u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let elapsed_us = 0;
+        record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+        return Some(score);
+    }
+
     let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
     #[cfg(any(test, feature = "pg_test"))]
     let started = Instant::now();
@@ -2601,13 +2620,17 @@ where
             candidate.loaded_state,
         ) {
             CandidateScoreDispatch::Exact(loaded_state) => {
-                let score = unsafe {
-                    exact_score_cached_graph_element(
-                        index_relation,
-                        opaque,
-                        candidate.element.tid,
-                        loaded_state,
-                    )
+                let score = if turboquant_binary_live_rerank_enabled(unsafe { &*opaque }) {
+                    candidate.approx_score
+                } else {
+                    unsafe {
+                        exact_score_cached_graph_element(
+                            index_relation,
+                            opaque,
+                            candidate.element.tid,
+                            loaded_state,
+                        )
+                    }
                 };
                 candidates.push(search::BeamCandidate::with_source(
                     candidate.element.tid,
@@ -2883,7 +2906,7 @@ fn grouped_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
     matches!(
         opaque.scan_graph_storage,
         graph::GraphStorageDescriptor::PqFastScan(_)
-    )
+    ) || turboquant_binary_live_rerank_enabled(opaque)
 }
 
 fn clear_grouped_live_rerank_buffer(opaque: &mut TqScanOpaque) {
@@ -2948,7 +2971,12 @@ fn grouped_live_rerank_output_score(
     opaque: &TqScanOpaque,
     buffered: &BufferedGroupedScanResult,
 ) -> f32 {
-    if grouped_heap_rerank_enabled(opaque) {
+    if grouped_heap_rerank_enabled(opaque)
+        || matches!(
+            opaque.scan_graph_storage,
+            graph::GraphStorageDescriptor::TurboQuant { .. }
+        )
+    {
         buffered.comparison_score.unwrap_or(buffered.approx_score)
     } else {
         buffered.approx_score

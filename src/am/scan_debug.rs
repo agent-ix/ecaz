@@ -1167,12 +1167,17 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
 
     let debug_profile = opaque.debug_profile;
     let quantizer = unsafe { &*opaque.cached_quantizer };
-    let rerank_score_calls = 0_i32;
-    let rerank_score_elapsed_us = 0_i64;
+    let rerank_score_calls = debug_profile
+        .grouped_rerank_quantized_score_calls
+        .saturating_add(debug_profile.grouped_rerank_heap_score_calls);
+    let rerank_score_elapsed_us = debug_profile
+        .grouped_rerank_quantized_score_elapsed_us
+        .saturating_add(debug_profile.grouped_rerank_heap_score_elapsed_us);
     let traversal_residual_elapsed_us = debug_profile
         .amrescan_total_elapsed_us
         .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
-        .saturating_sub(debug_profile.candidate_score_elapsed_us);
+        .saturating_sub(debug_profile.candidate_score_elapsed_us)
+        .saturating_sub(rerank_score_elapsed_us);
 
     unsafe { debug_end_heap_backed_scan(scan_state) };
 
@@ -1187,8 +1192,8 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
             .expect("counter should fit in i32"),
         i32::try_from(debug_profile.candidate_score_calls).expect("counter should fit in i32"),
         i64::try_from(debug_profile.candidate_score_elapsed_us).expect("timing should fit in i64"),
-        rerank_score_calls,
-        rerank_score_elapsed_us,
+        i32::try_from(rerank_score_calls).expect("counter should fit in i32"),
+        i64::try_from(rerank_score_elapsed_us).expect("timing should fit in i64"),
         quantizer.exact_score_mode_name().to_owned(),
         quantizer.exact_score_uses_lut(),
         quantizer.exact_score_uses_qjl(),

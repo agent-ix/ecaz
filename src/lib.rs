@@ -3890,37 +3890,68 @@ mod tests {
         create_turboquant_runtime_fixture_internal(table_name, index_name, true)
     }
 
-    fn create_turboquant_binary_runtime_fixture(
+    fn create_turboquant_binary_runtime_fixture_internal(
         table_name: &str,
         index_name: &str,
+        include_source: bool,
     ) -> pg_sys::Oid {
+        let source_column = if include_source {
+            ",\n                source real[]"
+        } else {
+            ""
+        };
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
-                id bigint primary key,
+                id bigint primary key{source_column},
                 embedding tqvector
             )"
         ))
         .expect("table creation should succeed");
 
         for id in 1..=16 {
+            let source = include_source
+                .then(|| format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_source(id)));
             let embedding =
                 format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
-            Spi::run(&format!(
-                "INSERT INTO {table_name} VALUES \
-                 ({id}, encode_to_tqvector({embedding}, 4, 42))"
-            ))
-            .expect("insert should succeed");
+            let insert_sql = if let Some(source) = source {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            };
+            Spi::run(&insert_sql).expect("insert should succeed");
         }
 
+        let build_source_column = if include_source {
+            ", build_source_column = 'source'"
+        } else {
+            ""
+        };
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')"
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}, storage_format = 'turboquant')"
         ))
         .expect("index creation should succeed");
 
         Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
             .expect("SPI query should succeed")
             .expect("index oid should exist")
+    }
+
+    fn create_turboquant_binary_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, false)
+    }
+
+    fn create_turboquant_binary_runtime_fixture_with_source(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_turboquant_binary_runtime_fixture_internal(table_name, index_name, true)
     }
 
     fn pq_fastscan_runtime_query() -> Vec<f32> {
@@ -4969,6 +5000,104 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_turboquant_quantized_rerank_profile_reports_quantized_only() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_turboquant_binary_runtime_fixture(
+            "tqhnsw_turboquant_runtime_quantized_rerank_profile",
+            "tqhnsw_turboquant_runtime_quantized_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe {
+            am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10)
+        };
+
+        assert!(
+            result_count > 0,
+            "turboquant quantized rerank profile should still emit ordered results",
+        );
+        assert!(
+            grouped_rerank_quantized_score_calls > 0
+                && grouped_rerank_quantized_score_elapsed_us >= 0,
+            "turboquant quantized rerank profile should surface deferred quantized comparison work",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_heap_score_calls,
+                grouped_rerank_heap_score_elapsed_us,
+                grouped_rerank_heap_rows_fetched,
+                grouped_rerank_heap_fetch_elapsed_us,
+                grouped_rerank_heap_decode_elapsed_us,
+                grouped_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "turboquant quantized rerank profile should leave heap rerank counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_turboquant_heap_rerank_profile_reports_heap_only() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_turboquant_binary_runtime_fixture_with_source(
+            "tqhnsw_turboquant_runtime_heap_rerank_profile",
+            "tqhnsw_turboquant_runtime_heap_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe {
+            am::debug_grouped_rerank_profile(index_oid, pq_fastscan_binary_runtime_query(), 10)
+        };
+
+        assert!(
+            result_count > 0,
+            "turboquant heap-f32 rerank profile should still emit ordered results",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_quantized_score_calls,
+                grouped_rerank_quantized_score_elapsed_us,
+            ),
+            (0, 0),
+            "turboquant heap-f32 rerank profile should bypass quantized rerank counters",
+        );
+        assert!(
+            grouped_rerank_heap_score_calls > 0 && grouped_rerank_heap_score_elapsed_us >= 0,
+            "turboquant heap-f32 rerank profile should surface per-element heap rerank work",
+        );
+        assert!(
+            grouped_rerank_heap_rows_fetched >= grouped_rerank_heap_score_calls
+                && grouped_rerank_heap_fetch_elapsed_us >= 0
+                && grouped_rerank_heap_decode_elapsed_us >= 0
+                && grouped_rerank_heap_dot_elapsed_us >= 0,
+            "turboquant heap-f32 rerank profile should surface heap fetch, decode, and dot-product work for survivor rows",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
@@ -5186,13 +5315,16 @@ mod tests {
             "turboquant scan stage profile should surface binary-prefilter work on the no-QJL 4-bit lane",
         );
         assert!(
-            turboquant_exact_score_calls > 0 && turboquant_exact_score_elapsed_us >= 0,
-            "turboquant scan stage profile should surface exact quantized scoring work",
+            turboquant_exact_score_calls >= 0 && turboquant_exact_score_elapsed_us >= 0,
+            "turboquant scan stage profile should keep exact-score counters well-formed even after deferring most scalar rescoring out of traversal",
         );
-        assert_eq!(
-            (turboquant_rerank_score_calls, turboquant_rerank_score_elapsed_us),
-            (0, 0),
-            "turboquant scan stage profile should report zero rerank work before the heap-rerank lever ships",
+        assert!(
+            turboquant_rerank_score_calls > 0 && turboquant_rerank_score_elapsed_us >= 0,
+            "turboquant scan stage profile should surface deferred rerank work once traversal stops exact-scoring every binary-prefilter survivor",
+        );
+        assert!(
+            turboquant_exact_score_calls < turboquant_binary_prefilter_survivor_candidates,
+            "turboquant scan stage profile should exact-score fewer candidates than the binary-prefilter survivor set once rerank owns the deferred comparison pass",
         );
         assert_eq!(
             turboquant_exact_score_mode, "mse_no_qjl_4bit",
@@ -18424,7 +18556,10 @@ mod tests {
             name!(turboquant_exact_score_uses_qjl, bool),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_turboquant_scan_stage_profile");
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_turboquant_scan_stage_profile",
+        );
 
         let (
             rescan_amrescan_total_elapsed_us,
