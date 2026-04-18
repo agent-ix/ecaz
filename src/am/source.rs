@@ -37,15 +37,15 @@ pub(super) fn average_source_representatives(
 pub(super) unsafe fn resolve_source_attnum(
     heap_relation: pg_sys::Relation,
     source_column: &str,
+    source_label: &str,
 ) -> i32 {
-    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
-        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
-    });
+    let source_column = std::ffi::CString::new(source_column)
+        .unwrap_or_else(|_| pgrx::error!("tqhnsw {source_label} contains an invalid NUL byte"));
     let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
     let attnum = i32::from(attnum);
     if attnum <= 0 {
         pgrx::error!(
-            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
+            "tqhnsw {source_label} \"{}\" does not name a user column on the heap relation",
             source_column.to_string_lossy()
         );
     }
@@ -58,7 +58,8 @@ pub(super) unsafe fn resolve_source_attribute(
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
+    let source_attnum =
+        unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
     let att = tuple_desc
         .get(source_attnum as usize - 1)

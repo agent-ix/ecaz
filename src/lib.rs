@@ -2715,7 +2715,8 @@ mod tests {
                 }
             })
             .collect::<Vec<_>>();
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
 
         assert_eq!(neighbor_tids.len(), 3);
         assert_eq!(elements.len(), 3);
@@ -2830,7 +2831,8 @@ mod tests {
         assert_eq!(metadata.seed, 42);
         assert_ne!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4));
 
         assert_eq!(elements.len(), 4);
         assert!(
@@ -3166,7 +3168,10 @@ mod tests {
 
         assert_eq!(decoded_metadata, metadata);
         assert!(reloptions.contains(&"storage_format=turboquant".to_string()));
-        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V3_TURBO_HOT_COLD);
+        assert_eq!(
+            metadata.format_version,
+            am::page::INDEX_FORMAT_V3_TURBO_HOT_COLD
+        );
         assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
         assert_eq!(
             metadata.search_codec_kind,
@@ -3297,8 +3302,7 @@ mod tests {
                         assert_eq!(tuple.collect_binary_words().len(), layout.binary_word_count);
                         assert!(tuple.heaptid_count() > 0);
                     }
-                    am::graph::GraphTupleRef::Scalar(_)
-                    | am::graph::GraphTupleRef::TurboHot(_) => {
+                    am::graph::GraphTupleRef::Scalar(_) | am::graph::GraphTupleRef::TurboHot(_) => {
                         panic!("PqFastScan entry should decode as grouped-hot tuple")
                     }
                 },
@@ -3796,6 +3800,7 @@ mod tests {
         index_name: &str,
         include_source_raw: bool,
         m: i32,
+        persisted_rerank_source_column: Option<&str>,
     ) -> pg_sys::Oid {
         let source_raw_column = if include_source_raw {
             ",\n                source_raw bytea"
@@ -3835,9 +3840,12 @@ mod tests {
             Spi::run(&insert_sql).expect("insert should succeed");
         }
 
+        let rerank_source_reloption = persisted_rerank_source_column
+            .map(|column| format!(", rerank_source_column = '{column}'"))
+            .unwrap_or_default();
         Spi::run(&format!(
             "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (m = {m}, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
+             (embedding tqvector_ip_ops) WITH (m = {m}, ef_construction = 80, build_source_column = 'source'{rerank_source_reloption}, storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
 
@@ -3847,14 +3855,27 @@ mod tests {
     }
 
     fn create_pq_fastscan_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
-        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, 6)
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, 6, None)
     }
 
     fn create_pq_fastscan_runtime_fixture_with_source_raw(
         table_name: &str,
         index_name: &str,
     ) -> pg_sys::Oid {
-        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, true, 6)
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, true, 6, None)
+    }
+
+    fn create_pq_fastscan_runtime_fixture_with_persisted_source_raw(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_pq_fastscan_runtime_fixture_internal(
+            table_name,
+            index_name,
+            true,
+            6,
+            Some("source_raw"),
+        )
     }
 
     fn create_pq_fastscan_runtime_fixture_with_m(
@@ -3862,7 +3883,7 @@ mod tests {
         index_name: &str,
         m: i32,
     ) -> pg_sys::Oid {
-        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m)
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m, None)
     }
 
     fn create_pq_fastscan_binary_runtime_fixture(
@@ -4572,6 +4593,33 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_pq_fastscan_runtime_settings_report_persisted_source() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_runtime_fixture_with_persisted_source_raw(
+            "tqhnsw_pq_fastscan_runtime_settings_persisted_heap_source",
+            "tqhnsw_pq_fastscan_runtime_settings_persisted_heap_source_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "the index-aware runtime settings helper should surface the persisted heap_f32 default when rerank_source_column is present",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("default_heap_f32_with_rerank_source_column"),
+            "the index-aware runtime settings helper should explain when heap_f32 came from a persisted rerank_source_column",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            Some("source_raw"),
+            "the index-aware runtime settings helper should surface the persisted rerank source column name",
+        );
+    }
+
+    #[pg_test]
     fn test_pq_fastscan_default_source_rerank_emits_heap_scores() {
         let table_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank";
         let index_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank_idx";
@@ -4800,6 +4848,62 @@ mod tests {
                     .expect("emitted score should be present for every observed heap tid"),
                 expected,
                 "PqFastScan heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_persisted_bytea_rerank_emits_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea";
+        let index_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea_idx";
+        let index_oid =
+            create_pq_fastscan_runtime_fixture_with_persisted_source_raw(table_name, index_name);
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+        }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        let query = pq_fastscan_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "PqFastScan should still emit ordered results when rerank_source_column persists a bytea source"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "a persisted bytea rerank_source_column should attach exact heap comparison scores",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "a persisted bytea rerank_source_column should use the raw heap f32 inner product",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "a persisted bytea rerank_source_column should emit the exact heap comparison score as the order-by score",
             );
         }
     }
@@ -7762,10 +7866,11 @@ mod tests {
         assert_eq!(metadata.dimensions, 4);
         assert_eq!(metadata.bits, 4);
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
 
         assert_eq!(
             elements.len(),
@@ -7822,6 +7927,77 @@ mod tests {
         Spi::run(
             "CREATE INDEX tqhnsw_bad_source_type_idx ON tqhnsw_bad_source_type USING tqhnsw \
              (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "rerank_source_column requires storage_format = 'pq_fastscan'")]
+    fn test_pq_fastscan_rerank_source_rejects_non_pq_fastscan_storage() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_rerank_source_storage (
+                id bigint primary key,
+                source real[],
+                source_raw bytea,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_rerank_source_storage VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[1.0, 0.0, 0.0, 0.0]::real[]), encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_rerank_source_storage_idx ON tqhnsw_bad_rerank_source_storage USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'source_raw')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "does not name a user column")]
+    fn test_pq_fastscan_rerank_source_rejects_missing_column() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_rerank_source_column (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_rerank_source_column VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_rerank_source_column_idx ON tqhnsw_bad_rerank_source_column USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'missing', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "must be real[] or bytea")]
+    fn test_pq_fastscan_rerank_source_rejects_wrong_type() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_bad_rerank_source_type (
+                id bigint primary key,
+                source real[],
+                source_raw text,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_bad_rerank_source_type VALUES
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_bad_rerank_source_type_idx ON tqhnsw_bad_rerank_source_type USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'source_raw', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should fail");
     }
@@ -7970,7 +8146,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 8));
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 8));
         let neighbors = page_tuples
             .iter()
             .filter_map(|(tid, tuple)| {
@@ -8054,7 +8231,8 @@ mod tests {
                 .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 8));
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 8));
 
         assert!(
             !elements.is_empty(),
@@ -8097,10 +8275,11 @@ mod tests {
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
 
         assert_eq!(
             elements.len(),
@@ -8143,10 +8322,11 @@ mod tests {
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
 
         assert_eq!(
             elements.len(),
@@ -8195,10 +8375,11 @@ mod tests {
         assert_eq!(metadata.bits, 4);
         assert_eq!(metadata.seed, 42);
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
 
         assert_eq!(elements.len(), 2);
         assert!(elements
@@ -8271,13 +8452,10 @@ mod tests {
             .find(|dim| {
                 let code_len = code_len(*dim as usize, 4);
                 let binary_word_count = turboquant_v3_binary_word_count(*dim as usize, 4);
-                let required_bytes = turboquant_v3_triplet_storage_bytes(
-                    0,
-                    default_m,
-                    code_len,
-                    binary_word_count,
-                );
-                if required_bytes > (pg_sys::BLCKSZ as usize).saturating_sub(am::page::PAGE_HEADER_BYTES)
+                let required_bytes =
+                    turboquant_v3_triplet_storage_bytes(0, default_m, code_len, binary_word_count);
+                if required_bytes
+                    > (pg_sys::BLCKSZ as usize).saturating_sub(am::page::PAGE_HEADER_BYTES)
                 {
                     return false;
                 }
@@ -8545,10 +8723,11 @@ mod tests {
             "duplicate insert should not add a new tuple pair"
         );
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
         let mut heaptid_counts = elements
             .iter()
             .map(|element| element.heaptids.len())
@@ -8608,10 +8787,11 @@ mod tests {
             "gamma-distinct same-code inserts should append a fresh hot/rerank/neighbor triplet"
         );
 
-        let elements = decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
-            .into_iter()
-            .map(|(_, element)| element)
-            .collect::<Vec<_>>();
+        let elements =
+            decode_turboquant_elements_from_pages(&metadata, &data_pages, code_len(4, 4))
+                .into_iter()
+                .map(|(_, element)| element)
+                .collect::<Vec<_>>();
 
         assert_eq!(
             elements.len(),

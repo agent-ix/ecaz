@@ -70,6 +70,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let mut state = BuildState::new(index_relation);
+            validate_pq_fastscan_rerank_source_column(heap_relation, &state.options);
 
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
@@ -113,6 +114,10 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sy
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = BuildState::new(index_relation);
+            validate_pq_fastscan_rerank_source_column_for_empty_build(
+                index_relation,
+                &state.options,
+            );
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
         })
     }
@@ -193,10 +198,12 @@ impl BuildState {
                         )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
                     }
                     options::StorageFormat::PqFastScan => {
-                        page::raw_tuple_storage_bytes(page::TqElementTuple::encoded_len_with_binary(
-                            tuple.code.len(),
-                            binary_word_count,
-                        )) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
+                        page::raw_tuple_storage_bytes(
+                            page::TqElementTuple::encoded_len_with_binary(
+                                tuple.code.len(),
+                                binary_word_count,
+                            ),
+                        ) <= self.page_size.saturating_sub(page::PAGE_HEADER_BYTES)
                     }
                 };
                 if !fits_on_page {
@@ -266,6 +273,47 @@ impl BuildState {
 
         self.heap_tuples.push(tuple);
     }
+}
+
+fn validate_pq_fastscan_rerank_source_column(
+    heap_relation: pg_sys::Relation,
+    options: &options::TqHnswOptions,
+) {
+    if !matches!(options.storage_format, options::StorageFormat::PqFastScan) {
+        return;
+    }
+    let Some(source_column) = options.rerank_source_column.as_deref() else {
+        return;
+    };
+
+    unsafe {
+        source::resolve_source_attribute(
+            heap_relation,
+            source_column,
+            "rerank_source_column",
+            source::SourceTypePolicy::RealArrayOrBytea,
+        )
+    };
+}
+
+fn validate_pq_fastscan_rerank_source_column_for_empty_build(
+    index_relation: pg_sys::Relation,
+    options: &options::TqHnswOptions,
+) {
+    if !matches!(options.storage_format, options::StorageFormat::PqFastScan)
+        || options.rerank_source_column.is_none()
+    {
+        return;
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("tqhnsw rerank_source_column could not resolve heap relation for validation");
+    }
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    validate_pq_fastscan_rerank_source_column(heap_relation, options);
+    unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 }
 
 fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
@@ -1201,8 +1249,8 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to update neighbor tuple: {e}"));
     }
 
-    let entry_point = choose_entry_point(&hot_tids, &graph_nodes, state)
-        .unwrap_or(page::ItemPointer::INVALID);
+    let entry_point =
+        choose_entry_point(&hot_tids, &graph_nodes, state).unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
     let seed = state.seed.expect("non-empty build should record seed");
 
@@ -1218,7 +1266,8 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
             max_level,
             seed,
             inserted_since_rebuild: 0,
-            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed) > 0,
+            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed)
+                > 0,
         }),
     }
 }
@@ -1687,6 +1736,7 @@ mod tests {
                 ef_construction: 64,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1760,6 +1810,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1828,6 +1879,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1879,6 +1931,7 @@ mod tests {
                 ef_construction: 80,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -1951,6 +2004,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2018,6 +2072,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2044,6 +2099,7 @@ mod tests {
                 ef_construction: 64,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2296,6 +2352,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2374,6 +2431,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2402,6 +2460,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2460,6 +2519,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2520,6 +2580,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2585,6 +2646,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2661,6 +2723,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2742,6 +2805,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
@@ -2799,6 +2863,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,

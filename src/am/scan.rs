@@ -531,6 +531,7 @@ impl GroupedRerankMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PqFastScanRerankModeResolution {
     EnvOverride,
+    DefaultHeapF32WithRerankSourceColumn,
     DefaultHeapF32WithBuildSourceColumn,
     DefaultQuantizedMissingBuildSourceColumn,
     DefaultQuantizedTurboQuantStorage,
@@ -541,6 +542,9 @@ impl PqFastScanRerankModeResolution {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::EnvOverride => "env_override",
+            Self::DefaultHeapF32WithRerankSourceColumn => {
+                "default_heap_f32_with_rerank_source_column"
+            }
             Self::DefaultHeapF32WithBuildSourceColumn => {
                 "default_heap_f32_with_build_source_column"
             }
@@ -1084,7 +1088,8 @@ fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) ->
     if matches!(
         index_options.storage_format,
         super::options::StorageFormat::PqFastScan
-    ) && index_options.build_source_column.is_some()
+    ) && (index_options.rerank_source_column.is_some()
+        || index_options.build_source_column.is_some())
     {
         GroupedRerankMode::HeapF32
     } else {
@@ -1097,7 +1102,9 @@ fn default_grouped_rerank_mode_resolution(
 ) -> PqFastScanRerankModeResolution {
     match index_options.storage_format {
         super::options::StorageFormat::PqFastScan => {
-            if index_options.build_source_column.is_some() {
+            if index_options.rerank_source_column.is_some() {
+                PqFastScanRerankModeResolution::DefaultHeapF32WithRerankSourceColumn
+            } else if index_options.build_source_column.is_some() {
                 PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn
             } else {
                 PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn
@@ -1122,6 +1129,7 @@ fn effective_grouped_rerank_source_column(
         LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
     )
     .map(|value| value.to_string_lossy().into_owned())
+    .or_else(|| index_options.rerank_source_column.clone())
     .or_else(|| index_options.build_source_column.clone())
 }
 
@@ -1401,13 +1409,19 @@ unsafe fn configure_grouped_heap_rerank_state(
     .is_some()
     {
         PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
+    } else if index_options.rerank_source_column.is_some() {
+        "rerank_source_column"
     } else {
         "build_source_column"
     };
     let source_column = rerank.source_column.unwrap_or_else(|| {
-        index_options.build_source_column.clone().unwrap_or_else(|| {
+        index_options
+            .rerank_source_column
+            .clone()
+            .or_else(|| index_options.build_source_column.clone())
+            .unwrap_or_else(|| {
             pgrx::error!(
-                "tqhnsw PqFastScan heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
+                "tqhnsw PqFastScan heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[] or bytea heap column",
                 PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
             )
         })
@@ -1855,10 +1869,7 @@ unsafe fn cached_graph_element(
                 };
 
                 if live_element {
-                    loaded_state = match (
-                        opaque_ref.scan_graph_storage,
-                        element.exact_payload(),
-                    ) {
+                    loaded_state = match (opaque_ref.scan_graph_storage, element.exact_payload()) {
                         (graph::GraphStorageDescriptor::TurboQuantHotCold(_), None) => {
                             LoadedElementState::None
                         }
@@ -6602,6 +6613,7 @@ mod tests {
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
             ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
             build_source_column: Some("source".to_owned()),
+            rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::PqFastScan,
         };
 
@@ -6624,6 +6636,7 @@ mod tests {
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
             ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
             build_source_column: Some("source".to_owned()),
+            rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::TurboQuant,
         };
 
@@ -6646,6 +6659,7 @@ mod tests {
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
             ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
             build_source_column: None,
+            rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::PqFastScan,
         };
 
@@ -6658,6 +6672,35 @@ mod tests {
             default_grouped_rerank_mode_resolution(&options),
             PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn,
             "source-less pq_fastscan defaults should explain that quantized came from the missing build_source_column"
+        );
+    }
+
+    #[test]
+    fn rerank_source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: Some("source".to_owned()),
+            rerank_source_column: Some("source_raw".to_owned()),
+            storage_format: super::super::options::StorageFormat::PqFastScan,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::HeapF32,
+            "pq_fastscan indexes with a persisted rerank source should default rerank to heap_f32"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultHeapF32WithRerankSourceColumn,
+            "pq_fastscan defaults should explain when heap_f32 came from a persisted rerank_source_column"
+        );
+        assert_eq!(
+            effective_grouped_rerank_source_column(&options, GroupedRerankMode::HeapF32)
+                .as_deref(),
+            Some("source_raw"),
+            "a persisted rerank_source_column should win over build_source_column for default heap rerank"
         );
     }
 
