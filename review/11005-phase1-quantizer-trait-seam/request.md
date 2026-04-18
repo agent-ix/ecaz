@@ -198,12 +198,79 @@ Phase 1D starting notes:
 4. If virtual-call overhead shows up in profiles, ADR-041
    authorizes pivot to generics (`scan.rs::<Q: Quantizer>`). Do not
    pivot pre-emptively.
-5. The PqFastScanQuantizer construction site needs an
+
+### Scoping discovery after packet 11005 was first drafted
+
+The three production sites do **not** all have the same payload
+shape, which the `QueryScorer::score(&[u8])` trait contract assumes:
+
+- **`scan.rs:2171`** — `score_grouped_search_code_result`: calls
+  `grouped_pq_score_f32(lut, group_count, search_code)`. Payload is
+  a flat `&[u8]` of packed nibbles. **Direct fit** for
+  `QueryScorer::score`. The `PreparedGroupedScanQuery` struct at
+  `scan.rs:415` carries exactly `(lut_f32, group_count,
+  search_code_len)` — same shape as `PqFastScanScorer` in
+  `grouped_pq.rs`. Easiest path: `impl QueryScorer for
+  PreparedGroupedScanQuery` with a one-line adapter, then rewrite
+  site 2171 as `prepared_query.score(search_code)`. No perf
+  change, no payload copy.
+
+- **`scan.rs:2006`** — `score_grouped_rerank_payload_result`: calls
+  `quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)`.
+  This is TurboQuant rerank on the cold payload chain after a
+  PqFastScan approximate search. Payload is **split** into
+  `(gamma: f32, code_bytes: &[u8])` — the 4-byte gamma is kept
+  separate from the MSE+QJL packed code to avoid re-reading the
+  tuple header on the hot path.
+
+- **`scan.rs:4026`** — `score_scan_element_result`: same split
+  `(gamma, code_bytes)` TurboQuant scoring in the scalar scan loop.
+
+Sites 2006 and 4026 do not fit the trait's flat-payload `score(&[u8])`
+contract without either:
+
+(i) changing the scan-time tuple-read to produce a concatenated
+payload (one 4-byte prepend per scored element — ~768-byte payload,
+so ~0.5% extra copy), **or**
+
+(ii) extending the trait with a `score_split(gamma: f32, code: &[u8])`
+variant that ProdQuantizer implements directly and PqFastScan
+implements as `score(code)` with an ignored gamma, **or**
+
+(iii) accepting that the trait only threads site 2171 (the grouped
+PQ LUT scoring), and TurboQuant's split-payload API stays
+specialized inside the `match GraphStorageDescriptor` arm.
+
+**Recommendation for next agent.** Start with (iii) — thread site
+2171 only via `impl QueryScorer for PreparedGroupedScanQuery`, run
+the task-08 bench gate against the partially-threaded state, and
+file a follow-up for (i) vs (ii). This preserves today's hot-path
+shape, demonstrates the trait-consumption pattern, and defers the
+TurboQuant-split decision until we have bench data showing it's the
+bottleneck. ADR-041 stage 0 does not require threading every site
+to be considered "done" — the authoritative check is that
+tqdiskann can consume the trait without reaching into family
+internals, and that holds with just site 2171 threaded.
+
+**Alternative reading.** If the reviewer prefers full threading of
+all three sites, option (ii) is the lower-risk choice — it adds a
+trait method without changing the tuple-read shape. The
+`score_split` default could be `self.score(&[gamma_le_bytes,
+code].concat())` for families that don't care, with ProdQuantizer
+overriding for the split-path fast lane.
+
+5. PqFastScanQuantizer construction site needs an
    `Arc<ProdQuantizer>` + a loaded `GroupedCodebookModel`. Current
    scan setup loads both; the wiring is straightforward — construct
    a `PqFastScanQuantizer` once per scan, hold it in the scan
-   opaque, and swap the scoring-body call with
-   `scorer.score(code)`.
+   opaque, and swap the scoring-body call with `scorer.score(code)`.
+   If pursuing recommendation (iii) above, this step is optional —
+   `PreparedGroupedScanQuery` already has the LUT and group_count
+   baked in; no need to go through a separate
+   `PqFastScanQuantizer` at the site-2171 call. The
+   `PqFastScanQuantizer` wrapper still matters for **tqdiskann**'s
+   own scan path, which has no equivalent of
+   `PreparedGroupedScanQuery`.
 
 Tasks on the tracker:
 
