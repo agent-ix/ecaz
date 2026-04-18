@@ -41,7 +41,7 @@ Each review topic is a directory under `review/`:
 - Work in narrow, testable slices.
 - After each code checkpoint, run:
   - `cargo test`
-  - `PGRX_HOME=/tmp/tqvector_pgrx_home cargo pgrx test pg17`
+  - `scripts/run_pgrx_pg17_test.sh`
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - Commit each green code checkpoint.
 - After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
@@ -58,4 +58,5 @@ Each review topic is a directory under `review/`:
 
 - Do not revert unrelated local changes.
 - Preserve the current on-disk layout unless a very small change is clearly justified.
+- Do not use `/tmp`-based hacks or alternate scratch homes to work around approval, sandbox, or environment constraints; use the normal repo and user tool layouts instead.
 - Add ADRs for design decisions that need durable rationale.

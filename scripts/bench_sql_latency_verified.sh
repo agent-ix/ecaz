@@ -20,12 +20,17 @@ print_help() {
   cat <<'USAGE'
 Usage:
   bash scripts/bench_sql_latency_verified.sh --prefix <prefix> [--m N] \
+      [--corpus-table NAME] [--query-table NAME] [--index-name NAME] \
+      [--storage-format turboquant|pq_fastscan] \
       [bench_sql_latency.sh real-corpus args...]
 
 Behavior:
   - real-corpus only
   - requires at most one effective m per invocation (defaults to 8)
-  - verifies every measured (m, ef_search) cell uses <prefix>_m{N}_idx
+  - verifies every measured (m, ef_search) cell uses either:
+    - <prefix>_m{N}_idx (legacy/default)
+    - <prefix>_<storage_format>_m{N}_idx (when --storage-format is set)
+    - the explicit --index-name override
   - aborts before timing if the plan falls back to Seq Scan + Sort or picks
     a different index than expected
 
@@ -41,6 +46,8 @@ USAGE
 
 prefix=""
 declared_m=""
+declared_index_name=""
+declared_storage_format=""
 m_count=0
 forwarded_args=()
 
@@ -49,6 +56,19 @@ while [[ $# -gt 0 ]]; do
     --prefix)
       prefix="$2"
       forwarded_args+=("$1" "$2")
+      shift 2
+      ;;
+    --corpus-table|--query-table)
+      forwarded_args+=("$1" "$2")
+      shift 2
+      ;;
+    --index-name)
+      declared_index_name="$2"
+      forwarded_args+=("$1" "$2")
+      shift 2
+      ;;
+    --storage-format)
+      declared_storage_format="$2"
       shift 2
       ;;
     --m)
@@ -88,8 +108,29 @@ if [[ ! "$declared_m" =~ ^[0-9]+$ ]]; then
   echo "invalid m value: $declared_m" >&2
   exit 2
 fi
+if [[ -n "$declared_index_name" && ! "$declared_index_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+  echo "invalid index name: $declared_index_name" >&2
+  exit 2
+fi
+if [[ -n "$declared_storage_format" ]]; then
+  case "$declared_storage_format" in
+    turboquant|pq_fastscan)
+      ;;
+    *)
+      echo "invalid storage format: $declared_storage_format" >&2
+      exit 2
+      ;;
+  esac
+fi
 
-index_name="${prefix}_m${declared_m}_idx"
+if [[ -n "$declared_index_name" ]]; then
+  index_name="$declared_index_name"
+elif [[ -n "$declared_storage_format" ]]; then
+  index_name="${prefix}_${declared_storage_format}_m${declared_m}_idx"
+  forwarded_args+=(--index-name "$index_name")
+else
+  index_name="${prefix}_m${declared_m}_idx"
+fi
 export TQV_REQUIRE_INDEX_NAME="${index_name}"
 echo "[verified] requiring planner use ${index_name} for every measured cell" >&2
 exec bash "${delegate_script}" "${forwarded_args[@]}"

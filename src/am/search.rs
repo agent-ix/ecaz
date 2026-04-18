@@ -97,6 +97,18 @@ impl<NodeId> VisibleFrontier<NodeId>
 where
     NodeId: Copy + Eq + Hash,
 {
+    pub fn replace_candidate(&mut self, updated: BeamCandidate<NodeId>) -> bool {
+        let Some(slot) = self
+            .candidates
+            .iter_mut()
+            .find(|candidate| candidate.node == updated.node)
+        else {
+            return false;
+        };
+        *slot = updated;
+        true
+    }
+
     pub fn contains_node(&self, node: NodeId) -> bool {
         self.candidates
             .iter()
@@ -373,7 +385,10 @@ where
 
     pub fn peek_best(&mut self) -> Option<BeamCandidate<NodeId>> {
         loop {
-            let candidate = self.frontier.peek().map(|Reverse(queued)| queued.candidate)?;
+            let candidate = self
+                .frontier
+                .peek()
+                .map(|Reverse(queued)| queued.candidate)?;
             if self.queued.contains(&candidate.node) {
                 return Some(candidate);
             }
@@ -433,7 +448,10 @@ where
 
     pub fn pop_best(&mut self) -> Option<BeamCandidate<NodeId>> {
         loop {
-            let candidate = self.frontier.pop().map(|Reverse(queued)| queued.candidate)?;
+            let candidate = self
+                .frontier
+                .pop()
+                .map(|Reverse(queued)| queued.candidate)?;
             if self.queued.remove(&candidate.node) {
                 return Some(candidate);
             }

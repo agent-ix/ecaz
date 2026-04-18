@@ -9,7 +9,7 @@ Usage:
   scripts/pg17_scratch_psql.sh [--db DB] [--raw]
 
 Defaults:
-  socket dir: auto-detect /tmp/tqvector_pgrx_home, else $HOME/.pgrx
+  socket dir: /tmp/tqvector_pgrx_home
   port:       28817
   database:   postgres
   mode:       aligned-off, tuples-only, tab-separated, ON_ERROR_STOP=1
@@ -19,30 +19,18 @@ Environment overrides:
   TQV_PG_PORT
   TQV_PG_DATABASE
   TQV_PSQL_BIN
+  PGHOST
 EOF
 }
 
 port="${TQV_PG_PORT:-28817}"
 database="${TQV_PG_DATABASE:-postgres}"
 pgrx_home="${PGRX_HOME:-${HOME}/.pgrx}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 psql_bin="${TQV_PSQL_BIN:-${pgrx_home}/17.9/pgrx-install/bin/psql}"
 raw_mode=0
 sql=""
 sql_file=""
-
-detect_socket_dir() {
-    local port="$1"
-    local preferred="/tmp/tqvector_pgrx_home"
-    local fallback="${HOME}/.pgrx"
-
-    if [[ -S "${preferred}/.s.PGSQL.${port}" ]]; then
-        printf '%s\n' "${preferred}"
-    elif [[ -S "${fallback}/.s.PGSQL.${port}" ]]; then
-        printf '%s\n' "${fallback}"
-    else
-        printf '%s\n' "${preferred}"
-    fi
-}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -84,7 +72,7 @@ if [[ -n "${TQV_PG_SOCKET_DIR:-}" ]]; then
 elif [[ -n "${PGHOST:-}" ]]; then
     socket_dir="${PGHOST}"
 else
-    socket_dir="$(detect_socket_dir "${port}")"
+    socket_dir="$("${script_dir}/resolve_scratch_socket_dir.sh")"
 fi
 
 psql_args=(

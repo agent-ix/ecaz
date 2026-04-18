@@ -5,11 +5,21 @@ use std::ptr;
 
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox, PgTupleDesc};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox};
+use rand::Rng;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
-use crate::quant::prod::ProdQuantizer;
+use crate::quant::{
+    grouped_pq::{encode_grouped_pq, nearest_centroid_l2, GROUPED_PQ_CENTROIDS},
+    prod::ProdQuantizer,
+};
 
-use super::{options, page, shared, wal, P_NEW};
+use super::{options, page, shared, source, wal, P_NEW};
+
+const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
+const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
+const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
 
 #[derive(Debug, Clone)]
 pub(super) struct BuildTuple {
@@ -49,24 +59,6 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
             let tuple = build_heap_tuple(values, isnull, heap_tid);
             state.push(tuple);
         })
-    }
-}
-
-pub(super) fn average_source_representatives(
-    existing: &mut [f32],
-    existing_count: usize,
-    incoming: &[f32],
-    incoming_count: usize,
-) {
-    assert_eq!(existing.len(), incoming.len());
-    assert!(existing_count > 0);
-    assert!(incoming_count > 0);
-
-    let total_count = existing_count + incoming_count;
-    for (existing_value, incoming_value) in existing.iter_mut().zip(incoming.iter()) {
-        *existing_value = ((*existing_value * existing_count as f32)
-            + (*incoming_value * incoming_count as f32))
-            / total_count as f32;
     }
 }
 
@@ -141,16 +133,44 @@ impl BuildState {
     }
 
     pub(super) fn initial_metadata(&self) -> page::MetadataPage {
-        page::MetadataPage {
-            m: u16::try_from(self.options.m).expect("validated m should fit into u16"),
-            ef_construction: u16::try_from(self.options.ef_construction)
-                .expect("validated ef_construction should fit into u16"),
-            entry_point: page::ItemPointer::INVALID,
-            dimensions: 0,
-            bits: 0,
-            max_level: 0,
-            seed: 0,
-            inserted_since_rebuild: 0,
+        let m = u16::try_from(self.options.m).expect("validated m should fit into u16");
+        let ef_construction = u16::try_from(self.options.ef_construction)
+            .expect("validated ef_construction should fit into u16");
+
+        match self.options.storage_format {
+            options::StorageFormat::TurboQuant => {
+                page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+                    m,
+                    ef_construction,
+                    entry_point: page::ItemPointer::INVALID,
+                    dimensions: 0,
+                    bits: 0,
+                    max_level: 0,
+                    seed: 0,
+                    inserted_since_rebuild: 0,
+                    persisted_binary_sidecar: false,
+                })
+            }
+            options::StorageFormat::PqFastScan => page::MetadataPage {
+                m,
+                ef_construction,
+                entry_point: page::ItemPointer::INVALID,
+                dimensions: 0,
+                bits: 0,
+                max_level: 0,
+                seed: 0,
+                inserted_since_rebuild: 0,
+                format_version: page::INDEX_FORMAT_V2_GROUPED,
+                transform_kind: page::TransformKind::Srht,
+                search_codec_kind: page::SearchCodecKind::GroupedPq,
+                payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                    | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+                search_bits: 4,
+                rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+                search_subvector_count: 0,
+                search_subvector_dim: 0,
+                grouped_codebook_head: page::ItemPointer::INVALID,
+            },
         }
     }
 
@@ -216,7 +236,7 @@ impl BuildState {
                             tuple_source.len()
                         );
                     }
-                    average_source_representatives(
+                    source::average_source_representatives(
                         existing_source,
                         existing.source_count,
                         &tuple_source,
@@ -292,7 +312,7 @@ pub(super) unsafe fn build_heap_tuple(
     }
 }
 
-unsafe fn build_heap_tuple_with_source(
+pub(super) unsafe fn build_heap_tuple_with_source(
     vector_datum: pg_sys::Datum,
     heap_tid: page::ItemPointer,
     source_vector: Vec<f32>,
@@ -352,30 +372,21 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         .clone()
         .expect("source scan should only run when build_source_column is configured");
     let index_attnum = unsafe { source_build_index_attnum(index_info) };
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, &source_column) };
-    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
-    let att = tuple_desc
-        .get(source_attnum as usize - 1)
-        .expect("resolved build source attribute should exist");
-    if att.attisdropped {
-        pgrx::error!("tqhnsw build_source_column \"{source_column}\" references a dropped column");
-    }
-    if att.atttypid != pg_sys::FLOAT4ARRAYOID {
-        pgrx::error!(
-            "tqhnsw build_source_column \"{source_column}\" must be real[], got type oid {}",
-            u32::from(att.atttypid)
-        );
-    }
-
-    let slot = unsafe {
-        pg_sys::MakeSingleTupleTableSlot(
-            (*heap_relation).rd_att,
-            pg_sys::table_slot_callbacks(heap_relation),
+    let source_attribute = unsafe {
+        source::resolve_source_attribute(
+            heap_relation,
+            &source_column,
+            "build_source_column",
+            source::SourceTypePolicy::RealArrayOnly,
         )
     };
-    if slot.is_null() {
-        pgrx::error!("tqhnsw ambuild failed to allocate heap scan slot");
-    }
+
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "tqhnsw ambuild failed to allocate heap scan slot",
+        )
+    };
 
     let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     unsafe { pg_sys::PushActiveSnapshot(snapshot) };
@@ -407,9 +418,10 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         scanned_tuples += 1.0;
         let heap_tid = unsafe { decode_slot_tid(slot) };
         let vector_datum =
-            unsafe { required_slot_datum(slot, index_attnum, "indexed tqvector column") };
-        let source_datum =
-            unsafe { required_slot_datum(slot, source_attnum, "tqhnsw build_source_column") };
+            unsafe { source::required_slot_datum(slot, index_attnum, "indexed tqvector column") };
+        let source_datum = unsafe {
+            source::required_slot_datum(slot, source_attribute.attnum, "tqhnsw build_source_column")
+        };
         let source_vector = unsafe {
             Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
         }
@@ -452,21 +464,6 @@ unsafe fn source_build_index_attnum(index_info: *mut pg_sys::IndexInfo) -> i32 {
     attnum
 }
 
-unsafe fn resolve_source_attnum(heap_relation: pg_sys::Relation, source_column: &str) -> i32 {
-    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
-        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
-    });
-    let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
-    let attnum = i32::from(attnum);
-    if attnum <= 0 {
-        pgrx::error!(
-            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
-            source_column.to_string_lossy()
-        );
-    }
-    attnum
-}
-
 unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
     let heap_tid = unsafe { (*slot).tts_tid };
     let tid = pg_sys::ItemPointerData {
@@ -480,26 +477,477 @@ unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointe
     }
 }
 
-unsafe fn required_slot_datum(
-    slot: *mut pg_sys::TupleTableSlot,
-    attnum: i32,
-    label: &str,
-) -> pg_sys::Datum {
-    if unsafe { (*slot).tts_nvalid } < attnum as i16 {
-        unsafe { pg_sys::slot_getsomeattrs_int(slot, attnum) };
-    }
-    let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
-    if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        pgrx::error!("tqhnsw does not support NULL {label}");
-    }
-    unsafe { *(*slot).tts_values.add(attr_index) }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct HnswBuildNode {
     pub(super) level: u8,
     pub(super) neighbor_slots: Vec<Option<usize>>,
     pub(super) score_neighbors: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct V2GroupedBuildPayload {
+    pub(super) hot: page::TqGroupedHotTuple,
+    pub(super) rerank: page::TqRerankTuple,
+}
+
+pub(super) fn stage_v2_grouped_build_payload(
+    tuple: &BuildTuple,
+    level: u8,
+    neighbortid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    search_code: Vec<u8>,
+    persisted_binary_quantizer: &ProdQuantizer,
+) -> V2GroupedBuildPayload {
+    let binary_words = if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
+        persisted_binary_quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+    } else {
+        Vec::new()
+    };
+
+    V2GroupedBuildPayload {
+        hot: page::TqGroupedHotTuple {
+            level,
+            deleted: false,
+            heaptids: tuple.heap_tids.clone(),
+            neighbortid,
+            reranktid,
+            binary_words,
+            search_code,
+        },
+        rerank: page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        },
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct V2GroupedStagedChain {
+    pub(super) data_pages: page::DataPageChain,
+    pub(super) hot_tids: Vec<page::ItemPointer>,
+    pub(super) rerank_tids: Vec<page::ItemPointer>,
+    pub(super) neighbor_tids: Vec<page::ItemPointer>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct V2GroupedBuildPlan {
+    pub(super) staged_chain: V2GroupedStagedChain,
+    pub(super) entry_point: page::ItemPointer,
+    pub(super) max_level: u8,
+    pub(super) grouped_model: BuildGroupedPqModel,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct BuildFlushOutput {
+    pub(super) data_pages: page::DataPageChain,
+    pub(super) metadata: page::MetadataPage,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct BuildGroupedPqModel {
+    pub(super) codebooks: Vec<Vec<f32>>,
+    pub(super) group_count: usize,
+    pub(super) group_size: usize,
+    pub(super) transform_dim: usize,
+    pub(super) signs: Vec<f32>,
+}
+
+pub(super) fn stage_v2_grouped_page_chain(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    grouped_search_codes: &[Vec<u8>],
+) -> Result<V2GroupedStagedChain, String> {
+    if state.heap_tuples.len() != graph_nodes.len()
+        || state.heap_tuples.len() != grouped_search_codes.len()
+    {
+        return Err(format!(
+            "staged v2 inputs length mismatch: tuples={} graph_nodes={} grouped_search_codes={}",
+            state.heap_tuples.len(),
+            graph_nodes.len(),
+            grouped_search_codes.len()
+        ));
+    }
+
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let persisted_binary_quantizer = ProdQuantizer::cached(dimensions as usize, bits, seed);
+
+    let mut data_pages = page::DataPageChain::new(state.page_size);
+    let mut hot_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut rerank_tids = Vec::with_capacity(state.heap_tuples.len());
+    let mut neighbor_tids = Vec::with_capacity(state.heap_tuples.len());
+
+    for ((tuple, graph_node), grouped_search_code) in state
+        .heap_tuples
+        .iter()
+        .zip(graph_nodes.iter())
+        .zip(grouped_search_codes.iter())
+    {
+        let slot_count = graph_node.neighbor_slots.len();
+        let placeholder_neighbor = page::TqNeighborTuple {
+            count: slot_count as u16,
+            tids: vec![page::ItemPointer::INVALID; slot_count],
+        };
+        let neighbor_tid = data_pages.insert_neighbor(&placeholder_neighbor)?;
+        let rerank_tid = data_pages.insert_rerank(&page::TqRerankTuple {
+            gamma: tuple.gamma,
+            code: tuple.code.clone(),
+        })?;
+        let payload = stage_v2_grouped_build_payload(
+            tuple,
+            graph_node.level,
+            neighbor_tid,
+            rerank_tid,
+            grouped_search_code.clone(),
+            &persisted_binary_quantizer,
+        );
+        let hot_tid = data_pages.insert_grouped_hot(&payload.hot)?;
+
+        hot_tids.push(hot_tid);
+        rerank_tids.push(rerank_tid);
+        neighbor_tids.push(neighbor_tid);
+    }
+
+    for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
+        let neighbor_refs = graph_nodes[idx]
+            .neighbor_slots
+            .iter()
+            .map(|neighbor_idx| {
+                neighbor_idx
+                    .map(|ni| hot_tids[ni])
+                    .unwrap_or(page::ItemPointer::INVALID)
+            })
+            .collect::<Vec<_>>();
+
+        data_pages.update_neighbor(
+            neighbor_tid,
+            &page::TqNeighborTuple {
+                count: neighbor_refs.len() as u16,
+                tids: neighbor_refs,
+            },
+        )?;
+    }
+
+    Ok(V2GroupedStagedChain {
+        data_pages,
+        hot_tids,
+        rerank_tids,
+        neighbor_tids,
+    })
+}
+
+pub(super) fn stage_v2_grouped_page_chain_from_source(
+    state: &BuildState,
+    graph_nodes: &[HnswBuildNode],
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<(V2GroupedStagedChain, BuildGroupedPqModel), String> {
+    let model = train_build_grouped_pq_model(state, group_size, train_size, kmeans_iters)?;
+    let grouped_search_codes = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| derive_grouped_search_code_from_source(tuple, &model))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok((
+        stage_v2_grouped_page_chain(state, graph_nodes, &grouped_search_codes)?,
+        model,
+    ))
+}
+
+pub(super) fn plan_v2_grouped_source_build(
+    state: &BuildState,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<V2GroupedBuildPlan, String> {
+    let graph_nodes = build_hnsw_graph(state);
+    let (staged_chain, grouped_model) = stage_v2_grouped_page_chain_from_source(
+        state,
+        &graph_nodes,
+        group_size,
+        train_size,
+        kmeans_iters,
+    )?;
+    let entry_point = choose_entry_point(&staged_chain.hot_tids, &graph_nodes, state)
+        .unwrap_or(page::ItemPointer::INVALID);
+    let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+
+    Ok(V2GroupedBuildPlan {
+        staged_chain,
+        entry_point,
+        max_level,
+        grouped_model,
+    })
+}
+
+fn stage_v2_grouped_codebook_tuples(
+    data_pages: &mut page::DataPageChain,
+    model: &BuildGroupedPqModel,
+) -> Result<page::ItemPointer, String> {
+    let centroid_count = model.group_size * GROUPED_PQ_CENTROIDS;
+    let mut codebook_tids = Vec::with_capacity(model.group_count);
+
+    for (group_index, codebook) in model.codebooks.iter().enumerate() {
+        if codebook.len() != centroid_count {
+            return Err(format!(
+                "grouped codebook {} length mismatch: got {}, expected {}",
+                group_index,
+                codebook.len(),
+                centroid_count
+            ));
+        }
+        codebook_tids.push(
+            data_pages.insert_grouped_codebook(&page::TqGroupedCodebookTuple {
+                group_index: u16::try_from(group_index).map_err(|_| {
+                    format!("grouped codebook index {group_index} does not fit in u16")
+                })?,
+                nexttid: page::ItemPointer::INVALID,
+                centroids: codebook.clone(),
+            })?,
+        );
+    }
+
+    for (group_index, tid) in codebook_tids
+        .iter()
+        .copied()
+        .enumerate()
+        .take(codebook_tids.len().saturating_sub(1))
+    {
+        data_pages.update_grouped_codebook(
+            tid,
+            &page::TqGroupedCodebookTuple {
+                group_index: u16::try_from(group_index).expect("validated group index fits in u16"),
+                nexttid: codebook_tids[group_index + 1],
+                centroids: model.codebooks[group_index].clone(),
+            },
+        )?;
+    }
+
+    codebook_tids
+        .first()
+        .copied()
+        .ok_or_else(|| "grouped codebook staging requires at least one codebook".to_owned())
+}
+
+pub(super) fn train_build_grouped_pq_model(
+    state: &BuildState,
+    group_size: usize,
+    train_size: usize,
+    kmeans_iters: usize,
+) -> Result<BuildGroupedPqModel, String> {
+    let dimensions = usize::from(
+        state
+            .dimensions
+            .expect("non-empty build should record dimensions"),
+    );
+    let seed = state.seed.expect("non-empty build should record seed");
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions);
+    if transform_dim % group_size != 0 {
+        return Err(format!(
+            "transform dim {transform_dim} is not divisible by group_size {group_size}"
+        ));
+    }
+
+    let signs = crate::quant::rotation::sign_vector(transform_dim, seed);
+    let source_vectors = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            tuple
+                .source_vector
+                .as_ref()
+                .ok_or_else(|| "grouped build model requires source vectors".to_owned())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let transformed = source_vectors
+        .iter()
+        .map(|vector| crate::quant::rotation::srht_padded(vector, &signs))
+        .collect::<Vec<_>>();
+    let group_count = transform_dim / group_size;
+    let sample_count = train_size.min(transformed.len());
+    let sample_indices = sample_indices(
+        transformed.len(),
+        sample_count,
+        seed ^ 0xA5A5_5A5A_DEAD_BEEF,
+    );
+    let mut codebooks = Vec::with_capacity(group_count);
+
+    for group_index in 0..group_count {
+        let mut samples = Vec::with_capacity(sample_count * group_size);
+        for &sample_index in &sample_indices {
+            let start = group_index * group_size;
+            let end = start + group_size;
+            samples.extend_from_slice(&transformed[sample_index][start..end]);
+        }
+        codebooks.push(train_group_codebook(
+            &samples,
+            group_size,
+            kmeans_iters,
+            seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        )?);
+    }
+
+    Ok(BuildGroupedPqModel {
+        codebooks,
+        group_count,
+        group_size,
+        transform_dim,
+        signs,
+    })
+}
+
+pub(super) fn derive_grouped_search_code_from_source(
+    tuple: &BuildTuple,
+    model: &BuildGroupedPqModel,
+) -> Result<Vec<u8>, String> {
+    let source = tuple
+        .source_vector
+        .as_ref()
+        .ok_or_else(|| "grouped search code derivation requires source vector".to_owned())?;
+    let rotated = crate::quant::rotation::srht_padded(source, &model.signs);
+    Ok(encode_grouped_pq(
+        &rotated,
+        model.codebooks.iter().map(Vec::as_slice),
+        model.group_size,
+    ))
+}
+
+fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
+    if sample_count >= len {
+        return (0..len).collect();
+    }
+
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut indices = (0..len).collect::<Vec<_>>();
+    for i in 0..sample_count {
+        let swap_index = rng.gen_range(i..len);
+        indices.swap(i, swap_index);
+    }
+    indices.truncate(sample_count);
+    indices
+}
+
+fn train_group_codebook(
+    samples: &[f32],
+    group_size: usize,
+    kmeans_iters: usize,
+    seed: u64,
+) -> Result<Vec<f32>, String> {
+    const CENTROIDS: usize = 16;
+
+    let sample_count = samples.len() / group_size;
+    if sample_count == 0 {
+        return Err("grouped codebook training requires at least one sample".to_owned());
+    }
+    if sample_count < CENTROIDS {
+        return Ok(seed_group_codebook_from_small_samples(
+            samples,
+            group_size,
+            sample_count,
+            seed,
+        ));
+    }
+
+    let init_indices = sample_indices(sample_count, CENTROIDS, seed);
+    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
+    for (centroid_index, sample_index) in init_indices.into_iter().enumerate() {
+        let sample = sample_slice(samples, sample_index, group_size);
+        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
+    }
+
+    let mut assignments = vec![0usize; sample_count];
+    let mut sums = vec![0.0_f32; CENTROIDS * group_size];
+    let mut counts = [0usize; CENTROIDS];
+
+    for _ in 0..kmeans_iters {
+        sums.fill(0.0);
+        counts.fill(0);
+
+        for (sample_index, assignment) in assignments.iter_mut().enumerate() {
+            let sample = sample_slice(samples, sample_index, group_size);
+            let centroid_index = nearest_centroid_l2(sample, &centroids, group_size);
+            *assignment = centroid_index;
+            counts[centroid_index] += 1;
+            let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
+            for (dst, value) in centroid_sum.iter_mut().zip(sample.iter()) {
+                *dst += *value;
+            }
+        }
+
+        for (centroid_index, &count) in counts.iter().enumerate() {
+            if count == 0 {
+                let fallback_sample = sample_slice(
+                    samples,
+                    (seed as usize + centroid_index) % sample_count,
+                    group_size,
+                );
+                centroid_slice_mut(&mut centroids, centroid_index, group_size)
+                    .copy_from_slice(fallback_sample);
+                continue;
+            }
+
+            let inv_count = (count as f32).recip();
+            let centroid_sum = centroid_slice(&sums, centroid_index, group_size);
+            let centroid = centroid_slice_mut(&mut centroids, centroid_index, group_size);
+            for (dst, value) in centroid.iter_mut().zip(centroid_sum.iter()) {
+                *dst = *value * inv_count;
+            }
+        }
+    }
+
+    Ok(centroids)
+}
+
+fn seed_group_codebook_from_small_samples(
+    samples: &[f32],
+    group_size: usize,
+    sample_count: usize,
+    seed: u64,
+) -> Vec<f32> {
+    const CENTROIDS: usize = 16;
+
+    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
+    for centroid_index in 0..CENTROIDS {
+        let sample_index = (seed as usize + centroid_index) % sample_count;
+        let sample = sample_slice(samples, sample_index, group_size);
+        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
+    }
+    centroids
+}
+
+fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| {
+            let delta = left - right;
+            delta * delta
+        })
+        .sum()
+}
+
+fn sample_slice(samples: &[f32], sample_index: usize, group_size: usize) -> &[f32] {
+    let start = sample_index * group_size;
+    &samples[start..start + group_size]
+}
+
+fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -> &[f32] {
+    let start = centroid_index * group_size;
+    &centroids[start..start + group_size]
+}
+
+fn centroid_slice_mut(
+    centroids: &mut [f32],
+    centroid_index: usize,
+    group_size: usize,
+) -> &mut [f32] {
+    let start = centroid_index * group_size;
+    &mut centroids[start..start + group_size]
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -511,19 +959,21 @@ struct BuildCodeDistance {
 }
 
 impl BuildCodeDistance {
-    fn new(dimensions: usize, bits: u8, seed: u64) -> Self {
-        let quantizer = crate::quant::prod::ProdQuantizer::cached(dimensions, bits, seed);
-        let max_abs_centroid = quantizer
-            .codebook
+    fn new(dimensions: usize, bits: u8, seed: u64, tuples: &[BuildTuple]) -> Self {
+        // HNSW expects non-negative distances. Derive the offset from the actual
+        // encoded self-scores so QJL-enabled 4-bit lanes cannot underflow below 0.
+        let score_offset = tuples
             .iter()
-            .map(|value| value.abs())
+            .map(|tuple| {
+                crate::score_code_inner_product(dimensions, bits, seed, &tuple.code, &tuple.code)
+            })
             .fold(0.0_f32, f32::max);
 
         Self {
             dimensions,
             bits,
             seed,
-            score_offset: dimensions as f32 * max_abs_centroid * max_abs_centroid,
+            score_offset,
         }
     }
 }
@@ -547,6 +997,97 @@ impl Distance<f32> for BuildVectorDistance {
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
+    let output = match state.options.storage_format {
+        options::StorageFormat::TurboQuant => current_format_flush_output(state),
+        options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw pq_fastscan build failed: {e}")),
+    };
+    unsafe { flush_build_output(index_relation, &output) };
+}
+
+pub(super) fn pq_fastscan_flush_output(
+    state: &BuildState,
+    plan: &V2GroupedBuildPlan,
+    group_size: usize,
+) -> Result<BuildFlushOutput, String> {
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let bits = state.bits.expect("non-empty build should record bits");
+    let seed = state.seed.expect("non-empty build should record seed");
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
+    if transform_dim % group_size != 0 {
+        return Err(format!(
+            "transform dim {transform_dim} is not divisible by group_size {group_size}"
+        ));
+    }
+    let search_subvector_count = u16::try_from(transform_dim / group_size)
+        .map_err(|_| "grouped search subvector count does not fit into u16".to_owned())?;
+    let search_subvector_dim = u16::try_from(group_size)
+        .map_err(|_| "grouped search subvector dim does not fit into u16".to_owned())?;
+    let mut payload_flags =
+        page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD;
+    if persisted_binary_sidecar_word_count(dimensions, bits, seed) > 0 {
+        payload_flags |= page::PAYLOAD_FLAG_BINARY_SIDECAR;
+    }
+    let mut data_pages = plan.staged_chain.data_pages.clone();
+    let grouped_codebook_head =
+        stage_v2_grouped_codebook_tuples(&mut data_pages, &plan.grouped_model)?;
+
+    Ok(BuildFlushOutput {
+        data_pages,
+        metadata: page::MetadataPage {
+            m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(state.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point: plan.entry_point,
+            dimensions,
+            bits,
+            max_level: plan.max_level,
+            seed,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count,
+            search_subvector_dim,
+            grouped_codebook_head,
+        },
+    })
+}
+
+pub(super) fn default_pq_fastscan_flush_output(
+    state: &BuildState,
+) -> Result<BuildFlushOutput, String> {
+    if state.options.build_source_column.is_none() {
+        return Err("tqhnsw pq_fastscan build currently requires build_source_column".to_owned());
+    }
+    let dimensions = state
+        .dimensions
+        .expect("non-empty build should record dimensions");
+    let group_size = default_pq_fastscan_group_size(dimensions);
+    let train_size = state
+        .heap_tuples
+        .len()
+        .min(PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE);
+    let plan = plan_v2_grouped_source_build(
+        state,
+        group_size,
+        train_size,
+        PQ_FASTSCAN_DEFAULT_KMEANS_ITERS,
+    )?;
+    pq_fastscan_flush_output(state, &plan, group_size)
+}
+
+fn default_pq_fastscan_group_size(dimensions: u16) -> usize {
+    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
+    transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
+}
+
+fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -562,8 +1103,6 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     );
     let write_persisted_binary = persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported();
 
-    // Phase 1: Insert placeholder neighbor then element for each node.
-    // Writing them back-to-back co-locates them on the same page.
     for (idx, tuple) in state.heap_tuples.iter().enumerate() {
         let slot_count = graph_nodes[idx].neighbor_slots.len();
         let placeholder_neighbor = page::TqNeighborTuple {
@@ -595,7 +1134,6 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
         neighbor_tids.push(neighbor_tid);
     }
 
-    // Phase 2: Fill in neighbor references now that all element TIDs are known.
     for (idx, neighbor_tid) in neighbor_tids.iter().copied().enumerate() {
         let neighbor_refs = graph_nodes[idx]
             .neighbor_slots
@@ -621,24 +1159,29 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let entry_point = choose_entry_point(&element_tids, &graph_nodes, state)
         .unwrap_or(page::ItemPointer::INVALID);
     let max_level = graph_nodes.iter().map(|node| node.level).max().unwrap_or(0);
+    let seed = state.seed.expect("non-empty build should record seed");
 
-    unsafe { write_data_pages(index_relation, &data_pages) };
-    unsafe {
-        shared::initialize_metadata_page(
-            index_relation,
-            page::MetadataPage {
-                m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
-                ef_construction: u16::try_from(state.options.ef_construction)
-                    .expect("validated ef_construction should fit into u16"),
-                entry_point,
-                dimensions,
-                bits,
-                max_level,
-                seed: state.seed.expect("non-empty build should record seed"),
-                inserted_since_rebuild: 0,
-            },
-        )
-    };
+    BuildFlushOutput {
+        data_pages,
+        metadata: page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: u16::try_from(state.options.m).expect("validated m should fit into u16"),
+            ef_construction: u16::try_from(state.options.ef_construction)
+                .expect("validated ef_construction should fit into u16"),
+            entry_point,
+            dimensions,
+            bits,
+            max_level,
+            seed,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: persisted_binary_sidecar_word_count(dimensions, bits, seed)
+                > 0,
+        }),
+    }
+}
+
+unsafe fn flush_build_output(index_relation: pg_sys::Relation, output: &BuildFlushOutput) {
+    unsafe { write_data_pages(index_relation, &output.data_pages) };
+    unsafe { shared::initialize_metadata_page(index_relation, output.metadata.clone()) };
 }
 
 pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
@@ -672,13 +1215,14 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
         state.page_size,
     );
     let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
-    let hnsw = Hnsw::new(
+    let hnsw = Hnsw::new_with_seed(
         m,
         state.heap_tuples.len(),
         max_layer,
         usize::try_from(state.options.ef_construction)
             .expect("validated ef_construction should be non-negative"),
-        BuildCodeDistance::new(dimensions, bits, seed),
+        deterministic_hnsw_build_seed(state, 0x5343_414c_4152_5f31),
+        BuildCodeDistance::new(dimensions, bits, seed, &state.heap_tuples),
     );
 
     for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
@@ -729,12 +1273,13 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
                 .sum::<f32>()
         })
         .fold(0.0_f32, f32::max);
-    let hnsw = Hnsw::new(
+    let hnsw = Hnsw::new_with_seed(
         m,
         state.heap_tuples.len(),
         max_layer,
         usize::try_from(state.options.ef_construction)
             .expect("validated ef_construction should be non-negative"),
+        deterministic_hnsw_build_seed(state, 0x534f_5552_4345_5f31),
         BuildVectorDistance { score_offset },
     );
 
@@ -772,6 +1317,33 @@ fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
 
 fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
     vec![None; page::neighbor_slots(level, m as u16)]
+}
+
+fn deterministic_hnsw_build_seed(state: &BuildState, domain_tag: u64) -> u64 {
+    let base_seed = state.seed.expect("non-empty build should record seed");
+    let dimensions = u64::from(
+        state
+            .dimensions
+            .expect("non-empty build should record dimensions"),
+    );
+    let bits = u64::from(state.bits.expect("non-empty build should record bits"));
+    let tuple_count =
+        u64::try_from(state.heap_tuples.len()).expect("tuple count should fit into u64");
+    let build_hash = base_seed
+        ^ domain_tag
+        ^ dimensions.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ bits.wrapping_mul(0xA24B_AED4_963E_E407)
+        ^ (state.options.m as u64).wrapping_mul(0x94D0_49BB_1331_11EB)
+        ^ (state.options.ef_construction as u64).wrapping_mul(0xD134_2543_DE82_EF95)
+        ^ tuple_count.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    splitmix64(build_hash)
+}
+
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1001,7 +1573,10 @@ fn entry_point_score(
         .sum()
 }
 
-unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
+pub(super) unsafe fn write_data_pages(
+    index_relation: pg_sys::Relation,
+    data_pages: &page::DataPageChain,
+) {
     for staged_page in data_pages.pages() {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
@@ -1061,6 +1636,36 @@ mod tests {
     }
 
     #[test]
+    fn initial_metadata_uses_grouped_format_for_pq_fastscan_indexes() {
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 8,
+                ef_construction: 64,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        };
+
+        let metadata = state.initial_metadata();
+        assert_eq!(metadata.format_version, page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.search_codec_kind, page::SearchCodecKind::GroupedPq);
+        assert_eq!(
+            metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(metadata.search_subvector_count, 0);
+        assert_eq!(metadata.search_subvector_dim, 0);
+        assert_eq!(metadata.grouped_codebook_head, page::ItemPointer::INVALID);
+    }
+
+    #[test]
     fn scored_neighbor_graph_prefers_similarity_over_insert_order() {
         let seed = 42_u64;
         let bits = 8_u8;
@@ -1111,6 +1716,7 @@ mod tests {
                 ef_construction: 32,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1178,6 +1784,7 @@ mod tests {
                 ef_construction: 90,
                 ef_search: 40,
                 build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1199,6 +1806,191 @@ mod tests {
     }
 
     #[test]
+    fn hnsw_graph_builds_for_qjl_enabled_scalar_codes() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (1_i64..=16_i64)
+            .map(|id| {
+                let vector = (0_i64..16_i64)
+                    .map(|dim| (((id * 29 + dim) as f32) * 0.02).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: u16::try_from(id).expect("id should fit in u16"),
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: encoded_code(&vector, bits, seed),
+                    source_vector: None,
+                    source_count: 0,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 6,
+                ef_construction: 80,
+                ef_search: 40,
+                build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let nodes = build_hnsw_graph(&state);
+
+        assert_eq!(nodes.len(), 16);
+        assert!(nodes.iter().any(|node| {
+            !node
+                .neighbor_slots
+                .iter()
+                .all(|neighbor_slot| neighbor_slot.is_none())
+        }));
+    }
+
+    #[test]
+    fn hnsw_graph_build_is_deterministic_for_scalar_codes() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[1.0, 0.0, 0.5, -1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[0.0, 1.0, 0.25, -0.5], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: encoded_code(&[-1.0, 0.5, 0.0, 1.0], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let first = build_hnsw_graph(&state);
+        let second = build_hnsw_graph(&state);
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn hnsw_graph_build_is_deterministic_for_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 1,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x12, 0x34],
+                source_vector: Some(vec![1.0, 0.0, 0.5, -1.0]),
+                source_count: 1,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 2,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x56, 0x78],
+                source_vector: Some(vec![0.0, 1.0, 0.25, -0.5]),
+                source_count: 1,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 0,
+                    offset_number: 3,
+                }],
+                dimensions: 4,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0x9A, 0xBC],
+                source_vector: Some(vec![-1.0, 0.5, 0.0, 1.0]),
+                source_count: 1,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: tuples,
+            dimensions: Some(4),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let first = build_hnsw_graph(&state);
+        let second = build_hnsw_graph(&state);
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn source_scored_entry_point_prefers_raw_vectors() {
         let seed = 42_u64;
         let bits = 4_u8;
@@ -1208,6 +2000,7 @@ mod tests {
                 ef_construction: 64,
                 ef_search: 40,
                 build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
             },
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
@@ -1328,10 +2121,657 @@ mod tests {
     #[test]
     fn average_source_representative_weights_by_duplicate_count() {
         let mut representative = vec![1.0, 0.0];
-        average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
+        source::average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
         assert_eq!(representative, vec![0.5, 0.5]);
 
-        average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
+        source::average_source_representatives(&mut representative, 2, &[1.0, 1.0], 2);
         assert_eq!(representative, vec![0.75, 0.75]);
+    }
+
+    #[test]
+    fn stage_v2_grouped_build_payload_keeps_hot_and_cold_split() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let vector = (0..1536)
+            .map(|i| match i % 4 {
+                0 => 1.0,
+                1 => 0.0,
+                2 => 0.5,
+                _ => -1.0,
+            })
+            .collect::<Vec<_>>();
+        let tuple = BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 7,
+            }],
+            dimensions: 1536,
+            bits,
+            seed,
+            gamma: 1.25,
+            code: encoded_code(&vector, bits, seed),
+            source_vector: None,
+            source_count: 0,
+        };
+        let quantizer = ProdQuantizer::cached(1536, bits, seed);
+        let payload = stage_v2_grouped_build_payload(
+            &tuple,
+            3,
+            page::ItemPointer {
+                block_number: 10,
+                offset_number: 2,
+            },
+            page::ItemPointer {
+                block_number: 10,
+                offset_number: 3,
+            },
+            vec![0x12, 0x34],
+            &quantizer,
+        );
+
+        assert_eq!(payload.hot.level, 3);
+        assert_eq!(payload.hot.heaptids, tuple.heap_tids);
+        assert_eq!(payload.hot.search_code, vec![0x12, 0x34]);
+        assert_eq!(payload.hot.neighbortid.block_number, 10);
+        assert_eq!(payload.hot.reranktid.offset_number, 3);
+        assert_eq!(
+            payload.hot.binary_words,
+            quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
+        );
+        assert_eq!(payload.rerank.gamma.to_bits(), tuple.gamma.to_bits());
+        assert_eq!(payload.rerank.code, tuple.code);
+    }
+
+    #[test]
+    fn stage_v2_grouped_build_payload_skips_binary_sidecar_when_unsupported() {
+        let seed = 42_u64;
+        let bits = 8_u8;
+        let tuple = BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 7,
+            }],
+            dimensions: 8,
+            bits,
+            seed,
+            gamma: 0.5,
+            code: encoded_code(&[1.0, 0.0, 0.5, -1.0, 0.25, 0.5, -0.5, 0.75], bits, seed),
+            source_vector: None,
+            source_count: 0,
+        };
+        let quantizer = ProdQuantizer::cached(8, bits, seed);
+        let payload = stage_v2_grouped_build_payload(
+            &tuple,
+            1,
+            page::ItemPointer::INVALID,
+            page::ItemPointer::INVALID,
+            vec![0xAB],
+            &quantizer,
+        );
+
+        assert!(payload.hot.binary_words.is_empty());
+        assert_eq!(payload.hot.search_code, vec![0xAB]);
+        assert_eq!(payload.rerank.code, tuple.code);
+    }
+
+    #[test]
+    fn stage_v2_grouped_page_chain_links_hot_neighbor_and_rerank_tuples() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = vec![
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                }],
+                dimensions: 1536,
+                bits,
+                seed,
+                gamma: 0.5,
+                code: encoded_code(&vec![1.0; 1536], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+            BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 2,
+                }],
+                dimensions: 1536,
+                bits,
+                seed,
+                gamma: 0.25,
+                code: encoded_code(&vec![0.5; 1536], bits, seed),
+                source_vector: None,
+                source_count: 0,
+            },
+        ];
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(1536),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let graph_nodes = vec![
+            HnswBuildNode {
+                level: 1,
+                neighbor_slots: vec![Some(1)],
+                score_neighbors: vec![1],
+            },
+            HnswBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0)],
+                score_neighbors: vec![0],
+            },
+        ];
+        let grouped_search_codes = vec![vec![0x12, 0x34], vec![0x56, 0x78]];
+
+        let staged =
+            stage_v2_grouped_page_chain(&state, &graph_nodes, &grouped_search_codes).unwrap();
+
+        assert_eq!(staged.hot_tids.len(), 2);
+        assert_eq!(staged.rerank_tids.len(), 2);
+        assert_eq!(staged.neighbor_tids.len(), 2);
+
+        let hot0 = staged
+            .data_pages
+            .read_grouped_hot(staged.hot_tids[0], 24, 2)
+            .unwrap();
+        let rerank0 = staged
+            .data_pages
+            .read_rerank(staged.rerank_tids[0], tuples[0].code.len())
+            .unwrap();
+        let neighbors0 = staged
+            .data_pages
+            .read_neighbor(staged.neighbor_tids[0])
+            .unwrap();
+
+        assert_eq!(hot0.search_code, grouped_search_codes[0]);
+        assert_eq!(hot0.reranktid, staged.rerank_tids[0]);
+        assert_eq!(rerank0.code, tuples[0].code);
+        assert_eq!(neighbors0.tids[0], staged.hot_tids[1]);
+    }
+
+    #[test]
+    fn grouped_build_model_trains_and_derives_codes_from_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| BuildTuple {
+                heap_tids: vec![page::ItemPointer {
+                    block_number: 1,
+                    offset_number: (i + 1) as u16,
+                }],
+                dimensions: 16,
+                bits,
+                seed,
+                gamma: 0.0,
+                code: vec![0xAA; 8],
+                source_vector: Some(
+                    (0..16)
+                        .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                        .collect(),
+                ),
+                source_count: 1,
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let model = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap();
+        assert_eq!(model.group_size, 4);
+        assert_eq!(model.group_count, 4);
+
+        let code = derive_grouped_search_code_from_source(&tuples[0], &model).unwrap();
+        assert_eq!(code.len(), model.group_count.div_ceil(2));
+    }
+
+    #[test]
+    fn grouped_build_model_requires_source_vectors() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: None,
+                storage_format: options::StorageFormat::TurboQuant,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 16,
+            heap_tuples: (0..16)
+                .map(|i| BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0xAA; 8],
+                    source_vector: None,
+                    source_count: 0,
+                })
+                .collect(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let error = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap_err();
+        assert!(error.contains("source vectors"));
+    }
+
+    #[test]
+    fn grouped_build_model_supports_low_cardinality_source_sets() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..3)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 13 + dim) as f32 * 0.11).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let model = train_build_grouped_pq_model(&state, 4, 16, 3).unwrap();
+        assert_eq!(model.group_size, 4);
+        assert_eq!(model.group_count, 4);
+        assert_eq!(model.codebooks.len(), 4);
+        assert!(model
+            .codebooks
+            .iter()
+            .all(|codebook| codebook.len() == 4 * GROUPED_PQ_CENTROIDS));
+
+        let code = derive_grouped_search_code_from_source(&tuples[0], &model).unwrap();
+        assert_eq!(code.len(), model.group_count.div_ceil(2));
+    }
+
+    #[test]
+    fn stage_v2_grouped_page_chain_from_source_derives_codes_and_links_pages() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.1 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let graph_nodes = (0..16)
+            .map(|i| HnswBuildNode {
+                level: (i % 3) as u8,
+                neighbor_slots: vec![Some((i + 1) % 16)],
+                score_neighbors: vec![(i + 1) % 16],
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples.clone(),
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let (staged, model) =
+            stage_v2_grouped_page_chain_from_source(&state, &graph_nodes, 4, 16, 3).unwrap();
+
+        assert_eq!(staged.hot_tids.len(), 16);
+        assert_eq!(model.group_count, 4);
+        let first_hot = staged
+            .data_pages
+            .read_grouped_hot(staged.hot_tids[0], 0, 2)
+            .unwrap();
+        let first_rerank = staged
+            .data_pages
+            .read_rerank(staged.rerank_tids[0], tuples[0].code.len())
+            .unwrap();
+        let first_neighbor = staged
+            .data_pages
+            .read_neighbor(staged.neighbor_tids[0])
+            .unwrap();
+
+        assert_eq!(first_hot.reranktid, staged.rerank_tids[0]);
+        assert_eq!(first_rerank.code, tuples[0].code);
+        assert_eq!(first_neighbor.tids[0], staged.hot_tids[1]);
+        assert_eq!(first_hot.search_code.len(), 2);
+        assert!(first_hot.binary_words.is_empty());
+    }
+
+    #[test]
+    fn plan_v2_grouped_source_build_reports_entry_point_and_levels() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
+
+        assert_eq!(plan.staged_chain.hot_tids.len(), 16);
+        assert_ne!(plan.entry_point, page::ItemPointer::INVALID);
+        assert!(usize::from(plan.max_level) < 16);
+        assert_eq!(plan.grouped_model.group_count, 4);
+    }
+
+    #[test]
+    fn stage_v2_grouped_codebook_tuples_links_groups_in_order() {
+        let mut data_pages = page::DataPageChain::new(pg_sys::BLCKSZ as usize);
+        let model = BuildGroupedPqModel {
+            codebooks: vec![vec![0.1; 64], vec![0.2; 64], vec![0.3; 64], vec![0.4; 64]],
+            group_count: 4,
+            group_size: 4,
+            transform_dim: 16,
+            signs: vec![1.0; 16],
+        };
+
+        let head_tid = stage_v2_grouped_codebook_tuples(&mut data_pages, &model).unwrap();
+        let first = data_pages.read_grouped_codebook(head_tid, 64).unwrap();
+        let second = data_pages.read_grouped_codebook(first.nexttid, 64).unwrap();
+        let third = data_pages
+            .read_grouped_codebook(second.nexttid, 64)
+            .unwrap();
+        let fourth = data_pages.read_grouped_codebook(third.nexttid, 64).unwrap();
+
+        assert_eq!(first.group_index, 0);
+        assert_eq!(second.group_index, 1);
+        assert_eq!(third.group_index, 2);
+        assert_eq!(fourth.group_index, 3);
+        assert_eq!(fourth.nexttid, page::ItemPointer::INVALID);
+        assert_eq!(first.centroids, vec![0.1; 64]);
+        assert_eq!(fourth.centroids, vec![0.4; 64]);
+    }
+
+    #[test]
+    fn pq_fastscan_flush_output_marks_grouped_metadata_and_pages() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let plan = plan_v2_grouped_source_build(&state, 4, 16, 3).unwrap();
+        let output = pq_fastscan_flush_output(&state, &plan, 4).unwrap();
+
+        assert_eq!(
+            output.metadata.format_version,
+            page::INDEX_FORMAT_V2_GROUPED
+        );
+        assert_eq!(output.metadata.transform_kind, page::TransformKind::Srht);
+        assert_eq!(
+            output.metadata.search_codec_kind,
+            page::SearchCodecKind::GroupedPq
+        );
+        assert_eq!(
+            output.metadata.rerank_codec_kind,
+            page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(output.metadata.search_bits, 4);
+        assert_eq!(output.metadata.search_subvector_count, 4);
+        assert_eq!(output.metadata.search_subvector_dim, 4);
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
+        assert_eq!(
+            output.metadata.payload_flags,
+            page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+
+        let tuple_tags = output
+            .data_pages
+            .pages()
+            .iter()
+            .flat_map(|page| page.tuples().iter().map(|tuple| tuple[0]))
+            .collect::<Vec<_>>();
+        assert!(tuple_tags.contains(&page::TQ_GROUPED_HOT_TAG));
+        assert!(tuple_tags.contains(&page::TQ_RERANK_TAG));
+        assert!(tuple_tags.contains(&page::TQ_NEIGHBOR_TAG));
+        assert!(tuple_tags.contains(&page::TQ_GROUPED_CODEBOOK_TAG));
+        assert!(!tuple_tags.contains(&page::TQ_ELEMENT_TAG));
+    }
+
+    #[test]
+    fn default_pq_fastscan_flush_output_uses_default_v2_parameters() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..16)
+            .map(|i| {
+                let source = (0..16)
+                    .map(|dim| ((i * 19 + dim) as f32 * 0.05).cos())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 16,
+                    bits,
+                    seed,
+                    gamma: 0.05 * i as f32,
+                    code: vec![i as u8; 8],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = default_pq_fastscan_flush_output(&state).unwrap();
+
+        assert_eq!(
+            output.metadata.format_version,
+            page::INDEX_FORMAT_V2_GROUPED
+        );
+        assert_eq!(output.metadata.search_subvector_count, 1);
+        assert_eq!(
+            output.metadata.search_subvector_dim,
+            PQ_FASTSCAN_TARGET_GROUP_SIZE as u16
+        );
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
+    }
+
+    #[test]
+    fn default_pq_fastscan_flush_output_derives_small_dimension_group_size() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let tuples = (0..8)
+            .map(|i| {
+                let source = (0..8)
+                    .map(|dim| ((i * 17 + dim) as f32 * 0.07).sin())
+                    .collect::<Vec<_>>();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: (i + 1) as u16,
+                    }],
+                    dimensions: 8,
+                    bits,
+                    seed,
+                    gamma: 0.03 * i as f32,
+                    code: vec![i as u8; 4],
+                    source_vector: Some(source),
+                    source_count: 1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: tuples.len(),
+            heap_tuples: tuples,
+            dimensions: Some(8),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+
+        let output = default_pq_fastscan_flush_output(&state).unwrap();
+
+        assert_eq!(output.metadata.search_subvector_count, 1);
+        assert_eq!(output.metadata.search_subvector_dim, 8);
+        assert_ne!(
+            output.metadata.grouped_codebook_head,
+            page::ItemPointer::INVALID
+        );
     }
 }

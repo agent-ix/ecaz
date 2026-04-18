@@ -32,6 +32,36 @@ ORDER BY tq_code <#> encode_to_tqvector($query::float4[], 4, 42)
 LIMIT 10;
 ```
 
+## Choosing A Format
+
+`tqhnsw` supports two storage formats selected per index with the
+`storage_format` reloption:
+
+- `turboquant` is the default. Use it for small or medium indexes and for the
+  simplest operational path.
+- `pq_fastscan` stores a grouped hot path plus a colder rerank payload. Use it
+  for latency-critical workloads after measuring it on your corpus.
+
+```sql
+-- Default / explicit TurboQuant index
+CREATE INDEX ON memories
+USING tqhnsw (tq_code)
+WITH (storage_format = 'turboquant', m = 8, ef_construction = 64);
+
+-- PqFastScan index with a raw source column for grouped-code derivation
+CREATE INDEX ON memories
+USING tqhnsw (tq_code)
+WITH (
+    storage_format = 'pq_fastscan',
+    build_source_column = 'embedding_raw',
+    m = 8,
+    ef_construction = 64
+);
+```
+
+Switching an index from one storage format to the other requires `REINDEX`.
+There is no in-place format upgrade.
+
 ## Performance
 
 Measured on 1536-dimensional OpenAI embeddings ([DBpedia corpus](docs/recall-methodology.md)):

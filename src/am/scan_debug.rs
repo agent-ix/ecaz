@@ -307,7 +307,185 @@ type DebugScanProfile = (
     i64,
     i32,
     i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    i32,
+    i32,
+    i32,
 );
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugScanHeapFetchProfile = (i64, i64, i64, i64, i64, i32, i32, i32);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedRerankProfile = (
+    i64,
+    i64,
+    i64,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    i32,
+    i64,
+    i64,
+    i64,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanComparisonSummary = (i32, i32, i32, i32, f64, f32, f64);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanComparisonRow = (
+    HeapTidCoords,
+    i32,
+    f32,
+    Option<f32>,
+    Option<i32>,
+    Option<i32>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanOrderDriftSummary = (
+    i32,
+    i32,
+    i32,
+    f64,
+    i32,
+    f64,
+    Option<i32>,
+    Option<i32>,
+    bool,
+    bool,
+    bool,
+    bool,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanWindowedRow = (
+    HeapTidCoords,
+    i32,
+    i32,
+    f32,
+    Option<f32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugGroupedScanWindowedSummary = (
+    i32,
+    i32,
+    i32,
+    i32,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    f64,
+    f64,
+    i32,
+    i32,
+    f64,
+    f64,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DebugGroupedRankMetrics {
+    compared_result_count: i32,
+    mean_abs_rank_shift: f64,
+    max_abs_rank_shift: i32,
+    spearman_rank_correlation: f64,
+    exact_best_observed_rank: Option<i32>,
+    exact_top4_max_observed_rank: Option<i32>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+struct DebugHeapBackedScan {
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    scan: pg_sys::IndexScanDesc,
+    registered_snapshot: pg_sys::Snapshot,
+    pushed_registered_snapshot: bool,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_push_latest_snapshot(failure_label: &str) -> pg_sys::Snapshot {
+    unsafe { pg_sys::CommandCounterIncrement() };
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("{failure_label}");
+    }
+    unsafe { pg_sys::PushActiveSnapshot(registered_snapshot) };
+    registered_snapshot
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug scan could not resolve heap relation for index {index_oid}");
+    }
+
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let registered_snapshot = unsafe {
+        debug_push_latest_snapshot("debug scan could not acquire a fresh latest snapshot")
+    };
+    let pushed_registered_snapshot = true;
+    let snapshot = registered_snapshot;
+
+    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
+    if scan.is_null() {
+        unsafe {
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug scan failed to begin heap-backed index scan");
+    }
+
+    DebugHeapBackedScan {
+        index_relation,
+        heap_relation,
+        scan,
+        registered_snapshot,
+        pushed_registered_snapshot,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
+    unsafe {
+        pg_sys::index_endscan(state.scan);
+        if state.pushed_registered_snapshot {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(state.registered_snapshot);
+        }
+        pg_sys::index_close(
+            state.index_relation,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+        pg_sys::table_close(
+            state.heap_relation,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        );
+    }
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
@@ -580,9 +758,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<HeapTidCoords> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -597,9 +774,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
         tids.push((block_number, offset_number));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
 }
 
@@ -608,9 +783,17 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> DebugScanProfile {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    unsafe { debug_profile_ordered_scan_with_limit(index_oid, query, None) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    result_limit: Option<usize>,
+) -> DebugScanProfile {
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let total_started = Instant::now();
     let rescan_started = Instant::now();
@@ -639,7 +822,10 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
 
     let emit_started = Instant::now();
     let mut result_count = 0_i32;
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    let result_limit = result_limit.unwrap_or(usize::MAX);
+    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit
+        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+    {
         result_count += 1;
     }
     let emit_elapsed_us =
@@ -656,9 +842,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
     let total_elapsed_us =
         i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
 
     (
         rescan_elapsed_us,
@@ -732,8 +916,209 @@ pub(crate) unsafe fn debug_profile_ordered_scan(
         i64::try_from(rescan_debug_profile.candidate_score_elapsed_us)
             .expect("timing should fit in i64"),
         i32::try_from(rescan_debug_profile.score_cache_hits).expect("counter should fit in i32"),
-        i32::try_from(rescan_debug_profile.score_cache_misses)
+        i32::try_from(rescan_debug_profile.score_cache_misses).expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_approx_score_calls)
             .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.grouped_traversal_approx_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_exact_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(rescan_debug_profile.grouped_traversal_exact_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_expansions)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_candidates)
+            .expect("counter should fit in i32"),
+        i32::try_from(rescan_debug_profile.grouped_traversal_budgeted_exact_candidates)
+            .expect("counter should fit in i32"),
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    result_limit: usize,
+    project_attnum: Option<i32>,
+) -> DebugScanHeapFetchProfile {
+    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!(
+            "debug heap-fetch profile could not resolve heap relation for index {index_oid}"
+        );
+    }
+
+    let heap_relation =
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let registered_snapshot = unsafe {
+        debug_push_latest_snapshot(
+            "debug heap-fetch profile could not acquire a fresh latest snapshot",
+        )
+    };
+    let pushed_registered_snapshot = true;
+    let snapshot = registered_snapshot;
+
+    let slot = unsafe {
+        pg_sys::MakeSingleTupleTableSlot(
+            (*heap_relation).rd_att,
+            pg_sys::table_slot_callbacks(heap_relation),
+        )
+    };
+    if slot.is_null() {
+        unsafe {
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug heap-fetch profile failed to allocate tuple slot");
+    }
+
+    let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
+    if scan.is_null() {
+        unsafe {
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+            if pushed_registered_snapshot {
+                pg_sys::PopActiveSnapshot();
+                pg_sys::UnregisterSnapshot(registered_snapshot);
+            }
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+        pgrx::error!("debug heap-fetch profile failed to begin index scan");
+    }
+
+    let total_started = Instant::now();
+    let rescan_started = Instant::now();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { pg_sys::index_rescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
+        .expect("rescan timing should fit in i64");
+
+    let emit_started = Instant::now();
+    let mut result_count = 0_i32;
+    let mut slot_fetch_count = 0_i32;
+    let mut projected_count = 0_i32;
+    let mut slot_fetch_elapsed_us = 0_i64;
+    let mut projection_elapsed_us = 0_i64;
+    while usize::try_from(result_count).expect("result count should fit in usize") < result_limit {
+        let slot_fetch_started = Instant::now();
+        let found = unsafe {
+            pg_sys::index_getnext_slot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
+        };
+        slot_fetch_elapsed_us += i64::try_from(slot_fetch_started.elapsed().as_micros())
+            .expect("slot-fetch timing should fit in i64");
+        if !found {
+            break;
+        }
+
+        result_count += 1;
+        slot_fetch_count += 1;
+        if let Some(attnum) = project_attnum {
+            let projection_started = Instant::now();
+            let mut isnull = false;
+            let _ = unsafe { pg_sys::slot_getattr(slot, attnum, &mut isnull) };
+            projection_elapsed_us += i64::try_from(projection_started.elapsed().as_micros())
+                .expect("projection timing should fit in i64");
+            projected_count += 1;
+        }
+        unsafe {
+            pg_sys::ExecClearTuple(slot);
+        }
+    }
+    let emit_elapsed_us =
+        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let total_elapsed_us =
+        i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
+
+    unsafe {
+        pg_sys::index_endscan(scan);
+        pg_sys::ExecDropSingleTupleTableSlot(slot);
+        if pushed_registered_snapshot {
+            pg_sys::PopActiveSnapshot();
+            pg_sys::UnregisterSnapshot(registered_snapshot);
+        }
+        pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+    }
+
+    (
+        rescan_elapsed_us,
+        emit_elapsed_us,
+        total_elapsed_us,
+        slot_fetch_elapsed_us,
+        projection_elapsed_us,
+        result_count,
+        slot_fetch_count,
+        projected_count,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_rerank_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    limit_count: i32,
+) -> DebugGroupedRerankProfile {
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
+    let result_limit =
+        usize::try_from(limit_count).expect("grouped rerank profile limit should fit in usize");
+
+    let total_started = Instant::now();
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let emit_started = Instant::now();
+    let mut emitted = 0_i32;
+    while usize::try_from(emitted).expect("emitted count should fit in usize") < result_limit
+        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+    {
+        emitted += 1;
+    }
+    let result_count = emitted;
+    let emit_elapsed_us =
+        i64::try_from(emit_started.elapsed().as_micros()).expect("emit timing should fit in i64");
+    let total_elapsed_us =
+        i64::try_from(total_started.elapsed().as_micros()).expect("total timing should fit in i64");
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    let debug_profile = opaque.debug_profile;
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+
+    (
+        i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
+        i64::try_from(debug_profile.graph_result_materialize_elapsed_us)
+            .expect("timing should fit in i64"),
+        emit_elapsed_us,
+        total_elapsed_us,
+        result_count,
+        i32::try_from(debug_profile.grouped_rerank_quantized_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_quantized_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.grouped_rerank_heap_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_heap_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.grouped_rerank_heap_rows_fetched)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.grouped_rerank_heap_fetch_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(debug_profile.grouped_rerank_heap_decode_elapsed_us)
+            .expect("timing should fit in i64"),
+        i64::try_from(debug_profile.grouped_rerank_heap_dot_elapsed_us)
+            .expect("timing should fit in i64"),
     )
 }
 
@@ -1549,9 +1934,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
 ) -> Vec<(HeapTidCoords, f32)> {
-    let index_relation =
-        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
@@ -1567,10 +1951,467 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
         tids.push((heap_tid, score));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
-    unsafe { pg_sys::IndexScanEnd(scan) };
-    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    unsafe { debug_end_heap_backed_scan(scan_state) };
     tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let approx_score = debug_current_result_approx_score(scan)
+            .or_else(|| debug_scan_orderby_score(scan))
+            .expect("graph-first scan should publish an approximate score for emitted tuples");
+        let comparison_score = debug_current_result_comparison_score(scan);
+        let approx_rank = debug_current_result_approx_rank(scan);
+        tids.push((heap_tid, approx_score, comparison_score, approx_rank));
+    }
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let grouped_results = matches!(
+        unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
+            .unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")
+            }),
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    );
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    grouped_results
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_window_size(window_size: i32) -> usize {
+    if window_size <= 0 {
+        pgrx::error!("tqhnsw debug grouped scan window size must be positive");
+    }
+    usize::try_from(window_size).expect("grouped debug window size should fit in usize")
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_rank_metrics<I>(rows: I) -> DebugGroupedRankMetrics
+where
+    I: IntoIterator<Item = (i32, Option<i32>, Option<i32>)>,
+{
+    let mut compared_result_count = 0_i32;
+    let mut abs_rank_shift_sum = 0.0_f64;
+    let mut max_abs_rank_shift = 0_i32;
+    let mut d_squared_sum = 0.0_f64;
+    let mut exact_best_observed_rank = None;
+    let mut exact_top4_max_observed_rank = None;
+
+    for (observed_rank, exact_rank, explicit_rank_shift) in rows {
+        let Some(exact_rank) = exact_rank else {
+            continue;
+        };
+        compared_result_count += 1;
+
+        let abs_rank_shift = explicit_rank_shift
+            .unwrap_or(observed_rank - exact_rank)
+            .abs();
+        abs_rank_shift_sum += f64::from(abs_rank_shift);
+        max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+
+        let d = f64::from(observed_rank - exact_rank);
+        d_squared_sum += d * d;
+
+        if exact_rank == 1 {
+            exact_best_observed_rank = Some(observed_rank);
+        }
+        if exact_rank <= 4 {
+            exact_top4_max_observed_rank = Some(
+                exact_top4_max_observed_rank
+                    .map_or(observed_rank, |max_rank: i32| max_rank.max(observed_rank)),
+            );
+        }
+    }
+
+    let mean_abs_rank_shift = if compared_result_count == 0 {
+        0.0
+    } else {
+        abs_rank_shift_sum / f64::from(compared_result_count)
+    };
+    let spearman_rank_correlation = if compared_result_count < 2 {
+        0.0
+    } else {
+        let n = f64::from(compared_result_count);
+        1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+    };
+
+    DebugGroupedRankMetrics {
+        compared_result_count,
+        mean_abs_rank_shift,
+        max_abs_rank_shift,
+        spearman_rank_correlation,
+        exact_best_observed_rank,
+        exact_top4_max_observed_rank,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_grouped_scan_windowed_rows_from_comparison_rows(
+    rows: &[DebugGroupedScanComparisonRow],
+    window_size: usize,
+) -> Vec<DebugGroupedScanWindowedRow> {
+    let mut ordered_rows = rows.to_vec();
+    ordered_rows.sort_by_key(|row| row.1);
+    let mut buffered_rows = Vec::with_capacity(window_size.max(1));
+    let mut next_idx = 0usize;
+    let mut output_rows = Vec::with_capacity(ordered_rows.len());
+
+    // This is a sliding prefix window, so the tail drains from progressively smaller
+    // buffers once the approximate-order input is exhausted.
+    while output_rows.len() < ordered_rows.len() {
+        while buffered_rows.len() < window_size && next_idx < ordered_rows.len() {
+            buffered_rows.push(ordered_rows[next_idx]);
+            next_idx += 1;
+        }
+        let Some((selected_idx, _)) =
+            buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    let left_score = left.3;
+                    let right_score = right.3;
+                    // Missing comparison scores stay in approximate order instead of being
+                    // dropped from the simulation.
+                    let left_exact = left_score.unwrap_or(left.2);
+                    let right_exact = right_score.unwrap_or(right.2);
+                    left_exact
+                        .total_cmp(&right_exact)
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+        else {
+            break;
+        };
+
+        let (heap_tid, approx_rank, approx_score, comparison_score, exact_rank, exact_rank_shift) =
+            buffered_rows.remove(selected_idx);
+        let windowed_rank =
+            i32::try_from(output_rows.len() + 1).expect("windowed rank should fit in i32");
+        let windowed_rank_shift = exact_rank.map(|rank| windowed_rank - rank);
+        output_rows.push((
+            heap_tid,
+            approx_rank,
+            windowed_rank,
+            approx_score,
+            comparison_score,
+            exact_rank,
+            exact_rank_shift,
+            windowed_rank_shift,
+        ));
+    }
+
+    output_rows
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_comparison_rows(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> Vec<DebugGroupedScanComparisonRow> {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let ordered_rows = if grouped_results {
+        let mut ordered_rows = rows
+            .into_iter()
+            .enumerate()
+            .map(
+                |(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+                    (
+                        heap_tid,
+                        approx_score,
+                        comparison_score,
+                        approx_rank.unwrap_or_else(|| {
+                            i32::try_from(idx + 1).expect("approx rank should fit in i32")
+                        }),
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        ordered_rows.sort_by_key(|row| row.3);
+        ordered_rows
+    } else {
+        rows.into_iter()
+            .enumerate()
+            .map(
+                |(idx, (heap_tid, approx_score, comparison_score, _approx_rank))| {
+                    (
+                        heap_tid,
+                        approx_score,
+                        comparison_score,
+                        i32::try_from(idx + 1).expect("approx rank should fit in i32"),
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+    };
+    let mut exact_ranks = vec![None; ordered_rows.len()];
+    if grouped_results {
+        let mut compared_rows = ordered_rows
+            .iter()
+            .enumerate()
+            .filter_map(
+                |(idx, (_heap_tid, _approx_score, comparison_score, _approx_rank))| {
+                    comparison_score.map(|exact_score| (idx, exact_score))
+                },
+            )
+            .collect::<Vec<_>>();
+        compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            let left_approx_rank = ordered_rows[*left_idx].3;
+            let right_approx_rank = ordered_rows[*right_idx].3;
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| left_approx_rank.cmp(&right_approx_rank))
+        });
+        for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
+            exact_ranks[idx] = Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
+        }
+    }
+
+    ordered_rows
+        .into_iter()
+        .enumerate()
+        .map(
+            |(idx, (heap_tid, approx_score, comparison_score, approx_rank))| {
+                let exact_rank = exact_ranks[idx];
+                let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
+                (
+                    heap_tid,
+                    approx_rank,
+                    approx_score,
+                    grouped_results.then_some(comparison_score).flatten(),
+                    exact_rank,
+                    exact_rank_shift,
+                )
+            },
+        )
+        .collect()
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_comparison_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugGroupedScanComparisonSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) };
+    let emitted_result_count =
+        i32::try_from(rows.len()).expect("debug comparison summary count should fit in i32");
+    if !grouped_results {
+        return (emitted_result_count, 0, 0, 0, 0.0, 0.0, 0.0);
+    }
+
+    let grouped_result_count = emitted_result_count;
+    let mut compared_result_count = 0_i32;
+    let mut missing_comparison_count = 0_i32;
+    let mut abs_delta_sum = 0.0_f64;
+    let mut signed_delta_sum = 0.0_f64;
+    let mut max_abs_score_delta = 0.0_f32;
+
+    for (_heap_tid, approx_score, comparison_score, _approx_rank) in rows {
+        match comparison_score {
+            Some(exact_score) => {
+                compared_result_count += 1;
+                let signed_delta = approx_score - exact_score;
+                abs_delta_sum += f64::from(signed_delta.abs());
+                signed_delta_sum += f64::from(signed_delta);
+                max_abs_score_delta = max_abs_score_delta.max(signed_delta.abs());
+            }
+            None => missing_comparison_count += 1,
+        }
+    }
+
+    let mean_abs_score_delta = if compared_result_count == 0 {
+        0.0
+    } else {
+        abs_delta_sum / f64::from(compared_result_count)
+    };
+    let mean_signed_score_delta = if compared_result_count == 0 {
+        0.0
+    } else {
+        signed_delta_sum / f64::from(compared_result_count)
+    };
+
+    (
+        emitted_result_count,
+        grouped_result_count,
+        compared_result_count,
+        missing_comparison_count,
+        mean_abs_score_delta,
+        max_abs_score_delta,
+        mean_signed_score_delta,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_order_drift_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugGroupedScanOrderDriftSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let emitted_result_count =
+        i32::try_from(rows.len()).expect("debug order drift summary count should fit in i32");
+    if !grouped_results {
+        return (
+            emitted_result_count,
+            0,
+            0,
+            0.0,
+            0,
+            0.0,
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+        );
+    }
+
+    let grouped_result_count = emitted_result_count;
+    let metrics = debug_grouped_rank_metrics(rows.iter().map(
+        |(
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+    ));
+    let window_1_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 1);
+    let window_2_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 2);
+    let window_4_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 4);
+    let window_8_contains_exact_best = metrics
+        .exact_best_observed_rank
+        .is_some_and(|rank| rank <= 8);
+
+    (
+        emitted_result_count,
+        grouped_result_count,
+        metrics.compared_result_count,
+        metrics.mean_abs_rank_shift,
+        metrics.max_abs_rank_shift,
+        metrics.spearman_rank_correlation,
+        metrics.exact_best_observed_rank,
+        metrics.exact_top4_max_observed_rank,
+        window_1_contains_exact_best,
+        window_2_contains_exact_best,
+        window_4_contains_exact_best,
+        window_8_contains_exact_best,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_windowed_rows(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    window_size: i32,
+) -> Vec<DebugGroupedScanWindowedRow> {
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let window_size = debug_grouped_window_size(window_size);
+    debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_grouped_scan_windowed_summary(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    window_size: i32,
+) -> DebugGroupedScanWindowedSummary {
+    let grouped_results = unsafe { debug_scan_uses_grouped_storage(index_oid) };
+    let rows = unsafe { debug_grouped_scan_comparison_rows(index_oid, query) };
+    let window_size = debug_grouped_window_size(window_size);
+    let emitted_result_count =
+        i32::try_from(rows.len()).expect("debug grouped window summary count should fit in i32");
+    if !grouped_results {
+        return (
+            emitted_result_count,
+            0,
+            0,
+            i32::try_from(window_size).expect("grouped debug window size should fit in i32"),
+            None,
+            None,
+            None,
+            None,
+            0.0,
+            0.0,
+            0,
+            0,
+            0.0,
+            0.0,
+        );
+    }
+
+    let grouped_result_count = emitted_result_count;
+    let baseline_metrics = debug_grouped_rank_metrics(rows.iter().map(
+        |(
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+    ));
+    let windowed_rows = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, window_size);
+    let windowed_metrics = debug_grouped_rank_metrics(windowed_rows.iter().map(
+        |(
+            _heap_tid,
+            _approx_rank,
+            windowed_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            _exact_rank_shift,
+            windowed_rank_shift,
+        )| (*windowed_rank, *exact_rank, *windowed_rank_shift),
+    ));
+
+    (
+        emitted_result_count,
+        grouped_result_count,
+        baseline_metrics.compared_result_count,
+        i32::try_from(window_size).expect("grouped debug window size should fit in i32"),
+        baseline_metrics.exact_best_observed_rank,
+        windowed_metrics.exact_best_observed_rank,
+        baseline_metrics.exact_top4_max_observed_rank,
+        windowed_metrics.exact_top4_max_observed_rank,
+        baseline_metrics.mean_abs_rank_shift,
+        windowed_metrics.mean_abs_rank_shift,
+        baseline_metrics.max_abs_rank_shift,
+        windowed_metrics.max_abs_rank_shift,
+        baseline_metrics.spearman_rank_correlation,
+        windowed_metrics.spearman_rank_correlation,
+    )
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1705,6 +2546,30 @@ fn debug_scan_orderby_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
 
         f32::from_datum(*(*scan).xs_orderbyvals, false)
     }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_comparison_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_comparison_score_valid
+        .then_some(opaque.last_emitted_comparison_score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_approx_score(scan: pg_sys::IndexScanDesc) -> Option<f32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_approx_score_valid
+        .then_some(opaque.last_emitted_approx_score)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_current_result_approx_rank(scan: pg_sys::IndexScanDesc) -> Option<i32> {
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    opaque
+        .last_emitted_approx_rank_valid
+        .then_some(opaque.last_emitted_approx_rank)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2578,4 +3443,97 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn comparison_row(
+        block_number: u32,
+        offset_number: u16,
+        approx_rank: i32,
+        approx_score: f32,
+        comparison_score: Option<f32>,
+    ) -> DebugGroupedScanComparisonRow {
+        (
+            (block_number, offset_number),
+            approx_rank,
+            approx_score,
+            comparison_score,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn grouped_window_simulation_is_noop_for_window_one() {
+        let rows = vec![
+            comparison_row(1, 1, 1, -4.0, Some(-3.5)),
+            comparison_row(1, 2, 2, -3.0, Some(-2.5)),
+            comparison_row(1, 3, 3, -2.0, Some(-1.5)),
+        ];
+
+        let observed = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, 1);
+
+        assert_eq!(observed.len(), rows.len());
+        for (
+            idx,
+            (heap_tid, approx_rank, windowed_rank, approx_score, comparison_score, _, _, _),
+        ) in observed.iter().enumerate()
+        {
+            assert_eq!(*heap_tid, rows[idx].0);
+            assert_eq!(*approx_rank, rows[idx].1);
+            assert_eq!(*windowed_rank, rows[idx].1);
+            assert_eq!(*approx_score, rows[idx].2);
+            assert_eq!(*comparison_score, rows[idx].3);
+        }
+    }
+
+    #[test]
+    fn grouped_window_simulation_keeps_approx_order_for_tied_exact_scores() {
+        let rows = vec![
+            comparison_row(2, 1, 1, -4.0, Some(-2.0)),
+            comparison_row(2, 2, 2, -3.0, Some(-2.0)),
+            comparison_row(2, 3, 3, -2.0, Some(-1.5)),
+        ];
+
+        let observed = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, 3);
+        let observed_approx_ranks = observed
+            .iter()
+            .map(
+                |(
+                    _heap_tid,
+                    approx_rank,
+                    _windowed_rank,
+                    _approx_score,
+                    _comparison_score,
+                    _,
+                    _,
+                    _,
+                )| { *approx_rank },
+            )
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            observed_approx_ranks,
+            vec![1, 2, 3],
+            "exact-score ties should preserve the original approximate rank order"
+        );
+    }
+
+    #[test]
+    fn grouped_window_simulation_handles_windows_at_or_beyond_row_count() {
+        let rows = vec![
+            comparison_row(3, 1, 1, -4.0, Some(-1.0)),
+            comparison_row(3, 2, 2, -3.0, Some(-3.0)),
+            comparison_row(3, 3, 3, -2.0, Some(-2.0)),
+        ];
+
+        let exact_window = debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, rows.len());
+        let oversized_window =
+            debug_grouped_scan_windowed_rows_from_comparison_rows(&rows, rows.len() + 5);
+
+        assert_eq!(oversized_window, exact_window);
+    }
 }

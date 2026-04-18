@@ -6,18 +6,51 @@ use std::time::Instant;
 use hashbrown::{HashMap, HashSet};
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
+use crate::quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32};
 use crate::quant::prod::{BinarySignNoQjl4BitQuery, PreparedQuery, ProdQuantizer};
 
 use super::explain::TqExplainCounters;
 use super::graph;
 use super::page;
 use super::search;
+use super::source;
 use super::stream::{GraphPrefetchState, LinearPrefetchState};
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
 const ADR031_BINARY_PREFILTER_MIN_CANDIDATES: usize = 16;
 const ADR031_BINARY_PREFILTER_REJECTIONS: usize = 4;
 const ADR031_INLINE_BINARY_WORD_CAPACITY: usize = 24;
+const PQ_FASTSCAN_SCAN_WINDOW_ENV: &str = "TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW";
+const LEGACY_ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW";
+const PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE";
+const LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE";
+const PQ_FASTSCAN_RERANK_MODE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_RERANK_MODE";
+const LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE";
+const PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV: &str = "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN";
+const LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN";
+const PQ_FASTSCAN_EXACT_TRAVERSAL_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL";
+const PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE";
+const PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT_ENV: &str = "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT";
+const PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
+    "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY";
+const LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV: &str =
+    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY";
+pub(crate) const PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW: usize = 64;
+const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
+pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
+pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "heap_f32";
+const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
+    "tqhnsw PqFastScan exact scoring requires the cold rerank payload path";
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +84,21 @@ pub(super) struct ScanDebugProfile {
     pub(super) score_cache_misses: u64,
     pub(super) candidate_score_calls: u64,
     pub(super) candidate_score_elapsed_us: u64,
+    pub(super) grouped_traversal_approx_score_calls: u64,
+    pub(super) grouped_traversal_approx_score_elapsed_us: u64,
+    pub(super) grouped_traversal_exact_score_calls: u64,
+    pub(super) grouped_traversal_exact_score_elapsed_us: u64,
+    pub(super) grouped_traversal_budgeted_expansions: u64,
+    pub(super) grouped_traversal_budgeted_candidates: u64,
+    pub(super) grouped_traversal_budgeted_exact_candidates: u64,
+    pub(super) grouped_rerank_quantized_score_calls: u64,
+    pub(super) grouped_rerank_quantized_score_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_score_calls: u64,
+    pub(super) grouped_rerank_heap_score_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_rows_fetched: u64,
+    pub(super) grouped_rerank_heap_fetch_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_decode_elapsed_us: u64,
+    pub(super) grouped_rerank_heap_dot_elapsed_us: u64,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -141,7 +189,7 @@ fn record_stage_ordered_results_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_stage_ordered_results_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CachedHeapTids {
     len: u8,
     tids: [page::ItemPointer; page::HEAPTID_INLINE_CAPACITY],
@@ -174,6 +222,15 @@ impl CachedHeapTids {
 
     fn as_slice(&self) -> &[page::ItemPointer] {
         &self.tids[..self.len as usize]
+    }
+}
+
+impl Default for CachedHeapTids {
+    fn default() -> Self {
+        Self {
+            len: 0,
+            tids: [page::ItemPointer::INVALID; page::HEAPTID_INLINE_CAPACITY],
+        }
     }
 }
 
@@ -242,22 +299,41 @@ pub(super) struct CachedGraphElement {
     deleted: bool,
     heaptids: CachedHeapTids,
     neighbortid: page::ItemPointer,
+    reranktid: Option<page::ItemPointer>,
     binary_words: CachedBinaryWords,
+    grouped_search_code: CachedGroupedSearchCode,
 }
 
 impl CachedGraphElement {
-    fn from_tuple_ref(
+    fn from_graph_tuple_ref(
         tid: page::ItemPointer,
-        element: page::TqElementTupleRef<'_>,
+        element: graph::GraphTupleRef<'_>,
         binary_words: CachedBinaryWords,
     ) -> Self {
         Self {
             tid,
-            level: element.level,
-            deleted: element.deleted,
-            heaptids: CachedHeapTids::from_iter(element.heaptids()),
-            neighbortid: element.neighbortid,
+            level: element.level(),
+            deleted: element.deleted(),
+            heaptids: CachedHeapTids::from_iter(element.collect_heaptids()),
+            neighbortid: element.neighbortid(),
+            reranktid: element.reranktid(),
             binary_words,
+            grouped_search_code: CachedGroupedSearchCode::from_tuple_ref(element),
+        }
+    }
+
+    fn grouped_score_input(&self) -> Option<GroupedScoreInput<'_>> {
+        match (
+            self.reranktid,
+            self.grouped_search_code.as_slice(),
+            self.binary_words.as_slice(),
+        ) {
+            (Some(reranktid), Some(search_code), binary_words) => Some(GroupedScoreInput {
+                reranktid,
+                search_code,
+                binary_words,
+            }),
+            _ => None,
         }
     }
 }
@@ -271,6 +347,217 @@ enum LoadedElementState {
     None,
     ExactScore(f32),
     ExactPayload(LoadedElementScoreInput),
+    ExactUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CachedGroupedSearchCode {
+    None,
+    Bytes(Vec<u8>),
+}
+
+impl CachedGroupedSearchCode {
+    fn from_tuple_ref(element: graph::GraphTupleRef<'_>) -> Self {
+        match element.grouped_search_code() {
+            Some(search_code) => Self::Bytes(search_code.to_vec()),
+            None => Self::None,
+        }
+    }
+
+    fn as_slice(&self) -> Option<&[u8]> {
+        match self {
+            Self::None => None,
+            Self::Bytes(search_code) => Some(search_code.as_slice()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreInput<'a> {
+    reranktid: page::ItemPointer,
+    search_code: &'a [u8],
+    binary_words: &'a [u64],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GroupedScoreShape {
+    binary_word_count: usize,
+    search_code_len: usize,
+    rerank_code_len: usize,
+}
+
+impl GroupedScoreShape {
+    fn from_scan_graph_storage(scan_graph_storage: graph::GraphStorageDescriptor) -> Option<Self> {
+        match scan_graph_storage {
+            graph::GraphStorageDescriptor::TurboQuant { .. } => None,
+            graph::GraphStorageDescriptor::PqFastScan(layout) => Some(Self {
+                binary_word_count: layout.binary_word_count,
+                search_code_len: layout.search_code_len,
+                rerank_code_len: layout.rerank_code_len,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreCall<'a> {
+    shape: GroupedScoreShape,
+    input: GroupedScoreInput<'a>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScoreContext<'a> {
+    element_tid: page::ItemPointer,
+    call: GroupedScoreCall<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct PreparedGroupedScanQuery {
+    group_count: usize,
+    search_code_len: usize,
+    lut_f32: Vec<f32>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GroupedScorePayloadView<'a> {
+    element_tid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    binary_words: &'a [u64],
+    search_code: &'a [u8],
+    rerank_code_len: usize,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+struct GroupedScoreRerankPayload<'a> {
+    element_tid: page::ItemPointer,
+    reranktid: page::ItemPointer,
+    binary_words: &'a [u64],
+    search_code: &'a [u8],
+    rerank_gamma: f32,
+    rerank_code: Vec<u8>,
+}
+
+enum CandidateScoreDispatch<'a> {
+    Exact(LoadedElementState),
+    Grouped(GroupedScoreContext<'a>),
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedExactTraversalMode {
+    Disabled = 0,
+    AllLayers = 1,
+    Layer0Only = 2,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedExactTraversalStrategy {
+    Expansion = 0,
+    FrontierHead = 1,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedTraversalScoreMode {
+    GroupedPq = 0,
+    Binary = 1,
+}
+
+impl GroupedTraversalScoreMode {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::GroupedPq => "pq",
+            Self::Binary => "binary",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PqFastScanTraversalScoreModeResolution {
+    EnvOverride,
+    DefaultBinaryWithBinarySidecar,
+    FallbackGroupedPqMissingBinarySidecar,
+    NonPqFastScanStorage,
+}
+
+impl PqFastScanTraversalScoreModeResolution {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::EnvOverride => "env_override",
+            Self::DefaultBinaryWithBinarySidecar => "default_binary_with_binary_sidecar",
+            Self::FallbackGroupedPqMissingBinarySidecar => {
+                "fallback_grouped_pq_missing_binary_sidecar"
+            }
+            Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PqFastScanTraversalScoreModeDecision {
+    mode: GroupedTraversalScoreMode,
+    pub(crate) resolution: PqFastScanTraversalScoreModeResolution,
+}
+
+impl PqFastScanTraversalScoreModeDecision {
+    pub(crate) const fn mode_name(self) -> &'static str {
+        self.mode.as_str()
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupedRerankMode {
+    Quantized = 0,
+    HeapF32 = 1,
+}
+
+impl GroupedRerankMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Quantized => "quantized",
+            Self::HeapF32 => "heap_f32",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PqFastScanRerankModeResolution {
+    EnvOverride,
+    DefaultHeapF32WithBuildSourceColumn,
+    DefaultQuantizedMissingBuildSourceColumn,
+    NonPqFastScanStorage,
+}
+
+impl PqFastScanRerankModeResolution {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::EnvOverride => "env_override",
+            Self::DefaultHeapF32WithBuildSourceColumn => {
+                "default_heap_f32_with_build_source_column"
+            }
+            Self::DefaultQuantizedMissingBuildSourceColumn => {
+                "default_quantized_missing_build_source_column"
+            }
+            Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PqFastScanRerankModeDecision {
+    mode: GroupedRerankMode,
+    pub(crate) resolution: PqFastScanRerankModeResolution,
+    pub(crate) source_column: Option<String>,
+}
+
+impl PqFastScanRerankModeDecision {
+    pub(crate) const fn mode_name(&self) -> &'static str {
+        self.mode.as_str()
+    }
 }
 
 struct BinaryPrefilterCandidate {
@@ -278,6 +565,12 @@ struct BinaryPrefilterCandidate {
     element: Arc<CachedGraphElement>,
     approx_score: f32,
     loaded_state: LoadedElementState,
+}
+
+struct GroupedTraversalCandidate {
+    ordinal: usize,
+    element: Arc<CachedGraphElement>,
+    approx_score: f32,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -346,6 +639,101 @@ fn record_candidate_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
 
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_candidate_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_approx_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    record_candidate_score_elapsed(opaque, elapsed_us);
+    opaque.debug_profile.grouped_traversal_approx_score_calls += 1;
+    opaque
+        .debug_profile
+        .grouped_traversal_approx_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_approx_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_exact_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_traversal_exact_score_calls += 1;
+    opaque
+        .debug_profile
+        .grouped_traversal_exact_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_exact_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_traversal_budget(
+    opaque: &mut TqScanOpaque,
+    candidate_count: usize,
+    exact_candidate_count: usize,
+) {
+    if candidate_count == 0 {
+        return;
+    }
+
+    opaque.debug_profile.grouped_traversal_budgeted_expansions += 1;
+    opaque.debug_profile.grouped_traversal_budgeted_candidates +=
+        u64::try_from(candidate_count).expect("budgeted candidate count should fit in u64");
+    opaque
+        .debug_profile
+        .grouped_traversal_budgeted_exact_candidates += u64::try_from(exact_candidate_count)
+        .expect("budgeted exact candidate count should fit in u64");
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_traversal_budget(
+    _opaque: &mut TqScanOpaque,
+    _candidate_count: usize,
+    _exact_candidate_count: usize,
+) {
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_quantized_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_quantized_score_calls += 1;
+    opaque
+        .debug_profile
+        .grouped_rerank_quantized_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_quantized_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_score_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_score_calls += 1;
+    opaque.debug_profile.grouped_rerank_heap_score_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_score_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_fetch(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_rows_fetched += 1;
+    opaque.debug_profile.grouped_rerank_heap_fetch_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_fetch(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_decode_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_decode_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_decode_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn record_grouped_rerank_heap_dot_elapsed(opaque: &mut TqScanOpaque, elapsed_us: u64) {
+    opaque.debug_profile.grouped_rerank_heap_dot_elapsed_us += elapsed_us;
+}
+
+#[cfg(not(any(test, feature = "pg_test")))]
+fn record_grouped_rerank_heap_dot_elapsed(_opaque: &mut TqScanOpaque, _elapsed_us: u64) {}
 
 #[cfg(any(test, feature = "pg_test"))]
 fn record_score_cache_hit(opaque: &mut TqScanOpaque) {
@@ -439,6 +827,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_started = Instant::now();
             let metadata = super::shared::read_metadata_page((*scan).indexRelation);
+            let graph_storage = validate_runtime_scan_format((*scan).indexRelation, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
@@ -452,6 +842,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             (*scan).xs_orderbyvals = ptr::null_mut();
             (*scan).xs_orderbynulls = ptr::null_mut();
 
+            let index_options = super::options::relation_options((*scan).indexRelation);
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
@@ -463,13 +854,51 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             } else {
                 crate::code_len(metadata.dimensions as usize, metadata.bits)
             };
+            opaque.scan_graph_storage = graph_storage;
+            opaque.grouped_live_rerank_window = if matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::PqFastScan(_)
+            ) {
+                u8::try_from(resolve_grouped_live_rerank_window())
+                    .expect("grouped live rerank window should fit in u8")
+            } else {
+                u8::try_from(PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW)
+                    .expect("default grouped live rerank window should fit in u8")
+            };
+            opaque.grouped_traversal_score_mode = if matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::PqFastScan(_)
+            ) {
+                resolve_grouped_traversal_score_mode(opaque.scan_graph_storage)
+            } else {
+                GroupedTraversalScoreMode::GroupedPq
+            };
+            opaque.grouped_exact_traversal_mode = if matches!(
+                opaque.scan_graph_storage,
+                graph::GraphStorageDescriptor::PqFastScan(_)
+            ) {
+                resolve_grouped_exact_traversal_mode()
+            } else {
+                GroupedExactTraversalMode::Disabled
+            };
+            opaque.grouped_exact_traversal_strategy =
+                if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
+                    GroupedExactTraversalStrategy::Expansion
+                } else {
+                    resolve_grouped_exact_traversal_strategy(opaque.grouped_exact_traversal_mode)
+                };
+            opaque.grouped_exact_traversal_limit =
+                if opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Disabled {
+                    0
+                } else {
+                    resolve_grouped_exact_traversal_limit()
+                };
+            configure_grouped_heap_rerank_state(scan, opaque, &index_options);
             opaque.scan_block_count = pg_sys::RelationGetNumberOfBlocksInFork(
                 (*scan).indexRelation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
-            let scan_tuning = super::options::resolve_scan_tuning(
-                &super::options::relation_options((*scan).indexRelation),
-            );
+            let scan_tuning = super::options::resolve_scan_tuning(&index_options);
             opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
                 .expect("ef_search should fit in usize")
                 .max(1);
@@ -493,6 +922,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_started = Instant::now();
             store_scan_prepared_query(opaque, &query, &metadata);
+            store_grouped_scan_query((*scan).indexRelation, opaque, &metadata);
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_elapsed_us = u64::try_from(prepare_started.elapsed().as_micros())
                 .expect("timing should fit in u64");
@@ -547,6 +977,433 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
             record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
         })
     }
+}
+
+fn validate_runtime_scan_format(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> Result<graph::GraphStorageDescriptor, String> {
+    unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+}
+
+fn pq_fastscan_env_var(canonical: &str, legacy: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(canonical).or_else(|| std::env::var_os(legacy))
+}
+
+fn pq_fastscan_exact_traversal_enabled() -> bool {
+    pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_ENV,
+    )
+    .is_some()
+}
+
+pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
+    graph_storage: graph::GraphStorageDescriptor,
+) -> PqFastScanTraversalScoreModeDecision {
+    let Some(raw_mode) = pq_fastscan_env_var(
+        PQ_FASTSCAN_TRAVERSAL_SCORE_MODE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_GROUPED_SCORE_MODE_ENV,
+    ) else {
+        return match graph_storage {
+            graph::GraphStorageDescriptor::PqFastScan(layout) if layout.binary_word_count > 0 => {
+                PqFastScanTraversalScoreModeDecision {
+                    mode: GroupedTraversalScoreMode::Binary,
+                    resolution:
+                        PqFastScanTraversalScoreModeResolution::DefaultBinaryWithBinarySidecar,
+                }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(_) => PqFastScanTraversalScoreModeDecision {
+                mode: GroupedTraversalScoreMode::GroupedPq,
+                resolution:
+                    PqFastScanTraversalScoreModeResolution::FallbackGroupedPqMissingBinarySidecar,
+            },
+            graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                PqFastScanTraversalScoreModeDecision {
+                    mode: GroupedTraversalScoreMode::GroupedPq,
+                    resolution: PqFastScanTraversalScoreModeResolution::NonPqFastScanStorage,
+                }
+            }
+        };
+    };
+
+    let mode = match raw_mode.to_string_lossy().as_ref() {
+        "pq" => GroupedTraversalScoreMode::GroupedPq,
+        "binary" => GroupedTraversalScoreMode::Binary,
+        other => pgrx::error!(
+            "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got {:?}",
+            other
+        ),
+    };
+
+    PqFastScanTraversalScoreModeDecision {
+        mode,
+        resolution: PqFastScanTraversalScoreModeResolution::EnvOverride,
+    }
+}
+
+fn resolve_grouped_traversal_score_mode(
+    graph_storage: graph::GraphStorageDescriptor,
+) -> GroupedTraversalScoreMode {
+    resolve_pq_fastscan_traversal_score_mode_decision(graph_storage).mode
+}
+
+fn grouped_binary_traversal_score_enabled(opaque: &TqScanOpaque) -> bool {
+    matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    ) && opaque.grouped_traversal_score_mode == GroupedTraversalScoreMode::Binary
+}
+
+fn default_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
+    if index_options.build_source_column.is_some() {
+        GroupedRerankMode::HeapF32
+    } else {
+        GroupedRerankMode::Quantized
+    }
+}
+
+fn default_grouped_rerank_mode_resolution(
+    index_options: &super::options::TqHnswOptions,
+) -> PqFastScanRerankModeResolution {
+    if index_options.build_source_column.is_some() {
+        PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn
+    } else {
+        PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn
+    }
+}
+
+fn effective_grouped_rerank_source_column(
+    index_options: &super::options::TqHnswOptions,
+    mode: GroupedRerankMode,
+) -> Option<String> {
+    if mode != GroupedRerankMode::HeapF32 {
+        return None;
+    }
+
+    pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
+    )
+    .map(|value| value.to_string_lossy().into_owned())
+    .or_else(|| index_options.build_source_column.clone())
+}
+
+fn resolve_grouped_rerank_mode_decision(
+    index_options: &super::options::TqHnswOptions,
+) -> PqFastScanRerankModeDecision {
+    let Some(raw_mode) = pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_MODE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_MODE_ENV,
+    ) else {
+        let mode = default_grouped_rerank_mode(index_options);
+        return PqFastScanRerankModeDecision {
+            mode,
+            resolution: default_grouped_rerank_mode_resolution(index_options),
+            source_column: effective_grouped_rerank_source_column(index_options, mode),
+        };
+    };
+
+    let mode = match raw_mode.to_string_lossy().as_ref() {
+        "quantized" => GroupedRerankMode::Quantized,
+        "heap_f32" => GroupedRerankMode::HeapF32,
+        other => pgrx::error!(
+            "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got {:?}",
+            other
+        ),
+    };
+
+    PqFastScanRerankModeDecision {
+        mode,
+        resolution: PqFastScanRerankModeResolution::EnvOverride,
+        source_column: effective_grouped_rerank_source_column(index_options, mode),
+    }
+}
+
+pub(crate) unsafe fn resolve_pq_fastscan_rerank_mode_decision(
+    index_relation: pg_sys::Relation,
+    graph_storage: graph::GraphStorageDescriptor,
+) -> PqFastScanRerankModeDecision {
+    if !matches!(graph_storage, graph::GraphStorageDescriptor::PqFastScan(_)) {
+        return PqFastScanRerankModeDecision {
+            mode: GroupedRerankMode::Quantized,
+            resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
+            source_column: None,
+        };
+    }
+
+    let index_options = unsafe { super::options::relation_options(index_relation) };
+    resolve_grouped_rerank_mode_decision(&index_options)
+}
+
+fn resolve_grouped_rerank_mode(index_options: &super::options::TqHnswOptions) -> GroupedRerankMode {
+    resolve_grouped_rerank_mode_decision(index_options).mode
+}
+
+fn grouped_heap_rerank_enabled(opaque: &TqScanOpaque) -> bool {
+    opaque.grouped_rerank_mode == GroupedRerankMode::HeapF32
+}
+
+fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
+    if !pq_fastscan_exact_traversal_enabled() {
+        return GroupedExactTraversalMode::Disabled;
+    }
+
+    let Some(raw_scope) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_SCOPE_ENV,
+    ) else {
+        return GroupedExactTraversalMode::AllLayers;
+    };
+
+    match raw_scope.to_string_lossy().as_ref() {
+        "all" => GroupedExactTraversalMode::AllLayers,
+        "layer0" => GroupedExactTraversalMode::Layer0Only,
+        other => pgrx::error!(
+            "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got {:?}",
+            other
+        ),
+    }
+}
+
+fn grouped_exact_traversal_enabled_for_layer(mode: GroupedExactTraversalMode, layer: u8) -> bool {
+    match mode {
+        GroupedExactTraversalMode::Disabled => false,
+        GroupedExactTraversalMode::AllLayers => true,
+        GroupedExactTraversalMode::Layer0Only => layer == 0,
+    }
+}
+
+fn resolve_grouped_exact_traversal_strategy(
+    mode: GroupedExactTraversalMode,
+) -> GroupedExactTraversalStrategy {
+    let Some(raw_strategy) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_STRATEGY_ENV,
+    ) else {
+        return GroupedExactTraversalStrategy::Expansion;
+    };
+
+    match raw_strategy.to_string_lossy().as_ref() {
+        "expansion" => GroupedExactTraversalStrategy::Expansion,
+        "frontier_head" => {
+            if mode != GroupedExactTraversalMode::Layer0Only {
+                pgrx::error!(
+                    "tqhnsw PqFastScan exact traversal strategy frontier_head requires scope layer0"
+                );
+            }
+            GroupedExactTraversalStrategy::FrontierHead
+        }
+        other => pgrx::error!(
+            "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
+            other
+        ),
+    }
+}
+
+fn resolve_grouped_exact_traversal_limit() -> u8 {
+    let Some(raw_limit) = pq_fastscan_env_var(
+        PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_EXACT_TRAVERSAL_LIMIT_ENV,
+    ) else {
+        return 0;
+    };
+
+    let raw_limit = raw_limit.to_string_lossy();
+    let parsed_limit = raw_limit.parse::<u8>().unwrap_or_else(|_| {
+        pgrx::error!(
+            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
+            raw_limit
+        )
+    });
+    if parsed_limit == 0 {
+        pgrx::error!(
+            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
+            raw_limit
+        );
+    }
+    parsed_limit
+}
+
+fn grouped_exact_traversal_candidate_budget_for_layer(
+    opaque: &TqScanOpaque,
+    layer: u8,
+) -> Option<usize> {
+    if opaque.grouped_exact_traversal_strategy != GroupedExactTraversalStrategy::Expansion {
+        return None;
+    }
+    if !grouped_exact_traversal_enabled_for_layer(opaque.grouped_exact_traversal_mode, layer) {
+        return None;
+    }
+    match opaque.grouped_exact_traversal_limit {
+        0 => None,
+        limit => Some(usize::from(limit)),
+    }
+}
+
+fn grouped_exact_traversal_full_candidate_scoring_for_layer(
+    opaque: &TqScanOpaque,
+    layer: u8,
+) -> bool {
+    opaque.grouped_exact_traversal_strategy == GroupedExactTraversalStrategy::Expansion
+        && opaque.grouped_exact_traversal_limit == 0
+        && grouped_exact_traversal_enabled_for_layer(opaque.grouped_exact_traversal_mode, layer)
+}
+
+fn grouped_exact_traversal_frontier_head_enabled(opaque: &TqScanOpaque) -> bool {
+    opaque.grouped_exact_traversal_strategy == GroupedExactTraversalStrategy::FrontierHead
+        && opaque.grouped_exact_traversal_mode == GroupedExactTraversalMode::Layer0Only
+}
+
+fn resolve_grouped_live_rerank_window() -> usize {
+    let Some(raw_window) = pq_fastscan_env_var(
+        PQ_FASTSCAN_SCAN_WINDOW_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_SCAN_WINDOW_ENV,
+    ) else {
+        return PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW;
+    };
+
+    let raw_window = raw_window.to_string_lossy();
+    let parsed_window = raw_window.parse::<usize>().unwrap_or_else(|_| {
+        pgrx::error!(
+            "tqhnsw PqFastScan live rerank window must be an integer between 1 and {}, got {:?}",
+            PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
+            raw_window
+        )
+    });
+    if !(1..=PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW).contains(&parsed_window) {
+        pgrx::error!(
+            "tqhnsw PqFastScan live rerank window must be between 1 and {}, got {}",
+            PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
+            parsed_window
+        );
+    }
+    parsed_window
+}
+
+unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Relation, bool) {
+    if !unsafe { (*scan).heapRelation }.is_null() {
+        return (unsafe { (*scan).heapRelation }, false);
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve heap relation");
+    }
+    (
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+        true,
+    )
+}
+
+unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapshot, bool) {
+    if !unsafe { (*scan).xs_snapshot }.is_null() {
+        return (unsafe { (*scan).xs_snapshot }, false);
+    }
+
+    let active_snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if !active_snapshot.is_null() {
+        return (active_snapshot, false);
+    }
+
+    let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
+    if registered_snapshot.is_null() {
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank could not resolve an active snapshot");
+    }
+    (registered_snapshot, true)
+}
+
+unsafe fn free_grouped_heap_rerank_state(opaque: &mut TqScanOpaque) {
+    if !opaque.grouped_heap_rerank_slot.is_null() {
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(opaque.grouped_heap_rerank_slot) };
+        opaque.grouped_heap_rerank_slot = ptr::null_mut();
+    }
+    if opaque.grouped_heap_rerank_snapshot_owned && !opaque.grouped_heap_rerank_snapshot.is_null() {
+        unsafe { pg_sys::UnregisterSnapshot(opaque.grouped_heap_rerank_snapshot) };
+    }
+    opaque.grouped_heap_rerank_snapshot = ptr::null_mut();
+    opaque.grouped_heap_rerank_snapshot_owned = false;
+    if opaque.grouped_heap_rerank_relation_owned && !opaque.grouped_heap_rerank_relation.is_null() {
+        unsafe {
+            pg_sys::table_close(
+                opaque.grouped_heap_rerank_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+    }
+    opaque.grouped_heap_rerank_relation = ptr::null_mut();
+    opaque.grouped_heap_rerank_relation_owned = false;
+    opaque.grouped_heap_rerank_source_attnum = 0;
+    opaque.grouped_heap_rerank_source_type_oid = pg_sys::InvalidOid;
+}
+
+unsafe fn configure_grouped_heap_rerank_state(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+    index_options: &super::options::TqHnswOptions,
+) {
+    unsafe { free_grouped_heap_rerank_state(opaque) };
+    let rerank = if matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    ) {
+        resolve_grouped_rerank_mode_decision(index_options)
+    } else {
+        PqFastScanRerankModeDecision {
+            mode: GroupedRerankMode::Quantized,
+            resolution: PqFastScanRerankModeResolution::NonPqFastScanStorage,
+            source_column: None,
+        }
+    };
+    opaque.grouped_rerank_mode = rerank.mode;
+
+    if !grouped_heap_rerank_enabled(opaque) {
+        return;
+    }
+
+    let source_label = if pq_fastscan_env_var(
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV,
+        LEGACY_ADR030_EXPERIMENTAL_RERANK_SOURCE_COLUMN_ENV,
+    )
+    .is_some()
+    {
+        PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
+    } else {
+        "build_source_column"
+    };
+    let source_column = rerank.source_column.unwrap_or_else(|| {
+        index_options.build_source_column.clone().unwrap_or_else(|| {
+            pgrx::error!(
+                "tqhnsw PqFastScan heap-f32 rerank requires build_source_column or {} to name a raw real[] or bytea heap column",
+                PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
+            )
+        })
+    });
+    let (heap_relation, heap_relation_owned) = unsafe { resolve_scan_heap_relation(scan) };
+    let (snapshot, snapshot_owned) = unsafe { resolve_scan_snapshot(scan) };
+    let source_attribute = unsafe {
+        source::resolve_source_attribute(
+            heap_relation,
+            &source_column,
+            source_label,
+            source::SourceTypePolicy::RealArrayOrBytea,
+        )
+    };
+    let slot = unsafe {
+        source::allocate_heap_slot(
+            heap_relation,
+            "tqhnsw PqFastScan heap-f32 rerank failed to allocate a heap tuple slot",
+        )
+    };
+
+    opaque.grouped_heap_rerank_relation = heap_relation;
+    opaque.grouped_heap_rerank_relation_owned = heap_relation_owned;
+    opaque.grouped_heap_rerank_snapshot = snapshot;
+    opaque.grouped_heap_rerank_snapshot_owned = snapshot_owned;
+    opaque.grouped_heap_rerank_slot = slot;
+    opaque.grouped_heap_rerank_source_attnum = i16::try_from(source_attribute.attnum)
+        .expect("heap rerank source attnum should fit in i16");
+    opaque.grouped_heap_rerank_source_type_oid = source_attribute.type_oid;
 }
 
 pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
@@ -609,6 +1466,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanD
                 free_scan_emitted_set(opaque);
                 free_scan_prepared_query(opaque);
                 free_scan_query(opaque);
+                free_grouped_heap_rerank_state(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
             }
@@ -630,6 +1488,14 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
     }
     opaque.query_dimensions = u16::try_from(query.len()).expect("query length should fit in u16");
     opaque.query_values = query_values;
+}
+
+fn scan_query_values(opaque: &TqScanOpaque) -> &[f32] {
+    if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
+        pgrx::error!("tqhnsw scan state is missing raw query values");
+    }
+
+    unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
 }
 
 unsafe fn free_scan_query(opaque: &mut TqScanOpaque) {
@@ -656,20 +1522,31 @@ fn store_scan_prepared_query(
         metadata.seed,
     );
     let prepared = quantizer.prepare_ip_query(query);
-    let binary_prepared = (!super::options::disable_binary_prefilter()
-        && quantizer.binary_sign_no_qjl_4bit_supported())
-    .then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
+    let binary_query_requested = quantizer.binary_sign_no_qjl_4bit_supported()
+        && (grouped_binary_traversal_score_enabled(opaque)
+            || !super::options::disable_binary_prefilter());
+    let binary_prepared =
+        binary_query_requested.then(|| quantizer.prepare_ip_query_binary_sign_no_qjl_4bit(query));
     opaque.prepared_query = Box::into_raw(Box::new(prepared));
     opaque.binary_sign_query = binary_prepared
         .map(|prepared| Box::into_raw(Box::new(prepared)))
         .unwrap_or(ptr::null_mut());
     opaque.cached_quantizer = Arc::into_raw(quantizer);
+    if grouped_binary_traversal_score_enabled(opaque) && opaque.binary_sign_query.is_null() {
+        pgrx::error!(
+            "tqhnsw PqFastScan binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
+        );
+    }
     if cache_hit {
         opaque.explain_counters.record_quantizer_cache_hit();
     }
 }
 
 fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
+    if !opaque.grouped_query.is_null() {
+        drop(unsafe { Box::from_raw(opaque.grouped_query) });
+        opaque.grouped_query = ptr::null_mut();
+    }
     if !opaque.prepared_query.is_null() {
         drop(unsafe { Box::from_raw(opaque.prepared_query) });
         opaque.prepared_query = ptr::null_mut();
@@ -684,10 +1561,75 @@ fn free_scan_prepared_query(opaque: &mut TqScanOpaque) {
     }
 }
 
+fn build_prepared_grouped_scan_query(
+    prepared_query: &PreparedQuery,
+    model: &graph::GroupedCodebookModel,
+) -> PreparedGroupedScanQuery {
+    let expected_rotated_len = model.group_count * model.group_size;
+    assert_eq!(
+        prepared_query.rotated.len(),
+        expected_rotated_len,
+        "grouped scan prepared query length mismatch: got {}, expected {}",
+        prepared_query.rotated.len(),
+        expected_rotated_len
+    );
+
+    PreparedGroupedScanQuery {
+        group_count: model.group_count,
+        search_code_len: model.group_count.div_ceil(2),
+        lut_f32: build_grouped_pq_lut_f32(
+            &prepared_query.rotated,
+            &model.flat_codebooks,
+            model.group_size,
+        ),
+    }
+}
+
+unsafe fn load_grouped_scan_query(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    prepared_query: &PreparedQuery,
+) -> PreparedGroupedScanQuery {
+    let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
+    build_prepared_grouped_scan_query(prepared_query, &model)
+}
+
+unsafe fn store_grouped_scan_query(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    metadata: &page::MetadataPage,
+) {
+    if !matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    ) {
+        return;
+    }
+    if opaque.prepared_query.is_null() {
+        pgrx::error!(
+            "tqhnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
+        );
+    }
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let grouped_prepared =
+        unsafe { load_grouped_scan_query(index_relation, metadata, prepared_query) };
+    opaque.grouped_query = Box::into_raw(Box::new(grouped_prepared));
+}
+
+fn grouped_scan_query(opaque: &TqScanOpaque) -> Option<&PreparedGroupedScanQuery> {
+    if opaque.grouped_query.is_null() {
+        None
+    } else {
+        Some(unsafe { &*opaque.grouped_query })
+    }
+}
+
 fn reset_scan_position(opaque: &mut TqScanOpaque) {
     opaque.next_block_number = page::FIRST_DATA_BLOCK_NUMBER;
     opaque.next_offset_number = 1;
     opaque.execution_phase = ScanExecutionPhase::GraphTraversal;
+    clear_last_emitted_scan_scores(opaque);
+    clear_grouped_live_rerank_buffer(opaque);
     clear_scan_candidate_state(opaque);
     reset_scan_graph_cache(opaque);
     reset_scan_score_cache(opaque);
@@ -777,6 +1719,29 @@ fn cached_scan_element_score(opaque: &TqScanOpaque, element_tid: page::ItemPoint
     unsafe { &*opaque.score_cache }.get(&element_tid).copied()
 }
 
+unsafe fn live_loaded_state_from_exact_payload(
+    opaque: &mut TqScanOpaque,
+    element_tid: page::ItemPointer,
+    binary_query_active: bool,
+    exact_payload: Option<(f32, &[u8])>,
+) -> LoadedElementState {
+    match exact_payload {
+        Some((gamma, code_bytes)) if binary_query_active => {
+            LoadedElementState::ExactPayload(LoadedElementScoreInput {
+                gamma,
+                code_bytes: code_bytes.to_vec(),
+            })
+        }
+        Some((gamma, code_bytes)) => LoadedElementState::ExactScore(score_and_cache_scan_element(
+            opaque,
+            element_tid,
+            gamma,
+            code_bytes,
+        )),
+        None => LoadedElementState::ExactUnavailable,
+    }
+}
+
 fn binary_sign_query(opaque: &TqScanOpaque) -> Option<&BinarySignNoQjl4BitQuery> {
     if opaque.binary_sign_query.is_null() {
         None
@@ -831,45 +1796,40 @@ unsafe fn cached_graph_element(
     let binary_query_active = binary_sign_query(opaque_ref).is_some();
     let mut loaded_state = LoadedElementState::None;
     let element = Arc::new(unsafe {
-        graph::with_graph_element_tuple(
+        graph::with_graph_storage_tuple(
             index_relation,
             element_tid,
-            opaque_ref.scan_code_len,
+            opaque_ref.scan_graph_storage,
             |element| {
-                let live_element = !element.deleted && element.heaptid_count() > 0;
+                let live_element = !element.deleted() && element.heaptid_count() > 0;
                 let binary_words = if binary_query_active {
                     if !super::options::force_binary_derivation() && element.binary_word_count() > 0
                     {
-                        CachedBinaryWords::from_iter(
-                            element.binary_word_count(),
-                            element.binary_words(),
-                        )
+                        CachedBinaryWords::from_vec(element.collect_binary_words())
                     } else {
-                        let quantizer = &*opaque_ref.cached_quantizer;
-                        CachedBinaryWords::from_vec(
-                            quantizer.binary_sign_words_from_packed_no_qjl_4bit(element.code),
-                        )
+                        match element.exact_payload() {
+                            Some((_gamma, code_bytes)) => {
+                                let quantizer = &*opaque_ref.cached_quantizer;
+                                CachedBinaryWords::from_vec(
+                                    quantizer.binary_sign_words_from_packed_no_qjl_4bit(code_bytes),
+                                )
+                            }
+                            None => CachedBinaryWords::empty(),
+                        }
                     }
                 } else {
                     CachedBinaryWords::empty()
                 };
 
                 if live_element {
-                    loaded_state = if binary_query_active {
-                        LoadedElementState::ExactPayload(LoadedElementScoreInput {
-                            gamma: element.gamma,
-                            code_bytes: element.code.to_vec(),
-                        })
-                    } else {
-                        LoadedElementState::ExactScore(score_and_cache_scan_element(
-                            opaque_ref,
-                            element_tid,
-                            element.gamma,
-                            element.code,
-                        ))
-                    };
+                    loaded_state = live_loaded_state_from_exact_payload(
+                        opaque_ref,
+                        element_tid,
+                        binary_query_active,
+                        element.exact_payload(),
+                    );
                 }
-                CachedGraphElement::from_tuple_ref(element_tid, element, binary_words)
+                CachedGraphElement::from_graph_tuple_ref(element_tid, element, binary_words)
             },
         )
     });
@@ -896,19 +1856,22 @@ unsafe fn score_cached_graph_element_from_storage(
 ) -> f32 {
     let opaque_ref = unsafe { &mut *opaque };
     unsafe {
-        graph::with_graph_element_tuple(
+        graph::with_graph_storage_tuple(
             index_relation,
             element_tid,
-            opaque_ref.scan_code_len,
+            opaque_ref.scan_graph_storage,
             |element| {
-                if element.deleted || element.heaptid_count() == 0 {
+                if element.deleted() || element.heaptid_count() == 0 {
                     pgrx::error!(
                         "tqhnsw cannot exact-score dead or heapless graph element {}:{}",
                         element_tid.block_number,
                         element_tid.offset_number
                     );
                 }
-                score_and_cache_scan_element(opaque_ref, element_tid, element.gamma, element.code)
+                let (gamma, code_bytes) = element
+                    .exact_payload()
+                    .unwrap_or_else(|| pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}"));
+                score_and_cache_scan_element(opaque_ref, element_tid, gamma, code_bytes)
             },
         )
     }
@@ -936,6 +1899,9 @@ unsafe fn exact_score_cached_graph_element(
                 )
             }
         }
+        LoadedElementState::ExactUnavailable => {
+            pgrx::error!("{PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE}")
+        }
         LoadedElementState::None => {
             let opaque_ref = unsafe { &mut *opaque };
             if let Some(score) = cached_scan_element_score(opaque_ref, element_tid) {
@@ -950,10 +1916,449 @@ unsafe fn exact_score_cached_graph_element(
     }
 }
 
+fn grouped_score_context_from_scan_state<'a>(
+    scan_graph_storage: graph::GraphStorageDescriptor,
+    element: &'a CachedGraphElement,
+) -> Option<GroupedScoreContext<'a>> {
+    Some(GroupedScoreContext {
+        element_tid: element.tid,
+        call: GroupedScoreCall {
+            shape: GroupedScoreShape::from_scan_graph_storage(scan_graph_storage)?,
+            input: element.grouped_score_input()?,
+        },
+    })
+}
+
+fn grouped_score_search_code(grouped: GroupedScoreContext<'_>) -> Option<&[u8]> {
+    if grouped.call.input.search_code.len() != grouped.call.shape.search_code_len {
+        return None;
+    }
+    Some(grouped.call.input.search_code)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+fn grouped_score_payload_view<'a>(
+    grouped: GroupedScoreContext<'a>,
+) -> Option<GroupedScorePayloadView<'a>> {
+    if grouped.call.input.binary_words.len() != grouped.call.shape.binary_word_count {
+        return None;
+    }
+    if grouped.call.input.search_code.len() != grouped.call.shape.search_code_len {
+        return None;
+    }
+    Some(GroupedScorePayloadView {
+        element_tid: grouped.element_tid,
+        reranktid: grouped.call.input.reranktid,
+        binary_words: grouped.call.input.binary_words,
+        search_code: grouped.call.input.search_code,
+        rerank_code_len: grouped.call.shape.rerank_code_len,
+    })
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+fn grouped_score_rerank_payload<'a>(
+    payload: GroupedScorePayloadView<'a>,
+    rerank: graph::GroupedRerankPayload,
+) -> Option<GroupedScoreRerankPayload<'a>> {
+    if rerank.tid != payload.reranktid {
+        return None;
+    }
+    if rerank.code.len() != payload.rerank_code_len {
+        return None;
+    }
+    Some(GroupedScoreRerankPayload {
+        element_tid: payload.element_tid,
+        reranktid: payload.reranktid,
+        binary_words: payload.binary_words,
+        search_code: payload.search_code,
+        rerank_gamma: rerank.gamma,
+        rerank_code: rerank.code,
+    })
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+unsafe fn load_grouped_score_rerank_payload<'a>(
+    index_relation: pg_sys::Relation,
+    grouped: GroupedScoreContext<'a>,
+) -> Option<GroupedScoreRerankPayload<'a>> {
+    let payload = grouped_score_payload_view(grouped)?;
+    let rerank = unsafe {
+        graph::load_grouped_rerank_payload(
+            index_relation,
+            payload.reranktid,
+            graph::PqFastScanLayout {
+                binary_word_count: payload.binary_words.len(),
+                search_code_len: payload.search_code.len(),
+                rerank_code_len: payload.rerank_code_len,
+            },
+        )
+    };
+    grouped_score_rerank_payload(payload, rerank)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+fn score_grouped_rerank_payload_result(
+    quantizer: &ProdQuantizer,
+    prepared_query: &PreparedQuery,
+    payload: &GroupedScoreRerankPayload<'_>,
+) -> f32 {
+    // Negate inner product to produce distance, matching the scalar exact-score path.
+    -quantizer.score_ip_from_parts(prepared_query, payload.rerank_gamma, &payload.rerank_code)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+unsafe fn score_grouped_rerank_payload_from_scan_state(
+    opaque: *mut TqScanOpaque,
+    payload: &GroupedScoreRerankPayload<'_>,
+) -> f32 {
+    let opaque = unsafe { &*opaque };
+    if opaque.prepared_query.is_null() {
+        pgrx::error!("tqhnsw scan state is missing prepared query");
+    }
+    if opaque.cached_quantizer.is_null() {
+        pgrx::error!("tqhnsw scan state is missing cached quantizer");
+    }
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    score_grouped_rerank_payload_result(quantizer, prepared_query, payload)
+}
+
+unsafe fn score_grouped_heap_source_from_scan_state(
+    opaque: &mut TqScanOpaque,
+    heap_tid: page::ItemPointer,
+) -> f32 {
+    if opaque.grouped_heap_rerank_relation.is_null()
+        || opaque.grouped_heap_rerank_snapshot.is_null()
+        || opaque.grouped_heap_rerank_slot.is_null()
+        || opaque.grouped_heap_rerank_source_attnum <= 0
+    {
+        pgrx::error!("tqhnsw PqFastScan heap-f32 rerank is missing heap fetch state");
+    }
+
+    let source_attribute = source::SourceAttribute {
+        attnum: i32::from(opaque.grouped_heap_rerank_source_attnum),
+        type_oid: opaque.grouped_heap_rerank_source_type_oid,
+    };
+    #[cfg(any(test, feature = "pg_test"))]
+    let fetch_started = Instant::now();
+    unsafe {
+        source::fetch_heap_row_version(
+            opaque.grouped_heap_rerank_relation,
+            heap_tid,
+            opaque.grouped_heap_rerank_snapshot,
+            opaque.grouped_heap_rerank_slot,
+            "PqFastScan heap rerank source vector",
+        )
+    };
+    #[cfg(any(test, feature = "pg_test"))]
+    let fetch_elapsed_us =
+        u64::try_from(fetch_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let fetch_elapsed_us = 0;
+    record_grouped_rerank_heap_fetch(opaque, fetch_elapsed_us);
+    #[cfg(any(test, feature = "pg_test"))]
+    let decode_started = Instant::now();
+    let source = unsafe {
+        source::FlatFloat4SourceRef::from_datum(
+            source::required_slot_datum(
+                opaque.grouped_heap_rerank_slot,
+                source_attribute.attnum,
+                "PqFastScan heap rerank source vector",
+            ),
+            source_attribute.type_oid,
+            "PqFastScan heap rerank source vector",
+        )
+    };
+    #[cfg(any(test, feature = "pg_test"))]
+    let decode_elapsed_us =
+        u64::try_from(decode_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let decode_elapsed_us = 0;
+    record_grouped_rerank_heap_decode_elapsed(opaque, decode_elapsed_us);
+    #[cfg(any(test, feature = "pg_test"))]
+    let dot_started = Instant::now();
+    let score = source::negative_inner_product(scan_query_values(opaque), source.as_slice());
+    #[cfg(any(test, feature = "pg_test"))]
+    let dot_elapsed_us =
+        u64::try_from(dot_started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let dot_elapsed_us = 0;
+    record_grouped_rerank_heap_dot_elapsed(opaque, dot_elapsed_us);
+    drop(source);
+    unsafe { pg_sys::ExecClearTuple(opaque.grouped_heap_rerank_slot) };
+    score
+}
+
+unsafe fn score_grouped_candidate_heap_rerank(
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+) -> Option<f32> {
+    let opaque = unsafe { &mut *opaque };
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let mut best_score: Option<f32> = None;
+    for heap_tid in element.heaptids.as_slice().iter().copied() {
+        let score = unsafe { score_grouped_heap_source_from_scan_state(opaque, heap_tid) };
+        best_score = Some(match best_score {
+            Some(current) => current.min(score),
+            None => score,
+        });
+    }
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    if best_score.is_some() {
+        record_grouped_rerank_heap_score_elapsed(opaque, elapsed_us);
+    }
+    best_score
+}
+
+unsafe fn exact_score_grouped_candidate_context(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    let opaque_ref = unsafe { &mut *opaque };
+    if let Some(score) = cached_scan_element_score(opaque_ref, grouped.element_tid) {
+        record_score_cache_hit(opaque_ref);
+        return score;
+    }
+
+    let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
+        .unwrap_or_else(|| {
+            pgrx::error!("tqhnsw PqFastScan exact scoring requires metadata-aligned cold payload")
+        });
+    unsafe {
+        score_and_cache_scan_element(
+            opaque_ref,
+            grouped.element_tid,
+            payload.rerank_gamma,
+            &payload.rerank_code,
+        )
+    }
+}
+
+unsafe fn score_grouped_candidate_context_exact(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_traversal_exact_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    score
+}
+
+fn score_grouped_search_code_result(
+    prepared_query: &PreparedGroupedScanQuery,
+    search_code: &[u8],
+) -> f32 {
+    debug_assert_eq!(
+        search_code.len(),
+        prepared_query.search_code_len,
+        "grouped search-code length {} should match prepared grouped query width {}",
+        search_code.len(),
+        prepared_query.search_code_len
+    );
+    -grouped_pq_score_f32(
+        &prepared_query.lut_f32,
+        prepared_query.group_count,
+        search_code,
+    )
+}
+
+unsafe fn score_grouped_search_code_from_scan_state(
+    opaque: *mut TqScanOpaque,
+    search_code: &[u8],
+) -> f32 {
+    let opaque = unsafe { &*opaque };
+    let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
+        pgrx::error!("tqhnsw PqFastScan scan is missing PqFastScan query state")
+    });
+    score_grouped_search_code_result(prepared_query, search_code)
+}
+
+unsafe fn grouped_candidate_rerank_comparison_score(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+) -> Option<f32> {
+    if grouped_heap_rerank_enabled(unsafe { &*opaque }) {
+        return unsafe { score_grouped_candidate_heap_rerank(opaque, element) };
+    }
+
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element)?;
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { exact_score_grouped_candidate_context(index_relation, opaque, grouped) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_rerank_quantized_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    Some(score)
+}
+
+fn candidate_score_dispatch<'a>(
+    scan_graph_storage: graph::GraphStorageDescriptor,
+    element: &'a CachedGraphElement,
+    loaded_state: LoadedElementState,
+) -> CandidateScoreDispatch<'a> {
+    let grouped = grouped_score_context_from_scan_state(scan_graph_storage, element);
+    match loaded_state {
+        LoadedElementState::ExactUnavailable | LoadedElementState::None if grouped.is_some() => {
+            CandidateScoreDispatch::Grouped(grouped.unwrap_or_else(|| {
+                panic!("grouped score dispatch requires grouped score context for grouped payloads")
+            }))
+        }
+        other => CandidateScoreDispatch::Exact(other),
+    }
+}
+
+fn grouped_exact_traversal_candidate_indices(
+    candidates: &[GroupedTraversalCandidate],
+    budget: usize,
+) -> Vec<usize> {
+    let mut indices = (0..candidates.len()).collect::<Vec<_>>();
+    indices.sort_by(|&left, &right| {
+        candidates[left]
+            .approx_score
+            .total_cmp(&candidates[right].approx_score)
+            .then_with(|| candidates[left].ordinal.cmp(&candidates[right].ordinal))
+    });
+    indices.truncate(budget.min(indices.len()));
+    indices
+}
+
+unsafe fn score_grouped_candidate_context_approx(
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    let search_code = grouped_score_search_code(grouped).unwrap_or_else(|| {
+        panic!("grouped approximate scoring requires metadata-aligned grouped search codes")
+    });
+    #[cfg(any(test, feature = "pg_test"))]
+    let started = Instant::now();
+    let score = unsafe { score_grouped_search_code_from_scan_state(opaque, search_code) };
+    #[cfg(any(test, feature = "pg_test"))]
+    let elapsed_us =
+        u64::try_from(started.elapsed().as_micros()).expect("timing should fit in u64");
+    #[cfg(not(any(test, feature = "pg_test")))]
+    let elapsed_us = 0;
+    record_grouped_traversal_approx_score_elapsed(unsafe { &mut *opaque }, elapsed_us);
+    score
+}
+
+unsafe fn score_grouped_candidate_context_binary(
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+) -> f32 {
+    assert_eq!(
+        grouped.call.input.binary_words.len(),
+        grouped.call.shape.binary_word_count,
+        "grouped binary traversal scoring requires metadata-aligned binary sidecars",
+    );
+    let opaque = unsafe { &*opaque };
+    let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
+        pgrx::error!("tqhnsw PqFastScan binary traversal scoring requires a prepared binary query")
+    });
+    let quantizer = unsafe { &*opaque.cached_quantizer };
+    -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
+}
+
+unsafe fn score_budgeted_grouped_traversal_candidates(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    source_tid: page::ItemPointer,
+    budget: usize,
+    candidates: Vec<GroupedTraversalCandidate>,
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let mut final_scores = candidates
+        .iter()
+        .map(|candidate| candidate.approx_score)
+        .collect::<Vec<_>>();
+
+    let exact_indices = grouped_exact_traversal_candidate_indices(&candidates, budget);
+    record_grouped_traversal_budget(
+        unsafe { &mut *opaque },
+        candidates.len(),
+        exact_indices.len(),
+    );
+
+    for exact_idx in exact_indices {
+        let grouped = grouped_score_context_from_scan_state(
+            scan_graph_storage,
+            &candidates[exact_idx].element,
+        )
+        .unwrap_or_else(|| {
+            panic!("budgeted grouped exact traversal requires metadata-aligned grouped payloads")
+        });
+        final_scores[exact_idx] =
+            unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
+    }
+
+    candidates
+        .into_iter()
+        .enumerate()
+        .map(|(idx, candidate)| {
+            search::BeamCandidate::with_source(candidate.element.tid, final_scores[idx], source_tid)
+        })
+        .collect()
+}
+
+unsafe fn score_grouped_candidate_context(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    grouped: GroupedScoreContext<'_>,
+    traversal_layer: u8,
+) -> f32 {
+    let opaque_ref = unsafe { &*opaque };
+    if grouped_exact_traversal_full_candidate_scoring_for_layer(opaque_ref, traversal_layer) {
+        return unsafe { score_grouped_candidate_context_exact(index_relation, opaque, grouped) };
+    }
+
+    let _ = index_relation;
+    if grouped_binary_traversal_score_enabled(opaque_ref) {
+        return unsafe { score_grouped_candidate_context_binary(opaque, grouped) };
+    }
+
+    unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
+}
+
+unsafe fn score_cached_graph_element_dispatch(
+    index_relation: pg_sys::Relation,
+    opaque: *mut TqScanOpaque,
+    element: &CachedGraphElement,
+    loaded_state: LoadedElementState,
+    traversal_layer: u8,
+) -> f32 {
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    match candidate_score_dispatch(scan_graph_storage, element, loaded_state) {
+        CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+            exact_score_cached_graph_element(index_relation, opaque, element.tid, loaded_state)
+        },
+        CandidateScoreDispatch::Grouped(grouped) => unsafe {
+            score_grouped_candidate_context(index_relation, opaque, grouped, traversal_layer)
+        },
+    }
+}
+
 unsafe fn cached_graph_element_and_score(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
     element_tid: page::ItemPointer,
+    traversal_layer: u8,
 ) -> (Arc<CachedGraphElement>, Option<f32>) {
     let (element, loaded_state) =
         unsafe { cached_graph_element(index_relation, opaque, element_tid) };
@@ -961,7 +2366,13 @@ unsafe fn cached_graph_element_and_score(
         return (element, None);
     }
     let score = unsafe {
-        exact_score_cached_graph_element(index_relation, opaque, element_tid, loaded_state)
+        score_cached_graph_element_dispatch(
+            index_relation,
+            opaque,
+            &element,
+            loaded_state,
+            traversal_layer,
+        )
     };
     (element, Some(score))
 }
@@ -1014,6 +2425,9 @@ where
 {
     let (element, neighbors) =
         unsafe { cached_graph_adjacency(index_relation, opaque, source_tid) };
+    let scan_graph_storage = unsafe { (&*opaque).scan_graph_storage };
+    let exact_budget =
+        grouped_exact_traversal_candidate_budget_for_layer(unsafe { &*opaque }, layer);
     let scan_m = usize::from(unsafe { &*opaque }.scan_m);
     let capacity = graph::layer_slot_bounds(element.level, scan_m, layer)
         .map(|(start, end)| {
@@ -1025,6 +2439,7 @@ where
 
     let binary_query = unsafe { (*opaque).binary_sign_query.as_ref() };
     if binary_query.is_none() {
+        let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(capacity));
         graph::for_each_valid_neighbor_tid_for_layer(
             &neighbors.tids,
             element.level,
@@ -1032,19 +2447,70 @@ where
             layer,
             |neighbor_tid| {
                 if keep_neighbor_tid(neighbor_tid) {
-                    let (neighbor, score) = unsafe {
-                        cached_graph_element_and_score(index_relation, opaque, neighbor_tid)
-                    };
-                    if let Some(score) = score {
-                        candidates.push(search::BeamCandidate::with_source(
-                            neighbor.tid,
-                            score,
-                            source_tid,
-                        ));
+                    let (neighbor, loaded_state) =
+                        unsafe { cached_graph_element(index_relation, opaque, neighbor_tid) };
+                    if neighbor.deleted || neighbor.heaptids.is_empty() {
+                        return;
+                    }
+                    match candidate_score_dispatch(scan_graph_storage, &neighbor, loaded_state) {
+                        CandidateScoreDispatch::Exact(loaded_state) => {
+                            let score = unsafe {
+                                exact_score_cached_graph_element(
+                                    index_relation,
+                                    opaque,
+                                    neighbor.tid,
+                                    loaded_state,
+                                )
+                            };
+                            candidates.push(search::BeamCandidate::with_source(
+                                neighbor.tid,
+                                score,
+                                source_tid,
+                            ));
+                        }
+                        CandidateScoreDispatch::Grouped(grouped) => {
+                            if let Some(grouped_candidates) = grouped_candidates.as_mut() {
+                                let approx_score = unsafe {
+                                    score_grouped_candidate_context_approx(opaque, grouped)
+                                };
+                                let ordinal = grouped_candidates.len();
+                                grouped_candidates.push(GroupedTraversalCandidate {
+                                    ordinal,
+                                    element: neighbor,
+                                    approx_score,
+                                });
+                            } else {
+                                let score = unsafe {
+                                    score_grouped_candidate_context(
+                                        index_relation,
+                                        opaque,
+                                        grouped,
+                                        layer,
+                                    )
+                                };
+                                candidates.push(search::BeamCandidate::with_source(
+                                    neighbor.tid,
+                                    score,
+                                    source_tid,
+                                ));
+                            }
+                        }
                     }
                 }
             },
         );
+
+        if let Some(grouped_candidates) = grouped_candidates {
+            candidates.extend(unsafe {
+                score_budgeted_grouped_traversal_candidates(
+                    index_relation,
+                    opaque,
+                    source_tid,
+                    exact_budget.expect("grouped exact traversal budget should exist"),
+                    grouped_candidates,
+                )
+            });
+        }
 
         return candidates;
     }
@@ -1097,20 +2563,73 @@ where
         approx_candidates.sort_by_key(|candidate| candidate.ordinal);
     }
 
+    let mut grouped_candidates = exact_budget.map(|_| Vec::with_capacity(approx_candidates.len()));
     for candidate in approx_candidates {
-        let score = unsafe {
-            exact_score_cached_graph_element(
+        match candidate_score_dispatch(
+            scan_graph_storage,
+            &candidate.element,
+            candidate.loaded_state,
+        ) {
+            CandidateScoreDispatch::Exact(loaded_state) => {
+                let score = unsafe {
+                    exact_score_cached_graph_element(
+                        index_relation,
+                        opaque,
+                        candidate.element.tid,
+                        loaded_state,
+                    )
+                };
+                candidates.push(search::BeamCandidate::with_source(
+                    candidate.element.tid,
+                    score,
+                    source_tid,
+                ));
+            }
+            CandidateScoreDispatch::Grouped(grouped) => {
+                if let Some(grouped_candidates) = grouped_candidates.as_mut() {
+                    let approx_score =
+                        if grouped_binary_traversal_score_enabled(unsafe { &*opaque }) {
+                            candidate.approx_score
+                        } else {
+                            unsafe { score_grouped_candidate_context_approx(opaque, grouped) }
+                        };
+                    grouped_candidates.push(GroupedTraversalCandidate {
+                        ordinal: candidate.ordinal,
+                        element: candidate.element,
+                        approx_score,
+                    });
+                } else {
+                    let score = if grouped_binary_traversal_score_enabled(unsafe { &*opaque })
+                        && !grouped_exact_traversal_full_candidate_scoring_for_layer(
+                            unsafe { &*opaque },
+                            layer,
+                        ) {
+                        candidate.approx_score
+                    } else {
+                        unsafe {
+                            score_grouped_candidate_context(index_relation, opaque, grouped, layer)
+                        }
+                    };
+                    candidates.push(search::BeamCandidate::with_source(
+                        candidate.element.tid,
+                        score,
+                        source_tid,
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(grouped_candidates) = grouped_candidates {
+        candidates.extend(unsafe {
+            score_budgeted_grouped_traversal_candidates(
                 index_relation,
                 opaque,
-                candidate.element.tid,
-                candidate.loaded_state,
+                source_tid,
+                exact_budget.expect("grouped exact traversal budget should exist"),
+                grouped_candidates,
             )
-        };
-        candidates.push(search::BeamCandidate::with_source(
-            candidate.element.tid,
-            score,
-            source_tid,
-        ));
+        });
     }
 
     candidates
@@ -1145,6 +2664,30 @@ unsafe fn cached_upper_layer_seed_candidate(
 struct PendingScanOutput {
     heap_tid: page::ItemPointer,
     score: f32,
+    approx_score: Option<f32>,
+    approx_rank: Option<i32>,
+    comparison_score: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BufferedGroupedScanResult {
+    element_tid: page::ItemPointer,
+    approx_score: f32,
+    approx_rank_base: i32,
+    comparison_score: Option<f32>,
+    heap_tids: CachedHeapTids,
+}
+
+impl Default for BufferedGroupedScanResult {
+    fn default() -> Self {
+        Self {
+            element_tid: page::ItemPointer::INVALID,
+            approx_score: 0.0,
+            approx_rank_base: 0,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::default(),
+        }
+    }
 }
 
 struct GraphTraversalCursor<'a> {
@@ -1180,13 +2723,8 @@ impl<'a> GraphTraversalCursor<'a> {
         self.result_state.take_pending_output()
     }
 
-    fn emit_prefetched_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+    fn emit_prefetched_output(&mut self) -> Option<PendingScanOutput> {
         self.take_pending_output()
-            .map(|output| {
-                emit_scan_output(scan, output);
-                true
-            })
-            .unwrap_or(false)
     }
 
     unsafe fn prefetch_next(
@@ -1244,13 +2782,8 @@ impl<'a> LinearFallbackCursor<'a> {
         self.result_state.take_pending_output()
     }
 
-    fn emit_pending_output(&mut self, scan: pg_sys::IndexScanDesc) -> bool {
+    fn emit_pending_output(&mut self) -> Option<PendingScanOutput> {
         self.take_pending_output()
-            .map(|output| {
-                emit_scan_output(scan, output);
-                true
-            })
-            .unwrap_or(false)
     }
 
     fn advance_after_emit(&mut self) {
@@ -1261,16 +2794,15 @@ impl<'a> LinearFallbackCursor<'a> {
 
     fn emit_materialized_output(
         &mut self,
-        scan: pg_sys::IndexScanDesc,
         selected: SelectedScanResult,
-    ) -> bool {
+    ) -> Option<PendingScanOutput> {
         self.materialize(selected);
-        let emitted = self.emit_pending_output(scan);
+        let emitted = self.emit_pending_output();
         debug_assert!(
-            emitted,
+            emitted.is_some(),
             "linear fallback result materialization should seed pending heap tids before returning true"
         );
-        if emitted {
+        if emitted.is_some() {
             self.advance_after_emit();
         }
         emitted
@@ -1311,9 +2843,86 @@ fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
 }
 
 fn clear_graph_traversal_state(opaque: &mut TqScanOpaque) {
+    clear_grouped_live_rerank_buffer(opaque);
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
+}
+
+fn grouped_live_rerank_enabled(opaque: &TqScanOpaque) -> bool {
+    matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::PqFastScan(_)
+    )
+}
+
+fn clear_grouped_live_rerank_buffer(opaque: &mut TqScanOpaque) {
+    opaque
+        .grouped_live_rerank_buffer
+        .fill(BufferedGroupedScanResult::default());
+    opaque.grouped_live_rerank_buffer_len = 0;
+    opaque.grouped_live_rerank_next_approx_rank = 1;
+}
+
+fn grouped_live_rerank_window(opaque: &TqScanOpaque) -> usize {
+    usize::from(opaque.grouped_live_rerank_window)
+}
+
+fn buffered_grouped_scan_results(opaque: &TqScanOpaque) -> &[BufferedGroupedScanResult] {
+    &opaque.grouped_live_rerank_buffer[..usize::from(opaque.grouped_live_rerank_buffer_len)]
+}
+
+fn push_buffered_grouped_scan_result(
+    opaque: &mut TqScanOpaque,
+    buffered: BufferedGroupedScanResult,
+) {
+    let len = usize::from(opaque.grouped_live_rerank_buffer_len);
+    assert!(
+        len < grouped_live_rerank_window(opaque),
+        "grouped live rerank buffer should respect configured window capacity"
+    );
+    opaque.grouped_live_rerank_buffer[len] = buffered;
+    opaque.grouped_live_rerank_buffer_len += 1;
+}
+
+fn pop_best_buffered_grouped_scan_result(
+    opaque: &mut TqScanOpaque,
+) -> Option<BufferedGroupedScanResult> {
+    let buffer_len = usize::from(opaque.grouped_live_rerank_buffer_len);
+    if buffer_len == 0 {
+        return None;
+    }
+
+    let selected_idx = buffered_grouped_scan_results(opaque)
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            let left_exact = left.comparison_score.unwrap_or(left.approx_score);
+            let right_exact = right.comparison_score.unwrap_or(right.approx_score);
+            left_exact
+                .total_cmp(&right_exact)
+                .then_with(|| left.approx_rank_base.cmp(&right.approx_rank_base))
+        })
+        .map(|(idx, _)| idx)
+        .expect("grouped live rerank buffer should have a best candidate when non-empty");
+    let selected = opaque.grouped_live_rerank_buffer[selected_idx];
+    for idx in selected_idx..buffer_len.saturating_sub(1) {
+        opaque.grouped_live_rerank_buffer[idx] = opaque.grouped_live_rerank_buffer[idx + 1];
+    }
+    opaque.grouped_live_rerank_buffer[buffer_len - 1] = BufferedGroupedScanResult::default();
+    opaque.grouped_live_rerank_buffer_len -= 1;
+    Some(selected)
+}
+
+fn grouped_live_rerank_output_score(
+    opaque: &TqScanOpaque,
+    buffered: &BufferedGroupedScanResult,
+) -> f32 {
+    if grouped_heap_rerank_enabled(opaque) {
+        buffered.comparison_score.unwrap_or(buffered.approx_score)
+    } else {
+        buffered.approx_score
+    }
 }
 
 unsafe fn prefetch_next_graph_result_from_frontier(
@@ -1328,7 +2937,14 @@ unsafe fn prefetch_next_graph_result_from_frontier(
         return false;
     }
 
+    if grouped_live_rerank_enabled(opaque) {
+        return unsafe {
+            prefetch_next_grouped_windowed_graph_result(index_relation, opaque, result_state)
+        };
+    }
+
     loop {
+        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
         #[cfg(any(test, feature = "pg_test"))]
         let consume_started = Instant::now();
         let candidate = consume_candidate_frontier_head(opaque);
@@ -1371,6 +2987,102 @@ unsafe fn prefetch_next_graph_result_from_frontier(
     false
 }
 
+unsafe fn prefetch_next_grouped_windowed_graph_result(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    result_state: *mut ScanResultState,
+) -> bool {
+    let active_window = grouped_live_rerank_window(opaque);
+    while usize::from(opaque.grouped_live_rerank_buffer_len) < active_window {
+        unsafe { refine_grouped_frontier_head_exact(index_relation, opaque) };
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_started = Instant::now();
+        let candidate = consume_candidate_frontier_head(opaque);
+        #[cfg(any(test, feature = "pg_test"))]
+        let consume_elapsed_us =
+            u64::try_from(consume_started.elapsed().as_micros()).expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let consume_elapsed_us = 0;
+        record_frontier_consume_elapsed(opaque, consume_elapsed_us);
+        let Some(candidate) = candidate else {
+            break;
+        };
+
+        mark_expanded_source(opaque, candidate.node);
+        opaque.explain_counters.record_bootstrap_expansion();
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_started = Instant::now();
+        unsafe { buffer_grouped_graph_result_candidate(index_relation, opaque, candidate) };
+        #[cfg(any(test, feature = "pg_test"))]
+        let materialize_elapsed_us = u64::try_from(materialize_started.elapsed().as_micros())
+            .expect("timing should fit in u64");
+        #[cfg(not(any(test, feature = "pg_test")))]
+        let materialize_elapsed_us = 0;
+        record_graph_result_materialize_elapsed(opaque, materialize_elapsed_us);
+    }
+
+    let Some(buffered) = pop_best_buffered_grouped_scan_result(opaque) else {
+        return false;
+    };
+
+    mark_emitted_element(opaque, buffered.element_tid);
+    let output_score = grouped_live_rerank_output_score(opaque, &buffered);
+    let result_state = unsafe { &mut *result_state };
+    result_state.materialize_with_details(
+        buffered.element_tid,
+        output_score,
+        Some(buffered.approx_score),
+        Some(buffered.approx_rank_base),
+        buffered.comparison_score,
+        buffered.heap_tids.as_slice(),
+    );
+    true
+}
+
+unsafe fn buffer_grouped_graph_result_candidate(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+    candidate: search::BeamCandidate<page::ItemPointer>,
+) {
+    if emitted_contains_element(opaque, candidate.node) {
+        opaque.explain_counters.record_element_skipped();
+        return;
+    }
+
+    opaque.explain_counters.record_bootstrap_page_read();
+    let (element, _) = unsafe { cached_graph_element(index_relation, opaque, candidate.node) };
+    if element.deleted || element.heaptids.is_empty() {
+        opaque.explain_counters.record_element_skipped();
+        return;
+    }
+
+    let comparison_score = unsafe {
+        grouped_candidate_rerank_comparison_score(
+            index_relation,
+            opaque as *mut TqScanOpaque,
+            &element,
+        )
+    };
+    let approx_rank_base = opaque.grouped_live_rerank_next_approx_rank;
+    let emitted_heap_rows =
+        i32::try_from(element.heaptids.as_slice().len()).expect("heap tid count should fit in i32");
+    opaque.grouped_live_rerank_next_approx_rank = opaque
+        .grouped_live_rerank_next_approx_rank
+        .checked_add(emitted_heap_rows)
+        .expect("grouped approx rank should remain in i32 range");
+    opaque.explain_counters.record_element_scored();
+    push_buffered_grouped_scan_result(
+        opaque,
+        BufferedGroupedScanResult {
+            element_tid: candidate.node,
+            approx_score: candidate.score,
+            approx_rank_base,
+            comparison_score,
+            heap_tids: element.heaptids,
+        },
+    );
+}
+
 unsafe fn materialize_graph_result_candidate(
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
@@ -1389,11 +3101,25 @@ unsafe fn materialize_graph_result_candidate(
         return None;
     }
 
+    // Keep traversal/output ordering on the grouped approximate score for now, but
+    // capture the cold rerank score alongside emitted results so the next packets
+    // can compare approximate-vs-exact behavior on real scan outputs.
+    let comparison_score = unsafe {
+        grouped_candidate_rerank_comparison_score(
+            index_relation,
+            opaque as *mut TqScanOpaque,
+            &element,
+        )
+    };
     opaque.explain_counters.record_element_scored();
     mark_emitted_element(opaque, candidate.node);
-    unsafe { &mut *result_state }.materialize_from_parts(
+    let result_state = unsafe { &mut *result_state };
+    result_state.materialize_with_details(
         candidate.node,
         candidate.score,
+        None,
+        None,
+        comparison_score,
         element.heaptids.as_slice(),
     );
     Some(())
@@ -1465,7 +3191,6 @@ type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
 static EMPTY_VISIBLE_FRONTIER_STATE: VisibleCandidateFrontierState =
     VisibleCandidateFrontierState::empty();
 
-#[cfg(any(test, feature = "pg_test"))]
 fn visible_frontier_ref(opaque: &TqScanOpaque) -> &VisibleCandidateFrontierState {
     if opaque.candidate_frontier.is_null() {
         &EMPTY_VISIBLE_FRONTIER_STATE
@@ -1651,8 +3376,14 @@ unsafe fn initialize_scan_entry_candidate(
         return;
     }
 
-    let (entry, entry_score) =
-        unsafe { cached_graph_element_and_score(index_relation, opaque, metadata.entry_point) };
+    let (entry, entry_score) = unsafe {
+        cached_graph_element_and_score(
+            index_relation,
+            opaque,
+            metadata.entry_point,
+            metadata.max_level,
+        )
+    };
     if entry.deleted || entry.heaptids.is_empty() {
         return;
     }
@@ -1758,7 +3489,6 @@ fn seed_discovered_candidates(
     );
 }
 
-#[cfg(any(test, feature = "pg_test"))]
 fn seed_existing_frontier_into_expansion(opaque: &mut TqScanOpaque) {
     let candidates = visible_frontier_ref(opaque)
         .iter()
@@ -1815,6 +3545,64 @@ fn consume_candidate_frontier_head(
     with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, expansion| {
         visible_frontier.consume_best(expansion)
     })
+}
+
+unsafe fn refine_grouped_frontier_head_exact(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) {
+    if !grouped_exact_traversal_frontier_head_enabled(opaque) {
+        return;
+    }
+
+    loop {
+        let candidate = with_visible_frontier_mut_and_bootstrap_expansion(
+            opaque,
+            |visible_frontier, expansion| visible_frontier.best_candidate(expansion),
+        );
+        let Some(candidate) = candidate else {
+            return;
+        };
+        if cached_scan_element_score(opaque, candidate.node).is_some() {
+            return;
+        }
+
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        let (element, loaded_state) =
+            unsafe { cached_graph_element(index_relation, opaque_ptr, candidate.node) };
+        if element.deleted || element.heaptids.is_empty() {
+            return;
+        }
+
+        let exact_score =
+            match candidate_score_dispatch(opaque.scan_graph_storage, &element, loaded_state) {
+                CandidateScoreDispatch::Exact(loaded_state) => unsafe {
+                    exact_score_cached_graph_element(
+                        index_relation,
+                        opaque_ptr,
+                        element.tid,
+                        loaded_state,
+                    )
+                },
+                CandidateScoreDispatch::Grouped(grouped) => unsafe {
+                    score_grouped_candidate_context_exact(index_relation, opaque_ptr, grouped)
+                },
+            };
+        let updated = search::BeamCandidate {
+            score: exact_score,
+            ..candidate
+        };
+        let replaced =
+            with_visible_frontier_mut_and_bootstrap_expansion(opaque, |visible_frontier, _| {
+                visible_frontier.replace_candidate(updated)
+            });
+        if !replaced {
+            return;
+        }
+
+        reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
+        seed_existing_frontier_into_expansion(opaque);
+    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2032,7 +3820,13 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
-    let emitted = graph_traversal_cursor(opaque).emit_prefetched_output(scan);
+    let emitted = graph_traversal_cursor(opaque)
+        .emit_prefetched_output()
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
@@ -2055,7 +3849,14 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if linear_fallback_cursor(opaque).emit_pending_output(scan) {
+    if linear_fallback_cursor(opaque)
+        .emit_pending_output()
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false)
+    {
         linear_fallback_cursor(opaque).advance_after_emit();
         opaque.explain_counters.record_heap_tid_returned();
         return true;
@@ -2068,7 +3869,13 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     };
 
     mark_emitted_element(opaque, selected.element_tid);
-    let emitted = linear_fallback_cursor(opaque).emit_materialized_output(scan, selected);
+    let emitted = linear_fallback_cursor(opaque)
+        .emit_materialized_output(selected)
+        .map(|output| {
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false);
     if emitted {
         opaque.explain_counters.record_heap_tid_returned();
     }
@@ -2160,7 +3967,10 @@ unsafe fn select_next_linear_scan_result(
             return Some(SelectedScanResult {
                 element_tid,
                 score,
-                heap_tids: element.heaptids,
+                approx_score: None,
+                approx_rank_base: None,
+                comparison_score: None,
+                heap_tids: CachedHeapTids::from_iter(element.heaptids.iter().copied()),
             });
         }
 
@@ -2226,9 +4036,52 @@ fn set_scan_heap_tid(scan: pg_sys::IndexScanDesc, heap_tid: page::ItemPointer) {
     }
 }
 
-fn emit_scan_output(scan: pg_sys::IndexScanDesc, output: PendingScanOutput) {
+fn clear_last_emitted_scan_scores(opaque: &mut TqScanOpaque) {
+    opaque.last_emitted_approx_score = 0.0;
+    opaque.last_emitted_approx_score_valid = false;
+    opaque.last_emitted_approx_rank = 0;
+    opaque.last_emitted_approx_rank_valid = false;
+    opaque.last_emitted_comparison_score = 0.0;
+    opaque.last_emitted_comparison_score_valid = false;
+}
+
+fn emit_scan_output(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+    output: PendingScanOutput,
+) {
     set_scan_heap_tid(scan, output.heap_tid);
     set_scan_orderby_score(scan, output.score);
+    match output.approx_score {
+        Some(score) => {
+            opaque.last_emitted_approx_score = score;
+            opaque.last_emitted_approx_score_valid = true;
+        }
+        None => {
+            opaque.last_emitted_approx_score = 0.0;
+            opaque.last_emitted_approx_score_valid = false;
+        }
+    }
+    match output.approx_rank {
+        Some(rank) => {
+            opaque.last_emitted_approx_rank = rank;
+            opaque.last_emitted_approx_rank_valid = true;
+        }
+        None => {
+            opaque.last_emitted_approx_rank = 0;
+            opaque.last_emitted_approx_rank_valid = false;
+        }
+    }
+    match output.comparison_score {
+        Some(score) => {
+            opaque.last_emitted_comparison_score = score;
+            opaque.last_emitted_comparison_score_valid = true;
+        }
+        None => {
+            opaque.last_emitted_comparison_score = 0.0;
+            opaque.last_emitted_comparison_score_valid = false;
+        }
+    }
 }
 
 fn set_scan_orderby_score(scan: pg_sys::IndexScanDesc, score: f32) {
@@ -2261,6 +4114,12 @@ pub(super) struct CurrentScanResult {
     heap_tid: page::ItemPointer,
     score: f32,
     score_valid: bool,
+    approx_score: f32,
+    approx_score_valid: bool,
+    approx_rank_base: i32,
+    approx_rank_valid: bool,
+    comparison_score: f32,
+    comparison_score_valid: bool,
 }
 
 impl CurrentScanResult {
@@ -2283,6 +4142,30 @@ impl CurrentScanResult {
     pub(super) fn score_valid(&self) -> bool {
         self.score_valid
     }
+
+    pub(super) fn approx_score(&self) -> f32 {
+        self.approx_score
+    }
+
+    pub(super) fn approx_score_valid(&self) -> bool {
+        self.approx_score_valid
+    }
+
+    pub(super) fn approx_rank_base(&self) -> i32 {
+        self.approx_rank_base
+    }
+
+    pub(super) fn approx_rank_valid(&self) -> bool {
+        self.approx_rank_valid
+    }
+
+    pub(super) fn comparison_score(&self) -> f32 {
+        self.comparison_score
+    }
+
+    pub(super) fn comparison_score_valid(&self) -> bool {
+        self.comparison_score_valid
+    }
 }
 
 impl Default for CurrentScanResult {
@@ -2292,6 +4175,12 @@ impl Default for CurrentScanResult {
             heap_tid: page::ItemPointer::INVALID,
             score: 0.0,
             score_valid: false,
+            approx_score: 0.0,
+            approx_score_valid: false,
+            approx_rank_base: 0,
+            approx_rank_valid: false,
+            comparison_score: 0.0,
+            comparison_score_valid: false,
         }
     }
 }
@@ -2300,7 +4189,10 @@ impl Default for CurrentScanResult {
 struct SelectedScanResult {
     element_tid: page::ItemPointer,
     score: f32,
-    heap_tids: Vec<page::ItemPointer>,
+    approx_score: Option<f32>,
+    approx_rank_base: Option<i32>,
+    comparison_score: Option<f32>,
+    heap_tids: CachedHeapTids,
 }
 
 #[repr(C)]
@@ -2346,10 +4238,23 @@ impl ScanResultState {
     }
 
     fn take_pending_output(&mut self) -> Option<PendingScanOutput> {
+        let approx_rank = self
+            .current
+            .approx_rank_valid()
+            .then(|| self.current.approx_rank_base() + i32::from(self.pending_heaptid_index));
         let heap_tid = self.take_pending()?;
         Some(PendingScanOutput {
             heap_tid,
             score: self.current.score(),
+            approx_score: self
+                .current
+                .approx_score_valid()
+                .then_some(self.current.approx_score()),
+            approx_rank,
+            comparison_score: self
+                .current
+                .comparison_score_valid()
+                .then_some(self.current.comparison_score()),
         })
     }
 
@@ -2363,7 +4268,14 @@ impl ScanResultState {
     }
 
     fn materialize(&mut self, selected: SelectedScanResult) {
-        self.materialize_from_parts(selected.element_tid, selected.score, &selected.heap_tids);
+        self.materialize_with_details(
+            selected.element_tid,
+            selected.score,
+            selected.approx_score,
+            selected.approx_rank_base,
+            selected.comparison_score,
+            selected.heap_tids.as_slice(),
+        );
     }
 
     fn materialize_from_parts(
@@ -2372,17 +4284,60 @@ impl ScanResultState {
         score: f32,
         heaptids: &[page::ItemPointer],
     ) {
-        self.set_current(element_tid, score);
+        self.materialize_with_details(element_tid, score, None, None, None, heaptids);
+    }
+
+    fn materialize_with_details(
+        &mut self,
+        element_tid: page::ItemPointer,
+        score: f32,
+        approx_score: Option<f32>,
+        approx_rank_base: Option<i32>,
+        comparison_score: Option<f32>,
+        heaptids: &[page::ItemPointer],
+    ) {
+        self.set_current_with_details(
+            element_tid,
+            score,
+            approx_score,
+            approx_rank_base,
+            comparison_score,
+        );
         self.store_pending(heaptids);
     }
 
     fn set_current(&mut self, element_tid: page::ItemPointer, score: f32) {
+        self.set_current_with_details(element_tid, score, None, None, None);
+    }
+
+    fn set_current_with_details(
+        &mut self,
+        element_tid: page::ItemPointer,
+        score: f32,
+        approx_score: Option<f32>,
+        approx_rank_base: Option<i32>,
+        comparison_score: Option<f32>,
+    ) {
         self.current = CurrentScanResult {
             element_tid,
             heap_tid: page::ItemPointer::INVALID,
             score,
             score_valid: true,
+            approx_score: approx_score.unwrap_or(0.0),
+            approx_score_valid: approx_score.is_some(),
+            approx_rank_base: approx_rank_base.unwrap_or(0),
+            approx_rank_valid: approx_rank_base.is_some(),
+            comparison_score: comparison_score.unwrap_or(0.0),
+            comparison_score_valid: comparison_score.is_some(),
         };
+    }
+
+    fn set_current_comparison_score(&mut self, score: f32) {
+        if self.current.element_tid == page::ItemPointer::INVALID {
+            return;
+        }
+        self.current.comparison_score = score;
+        self.current.comparison_score_valid = true;
     }
 
     fn update_current_heap_tid(&mut self, heap_tid: page::ItemPointer) {
@@ -2445,6 +4400,7 @@ pub(super) struct TqScanOpaque {
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
+    pub(super) grouped_query: *mut PreparedGroupedScanQuery,
     pub(super) binary_sign_query: *mut BinarySignNoQjl4BitQuery,
     pub(super) cached_quantizer: *const ProdQuantizer,
     pub(super) scan_dimensions: u16,
@@ -2452,6 +4408,7 @@ pub(super) struct TqScanOpaque {
     pub(super) scan_bits: u8,
     pub(super) scan_seed: u64,
     pub(super) scan_code_len: usize,
+    pub(super) scan_graph_storage: graph::GraphStorageDescriptor,
     pub(super) scan_block_count: u32,
     pub(super) bootstrap_frontier_limit: usize,
     pub(super) visited_tids: *mut HashSet<page::ItemPointer>,
@@ -2469,6 +4426,28 @@ pub(super) struct TqScanOpaque {
     pub(super) next_block_number: u32,
     pub(super) next_offset_number: u16,
     pub(super) execution_phase: ScanExecutionPhase,
+    grouped_live_rerank_buffer: [BufferedGroupedScanResult; PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
+    grouped_live_rerank_buffer_len: u8,
+    grouped_live_rerank_window: u8,
+    grouped_traversal_score_mode: GroupedTraversalScoreMode,
+    grouped_rerank_mode: GroupedRerankMode,
+    grouped_heap_rerank_relation: pg_sys::Relation,
+    grouped_heap_rerank_relation_owned: bool,
+    grouped_heap_rerank_snapshot: pg_sys::Snapshot,
+    grouped_heap_rerank_snapshot_owned: bool,
+    grouped_heap_rerank_slot: *mut pg_sys::TupleTableSlot,
+    grouped_heap_rerank_source_attnum: i16,
+    grouped_heap_rerank_source_type_oid: pg_sys::Oid,
+    grouped_exact_traversal_mode: GroupedExactTraversalMode,
+    grouped_exact_traversal_strategy: GroupedExactTraversalStrategy,
+    grouped_exact_traversal_limit: u8,
+    grouped_live_rerank_next_approx_rank: i32,
+    pub(super) last_emitted_approx_score: f32,
+    pub(super) last_emitted_approx_score_valid: bool,
+    pub(super) last_emitted_approx_rank: i32,
+    pub(super) last_emitted_approx_rank_valid: bool,
+    pub(super) last_emitted_comparison_score: f32,
+    pub(super) last_emitted_comparison_score_valid: bool,
     pub(super) graph_prefetch_state: *mut GraphPrefetchState,
     pub(super) linear_prefetch_state: LinearPrefetchState,
     pub(super) explain_counters: TqExplainCounters,
@@ -2483,6 +4462,7 @@ impl Default for TqScanOpaque {
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
+            grouped_query: ptr::null_mut(),
             binary_sign_query: ptr::null_mut(),
             cached_quantizer: ptr::null(),
             scan_dimensions: 0,
@@ -2490,6 +4470,7 @@ impl Default for TqScanOpaque {
             scan_bits: 0,
             scan_seed: 0,
             scan_code_len: 0,
+            scan_graph_storage: graph::GraphStorageDescriptor::TurboQuant { code_len: 0 },
             scan_block_count: 0,
             bootstrap_frontier_limit: MAX_BOOTSTRAP_FRONTIER_CANDIDATES,
             visited_tids: ptr::null_mut(),
@@ -2505,6 +4486,29 @@ impl Default for TqScanOpaque {
             next_block_number: page::FIRST_DATA_BLOCK_NUMBER,
             next_offset_number: 1,
             execution_phase: ScanExecutionPhase::GraphTraversal,
+            grouped_live_rerank_buffer: [BufferedGroupedScanResult::default();
+                PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW],
+            grouped_live_rerank_buffer_len: 0,
+            grouped_live_rerank_window: PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW as u8,
+            grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
+            grouped_rerank_mode: GroupedRerankMode::Quantized,
+            grouped_heap_rerank_relation: ptr::null_mut(),
+            grouped_heap_rerank_relation_owned: false,
+            grouped_heap_rerank_snapshot: ptr::null_mut(),
+            grouped_heap_rerank_snapshot_owned: false,
+            grouped_heap_rerank_slot: ptr::null_mut(),
+            grouped_heap_rerank_source_attnum: 0,
+            grouped_heap_rerank_source_type_oid: pg_sys::InvalidOid,
+            grouped_exact_traversal_mode: GroupedExactTraversalMode::Disabled,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
+            grouped_exact_traversal_limit: 0,
+            grouped_live_rerank_next_approx_rank: 1,
+            last_emitted_approx_score: 0.0,
+            last_emitted_approx_score_valid: false,
+            last_emitted_approx_rank: 0,
+            last_emitted_approx_rank_valid: false,
+            last_emitted_comparison_score: 0.0,
+            last_emitted_comparison_score_valid: false,
             graph_prefetch_state: ptr::null_mut(),
             linear_prefetch_state: LinearPrefetchState::new(
                 page::FIRST_DATA_BLOCK_NUMBER,
@@ -2557,7 +4561,10 @@ mod tests {
                 (candidate.node.offset_number == 2).then(|| SelectedScanResult {
                     element_tid: candidate.node,
                     score: candidate.score,
-                    heap_tids: vec![tid(41, 1)],
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: None,
+                    heap_tids: CachedHeapTids::from_iter([tid(41, 1)]),
                 })
             },
         );
@@ -2611,7 +4618,10 @@ mod tests {
                 (candidate == candidate_b).then(|| SelectedScanResult {
                     element_tid: candidate.node,
                     score: candidate.score,
-                    heap_tids: vec![tid(42, 1)],
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: None,
+                    heap_tids: CachedHeapTids::from_iter([tid(42, 1)]),
                 })
             },
             |candidate| refilled_after.push(candidate.node),
@@ -2716,7 +4726,9 @@ mod tests {
                 deleted: false,
                 heaptids: CachedHeapTids::from_iter([tid(191, 1)]),
                 neighbortid: tid(91, 2),
+                reranktid: None,
                 binary_words: CachedBinaryWords::from_iter(1, [0_u64]),
+                grouped_search_code: CachedGroupedSearchCode::None,
             }),
         );
         graph_neighbor_cache_mut(&mut opaque).insert(
@@ -2873,6 +4885,9 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
             }),
             "pending output should expose the first heap tid together with the current result score"
         );
@@ -2881,6 +4896,9 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 2),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
             }),
             "pending output should preserve score while draining later heap tids from the same result"
         );
@@ -2909,6 +4927,9 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
             }),
             "linear fallback duplicate drain should still emit the first queued heap tid"
         );
@@ -2940,6 +4961,9 @@ mod tests {
             Some(PendingScanOutput {
                 heap_tid: tid(32, 1),
                 score: -5.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
             }),
             "linear fallback should still emit the final queued heap tid before teardown"
         );
@@ -3035,7 +5059,10 @@ mod tests {
         linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
             element_tid: tid(37, 1),
             score: -10.0,
-            heap_tids: vec![tid(38, 1)],
+            approx_score: None,
+            approx_rank_base: None,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::from_iter([tid(38, 1)]),
         });
 
         assert_eq!(
@@ -3060,7 +5087,10 @@ mod tests {
         linear_fallback_cursor(&mut opaque).materialize(SelectedScanResult {
             element_tid: tid(38, 1),
             score: -11.0,
-            heap_tids: vec![tid(39, 1)],
+            approx_score: None,
+            approx_rank_base: None,
+            comparison_score: None,
+            heap_tids: CachedHeapTids::from_iter([tid(39, 1)]),
         });
 
         assert_eq!(
@@ -3122,7 +5152,10 @@ mod tests {
             SelectedScanResult {
                 element_tid: tid(26, 1),
                 score: -4.5,
-                heap_tids: vec![tid(31, 1), tid(31, 2)],
+                approx_score: None,
+                approx_rank_base: None,
+                comparison_score: None,
+                heap_tids: CachedHeapTids::from_iter([tid(31, 1), tid(31, 2)]),
             },
         );
 
@@ -3151,11 +5184,38 @@ mod tests {
             tid(31, 2),
             "shared result materialization should retain all supplied heap tids"
         );
+        assert!(
+            !opaque.result_state.current().comparison_score_valid(),
+            "plain result materialization should leave comparison-score state empty by default"
+        );
+    }
+
+    #[test]
+    fn scan_result_state_comparison_score_tracks_current_result_lifecycle() {
+        let mut state = ScanResultState::default();
+        state.materialize_from_parts(tid(42, 1), -7.0, &[tid(43, 1), tid(43, 2)]);
+
+        assert!(
+            !state.current().comparison_score_valid(),
+            "materializing a result should not implicitly mark comparison score valid"
+        );
+
+        state.set_current_comparison_score(-6.5);
+
+        assert!(state.current().comparison_score_valid());
+        assert_eq!(state.current().comparison_score(), -6.5);
+
+        state.clear_current();
+
+        assert!(
+            !state.current().comparison_score_valid(),
+            "clearing current-result state should also clear any grouped rerank comparison score"
+        );
     }
 
     #[test]
     fn prepared_query_cache_lifetime_tracks_scan_state() {
-        let metadata = page::MetadataPage {
+        let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
             m: 8,
             ef_construction: 32,
             entry_point: page::ItemPointer::INVALID,
@@ -3164,7 +5224,8 @@ mod tests {
             max_level: 0,
             seed: 42,
             inserted_since_rebuild: 0,
-        };
+            persisted_binary_sidecar: false,
+        });
         let query = [1.0_f32, 2.0, 3.0, 4.0];
         let mut opaque = TqScanOpaque::default();
 
@@ -3173,6 +5234,10 @@ mod tests {
         assert!(
             !opaque.prepared_query.is_null(),
             "storing a prepared query should retain the prepared-query payload"
+        );
+        assert!(
+            opaque.grouped_query.is_null(),
+            "scalar scan state should not allocate grouped query preparation"
         );
         assert!(
             !opaque.cached_quantizer.is_null(),
@@ -3186,8 +5251,741 @@ mod tests {
             "freeing scan prepared-query state should release the prepared query payload"
         );
         assert!(
+            opaque.grouped_query.is_null(),
+            "freeing scan prepared-query state should release grouped query preparation too"
+        );
+        assert!(
             opaque.cached_quantizer.is_null(),
             "freeing scan prepared-query state should release the cached quantizer too"
+        );
+    }
+
+    #[test]
+    fn cached_graph_element_from_grouped_tuple_ref_keeps_grouped_hot_payloads() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(9, 1), tid(9, 2)],
+            neighbortid: tid(5, 4),
+            reranktid: tid(5, 5),
+            binary_words: vec![0x55AA55AA55AA55AA],
+            search_code: vec![0x21, 0x43],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(7, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(cached.tid, tid(7, 3));
+        assert_eq!(cached.level, tuple.level);
+        assert!(!cached.deleted);
+        assert_eq!(cached.heaptids.as_slice(), tuple.heaptids.as_slice());
+        assert_eq!(cached.neighbortid, tuple.neighbortid);
+        assert_eq!(cached.reranktid, Some(tuple.reranktid));
+        assert_eq!(
+            cached.binary_words.as_slice(),
+            tuple.binary_words.as_slice()
+        );
+        assert_eq!(
+            cached.grouped_search_code.as_slice(),
+            Some(tuple.search_code.as_slice())
+        );
+    }
+
+    #[test]
+    fn cached_graph_element_from_scalar_tuple_ref_has_no_grouped_hot_payloads() {
+        let tuple = page::TqElementTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(4, 1)],
+            gamma: 1.25,
+            neighbortid: tid(4, 2),
+            code: vec![0x11, 0x22, 0x33, 0x44],
+            binary_words: vec![0xA5A5A5A5A5A5A5A5],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::Scalar(
+            page::TqElementTupleRef::decode(&encoded, tuple.code.len()).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(8, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(cached.reranktid, None);
+        assert_eq!(cached.grouped_search_code.as_slice(), None);
+        assert_eq!(cached.grouped_score_input(), None);
+    }
+
+    #[test]
+    fn grouped_score_input_uses_cached_grouped_hot_payloads() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 3,
+            deleted: false,
+            heaptids: vec![tid(11, 1)],
+            neighbortid: tid(11, 2),
+            reranktid: tid(11, 3),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+            search_code: vec![0x10, 0x32, 0x54],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 2, 3).unwrap(),
+        );
+
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(11, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+        let grouped = cached
+            .grouped_score_input()
+            .expect("grouped hot tuples should expose grouped score input from cached payloads");
+
+        assert_eq!(grouped.reranktid, tuple.reranktid);
+        assert_eq!(grouped.search_code, tuple.search_code.as_slice());
+        assert_eq!(grouped.binary_words, tuple.binary_words.as_slice());
+    }
+
+    #[test]
+    fn grouped_score_shape_uses_grouped_scan_layout() {
+        let shape = GroupedScoreShape::from_scan_graph_storage(
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            }),
+        )
+        .expect("grouped scan storage should produce grouped score shape");
+
+        assert_eq!(
+            shape,
+            GroupedScoreShape {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            }
+        );
+    }
+
+    #[test]
+    fn grouped_score_context_uses_scan_shape_and_cached_payloads() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(15, 1)],
+            neighbortid: tid(15, 2),
+            reranktid: tid(15, 3),
+            binary_words: vec![0x1234_5678_9ABC_DEF0, 0x0FED_CBA9_8765_4321],
+            search_code: vec![0x9A, 0xBC, 0xDE],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 2, 3).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(15, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        let context = grouped_score_context_from_scan_state(
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 2,
+                search_code_len: 3,
+                rerank_code_len: 96,
+            }),
+            &cached,
+        )
+        .expect(
+            "grouped scan state and grouped cached element should produce grouped score context",
+        );
+
+        assert_eq!(context.element_tid, tid(15, 4));
+        assert_eq!(
+            context.call.shape,
+            GroupedScoreShape {
+                binary_word_count: 2,
+                search_code_len: 3,
+                rerank_code_len: 96,
+            }
+        );
+        assert_eq!(context.call.input.reranktid, tuple.reranktid);
+        assert_eq!(context.call.input.search_code, tuple.search_code.as_slice());
+        assert_eq!(
+            context.call.input.binary_words,
+            tuple.binary_words.as_slice()
+        );
+    }
+
+    #[test]
+    fn grouped_score_context_requires_grouped_scan_storage() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(16, 1)],
+            neighbortid: tid(16, 2),
+            reranktid: tid(16, 3),
+            binary_words: vec![0x0123_4567_89AB_CDEF],
+            search_code: vec![0x21, 0x43],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(16, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        assert_eq!(
+            grouped_score_context_from_scan_state(
+                graph::GraphStorageDescriptor::TurboQuant { code_len: 4 },
+                &cached,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn grouped_exact_traversal_mode_enables_every_layer_in_all_scope() {
+        assert!(grouped_exact_traversal_enabled_for_layer(
+            GroupedExactTraversalMode::AllLayers,
+            0
+        ));
+        assert!(grouped_exact_traversal_enabled_for_layer(
+            GroupedExactTraversalMode::AllLayers,
+            3
+        ));
+    }
+
+    #[test]
+    fn grouped_exact_traversal_mode_limits_layer0_scope_to_layer0() {
+        assert!(grouped_exact_traversal_enabled_for_layer(
+            GroupedExactTraversalMode::Layer0Only,
+            0
+        ));
+        assert!(!grouped_exact_traversal_enabled_for_layer(
+            GroupedExactTraversalMode::Layer0Only,
+            1
+        ));
+        assert!(!grouped_exact_traversal_enabled_for_layer(
+            GroupedExactTraversalMode::Disabled,
+            0
+        ));
+    }
+
+    #[test]
+    fn grouped_exact_traversal_candidate_budget_requires_enabled_layer() {
+        let mut opaque = TqScanOpaque {
+            grouped_exact_traversal_mode: GroupedExactTraversalMode::AllLayers,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
+            grouped_exact_traversal_limit: 4,
+            ..TqScanOpaque::default()
+        };
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
+            Some(4)
+        );
+        opaque.grouped_exact_traversal_mode = GroupedExactTraversalMode::Layer0Only;
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
+            Some(4)
+        );
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 1),
+            None
+        );
+        opaque.grouped_exact_traversal_limit = 0;
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
+            None
+        );
+        opaque.grouped_exact_traversal_strategy = GroupedExactTraversalStrategy::FrontierHead;
+        opaque.grouped_exact_traversal_limit = 4;
+        assert_eq!(
+            grouped_exact_traversal_candidate_budget_for_layer(&opaque, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn grouped_exact_traversal_full_candidate_scoring_requires_expansion_strategy_without_limit() {
+        let mut opaque = TqScanOpaque {
+            grouped_exact_traversal_mode: GroupedExactTraversalMode::AllLayers,
+            grouped_exact_traversal_strategy: GroupedExactTraversalStrategy::Expansion,
+            grouped_exact_traversal_limit: 0,
+            ..TqScanOpaque::default()
+        };
+        assert!(grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
+        opaque.grouped_exact_traversal_limit = 2;
+        assert!(!grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
+        opaque.grouped_exact_traversal_limit = 0;
+        opaque.grouped_exact_traversal_strategy = GroupedExactTraversalStrategy::FrontierHead;
+        assert!(!grouped_exact_traversal_full_candidate_scoring_for_layer(
+            &opaque, 0
+        ));
+    }
+
+    #[test]
+    fn grouped_exact_traversal_candidate_indices_pick_lowest_scores_stably() {
+        let candidate = |ordinal| {
+            Arc::new(CachedGraphElement {
+                tid: tid(90, ordinal),
+                level: 0,
+                deleted: false,
+                heaptids: CachedHeapTids::default(),
+                neighbortid: page::ItemPointer::INVALID,
+                reranktid: None,
+                binary_words: CachedBinaryWords::empty(),
+                grouped_search_code: CachedGroupedSearchCode::None,
+            })
+        };
+        let candidates = vec![
+            GroupedTraversalCandidate {
+                ordinal: 3,
+                element: candidate(3),
+                approx_score: -2.0,
+            },
+            GroupedTraversalCandidate {
+                ordinal: 1,
+                element: candidate(1),
+                approx_score: -4.0,
+            },
+            GroupedTraversalCandidate {
+                ordinal: 2,
+                element: candidate(2),
+                approx_score: -4.0,
+            },
+        ];
+
+        assert_eq!(
+            grouped_exact_traversal_candidate_indices(&candidates, 2),
+            vec![1, 2]
+        );
+        assert_eq!(
+            grouped_exact_traversal_candidate_indices(&candidates, 99),
+            vec![1, 2, 0]
+        );
+    }
+
+    #[test]
+    fn candidate_score_dispatch_uses_grouped_input_for_exact_unavailable() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(12, 1)],
+            neighbortid: tid(12, 2),
+            reranktid: tid(12, 3),
+            binary_words: vec![0xAABBCCDD00112233],
+            search_code: vec![0xAB, 0xCD],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(12, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 1,
+                search_code_len: 2,
+                rerank_code_len: 96,
+            }),
+            &cached,
+            LoadedElementState::ExactUnavailable,
+        ) {
+            CandidateScoreDispatch::Grouped(grouped) => {
+                assert_eq!(grouped.element_tid, tid(12, 4));
+                assert_eq!(
+                    grouped.call.shape,
+                    GroupedScoreShape {
+                        binary_word_count: 1,
+                        search_code_len: 2,
+                        rerank_code_len: 96,
+                    }
+                );
+                assert_eq!(grouped.call.input.reranktid, tuple.reranktid);
+                assert_eq!(grouped.call.input.search_code, tuple.search_code.as_slice());
+                assert_eq!(
+                    grouped.call.input.binary_words,
+                    tuple.binary_words.as_slice()
+                );
+            }
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("exact-unavailable grouped tuples should dispatch through grouped input")
+            }
+        }
+    }
+
+    #[test]
+    fn candidate_score_dispatch_uses_grouped_input_for_cached_grouped_hit() {
+        let tuple = page::TqGroupedHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(12, 1)],
+            neighbortid: tid(12, 2),
+            reranktid: tid(12, 3),
+            binary_words: vec![0xAABBCCDD00112233],
+            search_code: vec![0xAB, 0xCD],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::GroupedHot(
+            page::TqGroupedHotTupleRef::decode(&encoded, 1, 2).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(12, 4),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 1,
+                search_code_len: 2,
+                rerank_code_len: 96,
+            }),
+            &cached,
+            LoadedElementState::None,
+        ) {
+            CandidateScoreDispatch::Grouped(grouped) => {
+                assert_eq!(grouped.element_tid, tid(12, 4));
+                assert_eq!(grouped.call.input.reranktid, tuple.reranktid);
+                assert_eq!(grouped.call.input.search_code, tuple.search_code.as_slice());
+            }
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("cached grouped tuples should keep grouped score dispatch on cache hits")
+            }
+        }
+    }
+
+    #[test]
+    fn grouped_score_payload_view_preserves_context_fields() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(20, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 3,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(20, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        let payload = grouped_score_payload_view(grouped)
+            .expect("metadata-aligned grouped context should produce grouped payload view");
+
+        assert_eq!(payload.element_tid, tid(20, 4));
+        assert_eq!(payload.reranktid, tid(20, 3));
+        assert_eq!(
+            payload.binary_words,
+            &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210]
+        );
+        assert_eq!(payload.search_code, &[0x10, 0x32, 0x54]);
+        assert_eq!(payload.rerank_code_len, 96);
+    }
+
+    #[test]
+    fn grouped_score_search_code_preserves_metadata_aligned_search_codes() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(20, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 3,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(20, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF, 0x0FED_CBA9_7654_3210],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(
+            grouped_score_search_code(grouped),
+            Some(&[0x10, 0x32, 0x54][..])
+        );
+    }
+
+    #[test]
+    fn grouped_score_payload_view_rejects_shape_mismatch() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(21, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 4,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(21, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(grouped_score_payload_view(grouped), None);
+    }
+
+    #[test]
+    fn grouped_score_search_code_rejects_search_code_shape_mismatch() {
+        let grouped = GroupedScoreContext {
+            element_tid: tid(21, 4),
+            call: GroupedScoreCall {
+                shape: GroupedScoreShape {
+                    binary_word_count: 2,
+                    search_code_len: 4,
+                    rerank_code_len: 96,
+                },
+                input: GroupedScoreInput {
+                    reranktid: tid(21, 3),
+                    binary_words: &[0x0123_4567_89AB_CDEF],
+                    search_code: &[0x10, 0x32, 0x54],
+                },
+            },
+        };
+
+        assert_eq!(grouped_score_search_code(grouped), None);
+    }
+
+    #[test]
+    fn grouped_score_rerank_payload_preserves_hot_and_cold_fields() {
+        let payload = GroupedScorePayloadView {
+            element_tid: tid(30, 4),
+            reranktid: tid(30, 3),
+            binary_words: &[0x0123_4567_89AB_CDEF],
+            search_code: &[0x10, 0x32, 0x54],
+            rerank_code_len: 4,
+        };
+        let rerank = graph::GroupedRerankPayload {
+            tid: tid(30, 3),
+            gamma: 0.75,
+            code: vec![0xAA, 0xBB, 0xCC, 0xDD],
+        };
+
+        let merged = grouped_score_rerank_payload(payload, rerank)
+            .expect("matching rerank tuple should compose with grouped hot payload");
+
+        assert_eq!(merged.element_tid, tid(30, 4));
+        assert_eq!(merged.reranktid, tid(30, 3));
+        assert_eq!(merged.binary_words, &[0x0123_4567_89AB_CDEF]);
+        assert_eq!(merged.search_code, &[0x10, 0x32, 0x54]);
+        assert_eq!(merged.rerank_gamma, 0.75);
+        assert_eq!(merged.rerank_code, vec![0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn grouped_score_rerank_payload_rejects_mismatched_cold_payload() {
+        let payload = GroupedScorePayloadView {
+            element_tid: tid(31, 4),
+            reranktid: tid(31, 3),
+            binary_words: &[0x0123_4567_89AB_CDEF],
+            search_code: &[0x10, 0x32, 0x54],
+            rerank_code_len: 4,
+        };
+
+        assert_eq!(
+            grouped_score_rerank_payload(
+                payload,
+                graph::GroupedRerankPayload {
+                    tid: tid(31, 5),
+                    gamma: 0.5,
+                    code: vec![0xAA, 0xBB, 0xCC, 0xDD],
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            grouped_score_rerank_payload(
+                payload,
+                graph::GroupedRerankPayload {
+                    tid: tid(31, 3),
+                    gamma: 0.5,
+                    code: vec![0xAA, 0xBB],
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn score_grouped_rerank_payload_result_matches_prod_quantizer_path() {
+        let vector = vec![0.1_f32, -0.2, 0.3, -0.4];
+        let query = vec![0.25_f32, 0.5, -0.75, 0.125];
+        let quantizer = ProdQuantizer::new(vector.len(), 4, 42);
+        let encoded = quantizer.encode(&vector);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let mut code_bytes = encoded.mse_packed.clone();
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        let payload = GroupedScoreRerankPayload {
+            element_tid: tid(40, 4),
+            reranktid: tid(40, 3),
+            binary_words: &[],
+            search_code: &[],
+            rerank_gamma: encoded.gamma,
+            rerank_code: code_bytes,
+        };
+
+        let observed = score_grouped_rerank_payload_result(&quantizer, &prepared, &payload);
+        let expected =
+            -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
+
+        assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn build_prepared_grouped_scan_query_uses_persisted_codebooks() {
+        let prepared = PreparedQuery {
+            lut: Vec::new(),
+            rotated: vec![1.0_f32, 2.0, 3.0, 4.0],
+            sq: Vec::new(),
+            qjl_scale: 0.0,
+        };
+        let model = graph::GroupedCodebookModel {
+            head_tid: page::ItemPointer::INVALID,
+            group_count: 2,
+            group_size: 2,
+            flat_codebooks: vec![
+                1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0, 7.0, 0.0, 8.0, 0.0,
+                9.0, 0.0, 10.0, 0.0, 11.0, 0.0, 12.0, 0.0, 13.0, 0.0, 14.0, 0.0, 15.0, 0.0, 16.0,
+                0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 5.0, 0.0, 6.0, 0.0, 7.0, 0.0,
+                8.0, 0.0, 9.0, 0.0, 10.0, 0.0, 11.0, 0.0, 12.0, 0.0, 13.0, 0.0, 14.0, 0.0, 15.0,
+                0.0, 16.0,
+            ],
+        };
+
+        let grouped = build_prepared_grouped_scan_query(&prepared, &model);
+
+        assert_eq!(grouped.group_count, 2);
+        assert_eq!(grouped.search_code_len, 1);
+        assert_eq!(grouped.lut_f32.len(), 32);
+        assert_eq!(grouped.lut_f32[0], 1.0);
+        assert_eq!(grouped.lut_f32[1], 2.0);
+        assert_eq!(grouped.lut_f32[15], 16.0);
+        assert_eq!(grouped.lut_f32[16], 4.0);
+        assert_eq!(grouped.lut_f32[17], 8.0);
+        assert_eq!(grouped.lut_f32[31], 64.0);
+    }
+
+    #[test]
+    fn score_grouped_search_code_result_negates_shared_grouped_pq_score() {
+        let prepared = PreparedGroupedScanQuery {
+            group_count: 3,
+            search_code_len: 2,
+            lut_f32: {
+                let mut lut = vec![0.0_f32; 3 * 16];
+                lut[1] = 1.5;
+                lut[16 + 3] = -0.25;
+                lut[32 + 2] = 2.0;
+                lut
+            },
+        };
+        let search_code = &[0x31, 0x02];
+
+        let observed = score_grouped_search_code_result(&prepared, search_code);
+        let expected = -crate::quant::grouped_pq::grouped_pq_score_f32(
+            &prepared.lut_f32,
+            prepared.group_count,
+            search_code,
+        );
+
+        assert_eq!(observed, expected);
+        assert_eq!(observed, -3.25);
+    }
+
+    #[test]
+    fn candidate_score_dispatch_keeps_scalar_loaded_state_exact() {
+        let tuple = page::TqElementTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(13, 1)],
+            gamma: 0.75,
+            neighbortid: tid(13, 2),
+            code: vec![0x01, 0x23, 0x45, 0x67],
+            binary_words: vec![0x0102030405060708],
+        };
+        let encoded = tuple.encode().unwrap();
+        let tuple_ref = graph::GraphTupleRef::Scalar(
+            page::TqElementTupleRef::decode(&encoded, tuple.code.len()).unwrap(),
+        );
+        let cached = CachedGraphElement::from_graph_tuple_ref(
+            tid(13, 3),
+            tuple_ref,
+            CachedBinaryWords::from_vec(tuple.binary_words.clone()),
+        );
+
+        match candidate_score_dispatch(
+            graph::GraphStorageDescriptor::TurboQuant {
+                code_len: tuple.code.len(),
+            },
+            &cached,
+            LoadedElementState::None,
+        ) {
+            CandidateScoreDispatch::Exact(LoadedElementState::None) => {}
+            CandidateScoreDispatch::Exact(_) => {
+                panic!("scalar fallback dispatch should preserve the original exact loaded state")
+            }
+            CandidateScoreDispatch::Grouped(_) => {
+                panic!("scalar tuples should never dispatch through grouped score input")
+            }
+        }
+    }
+
+    #[test]
+    fn validate_runtime_scan_format_accepts_pq_fastscan_metadata() {
+        let metadata = page::MetadataPage {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 16,
+            bits: 4,
+            max_level: 2,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+            grouped_codebook_head: tid(1, 2),
+        };
+
+        assert_eq!(
+            graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: 1,
+                rerank_code_len: crate::code_len(16, 4),
+            })
         );
     }
 
@@ -3415,10 +6213,10 @@ mod tests {
 
         assert_eq!(
             visited,
-            vec![(first_valid.block_number, first_valid.offset_number), (
-                second_valid.block_number,
-                second_valid.offset_number
-            )],
+            vec![
+                (first_valid.block_number, first_valid.offset_number),
+                (second_valid.block_number, second_valid.offset_number)
+            ],
             "collection should skip INVALID neighbors and continue through live candidates in order"
         );
         assert_eq!(
@@ -3715,6 +6513,80 @@ mod tests {
         assert!(
             !expanded_contains_source(&opaque, grandchild_tid),
             "trace seeding should leave deeper discovered candidates available for later refill"
+        );
+    }
+
+    #[test]
+    fn source_backed_default_rerank_resolves_to_heap_f32() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: Some("source".to_owned()),
+            storage_format: super::super::options::StorageFormat::TurboQuant,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::HeapF32,
+            "build_source_column indexes should default PqFastScan rerank to heap_f32"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultHeapF32WithBuildSourceColumn,
+            "source-backed PqFastScan defaults should explain that heap_f32 came from build_source_column"
+        );
+    }
+
+    #[test]
+    fn source_less_default_rerank_resolves_to_quantized() {
+        let options = super::super::options::TqHnswOptions {
+            m: super::super::TQHNSW_DEFAULT_M,
+            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            build_source_column: None,
+            storage_format: super::super::options::StorageFormat::TurboQuant,
+        };
+
+        assert_eq!(
+            default_grouped_rerank_mode(&options),
+            GroupedRerankMode::Quantized,
+            "source-less indexes should default PqFastScan rerank to quantized"
+        );
+        assert_eq!(
+            default_grouped_rerank_mode_resolution(&options),
+            PqFastScanRerankModeResolution::DefaultQuantizedMissingBuildSourceColumn,
+            "source-less defaults should explain that quantized came from the missing build_source_column"
+        );
+    }
+
+    #[test]
+    fn grouped_binary_traversal_score_gate_requires_pq_fastscan_storage() {
+        let mut opaque = TqScanOpaque {
+            grouped_traversal_score_mode: GroupedTraversalScoreMode::Binary,
+            scan_graph_storage: graph::GraphStorageDescriptor::TurboQuant { code_len: 64 },
+            ..TqScanOpaque::default()
+        };
+        assert!(
+            !grouped_binary_traversal_score_enabled(&opaque),
+            "binary traversal score mode should stay off for non-pq_fastscan storage even when the mode is binary",
+        );
+
+        opaque.scan_graph_storage =
+            graph::GraphStorageDescriptor::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 24,
+                search_code_len: 48,
+                rerank_code_len: 768,
+            });
+        assert!(
+            grouped_binary_traversal_score_enabled(&opaque),
+            "binary traversal score mode should activate for pq_fastscan layouts when the mode is binary",
+        );
+
+        opaque.grouped_traversal_score_mode = GroupedTraversalScoreMode::GroupedPq;
+        assert!(
+            !grouped_binary_traversal_score_enabled(&opaque),
+            "grouped-pq traversal mode should disable the binary traversal gate even for pq_fastscan layouts",
         );
     }
 }

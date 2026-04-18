@@ -7,15 +7,18 @@ Usage:
   scripts/run_real_corpus_recall_scratch.sh gate \
       --prefix tqhnsw_real_50k \
       --queries-table tqhnsw_real_50k_queries_50 \
+      [--storage-format turboquant|pq_fastscan] \
       [--corpus-table tqhnsw_real_50k_corpus] \
       [--detach] \
       [--output-dir /path/to/output]
 
   scripts/run_real_corpus_recall_scratch.sh summary \
-      --index tqhnsw_real_50k_m8_idx \
       --m 8 \
       --ef-search 128 \
       --queries-table tqhnsw_real_50k_queries_50 \
+      [--prefix tqhnsw_real_50k] \
+      [--storage-format turboquant|pq_fastscan] \
+      [--index tqhnsw_real_50k_m8_idx] \
       [--corpus-table tqhnsw_real_50k_corpus] \
       [--detach] \
       [--output-dir /path/to/output]
@@ -29,6 +32,7 @@ Notes:
 Defaults:
   output dir: <repo>/tmp/real_corpus_runs
   corpus table for `gate`: <prefix>_corpus
+  fixture/index prefix with `--storage-format`: <prefix>_<storage_format>
 EOF
 }
 
@@ -44,6 +48,8 @@ queries_table=""
 index_name=""
 m=""
 ef_search=""
+storage_format=""
+fixture_prefix=""
 
 slugify() {
     printf '%s' "$1" | tr -c '[:alnum:]_-' '_'
@@ -101,6 +107,10 @@ while [[ $# -gt 0 ]]; do
             ef_search="$2"
             shift 2
             ;;
+        --storage-format)
+            storage_format="$2"
+            shift 2
+            ;;
         --output-dir)
             output_dir="$2"
             shift 2
@@ -121,6 +131,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -n "$storage_format" ]]; then
+    case "$storage_format" in
+        turboquant|pq_fastscan)
+            ;;
+        *)
+            echo "--storage-format must be one of: turboquant, pq_fastscan" >&2
+            exit 2
+            ;;
+    esac
+fi
+
 if [[ -z "$queries_table" ]]; then
     echo "--queries-table is required" >&2
     exit 2
@@ -135,6 +156,15 @@ if [[ -z "$corpus_table" ]]; then
     exit 2
 fi
 
+fixture_prefix="$prefix"
+if [[ -n "$storage_format" ]]; then
+    if [[ -z "$prefix" ]]; then
+        echo "--storage-format requires --prefix" >&2
+        exit 2
+    fi
+    fixture_prefix="${prefix}_${storage_format}"
+fi
+
 select_sql=""
 run_sql=""
 stem=""
@@ -144,13 +174,20 @@ case "$subcommand" in
             echo "--prefix is required for gate runs" >&2
             exit 2
         fi
-        select_sql="select * from tests.tqhnsw_graph_scan_recall_external_gate_report('${corpus_table}','${queries_table}','${prefix}')"
-        stem="gate_$(slugify "${prefix}")_$(slugify "${queries_table}")"
+        select_sql="select * from tests.tqhnsw_graph_scan_recall_external_gate_report('${corpus_table}','${queries_table}','${fixture_prefix}')"
+        stem="gate_$(slugify "${fixture_prefix}")_$(slugify "${queries_table}")"
         ;;
     summary)
-        if [[ -z "$index_name" || -z "$m" || -z "$ef_search" ]]; then
-            echo "--index, --m, and --ef-search are required for summary runs" >&2
+        if [[ -z "$m" || -z "$ef_search" ]]; then
+            echo "--m and --ef-search are required for summary runs" >&2
             exit 2
+        fi
+        if [[ -z "$index_name" ]]; then
+            if [[ -z "$fixture_prefix" ]]; then
+                echo "--index is required unless --prefix is provided" >&2
+                exit 2
+            fi
+            index_name="${fixture_prefix}_m${m}_idx"
         fi
         select_sql="select * from tests.tqhnsw_graph_scan_recall_external_summary('${corpus_table}','${queries_table}','${index_name}',${m},${ef_search})"
         stem="summary_$(slugify "${index_name}")_m${m}_ef${ef_search}_$(slugify "${queries_table}")"

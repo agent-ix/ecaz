@@ -26,6 +26,7 @@
 //! AVX2+FMA or NEON accelerated.
 
 pub mod codebook;
+pub mod grouped_pq;
 pub mod hadamard;
 pub mod mse;
 pub mod prod;

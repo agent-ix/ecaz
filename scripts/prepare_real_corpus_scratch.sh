@@ -8,6 +8,7 @@ Usage:
     --profile tqhnsw_real_50k \
     --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
     --output-dir /path/to/staged \
+    [--storage-format turboquant|pq_fastscan] \
     [--vector-column text-embedding-3-large-1536-embedding] \
     [--id-column _id] \
     [--dim 1536] \
@@ -47,6 +48,7 @@ id_column=""
 vector_column=""
 dim="1536"
 source_dataset=""
+storage_format=""
 declare -a m_values=()
 
 while [[ $# -gt 0 ]]; do
@@ -79,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             source_dataset="$2"
             shift 2
             ;;
+        --storage-format)
+            storage_format="$2"
+            shift 2
+            ;;
         --m)
             m_values+=("$2")
             shift 2
@@ -103,6 +109,17 @@ fi
 
 if [[ ${#m_values[@]} -eq 0 ]]; then
     m_values=(8)
+fi
+
+if [[ -n "$storage_format" ]]; then
+    case "$storage_format" in
+        turboquant|pq_fastscan)
+            ;;
+        *)
+            echo "--storage-format must be one of: turboquant, pq_fastscan" >&2
+            exit 2
+            ;;
+    esac
 fi
 
 default_python="${repo_root}/../datasets/.venv/bin/python"
@@ -141,5 +158,8 @@ loader_args=(
 for m in "${m_values[@]}"; do
     loader_args+=(--m "$m")
 done
+if [[ -n "$storage_format" ]]; then
+    loader_args+=(--storage-format "$storage_format")
+fi
 
 exec "${repo_root}/scripts/load_real_corpus_scratch.sh" "${loader_args[@]}"

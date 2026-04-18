@@ -8,6 +8,8 @@ pgrx::pg_module_magic!();
 #[allow(dead_code)]
 mod am;
 mod quant;
+#[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
+mod standalone_pg_backend_stubs;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
@@ -38,6 +40,10 @@ pub mod bench_api {
 
     // Codebook
     pub use crate::quant::codebook::{beta_pdf, lloyd_max};
+    pub use crate::quant::grouped_pq::{
+        build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_nibble, grouped_pq_score_f32,
+        nearest_centroid_l2, pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS,
+    };
 
     // MSE
     pub use crate::quant::mse::{decode_indices, nearest_centroid_index, quantize_to_indices};
@@ -47,9 +53,9 @@ pub mod bench_api {
 
     // Page codec
     pub use crate::am::page::{
-        neighbor_slots, neighbor_tuple_encoded_len, DataPage, DataPageChain, ItemPointer,
-        MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
-        PAGE_HEADER_BYTES,
+        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, DataPage, DataPageChain,
+        ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
+        ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
     };
 
     // Text I/O
@@ -733,6 +739,37 @@ pub mod pg_test {
 #[pg_schema]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    struct ScopedEnvVar {
+        key: &'static str,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl ScopedEnvVar {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for ScopedEnvVar {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.as_ref() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
+    fn env_var_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env-var test lock should not be poisoned")
+    }
     #[cfg(test)]
     use hnsw_rs::prelude::{AnnT, Distance, Hnsw};
     use rand::Rng;
@@ -749,6 +786,8 @@ mod tests {
     const RECALL_K: usize = 10;
     const RECALL_EF_CONSTRUCTION: i32 = 128;
     const RECALL_INSERT_BATCH_SIZE: usize = 32;
+    const PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT: i32 = ((RECALL_DIM as i32) + 63) / 64;
+    const SCORE_ASSERT_EPSILON: f32 = 1e-5;
     const RECALL_GATE_CONFIGS: [(i32, i32, Option<f32>); 4] = [
         (8, 40, None),
         (8, 128, Some(0.89_f32)),
@@ -836,6 +875,13 @@ mod tests {
         a.iter().zip(b).map(|(x, y)| x * y).sum()
     }
 
+    fn assert_f32_close(observed: f32, expected: f32, label: &str) {
+        assert!(
+            (observed - expected).abs() <= SCORE_ASSERT_EPSILON,
+            "{label}: observed {observed}, expected {expected}",
+        );
+    }
+
     fn brute_force_top_k(corpus: &[Vec<f32>], query: &[f32], k: usize) -> Vec<usize> {
         let mut scores: Vec<(usize, f32)> = corpus
             .iter()
@@ -887,14 +933,23 @@ mod tests {
         parse_ctid(&ctid)
     }
 
-    fn decode_index_elements_and_neighbors(
-        index_oid: pg_sys::Oid,
-        code_len: usize,
-    ) -> (
+    type ScalarElementsAndNeighbors = (
         am::page::MetadataPage,
         Vec<(am::page::ItemPointer, am::page::TqElementTuple)>,
         HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
-    ) {
+    );
+
+    type GroupedElementsAndNeighbors = (
+        am::page::MetadataPage,
+        am::graph::PqFastScanLayout,
+        Vec<(am::page::ItemPointer, am::page::TqGroupedHotTuple)>,
+        HashMap<am::page::ItemPointer, am::page::TqNeighborTuple>,
+    );
+
+    fn decode_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+        code_len: usize,
+    ) -> ScalarElementsAndNeighbors {
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let mut elements = Vec::new();
         let mut neighbors = HashMap::new();
@@ -929,6 +984,53 @@ mod tests {
         (metadata, elements, neighbors)
     }
 
+    fn decode_grouped_index_elements_and_neighbors(
+        index_oid: pg_sys::Oid,
+    ) -> GroupedElementsAndNeighbors {
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("grouped decode helper requires a PqFastScan index")
+            }
+        };
+        let mut elements = Vec::new();
+        let mut neighbors = HashMap::new();
+
+        for page in data_pages {
+            for (idx, tuple) in page.tuples.iter().enumerate() {
+                let tid = am::page::ItemPointer {
+                    block_number: page.block_number,
+                    offset_number: u16::try_from(idx + 1)
+                        .expect("page tuple offset should fit in u16"),
+                };
+                match tuple.first().copied() {
+                    Some(am::page::TQ_GROUPED_HOT_TAG) => {
+                        elements.push((
+                            tid,
+                            am::page::TqGroupedHotTuple::decode(
+                                tuple,
+                                layout.binary_word_count,
+                                layout.search_code_len,
+                            )
+                            .expect("grouped hot tuple should decode"),
+                        ));
+                    }
+                    Some(am::page::TQ_NEIGHBOR_TAG) => {
+                        neighbors.insert(
+                            tid,
+                            am::page::TqNeighborTuple::decode(tuple)
+                                .expect("neighbor tuple should decode"),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        (metadata, layout, elements, neighbors)
+    }
+
     fn find_element_for_heap_tid(
         elements: &[(am::page::ItemPointer, am::page::TqElementTuple)],
         heap_tid: am::page::ItemPointer,
@@ -937,6 +1039,17 @@ mod tests {
             .iter()
             .find(|(_, element)| element.heaptids.contains(&heap_tid))
             .expect("element should be discoverable by heap tid");
+        (*element_tid, element)
+    }
+
+    fn find_grouped_element_for_heap_tid(
+        elements: &[(am::page::ItemPointer, am::page::TqGroupedHotTuple)],
+        heap_tid: am::page::ItemPointer,
+    ) -> (am::page::ItemPointer, &am::page::TqGroupedHotTuple) {
+        let (element_tid, element) = elements
+            .iter()
+            .find(|(_, element)| element.heaptids.contains(&heap_tid))
+            .expect("grouped element should be discoverable by heap tid");
         (*element_tid, element)
     }
 
@@ -2558,13 +2671,12 @@ mod tests {
             metadata.bits,
             metadata.seed,
         );
-        let expected_binary_word_count = if persisted_binary_quantizer
-            .binary_sign_no_qjl_4bit_supported()
-        {
-            (metadata.dimensions as usize).div_ceil(64)
-        } else {
-            0
-        };
+        let expected_binary_word_count =
+            if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
+                (metadata.dimensions as usize).div_ceil(64)
+            } else {
+                0
+            };
         for (element_tid, element) in &elements {
             assert!(element.level <= metadata.max_level);
             assert!(!element.deleted);
@@ -2671,6 +2783,4534 @@ mod tests {
         assert!(elements
             .iter()
             .all(|(_, element)| element.heaptids.len() == 1));
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pq_fastscan_source_build_writes_grouped_pages() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 11 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_source_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_source_build_idx ON tqhnsw_pq_fastscan_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_pq_fastscan_source_build_idx'::regclass",
+        )
+        .expect("SPI query should succeed")
+        .expect("reloptions should exist");
+
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+
+        assert!(reloptions.contains(&"storage_format=pq_fastscan".to_string()));
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
+        assert_eq!(
+            metadata.search_codec_kind,
+            am::page::SearchCodecKind::GroupedPq
+        );
+        assert_eq!(
+            metadata.rerank_codec_kind,
+            am::page::RerankCodecKind::ScalarQuantized
+        );
+        assert_eq!(
+            metadata.payload_flags & am::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            am::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+        );
+        assert_eq!(
+            metadata.payload_flags & am::page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            am::page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+        assert_eq!(metadata.dimensions, 16);
+        assert_eq!(metadata.bits, 4);
+        assert_eq!(metadata.seed, 42);
+        assert_eq!(metadata.search_bits, 4);
+        assert_eq!(metadata.search_subvector_count, 1);
+        assert_eq!(metadata.search_subvector_dim, 16);
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let grouped_hot_tids = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+        let grouped_codebook_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(grouped_hot_tids.len(), 16);
+        assert_eq!(rerank_count, 16);
+        assert_eq!(neighbor_count, 16);
+        assert_eq!(
+            grouped_codebook_count,
+            metadata.search_subvector_count as usize
+        );
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+        assert!(!page_tuples
+            .iter()
+            .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)));
+        assert!(
+            grouped_hot_tids.contains(&metadata.entry_point),
+            "entry point should identify a grouped hot tuple for a PqFastScan build"
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pq_fastscan_small_source_build_writes_grouped_pages() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_small_source_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=4 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.05).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 7 + dim) as f32) * 0.04).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_small_source_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_small_source_build_idx ON tqhnsw_pq_fastscan_small_source_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("small-table index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_small_source_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let grouped_hot_tids = page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+        let grouped_codebook_count = page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(grouped_hot_tids.len(), 4);
+        assert_eq!(rerank_count, 4);
+        assert_eq!(neighbor_count, 4);
+        assert_eq!(
+            grouped_codebook_count,
+            metadata.search_subvector_count as usize
+        );
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+        assert!(
+            grouped_hot_tids.contains(&metadata.entry_point),
+            "small-cardinality PqFastScan build should still pick a grouped hot tuple entry point",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pq_fastscan_small_dim_build_derives_group_size() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_small_dim_build (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=8 {
+            let source = (0..8)
+                .map(|dim| format!("{:.6}", (((id * 11 + dim) as f32) * 0.08).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..8)
+                .map(|dim| format!("{:.6}", (((id * 5 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_small_dim_build VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_small_dim_build_idx ON tqhnsw_pq_fastscan_small_dim_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("small-dimension index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_small_dim_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let grouped_codebook_count = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V2_GROUPED);
+        assert_eq!(metadata.search_subvector_dim, 8);
+        assert_eq!(metadata.search_subvector_count, 1);
+        assert_eq!(grouped_codebook_count, 1);
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_turboquant_storage_format_build_writes_scalar_pages() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_turboquant_storage_build (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 7 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_turboquant_storage_build VALUES \
+                 ({id}, encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_turboquant_storage_build_idx ON tqhnsw_turboquant_storage_build USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_turboquant_storage_build_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let reloptions = Spi::get_one::<Vec<String>>(
+            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_turboquant_storage_build_idx'::regclass",
+        )
+        .expect("SPI query should succeed")
+        .expect("reloptions should exist");
+        let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let (decoded_metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(16, 4));
+
+        assert_eq!(decoded_metadata, metadata);
+        assert!(reloptions.contains(&"storage_format=turboquant".to_string()));
+        assert_eq!(metadata.format_version, am::page::INDEX_FORMAT_V1_SCALAR);
+        assert_eq!(metadata.transform_kind, am::page::TransformKind::Srht);
+        assert_eq!(
+            metadata.search_codec_kind,
+            am::page::SearchCodecKind::ScalarQuantized
+        );
+        assert_eq!(metadata.rerank_codec_kind, am::page::RerankCodecKind::None);
+        assert_eq!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+        assert_eq!(metadata.search_subvector_count, 0);
+        assert_eq!(metadata.search_subvector_dim, 0);
+        assert_eq!(elements.len(), 16);
+        assert_eq!(neighbors.len(), 16);
+        assert!(
+            elements.iter().any(|(tid, _)| *tid == metadata.entry_point),
+            "entry point should identify a scalar element tuple for a TurboQuant build",
+        );
+        assert!(elements
+            .iter()
+            .all(|(_, element)| element.heaptids.len() == 1));
+
+        let page_tuples = data_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .collect::<Vec<_>>();
+        let scalar_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG))
+            .count();
+        let neighbor_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+        let grouped_hot_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG))
+            .count();
+        let rerank_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let codebook_count = page_tuples
+            .iter()
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_CODEBOOK_TAG))
+            .count();
+
+        assert_eq!(scalar_count, 16);
+        assert_eq!(neighbor_count, 16);
+        assert_eq!(grouped_hot_count, 0);
+        assert_eq!(rerank_count, 0);
+        assert_eq!(codebook_count, 0);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_graph_reads_load_entry_and_neighbors() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_graph_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_graph_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_graph_reads_idx ON tqhnsw_pq_fastscan_graph_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_graph_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("PqFastScan build should not decode as TurboQuant storage")
+            }
+        };
+
+        let index_relation =
+            unsafe { open_valid_tqhnsw_index(index_oid, "test_pq_fastscan_graph_reads") };
+
+        unsafe {
+            am::graph::with_graph_storage_tuple(
+                index_relation,
+                metadata.entry_point,
+                am::graph::GraphStorageDescriptor::PqFastScan(layout),
+                |entry| match entry {
+                    am::graph::GraphTupleRef::GroupedHot(tuple) => {
+                        assert_eq!(tuple.search_code.len(), layout.search_code_len);
+                        assert_eq!(tuple.collect_binary_words().len(), layout.binary_word_count);
+                        assert!(tuple.heaptid_count() > 0);
+                    }
+                    am::graph::GraphTupleRef::Scalar(_) => {
+                        panic!("PqFastScan entry should decode as grouped-hot tuple")
+                    }
+                },
+            );
+        }
+
+        let (entry, neighbors) = unsafe {
+            am::graph::load_grouped_graph_adjacency(index_relation, metadata.entry_point, layout)
+        };
+
+        assert_eq!(entry.tid, metadata.entry_point);
+        assert!(!entry.deleted);
+        assert_eq!(entry.search_code.len(), layout.search_code_len);
+        assert_eq!(entry.binary_words.len(), layout.binary_word_count);
+        assert!(!entry.heaptids.is_empty());
+        assert_ne!(entry.reranktid, am::page::ItemPointer::INVALID);
+        assert_eq!(neighbors.tid, entry.neighbortid);
+        assert!(neighbors.count > 0);
+        assert!(
+            neighbors
+                .tids
+                .iter()
+                .any(|tid| *tid != am::page::ItemPointer::INVALID),
+            "entry adjacency should include at least one real grouped-hot neighbor",
+        );
+
+        let first_neighbor_tid = neighbors
+            .tids
+            .iter()
+            .copied()
+            .find(|tid| *tid != am::page::ItemPointer::INVALID)
+            .expect("grouped entry should expose a readable neighbor");
+        let neighbor = unsafe {
+            am::graph::load_grouped_graph_element(index_relation, first_neighbor_tid, layout)
+        };
+
+        assert_eq!(neighbor.search_code.len(), layout.search_code_len);
+        assert_eq!(neighbor.binary_words.len(), layout.binary_word_count);
+        assert!(!neighbor.heaptids.is_empty());
+        assert_ne!(neighbor.reranktid, am::page::ItemPointer::INVALID);
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_graph_reads_load_cold_rerank_payload() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_rerank_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_rerank_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_rerank_reads_idx ON tqhnsw_pq_fastscan_rerank_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_rerank_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        let layout = match am::graph::GraphStorageDescriptor::from_metadata(&metadata).unwrap() {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                panic!("PqFastScan build should not decode as TurboQuant storage")
+            }
+        };
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_pq_fastscan_graph_reads_load_cold_rerank_payload",
+            )
+        };
+        let entry = unsafe {
+            am::graph::load_grouped_graph_element(index_relation, metadata.entry_point, layout)
+        };
+        let rerank = unsafe {
+            am::graph::load_grouped_rerank_payload(index_relation, entry.reranktid, layout)
+        };
+
+        assert_eq!(rerank.tid, entry.reranktid);
+        assert_eq!(rerank.code.len(), layout.rerank_code_len);
+        assert!(rerank.gamma.is_finite());
+        assert!(
+            rerank.code.iter().any(|byte| *byte != 0),
+            "cold rerank payload should contain a non-empty scalar code",
+        );
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_graph_reads_load_persisted_codebooks() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_codebook_reads (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 43 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_codebook_reads VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_codebook_reads_idx ON tqhnsw_pq_fastscan_codebook_reads USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_codebook_reads_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+
+        let (_block_count, metadata, _data_pages) = unsafe { am::debug_index_pages(index_oid) };
+        assert_ne!(
+            metadata.grouped_codebook_head,
+            am::page::ItemPointer::INVALID
+        );
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_pq_fastscan_graph_reads_load_persisted_codebooks",
+            )
+        };
+        let model = unsafe { am::graph::load_grouped_codebook_model(index_relation, &metadata) };
+
+        assert_eq!(model.head_tid, metadata.grouped_codebook_head);
+        assert_eq!(model.group_count, metadata.search_subvector_count as usize);
+        assert_eq!(model.group_size, metadata.search_subvector_dim as usize);
+        assert_eq!(
+            model.flat_codebooks.len(),
+            model.group_count * model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS
+        );
+        assert!(
+            model.flat_codebooks.iter().all(|value| value.is_finite()),
+            "persisted grouped codebooks should decode as finite f32 values",
+        );
+
+        let head = unsafe {
+            am::graph::with_grouped_codebook_tuple(
+                index_relation,
+                model.head_tid,
+                model.group_size * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS,
+                |tuple| (tuple.group_index, tuple.nexttid),
+            )
+        };
+        assert_eq!(head.0, 0);
+        if model.group_count == 1 {
+            assert_eq!(head.1, am::page::ItemPointer::INVALID);
+        } else {
+            assert_ne!(head.1, am::page::ItemPointer::INVALID);
+        }
+
+        let query = vec![0.5_f32; model.group_count * model.group_size];
+        let lut = crate::quant::grouped_pq::build_grouped_pq_lut_f32(
+            &query,
+            &model.flat_codebooks,
+            model.group_size,
+        );
+        assert_eq!(
+            lut.len(),
+            model.group_count * crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS
+        );
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_ordered_scan_smoke() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_reject (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_reject VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_reject_idx ON tqhnsw_pq_fastscan_runtime_reject USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let observed = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_reject \
+             ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                      0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered SELECT should succeed");
+        assert!(
+            observed.is_some(),
+            "PqFastScan ordered scans should emit at least one row",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_ordered_scan_plan_smoke() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_enabled (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_enabled VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_enabled_idx ON tqhnsw_pq_fastscan_runtime_enabled USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
+                     ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                              0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+                     LIMIT 3",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(
+            plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+            "PqFastScan runtime smoke test should route through tqhnsw when PqFastScan storage is selected: {plan}"
+        );
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
+                     ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
+                                              0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
+                     LIMIT 3",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed when PqFastScan storage is selected")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(ordered_ids.len(), 3);
+        assert!(
+            ordered_ids.windows(2).all(|pair| pair[0] != pair[1]),
+            "PqFastScan runtime smoke test should emit distinct ids"
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan live rerank window must be between 1 and 64, got 0"
+    )]
+    fn test_pq_fastscan_runtime_rejects_invalid_live_window_env() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "0");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_window (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_window VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_window_idx ON tqhnsw_pq_fastscan_runtime_invalid_window USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_window \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped window env");
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_captures_rerank_scores() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_compare (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_compare VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_compare_idx ON tqhnsw_pq_fastscan_runtime_compare USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_compare_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let source = (0..16)
+                    .map(|dim| (((id * 31 + dim) as f32) * 0.03).cos())
+                    .collect::<Vec<_>>();
+                let heap_tid = heap_tid_for_row("tqhnsw_pq_fastscan_runtime_compare", id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &source),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "PqFastScan runtime comparison path should emit at least one ordered result"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score
+                .expect("PqFastScan emitted results should carry an exact rerank comparison score");
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact source score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan comparison score should match the source-backed exact rerank score for the emitted tuple",
+            );
+        }
+    }
+
+    type DebugScanComparisonRow = ((u32, u16), f32, Option<f32>, Option<i32>);
+    type DebugGroupedComparisonRow = ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
+
+    #[pg_extern]
+    fn tqhnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn create_pq_fastscan_runtime_fixture_internal(
+        table_name: &str,
+        index_name: &str,
+        include_source_raw: bool,
+        m: i32,
+    ) -> pg_sys::Oid {
+        let source_raw_column = if include_source_raw {
+            ",\n                source_raw bytea"
+        } else {
+            ""
+        };
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[]{source_raw_column},
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let insert_sql = if include_source_raw {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, ARRAY[{source}]::real[], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[{source}]::real[]), \
+                     encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                )
+            };
+            Spi::run(&insert_sql).expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = {m}, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
+    fn create_pq_fastscan_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, 6)
+    }
+
+    fn create_pq_fastscan_runtime_fixture_with_source_raw(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, true, 6)
+    }
+
+    fn create_pq_fastscan_runtime_fixture_with_m(
+        table_name: &str,
+        index_name: &str,
+        m: i32,
+    ) -> pg_sys::Oid {
+        create_pq_fastscan_runtime_fixture_internal(table_name, index_name, false, m)
+    }
+
+    fn create_pq_fastscan_binary_runtime_fixture(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_source(id));
+            let embedding =
+                format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
+    fn create_turboquant_runtime_fixture_internal(
+        table_name: &str,
+        index_name: &str,
+        include_source: bool,
+    ) -> pg_sys::Oid {
+        let source_column = if include_source {
+            ",\n                source real[]"
+        } else {
+            ""
+        };
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key{source_column},
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let embedding = format_recall_vector_sql_literal(&runtime_fixture_embedding(id));
+            let insert_sql = if include_source {
+                let source = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(id));
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({id}, encode_to_tqvector({embedding}, 4, 42))"
+                )
+            };
+            Spi::run(&insert_sql).expect("insert should succeed");
+        }
+
+        let build_source_column = if include_source {
+            ", build_source_column = 'source'"
+        } else {
+            ""
+        };
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}, storage_format = 'turboquant')"
+        ))
+        .expect("index creation should succeed");
+
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
+
+    fn create_turboquant_runtime_fixture(table_name: &str, index_name: &str) -> pg_sys::Oid {
+        create_turboquant_runtime_fixture_internal(table_name, index_name, false)
+    }
+
+    fn create_turboquant_runtime_fixture_with_source(
+        table_name: &str,
+        index_name: &str,
+    ) -> pg_sys::Oid {
+        create_turboquant_runtime_fixture_internal(table_name, index_name, true)
+    }
+
+    fn pq_fastscan_runtime_query() -> Vec<f32> {
+        vec![
+            0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
+            1.52, 1.62,
+        ]
+    }
+
+    fn pq_fastscan_binary_runtime_query() -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((dim * 17 + 5) as f32) * 0.0013).sin() + (((dim * 29 + 11) as f32) * 0.0009).cos()
+            })
+            .collect()
+    }
+
+    fn runtime_fixture_embedding(id: i64) -> Vec<f32> {
+        (0..16)
+            .map(|dim| (((id * 29 + dim) as f32) * 0.02).sin())
+            .collect()
+    }
+
+    fn pq_fastscan_runtime_source(id: i64) -> Vec<f32> {
+        (0..16)
+            .map(|dim| (((id * 41 + dim) as f32) * 0.03).cos())
+            .collect()
+    }
+
+    fn pq_fastscan_binary_runtime_embedding(id: i64) -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((id * 29 + dim * 7) as f32) * 0.0011).sin()
+                    + (((id * 13 + dim * 3) as f32) * 0.0007).cos()
+            })
+            .collect()
+    }
+
+    fn pq_fastscan_binary_runtime_source(id: i64) -> Vec<f32> {
+        (0..RECALL_DIM)
+            .map(|dim| {
+                let dim = dim as i64;
+                (((id * 41 + dim * 11) as f32) * 0.0012).cos()
+                    + (((id * 19 + dim * 5) as f32) * 0.0008).sin()
+            })
+            .collect()
+    }
+
+    fn fetch_pq_fastscan_index_runtime_text(
+        index_oid: pg_sys::Oid,
+        column: &str,
+    ) -> Option<String> {
+        Spi::get_one::<String>(&format!(
+            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+        ))
+        .expect("index runtime settings probe should succeed")
+    }
+
+    fn fetch_pq_fastscan_index_runtime_i32(index_oid: pg_sys::Oid, column: &str) -> Option<i32> {
+        Spi::get_one::<i32>(&format!(
+            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+        ))
+        .expect("index runtime settings probe should succeed")
+    }
+
+    fn observed_heap_tids_for_query(index_oid: pg_sys::Oid, query: Vec<f32>) -> Vec<(u32, u16)> {
+        unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query) }
+            .into_iter()
+            .map(|(heap_tid, _score)| heap_tid)
+            .collect()
+    }
+
+    fn observed_ids_for_query(
+        index_oid: pg_sys::Oid,
+        table_name: &str,
+        query: Vec<f32>,
+    ) -> Vec<usize> {
+        let ctid_to_id = ctid_id_map(table_name);
+        observed_heap_tids_for_query(index_oid, query)
+            .into_iter()
+            .map(|heap_tid| {
+                *ctid_to_id
+                    .get(&heap_tid)
+                    .expect("observed heap tid should map back to a table row")
+            })
+            .collect()
+    }
+
+    fn first_self_ranked_runtime_fixture_id(
+        index_oid: pg_sys::Oid,
+        table_name: &str,
+        candidate_ids: std::ops::RangeInclusive<i64>,
+    ) -> i64 {
+        candidate_ids
+            .into_iter()
+            .find(|id| {
+                observed_ids_for_query(index_oid, table_name, runtime_fixture_embedding(*id))
+                    .first()
+                    .copied()
+                    == Some(usize::try_from(*id).expect("runtime fixture id should fit in usize"))
+            })
+            .expect("fixture should expose at least one row that ranks first for its own embedding")
+    }
+
+    fn simulate_grouped_live_window_order(
+        baseline_rows: &[DebugGroupedComparisonRow],
+        window_size: usize,
+    ) -> Vec<(u32, u16)> {
+        let mut buffered_rows = Vec::with_capacity(window_size);
+        let mut next_idx = 0usize;
+        let mut expected_order = Vec::with_capacity(baseline_rows.len());
+        while expected_order.len() < baseline_rows.len() {
+            while buffered_rows.len() < window_size && next_idx < baseline_rows.len() {
+                buffered_rows.push(baseline_rows[next_idx]);
+                next_idx += 1;
+            }
+            let (selected_idx, _) = buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    left.3
+                        .unwrap_or(left.2)
+                        .total_cmp(&right.3.unwrap_or(right.2))
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+                .expect("windowed grouped simulation should always have a buffered row");
+            let (heap_tid, _approx_rank, _approx_score, _comparison_score, _exact_rank, _shift) =
+                buffered_rows.remove(selected_idx);
+            expected_order.push(heap_tid);
+        }
+        expected_order
+    }
+
+    fn pq_fastscan_exact_traversal_runtime_observed_scores(
+        table_name: &str,
+        index_name: &str,
+        scope: Option<&str>,
+    ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = scope
+            .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", value));
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+        }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        (observed, emitted_scores)
+    }
+
+    fn pq_fastscan_rerank_runtime_observed_scores(
+        table_name: &str,
+        index_name: &str,
+        rerank_mode: Option<&str>,
+        rerank_source_column: Option<&str>,
+        include_source_raw: bool,
+    ) -> (Vec<DebugScanComparisonRow>, HashMap<(u32, u16), f32>) {
+        let _lock = env_var_test_lock();
+        let _rerank_guard =
+            rerank_mode.map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", value));
+        let _source_guard = rerank_source_column
+            .map(|value| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", value));
+        let index_oid = if include_source_raw {
+            create_pq_fastscan_runtime_fixture_with_source_raw(table_name, index_name)
+        } else {
+            create_pq_fastscan_runtime_fixture(table_name, index_name)
+        };
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+        let emitted_scores = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, pq_fastscan_runtime_query())
+        }
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+        (observed, emitted_scores)
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_exact_traversal_emits_exact_scores() {
+        let (observed, emitted_scores) = pq_fastscan_exact_traversal_runtime_observed_scores(
+            "tqhnsw_pq_fastscan_runtime_exact_traversal",
+            "tqhnsw_pq_fastscan_runtime_exact_traversal_idx",
+            None,
+        );
+
+        assert!(
+            !observed.is_empty(),
+            "exact grouped traversal runtime should still emit ordered results"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score
+                .expect("exact grouped traversal runtime should still attach comparison scores");
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("exact traversal should emit an order-by score for every observed heap tid"),
+                comparison_score,
+                "exact grouped traversal should emit the same exact rerank score it records as the comparison sidecar",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_runtime_settings_reflect_controls() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _rerank_source_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", "source_raw");
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "all");
+        let _strategy_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY", "expansion");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
+
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pq_fastscan_build_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface that pq_fastscan build selection is always available via reloptions",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pq_fastscan_scan_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface that pq_fastscan scan selection is always available",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_scan_window
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("8"),
+            "the runtime settings probe should surface the configured pq_fastscan scan window",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_traversal_score_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("binary"),
+            "the runtime settings probe should surface the configured pq_fastscan traversal score mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("heap_f32"),
+            "the runtime settings probe should surface the configured pq_fastscan rerank mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_source_column
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("source_raw"),
+            "the runtime settings probe should surface the configured pq_fastscan rerank source column",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pq_fastscan_exact_traversal_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(true),
+            "the runtime settings probe should surface the pq_fastscan exact traversal gate",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_exact_traversal_scope
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("all"),
+            "the runtime settings probe should surface the pq_fastscan exact traversal scope",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_exact_traversal_strategy
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("expansion"),
+            "the runtime settings probe should surface the pq_fastscan exact traversal strategy",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_exact_traversal_limit
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("1"),
+            "the runtime settings probe should surface the pq_fastscan exact traversal limit",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_runtime_settings_surface_effective_defaults() {
+        let _lock = env_var_test_lock();
+
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_scan_window
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("64"),
+            "the runtime settings probe should surface the effective default pq_fastscan scan window",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_traversal_score_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("binary"),
+            "the runtime settings probe should surface the effective default pq_fastscan traversal score mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_mode
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("heap_f32"),
+            "the runtime settings probe should surface the effective default pq_fastscan rerank mode",
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT pq_fastscan_rerank_source_column
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed")
+            .as_deref(),
+            Some("build_source_column"),
+            "the runtime settings probe should surface the source-backed pq_fastscan rerank column label by default",
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pq_fastscan_exact_traversal_enabled
+                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+            )
+            .expect("runtime settings probe should succeed"),
+            Some(false),
+            "the runtime settings probe should surface that exact traversal stays disabled by default",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_binary_default() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_binary_default",
+            "tqhnsw_pq_fastscan_runtime_settings_binary_default_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("binary"),
+            "the index-aware runtime settings helper should surface the effective traversal mode for a binary-sidecar pq_fastscan index",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("default_binary_with_binary_sidecar"),
+            "the index-aware runtime settings helper should explain when binary traversal comes from the persisted binary sidecar default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT),
+            "the index-aware runtime settings helper should surface the layout binary word count used to pick the default traversal path",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "the index-aware runtime settings helper should surface the effective heap_f32 rerank default for source-backed pq_fastscan indexes",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("default_heap_f32_with_build_source_column"),
+            "the index-aware runtime settings helper should explain when heap_f32 rerank came from the persisted build_source_column default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            Some("source"),
+            "the index-aware runtime settings helper should surface the effective rerank source column name",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_binary_fallback() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback",
+            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback_idx",
+        );
+
+        let (_block_count, _m, _ef_construction, mut metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        metadata.payload_flags &= !am::page::PAYLOAD_FLAG_BINARY_SIDECAR;
+        unsafe { am::debug_update_index_metadata(index_oid, metadata) };
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("pq"),
+            "the index-aware runtime settings helper should surface the actual grouped-pq fallback when a pq_fastscan index lacks a persisted binary sidecar",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("fallback_grouped_pq_missing_binary_sidecar"),
+            "the index-aware runtime settings helper should explain when the binary default fell back because the index metadata no longer advertises a binary sidecar",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(0),
+            "the index-aware runtime settings helper should surface that the fallback path came from a zero-word binary layout",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_env_override() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_settings_env_override",
+            "tqhnsw_pq_fastscan_runtime_settings_env_override_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_traversal_score_mode")
+                .as_deref(),
+            Some("pq"),
+            "the index-aware runtime settings helper should surface the env-selected traversal mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                index_oid,
+                "pq_fastscan_traversal_score_mode_resolution",
+            )
+            .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that an explicit env override won over the layout default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_i32(index_oid, "pq_fastscan_layout_binary_word_count"),
+            Some(PQ_FASTSCAN_BINARY_RUNTIME_WORD_COUNT),
+            "the index-aware runtime settings helper should still surface the persisted binary layout when an env override changes the selected traversal mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("quantized"),
+            "the index-aware runtime settings helper should surface the env-selected rerank mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that an explicit rerank env override won over the source-backed default",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            None,
+            "the index-aware runtime settings helper should omit the rerank source column when quantized rerank is selected",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_index_runtime_settings_report_heap_override() {
+        let _lock = env_var_test_lock();
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let _rerank_source_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", "source_raw");
+        let index_oid = create_pq_fastscan_runtime_fixture_with_source_raw(
+            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override",
+            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override_idx",
+        );
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "the index-aware runtime settings helper should surface the env-selected heap_f32 rerank mode",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("env_override"),
+            "the index-aware runtime settings helper should report that the heap rerank mode came from an explicit env override",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            Some("source_raw"),
+            "the index-aware runtime settings helper should surface the effective rerank source override column name",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_default_source_rerank_emits_heap_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank";
+        let index_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank_idx";
+        let (observed, emitted_scores) =
+            pq_fastscan_rerank_runtime_observed_scores(table_name, index_name, None, None, false);
+        let query = pq_fastscan_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "source-backed default PqFastScan rerank should still emit ordered results"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "source-backed default PqFastScan rerank should attach exact heap comparison scores",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "source-backed default PqFastScan rerank should use the raw heap f32 inner product",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "source-backed default PqFastScan rerank should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_default_rerank_matches_explicit_heap() {
+        let _lock = env_var_test_lock();
+        let default_index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_default_rerank_parity",
+            "tqhnsw_pq_fastscan_runtime_default_rerank_parity_idx",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(default_index_oid, "pq_fastscan_rerank_mode")
+                .as_deref(),
+            Some("heap_f32"),
+            "the default source-backed fixture should resolve to heap_f32 rerank",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                default_index_oid,
+                "pq_fastscan_rerank_mode_resolution",
+            )
+            .as_deref(),
+            Some("default_heap_f32_with_build_source_column"),
+            "the default source-backed fixture should report that heap_f32 came from build_source_column",
+        );
+        let default_observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                default_index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+
+        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let explicit_index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity",
+            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity_idx",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(explicit_index_oid, "pq_fastscan_rerank_mode")
+                .as_deref(),
+            Some("heap_f32"),
+            "the explicit heap override fixture should still resolve to heap_f32 rerank",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(
+                explicit_index_oid,
+                "pq_fastscan_rerank_mode_resolution",
+            )
+            .as_deref(),
+            Some("env_override"),
+            "the explicit heap override fixture should report that heap_f32 came from the env override",
+        );
+        let explicit_heap_observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                explicit_index_oid,
+                pq_fastscan_runtime_query(),
+            )
+        };
+
+        let default_scores = default_observed
+            .into_iter()
+            .map(
+                |(_heap_tid, emitted_score, comparison_score, approx_rank)| {
+                    (
+                        emitted_score,
+                        comparison_score
+                            .expect("default heap rerank should emit comparison scores"),
+                        approx_rank,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        let explicit_heap_scores = explicit_heap_observed
+            .into_iter()
+            .map(
+                |(_heap_tid, emitted_score, comparison_score, approx_rank)| {
+                    (
+                        emitted_score,
+                        comparison_score
+                            .expect("explicit heap rerank should emit comparison scores"),
+                        approx_rank,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            default_scores, explicit_heap_scores,
+            "source-backed default rerank should match the explicit heap_f32 override exactly"
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
+        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
+        let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
+            table_name,
+            index_name,
+            Some("heap_f32"),
+            None,
+            false,
+        );
+        let query = pq_fastscan_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "PqFastScan heap rerank should still emit ordered results"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score
+                .expect("PqFastScan heap rerank should attach exact heap comparison scores");
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan heap rerank comparison score should match the raw heap f32 inner product",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "PqFastScan heap rerank should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_heap_rerank_bytea_source_emits_exact_scores() {
+        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea";
+        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea_idx";
+        let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
+            table_name,
+            index_name,
+            Some("heap_f32"),
+            Some("source_raw"),
+            true,
+        );
+        let query = pq_fastscan_runtime_query();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "PqFastScan heap rerank should still emit ordered results with a bytea source override"
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "PqFastScan heap rerank with a bytea source override should attach exact heap comparison scores",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact heap score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "PqFastScan heap rerank bytea comparison score should match the raw heap f32 inner product",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "PqFastScan heap rerank with a bytea source override should emit the exact heap comparison score as the order-by score",
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_profile_exact_counters_zero_without_gate() {
+        let _lock = env_var_test_lock();
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_profile_approx",
+            "tqhnsw_pq_fastscan_runtime_profile_approx_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+
+        assert!(
+            grouped_traversal_approx_score_calls > 0
+                && grouped_traversal_approx_score_elapsed_us >= 0,
+            "grouped approximate scans should surface grouped approximate traversal scoring work",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0),
+            "grouped approximate scans should leave grouped exact traversal counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_binary_score_mode_bypasses_grouped_pq_scoring() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
+        let index_oid = create_pq_fastscan_binary_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode",
+            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe {
+            am::debug_profile_ordered_scan(index_oid, pq_fastscan_binary_runtime_query())
+        };
+
+        assert!(
+            result_count > 0,
+            "binary grouped traversal score mode should still emit ordered results",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_approx_score_calls,
+                grouped_traversal_approx_score_elapsed_us,
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0, 0, 0),
+            "binary grouped traversal score mode should bypass grouped PQ scoring and leave exact-traversal counters inert without the exact gate",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_quantized_rerank_profile_quantized_only() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
+            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10) };
+
+        assert!(
+            result_count > 0,
+            "quantized grouped rerank profile should still emit ordered results",
+        );
+        assert!(
+            grouped_rerank_quantized_score_calls > 0
+                && grouped_rerank_quantized_score_elapsed_us >= 0,
+            "quantized grouped rerank profile should surface quantized comparison work",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_heap_score_calls,
+                grouped_rerank_heap_score_elapsed_us,
+                grouped_rerank_heap_rows_fetched,
+                grouped_rerank_heap_fetch_elapsed_us,
+                grouped_rerank_heap_decode_elapsed_us,
+                grouped_rerank_heap_dot_elapsed_us,
+            ),
+            (0, 0, 0, 0, 0, 0),
+            "quantized grouped rerank profile should leave heap rerank counters inert",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_heap_rerank_profile_reports_heap_only() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile",
+            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile_idx",
+        );
+        let (
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = unsafe { am::debug_grouped_rerank_profile(index_oid, pq_fastscan_runtime_query(), 10) };
+
+        assert!(
+            result_count > 0,
+            "heap-f32 grouped rerank profile should still emit ordered results",
+        );
+        assert_eq!(
+            (
+                grouped_rerank_quantized_score_calls,
+                grouped_rerank_quantized_score_elapsed_us,
+            ),
+            (0, 0),
+            "heap-f32 grouped rerank profile should bypass quantized rerank counters",
+        );
+        assert!(
+            grouped_rerank_heap_score_calls > 0 && grouped_rerank_heap_score_elapsed_us >= 0,
+            "heap-f32 grouped rerank profile should surface per-element heap rerank work",
+        );
+        assert!(
+            grouped_rerank_heap_rows_fetched >= grouped_rerank_heap_score_calls
+                && grouped_rerank_heap_fetch_elapsed_us >= 0
+                && grouped_rerank_heap_decode_elapsed_us >= 0
+                && grouped_rerank_heap_dot_elapsed_us >= 0,
+            "heap-f32 grouped rerank profile should surface heap fetch, decode, and dot-product work for survivor rows",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
+        let _lock = env_var_test_lock();
+        let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
+        let index_name = "tqhnsw_pq_fastscan_rerank_profile_sql_surface_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_rerank_profile_sql_surface",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
+        let (
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            result_count,
+                            pq_fastscan_rerank_quantized_score_calls,
+                            pq_fastscan_rerank_quantized_score_elapsed_us,
+                            pq_fastscan_rerank_heap_score_calls,
+                            pq_fastscan_rerank_heap_score_elapsed_us,
+                            pq_fastscan_rerank_heap_rows_fetched,
+                            pq_fastscan_rerank_heap_fetch_elapsed_us,
+                            pq_fastscan_rerank_heap_decode_elapsed_us,
+                            pq_fastscan_rerank_heap_dot_elapsed_us
+                         FROM tests.tqhnsw_debug_pq_fastscan_rerank_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal},
+                            10
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("pq fastscan rerank profile query should succeed")
+                .next()
+                .expect("pq fastscan rerank profile should return one row");
+            (
+                row["result_count"]
+                    .value::<i32>()
+                    .expect("result count should decode")
+                    .expect("result count should be non-null"),
+                row["pq_fastscan_rerank_quantized_score_calls"]
+                    .value::<i32>()
+                    .expect("quantized score call count should decode")
+                    .expect("quantized score call count should be non-null"),
+                row["pq_fastscan_rerank_quantized_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("quantized score elapsed should decode")
+                    .expect("quantized score elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_score_calls"]
+                    .value::<i32>()
+                    .expect("heap score call count should decode")
+                    .expect("heap score call count should be non-null"),
+                row["pq_fastscan_rerank_heap_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap score elapsed should decode")
+                    .expect("heap score elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_rows_fetched"]
+                    .value::<i32>()
+                    .expect("heap rows fetched should decode")
+                    .expect("heap rows fetched should be non-null"),
+                row["pq_fastscan_rerank_heap_fetch_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap fetch elapsed should decode")
+                    .expect("heap fetch elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_decode_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap decode elapsed should decode")
+                    .expect("heap decode elapsed should be non-null"),
+                row["pq_fastscan_rerank_heap_dot_elapsed_us"]
+                    .value::<i64>()
+                    .expect("heap dot elapsed should decode")
+                    .expect("heap dot elapsed should be non-null"),
+            )
+        });
+
+        assert!(result_count > 0);
+        assert!(
+            pq_fastscan_rerank_heap_score_calls > 0
+                && pq_fastscan_rerank_heap_score_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_rows_fetched >= pq_fastscan_rerank_heap_score_calls
+                && pq_fastscan_rerank_heap_fetch_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_decode_elapsed_us >= 0
+                && pq_fastscan_rerank_heap_dot_elapsed_us >= 0,
+            "canonical pq fastscan rerank profile should surface heap rerank work on the source-backed default path",
+        );
+        assert_eq!(
+            (
+                pq_fastscan_rerank_quantized_score_calls,
+                pq_fastscan_rerank_quantized_score_elapsed_us,
+            ),
+            (0, 0),
+            "canonical pq fastscan rerank profile should bypass quantized rerank counters on the source-backed default path",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_profile_budgeted_exact_counters() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact",
+            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+
+        assert!(
+            grouped_traversal_approx_score_calls > 0
+                && grouped_traversal_approx_score_elapsed_us >= 0,
+            "budgeted grouped exact traversal should still score grouped approximate candidates first",
+        );
+        assert!(
+            grouped_traversal_exact_score_calls > 0
+                && grouped_traversal_exact_score_elapsed_us >= 0,
+            "budgeted grouped exact traversal should surface exact rescoring work",
+        );
+        assert!(
+            score_cache_hits > 0 && score_cache_misses > 0,
+            "budgeted grouped exact traversal should reuse cached exact scores after the first miss path",
+        );
+        assert!(
+            grouped_traversal_budgeted_expansions > 0
+                && grouped_traversal_budgeted_candidates
+                    >= grouped_traversal_budgeted_exact_candidates,
+            "budgeted grouped exact traversal should report the candidate sets it exact-rescored",
+        );
+        assert!(
+            grouped_traversal_exact_score_calls >= grouped_traversal_budgeted_exact_candidates,
+            "grouped exact traversal should include at least the budgeted exact rescoring calls, even if entry or seed scoring adds more",
+        );
+        assert_eq!(
+            grouped_traversal_budgeted_expansions, grouped_traversal_budgeted_exact_candidates,
+            "limit=1 should exact-rescore one grouped candidate per budgeted expansion",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_pq_fastscan_scan_hot_path_profile_sql_surface() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
+        let index_name = "tqhnsw_pq_fastscan_hot_path_profile_sql_surface_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_hot_path_profile_sql_surface",
+            index_name,
+        );
+        let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
+        let (
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            score_cache_hits,
+                            score_cache_misses,
+                            pq_fastscan_traversal_approx_score_calls,
+                            pq_fastscan_traversal_approx_score_elapsed_us,
+                            pq_fastscan_traversal_exact_score_calls,
+                            pq_fastscan_traversal_exact_score_elapsed_us,
+                            pq_fastscan_traversal_budgeted_expansions,
+                            pq_fastscan_traversal_budgeted_candidates,
+                            pq_fastscan_traversal_budgeted_exact_candidates
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+                            '{index_name}'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("pq fastscan hot path profile query should succeed")
+                .next()
+                .expect("pq fastscan hot path profile should return one row");
+            (
+                row["score_cache_hits"]
+                    .value::<i32>()
+                    .expect("score cache hits should decode")
+                    .expect("score cache hits should be non-null"),
+                row["score_cache_misses"]
+                    .value::<i32>()
+                    .expect("score cache misses should decode")
+                    .expect("score cache misses should be non-null"),
+                row["pq_fastscan_traversal_approx_score_calls"]
+                    .value::<i32>()
+                    .expect("approx score call count should decode")
+                    .expect("approx score call count should be non-null"),
+                row["pq_fastscan_traversal_approx_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("approx score elapsed should decode")
+                    .expect("approx score elapsed should be non-null"),
+                row["pq_fastscan_traversal_exact_score_calls"]
+                    .value::<i32>()
+                    .expect("exact score call count should decode")
+                    .expect("exact score call count should be non-null"),
+                row["pq_fastscan_traversal_exact_score_elapsed_us"]
+                    .value::<i64>()
+                    .expect("exact score elapsed should decode")
+                    .expect("exact score elapsed should be non-null"),
+                row["pq_fastscan_traversal_budgeted_expansions"]
+                    .value::<i32>()
+                    .expect("budgeted expansion count should decode")
+                    .expect("budgeted expansion count should be non-null"),
+                row["pq_fastscan_traversal_budgeted_candidates"]
+                    .value::<i32>()
+                    .expect("budgeted candidate count should decode")
+                    .expect("budgeted candidate count should be non-null"),
+                row["pq_fastscan_traversal_budgeted_exact_candidates"]
+                    .value::<i32>()
+                    .expect("budgeted exact candidate count should decode")
+                    .expect("budgeted exact candidate count should be non-null"),
+            )
+        });
+
+        assert!(
+            pq_fastscan_traversal_approx_score_calls > 0
+                && pq_fastscan_traversal_approx_score_elapsed_us >= 0,
+            "canonical pq fastscan hot path profile should surface approximate traversal scoring",
+        );
+        assert!(
+            pq_fastscan_traversal_exact_score_calls > 0
+                && pq_fastscan_traversal_exact_score_elapsed_us >= 0,
+            "canonical pq fastscan hot path profile should surface exact traversal rescoring",
+        );
+        assert!(
+            score_cache_hits >= 0 && score_cache_misses > 0,
+            "canonical pq fastscan hot path profile should surface exact-score cache activity",
+        );
+        assert!(
+            pq_fastscan_traversal_budgeted_expansions > 0
+                && pq_fastscan_traversal_budgeted_candidates
+                    >= pq_fastscan_traversal_budgeted_exact_candidates,
+            "canonical pq fastscan hot path profile should report the budgeted exact traversal candidate sets",
+        );
+        assert!(
+            pq_fastscan_traversal_exact_score_calls
+                >= pq_fastscan_traversal_budgeted_exact_candidates,
+            "canonical pq fastscan hot path profile should include at least the budgeted exact rescoring calls",
+        );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_profile_frontier_head_exact_counters() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "layer0");
+        let _strategy_guard = ScopedEnvVar::set(
+            "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY",
+            "frontier_head",
+        );
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact",
+            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact_idx",
+        );
+        let (
+            _rescan_elapsed_us,
+            _emit_elapsed_us,
+            _total_elapsed_us,
+            _rescan_phase,
+            _rescan_current_result,
+            _rescan_ordered_slots,
+            _rescan_pending_heap_tids,
+            _rescan_visited_elements,
+            _rescan_expanded_sources,
+            _rescan_emitted_elements,
+            _rescan_bootstrap_expansions,
+            _rescan_bootstrap_pages_read,
+            _rescan_quantizer_cache_hit,
+            _result_count,
+            _final_phase,
+            _final_ordered_slots,
+            _total_bootstrap_expansions,
+            _total_bootstrap_pages_read,
+            _total_linear_pages_read,
+            _total_elements_scored,
+            _total_elements_skipped,
+            _total_heap_tids_returned,
+            _total_quantizer_cache_hit,
+            _total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+
+        assert!(
+            grouped_traversal_approx_score_calls > 0
+                && grouped_traversal_approx_score_elapsed_us >= 0,
+            "frontier-head grouped exact traversal should still score grouped approximate candidates first",
+        );
+        assert!(
+            grouped_traversal_exact_score_calls > 0
+                && grouped_traversal_exact_score_elapsed_us >= 0,
+            "frontier-head grouped exact traversal should surface exact rescoring work",
+        );
+        let _ = score_cache_hits;
+        assert!(
+            score_cache_misses > 0,
+            "frontier-head grouped exact traversal should still populate the scan-local exact cache",
+        );
+        assert_eq!(
+            (
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0),
+            "frontier-head grouped exact traversal should not use the per-expansion budget path",
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got \"bogus\""
+    )]
+    fn test_pq_fastscan_traversal_score_mode_rejects_invalid_env() {
+        let _lock = env_var_test_lock();
+        let _score_mode_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "bogus");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_invalid_score_mode",
+            "tqhnsw_pq_fastscan_runtime_invalid_score_mode_idx",
+        );
+
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan rerank mode must be one of [quantized, heap_f32], got \"bogus\""
+    )]
+    fn test_pq_fastscan_rerank_mode_rejects_invalid_env() {
+        let _lock = env_var_test_lock();
+        let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "bogus");
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode",
+            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
+        );
+
+        let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got \"bogus\""
+    )]
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_scope_env() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "bogus");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_scope (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_scope VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_scope_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_scope USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_scope \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped exact traversal scope");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
+    )]
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_strategy_env() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _scope_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "layer0");
+        let _strategy_guard =
+            ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY", "bogus");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_strategy (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_strategy VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_strategy_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_strategy USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_strategy \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped exact traversal strategy");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw PqFastScan exact traversal limit must be a positive integer, got bogus"
+    )]
+    fn test_pq_fastscan_exact_traversal_rejects_invalid_limit_env() {
+        let _lock = env_var_test_lock();
+        let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
+        let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "bogus");
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_limit (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 43 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_limit VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_limit_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_limit USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_limit \
+             ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
+             LIMIT 1",
+        )
+        .expect("ordered scan should reach amrescan before rejecting invalid grouped exact traversal limit");
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_comparison_summary_matches_rows() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.03).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.02).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_summary_idx ON tqhnsw_pq_fastscan_runtime_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.15_f32, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35, 1.45,
+            1.55, 1.65,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+
+        let compared_rows = observed
+            .iter()
+            .filter_map(
+                |(_heap_tid, approx_score, comparison_score, _approx_rank)| {
+                    comparison_score.map(|exact_score| (*approx_score, exact_score))
+                },
+            )
+            .collect::<Vec<_>>();
+        let expected_emitted_result_count =
+            i32::try_from(observed.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let expected_compared_result_count =
+            i32::try_from(compared_rows.len()).expect("compared result count should fit in i32");
+        let expected_missing_comparison_count =
+            expected_grouped_result_count - expected_compared_result_count;
+        let expected_mean_abs_score_delta = if compared_rows.is_empty() {
+            0.0
+        } else {
+            compared_rows
+                .iter()
+                .map(|(approx_score, exact_score)| f64::from((approx_score - exact_score).abs()))
+                .sum::<f64>()
+                / f64::from(expected_compared_result_count)
+        };
+        let expected_max_abs_score_delta = compared_rows
+            .iter()
+            .map(|(approx_score, exact_score)| (approx_score - exact_score).abs())
+            .fold(0.0_f32, f32::max);
+        let expected_mean_signed_score_delta = if compared_rows.is_empty() {
+            0.0
+        } else {
+            compared_rows
+                .iter()
+                .map(|(approx_score, exact_score)| f64::from(approx_score - exact_score))
+                .sum::<f64>()
+                / f64::from(expected_compared_result_count)
+        };
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            pq_fastscan_result_count,
+                            compared_result_count,
+                            missing_comparison_count,
+                            mean_abs_score_delta,
+                            max_abs_score_delta,
+                            mean_signed_score_delta
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
+                            'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped comparison summary query should succeed")
+                .next()
+                .expect("grouped comparison summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["missing_comparison_count"]
+                    .value::<i32>()
+                    .expect("missing comparison count should decode")
+                    .expect("missing comparison count should be non-null"),
+                row["mean_abs_score_delta"]
+                    .value::<f64>()
+                    .expect("mean abs score delta should decode")
+                    .expect("mean abs score delta should be non-null"),
+                row["max_abs_score_delta"]
+                    .value::<f32>()
+                    .expect("max abs score delta should decode")
+                    .expect("max abs score delta should be non-null"),
+                row["mean_signed_score_delta"]
+                    .value::<f64>()
+                    .expect("mean signed score delta should decode")
+                    .expect("mean signed score delta should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert_eq!(missing_comparison_count, expected_missing_comparison_count);
+        assert!(
+            (mean_abs_score_delta - expected_mean_abs_score_delta).abs() <= 1e-6,
+            "mean abs grouped score delta should match the emitted-row summary"
+        );
+        assert!(
+            (max_abs_score_delta - expected_max_abs_score_delta).abs() <= f32::EPSILON,
+            "max abs grouped score delta should match the emitted-row summary"
+        );
+        assert!(
+            (mean_signed_score_delta - expected_mean_signed_score_delta).abs() <= 1e-6,
+            "mean signed grouped score delta should match the emitted-row summary"
+        );
+    }
+
+    #[pg_test]
+    fn test_scalar_runtime_summary_reports_no_grouped_comparisons() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_summary_idx ON tqhnsw_scalar_runtime_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        pq_fastscan_result_count,
+                        compared_result_count,
+                        missing_comparison_count,
+                        mean_abs_score_delta,
+                        max_abs_score_delta,
+                        mean_signed_score_delta
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
+                        'tqhnsw_scalar_runtime_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar comparison summary query should succeed")
+                .next()
+                .expect("scalar comparison summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["missing_comparison_count"]
+                    .value::<i32>()
+                    .expect("missing comparison count should decode")
+                    .expect("missing comparison count should be non-null"),
+                row["mean_abs_score_delta"]
+                    .value::<f64>()
+                    .expect("mean abs score delta should decode")
+                    .expect("mean abs score delta should be non-null"),
+                row["max_abs_score_delta"]
+                    .value::<f32>()
+                    .expect("max abs score delta should decode")
+                    .expect("max abs score delta should be non-null"),
+                row["mean_signed_score_delta"]
+                    .value::<f64>()
+                    .expect("mean signed score delta should decode")
+                    .expect("mean signed score delta should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(missing_comparison_count, 0);
+        assert_eq!(mean_abs_score_delta, 0.0);
+        assert_eq!(max_abs_score_delta, 0.0);
+        assert_eq!(mean_signed_score_delta, 0.0);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_comparison_rows_report_exact_ranks() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_comparison_rows (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 19 + dim) as f32) * 0.04).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_comparison_rows VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_comparison_rows_idx ON tqhnsw_pq_fastscan_runtime_comparison_rows USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.05_f32, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35,
+            1.45, 1.55,
+        ];
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+        let mut expected_exact_ranks = vec![None; observed.len()];
+        let mut ordered_observed = observed
+            .iter()
+            .enumerate()
+            .map(
+                |(
+                    idx,
+                    ((block_number, offset_number), approx_score, comparison_score, approx_rank),
+                )| {
+                    (
+                        idx,
+                        *block_number,
+                        *offset_number,
+                        *approx_score,
+                        *comparison_score,
+                        approx_rank.unwrap_or_else(|| {
+                            i32::try_from(idx + 1).expect("approx rank should fit in i32")
+                        }),
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        ordered_observed.sort_by_key(|row| row.5);
+        let mut compared_rows = ordered_observed
+            .iter()
+            .enumerate()
+            .filter_map(
+                |(
+                    idx,
+                    (
+                        _live_idx,
+                        _block_number,
+                        _offset_number,
+                        _approx_score,
+                        comparison_score,
+                        _approx_rank,
+                    ),
+                )| { comparison_score.map(|exact_score| (idx, exact_score)) },
+            )
+            .collect::<Vec<_>>();
+        compared_rows.sort_by(|(left_idx, left_score), (right_idx, right_score)| {
+            let left_approx_rank = ordered_observed[*left_idx].5;
+            let right_approx_rank = ordered_observed[*right_idx].5;
+            left_score
+                .total_cmp(right_score)
+                .then_with(|| left_approx_rank.cmp(&right_approx_rank))
+        });
+        for (rank, (idx, _exact_score)) in compared_rows.into_iter().enumerate() {
+            expected_exact_ranks[idx] =
+                Some(i32::try_from(rank + 1).expect("exact rank should fit in i32"));
+        }
+        let expected_rows = ordered_observed
+            .iter()
+            .enumerate()
+            .map(
+                |(
+                    idx,
+                    (
+                        _live_idx,
+                        block_number,
+                        offset_number,
+                        approx_score,
+                        comparison_score,
+                        approx_rank,
+                    ),
+                )| {
+                    let exact_rank = expected_exact_ranks[idx];
+                    let exact_rank_shift = exact_rank.map(|rank| approx_rank - rank);
+                    (
+                        i64::from(*block_number),
+                        i32::from(*offset_number),
+                        *approx_rank,
+                        *approx_score,
+                        *comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let actual_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            block_number,
+                            offset_number,
+                            approx_rank,
+                            approx_score,
+                            comparison_score,
+                            exact_rank,
+                            exact_rank_shift
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
+                            'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid,
+                            {query_literal}
+                         )
+                         ORDER BY approx_rank"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped comparison rows query should succeed")
+                .map(|row| {
+                    (
+                        row["block_number"]
+                            .value::<i64>()
+                            .expect("block number should decode")
+                            .expect("block number should be non-null"),
+                        row["offset_number"]
+                            .value::<i32>()
+                            .expect("offset number should decode")
+                            .expect("offset number should be non-null"),
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["approx_score"]
+                            .value::<f32>()
+                            .expect("approx score should decode")
+                            .expect("approx score should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(actual_rows.len(), expected_rows.len());
+        for (actual, expected) in actual_rows.iter().zip(expected_rows.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(actual.1, expected.1);
+            assert_eq!(actual.2, expected.2);
+            assert_eq!(actual.3.to_bits(), expected.3.to_bits());
+            assert_eq!(
+                actual.4.map(f32::to_bits),
+                expected.4.map(f32::to_bits),
+                "comparison score should preserve the emitted exact rerank score"
+            );
+            assert_eq!(actual.5, expected.5);
+            assert_eq!(actual.6, expected.6);
+        }
+    }
+
+    #[pg_test]
+    fn test_scalar_runtime_comparison_rows_leave_exact_order_null() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_comparison_rows (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_comparison_rows VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_comparison_rows_idx ON tqhnsw_scalar_runtime_comparison_rows USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        approx_rank,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
+                        'tqhnsw_scalar_runtime_comparison_rows_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )
+                     ORDER BY approx_rank",
+                    None,
+                    &[],
+                )
+                .expect("scalar comparison rows query should succeed")
+                .map(|row| {
+                    (
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert!(!rows.is_empty());
+        for (idx, (approx_rank, comparison_score, exact_rank, exact_rank_shift)) in
+            rows.iter().enumerate()
+        {
+            assert_eq!(
+                *approx_rank,
+                i32::try_from(idx + 1).expect("approx rank should fit in i32")
+            );
+            assert_eq!(*comparison_score, None);
+            assert_eq!(*exact_rank, None);
+            assert_eq!(*exact_rank_shift, None);
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_order_drift_summary_matches_rows() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_order_drift_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.025).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.035).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_order_drift_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_order_drift_summary_idx ON tqhnsw_pq_fastscan_runtime_order_drift_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.12_f32, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22, 1.32, 1.42,
+            1.52, 1.62,
+        ];
+        let observed = unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let expected_emitted_result_count =
+            i32::try_from(observed.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let mut expected_compared_result_count = 0_i32;
+        let mut abs_rank_shift_sum = 0.0_f64;
+        let mut expected_max_abs_rank_shift = 0_i32;
+        let mut d_squared_sum = 0.0_f64;
+        let mut expected_exact_best_approx_rank = None;
+        let mut expected_exact_top4_max_approx_rank = None;
+
+        for (
+            _heap_tid,
+            approx_rank,
+            _approx_score,
+            _comparison_score,
+            exact_rank,
+            exact_rank_shift,
+        ) in &observed
+        {
+            let Some(exact_rank) = exact_rank else {
+                continue;
+            };
+            expected_compared_result_count += 1;
+            let rank_shift =
+                exact_rank_shift.expect("grouped comparison rows should populate exact rank shift");
+            let abs_rank_shift = rank_shift.abs();
+            abs_rank_shift_sum += f64::from(abs_rank_shift);
+            expected_max_abs_rank_shift = expected_max_abs_rank_shift.max(abs_rank_shift);
+            let d = f64::from(*approx_rank - *exact_rank);
+            d_squared_sum += d * d;
+            if *exact_rank == 1 {
+                expected_exact_best_approx_rank = Some(*approx_rank);
+            }
+            if *exact_rank <= 4 {
+                expected_exact_top4_max_approx_rank = Some(
+                    expected_exact_top4_max_approx_rank
+                        .map_or(*approx_rank, |max_rank: i32| max_rank.max(*approx_rank)),
+                );
+            }
+        }
+
+        let expected_mean_abs_rank_shift = if expected_compared_result_count == 0 {
+            0.0
+        } else {
+            abs_rank_shift_sum / f64::from(expected_compared_result_count)
+        };
+        let expected_spearman_rank_correlation = if expected_compared_result_count < 2 {
+            0.0
+        } else {
+            let n = f64::from(expected_compared_result_count);
+            1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+        };
+        let expected_window_1_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 1);
+        let expected_window_2_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 2);
+        let expected_window_4_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 4);
+        let expected_window_8_contains_exact_best =
+            expected_exact_best_approx_rank.is_some_and(|rank| rank <= 8);
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            pq_fastscan_result_count,
+                            compared_result_count,
+                            mean_abs_rank_shift,
+                            max_abs_rank_shift,
+                            spearman_rank_correlation,
+                            exact_best_approx_rank,
+                            exact_top4_max_approx_rank,
+                            window_1_contains_exact_best,
+                            window_2_contains_exact_best,
+                            window_4_contains_exact_best,
+                            window_8_contains_exact_best
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
+                            'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid,
+                            {query_literal}
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped order drift summary query should succeed")
+                .next()
+                .expect("grouped order drift summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["mean_abs_rank_shift"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift should decode")
+                    .expect("mean abs rank shift should be non-null"),
+                row["max_abs_rank_shift"]
+                    .value::<i32>()
+                    .expect("max abs rank shift should decode")
+                    .expect("max abs rank shift should be non-null"),
+                row["spearman_rank_correlation"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation should decode")
+                    .expect("spearman rank correlation should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["window_1_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 1 flag should decode")
+                    .expect("window 1 flag should be non-null"),
+                row["window_2_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 2 flag should decode")
+                    .expect("window 2 flag should be non-null"),
+                row["window_4_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 4 flag should decode")
+                    .expect("window 4 flag should be non-null"),
+                row["window_8_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 8 flag should decode")
+                    .expect("window 8 flag should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert!(
+            (mean_abs_rank_shift - expected_mean_abs_rank_shift).abs() <= 1e-6,
+            "mean abs rank shift should match the emitted-row order summary"
+        );
+        assert_eq!(max_abs_rank_shift, expected_max_abs_rank_shift);
+        assert!(
+            (spearman_rank_correlation - expected_spearman_rank_correlation).abs() <= 1e-6,
+            "spearman rank correlation should match the emitted-row order summary"
+        );
+        assert_eq!(exact_best_approx_rank, expected_exact_best_approx_rank);
+        assert_eq!(
+            exact_top4_max_approx_rank,
+            expected_exact_top4_max_approx_rank
+        );
+        assert_eq!(
+            window_1_contains_exact_best,
+            expected_window_1_contains_exact_best
+        );
+        assert_eq!(
+            window_2_contains_exact_best,
+            expected_window_2_contains_exact_best
+        );
+        assert_eq!(
+            window_4_contains_exact_best,
+            expected_window_4_contains_exact_best
+        );
+        assert_eq!(
+            window_8_contains_exact_best,
+            expected_window_8_contains_exact_best
+        );
+    }
+
+    #[pg_test]
+    fn test_scalar_order_drift_summary_is_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_order_drift_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_order_drift_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_order_drift_summary_idx ON tqhnsw_scalar_runtime_order_drift_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        pq_fastscan_result_count,
+                        compared_result_count,
+                        mean_abs_rank_shift,
+                        max_abs_rank_shift,
+                        spearman_rank_correlation,
+                        exact_best_approx_rank,
+                        exact_top4_max_approx_rank,
+                        window_1_contains_exact_best,
+                        window_2_contains_exact_best,
+                        window_4_contains_exact_best,
+                        window_8_contains_exact_best
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
+                        'tqhnsw_scalar_runtime_order_drift_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar order drift summary query should succeed")
+                .next()
+                .expect("scalar order drift summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["mean_abs_rank_shift"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift should decode")
+                    .expect("mean abs rank shift should be non-null"),
+                row["max_abs_rank_shift"]
+                    .value::<i32>()
+                    .expect("max abs rank shift should decode")
+                    .expect("max abs rank shift should be non-null"),
+                row["spearman_rank_correlation"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation should decode")
+                    .expect("spearman rank correlation should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["window_1_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 1 flag should decode")
+                    .expect("window 1 flag should be non-null"),
+                row["window_2_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 2 flag should decode")
+                    .expect("window 2 flag should be non-null"),
+                row["window_4_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 4 flag should decode")
+                    .expect("window 4 flag should be non-null"),
+                row["window_8_contains_exact_best"]
+                    .value::<bool>()
+                    .expect("window 8 flag should decode")
+                    .expect("window 8 flag should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(mean_abs_rank_shift, 0.0);
+        assert_eq!(max_abs_rank_shift, 0);
+        assert_eq!(spearman_rank_correlation, 0.0);
+        assert_eq!(exact_best_approx_rank, None);
+        assert_eq!(exact_top4_max_approx_rank, None);
+        assert!(!window_1_contains_exact_best);
+        assert!(!window_2_contains_exact_best);
+        assert!(!window_4_contains_exact_best);
+        assert!(!window_8_contains_exact_best);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_windowed_rows_match_simulation() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_rows (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 41 + dim) as f32) * 0.02).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_rows VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_rows_idx ON tqhnsw_pq_fastscan_runtime_windowed_rows USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.14_f32, 0.24, 0.34, 0.44, 0.54, 0.64, 0.74, 0.84, 0.94, 1.04, 1.14, 1.24, 1.34, 1.44,
+            1.54, 1.64,
+        ];
+        let baseline_rows =
+            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let window_size = 4_usize;
+        let mut buffered_rows = Vec::with_capacity(window_size);
+        let mut next_idx = 0usize;
+        let mut expected_rows = Vec::with_capacity(baseline_rows.len());
+        while expected_rows.len() < baseline_rows.len() {
+            while buffered_rows.len() < window_size && next_idx < baseline_rows.len() {
+                buffered_rows.push(baseline_rows[next_idx]);
+                next_idx += 1;
+            }
+            let (selected_idx, _) = buffered_rows
+                .iter()
+                .enumerate()
+                .min_by(|(_, left), (_, right)| {
+                    left.3
+                        .unwrap_or(left.2)
+                        .total_cmp(&right.3.unwrap_or(right.2))
+                        .then_with(|| left.1.cmp(&right.1))
+                })
+                .expect("windowed grouped simulation should always have a buffered row");
+            let (
+                (block_number, offset_number),
+                approx_rank,
+                approx_score,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+            ) = buffered_rows.remove(selected_idx);
+            let windowed_rank =
+                i32::try_from(expected_rows.len() + 1).expect("windowed rank should fit in i32");
+            let windowed_rank_shift = exact_rank.map(|rank| windowed_rank - rank);
+            expected_rows.push((
+                i64::from(block_number),
+                i32::from(offset_number),
+                approx_rank,
+                windowed_rank,
+                approx_score,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+                windowed_rank_shift,
+            ));
+        }
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let actual_rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT
+                            block_number,
+                            offset_number,
+                            approx_rank,
+                            windowed_rank,
+                            approx_score,
+                            comparison_score,
+                            exact_rank,
+                            exact_rank_shift,
+                            windowed_rank_shift
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
+                            'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid,
+                            {query_literal},
+                            4
+                         )
+                         ORDER BY windowed_rank"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped windowed rows query should succeed")
+                .map(|row| {
+                    (
+                        row["block_number"]
+                            .value::<i64>()
+                            .expect("block number should decode")
+                            .expect("block number should be non-null"),
+                        row["offset_number"]
+                            .value::<i32>()
+                            .expect("offset number should decode")
+                            .expect("offset number should be non-null"),
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["windowed_rank"]
+                            .value::<i32>()
+                            .expect("windowed rank should decode")
+                            .expect("windowed rank should be non-null"),
+                        row["approx_score"]
+                            .value::<f32>()
+                            .expect("approx score should decode")
+                            .expect("approx score should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                        row["windowed_rank_shift"]
+                            .value::<i32>()
+                            .expect("windowed rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(actual_rows.len(), expected_rows.len());
+        for (actual, expected) in actual_rows.iter().zip(expected_rows.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(actual.1, expected.1);
+            assert_eq!(actual.2, expected.2);
+            assert_eq!(actual.3, expected.3);
+            assert_eq!(actual.4.to_bits(), expected.4.to_bits());
+            assert_eq!(actual.5.map(f32::to_bits), expected.5.map(f32::to_bits));
+            assert_eq!(actual.6, expected.6);
+            assert_eq!(actual.7, expected.7);
+            assert_eq!(actual.8, expected.8);
+        }
+    }
+
+    fn assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(
+        window_size: i32,
+        configure_window_env: bool,
+        require_movement: bool,
+    ) {
+        let _lock = env_var_test_lock();
+        let window_value = window_size.to_string();
+        let _window_guard = configure_window_env
+            .then(|| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", &window_value));
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_live_window (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=32 {
+            let source = (0..16)
+                .map(|dim| {
+                    format!(
+                        "{:.6}",
+                        (((id * 43 + dim * 7) as f32) * 0.019).cos()
+                            + (((id * 17 + dim * 5) as f32) * 0.011).sin()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| {
+                    format!(
+                        "{:.6}",
+                        (((id * 29 + dim * 11) as f32) * 0.023).sin()
+                            + (((id * 13 + dim * 3) as f32) * 0.017).cos()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_live_window VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_live_window_idx ON tqhnsw_pq_fastscan_runtime_live_window USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_live_window_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let candidate_queries = (0..24)
+            .map(|seed| {
+                (0..16)
+                    .map(|dim| {
+                        (((seed * 31 + dim * 7) as f32) * 0.021).sin()
+                            + (((seed * 19 + dim * 5) as f32) * 0.014).cos()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        let (query, live_rows, baseline_rows) = candidate_queries
+            .into_iter()
+            .find_map(|query| {
+                let live_rows = unsafe {
+                    am::debug_gettuple_scan_heap_tids_with_score_comparisons(
+                        index_oid,
+                        query.clone(),
+                    )
+                };
+                let baseline_rows =
+                    unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+                let actual_live_order = live_rows
+                    .iter()
+                    .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+                    .collect::<Vec<_>>();
+                let baseline_approx_order = baseline_rows
+                    .iter()
+                    .map(
+                        |(
+                            heap_tid,
+                            _approx_rank,
+                            _approx_score,
+                            _comparison_score,
+                            _exact_rank,
+                            _exact_rank_shift,
+                        )| *heap_tid,
+                    )
+                    .collect::<Vec<_>>();
+                (!require_movement || actual_live_order != baseline_approx_order).then_some((
+                    query,
+                    live_rows,
+                    baseline_rows,
+                ))
+            })
+            .expect(if require_movement {
+                "at least one deterministic grouped query should exhibit live window movement"
+            } else {
+                "the deterministic grouped query set should provide at least one candidate"
+            });
+
+        let expected_live_order = simulate_grouped_live_window_order(
+            &baseline_rows,
+            usize::try_from(window_size).expect("window size should fit in usize"),
+        );
+        let actual_live_order = live_rows
+            .iter()
+            .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual_live_order
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected_live_order
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "grouped live runtime should emit the same heap tid set as the window-size-{window_size} simulation",
+        );
+
+        let baseline_approx_order = baseline_rows
+            .iter()
+            .map(
+                |(
+                    heap_tid,
+                    _approx_rank,
+                    _approx_score,
+                    _comparison_score,
+                    _exact_rank,
+                    _exact_rank_shift,
+                )| *heap_tid,
+            )
+            .collect::<Vec<_>>();
+        if require_movement {
+            assert_ne!(
+                actual_live_order, baseline_approx_order,
+                "the selected query should prove the live grouped rerank window changes output order"
+            );
+        }
+
+        let mut live_rows_sorted_by_approx_rank = live_rows.clone();
+        live_rows_sorted_by_approx_rank.sort_by_key(
+            |(_heap_tid, _approx_score, _comparison_score, approx_rank)| {
+                approx_rank.expect(
+                    "grouped live results should preserve baseline approximate rank sidecars",
+                )
+            },
+        );
+        let preserved_approx_order = live_rows_sorted_by_approx_rank
+            .iter()
+            .map(|(heap_tid, _approx_score, _comparison_score, _approx_rank)| *heap_tid)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            preserved_approx_order, baseline_approx_order,
+            "grouped comparison rows should still expose baseline approximate order after live rerank cutover"
+        );
+
+        let _query_literal = format_recall_vector_sql_literal(&query);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_live_window_matches_simulation() {
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(4, false, true);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_live_window_respects_window_env() {
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(8, true, false);
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_runtime_live_window_supports_higher_window_env() {
+        assert_pq_fastscan_runtime_live_window_matches_windowed_simulation(32, true, false);
+    }
+
+    #[pg_test]
+    fn test_scalar_windowed_rows_are_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_windowed_rows (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_windowed_rows VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_windowed_rows_idx ON tqhnsw_scalar_runtime_windowed_rows USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT
+                        approx_rank,
+                        windowed_rank,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                        windowed_rank_shift
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
+                        'tqhnsw_scalar_runtime_windowed_rows_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                        4
+                     )
+                     ORDER BY windowed_rank",
+                    None,
+                    &[],
+                )
+                .expect("scalar windowed rows query should succeed")
+                .map(|row| {
+                    (
+                        row["approx_rank"]
+                            .value::<i32>()
+                            .expect("approx rank should decode")
+                            .expect("approx rank should be non-null"),
+                        row["windowed_rank"]
+                            .value::<i32>()
+                            .expect("windowed rank should decode")
+                            .expect("windowed rank should be non-null"),
+                        row["comparison_score"]
+                            .value::<f32>()
+                            .expect("comparison score should decode"),
+                        row["exact_rank"]
+                            .value::<i32>()
+                            .expect("exact rank should decode"),
+                        row["exact_rank_shift"]
+                            .value::<i32>()
+                            .expect("exact rank shift should decode"),
+                        row["windowed_rank_shift"]
+                            .value::<i32>()
+                            .expect("windowed rank shift should decode"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert!(!rows.is_empty());
+        for (
+            idx,
+            (
+                approx_rank,
+                windowed_rank,
+                comparison_score,
+                exact_rank,
+                exact_rank_shift,
+                windowed_rank_shift,
+            ),
+        ) in rows.iter().enumerate()
+        {
+            let expected_rank = i32::try_from(idx + 1).expect("rank should fit in i32");
+            assert_eq!(*approx_rank, expected_rank);
+            assert_eq!(*windowed_rank, expected_rank);
+            assert_eq!(*comparison_score, None);
+            assert_eq!(*exact_rank, None);
+            assert_eq!(*exact_rank_shift, None);
+            assert_eq!(*windowed_rank_shift, None);
+        }
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_windowed_summary_matches_rows() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_summary (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.035).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.025).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_summary VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_summary_idx ON tqhnsw_pq_fastscan_runtime_windowed_summary USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![
+            0.16_f32, 0.26, 0.36, 0.46, 0.56, 0.66, 0.76, 0.86, 0.96, 1.06, 1.16, 1.26, 1.36, 1.46,
+            1.56, 1.66,
+        ];
+        let baseline_rows =
+            unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query.clone()) };
+        let windowed_rows =
+            unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query.clone(), 4) };
+
+        let rank_metrics = |rows: &[(i32, Option<i32>, Option<i32>)]| {
+            let mut compared_result_count = 0_i32;
+            let mut abs_rank_shift_sum = 0.0_f64;
+            let mut max_abs_rank_shift = 0_i32;
+            let mut d_squared_sum = 0.0_f64;
+            let mut exact_best_rank = None;
+            let mut exact_top4_max_rank = None;
+
+            for (observed_rank, exact_rank, explicit_rank_shift) in rows {
+                let Some(exact_rank) = exact_rank else {
+                    continue;
+                };
+                compared_result_count += 1;
+                let abs_rank_shift = explicit_rank_shift
+                    .unwrap_or(observed_rank - exact_rank)
+                    .abs();
+                abs_rank_shift_sum += f64::from(abs_rank_shift);
+                max_abs_rank_shift = max_abs_rank_shift.max(abs_rank_shift);
+                let d = f64::from(observed_rank - exact_rank);
+                d_squared_sum += d * d;
+                if *exact_rank == 1 {
+                    exact_best_rank = Some(*observed_rank);
+                }
+                if *exact_rank <= 4 {
+                    exact_top4_max_rank = Some(
+                        exact_top4_max_rank
+                            .map_or(*observed_rank, |max_rank: i32| max_rank.max(*observed_rank)),
+                    );
+                }
+            }
+
+            let mean_abs_rank_shift = if compared_result_count == 0 {
+                0.0
+            } else {
+                abs_rank_shift_sum / f64::from(compared_result_count)
+            };
+            let spearman_rank_correlation = if compared_result_count < 2 {
+                0.0
+            } else {
+                let n = f64::from(compared_result_count);
+                1.0 - (6.0 * d_squared_sum / (n * (n * n - 1.0)))
+            };
+
+            (
+                compared_result_count,
+                mean_abs_rank_shift,
+                max_abs_rank_shift,
+                spearman_rank_correlation,
+                exact_best_rank,
+                exact_top4_max_rank,
+            )
+        };
+
+        let expected_emitted_result_count =
+            i32::try_from(baseline_rows.len()).expect("emitted result count should fit in i32");
+        let expected_grouped_result_count = expected_emitted_result_count;
+        let baseline_metric_rows = baseline_rows
+            .iter()
+            .map(
+                |(
+                    _heap_tid,
+                    approx_rank,
+                    _approx_score,
+                    _comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                )| { (*approx_rank, *exact_rank, *exact_rank_shift) },
+            )
+            .collect::<Vec<_>>();
+        let windowed_metric_rows = windowed_rows
+            .iter()
+            .map(
+                |(
+                    _heap_tid,
+                    _approx_rank,
+                    windowed_rank,
+                    _approx_score,
+                    _comparison_score,
+                    exact_rank,
+                    _exact_rank_shift,
+                    windowed_rank_shift,
+                )| (*windowed_rank, *exact_rank, *windowed_rank_shift),
+            )
+            .collect::<Vec<_>>();
+        let (
+            expected_compared_result_count,
+            expected_mean_abs_rank_shift_before,
+            expected_max_abs_rank_shift_before,
+            expected_spearman_before,
+            expected_exact_best_approx_rank,
+            expected_exact_top4_max_approx_rank,
+        ) = rank_metrics(&baseline_metric_rows);
+        let (
+            _windowed_compared_result_count,
+            expected_mean_abs_rank_shift_after,
+            expected_max_abs_rank_shift_after,
+            expected_spearman_after,
+            expected_exact_best_windowed_rank,
+            expected_exact_top4_max_windowed_rank,
+        ) = rank_metrics(&windowed_metric_rows);
+
+        let query_literal = format_recall_vector_sql_literal(&query);
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_before,
+            spearman_after,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    &format!(
+                        "SELECT
+                            emitted_result_count,
+                            pq_fastscan_result_count,
+                            compared_result_count,
+                            window_size,
+                            exact_best_approx_rank,
+                            exact_best_windowed_rank,
+                            exact_top4_max_approx_rank,
+                            exact_top4_max_windowed_rank,
+                            mean_abs_rank_shift_before,
+                            mean_abs_rank_shift_after,
+                            max_abs_rank_shift_before,
+                            max_abs_rank_shift_after,
+                            spearman_rank_correlation_before,
+                            spearman_rank_correlation_after
+                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
+                            'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid,
+                            {query_literal},
+                            4
+                         )"
+                    ),
+                    None,
+                    &[],
+                )
+                .expect("grouped windowed summary query should succeed")
+                .next()
+                .expect("grouped windowed summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["window_size"]
+                    .value::<i32>()
+                    .expect("window size should decode")
+                    .expect("window size should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_best_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact best windowed rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["exact_top4_max_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max windowed rank should decode"),
+                row["mean_abs_rank_shift_before"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift before should decode")
+                    .expect("mean abs rank shift before should be non-null"),
+                row["mean_abs_rank_shift_after"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift after should decode")
+                    .expect("mean abs rank shift after should be non-null"),
+                row["max_abs_rank_shift_before"]
+                    .value::<i32>()
+                    .expect("max abs rank shift before should decode")
+                    .expect("max abs rank shift before should be non-null"),
+                row["max_abs_rank_shift_after"]
+                    .value::<i32>()
+                    .expect("max abs rank shift after should decode")
+                    .expect("max abs rank shift after should be non-null"),
+                row["spearman_rank_correlation_before"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation before should decode")
+                    .expect("spearman rank correlation before should be non-null"),
+                row["spearman_rank_correlation_after"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation after should decode")
+                    .expect("spearman rank correlation after should be non-null"),
+            )
+        });
+
+        assert_eq!(emitted_result_count, expected_emitted_result_count);
+        assert_eq!(grouped_result_count, expected_grouped_result_count);
+        assert_eq!(compared_result_count, expected_compared_result_count);
+        assert_eq!(window_size, 4);
+        assert_eq!(exact_best_approx_rank, expected_exact_best_approx_rank);
+        assert_eq!(exact_best_windowed_rank, expected_exact_best_windowed_rank);
+        assert_eq!(
+            exact_top4_max_approx_rank,
+            expected_exact_top4_max_approx_rank
+        );
+        assert_eq!(
+            exact_top4_max_windowed_rank,
+            expected_exact_top4_max_windowed_rank
+        );
+        assert!(
+            (mean_abs_rank_shift_before - expected_mean_abs_rank_shift_before).abs() <= 1e-6,
+            "baseline mean abs rank shift should match the row aggregation"
+        );
+        assert!(
+            (mean_abs_rank_shift_after - expected_mean_abs_rank_shift_after).abs() <= 1e-6,
+            "windowed mean abs rank shift should match the row aggregation"
+        );
+        assert_eq!(
+            max_abs_rank_shift_before,
+            expected_max_abs_rank_shift_before
+        );
+        assert_eq!(max_abs_rank_shift_after, expected_max_abs_rank_shift_after);
+        assert!(
+            (spearman_before - expected_spearman_before).abs() <= 1e-6,
+            "baseline spearman should match the row aggregation"
+        );
+        assert!(
+            (spearman_after - expected_spearman_after).abs() <= 1e-6,
+            "windowed spearman should match the row aggregation"
+        );
+        if let (Some(approx_rank), Some(windowed_rank)) =
+            (exact_best_approx_rank, exact_best_windowed_rank)
+        {
+            assert!(
+                windowed_rank <= approx_rank,
+                "a sliding rerank window should not push the exact-best emitted row later than its baseline approximate rank"
+            );
+        }
+    }
+
+    #[pg_test]
+    fn test_scalar_windowed_summary_is_inert() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_scalar_runtime_windowed_summary (
+                id bigint primary key,
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+
+        Spi::run(
+            "INSERT INTO tqhnsw_scalar_runtime_windowed_summary VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+        )
+        .expect("insert should succeed");
+
+        Spi::run(
+            "CREATE INDEX tqhnsw_scalar_runtime_windowed_summary_idx ON tqhnsw_scalar_runtime_windowed_summary USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_before,
+            spearman_after,
+        ) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT
+                        emitted_result_count,
+                        pq_fastscan_result_count,
+                        compared_result_count,
+                        window_size,
+                        exact_best_approx_rank,
+                        exact_best_windowed_rank,
+                        exact_top4_max_approx_rank,
+                        exact_top4_max_windowed_rank,
+                        mean_abs_rank_shift_before,
+                        mean_abs_rank_shift_after,
+                        max_abs_rank_shift_before,
+                        max_abs_rank_shift_after,
+                        spearman_rank_correlation_before,
+                        spearman_rank_correlation_after
+                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
+                        'tqhnsw_scalar_runtime_windowed_summary_idx'::regclass::oid,
+                        ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                        4
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("scalar windowed summary query should succeed")
+                .next()
+                .expect("scalar windowed summary should return one row");
+            (
+                row["emitted_result_count"]
+                    .value::<i32>()
+                    .expect("emitted result count should decode")
+                    .expect("emitted result count should be non-null"),
+                row["pq_fastscan_result_count"]
+                    .value::<i32>()
+                    .expect("grouped result count should decode")
+                    .expect("grouped result count should be non-null"),
+                row["compared_result_count"]
+                    .value::<i32>()
+                    .expect("compared result count should decode")
+                    .expect("compared result count should be non-null"),
+                row["window_size"]
+                    .value::<i32>()
+                    .expect("window size should decode")
+                    .expect("window size should be non-null"),
+                row["exact_best_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact best approx rank should decode"),
+                row["exact_best_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact best windowed rank should decode"),
+                row["exact_top4_max_approx_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max approx rank should decode"),
+                row["exact_top4_max_windowed_rank"]
+                    .value::<i32>()
+                    .expect("exact top4 max windowed rank should decode"),
+                row["mean_abs_rank_shift_before"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift before should decode")
+                    .expect("mean abs rank shift before should be non-null"),
+                row["mean_abs_rank_shift_after"]
+                    .value::<f64>()
+                    .expect("mean abs rank shift after should decode")
+                    .expect("mean abs rank shift after should be non-null"),
+                row["max_abs_rank_shift_before"]
+                    .value::<i32>()
+                    .expect("max abs rank shift before should decode")
+                    .expect("max abs rank shift before should be non-null"),
+                row["max_abs_rank_shift_after"]
+                    .value::<i32>()
+                    .expect("max abs rank shift after should decode")
+                    .expect("max abs rank shift after should be non-null"),
+                row["spearman_rank_correlation_before"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation before should decode")
+                    .expect("spearman rank correlation before should be non-null"),
+                row["spearman_rank_correlation_after"]
+                    .value::<f64>()
+                    .expect("spearman rank correlation after should decode")
+                    .expect("spearman rank correlation after should be non-null"),
+            )
+        });
+
+        assert!(emitted_result_count > 0);
+        assert_eq!(grouped_result_count, 0);
+        assert_eq!(compared_result_count, 0);
+        assert_eq!(window_size, 4);
+        assert_eq!(exact_best_approx_rank, None);
+        assert_eq!(exact_best_windowed_rank, None);
+        assert_eq!(exact_top4_max_approx_rank, None);
+        assert_eq!(exact_top4_max_windowed_rank, None);
+        assert_eq!(mean_abs_rank_shift_before, 0.0);
+        assert_eq!(mean_abs_rank_shift_after, 0.0);
+        assert_eq!(max_abs_rank_shift_before, 0);
+        assert_eq!(max_abs_rank_shift_after, 0);
+        assert_eq!(spearman_before, 0.0);
+        assert_eq!(spearman_after, 0.0);
     }
 
     #[pg_test]
@@ -3698,10 +8338,9 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw aminsert does not support build_source_column indexes yet")]
-    fn test_tqhnsw_insert_rejects_build_source_column_index() {
+    fn test_tqhnsw_insert_supports_build_source_column_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_source_reject (
+            "CREATE TABLE tqhnsw_insert_source_live (
                 id bigint primary key,
                 source real[],
                 embedding tqvector
@@ -3709,20 +8348,1242 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_reject VALUES
-             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42))",
+            "INSERT INTO tqhnsw_insert_source_live VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ARRAY[0.8, 0.2, 0.3, -0.6], encode_to_tqvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
-        .expect("seed insert should succeed");
+        .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_source_reject_idx ON tqhnsw_insert_source_reject USING tqhnsw \
-             (embedding tqvector_ip_ops) WITH (build_source_column = 'source')",
+            "CREATE INDEX tqhnsw_insert_source_live_idx ON tqhnsw_insert_source_live USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', m = 2)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_reject VALUES
-             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42))",
+            "INSERT INTO tqhnsw_insert_source_live VALUES
+             (4, ARRAY[0.7, 0.3, 0.2, -0.4], encode_to_tqvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
-        .expect("insert should fail");
+        .expect("live insert should succeed on build_source_column indexes");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_source_live_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_source_live", 4);
+        let (metadata, elements, neighbors) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_element_tid, inserted_element) =
+            find_element_for_heap_tid(&elements, inserted_heap_tid);
+
+        assert!(
+            metadata.inserted_since_rebuild > 0,
+            "live inserts should still advance drift tracking on build_source_column indexes",
+        );
+        assert!(!inserted_element.deleted);
+        assert!(
+            inserted_element.neighbortid != am::page::ItemPointer::INVALID,
+            "live insert should persist a neighbor tuple for the new element",
+        );
+        let neighbors = neighbors
+            .get(&inserted_element.neighbortid)
+            .expect("newly inserted source-backed element should keep a neighbor tuple");
+        assert_eq!(neighbors.count as usize, neighbors.tids.len());
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_bootstraps_empty_pq_fastscan_index() {
+        let _lock = env_var_test_lock();
+        let inserted_query = vec![
+            0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
+            -0.2,
+        ];
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_empty_pq_fastscan_bootstrap (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_empty_pq_fastscan_bootstrap_idx ON tqhnsw_insert_empty_pq_fastscan_bootstrap USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_empty_pq_fastscan_bootstrap VALUES
+             (17,
+              ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+                    0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
+              encode_to_tqvector(
+                  ARRAY[0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5,
+                        0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2]::real[],
+                  4,
+                  42
+              ))",
+        )
+        .expect("empty-index bootstrap insert should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_empty_pq_fastscan_bootstrap_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_metadata, layout, elements, neighbors) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        assert_eq!(elements.len(), 1);
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(elements[0].1.search_code.len(), layout.search_code_len);
+        assert_eq!(elements[0].1.binary_words.len(), layout.binary_word_count);
+        assert!(
+            elements[0].1.reranktid != am::page::ItemPointer::INVALID,
+            "empty-index bootstrap should persist a rerank tuple",
+        );
+
+        let ctid_to_id = ctid_id_map("tqhnsw_insert_empty_pq_fastscan_bootstrap");
+        let observed_ids =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query) }
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("bootstrap scan heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
+        assert_eq!(
+            observed_ids,
+            vec![17],
+            "bootstrap-created PqFastScan index should emit the inserted row in ordered scan",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_appends_to_built_pq_fastscan_index() {
+        let _lock = env_var_test_lock();
+        let inserted_query = vec![
+            0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
+            -0.2,
+        ];
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_pq_fastscan_live (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 29 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 17 + dim) as f32) * 0.04).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_pq_fastscan_live_idx ON tqhnsw_insert_pq_fastscan_live USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_pq_fastscan_live_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_before_block_count, before_metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let before_page_tuples = before_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let before_grouped_hot_tids = before_page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let before_rerank_count = before_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let before_neighbor_count = before_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES
+             (17,
+              ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
+                    0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
+              encode_to_tqvector(
+                  ARRAY[0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5,
+                        0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2]::real[],
+                  4,
+                  42
+              ))",
+        )
+        .expect("insert should succeed on a built PqFastScan index");
+
+        let (_after_block_count, after_metadata, after_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let after_page_tuples = after_pages
+            .iter()
+            .flat_map(|page| {
+                page.tuples.iter().enumerate().map(move |(idx, tuple)| {
+                    (
+                        am::page::ItemPointer {
+                            block_number: page.block_number,
+                            offset_number: (idx + 1) as u16,
+                        },
+                        tuple.as_slice(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let after_grouped_hot_tids = after_page_tuples
+            .iter()
+            .filter_map(|(tid, tuple)| {
+                (tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG)).then_some(*tid)
+            })
+            .collect::<Vec<_>>();
+        let after_rerank_count = after_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_RERANK_TAG))
+            .count();
+        let after_neighbor_count = after_page_tuples
+            .iter()
+            .filter(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_NEIGHBOR_TAG))
+            .count();
+
+        assert_eq!(
+            after_metadata.inserted_since_rebuild,
+            before_metadata.inserted_since_rebuild + 1
+        );
+        assert_eq!(
+            after_grouped_hot_tids.len(),
+            before_grouped_hot_tids.len() + 1
+        );
+        assert_eq!(after_rerank_count, before_rerank_count + 1);
+        assert_eq!(after_neighbor_count, before_neighbor_count + 1);
+        assert!(
+            !after_page_tuples
+                .iter()
+                .any(|(_, tuple)| tuple.first().copied() == Some(am::page::TQ_ELEMENT_TAG)),
+            "PqFastScan live insert should keep writing grouped hot tuples, not scalar element tuples",
+        );
+
+        let new_hot_tid = after_grouped_hot_tids
+            .iter()
+            .copied()
+            .find(|tid| !before_grouped_hot_tids.contains(tid))
+            .expect("live insert should add exactly one grouped hot tuple");
+        let layout =
+            match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
+                am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+                am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                    panic!("PqFastScan insert test should still decode as PqFastScan storage")
+                }
+            };
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "test_tqhnsw_insert_appends_to_built_pq_fastscan_index",
+            )
+        };
+        let new_hot =
+            unsafe { am::graph::load_grouped_graph_element(index_relation, new_hot_tid, layout) };
+        let rerank = unsafe {
+            am::graph::load_grouped_rerank_payload(index_relation, new_hot.reranktid, layout)
+        };
+        assert!(!new_hot.deleted);
+        assert_eq!(new_hot.heaptids.len(), 1);
+        assert_eq!(new_hot.search_code.len(), layout.search_code_len);
+        assert_eq!(new_hot.binary_words.len(), layout.binary_word_count);
+        assert_ne!(new_hot.neighbortid, am::page::ItemPointer::INVALID);
+        assert_ne!(new_hot.reranktid, am::page::ItemPointer::INVALID);
+        assert_eq!(rerank.code.len(), layout.rerank_code_len);
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+
+        let ctid_to_id = ctid_id_map("tqhnsw_insert_pq_fastscan_live");
+        let observed_ids = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone())
+        }
+        .into_iter()
+        .map(|(heap_tid, _score)| {
+            *ctid_to_id
+                .get(&heap_tid)
+                .expect("inserted-row query heap tid should map back to a table row")
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            observed_ids.first().copied(),
+            Some(17),
+            "querying the inserted embedding should rank the new PqFastScan row first",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_insert_coalesces_duplicate_vectors_for_pq_fastscan() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_insert_duplicate_pq_fastscan (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 23 + dim) as f32) * 0.03).sin()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 13 + dim) as f32) * 0.06).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_insert_duplicate_pq_fastscan_idx ON tqhnsw_insert_duplicate_pq_fastscan USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_insert_duplicate_pq_fastscan_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_before_block_count, _before_metadata, before_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let before_tuple_count = before_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+
+        Spi::run(
+            "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan
+             SELECT 17, source, embedding
+               FROM tqhnsw_insert_duplicate_pq_fastscan
+              WHERE id = 1",
+        )
+        .expect("duplicate insert should succeed on a built PqFastScan index");
+
+        let (_after_block_count, after_metadata, after_pages) =
+            unsafe { am::debug_index_pages(index_oid) };
+        let after_tuple_count = after_pages
+            .iter()
+            .map(|page| page.tuples.len())
+            .sum::<usize>();
+        assert_eq!(
+            after_tuple_count, before_tuple_count,
+            "duplicate PqFastScan insert should not add new hot/rerank/neighbor tuples",
+        );
+
+        let layout =
+            match am::graph::GraphStorageDescriptor::from_metadata(&after_metadata).unwrap() {
+                am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+                am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                    panic!("PqFastScan duplicate test should still decode as PqFastScan storage")
+                }
+            };
+        let grouped_hot = after_pages
+            .iter()
+            .flat_map(|page| page.tuples.iter())
+            .filter(|tuple| tuple.first().copied() == Some(am::page::TQ_GROUPED_HOT_TAG))
+            .map(|tuple| {
+                am::page::TqGroupedHotTuple::decode(
+                    tuple,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .expect("grouped hot tuple should decode")
+            })
+            .collect::<Vec<_>>();
+        let mut heaptid_counts = grouped_hot
+            .iter()
+            .map(|element| element.heaptids.len())
+            .collect::<Vec<_>>();
+        heaptid_counts.sort_unstable();
+        assert_eq!(heaptid_counts[heaptid_counts.len() - 1], 2);
+        assert_eq!(
+            heaptid_counts.iter().filter(|count| **count == 1).count(),
+            grouped_hot.len() - 1
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_stats_accepts_pq_fastscan_index() {
+        let _lock = env_var_test_lock();
+
+        let index_oid = create_pq_fastscan_runtime_fixture(
+            "tqhnsw_vacuum_grouped_stats",
+            "tqhnsw_vacuum_grouped_stats_idx",
+        );
+
+        let stats = unsafe { am::debug_vacuum_stats(index_oid) };
+        let (_metadata, _layout, elements, _neighbors) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(
+            stats.num_index_tuples,
+            elements.len() as f64,
+            "vacuum stats should count live grouped hot tuples for PqFastScan indexes",
+        );
+        assert_eq!(elements.len(), 16);
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass1_compacts_pq_fastscan_duplicates() {
+        let _lock = env_var_test_lock();
+
+        Spi::run(
+            "CREATE TABLE tqhnsw_vacuum_pass1_grouped_duplicates (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=16 {
+            let source = (0..16)
+                .map(|dim| format!("{:.6}", (((id * 31 + dim) as f32) * 0.05).cos()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let embedding = if id == 2 {
+                (0..16)
+                    .map(|dim| format!("{:.6}", (((37 + dim) as f32) * 0.04).sin()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                (0..16)
+                    .map(|dim| format!("{:.6}", (((id * 37 + dim) as f32) * 0.04).sin()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            Spi::run(&format!(
+                "INSERT INTO tqhnsw_vacuum_pass1_grouped_duplicates VALUES \
+                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+            ))
+            .expect("seed insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX tqhnsw_vacuum_pass1_grouped_duplicates_idx ON tqhnsw_vacuum_pass1_grouped_duplicates USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
+        )
+        .expect("index creation should succeed");
+
+        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 2);
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'tqhnsw_vacuum_pass1_grouped_duplicates_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let (_metadata_before, _layout_before, elements_before, _neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_duplicate_tid_before, duplicate_before) =
+            find_grouped_element_for_heap_tid(&elements_before, survivor_heap_tid);
+        assert!(
+            duplicate_before.heaptids.contains(&deleted_heap_tid),
+            "fixture should build a grouped hot tuple with both duplicate heap tids",
+        );
+
+        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
+            .expect("delete should succeed");
+
+        let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+        let (_metadata_after, _layout_after, elements_after, _neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_duplicate_tid_after, duplicate_after) =
+            find_grouped_element_for_heap_tid(&elements_after, survivor_heap_tid);
+
+        assert_eq!(
+            duplicate_after.heaptids,
+            vec![survivor_heap_tid],
+            "pass 1 should compact the grouped hot tuple to the surviving heap tid",
+        );
+        assert!(
+            elements_after
+                .iter()
+                .all(|(_, element)| !element.heaptids.contains(&deleted_heap_tid)),
+            "pass 1 should remove the deleted heap tid from every grouped hot tuple",
+        );
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(
+            stats.num_index_tuples, 15.0,
+            "amvacuumcleanup should report the remaining live grouped hot tuple count",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_unlinks_pq_fastscan_refs() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_vacuum_grouped_pass2_unlink";
+        let index_name = "tqhnsw_vacuum_grouped_pass2_unlink_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+        let (_metadata_before, _layout_before, elements_before, neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid) = (1..=16_i64)
+            .find_map(|id| {
+                let observed_ids =
+                    observed_ids_for_query(index_oid, table_name, runtime_fixture_embedding(id));
+                if observed_ids.first().copied()
+                    != Some(usize::try_from(id).expect("row id should fit in usize"))
+                {
+                    return None;
+                }
+                let heap_tid = heap_tid_for_row(table_name, id);
+                let (element_tid, _element) =
+                    find_grouped_element_for_heap_tid(&elements_before, heap_tid);
+                (count_neighbor_refs(&neighbors_before, element_tid) > 0).then_some((
+                    id,
+                    heap_tid,
+                    element_tid,
+                ))
+            })
+            .expect(
+                "fixture should expose at least one grouped hot tuple with inbound neighbor refs that also self-ranks before vacuum",
+            );
+        let deleted_query = (0_i64..16_i64)
+            .map(|dim| (((deleted_row_id * 29 + dim) as f32) * 0.02).sin())
+            .collect::<Vec<_>>();
+        let ctid_to_id = ctid_id_map(table_name);
+        let observed_before_ids = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query.clone())
+        }
+        .into_iter()
+        .map(|(heap_tid, _score)| {
+            *ctid_to_id
+                .get(&heap_tid)
+                .expect("pre-vacuum heap tid should map back to a table row")
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            observed_before_ids.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "before vacuum, querying the deleted row's embedding should rank that row first",
+        );
+
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (_metadata_after, _layout_after, elements_after, neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (_, deleted_element_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == deleted_element_tid)
+            .expect("deleted grouped hot tuple should remain on disk after vacuum");
+
+        assert!(
+            deleted_element_after.deleted,
+            "vacuum should finalize a fully dead grouped hot tuple after repair",
+        );
+        assert!(
+            deleted_element_after.heaptids.is_empty(),
+            "vacuum should leave the finalized grouped hot tuple with no surviving heap tids",
+        );
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "pass 2 should remove every persisted neighbor ref to the deleted grouped hot tuple",
+        );
+
+        let observed_after_ids =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, deleted_query) }
+                .into_iter()
+                .map(|(heap_tid, _score)| {
+                    *ctid_to_id
+                        .get(&heap_tid)
+                        .expect("post-vacuum heap tid should map back to a table row")
+                })
+                .collect::<Vec<_>>();
+        assert!(
+            !observed_after_ids.is_empty(),
+            "vacuumed PqFastScan index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_ids.contains(
+                &usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")
+            ),
+            "vacuumed PqFastScan scan results should no longer surface the deleted row",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_vacuum_pass2_replaces_pq_fastscan_layer0_edges() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_vacuum_grouped_pass2_replace";
+        let index_name = "tqhnsw_vacuum_grouped_pass2_replace_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture_with_m(table_name, index_name, 2);
+        let (metadata_before, _layout_before, elements_before, neighbors_before) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
+            (1_i64..=16_i64)
+                .find_map(|id| {
+                    let deleted_heap_tid = heap_tid_for_row(table_name, id);
+                    let (deleted_element_tid, _deleted_element) =
+                        find_grouped_element_for_heap_tid(&elements_before, deleted_heap_tid);
+                    let affected_before = elements_before
+                        .iter()
+                        .filter_map(|(element_tid, element)| {
+                            if *element_tid == deleted_element_tid
+                                || element.deleted
+                                || element.heaptids.is_empty()
+                            {
+                                return None;
+                            }
+
+                            let neighbor = neighbors_before
+                                .get(&element.neighbortid)
+                                .expect("live grouped element should have a persisted neighbor tuple");
+                            let layer0 = layer_neighbor_slice(
+                                &neighbor.tids,
+                                usize::from(metadata_before.m),
+                                0,
+                            );
+                            layer0.contains(&deleted_element_tid).then(|| {
+                                (
+                                    *element_tid,
+                                    layer0
+                                        .iter()
+                                        .copied()
+                                        .filter(|tid| {
+                                            *tid != am::page::ItemPointer::INVALID
+                                                && *tid != deleted_element_tid
+                                        })
+                                        .collect::<Vec<_>>(),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+
+                    (!affected_before.is_empty())
+                        .then_some((id, deleted_heap_tid, deleted_element_tid, affected_before))
+                })
+                .expect(
+                    "fixture should provide at least one deletable grouped row with a live inbound layer-0 edge",
+                );
+
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let (metadata_after, _layout_after, elements_after, neighbors_after) =
+            decode_grouped_index_elements_and_neighbors(index_oid);
+        let mut replacement_filled = false;
+
+        for (affected_tid, surviving_before) in affected_before {
+            let (_, element_after) = elements_after
+                .iter()
+                .find(|(tid, _)| *tid == affected_tid)
+                .expect("affected live grouped element should remain on disk after vacuum");
+            let neighbor_after = neighbors_after
+                .get(&element_after.neighbortid)
+                .expect("affected live grouped element should keep a persisted neighbor tuple");
+            let layer0_after =
+                layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+            let surviving_after = layer0_after
+                .iter()
+                .copied()
+                .filter(|tid| *tid != am::page::ItemPointer::INVALID)
+                .collect::<Vec<_>>();
+
+            if surviving_after
+                .iter()
+                .any(|tid| *tid != deleted_element_tid && !surviving_before.contains(tid))
+            {
+                replacement_filled = true;
+                break;
+            }
+        }
+
+        assert_eq!(
+            count_neighbor_refs(&neighbors_after, deleted_element_tid),
+            0,
+            "grouped vacuum replacement should still leave no persisted refs to the deleted element tid",
+        );
+        assert!(
+            replacement_filled,
+            "grouped vacuum replacement should fill at least one broken layer-0 edge with a new live candidate",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_turboquant_reloption_round_trip() {
+        let table_name = "tqhnsw_turboquant_reloption_round_trip";
+        let index_name = "tqhnsw_turboquant_reloption_round_trip_idx";
+        let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "explicit turboquant reloption should still rank a row first for its own embedding",
+        );
+
+        let _inserted_row_id = (17_i64..=64_i64)
+            .find(|candidate_id| {
+                let candidate_id = *candidate_id;
+                let candidate_embedding = runtime_fixture_embedding(candidate_id);
+                let candidate_embedding_sql =
+                    format_recall_vector_sql_literal(&candidate_embedding);
+                Spi::run(&format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({candidate_id}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                ))
+                .expect("live insert should succeed on an explicit turboquant index");
+
+                let observed_after_insert =
+                    observed_ids_for_query(index_oid, table_name, candidate_embedding.clone());
+                observed_after_insert.first().copied()
+                    == Some(
+                        usize::try_from(candidate_id)
+                            .expect("inserted row id should fit in usize"),
+                    )
+            })
+            .expect(
+                "fixture should expose at least one live-inserted turboquant row that ranks first for its own embedding",
+            );
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "vacuumed turboquant reloption index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuumed turboquant reloption index should no longer emit the deleted row",
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_requires_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_guard";
+        let index_name = "tqhnsw_storage_format_reindex_guard_idx";
+        let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let query = format_recall_vector_sql_literal(&runtime_fixture_embedding(1));
+        let _ = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query} \
+             LIMIT 1"
+        ))
+        .expect("ordered scan should reach amrescan before rejecting a storage-format mismatch");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_rejects_insert_until_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_insert_guard";
+        let index_name = "tqhnsw_storage_format_reindex_insert_guard_idx";
+        let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("insert should reach aminsert before rejecting a storage-format mismatch");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_rejects_vacuum_until_reindex() {
+        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard";
+        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_idx";
+        let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_requires_reindex() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_guard_reverse_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+
+        let query = format_recall_vector_sql_literal(&runtime_fixture_embedding(1));
+        let _ = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query} \
+             LIMIT 1"
+        ))
+        .expect("ordered scan should reach amrescan before rejecting the reverse storage-format mismatch");
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_rejects_insert() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_insert_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_insert_guard_reverse_idx";
+        let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        let inserted_source_sql = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(17));
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect(
+            "insert should reach aminsert before rejecting the reverse storage-format mismatch",
+        );
+    }
+
+    #[pg_test]
+    #[should_panic(
+        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+    )]
+    fn test_tqhnsw_storage_format_switch_reverse_rejects_vacuum() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse";
+        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = 1_i64;
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'turboquant')"
+        ))
+        .expect("ALTER INDEX should update the reloption without rewriting the index");
+
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_storage_format_switch_reindex_restores_runtime() {
+        let table_name = "tqhnsw_storage_format_reindex_restores_runtime_paths";
+        let index_name = "tqhnsw_storage_format_reindex_restores_runtime_paths_idx";
+        let index_oid = create_turboquant_runtime_fixture_with_source(table_name, index_name);
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (storage_format = 'pq_fastscan')"
+        ))
+        .expect("ALTER INDEX should update the reloption before REINDEX");
+        Spi::run(&format!("REINDEX INDEX {index_name}"))
+            .expect("REINDEX should rebuild the index to match the new storage format");
+
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        assert_eq!(
+            metadata
+                .graph_storage_format()
+                .expect("reindexed metadata should decode"),
+            am::page::GraphStorageFormat::PqFastScan,
+            "REINDEX after a storage_format ALTER should rewrite the on-disk metadata format",
+        );
+
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "reindexed pq_fastscan output should still rank a row first for its own embedding",
+        );
+
+        let inserted_embedding_sql =
+            format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
+        let inserted_source_sql = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(17));
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES \
+             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+        ))
+        .expect("matching reloption/metadata pairs should accept insert cleanly after REINDEX");
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "reindexed pq_fastscan output should still emit ordered scan results after insert and vacuum",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuum after REINDEX should still remove the deleted heap tid from ordered scan output",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_pq_fastscan_reloption_round_trip() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_pq_fastscan_reloption_round_trip";
+        let index_name = "tqhnsw_pq_fastscan_reloption_round_trip_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+
+        let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
+        let deleted_query = runtime_fixture_embedding(deleted_row_id);
+        let observed_before_delete =
+            observed_ids_for_query(index_oid, table_name, deleted_query.clone());
+        assert_eq!(
+            observed_before_delete.first().copied(),
+            Some(usize::try_from(deleted_row_id).expect("deleted row id should fit in usize")),
+            "explicit pq_fastscan reloption should still rank a row first for its own embedding",
+        );
+
+        let _inserted_row_id = (17_i64..=64_i64)
+            .find(|candidate_id| {
+                let candidate_id = *candidate_id;
+                let candidate_source_sql = format_recall_vector_sql_literal(
+                    &pq_fastscan_runtime_source(candidate_id),
+                );
+                let candidate_embedding = runtime_fixture_embedding(candidate_id);
+                let candidate_embedding_sql =
+                    format_recall_vector_sql_literal(&candidate_embedding);
+                Spi::run(&format!(
+                    "INSERT INTO {table_name} VALUES \
+                     ({candidate_id}, {candidate_source_sql}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                ))
+                .expect("live insert should succeed on an explicit pq_fastscan index");
+
+                let observed_after_insert =
+                    observed_ids_for_query(index_oid, table_name, candidate_embedding.clone());
+                observed_after_insert.first().copied()
+                    == Some(
+                        usize::try_from(candidate_id)
+                            .expect("inserted row id should fit in usize"),
+                    )
+            })
+            .expect(
+                "fixture should expose at least one live-inserted pq_fastscan row that ranks first for its own embedding",
+            );
+
+        let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+        Spi::run(&format!(
+            "DELETE FROM {table_name} WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
+
+        let observed_after_delete = observed_heap_tids_for_query(index_oid, deleted_query);
+        assert!(
+            !observed_after_delete.is_empty(),
+            "vacuumed pq_fastscan reloption index should still emit ordered scan results",
+        );
+        assert!(
+            !observed_after_delete.contains(&(
+                deleted_heap_tid.block_number,
+                deleted_heap_tid.offset_number
+            )),
+            "vacuumed pq_fastscan reloption index should no longer emit the deleted row",
+        );
+    }
+
+    #[pg_test]
+    fn test_vacuum_source_backed_repair_prefers_source_candidate() {
+        let table_name = "tqhnsw_vacuum_source_metric";
+        let index_name = "tqhnsw_vacuum_source_metric_idx";
+
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                source real[],
+                embedding tqvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        let mut source_by_id = HashMap::new();
+        for id in 1_i64..=8_i64 {
+            let theta = 0.18_f32 * id as f32;
+            let embedding_rank = match id {
+                1 => 1_i64,
+                2 => 5,
+                3 => 2,
+                4 => 7,
+                5 => 3,
+                6 => 8,
+                7 => 4,
+                8 => 6,
+                _ => unreachable!("fixture only seeds ids 1..=8"),
+            };
+            let embedding_theta = 0.18_f32 * embedding_rank as f32;
+            let source = vec![
+                theta.cos(),
+                theta.sin(),
+                (theta * 0.5).cos(),
+                (theta * 0.5).sin(),
+            ];
+            let embedding = [
+                embedding_theta.cos(),
+                embedding_theta.sin(),
+                (embedding_theta * 0.5).cos(),
+                (embedding_theta * 0.5).sin(),
+            ];
+            source_by_id.insert(id, source.clone());
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES (
+                    {id},
+                    ARRAY[{source}]::real[],
+                    encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42)
+                )",
+                source = source
+                    .iter()
+                    .map(|value| format!("{value:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                embedding = embedding
+                    .iter()
+                    .map(|value| format!("{value:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ))
+            .expect("seed insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding tqvector_ip_ops) WITH (m = 2, build_source_column = 'source')"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (metadata_before, elements_before, neighbors_before) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+
+        let heap_tid_to_id = (1_i64..=8_i64)
+            .map(|id| (heap_tid_for_row(table_name, id), id))
+            .collect::<HashMap<_, _>>();
+        let case = (1_i64..=8_i64)
+            .find_map(|deleted_row_id| {
+                let deleted_heap_tid = heap_tid_for_row(table_name, deleted_row_id);
+                let (deleted_element_tid, _) =
+                    find_element_for_heap_tid(&elements_before, deleted_heap_tid);
+
+                elements_before.iter().find_map(|(affected_tid, affected_element)| {
+                    if *affected_tid == deleted_element_tid
+                        || affected_element.deleted
+                        || affected_element.heaptids.is_empty()
+                    {
+                        return None;
+                    }
+
+                    let neighbor = neighbors_before.get(&affected_element.neighbortid).expect(
+                        "live source-backed element should have a persisted neighbor tuple",
+                    );
+                    let layer0 =
+                        layer_neighbor_slice(&neighbor.tids, usize::from(metadata_before.m), 0);
+                    if !layer0.contains(&deleted_element_tid) {
+                        return None;
+                    }
+
+                    let existing_live = layer0
+                        .iter()
+                        .copied()
+                        .filter(|tid| {
+                            *tid != am::page::ItemPointer::INVALID && *tid != deleted_element_tid
+                        })
+                        .collect::<HashSet<_>>();
+                    let affected_row_id = *heap_tid_to_id
+                        .get(
+                            affected_element
+                                .heaptids
+                                .first()
+                                .expect("affected element should keep one representative heap tid"),
+                        )
+                        .expect("affected heap tid should map back to a table row");
+                    let affected_source = source_by_id
+                        .get(&affected_row_id)
+                        .expect("affected row should keep its source vector");
+
+                    let mut ranked = elements_before
+                        .iter()
+                        .filter_map(|(candidate_tid, candidate_element)| {
+                            if *candidate_tid == *affected_tid
+                                || *candidate_tid == deleted_element_tid
+                                || candidate_element.deleted
+                                || candidate_element.heaptids.is_empty()
+                                || existing_live.contains(candidate_tid)
+                            {
+                                return None;
+                            }
+
+                            let candidate_row_id = *heap_tid_to_id
+                                .get(
+                                    candidate_element
+                                        .heaptids
+                                        .first()
+                                        .expect("candidate element should keep one representative heap tid"),
+                                )
+                                .expect("candidate heap tid should map back to a table row");
+                            let candidate_source = source_by_id
+                                .get(&candidate_row_id)
+                                .expect("candidate row should keep its source vector");
+                            Some((
+                                *candidate_tid,
+                                -dot_product(affected_source, candidate_source),
+                                -crate::score_code_inner_product(
+                                    metadata_before.dimensions as usize,
+                                    metadata_before.bits,
+                                    metadata_before.seed,
+                                    &affected_element.code,
+                                    &candidate_element.code,
+                                ),
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    ranked.sort_by(|left, right| {
+                        left.1
+                            .total_cmp(&right.1)
+                            .then_with(|| left.0.block_number.cmp(&right.0.block_number))
+                            .then_with(|| left.0.offset_number.cmp(&right.0.offset_number))
+                    });
+                    let expected_source_best = ranked.first().map(|entry| entry.0)?;
+                    ranked.sort_by(|left, right| {
+                        left.2
+                            .total_cmp(&right.2)
+                            .then_with(|| left.0.block_number.cmp(&right.0.block_number))
+                            .then_with(|| left.0.offset_number.cmp(&right.0.offset_number))
+                    });
+                    let expected_code_best = ranked.first().map(|entry| entry.0)?;
+                    (expected_source_best != expected_code_best).then_some((
+                        deleted_row_id,
+                        deleted_heap_tid,
+                        *affected_tid,
+                        expected_source_best,
+                    ))
+                })
+            })
+            .expect("fixture should expose at least one broken layer-0 edge where source-space and code-space replacement rankings differ");
+
+        Spi::run(&format!("DELETE FROM {table_name} WHERE id = {}", case.0))
+            .expect("delete should succeed");
+        unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[case.1]) };
+
+        let (metadata_after, elements_after, neighbors_after) =
+            decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
+        let (_, affected_after) = elements_after
+            .iter()
+            .find(|(tid, _)| *tid == case.2)
+            .expect("affected element should remain on disk after vacuum repair");
+        let neighbor_after = neighbors_after
+            .get(&affected_after.neighbortid)
+            .expect("affected element should keep a persisted neighbor tuple after repair");
+        let layer0_after =
+            layer_neighbor_slice(&neighbor_after.tids, usize::from(metadata_after.m), 0);
+
+        assert!(
+            layer0_after.contains(&case.3),
+            "vacuum source-backed repair should choose the best source-space replacement candidate",
+        );
     }
 
     #[pg_test]
@@ -5220,6 +11081,13 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
         assert_eq!(
@@ -5270,6 +11138,19 @@ mod tests {
             score_cache_hits >= 0 && score_cache_misses > 0,
             "profiling should surface score-cache counters and at least one first-score miss on a non-empty fixture",
         );
+        assert_eq!(
+            (
+                grouped_traversal_approx_score_calls,
+                grouped_traversal_approx_score_elapsed_us,
+                grouped_traversal_exact_score_calls,
+                grouped_traversal_exact_score_elapsed_us,
+                grouped_traversal_budgeted_expansions,
+                grouped_traversal_budgeted_candidates,
+                grouped_traversal_budgeted_exact_candidates,
+            ),
+            (0, 0, 0, 0, 0, 0, 0),
+            "scalar fixtures should leave grouped traversal counters inert",
+        );
         assert!(
             result_count > 0,
             "the profiled scan should return at least one heap TID on a non-empty fixture",
@@ -5293,6 +11174,153 @@ mod tests {
         assert_eq!(
             total_heap_tids_returned, result_count,
             "heap-TID return count should match the helper's emitted row count",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_scan_profile_limit_stops_early() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_profile_limited_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_profile_limited_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_profile_limited_fixture_idx \
+             ON tqhnsw_debug_scan_profile_limited_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let full_result_count = Spi::get_one::<i32>(
+            "SELECT tests.tqhnsw_debug_scan_result_count(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+             )",
+        )
+        .expect("full result-count query should succeed")
+        .expect("full result-count query should return a row");
+        let limited_result_count = Spi::get_one::<i32>(
+            "SELECT result_count
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited profile query should succeed")
+        .expect("limited profile query should return a row");
+        let limited_heap_tids_returned = Spi::get_one::<i32>(
+            "SELECT total_heap_tids_returned
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited heap-tid query should succeed")
+        .expect("limited heap-tid query should return a row");
+        let limited_final_phase = Spi::get_one::<String>(
+            "SELECT final_phase
+             FROM tests.tqhnsw_debug_scan_profile_limited(
+                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+                 ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                 1
+             )",
+        )
+        .expect("limited final-phase query should succeed")
+        .expect("limited final-phase query should return a row");
+
+        assert!(
+            full_result_count > 1,
+            "fixture should expose more than one ordered result so the limit meaningfully truncates the scan",
+        );
+        assert_eq!(
+            limited_result_count, 1,
+            "limited scan profile should stop after the requested number of emitted results",
+        );
+        assert_eq!(
+            limited_heap_tids_returned, 1,
+            "limited scan profile should report only the emitted heap TIDs it actually returned",
+        );
+        assert_ne!(
+            limited_final_phase, "exhausted",
+            "stopping early should preserve a non-exhausted execution phase",
+        );
+    }
+
+    #[pg_test]
+    fn test_tqhnsw_debug_scan_heap_fetch_profile_projects_rows() {
+        Spi::run(
+            "CREATE TABLE tqhnsw_debug_scan_heap_fetch_fixture \
+             (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO tqhnsw_debug_scan_heap_fetch_fixture VALUES
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+        )
+        .expect("seed insert should succeed");
+        Spi::run(
+            "CREATE INDEX tqhnsw_debug_scan_heap_fetch_fixture_idx \
+             ON tqhnsw_debug_scan_heap_fetch_fixture USING tqhnsw \
+             (embedding tqvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (result_count, slot_fetch_count, projected_count) = Spi::connect(|client| {
+            let row = client
+                .select(
+                    "SELECT result_count, slot_fetch_count, projected_count
+                     FROM tests.tqhnsw_debug_scan_heap_fetch_profile(
+                         'tqhnsw_debug_scan_heap_fetch_fixture_idx'::regclass::oid,
+                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
+                         2,
+                         1
+                     )",
+                    None,
+                    &[],
+                )
+                .expect("heap-fetch profile query should succeed")
+                .next()
+                .expect("heap-fetch profile query should return one row");
+            (
+                row["result_count"]
+                    .value::<i32>()
+                    .expect("result count should decode")
+                    .expect("result count should be non-null"),
+                row["slot_fetch_count"]
+                    .value::<i32>()
+                    .expect("slot fetch count should decode")
+                    .expect("slot fetch count should be non-null"),
+                row["projected_count"]
+                    .value::<i32>()
+                    .expect("projected count should decode")
+                    .expect("projected count should be non-null"),
+            )
+        });
+
+        assert_eq!(
+            result_count, 2,
+            "helper should stop after the requested row limit"
+        );
+        assert_eq!(
+            slot_fetch_count, 2,
+            "helper should fetch one visible heap tuple into the slot for each returned row on this simple fixture",
+        );
+        assert_eq!(
+            projected_count, 2,
+            "helper should project the requested heap attribute for each fetched row",
         );
     }
 
@@ -11156,6 +17184,13 @@ mod tests {
             _candidate_score_elapsed_us,
             _score_cache_hits,
             _score_cache_misses,
+            _grouped_traversal_approx_score_calls,
+            _grouped_traversal_approx_score_elapsed_us,
+            _grouped_traversal_exact_score_calls,
+            _grouped_traversal_exact_score_elapsed_us,
+            _grouped_traversal_budgeted_expansions,
+            _grouped_traversal_budgeted_candidates,
+            _grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
 
         TableIterator::once((
@@ -11188,44 +17223,622 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_hot_path_profile(
+    fn tqhnsw_debug_scan_profile_limited(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
+        limit_count: i32,
     ) -> TableIterator<
         'static,
         (
-            name!(rescan_amrescan_total_elapsed_us, i64),
-            name!(rescan_query_decode_elapsed_us, i64),
-            name!(rescan_scan_setup_elapsed_us, i64),
-            name!(rescan_store_query_elapsed_us, i64),
-            name!(rescan_prepare_query_elapsed_us, i64),
-            name!(rescan_reset_state_elapsed_us, i64),
-            name!(rescan_initialize_entry_elapsed_us, i64),
-            name!(rescan_upper_layer_seed_elapsed_us, i64),
-            name!(rescan_layer0_seed_elapsed_us, i64),
-            name!(rescan_stage_ordered_results_elapsed_us, i64),
-            name!(rescan_initial_prefetch_elapsed_us, i64),
-            name!(rescan_frontier_consume_elapsed_us, i64),
-            name!(rescan_graph_result_materialize_elapsed_us, i64),
-            name!(graph_element_cache_hits, i32),
-            name!(graph_element_cache_misses, i32),
-            name!(graph_element_load_elapsed_us, i64),
-            name!(graph_neighbor_cache_hits, i32),
-            name!(graph_neighbor_cache_misses, i32),
-            name!(graph_neighbor_load_elapsed_us, i64),
-            name!(candidate_score_calls, i32),
-            name!(candidate_score_elapsed_us, i64),
-            name!(score_cache_hits, i32),
-            name!(score_cache_misses, i32),
+            name!(rescan_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(rescan_phase, String),
+            name!(rescan_current_result, bool),
+            name!(rescan_ordered_slots, i32),
+            name!(rescan_pending_heap_tids, i32),
+            name!(rescan_visited_elements, i32),
+            name!(rescan_expanded_sources, i32),
+            name!(rescan_emitted_elements, i32),
+            name!(rescan_bootstrap_expansions, i32),
+            name!(rescan_bootstrap_pages_read, i32),
+            name!(rescan_quantizer_cache_hit, bool),
+            name!(result_count, i32),
+            name!(final_phase, String),
+            name!(final_ordered_slots, i32),
+            name!(total_bootstrap_expansions, i32),
+            name!(total_bootstrap_pages_read, i32),
+            name!(total_linear_pages_read, i32),
+            name!(total_elements_scored, i32),
+            name!(total_elements_skipped, i32),
+            name!(total_heap_tids_returned, i32),
+            name!(total_quantizer_cache_hit, bool),
+            name!(total_emitted_elements, i32),
         ),
     > {
+        if limit_count < 0 {
+            pgrx::error!("limit_count must be non-negative");
+        }
+
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile")
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_profile_limited")
         };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
 
+        let (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+            _rescan_amrescan_total_elapsed_us,
+            _rescan_query_decode_elapsed_us,
+            _rescan_scan_setup_elapsed_us,
+            _rescan_store_query_elapsed_us,
+            _rescan_prepare_query_elapsed_us,
+            _rescan_reset_state_elapsed_us,
+            _rescan_initialize_entry_elapsed_us,
+            _rescan_upper_layer_seed_elapsed_us,
+            _rescan_layer0_seed_elapsed_us,
+            _rescan_stage_ordered_results_elapsed_us,
+            _rescan_initial_prefetch_elapsed_us,
+            _rescan_frontier_consume_elapsed_us,
+            _rescan_graph_result_materialize_elapsed_us,
+            _graph_element_cache_hits,
+            _graph_element_cache_misses,
+            _graph_element_load_elapsed_us,
+            _graph_neighbor_cache_hits,
+            _graph_neighbor_cache_misses,
+            _graph_neighbor_load_elapsed_us,
+            _candidate_score_calls,
+            _candidate_score_elapsed_us,
+            _score_cache_hits,
+            _score_cache_misses,
+            _grouped_traversal_approx_score_calls,
+            _grouped_traversal_approx_score_elapsed_us,
+            _grouped_traversal_exact_score_calls,
+            _grouped_traversal_exact_score_elapsed_us,
+            _grouped_traversal_budgeted_expansions,
+            _grouped_traversal_budgeted_candidates,
+            _grouped_traversal_budgeted_exact_candidates,
+        ) = unsafe {
+            am::debug_profile_ordered_scan_with_limit(
+                index_oid,
+                query,
+                Some(usize::try_from(limit_count).expect("limit count should fit in usize")),
+            )
+        };
+
+        TableIterator::once((
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            rescan_phase,
+            rescan_current_result,
+            rescan_ordered_slots,
+            rescan_pending_heap_tids,
+            rescan_visited_elements,
+            rescan_expanded_sources,
+            rescan_emitted_elements,
+            rescan_bootstrap_expansions,
+            rescan_bootstrap_pages_read,
+            rescan_quantizer_cache_hit,
+            result_count,
+            final_phase,
+            final_ordered_slots,
+            total_bootstrap_expansions,
+            total_bootstrap_pages_read,
+            total_linear_pages_read,
+            total_elements_scored,
+            total_elements_skipped,
+            total_heap_tids_returned,
+            total_quantizer_cache_hit,
+            total_emitted_elements,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_heap_fetch_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+        project_attnum: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(slot_fetch_elapsed_us, i64),
+            name!(projection_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(slot_fetch_count, i32),
+            name!(projected_count, i32),
+        ),
+    > {
+        if limit_count < 0 {
+            pgrx::error!("limit_count must be non-negative");
+        }
+        if project_attnum < 0 {
+            pgrx::error!("project_attnum must be non-negative");
+        }
+
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_heap_fetch_profile")
+        };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+
+        let (
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
+        ) = unsafe {
+            am::debug_profile_ordered_scan_with_heap_fetch(
+                index_oid,
+                query,
+                usize::try_from(limit_count).expect("limit count should fit in usize"),
+                (project_attnum > 0).then_some(project_attnum),
+            )
+        };
+
+        TableIterator::once((
+            rescan_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            slot_fetch_elapsed_us,
+            projection_elapsed_us,
+            result_count,
+            slot_fetch_count,
+            projected_count,
+        ))
+    }
+
+    struct PqFastScanRuntimeSettings {
+        build_enabled: bool,
+        scan_enabled: bool,
+        scan_window: Option<String>,
+        traversal_score_mode: Option<String>,
+        rerank_mode: Option<String>,
+        rerank_source_column: Option<String>,
+        exact_traversal_enabled: bool,
+        exact_traversal_scope: Option<String>,
+        exact_traversal_strategy: Option<String>,
+        exact_traversal_limit: Option<String>,
+    }
+
+    fn current_pq_fastscan_runtime_settings() -> PqFastScanRuntimeSettings {
+        let env_string = |canonical: &str, legacy: &str| {
+            std::env::var_os(canonical)
+                .or_else(|| std::env::var_os(legacy))
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        PqFastScanRuntimeSettings {
+            build_enabled: true,
+            scan_enabled: true,
+            scan_window: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_WINDOW",
+                )
+                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW.to_string()),
+            ),
+            traversal_score_mode: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_GROUPED_SCORE_MODE",
+                )
+                .unwrap_or_else(|| {
+                    crate::am::PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME.to_owned()
+                }),
+            ),
+            rerank_mode: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_RERANK_MODE",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_MODE",
+                )
+                .unwrap_or_else(|| crate::am::PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME.to_owned()),
+            ),
+            rerank_source_column: Some(
+                env_string(
+                    "TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN",
+                    "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_RERANK_SOURCE_COLUMN",
+                )
+                .unwrap_or_else(|| "build_source_column".to_owned()),
+            ),
+            exact_traversal_enabled: std::env::var_os("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL")
+                .or_else(|| {
+                    std::env::var_os("TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL")
+                })
+                .is_some(),
+            exact_traversal_scope: env_string(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_SCOPE",
+            ),
+            exact_traversal_strategy: env_string(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_STRATEGY",
+            ),
+            exact_traversal_limit: env_string(
+                "TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT",
+                "TQVECTOR_EXPERIMENTAL_ADR030_V2_SCAN_EXACT_TRAVERSAL_LIMIT",
+            ),
+        }
+    }
+
+    struct PqFastScanIndexRuntimeSettings {
+        base: PqFastScanRuntimeSettings,
+        traversal_score_mode_resolution: Option<String>,
+        rerank_mode_resolution: Option<String>,
+        layout_binary_word_count: Option<i32>,
+    }
+
+    fn current_pq_fastscan_runtime_settings_for_index(
+        index_oid: pg_sys::Oid,
+    ) -> PqFastScanIndexRuntimeSettings {
+        let index_relation = unsafe {
+            open_valid_tqhnsw_index(
+                index_oid,
+                "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index",
+            )
+        };
+        let (_block_count, _m, _ef_construction, metadata) =
+            unsafe { am::debug_index_metadata(index_oid) };
+        let storage = unsafe {
+            am::graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata)
+        }
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+        let layout = match storage {
+            am::graph::GraphStorageDescriptor::PqFastScan(layout) => layout,
+            am::graph::GraphStorageDescriptor::TurboQuant { .. } => {
+                unsafe {
+                    pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+                };
+                pgrx::error!(
+                    "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"
+                );
+            }
+        };
+        let traversal = am::resolve_pq_fastscan_traversal_score_mode_decision(storage);
+        let rerank =
+            unsafe { am::resolve_pq_fastscan_rerank_mode_decision(index_relation, storage) };
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let mut base = current_pq_fastscan_runtime_settings();
+        base.traversal_score_mode = Some(traversal.mode_name().to_owned());
+        base.rerank_mode = Some(rerank.mode_name().to_owned());
+        base.rerank_source_column = rerank.source_column;
+
+        PqFastScanIndexRuntimeSettings {
+            base,
+            traversal_score_mode_resolution: Some(traversal.resolution.as_str().to_owned()),
+            rerank_mode_resolution: Some(rerank.resolution.as_str().to_owned()),
+            layout_binary_word_count: Some(
+                i32::try_from(layout.binary_word_count)
+                    .expect("binary-word count should fit in i32"),
+            ),
+        }
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_runtime_settings() -> TableIterator<
+        'static,
+        (
+            name!(pq_fastscan_build_enabled, bool),
+            name!(pq_fastscan_scan_enabled, bool),
+            name!(pq_fastscan_scan_window, Option<String>),
+            name!(pq_fastscan_traversal_score_mode, Option<String>),
+            name!(pq_fastscan_rerank_mode, Option<String>),
+            name!(pq_fastscan_rerank_source_column, Option<String>),
+            name!(pq_fastscan_exact_traversal_enabled, bool),
+            name!(pq_fastscan_exact_traversal_scope, Option<String>),
+            name!(pq_fastscan_exact_traversal_strategy, Option<String>),
+            name!(pq_fastscan_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        let settings = current_pq_fastscan_runtime_settings();
+        TableIterator::once((
+            settings.build_enabled,
+            settings.scan_enabled,
+            settings.scan_window,
+            settings.traversal_score_mode,
+            settings.rerank_mode,
+            settings.rerank_source_column,
+            settings.exact_traversal_enabled,
+            settings.exact_traversal_scope,
+            settings.exact_traversal_strategy,
+            settings.exact_traversal_limit,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_runtime_settings_for_index(
+        index_oid: pg_sys::Oid,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(pq_fastscan_build_enabled, bool),
+            name!(pq_fastscan_scan_enabled, bool),
+            name!(pq_fastscan_scan_window, Option<String>),
+            name!(pq_fastscan_traversal_score_mode, Option<String>),
+            name!(pq_fastscan_traversal_score_mode_resolution, Option<String>),
+            name!(pq_fastscan_layout_binary_word_count, Option<i32>),
+            name!(pq_fastscan_rerank_mode, Option<String>),
+            name!(pq_fastscan_rerank_mode_resolution, Option<String>),
+            name!(pq_fastscan_rerank_source_column, Option<String>),
+            name!(pq_fastscan_exact_traversal_enabled, bool),
+            name!(pq_fastscan_exact_traversal_scope, Option<String>),
+            name!(pq_fastscan_exact_traversal_strategy, Option<String>),
+            name!(pq_fastscan_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        let settings = current_pq_fastscan_runtime_settings_for_index(index_oid);
+        TableIterator::once((
+            settings.base.build_enabled,
+            settings.base.scan_enabled,
+            settings.base.scan_window,
+            settings.base.traversal_score_mode,
+            settings.traversal_score_mode_resolution,
+            settings.layout_binary_word_count,
+            settings.base.rerank_mode,
+            settings.rerank_mode_resolution,
+            settings.base.rerank_source_column,
+            settings.base.exact_traversal_enabled,
+            settings.base.exact_traversal_scope,
+            settings.base.exact_traversal_strategy,
+            settings.base.exact_traversal_limit,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_adr030_runtime_settings() -> TableIterator<
+        'static,
+        (
+            name!(grouped_build_enabled, bool),
+            name!(grouped_scan_enabled, bool),
+            name!(grouped_scan_window, Option<String>),
+            name!(grouped_scan_score_mode, Option<String>),
+            name!(grouped_scan_rerank_mode, Option<String>),
+            name!(grouped_scan_rerank_source_column, Option<String>),
+            name!(grouped_exact_traversal_enabled, bool),
+            name!(grouped_exact_traversal_scope, Option<String>),
+            name!(grouped_exact_traversal_strategy, Option<String>),
+            name!(grouped_exact_traversal_limit, Option<String>),
+        ),
+    > {
+        let settings = current_pq_fastscan_runtime_settings();
+        TableIterator::once((
+            settings.build_enabled,
+            settings.scan_enabled,
+            settings.scan_window,
+            settings.traversal_score_mode,
+            settings.rerank_mode,
+            settings.rerank_source_column,
+            settings.exact_traversal_enabled,
+            settings.exact_traversal_scope,
+            settings.exact_traversal_strategy,
+            settings.exact_traversal_limit,
+        ))
+    }
+
+    fn validate_debug_index(index_oid: pg_sys::Oid, helper_name: &'static str) {
+        let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, helper_name) };
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
+    }
+
+    type PqFastScanScanOrderDriftSummaryValues = (
+        i32,
+        i32,
+        i32,
+        f64,
+        i32,
+        f64,
+        Option<i32>,
+        Option<i32>,
+        bool,
+        bool,
+        bool,
+        bool,
+    );
+    type PqFastScanScanWindowedRowValues = (
+        i64,
+        i32,
+        i32,
+        i32,
+        f32,
+        Option<f32>,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+    );
+    type PqFastScanScanWindowedSummaryValues = (
+        i32,
+        i32,
+        i32,
+        i32,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+        Option<i32>,
+        f64,
+        f64,
+        i32,
+        i32,
+        f64,
+        f64,
+    );
+    type PqFastScanScanComparisonRowValues =
+        (i64, i32, i32, f32, Option<f32>, Option<i32>, Option<i32>);
+    type PqFastScanScanComparisonSummaryValues = (i32, i32, i32, i32, f64, f32, f64);
+    type DebugScanHotPathProfileValues = (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i32,
+        i32,
+    );
+    type PqFastScanRerankProfileValues = (
+        i64,
+        i64,
+        i64,
+        i64,
+        i32,
+        i32,
+        i64,
+        i32,
+        i64,
+        i32,
+        i64,
+        i64,
+        i64,
+    );
+
+    fn pq_fastscan_scan_order_drift_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> PqFastScanScanOrderDriftSummaryValues {
+        unsafe { am::debug_grouped_scan_order_drift_summary(index_oid, query) }
+    }
+
+    fn pq_fastscan_scan_windowed_rows_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> Vec<PqFastScanScanWindowedRowValues> {
+        unsafe { am::debug_grouped_scan_windowed_rows(index_oid, query, window_size) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    windowed_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                    windowed_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        windowed_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                        windowed_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+    }
+
+    fn pq_fastscan_scan_windowed_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> PqFastScanScanWindowedSummaryValues {
+        unsafe { am::debug_grouped_scan_windowed_summary(index_oid, query, window_size) }
+    }
+
+    fn pq_fastscan_scan_comparison_rows_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> Vec<PqFastScanScanComparisonRowValues> {
+        unsafe { am::debug_grouped_scan_comparison_rows(index_oid, query) }
+            .into_iter()
+            .map(
+                |(
+                    (block_number, offset_number),
+                    approx_rank,
+                    approx_score,
+                    comparison_score,
+                    exact_rank,
+                    exact_rank_shift,
+                )| {
+                    (
+                        i64::from(block_number),
+                        i32::from(offset_number),
+                        approx_rank,
+                        approx_score,
+                        comparison_score,
+                        exact_rank,
+                        exact_rank_shift,
+                    )
+                },
+            )
+            .collect::<Vec<_>>()
+    }
+
+    fn pq_fastscan_scan_comparison_summary_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> PqFastScanScanComparisonSummaryValues {
+        unsafe { am::debug_grouped_scan_comparison_summary(index_oid, query) }
+    }
+
+    fn debug_scan_hot_path_profile_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> DebugScanHotPathProfileValues {
         let (
             _rescan_elapsed_us,
             _emit_elapsed_us,
@@ -11274,7 +17887,131 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
         ) = unsafe { am::debug_profile_ordered_scan(index_oid, query) };
+
+        (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        )
+    }
+
+    fn pq_fastscan_rerank_profile_values(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> PqFastScanRerankProfileValues {
+        unsafe { am::debug_grouped_rerank_profile(index_oid, query, limit_count) }
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_scan_hot_path_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_query_decode_elapsed_us, i64),
+            name!(rescan_scan_setup_elapsed_us, i64),
+            name!(rescan_store_query_elapsed_us, i64),
+            name!(rescan_prepare_query_elapsed_us, i64),
+            name!(rescan_reset_state_elapsed_us, i64),
+            name!(rescan_initialize_entry_elapsed_us, i64),
+            name!(rescan_upper_layer_seed_elapsed_us, i64),
+            name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(rescan_stage_ordered_results_elapsed_us, i64),
+            name!(rescan_initial_prefetch_elapsed_us, i64),
+            name!(rescan_frontier_consume_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(graph_element_cache_hits, i32),
+            name!(graph_element_cache_misses, i32),
+            name!(graph_element_load_elapsed_us, i64),
+            name!(graph_neighbor_cache_hits, i32),
+            name!(graph_neighbor_cache_misses, i32),
+            name!(graph_neighbor_load_elapsed_us, i64),
+            name!(candidate_score_calls, i32),
+            name!(candidate_score_elapsed_us, i64),
+            name!(score_cache_hits, i32),
+            name!(score_cache_misses, i32),
+            name!(grouped_traversal_approx_score_calls, i32),
+            name!(grouped_traversal_approx_score_elapsed_us, i64),
+            name!(grouped_traversal_exact_score_calls, i32),
+            name!(grouped_traversal_exact_score_elapsed_us, i64),
+            name!(grouped_traversal_budgeted_expansions, i32),
+            name!(grouped_traversal_budgeted_candidates, i32),
+            name!(grouped_traversal_budgeted_exact_candidates, i32),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ) = debug_scan_hot_path_profile_values(index_oid, query);
 
         TableIterator::once((
             rescan_amrescan_total_elapsed_us,
@@ -11300,6 +18037,243 @@ mod tests {
             candidate_score_elapsed_us,
             score_cache_hits,
             score_cache_misses,
+            grouped_traversal_approx_score_calls,
+            grouped_traversal_approx_score_elapsed_us,
+            grouped_traversal_exact_score_calls,
+            grouped_traversal_exact_score_elapsed_us,
+            grouped_traversal_budgeted_expansions,
+            grouped_traversal_budgeted_candidates,
+            grouped_traversal_budgeted_exact_candidates,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_query_decode_elapsed_us, i64),
+            name!(rescan_scan_setup_elapsed_us, i64),
+            name!(rescan_store_query_elapsed_us, i64),
+            name!(rescan_prepare_query_elapsed_us, i64),
+            name!(rescan_reset_state_elapsed_us, i64),
+            name!(rescan_initialize_entry_elapsed_us, i64),
+            name!(rescan_upper_layer_seed_elapsed_us, i64),
+            name!(rescan_layer0_seed_elapsed_us, i64),
+            name!(rescan_stage_ordered_results_elapsed_us, i64),
+            name!(rescan_initial_prefetch_elapsed_us, i64),
+            name!(rescan_frontier_consume_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(graph_element_cache_hits, i32),
+            name!(graph_element_cache_misses, i32),
+            name!(graph_element_load_elapsed_us, i64),
+            name!(graph_neighbor_cache_hits, i32),
+            name!(graph_neighbor_cache_misses, i32),
+            name!(graph_neighbor_load_elapsed_us, i64),
+            name!(candidate_score_calls, i32),
+            name!(candidate_score_elapsed_us, i64),
+            name!(score_cache_hits, i32),
+            name!(score_cache_misses, i32),
+            name!(pq_fastscan_traversal_approx_score_calls, i32),
+            name!(pq_fastscan_traversal_approx_score_elapsed_us, i64),
+            name!(pq_fastscan_traversal_exact_score_calls, i32),
+            name!(pq_fastscan_traversal_exact_score_elapsed_us, i64),
+            name!(pq_fastscan_traversal_budgeted_expansions, i32),
+            name!(pq_fastscan_traversal_budgeted_candidates, i32),
+            name!(pq_fastscan_traversal_budgeted_exact_candidates, i32),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile",
+        );
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ) = debug_scan_hot_path_profile_values(index_oid, query);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_query_decode_elapsed_us,
+            rescan_scan_setup_elapsed_us,
+            rescan_store_query_elapsed_us,
+            rescan_prepare_query_elapsed_us,
+            rescan_reset_state_elapsed_us,
+            rescan_initialize_entry_elapsed_us,
+            rescan_upper_layer_seed_elapsed_us,
+            rescan_layer0_seed_elapsed_us,
+            rescan_stage_ordered_results_elapsed_us,
+            rescan_initial_prefetch_elapsed_us,
+            rescan_frontier_consume_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            graph_element_cache_hits,
+            graph_element_cache_misses,
+            graph_element_load_elapsed_us,
+            graph_neighbor_cache_hits,
+            graph_neighbor_cache_misses,
+            graph_neighbor_load_elapsed_us,
+            candidate_score_calls,
+            candidate_score_elapsed_us,
+            score_cache_hits,
+            score_cache_misses,
+            pq_fastscan_traversal_approx_score_calls,
+            pq_fastscan_traversal_approx_score_elapsed_us,
+            pq_fastscan_traversal_exact_score_calls,
+            pq_fastscan_traversal_exact_score_elapsed_us,
+            pq_fastscan_traversal_budgeted_expansions,
+            pq_fastscan_traversal_budgeted_candidates,
+            pq_fastscan_traversal_budgeted_exact_candidates,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_rerank_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(pq_fastscan_rerank_quantized_score_calls, i32),
+            name!(pq_fastscan_rerank_quantized_score_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_score_calls, i32),
+            name!(pq_fastscan_rerank_heap_score_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_rows_fetched, i32),
+            name!(pq_fastscan_rerank_heap_fetch_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_decode_elapsed_us, i64),
+            name!(pq_fastscan_rerank_heap_dot_elapsed_us, i64),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_pq_fastscan_rerank_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ) = pq_fastscan_rerank_profile_values(index_oid, query, limit_count);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            pq_fastscan_rerank_quantized_score_calls,
+            pq_fastscan_rerank_quantized_score_elapsed_us,
+            pq_fastscan_rerank_heap_score_calls,
+            pq_fastscan_rerank_heap_score_elapsed_us,
+            pq_fastscan_rerank_heap_rows_fetched,
+            pq_fastscan_rerank_heap_fetch_elapsed_us,
+            pq_fastscan_rerank_heap_decode_elapsed_us,
+            pq_fastscan_rerank_heap_dot_elapsed_us,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_rerank_profile(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        limit_count: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(rescan_amrescan_total_elapsed_us, i64),
+            name!(rescan_graph_result_materialize_elapsed_us, i64),
+            name!(emit_elapsed_us, i64),
+            name!(total_elapsed_us, i64),
+            name!(result_count, i32),
+            name!(grouped_rerank_quantized_score_calls, i32),
+            name!(grouped_rerank_quantized_score_elapsed_us, i64),
+            name!(grouped_rerank_heap_score_calls, i32),
+            name!(grouped_rerank_heap_score_elapsed_us, i64),
+            name!(grouped_rerank_heap_rows_fetched, i32),
+            name!(grouped_rerank_heap_fetch_elapsed_us, i64),
+            name!(grouped_rerank_heap_decode_elapsed_us, i64),
+            name!(grouped_rerank_heap_dot_elapsed_us, i64),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_rerank_profile");
+
+        let (
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
+        ) = pq_fastscan_rerank_profile_values(index_oid, query, limit_count);
+
+        TableIterator::once((
+            rescan_amrescan_total_elapsed_us,
+            rescan_graph_result_materialize_elapsed_us,
+            emit_elapsed_us,
+            total_elapsed_us,
+            result_count,
+            grouped_rerank_quantized_score_calls,
+            grouped_rerank_quantized_score_elapsed_us,
+            grouped_rerank_heap_score_calls,
+            grouped_rerank_heap_score_elapsed_us,
+            grouped_rerank_heap_rows_fetched,
+            grouped_rerank_heap_fetch_elapsed_us,
+            grouped_rerank_heap_decode_elapsed_us,
+            grouped_rerank_heap_dot_elapsed_us,
         ))
     }
 
@@ -11329,13 +18303,446 @@ mod tests {
         let rows = unsafe { am::debug_gettuple_scan_heap_tids(index_oid, query) }
             .into_iter()
             .map(|(block_number, offset_number)| {
-                (
-                    i64::from(block_number),
-                    i32::from(offset_number),
-                )
+                (i64::from(block_number), i32::from(offset_number))
             })
             .collect::<Vec<_>>();
         TableIterator::new(rows)
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(mean_abs_rank_shift, f64),
+            name!(max_abs_rank_shift, i32),
+            name!(spearman_rank_correlation, f64),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(window_1_contains_exact_best, bool),
+            name!(window_2_contains_exact_best, bool),
+            name!(window_4_contains_exact_best, bool),
+            name!(window_8_contains_exact_best, bool),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = pq_fastscan_scan_order_drift_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_order_drift_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(mean_abs_rank_shift, f64),
+            name!(max_abs_rank_shift, i32),
+            name!(spearman_rank_correlation, f64),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(window_1_contains_exact_best, bool),
+            name!(window_2_contains_exact_best, bool),
+            name!(window_4_contains_exact_best, bool),
+            name!(window_8_contains_exact_best, bool),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_order_drift_summary",
+        );
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ) = pq_fastscan_scan_order_drift_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            mean_abs_rank_shift,
+            max_abs_rank_shift,
+            spearman_rank_correlation,
+            exact_best_approx_rank,
+            exact_top4_max_approx_rank,
+            window_1_contains_exact_best,
+            window_2_contains_exact_best,
+            window_4_contains_exact_best,
+            window_8_contains_exact_best,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_windowed_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(windowed_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+            name!(windowed_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows",
+        );
+        TableIterator::new(pq_fastscan_scan_windowed_rows_values(
+            index_oid,
+            query,
+            window_size,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_windowed_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(windowed_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+            name!(windowed_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_windowed_rows");
+        TableIterator::new(pq_fastscan_scan_windowed_rows_values(
+            index_oid,
+            query,
+            window_size,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_windowed_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(window_size, i32),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_best_windowed_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(exact_top4_max_windowed_rank, Option<i32>),
+            name!(mean_abs_rank_shift_before, f64),
+            name!(mean_abs_rank_shift_after, f64),
+            name!(max_abs_rank_shift_before, i32),
+            name!(max_abs_rank_shift_after, i32),
+            name!(spearman_rank_correlation_before, f64),
+            name!(spearman_rank_correlation_after, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ) = pq_fastscan_scan_windowed_summary_values(index_oid, query, window_size);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_windowed_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        window_size: i32,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(window_size, i32),
+            name!(exact_best_approx_rank, Option<i32>),
+            name!(exact_best_windowed_rank, Option<i32>),
+            name!(exact_top4_max_approx_rank, Option<i32>),
+            name!(exact_top4_max_windowed_rank, Option<i32>),
+            name!(mean_abs_rank_shift_before, f64),
+            name!(mean_abs_rank_shift_after, f64),
+            name!(max_abs_rank_shift_before, i32),
+            name!(max_abs_rank_shift_after, i32),
+            name!(spearman_rank_correlation_before, f64),
+            name!(spearman_rank_correlation_after, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_windowed_summary",
+        );
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ) = pq_fastscan_scan_windowed_summary_values(index_oid, query, window_size);
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            window_size,
+            exact_best_approx_rank,
+            exact_best_windowed_rank,
+            exact_top4_max_approx_rank,
+            exact_top4_max_windowed_rank,
+            mean_abs_rank_shift_before,
+            mean_abs_rank_shift_after,
+            max_abs_rank_shift_before,
+            max_abs_rank_shift_after,
+            spearman_rank_correlation_before,
+            spearman_rank_correlation_after,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_comparison_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows",
+        );
+        TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_comparison_rows(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(block_number, i64),
+            name!(offset_number, i32),
+            name!(approx_rank, i32),
+            name!(approx_score, f32),
+            name!(comparison_score, Option<f32>),
+            name!(exact_rank, Option<i32>),
+            name!(exact_rank_shift, Option<i32>),
+        ),
+    > {
+        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_rows");
+        TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_pq_fastscan_scan_comparison_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(pq_fastscan_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(missing_comparison_count, i32),
+            name!(mean_abs_score_delta, f64),
+            name!(max_abs_score_delta, f32),
+            name!(mean_signed_score_delta, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary",
+        );
+
+        let (
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = pq_fastscan_scan_comparison_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            pq_fastscan_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ))
+    }
+
+    #[pg_extern]
+    #[allow(clippy::type_complexity)]
+    fn tqhnsw_debug_grouped_scan_comparison_summary(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(emitted_result_count, i32),
+            name!(grouped_result_count, i32),
+            name!(compared_result_count, i32),
+            name!(missing_comparison_count, i32),
+            name!(mean_abs_score_delta, f64),
+            name!(max_abs_score_delta, f32),
+            name!(mean_signed_score_delta, f64),
+        ),
+    > {
+        validate_debug_index(
+            index_oid,
+            "tests.tqhnsw_debug_grouped_scan_comparison_summary",
+        );
+
+        let (
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ) = pq_fastscan_scan_comparison_summary_values(index_oid, query);
+
+        TableIterator::once((
+            emitted_result_count,
+            grouped_result_count,
+            compared_result_count,
+            missing_comparison_count,
+            mean_abs_score_delta,
+            max_abs_score_delta,
+            mean_signed_score_delta,
+        ))
     }
 
     #[pg_extern]
@@ -11435,10 +18842,32 @@ mod tests {
         );
     }
 
-    /// Helper that materializes the external corpus / query / index layout
+    fn external_recall_index_prefix(prefix: &str, storage_format: Option<&str>) -> String {
+        match storage_format {
+            Some(storage_format) => format!("{prefix}_{storage_format}"),
+            None => prefix.to_string(),
+        }
+    }
+
+    fn external_recall_index_name(prefix: &str, storage_format: Option<&str>, m: i32) -> String {
+        format!(
+            "{}_m{m}_idx",
+            external_recall_index_prefix(prefix, storage_format)
+        )
+    }
+
+    fn external_recall_storage_format_clause(storage_format: Option<&str>) -> String {
+        match storage_format {
+            Some(storage_format) => format!(", storage_format = '{storage_format}'"),
+            None => String::new(),
+        }
+    }
+
+    /// Helper that materializes the external corpus / query table layout
     /// described in `docs/RECALL_REAL_CORPUS.md` for a small synthetic dataset.
-    /// Used by the external-probe smoke test below.
-    fn create_external_recall_smoke_fixture(prefix: &str, corpus_size: usize, query_count: usize) {
+    /// Index families are created separately so the smoke test can attach
+    /// multiple storage formats to the same staged tables.
+    fn create_external_recall_smoke_tables(prefix: &str, corpus_size: usize, query_count: usize) {
         let corpus_table = format!("{prefix}_corpus");
         let queries_table = format!("{prefix}_queries");
 
@@ -11503,38 +18932,29 @@ mod tests {
             "INSERT INTO {queries_table} (id, source) VALUES {query_values}"
         ))
         .expect("smoke fixture query batch insert should succeed");
+    }
 
+    fn create_external_recall_smoke_indexes(prefix: &str, storage_format: Option<&str>) {
+        let corpus_table = format!("{prefix}_corpus");
+        let storage_format_clause = external_recall_storage_format_clause(storage_format);
         for m in [8_i32, 16_i32] {
-            let index_name = format!("{prefix}_m{m}_idx");
+            let index_name = external_recall_index_name(prefix, storage_format, m);
             Spi::run(&format!(
                 "CREATE INDEX {index_name} ON {corpus_table} \
                  USING tqhnsw (embedding tqvector_ip_ops) \
                  WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION}, \
-                       build_source_column = 'source')"
+                       build_source_column = 'source'{storage_format_clause})"
             ))
             .expect("smoke fixture index create should succeed");
         }
     }
 
-    #[pg_test]
-    // Ignored because it requires the `pg_test` cargo feature and a scratch
-    // pgrx test cluster to run, not because of long seeding. Seeding is
-    // batched in `create_external_recall_smoke_fixture`; the remaining
-    // wall-clock cost lives in the probe / gate phases below, which are
-    // out of scope for the seeding fix.
-    #[ignore]
-    fn test_tqhnsw_graph_scan_recall_external_smoke_500() {
-        // Smoke test for the external corpus / query / index probe path. The
-        // real DBpedia corpus is staged out-of-band by
-        // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
-        // dataset that the loader's schema accepts so we can exercise the
-        // Rust probe surface end-to-end.
-        let prefix = "tqhnsw_recall_external_smoke";
-        create_external_recall_smoke_fixture(prefix, 500, 25);
-
+    fn assert_external_recall_smoke_probe(prefix: &str, storage_format: Option<&str>) {
         let corpus_table = format!("{prefix}_corpus");
         let queries_table = format!("{prefix}_queries");
-        let m8_index = format!("{prefix}_m8_idx");
+        let index_prefix = external_recall_index_prefix(prefix, storage_format);
+        let m8_index = external_recall_index_name(prefix, storage_format, 8);
+        let storage_label = storage_format.unwrap_or("default");
 
         let summary = probe_graph_scan_recall_external_summary_for_relation(
             &corpus_table,
@@ -11559,7 +18979,7 @@ mod tests {
         ) = summary;
 
         println!(
-            "external smoke 500: m={m} ef={ef_search} corpus={corpus_rows} queries={query_count} \
+            "external smoke 500 ({storage_label}): m={m} ef={ef_search} corpus={corpus_rows} queries={query_count} \
              graph@10={graph_recall_at_10:.4} graph@100={graph_recall_at_100:.4} \
              ndcg@10={ndcg_at_10:.4} mae={mean_abs_score_error:.6} \
              spearman={spearman_rho_at_10:.4} exact@10={exact_quantized_recall_at_10:.4} \
@@ -11570,12 +18990,6 @@ mod tests {
         assert_eq!(ef_search, 128);
         assert_eq!(corpus_rows, 500);
         assert_eq!(query_count, 25);
-        // The smoke fixture is uniformly random in 1536 dimensions; tqvector
-        // recall is dominated by the quantizer noise floor in this regime.
-        // We don't assert a specific recall — just that the path returns a
-        // sane fraction in [0, 1] and doesn't blow up. The real recall gate
-        // is `tqhnsw_graph_scan_recall_external_gate_report` against the
-        // staged DBpedia corpus.
         assert!((0.0..=1.0).contains(&graph_recall_at_10));
         assert!((0.0..=1.0).contains(&graph_recall_at_100));
         assert!((0.0..=1.0).contains(&exact_quantized_recall_at_10));
@@ -11583,8 +18997,6 @@ mod tests {
         assert!(ndcg_at_10 >= 0.0);
         assert!(mean_abs_score_error >= 0.0);
 
-        // Reusability: rerunning against the same loaded tables and index
-        // produces an identical row.
         let summary_two = probe_graph_scan_recall_external_summary_for_relation(
             &corpus_table,
             &queries_table,
@@ -11594,16 +19006,15 @@ mod tests {
         );
         assert_eq!(
             summary, summary_two,
-            "external recall summary should be deterministic across reruns"
+            "external recall summary should be deterministic across reruns for {storage_label}"
         );
 
-        // Gate report wrapper: covers all four NFR-003 A4 configurations
-        // against the m=8 and m=16 indexes built by the smoke fixture.
-        let gate = run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, prefix);
+        let gate =
+            run_graph_scan_recall_gate_from_external(&corpus_table, &queries_table, &index_prefix);
         assert_eq!(
             gate.len(),
             RECALL_GATE_CONFIGS.len(),
-            "gate report should emit one row per A4 config"
+            "gate report should emit one row per A4 config for {storage_label}"
         );
         for ((m, ef_search, recall, target, passed), expected) in
             gate.iter().zip(RECALL_GATE_CONFIGS.iter())
@@ -11612,12 +19023,34 @@ mod tests {
             assert_eq!(*ef_search, expected.1);
             assert_eq!(*target, expected.2);
             assert!((0.0..=1.0).contains(recall));
-            // Targetless rows always pass; gated rows are only asserted to
-            // be deterministic, not to clear the gate on synthetic data.
             if expected.2.is_none() {
                 assert!(*passed);
             }
         }
+    }
+
+    #[pg_test]
+    // Ignored because it requires the `pg_test` cargo feature and a scratch
+    // pgrx test cluster to run, not because of long seeding. Seeding is
+    // batched in `create_external_recall_smoke_tables`; the remaining
+    // wall-clock cost lives in the probe / gate phases below.
+    #[ignore]
+    fn test_tqhnsw_recall_external_smoke_500_formats() {
+        // Smoke test for the external corpus / query / index probe path. The
+        // real DBpedia corpus is staged out-of-band by
+        // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
+        // dataset that the loader's schema accepts so we can exercise the
+        // Rust probe surface end-to-end, including coexisting explicit
+        // storage-format index families on one shared corpus/query table pair.
+        let prefix = "tqhnsw_recall_external_smoke";
+        create_external_recall_smoke_tables(prefix, 500, 25);
+        create_external_recall_smoke_indexes(prefix, None);
+        create_external_recall_smoke_indexes(prefix, Some("turboquant"));
+        create_external_recall_smoke_indexes(prefix, Some("pq_fastscan"));
+
+        assert_external_recall_smoke_probe(prefix, None);
+        assert_external_recall_smoke_probe(prefix, Some("turboquant"));
+        assert_external_recall_smoke_probe(prefix, Some("pq_fastscan"));
     }
 
     #[cfg(test)]

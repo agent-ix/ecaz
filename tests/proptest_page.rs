@@ -2,8 +2,8 @@
 
 use proptest::prelude::*;
 use tqvector::bench_api::{
-    ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
-    ITEM_POINTER_BYTES,
+    CurrentFormatMetadata, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple,
+    HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
 
 // P9: TqElementTuple encode/decode roundtrip.
@@ -80,16 +80,20 @@ proptest! {
         max_level in 0..20u8,
         seed in 0..10000u64,
     ) {
-        let metadata = MetadataPage {
+        let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
             m,
             ef_construction,
-            entry_point: ItemPointer { block_number: 1, offset_number: 1 },
+            entry_point: ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            },
             dimensions,
             bits,
             max_level,
             seed,
             inserted_since_rebuild: seed,
-        };
+            persisted_binary_sidecar: false,
+        });
 
         let encoded = metadata.encode();
         let decoded = MetadataPage::decode(&encoded).unwrap();

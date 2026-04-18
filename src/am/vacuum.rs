@@ -2,16 +2,225 @@ use std::{collections::HashSet, ffi::c_void, ptr};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
-use super::{graph, page, search, shared, wal};
-use crate::quant::prod::payload_len;
-
+use super::{graph, options, page, search, shared, source, wal};
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VacuumFormatAdapter {
+    TurboQuant { code_len: usize },
+    PqFastScan(graph::PqFastScanLayout),
+}
+
+#[derive(Debug)]
+enum VacuumSearchMetric {
+    Code,
+    Source(VacuumHeapSourceScorer),
+}
+
+#[derive(Debug)]
+struct VacuumHeapSourceScorer {
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attribute: source::SourceAttribute,
+}
+
+impl VacuumHeapSourceScorer {
+    unsafe fn new(heap_relation: pg_sys::Relation, source_column: &str) -> Self {
+        let source_attribute = unsafe {
+            source::resolve_source_attribute(
+                heap_relation,
+                source_column,
+                "build_source_column",
+                source::SourceTypePolicy::RealArrayOnly,
+            )
+        };
+        let slot = unsafe {
+            source::allocate_heap_slot(
+                heap_relation,
+                "tqhnsw vacuum failed to allocate a heap source slot",
+            )
+        };
+
+        Self {
+            heap_relation,
+            snapshot: std::ptr::addr_of_mut!(pg_sys::SnapshotAnyData),
+            slot,
+            source_attribute,
+        }
+    }
+
+    unsafe fn averaged_source_vector(
+        &mut self,
+        heap_tids: &[page::ItemPointer],
+        label: &str,
+    ) -> Option<Vec<f32>> {
+        let mut representative: Option<Vec<f32>> = None;
+        let mut count = 0usize;
+
+        for heap_tid in heap_tids.iter().copied() {
+            let source = unsafe {
+                source::load_source_from_heap_row(
+                    self.heap_relation,
+                    heap_tid,
+                    self.snapshot,
+                    self.slot,
+                    self.source_attribute,
+                    label,
+                )
+            };
+            match representative.as_mut() {
+                Some(existing) => {
+                    source::average_source_representatives(existing, count, source.as_slice(), 1);
+                    count += 1;
+                }
+                None => {
+                    representative = Some(source.as_slice().to_vec());
+                    count = 1;
+                }
+            }
+            drop(source);
+            unsafe { pg_sys::ExecClearTuple(self.slot) };
+        }
+
+        representative
+    }
+
+    unsafe fn score_graph_element_pair(
+        &mut self,
+        source_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> Option<f32> {
+        if source_element.deleted
+            || source_element.heaptids.is_empty()
+            || candidate_element.deleted
+            || candidate_element.heaptids.is_empty()
+        {
+            return None;
+        }
+
+        let source_vector = unsafe {
+            self.averaged_source_vector(
+                &source_element.heaptids,
+                "vacuum repair source-backed element",
+            )
+        }?;
+        let candidate_vector = unsafe {
+            self.averaged_source_vector(
+                &candidate_element.heaptids,
+                "vacuum repair source-backed candidate",
+            )
+        }?;
+        Some(source::negative_inner_product(
+            &source_vector,
+            &candidate_vector,
+        ))
+    }
+}
+
+impl Drop for VacuumHeapSourceScorer {
+    fn drop(&mut self) {
+        if !self.slot.is_null() {
+            unsafe { pg_sys::ExecDropSingleTupleTableSlot(self.slot) };
+        }
+    }
+}
+
+impl VacuumSearchMetric {
+    unsafe fn for_relation(
+        index_relation: pg_sys::Relation,
+        heap_relation: pg_sys::Relation,
+    ) -> Self {
+        let index_options = unsafe { options::relation_options(index_relation) };
+        match index_options.build_source_column.as_deref() {
+            Some(source_column) => {
+                if heap_relation.is_null() {
+                    pgrx::error!(
+                        "tqhnsw vacuum requires a heap relation for build_source_column indexes"
+                    );
+                }
+                Self::Source(unsafe { VacuumHeapSourceScorer::new(heap_relation, source_column) })
+            }
+            None => Self::Code,
+        }
+    }
+
+    unsafe fn score_graph_element(
+        &mut self,
+        metadata: &page::MetadataPage,
+        source_element: &graph::GraphElement,
+        candidate_element: &graph::GraphElement,
+    ) -> Option<f32> {
+        match self {
+            Self::Code => {
+                score_vacuum_code_element(metadata, &source_element.code, candidate_element)
+            }
+            Self::Source(scorer) => unsafe {
+                scorer.score_graph_element_pair(source_element, candidate_element)
+            },
+        }
+    }
+}
+
+impl VacuumFormatAdapter {
+    fn graph_storage(self) -> graph::GraphStorageDescriptor {
+        match self {
+            Self::TurboQuant { code_len } => graph::GraphStorageDescriptor::TurboQuant { code_len },
+            Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
+        }
+    }
+
+    unsafe fn vacuum_cleanup(
+        self,
+        index_relation: pg_sys::Relation,
+        stats: *mut pg_sys::IndexBulkDeleteResult,
+    ) -> *mut pg_sys::IndexBulkDeleteResult {
+        let _ = self;
+        unsafe { shared::tqhnsw_noop_vacuum_stats(index_relation, stats) }
+    }
+
+    unsafe fn repair_graph_connections(
+        self,
+        index_relation: pg_sys::Relation,
+        heap_relation: pg_sys::Relation,
+        deleted_tids: &[page::ItemPointer],
+    ) {
+        unsafe {
+            repair_graph_connections_with_storage(
+                index_relation,
+                heap_relation,
+                self.graph_storage(),
+                deleted_tids,
+            )
+        }
+    }
+
+    unsafe fn finalize_fully_dead_elements(
+        self,
+        index_relation: pg_sys::Relation,
+        deleted_tids: &[page::ItemPointer],
+    ) {
+        unsafe {
+            finalize_fully_dead_elements_with_storage(
+                index_relation,
+                self.graph_storage(),
+                deleted_tids,
+            )
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-struct ElementVacuumUpdate {
-    tid: page::ItemPointer,
-    tuple: page::TqElementTuple,
+enum ElementVacuumUpdate {
+    TurboQuant {
+        tid: page::ItemPointer,
+        tuple: page::TqElementTuple,
+    },
+    PqFastScanHot {
+        tid: page::ItemPointer,
+        tuple: page::TqGroupedHotTuple,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -38,9 +247,8 @@ struct LayerRepairPlan {
 #[derive(Debug, Clone, Copy)]
 struct LinearRepairPlanner<'a> {
     metadata: &'a page::MetadataPage,
-    code_len: usize,
-    source_tid: page::ItemPointer,
-    source_code: &'a [u8],
+    storage: graph::GraphStorageDescriptor,
+    source: &'a graph::GraphElement,
     deleted_tids: &'a HashSet<page::ItemPointer>,
     existing_set: &'a HashSet<page::ItemPointer>,
     layer: u8,
@@ -49,7 +257,7 @@ struct LinearRepairPlanner<'a> {
 #[derive(Debug, Clone, Copy)]
 struct RepairSearchPlanner<'a> {
     metadata: &'a page::MetadataPage,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     source: &'a graph::GraphElement,
     layer: u8,
     deleted_tids: &'a HashSet<page::ItemPointer>,
@@ -74,10 +282,20 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
+            let metadata = shared::read_metadata_page((*info).index);
+            let format = resolve_vacuum_format_adapter((*info).index, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             let Some(callback) = callback else {
                 return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
             };
-            run_pass1_vacuum((*info).index, stats, callback, callback_state)
+            run_bulkdelete_with_adapter(
+                format,
+                (*info).index,
+                (*info).heaprel,
+                stats,
+                callback,
+                callback_state,
+            )
         })
     }
 }
@@ -86,15 +304,39 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
-    unsafe { pgrx::pgrx_extern_c_guard(|| shared::tqhnsw_noop_vacuum_stats((*info).index, stats)) }
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let metadata = shared::read_metadata_page((*info).index);
+            let format = resolve_vacuum_format_adapter((*info).index, &metadata)
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            format.vacuum_cleanup((*info).index, stats)
+        })
+    }
 }
 
-unsafe fn run_pass1_vacuum(
+fn resolve_vacuum_format_adapter(
     index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> Result<VacuumFormatAdapter, String> {
+    match unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }? {
+        graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+            Ok(VacuumFormatAdapter::TurboQuant { code_len })
+        }
+        graph::GraphStorageDescriptor::PqFastScan(layout) => {
+            Ok(VacuumFormatAdapter::PqFastScan(layout))
+        }
+    }
+}
+
+unsafe fn run_bulkdelete_with_adapter(
+    format: VacuumFormatAdapter,
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
+    let storage = format.graph_storage();
     let stats = if stats.is_null() {
         unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
     } else {
@@ -103,10 +345,6 @@ unsafe fn run_pass1_vacuum(
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
-    let metadata = unsafe { shared::read_metadata_page(index_relation) };
-    let code_len = payload_len(usize::from(metadata.dimensions), metadata.bits)
-        .checked_sub(4)
-        .expect("payload length should include gamma");
 
     let mut live_elements = 0_usize;
     let mut removed_heap_tids = 0_usize;
@@ -134,7 +372,7 @@ unsafe fn run_pass1_vacuum(
                 share_page_ptr,
                 share_page_size,
                 block_number,
-                code_len,
+                storage,
                 callback,
                 callback_state,
             )
@@ -166,7 +404,7 @@ unsafe fn run_pass1_vacuum(
                 index_relation,
                 exclusive_buffer,
                 block_number,
-                code_len,
+                storage,
                 callback,
                 callback_state,
             )
@@ -176,8 +414,8 @@ unsafe fn run_pass1_vacuum(
         finalize_tids.extend(final_plan.finalize_tids);
     }
 
-    unsafe { repair_graph_connections(index_relation, &finalize_tids) };
-    unsafe { finalize_fully_dead_elements(index_relation, code_len, &finalize_tids) };
+    unsafe { format.repair_graph_connections(index_relation, heap_relation, &finalize_tids) };
+    unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
 
     unsafe {
         (*stats).num_pages = block_count;
@@ -192,7 +430,7 @@ unsafe fn rewrite_page_pass1(
     index_relation: pg_sys::Relation,
     buffer: pg_sys::Buffer,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> PagePass1Plan {
@@ -204,7 +442,7 @@ unsafe fn rewrite_page_pass1(
             page_ptr,
             page_size,
             block_number,
-            code_len,
+            storage,
             callback,
             callback_state,
         )
@@ -228,7 +466,7 @@ unsafe fn plan_page_pass1(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
 ) -> PagePass1Plan {
@@ -249,37 +487,77 @@ unsafe fn plan_page_pass1(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-            continue;
-        }
 
         let tid = page::ItemPointer {
             block_number,
             offset_number: offset,
         };
-        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode vacuum element tuple: {e}"));
-        let starting_len = element.heaptids.len();
-        element
-            .heaptids
-            .retain(|heap_tid| unsafe { !heap_tid_is_dead(*heap_tid, callback, callback_state) });
-        let removed = starting_len.saturating_sub(element.heaptids.len());
+        match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode vacuum element tuple: {e}")
+                    });
+                let starting_len = element.heaptids.len();
+                element.heaptids.retain(|heap_tid| unsafe {
+                    !heap_tid_is_dead(*heap_tid, callback, callback_state)
+                });
+                let removed = starting_len.saturating_sub(element.heaptids.len());
 
-        if !element.deleted && !element.heaptids.is_empty() {
-            plan.live_elements += 1;
-        }
-        if !element.deleted && element.heaptids.is_empty() {
-            plan.finalize_tids.push(tid);
-        }
-        if removed == 0 {
-            continue;
-        }
+                if !element.deleted && !element.heaptids.is_empty() {
+                    plan.live_elements += 1;
+                }
+                if !element.deleted && element.heaptids.is_empty() {
+                    plan.finalize_tids.push(tid);
+                }
+                if removed == 0 {
+                    continue;
+                }
 
-        plan.removed_heap_tids += removed;
-        plan.updates.push(ElementVacuumUpdate {
-            tid,
-            tuple: element,
-        });
+                plan.removed_heap_tids += removed;
+                plan.updates.push(ElementVacuumUpdate::TurboQuant {
+                    tid,
+                    tuple: element,
+                });
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let mut element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode vacuum grouped hot tuple: {e}")
+                });
+                let starting_len = element.heaptids.len();
+                element.heaptids.retain(|heap_tid| unsafe {
+                    !heap_tid_is_dead(*heap_tid, callback, callback_state)
+                });
+                let removed = starting_len.saturating_sub(element.heaptids.len());
+
+                if !element.deleted && !element.heaptids.is_empty() {
+                    plan.live_elements += 1;
+                }
+                if !element.deleted && element.heaptids.is_empty() {
+                    plan.finalize_tids.push(tid);
+                }
+                if removed == 0 {
+                    continue;
+                }
+
+                plan.removed_heap_tids += removed;
+                plan.updates.push(ElementVacuumUpdate::PqFastScanHot {
+                    tid,
+                    tuple: element,
+                });
+            }
+        }
     }
 
     plan
@@ -292,12 +570,16 @@ unsafe fn apply_page_pass1_updates(
     updates: &[ElementVacuumUpdate],
 ) {
     for update in updates {
-        let item_id = unsafe { &*shared::page_item_id(page_ptr, update.tid.offset_number) };
+        let tid = match update {
+            ElementVacuumUpdate::TurboQuant { tid, .. }
+            | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
+        };
+        let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
                 "tqhnsw vacuum element tuple slot {}/{} is unused",
-                update.tid.block_number,
-                update.tid.offset_number
+                tid.block_number,
+                tid.offset_number
             );
         }
 
@@ -307,10 +589,16 @@ unsafe fn apply_page_pass1_updates(
             pgrx::error!("tqhnsw found invalid vacuum rewrite bounds on block {block_number}");
         }
 
-        let encoded = update
-            .tuple
-            .encode()
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}"));
+        let encoded = match update {
+            ElementVacuumUpdate::TurboQuant { tuple, .. } => tuple.encode().unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}")
+            }),
+            ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
+                tuple.encode().unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to encode vacuum grouped hot tuple: {e}")
+                })
+            }
+        };
         if encoded.len() != tuple_len {
             pgrx::error!(
                 "tqhnsw vacuum element tuple size changed from {} to {} on block {}",
@@ -326,8 +614,10 @@ unsafe fn apply_page_pass1_updates(
     }
 }
 
-unsafe fn repair_graph_connections(
+unsafe fn repair_graph_connections_with_storage(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &[page::ItemPointer],
 ) {
     if deleted_tids.is_empty() {
@@ -335,18 +625,17 @@ unsafe fn repair_graph_connections(
     }
 
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
-    let code_len = payload_len(usize::from(metadata.dimensions), metadata.bits)
-        .checked_sub(4)
-        .expect("payload length should include gamma");
+    let mut metric = unsafe { VacuumSearchMetric::for_relation(index_relation, heap_relation) };
     let deleted_tids = deleted_tids.iter().copied().collect::<HashSet<_>>();
     let repair_requests =
-        unsafe { collect_repair_requests(index_relation, code_len, metadata.m, &deleted_tids) };
+        unsafe { collect_repair_requests(index_relation, storage, metadata.m, &deleted_tids) };
     unsafe { unlink_deleted_graph_connections(index_relation, &deleted_tids) };
     let repair_plans = unsafe {
         plan_repair_replacements(
             index_relation,
             &metadata,
-            code_len,
+            &mut metric,
+            storage,
             &deleted_tids,
             &repair_requests,
         )
@@ -356,7 +645,7 @@ unsafe fn repair_graph_connections(
 
 unsafe fn collect_repair_requests(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
 ) -> Vec<LayerRepairRequest> {
@@ -388,7 +677,7 @@ unsafe fn collect_repair_requests(
                 page_ptr,
                 page_size,
                 block_number,
-                code_len,
+                storage,
                 m,
                 deleted_tids,
                 &mut requests,
@@ -411,7 +700,7 @@ unsafe fn collect_repair_requests_on_page(
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     m: u16,
     deleted_tids: &HashSet<page::ItemPointer>,
     requests: &mut Vec<LayerRepairRequest>,
@@ -434,36 +723,56 @@ unsafe fn collect_repair_requests_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+        let (level, deleted, heaptids_empty, neighbortid) = match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
+                    });
+                (
+                    element.level,
+                    element.deleted,
+                    element.heaptids.is_empty(),
+                    element.neighbortid,
+                )
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode repair-request grouped hot tuple: {e}")
+                });
+                (
+                    element.level,
+                    element.deleted,
+                    element.heaptids.is_empty(),
+                    element.neighbortid,
+                )
+            }
+        };
+        if deleted || heaptids_empty || neighbortid == page::ItemPointer::INVALID {
             continue;
         }
 
-        let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
-        });
-        if element.deleted
-            || element.heaptids.is_empty()
-            || element.neighbortid == page::ItemPointer::INVALID
-        {
-            continue;
-        }
-
-        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, element.neighbortid) };
+        let neighbors = unsafe { graph::load_graph_neighbors(index_relation, neighbortid) };
         let source_tid = page::ItemPointer {
             block_number,
             offset_number: offset,
         };
-        for layer in 0..=element.level {
-            if layer_slice_contains_deleted_ref(
-                &neighbors.tids,
-                element.level,
-                m,
-                layer,
-                deleted_tids,
-            ) {
+        for layer in 0..=level {
+            if layer_slice_contains_deleted_ref(&neighbors.tids, level, m, layer, deleted_tids) {
                 requests.push(LayerRepairRequest {
                     source_tid,
-                    neighbor_tid: element.neighbortid,
+                    neighbor_tid: neighbortid,
                     layer,
                 });
             }
@@ -542,14 +851,22 @@ unsafe fn unlink_deleted_graph_connections(
 unsafe fn plan_repair_replacements(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    code_len: usize,
+    metric: &mut VacuumSearchMetric,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &HashSet<page::ItemPointer>,
     requests: &[LayerRepairRequest],
 ) -> Vec<LayerRepairPlan> {
     let mut plans = requests
         .iter()
         .filter_map(|request| unsafe {
-            plan_repair_replacement(index_relation, metadata, code_len, deleted_tids, request)
+            plan_repair_replacement(
+                index_relation,
+                metadata,
+                metric,
+                storage,
+                deleted_tids,
+                request,
+            )
         })
         .collect::<Vec<_>>();
     plans.sort_unstable_by(|left, right| {
@@ -562,11 +879,13 @@ unsafe fn plan_repair_replacements(
 unsafe fn plan_repair_replacement(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    code_len: usize,
+    metric: &mut VacuumSearchMetric,
+    storage: graph::GraphStorageDescriptor,
     deleted_tids: &HashSet<page::ItemPointer>,
     request: &LayerRepairRequest,
 ) -> Option<LayerRepairPlan> {
-    let source = unsafe { graph::load_graph_element(index_relation, request.source_tid, code_len) };
+    let source =
+        unsafe { graph::load_exact_graph_element(index_relation, request.source_tid, storage) };
     if source.deleted
         || source.heaptids.is_empty()
         || source.neighbortid != request.neighbor_tid
@@ -599,7 +918,7 @@ unsafe fn plan_repair_replacement(
     let existing_set = existing_layer.iter().copied().collect::<HashSet<_>>();
     let planner = RepairSearchPlanner {
         metadata,
-        code_len,
+        storage,
         source: &source,
         layer: request.layer,
         deleted_tids,
@@ -607,21 +926,22 @@ unsafe fn plan_repair_replacement(
         existing_set: &existing_set,
         target_len: free_slots,
     };
-    let replacements = unsafe { search_repair_candidates_for_layer(index_relation, &planner) };
+    let replacements =
+        unsafe { search_repair_candidates_for_layer(index_relation, metric, &planner) };
     let mut replacements = replacements;
+    let linear_planner = LinearRepairPlanner {
+        metadata,
+        storage,
+        source: &source,
+        deleted_tids,
+        existing_set: &existing_set,
+        layer: request.layer,
+    };
     if replacements.len() < free_slots {
-        let linear_planner = LinearRepairPlanner {
-            metadata,
-            code_len,
-            source_tid: source.tid,
-            source_code: &source.code,
-            deleted_tids,
-            existing_set: &existing_set,
-            layer: request.layer,
-        };
         unsafe {
             top_up_repair_replacements_from_linear_scan(
                 index_relation,
+                metric,
                 &linear_planner,
                 &mut replacements,
                 free_slots,
@@ -642,22 +962,29 @@ unsafe fn plan_repair_replacement(
 
 unsafe fn search_repair_candidates_for_layer(
     index_relation: pg_sys::Relation,
+    metric: &mut VacuumSearchMetric,
     planner: &RepairSearchPlanner<'_>,
 ) -> Vec<page::ItemPointer> {
     let mut seeds = Vec::new();
 
     if let Some(entry_candidate) = unsafe {
-        load_vacuum_entry_candidate(index_relation, planner.metadata, &planner.source.code)
+        load_vacuum_entry_candidate(
+            index_relation,
+            planner.metadata,
+            planner.storage,
+            metric,
+            planner.source,
+        )
     } {
         if planner.layer == 0 {
             seeds.push(unsafe {
-                graph::greedy_descend_from_entry(
+                graph::greedy_descend_from_entry_with_storage(
                     index_relation,
-                    planner.code_len,
+                    planner.storage,
                     usize::from(planner.metadata.m),
                     entry_candidate,
                     |neighbor| {
-                        score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
+                        metric.score_graph_element(planner.metadata, planner.source, neighbor)
                     },
                 )
             });
@@ -665,20 +992,16 @@ unsafe fn search_repair_candidates_for_layer(
             let mut upper_seeds = vec![entry_candidate];
             for current_layer in (planner.layer..=planner.metadata.max_level).rev() {
                 upper_seeds = unsafe {
-                    graph::search_layer_result_candidates(
+                    graph::search_layer_result_candidates_with_storage(
                         index_relation,
-                        planner.code_len,
+                        planner.storage,
                         usize::from(planner.metadata.m),
                         current_layer,
                         repair_ef_construction(planner.metadata),
                         upper_seeds,
                         |_| true,
                         |neighbor| {
-                            score_vacuum_graph_element(
-                                planner.metadata,
-                                &planner.source.code,
-                                neighbor,
-                            )
+                            metric.score_graph_element(planner.metadata, planner.source, neighbor)
                         },
                     )
                 };
@@ -691,8 +1014,9 @@ unsafe fn search_repair_candidates_for_layer(
     }
 
     seeds.extend(planner.existing_layer.iter().filter_map(|tid| unsafe {
-        let element = graph::load_graph_element(index_relation, *tid, planner.code_len);
-        score_vacuum_graph_element(planner.metadata, &planner.source.code, &element)
+        let element = graph::load_exact_graph_element(index_relation, *tid, planner.storage);
+        metric
+            .score_graph_element(planner.metadata, planner.source, &element)
             .map(|score| search::BeamCandidate::new(*tid, score))
     }));
     dedup_beam_candidates_by_tid(&mut seeds);
@@ -702,9 +1026,9 @@ unsafe fn search_repair_candidates_for_layer(
 
     let candidates = if planner.layer == 0 {
         unsafe {
-            graph::search_layer0_result_candidates(
+            graph::search_layer0_result_candidates_with_storage(
                 index_relation,
-                planner.code_len,
+                planner.storage,
                 usize::from(planner.metadata.m),
                 repair_ef_construction(planner.metadata),
                 seeds,
@@ -712,16 +1036,14 @@ unsafe fn search_repair_candidates_for_layer(
                     neighbor_tid != planner.source.tid
                         && !planner.deleted_tids.contains(&neighbor_tid)
                 },
-                |neighbor| {
-                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
-                },
+                |neighbor| metric.score_graph_element(planner.metadata, planner.source, neighbor),
             )
         }
     } else {
         unsafe {
-            graph::search_layer_result_candidates(
+            graph::search_layer_result_candidates_with_storage(
                 index_relation,
-                planner.code_len,
+                planner.storage,
                 usize::from(planner.metadata.m),
                 planner.layer,
                 repair_ef_construction(planner.metadata),
@@ -730,9 +1052,7 @@ unsafe fn search_repair_candidates_for_layer(
                     neighbor_tid != planner.source.tid
                         && !planner.deleted_tids.contains(&neighbor_tid)
                 },
-                |neighbor| {
-                    score_vacuum_graph_element(planner.metadata, &planner.source.code, neighbor)
-                },
+                |neighbor| metric.score_graph_element(planner.metadata, planner.source, neighbor),
             )
         }
     };
@@ -753,20 +1073,21 @@ unsafe fn search_repair_candidates_for_layer(
 unsafe fn load_vacuum_entry_candidate(
     index_relation: pg_sys::Relation,
     metadata: &page::MetadataPage,
-    source_code: &[u8],
+    storage: graph::GraphStorageDescriptor,
+    metric: &mut VacuumSearchMetric,
+    source_element: &graph::GraphElement,
 ) -> Option<search::BeamCandidate<page::ItemPointer>> {
     if metadata.entry_point == page::ItemPointer::INVALID {
         return None;
     }
 
-    let entry = unsafe {
-        graph::load_graph_element(index_relation, metadata.entry_point, source_code.len())
-    };
-    let entry_score = score_vacuum_graph_element(metadata, source_code, &entry)?;
+    let entry =
+        unsafe { graph::load_exact_graph_element(index_relation, metadata.entry_point, storage) };
+    let entry_score = unsafe { metric.score_graph_element(metadata, source_element, &entry) }?;
     Some(search::BeamCandidate::new(entry.tid, entry_score))
 }
 
-fn score_vacuum_graph_element(
+fn score_vacuum_code_element(
     metadata: &page::MetadataPage,
     source_code: &[u8],
     element: &graph::GraphElement,
@@ -798,6 +1119,7 @@ fn dedup_beam_candidates_by_tid(candidates: &mut Vec<search::BeamCandidate<page:
 
 unsafe fn top_up_repair_replacements_from_linear_scan(
     index_relation: pg_sys::Relation,
+    metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
     replacements: &mut Vec<page::ItemPointer>,
     target_len: usize,
@@ -830,9 +1152,11 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
         let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
         unsafe {
             collect_linear_repair_candidates_on_page(
+                index_relation,
                 page_ptr,
                 page_size,
                 block_number,
+                metric,
                 planner,
                 replacements,
                 &mut scored,
@@ -857,9 +1181,11 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
 }
 
 unsafe fn collect_linear_repair_candidates_on_page(
+    index_relation: pg_sys::Relation,
     page_ptr: *mut u8,
     page_size: usize,
     block_number: u32,
+    metric: &mut VacuumSearchMetric,
     planner: &LinearRepairPlanner<'_>,
     replacements: &[page::ItemPointer],
     scored: &mut Vec<(page::ItemPointer, f32)>,
@@ -880,15 +1206,11 @@ unsafe fn collect_linear_repair_candidates_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
-            continue;
-        }
-
         let tid = page::ItemPointer {
             block_number,
             offset_number: offset,
         };
-        if tid == planner.source_tid
+        if tid == planner.source.tid
             || planner.deleted_tids.contains(&tid)
             || planner.existing_set.contains(&tid)
             || replacements.contains(&tid)
@@ -896,24 +1218,112 @@ unsafe fn collect_linear_repair_candidates_on_page(
             continue;
         }
 
-        let element =
-            page::TqElementTuple::decode(tuple_bytes, planner.code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
-            });
-        if element.deleted || element.heaptids.is_empty() || element.level < planner.layer {
+        let candidate = match planner.storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+                    continue;
+                }
+                let element =
+                    page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
+                    });
+                graph::GraphElement {
+                    tid,
+                    level: element.level,
+                    deleted: element.deleted,
+                    heaptids: element.heaptids,
+                    gamma: element.gamma,
+                    neighbortid: element.neighbortid,
+                    code: element.code,
+                }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode linear-repair grouped hot tuple: {e}")
+                });
+                let rerank = unsafe {
+                    load_grouped_rerank_payload_for_linear_repair_candidate(
+                        index_relation,
+                        page_ptr,
+                        page_size,
+                        block_number,
+                        element.reranktid,
+                        layout,
+                    )
+                };
+                graph::GraphElement {
+                    tid,
+                    level: element.level,
+                    deleted: element.deleted,
+                    heaptids: element.heaptids,
+                    gamma: rerank.gamma,
+                    neighbortid: element.neighbortid,
+                    code: rerank.code,
+                }
+            }
+        };
+        if candidate.deleted || candidate.heaptids.is_empty() || candidate.level < planner.layer {
             continue;
         }
 
-        scored.push((
-            tid,
-            -crate::score_code_inner_product(
-                planner.metadata.dimensions as usize,
-                planner.metadata.bits,
-                planner.metadata.seed,
-                planner.source_code,
-                &element.code,
-            ),
-        ));
+        if let Some(score) =
+            unsafe { metric.score_graph_element(planner.metadata, planner.source, &candidate) }
+        {
+            scored.push((tid, score));
+        }
+    }
+}
+
+unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
+    index_relation: pg_sys::Relation,
+    page_ptr: *mut u8,
+    page_size: usize,
+    block_number: u32,
+    rerank_tid: page::ItemPointer,
+    layout: graph::PqFastScanLayout,
+) -> graph::GroupedRerankPayload {
+    if rerank_tid == page::ItemPointer::INVALID {
+        pgrx::error!("tqhnsw linear-repair grouped candidate is missing a rerank payload tid");
+    }
+
+    if rerank_tid.block_number != block_number {
+        return unsafe { graph::load_grouped_rerank_payload(index_relation, rerank_tid, layout) };
+    }
+
+    let item_id = unsafe { &*shared::page_item_id(page_ptr, rerank_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!(
+            "tqhnsw linear-repair rerank tuple slot {}/{} is unused",
+            rerank_tid.block_number,
+            rerank_tid.offset_number
+        );
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "tqhnsw found invalid linear-repair rerank tuple bounds on block {block_number}"
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    let rerank =
+        page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len).unwrap_or_else(|e| {
+            pgrx::error!("tqhnsw failed to decode linear-repair rerank tuple: {e}")
+        });
+    graph::GroupedRerankPayload {
+        tid: rerank_tid,
+        gamma: rerank.gamma,
+        code: rerank.code,
     }
 }
 
@@ -1219,9 +1629,9 @@ unsafe fn apply_page_pass2_updates(
     }
 }
 
-unsafe fn finalize_fully_dead_elements(
+unsafe fn finalize_fully_dead_elements_with_storage(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
 ) {
     if tids.is_empty() {
@@ -1241,10 +1651,10 @@ unsafe fn finalize_fully_dead_elements(
         }
 
         unsafe {
-            finalize_fully_dead_elements_on_page(
+            finalize_fully_dead_elements_on_page_with_storage(
                 index_relation,
                 block_number,
-                code_len,
+                storage,
                 &tids[start..end],
             )
         };
@@ -1252,10 +1662,10 @@ unsafe fn finalize_fully_dead_elements(
     }
 }
 
-unsafe fn finalize_fully_dead_elements_on_page(
+unsafe fn finalize_fully_dead_elements_on_page_with_storage(
     index_relation: pg_sys::Relation,
     block_number: u32,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     tids: &[page::ItemPointer],
 ) {
     let buffer = unsafe {
@@ -1294,18 +1704,42 @@ unsafe fn finalize_fully_dead_elements_on_page(
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        let mut element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
-        });
-        if element.deleted || !element.heaptids.is_empty() {
-            continue;
-        }
+        match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
+                    });
+                if element.deleted || !element.heaptids.is_empty() {
+                    continue;
+                }
 
-        element.deleted = true;
-        updates.push(ElementVacuumUpdate {
-            tid: *tid,
-            tuple: element,
-        });
+                element.deleted = true;
+                updates.push(ElementVacuumUpdate::TurboQuant {
+                    tid: *tid,
+                    tuple: element,
+                });
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                let mut element = page::TqGroupedHotTuple::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                    layout.search_code_len,
+                )
+                .unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to decode finalize grouped hot tuple: {e}")
+                });
+                if element.deleted || !element.heaptids.is_empty() {
+                    continue;
+                }
+
+                element.deleted = true;
+                updates.push(ElementVacuumUpdate::PqFastScanHot {
+                    tid: *tid,
+                    tuple: element,
+                });
+            }
+        }
     }
 
     if updates.is_empty() {
@@ -1369,8 +1803,15 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         )
     };
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    let heap_relation = if heap_oid == pg_sys::InvalidOid {
+        ptr::null_mut()
+    } else {
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) }
+    };
     let mut info = PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
     info.index = index_relation;
+    info.heaprel = heap_relation;
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
     let mut callback_state = DebugVacuumCallbackState {
         dead_tids: dead_tids.iter().copied().collect(),
@@ -1388,10 +1829,91 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     let result = unsafe { *stats };
 
     unsafe {
+        if !heap_relation.is_null() {
+            pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+        }
         pg_sys::index_close(
             index_relation,
             pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
         )
     };
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scalar_v1_metadata() -> page::MetadataPage {
+        page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 64,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        })
+    }
+
+    fn pq_fastscan_metadata() -> page::MetadataPage {
+        page::MetadataPage {
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 1,
+            search_subvector_dim: 16,
+            grouped_codebook_head: page::ItemPointer {
+                block_number: 1,
+                offset_number: 2,
+            },
+            ..scalar_v1_metadata()
+        }
+    }
+
+    #[test]
+    fn resolve_vacuum_format_adapter_accepts_scalar_v1() {
+        let format =
+            match graph::GraphStorageDescriptor::from_metadata(&scalar_v1_metadata()).unwrap() {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    VacuumFormatAdapter::TurboQuant { code_len }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    VacuumFormatAdapter::PqFastScan(layout)
+                }
+            };
+        assert_eq!(
+            format,
+            VacuumFormatAdapter::TurboQuant {
+                code_len: crate::code_len(16, 4),
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_vacuum_format_adapter_recognizes_pq_fastscan() {
+        let format =
+            match graph::GraphStorageDescriptor::from_metadata(&pq_fastscan_metadata()).unwrap() {
+                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                    VacuumFormatAdapter::TurboQuant { code_len }
+                }
+                graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                    VacuumFormatAdapter::PqFastScan(layout)
+                }
+            };
+        assert_eq!(
+            format,
+            VacuumFormatAdapter::PqFastScan(graph::PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: 1,
+                rerank_code_len: crate::code_len(16, 4),
+            })
+        );
+    }
 }

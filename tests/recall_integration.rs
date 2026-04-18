@@ -690,7 +690,11 @@ fn run_tail_full_reference(
 }
 
 fn tiled_srht(input: &[f32], signs: &[f32], tile_dim: usize) -> Vec<f32> {
-    assert_eq!(input.len(), signs.len(), "tiled srht input/sign length mismatch");
+    assert_eq!(
+        input.len(),
+        signs.len(),
+        "tiled srht input/sign length mismatch"
+    );
     assert_eq!(
         input.len() % tile_dim,
         0,
@@ -1498,15 +1502,7 @@ fn quantizer_recall_1536_same_payload_qjl_vs_mse_10k_clustered() {
     for (label, report) in [
         (
             "legacy_3mse_plus_qjl",
-            run_tiled_full_reference(
-                &corpus,
-                &queries,
-                dim,
-                4,
-                seed,
-                tile_dim,
-                dim,
-            ),
+            run_tiled_full_reference(&corpus, &queries, dim, 4, seed, tile_dim, dim),
         ),
         (
             "current_4mse_no_qjl",

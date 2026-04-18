@@ -5,7 +5,134 @@ use std::ptr;
 use hashbrown::HashSet;
 use pgrx::pg_sys;
 
-use super::{page, search};
+use super::{options, page, search};
+use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PqFastScanLayout {
+    pub binary_word_count: usize,
+    pub search_code_len: usize,
+    pub rerank_code_len: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GraphStorageDescriptor {
+    TurboQuant { code_len: usize },
+    PqFastScan(PqFastScanLayout),
+}
+
+impl GraphStorageDescriptor {
+    pub(crate) unsafe fn from_index_relation(
+        index_relation: pg_sys::Relation,
+        metadata: &page::MetadataPage,
+    ) -> Result<Self, String> {
+        let descriptor = Self::from_metadata(metadata)?;
+        let expected = unsafe { options::relation_options(index_relation) }.storage_format;
+        if descriptor.matches_storage_format(expected) {
+            return Ok(descriptor);
+        }
+
+        Err(format!(
+            "tqhnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
+            expected.as_str(),
+            descriptor.storage_format_name(),
+        ))
+    }
+
+    pub(crate) fn from_metadata(metadata: &page::MetadataPage) -> Result<Self, String> {
+        match metadata.graph_storage_format()? {
+            page::GraphStorageFormat::TurboQuant => Ok(Self::TurboQuant {
+                code_len: if metadata.dimensions == 0 {
+                    0
+                } else {
+                    crate::code_len(metadata.dimensions as usize, metadata.bits)
+                },
+            }),
+            page::GraphStorageFormat::PqFastScan => {
+                if metadata.dimensions == 0 {
+                    return Ok(Self::PqFastScan(PqFastScanLayout {
+                        binary_word_count: 0,
+                        search_code_len: 0,
+                        rerank_code_len: 0,
+                    }));
+                }
+                if metadata.payload_flags & page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE == 0 {
+                    return Err(
+                        "PqFastScan metadata must advertise grouped search-code payloads"
+                            .to_owned(),
+                    );
+                }
+                if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
+                    return Err(
+                        "PqFastScan metadata must advertise cold rerank payloads".to_owned()
+                    );
+                }
+                if metadata.search_codec_kind != page::SearchCodecKind::GroupedPq {
+                    return Err(format!(
+                        "unsupported PqFastScan search codec: {:?}",
+                        metadata.search_codec_kind
+                    ));
+                }
+                if metadata.search_bits != 4 {
+                    return Err(format!(
+                        "unsupported PqFastScan search bits: {}",
+                        metadata.search_bits
+                    ));
+                }
+                if metadata.search_subvector_count == 0 || metadata.search_subvector_dim == 0 {
+                    return Err(
+                        "PqFastScan metadata must record non-zero grouped search shape".to_owned(),
+                    );
+                }
+                if metadata.rerank_codec_kind != page::RerankCodecKind::ScalarQuantized {
+                    return Err(format!(
+                        "unsupported PqFastScan rerank codec: {:?}",
+                        metadata.rerank_codec_kind
+                    ));
+                }
+                if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
+                    return Err(
+                        "PqFastScan metadata must advertise a persisted grouped codebook chain"
+                            .to_owned(),
+                    );
+                }
+                let binary_word_count =
+                    if metadata.payload_flags & page::PAYLOAD_FLAG_BINARY_SIDECAR != 0
+                        && crate::quant::prod::ProdQuantizer::cached(
+                            metadata.dimensions as usize,
+                            metadata.bits,
+                            metadata.seed,
+                        )
+                        .binary_sign_no_qjl_4bit_supported()
+                    {
+                        (metadata.dimensions as usize).div_ceil(64)
+                    } else {
+                        0
+                    };
+                Ok(Self::PqFastScan(PqFastScanLayout {
+                    binary_word_count,
+                    search_code_len: usize::from(metadata.search_subvector_count).div_ceil(2),
+                    rerank_code_len: crate::code_len(metadata.dimensions as usize, metadata.bits),
+                }))
+            }
+        }
+    }
+
+    fn storage_format_name(self) -> &'static str {
+        match self {
+            Self::TurboQuant { .. } => options::StorageFormat::TurboQuant.as_str(),
+            Self::PqFastScan(_) => options::StorageFormat::PqFastScan.as_str(),
+        }
+    }
+
+    fn matches_storage_format(self, storage_format: options::StorageFormat) -> bool {
+        matches!(
+            (self, storage_format),
+            (Self::TurboQuant { .. }, options::StorageFormat::TurboQuant)
+                | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
+        )
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GraphElement {
@@ -18,11 +145,120 @@ pub(crate) struct GraphElement {
     pub code: Vec<u8>,
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedGraphElement {
+    pub tid: page::ItemPointer,
+    pub level: u8,
+    pub deleted: bool,
+    pub heaptids: Vec<page::ItemPointer>,
+    pub neighbortid: page::ItemPointer,
+    pub reranktid: page::ItemPointer,
+    pub binary_words: Vec<u64>,
+    pub search_code: Vec<u8>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedRerankPayload {
+    pub tid: page::ItemPointer,
+    pub gamma: f32,
+    pub code: Vec<u8>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GroupedCodebookModel {
+    pub head_tid: page::ItemPointer,
+    pub group_count: usize,
+    pub group_size: usize,
+    pub flat_codebooks: Vec<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphNeighbors {
     pub tid: page::ItemPointer,
     pub count: usize,
     pub tids: Vec<page::ItemPointer>,
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GraphTupleRef<'a> {
+    Scalar(page::TqElementTupleRef<'a>),
+    GroupedHot(page::TqGroupedHotTupleRef<'a>),
+}
+
+impl<'a> GraphTupleRef<'a> {
+    pub(crate) fn level(self) -> u8 {
+        match self {
+            Self::Scalar(tuple) => tuple.level,
+            Self::GroupedHot(tuple) => tuple.level,
+        }
+    }
+
+    pub(crate) fn deleted(self) -> bool {
+        match self {
+            Self::Scalar(tuple) => tuple.deleted,
+            Self::GroupedHot(tuple) => tuple.deleted,
+        }
+    }
+
+    pub(crate) fn heaptid_count(self) -> usize {
+        match self {
+            Self::Scalar(tuple) => tuple.heaptid_count(),
+            Self::GroupedHot(tuple) => tuple.heaptid_count(),
+        }
+    }
+
+    pub(crate) fn collect_heaptids(self) -> Vec<page::ItemPointer> {
+        match self {
+            Self::Scalar(tuple) => tuple.collect_heaptids(),
+            Self::GroupedHot(tuple) => tuple.collect_heaptids(),
+        }
+    }
+
+    pub(crate) fn neighbortid(self) -> page::ItemPointer {
+        match self {
+            Self::Scalar(tuple) => tuple.neighbortid,
+            Self::GroupedHot(tuple) => tuple.neighbortid,
+        }
+    }
+
+    pub(crate) fn reranktid(self) -> Option<page::ItemPointer> {
+        match self {
+            Self::Scalar(_) => None,
+            Self::GroupedHot(tuple) => Some(tuple.reranktid),
+        }
+    }
+
+    pub(crate) fn binary_word_count(self) -> usize {
+        match self {
+            Self::Scalar(tuple) => tuple.binary_word_count(),
+            Self::GroupedHot(tuple) => tuple.binary_word_count(),
+        }
+    }
+
+    pub(crate) fn collect_binary_words(self) -> Vec<u64> {
+        match self {
+            Self::Scalar(tuple) => tuple.collect_binary_words(),
+            Self::GroupedHot(tuple) => tuple.collect_binary_words(),
+        }
+    }
+
+    pub(crate) fn exact_payload(self) -> Option<(f32, &'a [u8])> {
+        match self {
+            Self::Scalar(tuple) => Some((tuple.gamma, tuple.code)),
+            Self::GroupedHot(_) => None,
+        }
+    }
+
+    pub(crate) fn grouped_search_code(self) -> Option<&'a [u8]> {
+        match self {
+            Self::Scalar(_) => None,
+            Self::GroupedHot(tuple) => Some(tuple.search_code),
+        }
+    }
 }
 
 pub(crate) unsafe fn load_graph_element(
@@ -47,6 +283,60 @@ pub(crate) unsafe fn load_graph_element(
     }
 }
 
+pub(crate) unsafe fn load_exact_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+) -> GraphElement {
+    match storage {
+        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+            load_graph_element(index_relation, element_tid, code_len)
+        },
+        GraphStorageDescriptor::PqFastScan(layout) => {
+            let hot = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
+            let rerank =
+                unsafe { load_grouped_rerank_payload(index_relation, hot.reranktid, layout) };
+            GraphElement {
+                tid: hot.tid,
+                level: hot.level,
+                deleted: hot.deleted,
+                heaptids: hot.heaptids,
+                gamma: rerank.gamma,
+                neighbortid: hot.neighbortid,
+                code: rerank.code,
+            }
+        }
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_graph_element(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+) -> GroupedGraphElement {
+    let element = unsafe {
+        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+            page::TqGroupedHotTuple::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"));
+    GroupedGraphElement {
+        tid: element_tid,
+        level: element.level,
+        deleted: element.deleted,
+        heaptids: element.heaptids,
+        neighbortid: element.neighbortid,
+        reranktid: element.reranktid,
+        binary_words: element.binary_words,
+        search_code: element.search_code,
+    }
+}
+
 pub(crate) unsafe fn with_graph_element_tuple<R, F>(
     index_relation: pg_sys::Relation,
     element_tid: page::ItemPointer,
@@ -64,6 +354,204 @@ where
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"))
 }
 
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_graph_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqGroupedHotTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, element_tid, "grouped hot", |tuple_bytes| {
+            Ok(f(page::TqGroupedHotTupleRef::decode(
+                tuple_bytes,
+                layout.binary_word_count,
+                layout.search_code_len,
+            )?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_graph_storage_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    f: F,
+) -> R
+where
+    F: FnOnce(GraphTupleRef<'_>) -> R,
+{
+    match storage {
+        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+            with_graph_element_tuple(index_relation, element_tid, code_len, |tuple| {
+                f(GraphTupleRef::Scalar(tuple))
+            })
+        },
+        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+            with_grouped_graph_tuple(index_relation, element_tid, layout, |tuple| {
+                f(GraphTupleRef::GroupedHot(tuple))
+            })
+        },
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    rerank_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqRerankTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+            Ok(f(page::TqRerankTupleRef::decode(
+                tuple_bytes,
+                layout.rerank_code_len,
+            )?))
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_rerank_payload(
+    index_relation: pg_sys::Relation,
+    rerank_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+) -> GroupedRerankPayload {
+    let rerank = unsafe {
+        read_page_tuple(index_relation, rerank_tid, "rerank", |tuple_bytes| {
+            page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len)
+        })
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"));
+    GroupedRerankPayload {
+        tid: rerank_tid,
+        gamma: rerank.gamma,
+        code: rerank.code,
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn with_grouped_codebook_tuple<R, F>(
+    index_relation: pg_sys::Relation,
+    codebook_tid: page::ItemPointer,
+    centroid_count: usize,
+    f: F,
+) -> R
+where
+    F: FnOnce(page::TqGroupedCodebookTupleRef<'_>) -> R,
+{
+    unsafe {
+        read_page_tuple(
+            index_relation,
+            codebook_tid,
+            "grouped codebook",
+            |tuple_bytes| {
+                Ok(f(page::TqGroupedCodebookTupleRef::decode(
+                    tuple_bytes,
+                    centroid_count,
+                )?))
+            },
+        )
+    }
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped codebook tuple: {e}"))
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_codebook_model(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> GroupedCodebookModel {
+    let group_count = usize::from(metadata.search_subvector_count);
+    let group_size = usize::from(metadata.search_subvector_dim);
+    if group_count == 0 || group_size == 0 {
+        pgrx::error!("tqhnsw grouped codebook load requires non-zero grouped search shape");
+    }
+    if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
+        pgrx::error!("tqhnsw PqFastScan metadata is missing a grouped codebook head pointer");
+    }
+
+    let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
+    let mut next_tid = metadata.grouped_codebook_head;
+    let mut flat_codebooks = Vec::with_capacity(group_count * centroid_count);
+
+    for expected_group_index in 0..group_count {
+        if next_tid == page::ItemPointer::INVALID {
+            pgrx::error!(
+                "tqhnsw grouped codebook chain ended early at group {} of {}",
+                expected_group_index,
+                group_count
+            );
+        }
+        let codebook = unsafe {
+            with_grouped_codebook_tuple(index_relation, next_tid, centroid_count, |tuple| {
+                page::TqGroupedCodebookTuple {
+                    group_index: tuple.group_index,
+                    nexttid: tuple.nexttid,
+                    centroids: tuple.collect_centroids(),
+                }
+            })
+        };
+        if usize::from(codebook.group_index) != expected_group_index {
+            pgrx::error!(
+                "tqhnsw grouped codebook order mismatch: got group {}, expected {}",
+                codebook.group_index,
+                expected_group_index
+            );
+        }
+        flat_codebooks.extend(codebook.centroids);
+        next_tid = codebook.nexttid;
+    }
+
+    if next_tid != page::ItemPointer::INVALID {
+        pgrx::error!(
+            "tqhnsw grouped codebook chain contains trailing tuples beyond metadata shape"
+        );
+    }
+
+    GroupedCodebookModel {
+        head_tid: metadata.grouped_codebook_head,
+        group_count,
+        group_size,
+        flat_codebooks,
+    }
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) fn derive_grouped_search_code_from_source(
+    metadata: &page::MetadataPage,
+    model: &GroupedCodebookModel,
+    source_vector: &[f32],
+) -> Result<Vec<u8>, String> {
+    if source_vector.len() != metadata.dimensions as usize {
+        return Err(format!(
+            "grouped search code source dimension mismatch: source dim {} vs tqvector dim {}",
+            source_vector.len(),
+            metadata.dimensions
+        ));
+    }
+
+    let transform_dim = model.group_count * model.group_size;
+    let signs = crate::quant::rotation::sign_vector(transform_dim, metadata.seed);
+    let rotated = crate::quant::rotation::srht_padded(source_vector, &signs);
+    Ok(crate::quant::grouped_pq::encode_grouped_pq(
+        &rotated,
+        model
+            .flat_codebooks
+            .chunks_exact(GROUPED_PQ_CENTROIDS * model.group_size),
+        model.group_size,
+    ))
+}
+
 pub(crate) unsafe fn load_graph_neighbors(
     index_relation: pg_sys::Relation,
     neighbor_tid: page::ItemPointer,
@@ -77,7 +565,12 @@ pub(crate) unsafe fn load_graph_neighbors(
     }
 
     let neighbor = unsafe {
-        read_page_tuple(index_relation, neighbor_tid, "neighbor", page::TqNeighborTuple::decode)
+        read_page_tuple(
+            index_relation,
+            neighbor_tid,
+            "neighbor",
+            page::TqNeighborTuple::decode,
+        )
     }
     .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph neighbor tuple: {e}"));
     let count = neighbor.count as usize;
@@ -101,6 +594,27 @@ pub(crate) unsafe fn load_graph_adjacency(
     code_len: usize,
 ) -> (GraphElement, GraphNeighbors) {
     let element = unsafe { load_graph_element(index_relation, element_tid, code_len) };
+    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    (element, neighbors)
+}
+
+pub(crate) unsafe fn load_exact_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+) -> (GraphElement, GraphNeighbors) {
+    let element = unsafe { load_exact_graph_element(index_relation, element_tid, storage) };
+    let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
+    (element, neighbors)
+}
+
+#[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
+pub(crate) unsafe fn load_grouped_graph_adjacency(
+    index_relation: pg_sys::Relation,
+    element_tid: page::ItemPointer,
+    layout: PqFastScanLayout,
+) -> (GroupedGraphElement, GraphNeighbors) {
+    let element = unsafe { load_grouped_graph_element(index_relation, element_tid, layout) };
     let neighbors = unsafe { load_graph_neighbors(index_relation, element.neighbortid) };
     (element, neighbors)
 }
@@ -153,6 +667,31 @@ where
     }
 }
 
+pub(crate) unsafe fn load_layer0_successor_candidates_with_storage<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    unsafe {
+        load_successor_candidates_for_layer_with_storage(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            0,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    }
+}
+
 pub(crate) unsafe fn greedy_descend_from_entry<ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
@@ -176,6 +715,36 @@ where
                 m,
                 layer,
                 |_| true,
+                &mut score_candidate,
+            )
+        },
+    )
+}
+
+pub(crate) unsafe fn greedy_descend_from_entry_with_storage<ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    entry_candidate: search::BeamCandidate<page::ItemPointer>,
+    mut score_candidate: ScoreFn,
+) -> search::BeamCandidate<page::ItemPointer>
+where
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let entry_element =
+        unsafe { load_exact_graph_element(index_relation, entry_candidate.node, storage) };
+    let mut keep_all = |_| true;
+    greedy_descend_with_successors(
+        entry_candidate,
+        entry_element.level,
+        |source_tid, layer| unsafe {
+            load_successor_candidates_for_layer_with_storage(
+                index_relation,
+                source_tid,
+                storage,
+                m,
+                layer,
+                &mut keep_all,
                 &mut score_candidate,
             )
         },
@@ -234,6 +803,32 @@ where
     })
 }
 
+pub(crate) unsafe fn search_layer0_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_layer0_successor_candidates_with_storage(
+            index_relation,
+            source_tid,
+            storage,
+            m,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
 pub(crate) unsafe fn search_layer_result_candidates<SeedIter, KeepFn, ScoreFn>(
     index_relation: pg_sys::Relation,
     code_len: usize,
@@ -254,6 +849,34 @@ where
             index_relation,
             source_tid,
             code_len,
+            m,
+            layer,
+            &mut keep_neighbor_tid,
+            &mut score_candidate,
+        )
+    })
+}
+
+pub(crate) unsafe fn search_layer_result_candidates_with_storage<SeedIter, KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    ef_search: usize,
+    seeds: SeedIter,
+    mut keep_neighbor_tid: KeepFn,
+    mut score_candidate: ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    SeedIter: IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    search_layer0_result_candidates_with_successors(ef_search, seeds, |source_tid| unsafe {
+        load_successor_candidates_for_layer_with_storage(
+            index_relation,
+            source_tid,
+            storage,
             m,
             layer,
             &mut keep_neighbor_tid,
@@ -658,7 +1281,8 @@ where
     KeepFn: FnMut(page::ItemPointer) -> bool,
     ScoreFn: FnMut(&GraphElement) -> Option<f32>,
 {
-    let (element, neighbors) = unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
+    let (element, neighbors) =
+        unsafe { load_graph_adjacency(index_relation, source_tid, code_len) };
     let mut candidates = Vec::with_capacity(layer_neighbor_slot_capacity(
         neighbors.tids.len(),
         element.level,
@@ -666,20 +1290,61 @@ where
         layer,
     ));
 
-    for_each_valid_neighbor_tid_for_layer(&neighbors.tids, element.level, m, layer, |neighbor_tid| {
-        if keep_neighbor_tid(neighbor_tid) {
-            let neighbor = unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
-            if !neighbor.deleted && !neighbor.heaptids.is_empty() {
-                if let Some(score) = score_candidate(&neighbor) {
-                    candidates.push(search::BeamCandidate::with_source(
-                        neighbor.tid,
-                        score,
-                        source_tid,
-                    ));
+    for_each_valid_neighbor_tid_for_layer(
+        &neighbors.tids,
+        element.level,
+        m,
+        layer,
+        |neighbor_tid| {
+            if keep_neighbor_tid(neighbor_tid) {
+                let neighbor =
+                    unsafe { load_graph_element(index_relation, neighbor_tid, code_len) };
+                if !neighbor.deleted && !neighbor.heaptids.is_empty() {
+                    if let Some(score) = score_candidate(&neighbor) {
+                        candidates.push(search::BeamCandidate::with_source(
+                            neighbor.tid,
+                            score,
+                            source_tid,
+                        ));
+                    }
                 }
             }
+        },
+    );
+
+    candidates
+}
+
+unsafe fn load_successor_candidates_for_layer_with_storage<KeepFn, ScoreFn>(
+    index_relation: pg_sys::Relation,
+    source_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    m: usize,
+    layer: u8,
+    keep_neighbor_tid: &mut KeepFn,
+    score_candidate: &mut ScoreFn,
+) -> Vec<search::BeamCandidate<page::ItemPointer>>
+where
+    KeepFn: FnMut(page::ItemPointer) -> bool,
+    ScoreFn: FnMut(&GraphElement) -> Option<f32>,
+{
+    let (element, neighbors) =
+        unsafe { load_exact_graph_adjacency(index_relation, source_tid, storage) };
+    let valid_neighbor_tids =
+        valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer);
+    let mut candidates = Vec::with_capacity(valid_neighbor_tids.len());
+
+    for neighbor_tid in valid_neighbor_tids {
+        if !keep_neighbor_tid(neighbor_tid) {
+            continue;
         }
-    });
+
+        let neighbor = unsafe { load_exact_graph_element(index_relation, neighbor_tid, storage) };
+        let Some(score) = score_candidate(&neighbor) else {
+            continue;
+        };
+        candidates.push(search::BeamCandidate::new(neighbor_tid, score));
+    }
 
     candidates
 }
@@ -772,6 +1437,144 @@ mod tests {
             block_number,
             offset_number,
         }
+    }
+
+    fn pq_fastscan_metadata() -> page::MetadataPage {
+        page::MetadataPage {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 4,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            format_version: page::INDEX_FORMAT_V2_GROUPED,
+            transform_kind: page::TransformKind::Srht,
+            search_codec_kind: page::SearchCodecKind::GroupedPq,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_bits: 4,
+            rerank_codec_kind: page::RerankCodecKind::ScalarQuantized,
+            search_subvector_count: 2,
+            search_subvector_dim: 2,
+            grouped_codebook_head: tid(2, 1),
+        }
+    }
+
+    #[test]
+    fn graph_storage_descriptor_uses_scalar_code_len_for_v1_metadata() {
+        let metadata = page::MetadataPage::current_v1_scalar(page::CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 40,
+            entry_point: page::ItemPointer::INVALID,
+            dimensions: 16,
+            bits: 4,
+            max_level: 0,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: false,
+        });
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::TurboQuant {
+                code_len: crate::code_len(16, 4)
+            }
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_uses_grouped_lengths_for_v2_metadata() {
+        let metadata = page::MetadataPage {
+            dimensions: 96,
+            payload_flags: page::PAYLOAD_FLAG_BINARY_SIDECAR
+                | page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+            ..pq_fastscan_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::PqFastScan(PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: 3,
+                rerank_code_len: crate::code_len(96, 4),
+            })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_accepts_empty_grouped_metadata() {
+        let metadata = page::MetadataPage {
+            dimensions: 0,
+            bits: 0,
+            search_subvector_count: 0,
+            search_subvector_dim: 0,
+            grouped_codebook_head: page::ItemPointer::INVALID,
+            ..pq_fastscan_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata).unwrap(),
+            GraphStorageDescriptor::PqFastScan(PqFastScanLayout {
+                binary_word_count: 0,
+                search_code_len: 0,
+                rerank_code_len: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_grouped_payload_flag() {
+        let metadata = page::MetadataPage {
+            dimensions: 96,
+            payload_flags: page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+            ..pq_fastscan_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("PqFastScan metadata must advertise grouped search-code payloads".to_owned())
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_cold_rerank_flag() {
+        let metadata = page::MetadataPage {
+            dimensions: 96,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+            ..pq_fastscan_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("PqFastScan metadata must advertise cold rerank payloads".to_owned())
+        );
+    }
+
+    #[test]
+    fn graph_storage_descriptor_rejects_pq_fastscan_missing_codebook_head() {
+        let metadata = page::MetadataPage {
+            dimensions: 96,
+            payload_flags: page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE
+                | page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            search_subvector_count: 6,
+            search_subvector_dim: 16,
+            grouped_codebook_head: page::ItemPointer::INVALID,
+            ..pq_fastscan_metadata()
+        };
+
+        assert_eq!(
+            GraphStorageDescriptor::from_metadata(&metadata),
+            Err("PqFastScan metadata must advertise a persisted grouped codebook chain".to_owned())
+        );
     }
 
     #[test]
@@ -1051,6 +1854,57 @@ mod tests {
                 search::BeamCandidate::with_source(grandchild_tid, 0.05, child_tid),
             ],
             "visible-seed expansion should drop the original seeds and keep only newly discovered candidates in traversal order",
+        );
+    }
+
+    #[test]
+    fn derive_grouped_search_code_from_source_uses_persisted_codebook_shape() {
+        let metadata = pq_fastscan_metadata();
+        let model = GroupedCodebookModel {
+            head_tid: tid(2, 1),
+            group_count: 2,
+            group_size: 2,
+            flat_codebooks: vec![
+                -1.0, 0.0, 0.0, 1.0, 10.0, 10.0, 10.0, 10.0, 20.0, 20.0, 20.0, 20.0, 30.0, 30.0,
+                30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0, 60.0, 60.0, 60.0, 60.0,
+                70.0, 70.0, 70.0, 70.0, 10.0, 10.0, 10.0, 10.0, -2.0, 0.0, 0.0, 2.0, 20.0, 20.0,
+                20.0, 20.0, 30.0, 30.0, 30.0, 30.0, 40.0, 40.0, 40.0, 40.0, 50.0, 50.0, 50.0, 50.0,
+                60.0, 60.0, 60.0, 60.0, 70.0, 70.0, 70.0, 70.0,
+            ],
+        };
+        let source = vec![1.0, 1.0, -2.0, -2.0];
+        let rotated = crate::quant::rotation::srht_padded(
+            &source,
+            &crate::quant::rotation::sign_vector(4, metadata.seed),
+        );
+
+        let observed = derive_grouped_search_code_from_source(&metadata, &model, &source).unwrap();
+        let expected = crate::quant::grouped_pq::encode_grouped_pq(
+            &rotated,
+            model.flat_codebooks.chunks_exact(2 * GROUPED_PQ_CENTROIDS),
+            2,
+        );
+
+        assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn derive_grouped_search_code_from_source_rejects_dimension_mismatch() {
+        let error = derive_grouped_search_code_from_source(
+            &pq_fastscan_metadata(),
+            &GroupedCodebookModel {
+                head_tid: tid(2, 1),
+                group_count: 2,
+                group_size: 2,
+                flat_codebooks: vec![0.0; 2 * GROUPED_PQ_CENTROIDS * 2],
+            },
+            &[1.0, 2.0, 3.0],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            "grouped search code source dimension mismatch: source dim 3 vs tqvector dim 4"
         );
     }
 }

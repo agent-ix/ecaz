@@ -154,3 +154,5 @@ Coordination point: D2 wiring touches `am/scan.rs` (counter increments, ReadStre
 - FR-019 async I/O measured 4x cold-cache improvement in pgvector benchmarks — worth the PG18 gating complexity.
 - The cost model formula is fully specified in FR-020. D1 is largely translating the spec into code.
 - Strategy translation (FR-023) is ~20 lines of code but enables PG18 optimizer to reason about `<#>` ordering.
+- Task-15 merge follow-up owner: Agent 2 (Planner Integration track).
+- Task-15 merge follow-up target: April 24, 2026 to write the shared-table planner investigation note for sibling `m=8` / `m=16` index cross-choosing and decide whether it is a costing bug, a statistics gap, or expected planner behavior.

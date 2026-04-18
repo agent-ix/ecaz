@@ -24,6 +24,35 @@ struct TqHnswReloptions {
     ef_construction: i32,
     ef_search: i32,
     build_source_column_offset: i32,
+    storage_format_offset: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StorageFormat {
+    TurboQuant,
+    PqFastScan,
+}
+
+impl StorageFormat {
+    pub(super) const DEFAULT: Self = Self::TurboQuant;
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::TurboQuant => "turboquant",
+            Self::PqFastScan => "pq_fastscan",
+        }
+    }
+
+    fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "turboquant" => Ok(Self::TurboQuant),
+            "pq_fastscan" => Ok(Self::PqFastScan),
+            other => Err(format!(
+                "invalid tqhnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
+                other
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +61,7 @@ pub(super) struct TqHnswOptions {
     pub(super) ef_construction: i32,
     pub(super) ef_search: i32,
     pub(super) build_source_column: Option<String>,
+    pub(super) storage_format: StorageFormat,
 }
 
 impl TqHnswOptions {
@@ -40,6 +70,7 @@ impl TqHnswOptions {
         ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
         ef_search: TQHNSW_DEFAULT_EF_SEARCH,
         build_source_column: None,
+        storage_format: StorageFormat::DEFAULT,
     };
 }
 
@@ -183,9 +214,44 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
                 None,
                 offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
             );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                b"storage_format\0".as_ptr().cast(),
+                b"Index storage format: 'turboquant' (default) or 'pq_fastscan'.\0"
+                    .as_ptr()
+                    .cast(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(TqHnswReloptions, storage_format_offset) as i32,
+            );
             pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
         })
     }
+}
+
+unsafe fn read_string_reloption(
+    rd_options: *mut pg_sys::varlena,
+    offset: i32,
+    name: &str,
+) -> Option<String> {
+    if offset == 0 {
+        return None;
+    }
+
+    let value_ptr = unsafe {
+        rd_options
+            .cast::<u8>()
+            .add(offset as usize)
+            .cast::<std::ffi::c_char>()
+    };
+    let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
+        .to_str()
+        .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw {name} reloption: {e}"));
+    if value.is_empty() {
+        pgrx::error!("invalid tqhnsw {name} reloption: value must not be empty");
+    }
+    Some(value.to_owned())
 }
 
 pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
@@ -195,22 +261,24 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
     }
 
     let reloptions = unsafe { &*rd_options.cast::<TqHnswReloptions>() };
-    let build_source_column = if reloptions.build_source_column_offset == 0 {
-        None
-    } else {
-        let value_ptr = unsafe {
-            rd_options
-                .cast::<u8>()
-                .add(reloptions.build_source_column_offset as usize)
-                .cast::<std::ffi::c_char>()
-        };
-        let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
-            .to_str()
-            .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw build_source_column reloption: {e}"));
-        if value.is_empty() {
-            pgrx::error!("invalid tqhnsw build_source_column reloption: value must not be empty");
+    let build_source_column = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.build_source_column_offset,
+            "build_source_column",
+        )
+    };
+    let storage_format = match unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.storage_format_offset,
+            "storage_format",
+        )
+    } {
+        Some(value) => {
+            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
         }
-        Some(value.to_owned())
+        None => StorageFormat::DEFAULT,
     };
 
     TqHnswOptions {
@@ -218,6 +286,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
         ef_construction: reloptions.ef_construction,
         ef_search: reloptions.ef_search,
         build_source_column,
+        storage_format,
     }
 }
 
@@ -225,7 +294,8 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
 mod tests {
     use super::{
         disable_binary_prefilter, force_binary_derivation, resolve_scan_tuning_values,
-        EfSearchSource, ScanTuning, TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_SESSION_EF_SEARCH_UNSET,
+        EfSearchSource, ScanTuning, StorageFormat, TQHNSW_DEFAULT_EF_SEARCH,
+        TQHNSW_SESSION_EF_SEARCH_UNSET,
     };
 
     #[test]
@@ -288,5 +358,25 @@ mod tests {
     #[test]
     fn disable_binary_prefilter_defaults_off() {
         assert!(!disable_binary_prefilter());
+    }
+
+    #[test]
+    fn storage_format_reloption_accepts_supported_values() {
+        assert_eq!(
+            StorageFormat::parse_reloption("turboquant"),
+            Ok(StorageFormat::TurboQuant)
+        );
+        assert_eq!(
+            StorageFormat::parse_reloption("pq_fastscan"),
+            Ok(StorageFormat::PqFastScan)
+        );
+    }
+
+    #[test]
+    fn storage_format_reloption_rejects_unknown_values() {
+        let error = StorageFormat::parse_reloption("legacy_format").unwrap_err();
+        assert!(error.contains("storage_format"));
+        assert!(error.contains("turboquant"));
+        assert!(error.contains("pq_fastscan"));
     }
 }

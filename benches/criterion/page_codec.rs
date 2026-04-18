@@ -1,7 +1,9 @@
 //! Microbenchmarks for page tuple encode/decode.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{DataPage, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple};
+use tqvector::bench_api::{
+    CurrentFormatMetadata, DataPage, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple,
+};
 
 fn make_element_tuple(code_len: usize) -> TqElementTuple {
     TqElementTuple {
@@ -91,7 +93,7 @@ fn bench_neighbor_decode(c: &mut Criterion) {
 }
 
 fn bench_metadata_roundtrip(c: &mut Criterion) {
-    let metadata = MetadataPage {
+    let metadata = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
         m: 16,
         ef_construction: 128,
         entry_point: ItemPointer {
@@ -102,7 +104,9 @@ fn bench_metadata_roundtrip(c: &mut Criterion) {
         bits: 4,
         max_level: 5,
         seed: 42,
-    };
+        inserted_since_rebuild: 0,
+        persisted_binary_sidecar: false,
+    });
     let encoded = metadata.encode();
 
     c.bench_function("page/metadata_decode", |b| {
