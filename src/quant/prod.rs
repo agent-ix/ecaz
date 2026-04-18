@@ -1486,6 +1486,41 @@ fn read_bits_le(buffer: &[u8], start_bit: usize, width: usize) -> u16 {
     ((word >> bit_index) & mask) as u16
 }
 
+struct ProdQueryScorer<'a> {
+    quantizer: &'a ProdQuantizer,
+    prepared: PreparedQuery,
+}
+
+impl crate::quant::QueryScorer for ProdQueryScorer<'_> {
+    fn score(&self, code: &[u8]) -> f32 {
+        self.quantizer.score_ip_encoded(&self.prepared, code)
+    }
+}
+
+impl crate::quant::Quantizer for ProdQuantizer {
+    fn encode_code(&self, v: &[f32]) -> Box<[u8]> {
+        self.pack_payload(&self.encode(v)).into_boxed_slice()
+    }
+
+    fn prepare_scorer(
+        &self,
+        query: &[f32],
+    ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
+        Box::new(ProdQueryScorer {
+            quantizer: self,
+            prepared: self.prepare_ip_query(query),
+        })
+    }
+
+    fn code_len(&self) -> usize {
+        payload_len(self.original_dim, self.bits)
+    }
+
+    fn wire_format_version(&self) -> u32 {
+        crate::am::page::INDEX_FORMAT_V1_SCALAR as u32
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1621,6 +1656,32 @@ mod tests {
         assert_eq!(encoded.mse_packed.len(), 768);
         assert!(encoded.qjl_packed.is_empty());
         assert_eq!(quantizer.pack_payload(&encoded).len(), 772);
+    }
+
+    #[test]
+    fn quantizer_trait_score_matches_inherent_score_ip_encoded() {
+        // ADR-041 stage 0: trait-dispatched `QueryScorer::score` must
+        // return bit-exact results vs. the inherent `score_ip_encoded`
+        // hot path on the scoring seam.
+        use crate::quant::Quantizer;
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1536, 17);
+        let candidate = random_unit_vector(1536, 18);
+
+        let payload = quantizer.encode_code(&candidate);
+        let scorer = quantizer.prepare_scorer(&query);
+        let via_trait = scorer.score(&payload);
+
+        let inherent_prepared = quantizer.prepare_ip_query(&query);
+        let inherent_payload = quantizer.pack_payload(&quantizer.encode(&candidate));
+        let via_inherent = quantizer.score_ip_encoded(&inherent_prepared, &inherent_payload);
+
+        assert_eq!(via_trait.to_bits(), via_inherent.to_bits());
+        assert_eq!(quantizer.code_len(), payload.len());
+        assert_eq!(
+            <ProdQuantizer as Quantizer>::wire_format_version(&quantizer),
+            crate::am::page::INDEX_FORMAT_V1_SCALAR as u32
+        );
     }
 
     #[test]
