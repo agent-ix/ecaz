@@ -183,7 +183,7 @@ the LUT 4x. Composes with tiling.
   that is not enough data to pick a default. ADR-044 now owns the remaining
   decision surface and requires the must-measure cells before task 16 can call
   the `ecvector` storage-policy question closed:
-  - `EXTERNAL` (`attstorage = 'x'`) serious-lane + WAL/HOT cell
+  - `EXTENDED` (`attstorage = 'x'`) serious-lane + WAL/HOT cell
   - `MAIN` sanity cell
   - `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
   - decomposition / alternative-implementation follow-ups (`detoast` vs
@@ -231,7 +231,7 @@ unless called out.
 - [ ] **ADR-044 storage-policy matrix measured.** Packet `447` is enough to
   prove "`PLAIN` is fast and costly", but not enough to choose a default.
   Before task 16 closes the `ecvector` storage-policy question, land:
-  - the `EXTERNAL` q200 serious-lane + WAL/HOT cell
+  - the `EXTENDED` q200 serious-lane + WAL/HOT cell
   - the `MAIN` sanity cell
   - the `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
   - the larger touched-column update probe

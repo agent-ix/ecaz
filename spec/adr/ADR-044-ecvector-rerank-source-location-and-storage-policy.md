@@ -28,11 +28,21 @@ fixture. The write-path penalty is not small:
 
 ADR-043 has since been extended with `§Storage policy guidance`
 that treats inline as a per-column workload-specific mode
-(`EXTERNAL` for churn-heavy, `PLAIN` for read-mostly). That is a
-reasonable interim product answer, but it assumes the design space
-is "which `attstorage` do you pick." The design space is actually
-larger. This ADR enumerates the full option set so the decision is
-informed rather than implicit.
+(`EXTERNAL` for churn-heavy, `PLAIN` for read-mostly). A pg17
+scratch probe then corrected an important detail in that framing:
+for this server, `ALTER COLUMN ... SET STORAGE EXTERNAL` produces
+`attstorage = 'e'`, while `SET STORAGE EXTENDED` produces
+`attstorage = 'x'`. Current head declares `ecvector` with
+`STORAGE = external`, so packet `446` / packet `447` already
+measured the `EXTERNAL` default surface, not `EXTENDED`.
+
+That makes the remaining decision surface narrower and more precise:
+the question is no longer "should `ecvector` default to EXTERNAL or
+PLAIN?" It is "is the current `EXTERNAL` default the right stopping
+point, or do we need `PLAIN` as an expert lever and/or the
+architectural alternative of moving the rerank payload out of the
+heap entirely?" This ADR enumerates that full option set so the
+decision is informed rather than implicit.
 
 ## Scope
 
@@ -64,30 +74,36 @@ out of the heap entirely.
 
 `ecvector` is a varlena. PostgreSQL offers four `attstorage` modes.
 
-#### A1. `EXTENDED` (default)
+#### A1. `EXTERNAL` (default on current head)
 
-TOAST with LZ4/pglz compression. Small heap tuples (UPDATEs cheap,
-HOT viable), but reads pay detoast + decompress on every rerank.
+TOAST without compression. Keeps small heap tuples (UPDATEs cheap,
+HOT viable) while avoiding the compression step; rerank still pays
+detoast, but not decompress.
 
-- **Serious-lane latency:** worst (measured: `5.248ms` TurboQuant)
-- **Small-update WAL:** best (measured: `4.0MB / 1k batch`)
+- **Serious-lane latency:** measured baseline on current head
+  (`5.248ms` TurboQuant)
+- **Small-update WAL:** measured baseline (`4.0MB / 1k batch`)
 - **HOT:** viable
-- **Heap working set:** smallest
+- **Heap working set:** smallest measured current-head surface
 
-#### A2. `EXTERNAL`
+This is the current default, not a hypothesis.
 
-TOAST without compression. The hypothesis worth testing. Keeps
-small heap tuples (HOT viable, small WAL on updates) but skips the
-compression step — so rerank pays detoast only, not decompress.
+#### A2. `EXTENDED`
+
+TOAST with compression. Same small-heap-tuple / HOT-viable update
+shape as `EXTERNAL`, but adds decompression work on rerank reads in
+exchange for a smaller toasted footprint.
 
 - **Serious-lane latency:** **unmeasured** — hypothesis is
-  "most of the way from `EXTENDED` to `PLAIN`"
-- **Small-update WAL:** expected similar to `EXTENDED`
+  "same class as `EXTERNAL`, but worse"
+- **Small-update WAL:** expected similar to `EXTERNAL`
 - **HOT:** expected viable
-- **Heap working set:** same as `EXTENDED`
+- **Heap working set:** similar heap footprint to `EXTERNAL`
+- **TOAST bytes:** expected smaller than `EXTERNAL`
 
-If this hypothesis holds, `EXTERNAL` is the product default.
-It is the most impactful single cell in the measurement plan.
+This is now the highest-value unmeasured heap-storage cell, because
+it tells us whether the current default should stay uncompressed or
+whether compressed TOAST is viable on the serious lane.
 
 #### A3. `MAIN`
 
@@ -296,8 +312,8 @@ reruns).
 
 ### Must-measure (block the decision until landed)
 
-1. **A2: `EXTERNAL` cell.** Same table as `447`'s default surface
-   but with `ALTER COLUMN embedding SET STORAGE EXTERNAL`.
+1. **A2: `EXTENDED` cell.** Same table as `447`'s default surface
+   but with `ALTER COLUMN embedding SET STORAGE EXTENDED`.
    Measure:
    - serious-lane q200 latency (TurboQuant and PqFastScan,
      confirming reruns)
@@ -315,10 +331,12 @@ reruns).
 ### Should-measure (informs the architectural decision)
 
 4. **Decompose packet-`441`'s `1386us` decode bucket into detoast
-   vs decompress components.** If detoast alone is most of the
-   cost, A2 (`EXTERNAL`) is not the answer and we need the
-   architectural option (C1). If decompress dominates, A2 likely
-   is the answer.
+   vs decompress components.** If decompression is a large fraction,
+   A2 (`EXTENDED`) is unlikely to be viable and A1 (`EXTERNAL`)
+   remains the only heap-default candidate. If detoast dominates,
+   neither `EXTERNAL` nor `EXTENDED` closes much of the gap to
+   `PLAIN`, which strengthens the case for the architectural option
+   (C1).
 5. **Update probe with a larger touched column.** Packet `447`'s
    probe touched a 4-byte `integer`. A cell that touches a larger
    non-embedding column (e.g., a 100-byte text) tests whether the
@@ -342,16 +360,17 @@ number of additional options as documented expert knobs.
 
 ### Selection rules
 
-- **If A2 (`EXTERNAL`) recovers ≥80% of the serious-lane win from
-  A4 (`PLAIN`) and preserves HOT/WAL at A1 (`EXTENDED`) levels:**
-  A2 is the default. `PLAIN` is documented as an expert knob for
-  read-only tables. C1 is tabled.
-- **If A2 recovers 40-80% of the win:** A2 is the default *and*
-  C1 moves to a funded architectural track. The heap default is a
-  stopgap while C1 lands.
-- **If A2 recovers <40% of the win:** A2 is not the default. C1
-  is the expected product surface, and the immediate default is
-  A1 (`EXTENDED`) with `PLAIN` as an expert knob until C1 ships.
+- **If A2 (`EXTENDED`) stays within a small latency tax of
+  A1 (`EXTERNAL`) while materially reducing TOAST bytes:** keep A1
+  (`EXTERNAL`) as the default, and document A2 (`EXTENDED`) as the
+  space-first expert knob. C1 is tabled unless the A1→A4 gap is still
+  large enough to justify it on product grounds.
+- **If A2 regresses sharply versus A1 while A1 still sits far from
+  A4 (`PLAIN`):** A1 remains the default and C1 moves to a funded
+  architectural track. The heap default is a stopgap while C1 lands.
+- **If A2 regresses sharply and C1 is not yet funded:** A1
+  (`EXTERNAL`) remains the default and `PLAIN` stays the documented
+  expert knob until C1 ships.
 - **If B1 (`fillfactor`) restores HOT cleanly on the update
   probe at <25% heap overhead:** document `PLAIN + fillfactor=80`
   as an expert pattern in ADR-043's mitigation section, regardless
@@ -408,10 +427,11 @@ number of additional options as documented expert knobs.
 
 ## Open questions
 
-1. **Does `EXTERNAL` preserve HOT / small-update WAL?** Strong
-   prior yes, but unmeasured on this fixture. Must-measure cell 1.
-2. **How much of the serious-lane win does `EXTERNAL` recover
-   vs `PLAIN`?** The decisive question. Must-measure cell 1.
+1. **How much extra serious-lane tax does `EXTENDED` add over the
+   current `EXTERNAL` default?** Must-measure cell 1.
+2. **Does `EXTENDED` buy enough TOAST-footprint reduction to matter
+   at the 50k seam?** Same cell; this is the only reason to consider
+   it over the current default.
 3. **What is the engineering cost of C1 (index-side cold-page
    payload)?** Should-estimate item 6. Drives whether C1 is in
    scope as a product answer or a deferred follow-up.

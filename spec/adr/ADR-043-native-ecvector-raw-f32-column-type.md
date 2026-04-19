@@ -184,9 +184,16 @@ the default `attstorage` for `ecvector` should be) is tracked in
 
 Why this ADR does not pick a policy:
 
-- Packets `441` / `446` measured `EXTENDED` (default) vs `PLAIN`.
+- Current head declares `ecvector` with `STORAGE = external`, and a pg17
+  scratch probe confirmed the storage-code mapping is:
+  - `EXTERNAL` => `attstorage = 'e'`
+  - `EXTENDED` => `attstorage = 'x'`
+  - `MAIN` => `attstorage = 'm'`
+  - `PLAIN` => `attstorage = 'p'`
+- Packets `441` / `446` therefore measured `EXTERNAL` (default on current
+  head) vs `PLAIN`.
 - Packet `447` measured the write-path tradeoff of `PLAIN`.
-- `EXTERNAL` (TOASTed but uncompressed), `MAIN`, and `PLAIN +
+- `EXTENDED` (TOASTed and compressible), `MAIN`, and `PLAIN +
   fillfactor` sweeps are **not yet measured**. The project's M.O.
   is "prove with empirical data" — picking a per-workload default
   off two measured cells would be inference, not measurement.
@@ -196,9 +203,9 @@ ADR-044 enumerates the full option space (heap storage modes,
 alternative of putting the rerank-source payload in the index
 rather than the heap) and defines the measurement plan and
 decision criteria. Until ADR-044's matrix lands, no default
-change is made; `ecvector` keeps PostgreSQL's standard varlena
-default (`EXTENDED`) and users with read-mostly workloads can
-explicitly choose `PLAIN` as an expert lever while accepting the
+change is made; `ecvector` keeps the current-head `EXTERNAL`
+default and users with read-mostly workloads can explicitly
+choose `PLAIN` as an expert lever while accepting the
 packet-`447` write-path tradeoff.
 
 ## What landed vs. what remains
