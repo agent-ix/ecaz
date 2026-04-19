@@ -1592,7 +1592,13 @@ fn populate_native_upper_layer_forward_slots(
             },
         );
         if current_layer <= insert_level {
-            write_native_layer_forward_candidates(slots, &mut selections, current_layer, m, seeds.clone());
+            write_native_layer_forward_candidates(
+                slots,
+                &mut selections,
+                current_layer,
+                m,
+                seeds.iter().copied(),
+            );
         }
         if seeds.is_empty() {
             break;
