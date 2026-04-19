@@ -696,7 +696,17 @@ pub(super) fn choose_insert_level(
     heap_tid: page::ItemPointer,
     code_len: usize,
 ) -> u8 {
-    let max_level = max_insert_level_that_fits(m, code_len, pg_sys::BLCKSZ as usize);
+    choose_insert_level_for_page_size(m, seed, heap_tid, code_len, pg_sys::BLCKSZ as usize)
+}
+
+pub(super) fn choose_insert_level_for_page_size(
+    m: u16,
+    seed: u64,
+    heap_tid: page::ItemPointer,
+    code_len: usize,
+    page_size: usize,
+) -> u8 {
+    let max_level = max_insert_level_that_fits(m, code_len, page_size);
     if max_level == 0 {
         return 0;
     }
@@ -2813,6 +2823,30 @@ mod tests {
             layer_tids,
             vec![new_element_tid, tid(5, 5), tid(1, 2), tid(1, 3)],
             "a replanned full-slice mutation should admit the new node against the current live slice",
+        );
+    }
+
+    #[test]
+    fn choose_insert_level_for_page_size_respects_supplied_page_size() {
+        let heap_tid = tid(1, 1);
+        let full_page_level = choose_insert_level_for_page_size(
+            8,
+            42,
+            heap_tid,
+            crate::code_len(1536, 4),
+            pg_sys::BLCKSZ as usize,
+        );
+        let tighter_page_level = choose_insert_level_for_page_size(
+            8,
+            42,
+            heap_tid,
+            crate::code_len(1536, 4),
+            1024,
+        );
+
+        assert!(
+            tighter_page_level <= full_page_level,
+            "smaller build pages should never admit a higher sampled level than BLCKSZ pages",
         );
     }
 }

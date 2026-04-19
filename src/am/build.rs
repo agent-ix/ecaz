@@ -1418,16 +1418,22 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
     let m_u16 = u16::try_from(state.options.m).expect("validated m should fit into u16");
     let ef_construction = usize::try_from(state.options.ef_construction)
         .expect("validated ef_construction should be non-negative");
+    debug_assert_eq!(
+        state.page_size,
+        pg_sys::BLCKSZ as usize,
+        "native serial build currently assumes BLCKSZ-sized pages when planning graph levels",
+    );
     let mut nodes = Vec::with_capacity(state.heap_tuples.len());
     let mut entry_idx = None;
     let mut max_level = 0_u8;
 
     for node_idx in 0..state.heap_tuples.len() {
-        let level = insert::choose_insert_level(
+        let level = insert::choose_insert_level_for_page_size(
             m_u16,
             state.seed.expect("non-empty build should record seed"),
             state.heap_tuples[node_idx].heap_tids[0],
             state.heap_tuples[node_idx].code.len(),
+            state.page_size,
         );
         let mut node = NativeBuildNode {
             level,
@@ -1437,7 +1443,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
         if let Some(current_entry_idx) = entry_idx {
             let entry_candidate =
                 search::BeamCandidate::new(current_entry_idx, metric.score_between(state, node_idx, current_entry_idx));
-            let selections = populate_native_upper_layer_forward_slots(
+            let (mut selections, layer0_seeds) = populate_native_upper_layer_forward_slots(
                 &mut node.neighbor_slots,
                 &nodes,
                 state,
@@ -1449,25 +1455,15 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
                 m,
                 ef_construction,
             );
-            let descended_seed = graph::greedy_descend_with_successors(
-                entry_candidate,
-                max_level,
-                |source_idx, layer| {
-                    load_native_successor_candidates(
-                        &nodes, state, metric, node_idx, source_idx, layer, m,
-                    )
-                },
-            );
             let layer0_candidates = graph::search_layer0_result_candidates_with_successors(
                 ef_construction,
-                [descended_seed],
+                layer0_seeds,
                 |source_idx| {
                     load_native_successor_candidates(
                         &nodes, state, metric, node_idx, source_idx, 0, m,
                     )
                 },
             );
-            let mut selections = selections;
             write_native_layer_forward_candidates(
                 &mut node.neighbor_slots,
                 &mut selections,
@@ -1508,12 +1504,17 @@ fn populate_native_upper_layer_forward_slots(
     entry_level: u8,
     m: usize,
     ef_construction: usize,
-) -> Vec<NativeForwardSelection> {
+) -> (Vec<NativeForwardSelection>, Vec<search::BeamCandidate<usize>>) {
     let mut selections = Vec::new();
     if entry_level == 0 {
-        return selections;
+        return (selections, vec![entry_candidate]);
     }
 
+    // Native build intentionally uses the same ef_construction-width successor
+    // search on upper layers that it uses at layer 0. This is more expensive
+    // than classic greedy ef=1 descent, but it preserves the current
+    // higher-recall serial build behavior while FR-021 parallelization stays
+    // out of scope for this task.
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=entry_level).rev() {
         seeds = graph::search_layer0_result_candidates_with_successors(
@@ -1539,7 +1540,7 @@ fn populate_native_upper_layer_forward_slots(
         }
     }
 
-    selections
+    (selections, seeds)
 }
 
 fn load_native_successor_candidates(
@@ -1554,8 +1555,12 @@ fn load_native_successor_candidates(
     let Some((start, end)) = graph::layer_slot_bounds(nodes[source_idx].level, m, layer) else {
         return Vec::new();
     };
+    debug_assert!(
+        end <= nodes[source_idx].neighbor_slots.len(),
+        "layer slot bounds should stay within the persisted neighbor slot slice",
+    );
 
-    nodes[source_idx].neighbor_slots[start.min(nodes[source_idx].neighbor_slots.len())..end.min(nodes[source_idx].neighbor_slots.len())]
+    nodes[source_idx].neighbor_slots[start..end]
         .iter()
         .filter_map(|neighbor_idx| {
             let neighbor_idx = (*neighbor_idx)?;
