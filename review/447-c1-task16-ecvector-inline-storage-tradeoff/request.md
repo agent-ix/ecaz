@@ -295,3 +295,24 @@ The question is whether the product surface should:
 
 This packet does not make that policy choice. It closes the measurement gap
 so the choice can be made with numbers instead of guesswork.
+
+## Practical mitigation guidance
+
+The primary mitigation is structural:
+
+- keep the embedding row as static as possible
+- move frequently updated metadata to a separate table
+- join when needed
+
+That preserves the inline serious-lane read win without turning unrelated
+metadata writes into large row rewrites.
+
+Operationally, the measured guidance now looks like:
+
+- **Read-mostly / append-mostly tables:** inline `ecvector` is justified
+  when serious-lane latency matters
+- **Churn-heavy rows:** keep `ecvector` mostly external
+
+Lower-level mitigations like `fillfactor` may help at the margin, but they are
+not the primary answer. The clean product surface is likely a per-column
+storage-policy choice rather than one universal default.

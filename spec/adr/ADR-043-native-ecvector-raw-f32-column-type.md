@@ -73,6 +73,26 @@ packet-`441` win automatically for every `ecvector` column.
 the storage-policy default that would reproduce the inline hot-path
 result without extra tuning remains a follow-up.
 
+Packet `447` (2026-04-19) then measured the actual inline-storage
+tradeoff on the canonical `ecvector` surface:
+
+- serious-lane read latency stayed much better inline
+  (`5.248ms -> 3.195ms` on the confirming TurboQuant q200 rerun
+  from packet `446`)
+- total heap+TOAST bytes stayed in the same class
+  (`823.0MB` default vs `819.2MB` inline)
+- vacuum scan cost stayed effectively flat
+  (`19.121s` default vs `19.250s` inline on the 50k seam)
+- fresh TurboQuant build time was slightly better inline
+  (`180.774s -> 173.784s`, `-3.87%`)
+- small row rewrites became materially heavier inline
+  (`4.0MB -> 14.3MB` WAL on the steady 1k-row update batch, `3.56x`,
+  with HOT dropping from `38` to `0`)
+
+That packet changed the policy readout from "maybe inline should just
+be the default" to "inline is a real workload/storage-policy choice":
+strong for read-mostly rows, bad for churn-heavy rows.
+
 ## Per-row overhead comparison
 
 At 1B rows / 1536-dim, per-row header:
@@ -155,6 +175,46 @@ Current-head nuance:
 So the canonical row model is landed, but some surrounding helper
 surfaces are still broader than the intended end-state.
 
+### Storage policy guidance
+
+The type decision and the storage-policy decision are separate.
+
+- **Canonical type decision:** `ecvector(dim)` is always the right
+  canonical row type.
+- **Storage-policy decision:** whether a given `ecvector` column
+  should stay mostly external or be forced inline is workload-specific.
+
+Current measured guidance:
+
+- **Mutable / churn-heavy rows:** keep the default external-safe
+  policy. This avoids turning unrelated row touches into large heap
+  rewrites and large WAL bursts.
+- **Read-mostly / append-mostly rows:** inline storage is justified
+  when serious-lane latency matters more than row-churn cost.
+
+In PostgreSQL terms, this is a per-column policy choice:
+
+- churn-safe default:
+  `ALTER TABLE ... ALTER COLUMN embedding SET STORAGE EXTERNAL`
+- latency-first read-mostly mode:
+  `ALTER TABLE ... ALTER COLUMN embedding SET STORAGE PLAIN`
+
+The ADR therefore does **not** treat inline storage as universally
+correct. The data now supports exposing it as a first-class storage
+policy for the right workloads.
+
+### Primary mitigation for churn
+
+The best mitigation is structural, not micro-tuning:
+
+- keep the embedding row as static as possible
+- move frequently updated metadata into a separate table
+- join when needed
+
+That avoids paying the inline-row rewrite cost when a tiny unrelated
+field changes. Lower-level mitigations like `fillfactor` may help at
+the margin, but they are not the primary design answer.
+
 ## What landed vs. what remains
 
 ### Landed on current head
@@ -178,7 +238,8 @@ surfaces are still broader than the intended end-state.
 ### Still follow-up work
 
 - storage-policy support that makes the packet-`441` inline/raw
-  win a default or first-class supported path
+  win a first-class supported path, with explicit guidance about when
+  inline storage is and is not appropriate
 - cleanup of harnesses and loaders that still stage explicit
   `source real[]` truth columns
 - optional pgvector interop casts if we decide they are worth the
@@ -267,7 +328,8 @@ Out of scope:
 - Current head does not yet make the packet-`441` inline-storage
   result automatic. The type lands the right packed-f32 datum, but
   the heap/TOAST policy that reproduces the large serious-lane win
-  still needs an explicit follow-up.
+  still needs an explicit supported surface, and packet `447` shows
+  that the choice should be policy-driven rather than universal.
 
 ### Neutral
 
@@ -322,4 +384,7 @@ Out of scope:
    as well as `ecvector(N)`.
 5. **Should `ecvector` default to a different storage policy to
    preserve the packet-`441` hot-path result?** Still open, and
-   now clearly separated from the type/row-model decision itself.
+   now more precisely framed after packet `447`: the question is
+   not just "faster or slower" but whether the product should
+   surface inline storage as an explicit per-column mode for
+   read-mostly workloads rather than flipping the global default.
