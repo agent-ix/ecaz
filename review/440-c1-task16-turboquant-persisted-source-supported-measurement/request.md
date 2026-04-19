@@ -18,10 +18,9 @@ This packet measures that supported path on current head.
 
 ## Important setup note
 
-An initial scratch run produced flat `~26.96ms` numbers and could not see the
-TurboQuant stage-profile helper. That turned out to be a bad measurement
-surface: the scratch cluster had not been reinstalled on current head yet, so
-it was still running an older `tqvector.so`.
+An initial scratch run produced flat `~26.96ms` numbers. That turned out to be
+a bad measurement surface: the scratch cluster had not been reinstalled on
+current head yet, so it was still running an older `tqvector.so`.
 
 That stale-install run is **not** used for the readout below.
 
