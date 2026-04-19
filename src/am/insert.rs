@@ -2,7 +2,8 @@ use std::{cmp::Ordering, ptr};
 
 use pgrx::pg_sys;
 
-use super::{build, graph, options, page, search, shared, source, wal};
+use super::{build, graph, options, page, search, shared, source};
+use crate::storage::wal;
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.

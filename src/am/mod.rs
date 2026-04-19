@@ -16,7 +16,6 @@ mod source;
 mod stats;
 mod stream;
 mod vacuum;
-pub mod wal;
 
 pub(super) const TQHNSW_DEFAULT_M: i32 = 8;
 pub(super) const TQHNSW_MIN_M: i32 = 2;

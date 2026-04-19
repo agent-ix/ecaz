@@ -15,7 +15,8 @@ use crate::quant::{
     prod::ProdQuantizer,
 };
 
-use super::{options, page, shared, source, wal, P_NEW};
+use super::{options, page, shared, source, P_NEW};
+use crate::storage::wal;
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;

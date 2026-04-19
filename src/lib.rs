@@ -8,6 +8,7 @@ pgrx::pg_module_magic!();
 #[allow(dead_code)]
 mod am;
 mod quant;
+pub(crate) mod storage;
 #[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
 mod standalone_pg_backend_stubs;
 
@@ -53,9 +54,12 @@ pub mod bench_api {
 
     // Page codec
     pub use crate::am::page::{
-        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, DataPage, DataPageChain,
-        ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
-        ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
+        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, MetadataPage,
+        TqElementTuple, TqNeighborTuple,
+    };
+    pub use crate::storage::page::{
+        DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+        PAGE_HEADER_BYTES,
     };
 
     // Text I/O

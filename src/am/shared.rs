@@ -2,7 +2,8 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use super::{graph, options, page, wal, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
+use super::{graph, options, page, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
+use crate::storage::wal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct LiveEntryCandidate {
