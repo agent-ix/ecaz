@@ -1814,6 +1814,14 @@ mod tests {
     ) -> Vec<(i32, i32)> {
         let fixture_prefix = recall_fixture_ident(fixture_prefix);
         let table_name = format!("{fixture_prefix}_corpus");
+
+        if let Some(existing) =
+            gate_fixture_already_exists(&table_name, &fixture_prefix, corpus_size)
+        {
+            pgrx::log!("fixture already exists, skipping rebuild: {table_name}");
+            return existing;
+        }
+
         let corpus = random_unit_vectors(corpus_size, RECALL_DIM, RECALL_SEED as u64);
 
         Spi::run(&format!("DROP TABLE IF EXISTS {table_name} CASCADE"))
@@ -20485,6 +20493,34 @@ mod tests {
         assert_eq!(
             first, second,
             "fixture-backed gate report should be stable across reruns"
+        );
+    }
+
+    #[pg_test]
+    #[ignore]
+    fn test_tqhnsw_graph_scan_recall_source_gate_10k() {
+        let fixture_prefix = "tqhnsw_graph_scan_recall_gate_source_10k";
+        let query_count = 25;
+
+        let reset_started = Instant::now();
+        let reset_rows = reset_graph_scan_recall_gate_source_fixtures(fixture_prefix, 10_000);
+        let reset_elapsed = reset_started.elapsed();
+
+        let first_started = Instant::now();
+        let first = run_graph_scan_recall_gate_from_fixtures(fixture_prefix, query_count);
+        let first_elapsed = first_started.elapsed();
+
+        let second_started = Instant::now();
+        let second = run_graph_scan_recall_gate_from_fixtures(fixture_prefix, query_count);
+        let second_elapsed = second_started.elapsed();
+
+        println!(
+            "10k source fixture gate reuse: reset={reset_elapsed:?} fixtures={reset_rows:?} queries={query_count} first={first_elapsed:?} second={second_elapsed:?} results={first:?}"
+        );
+
+        assert_eq!(
+            first, second,
+            "source-build fixture-backed gate report should be stable across reruns"
         );
     }
 
