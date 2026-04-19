@@ -337,10 +337,12 @@ canonical-row position.
   ALTER cycle round-tripping; lock this in with a `pg_test` so a future
   refactor cannot silently break the measurement reproducibility. Packet
   `448` lands `test_turboquant_rerank_source_reloption_reset_round_trip`.
-- [ ] **`install_adr030_pg17_pg_test.sh` → backend `.so` version
+- [x] **`install_adr030_pg17_pg_test.sh` → backend `.so` version
   assertion.** Packet `440` caught a stale-install hazard manually
   (flat `~26.96ms` tipped it off). A script-level version check would
-  convert that manual diagnosis into an automatic safety belt.
+  convert that manual diagnosis into an automatic safety belt. Packet
+  `450` makes the install script compare the installed backend module
+  against the just-built release artifact and fail fast on mismatch.
 
 ### Merge
 
