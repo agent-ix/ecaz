@@ -150,6 +150,18 @@ the LUT 4x. Composes with tiling.
   `seed=42` are enforced invariants, not per-row bytes) and adds a pg test
   proving an indexed `ecvector` column does not silently fall back to a
   sibling `tqvector` column on `pq_fastscan`.
+- **Packet `446` measures the serious lane on the real `ecvector`
+  surface.** Default-storage `ecvector` leaves the serious lane in the
+  `5.2ms-5.9ms` range (`turboquant` vs `pq_fastscan` at `m=16`,
+  `ef_search=128`), while inline-storage `ecvector` carries the packet-`441`
+  win onto the productized type:
+  - inline `turboquant`: `3.427ms`, confirming rerun `3.195ms`
+  - inline `pq_fastscan`: `2.987ms`, confirming rerun `2.954ms`
+  - recall stayed pinned at `0.9629` for `turboquant` and `0.9635` for
+    `pq_fastscan`
+  The result is now explicit: the decisive lever is still heap storage
+  layout, and on the same inline `ecvector` serious lane `pq_fastscan`
+  remains faster than `turboquant`.
 
 ## Landing checklist
 
@@ -163,17 +175,20 @@ unless called out.
   `-4.33%` for persisted `source_raw` vs `source`. Rerun to confirm the
   direction survives restart noise. Cheap; unblocks treating the supported
   path as a validated runtime win rather than a single-cell inference.
-- [ ] **Rerun packet `441` at q200 ×≥2** on the `tqhnsw_real_50k_tq_mixed_inline_corpus`
-  surface. The `-35.16%` delta is far outside the packet-`432` noise
-  envelope, but one confirming run makes the task-16 headline number
-  bulletproof.
-- [ ] **Head-to-head vs PqFastScan on the same inline surface.** Task 16's
+- [x] **Rerun the inline serious-lane hypothesis at q200 ×≥2 on the
+  productized `ecvector` surface.** Packet `446` supersedes the old
+  `bytea`/duplicate-column seam with two q200 runs each on inline
+  `ecvector`: `turboquant` at `3.427ms` and `3.195ms`, `pq_fastscan` at
+  `2.987ms` and `2.954ms`. That is stronger evidence than a third run on the
+  obsolete `tqhnsw_real_50k_tq_mixed_inline_corpus` seam because it lands on
+  the actual row type.
+- [x] **Head-to-head vs PqFastScan on the same inline surface.** Task 16's
   stated outcome goal is "narrow the TurboQuant vs PqFastScan latency gap
   on the 50k warm real seam". No packet in the 422–441 arc has put
   TurboQuant-with-inline-source next to PqFastScan on the same corpus,
-  recall target, and runtime. Add one q200 cell on PqFastScan against the
-  mixed-inline (or equivalent) surface. Without this cell, task 16 closes
-  the gap question by inference, not measurement.
+  recall target, and runtime. Packet `446` closes that on inline
+  `ecvector`: `pq_fastscan` `2.954ms` vs `turboquant` `3.195ms` on the
+  confirming q200 runs, with recall `0.9635` vs `0.9629`.
 - [ ] **ef_search matrix for lever-4 `full_lut` on the quantized lane.**
   Packet `437` showed `-16%` at `ef_search = 128` on one cell. Before
   lever 4 becomes any kind of persisted default, run `ef_search = 64 /
@@ -195,10 +210,10 @@ unless called out.
 - [x] **`ecvector` column type landed.** Packet `442` lands the canonical
   `ecvector` row model; packet `443` narrows `tqvector` to the
   TurboQuant-family sibling artifact.
-- [ ] **Task 16's head-to-head measurement uses `ecvector`, not the
-  bytea+`STORAGE PLAIN` recipe.** The recipe was the research surface;
-  the closure measurement runs on the productized type so the
-  "narrow the gap" answer is in the same terms users will adopt.
+- [x] **Task 16's head-to-head measurement uses `ecvector`, not the
+  bytea+`STORAGE PLAIN` recipe.** Packet `446` lands the closure
+  head-to-head on default and inline `ecvector` corpora inside a fresh
+  current-head scratch DB.
 - [x] **Document `ecvector` as THE canonical column type** in
   README/quickstart. Packet `445` updates the root README quick start and
   storage-format examples so they create `ecvector` row columns and treat
