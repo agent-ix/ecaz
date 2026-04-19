@@ -175,45 +175,31 @@ Current-head nuance:
 So the canonical row model is landed, but some surrounding helper
 surfaces are still broader than the intended end-state.
 
-### Storage policy guidance
+### Storage policy — deferred to ADR-044
 
-The type decision and the storage-policy decision are separate.
+The type decision and the storage-policy decision are separate. The
+storage-policy decision (where raw-f32 rerank source lives and what
+the default `attstorage` for `ecvector` should be) is tracked in
+**ADR-044 — `ecvector` Rerank-Source Location and Storage Policy**.
 
-- **Canonical type decision:** `ecvector(dim)` is always the right
-  canonical row type.
-- **Storage-policy decision:** whether a given `ecvector` column
-  should stay mostly external or be forced inline is workload-specific.
+Why this ADR does not pick a policy:
 
-Current measured guidance:
+- Packets `441` / `446` measured `EXTENDED` (default) vs `PLAIN`.
+- Packet `447` measured the write-path tradeoff of `PLAIN`.
+- `EXTERNAL` (TOASTed but uncompressed), `MAIN`, and `PLAIN +
+  fillfactor` sweeps are **not yet measured**. The project's M.O.
+  is "prove with empirical data" — picking a per-workload default
+  off two measured cells would be inference, not measurement.
 
-- **Mutable / churn-heavy rows:** keep the default external-safe
-  policy. This avoids turning unrelated row touches into large heap
-  rewrites and large WAL bursts.
-- **Read-mostly / append-mostly rows:** inline storage is justified
-  when serious-lane latency matters more than row-churn cost.
-
-In PostgreSQL terms, this is a per-column policy choice:
-
-- churn-safe default:
-  `ALTER TABLE ... ALTER COLUMN embedding SET STORAGE EXTERNAL`
-- latency-first read-mostly mode:
-  `ALTER TABLE ... ALTER COLUMN embedding SET STORAGE PLAIN`
-
-The ADR therefore does **not** treat inline storage as universally
-correct. The data now supports exposing it as a first-class storage
-policy for the right workloads.
-
-### Primary mitigation for churn
-
-The best mitigation is structural, not micro-tuning:
-
-- keep the embedding row as static as possible
-- move frequently updated metadata into a separate table
-- join when needed
-
-That avoids paying the inline-row rewrite cost when a tiny unrelated
-field changes. Lower-level mitigations like `fillfactor` may help at
-the margin, but they are not the primary design answer.
+ADR-044 enumerates the full option space (heap storage modes,
+`fillfactor`/structural mitigations, and the architectural
+alternative of putting the rerank-source payload in the index
+rather than the heap) and defines the measurement plan and
+decision criteria. Until ADR-044's matrix lands, no default
+change is made; `ecvector` keeps PostgreSQL's standard varlena
+default (`EXTENDED`) and users with read-mostly workloads can
+explicitly choose `PLAIN` as an expert lever while accepting the
+packet-`447` write-path tradeoff.
 
 ## What landed vs. what remains
 

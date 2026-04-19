@@ -178,6 +178,19 @@ the LUT 4x. Composes with tiling.
   So the inline lever is now clearly a workload policy question: strong
   serious-lane win for read-mostly rows, real row-churn penalty for mutable
   rows.
+- **Reviewer feedback plus ADR-044 keep the storage-policy default open.**
+  Packet `447` proved `PLAIN` is fast but expensive on churn-heavy rows, but
+  that is not enough data to pick a default. ADR-044 now owns the remaining
+  decision surface and requires the must-measure cells before task 16 can call
+  the `ecvector` storage-policy question closed:
+  - `EXTERNAL` (`attstorage = 'x'`) serious-lane + WAL/HOT cell
+  - `MAIN` sanity cell
+  - `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
+  - decomposition / alternative-implementation follow-ups (`detoast` vs
+    `decompress`, larger touched-column update probe, C1 index-side cold-page
+    sketch)
+  ADR-043 now explicitly defers the storage-policy default to ADR-044 instead
+  of overstating packet `447` as the final answer.
 
 ## Landing checklist
 
@@ -215,6 +228,15 @@ unless called out.
   buffer-cache pressure, vacuum cost per page, WAL on updates, and
   index build time — all named as a tradeoff in the readout, not just
   a win. Closed in packet `447`.
+- [ ] **ADR-044 storage-policy matrix measured.** Packet `447` is enough to
+  prove "`PLAIN` is fast and costly", but not enough to choose a default.
+  Before task 16 closes the `ecvector` storage-policy question, land:
+  - the `EXTERNAL` q200 serious-lane + WAL/HOT cell
+  - the `MAIN` sanity cell
+  - the `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
+  - the larger touched-column update probe
+  - the detoast-vs-decompress read-path decomposition if practical
+  - the C1 index-side cold-page rerank-payload design sketch from ADR-044
 
 ### Productization
 
@@ -306,13 +328,15 @@ canonical-row position.
 ### Infrastructure and hygiene
 
 - [x] Vacuum concurrency regression fixed (packet `438`).
-- [ ] **Plan file outcome section updated** after each rerun /
-  head-to-head cell lands. Task 16's outcome narrative should reflect
-  measured truth, not just the 441 snapshot.
-- [ ] **Script-surface test for `ALTER INDEX … SET/RESET
+- [x] **Plan file outcome section updated** after each rerun /
+  head-to-head cell lands. Packet `447` and the ADR-044 follow-up now keep
+  the outcome section aligned with measured truth instead of the older
+  packet-`441` snapshot.
+- [x] **Script-surface test for `ALTER INDEX … SET/RESET
   (rerank_source_column)`.** Packet `440`'s methodology relies on the
   ALTER cycle round-tripping; lock this in with a `pg_test` so a future
-  refactor cannot silently break the measurement reproducibility.
+  refactor cannot silently break the measurement reproducibility. Packet
+  `448` lands `test_turboquant_rerank_source_reloption_reset_round_trip`.
 - [ ] **`install_adr030_pg17_pg_test.sh` → backend `.so` version
   assertion.** Packet `440` caught a stale-install hazard manually
   (flat `~26.96ms` tipped it off). A script-level version check would

@@ -5987,6 +5987,108 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_turboquant_rerank_source_reloption_reset_round_trip() {
+        let _lock = env_var_test_lock();
+        let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
+        let table_name = "tqhnsw_tq_rerank_source_reloption_round_trip";
+        let index_name = "tqhnsw_tq_rerank_source_reloption_round_trip_idx";
+        let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
+            table_name, index_name,
+        );
+        let query = pq_fastscan_binary_runtime_query();
+        let rerank_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &turboquant_binary_runtime_rerank_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let build_source_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &pq_fastscan_binary_runtime_source(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let assert_matches_expected = |observed: Vec<DebugScanComparisonRow>,
+                                       expected_scores: &HashMap<(u32, u16), f32>,
+                                       alternate_scores: &HashMap<(u32, u16), f32>,
+                                       message_prefix: &str| {
+            assert!(
+                !observed.is_empty(),
+                "{message_prefix} should still emit ordered results",
+            );
+            for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+                let comparison_score =
+                    comparison_score.expect("heap_f32 rerank should attach comparison scores");
+                let expected = expected_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("every emitted heap tid should map back to an exact source score");
+                let alternate = alternate_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("every emitted heap tid should map back to the alternate source score");
+                assert!(
+                    (expected - alternate).abs() > 1.0e-3,
+                    "{message_prefix} fixture should keep rerank and build-source scores materially different",
+                );
+                assert_f32_close(
+                    comparison_score,
+                    expected,
+                    &format!("{message_prefix} should use the expected exact heap source"),
+                );
+            }
+        };
+        let reloptions_for_index = || {
+            Spi::get_one::<Vec<String>>(&format!(
+                "SELECT reloptions FROM pg_class WHERE oid = '{index_name}'::regclass"
+            ))
+            .expect("reloptions query should succeed")
+            .expect("reloptions should exist")
+        };
+
+        assert!(reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()));
+        assert_matches_expected(
+            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) },
+            &rerank_scores,
+            &build_source_scores,
+            "persisted TurboQuant rerank_source_column",
+        );
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} RESET (rerank_source_column)"
+        ))
+        .expect("ALTER INDEX RESET should clear the persisted rerank source reloption");
+        assert!(
+            !reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()),
+            "RESET should remove rerank_source_column from reloptions",
+        );
+        assert_matches_expected(
+            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) },
+            &build_source_scores,
+            &rerank_scores,
+            "reset TurboQuant rerank_source_column",
+        );
+
+        Spi::run(&format!(
+            "ALTER INDEX {index_name} SET (rerank_source_column = 'source_raw')"
+        ))
+        .expect("ALTER INDEX SET should restore the persisted rerank source reloption");
+        assert!(reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()));
+        assert_matches_expected(
+            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query) },
+            &rerank_scores,
+            &build_source_scores,
+            "restored TurboQuant rerank_source_column",
+        );
+    }
+
+    #[pg_test]
     fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
