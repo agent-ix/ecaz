@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::ptr;
 
@@ -1176,6 +1176,36 @@ impl<'a> NativeBuildQueryScorer<'a> {
     }
 }
 
+struct NativeBacklinkTargetScorer<'a> {
+    state: &'a BuildState,
+    metric: BuildGraphMetric,
+    target_idx: usize,
+    cache: HashMap<usize, f32>,
+}
+
+impl<'a> NativeBacklinkTargetScorer<'a> {
+    fn new(state: &'a BuildState, metric: BuildGraphMetric, target_idx: usize) -> Self {
+        Self {
+            state,
+            metric,
+            target_idx,
+            cache: HashMap::new(),
+        }
+    }
+
+    fn score(&mut self, candidate_idx: usize) -> f32 {
+        if let Some(score) = self.cache.get(&candidate_idx) {
+            return *score;
+        }
+
+        let score = self
+            .metric
+            .score_between(self.state, self.target_idx, candidate_idx);
+        self.cache.insert(candidate_idx, score);
+        score
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeBuildNode {
     level: u8,
@@ -1634,8 +1664,23 @@ fn add_native_backlinks(
             .then_with(|| left.layer.cmp(&right.layer))
     });
     pending.dedup();
+    let mut target_scorer: Option<NativeBacklinkTargetScorer<'_>> = None;
 
     for selection in pending {
+        let needs_new_target_scorer = match target_scorer.as_ref() {
+            Some(scorer) => scorer.target_idx != selection.node_idx,
+            None => true,
+        };
+        if needs_new_target_scorer {
+            target_scorer = Some(NativeBacklinkTargetScorer::new(
+                state,
+                metric,
+                selection.node_idx,
+            ));
+        }
+        let target_scorer = target_scorer
+            .as_mut()
+            .expect("target scorer should exist for backlink planning");
         let Some((start, end)) =
             insert::backlink_slot_bounds(m, nodes[selection.node_idx].neighbor_slots.len(), selection.layer)
         else {
@@ -1650,22 +1695,22 @@ fn add_native_backlinks(
             continue;
         }
 
-        let candidates = layer_slice
+        let mut candidates = layer_slice
             .iter()
             .filter_map(|slot| {
                 let neighbor_idx = (*slot)?;
                 Some(insert::ScoredBacklinkNode {
                     node: neighbor_idx,
-                    score: metric.score_between(state, selection.node_idx, neighbor_idx),
+                    score: target_scorer.score(neighbor_idx),
                     is_new: false,
                 })
             })
-            .chain(std::iter::once(insert::ScoredBacklinkNode {
-                node: new_node_idx,
-                score: metric.score_between(state, selection.node_idx, new_node_idx),
-                is_new: true,
-            }))
             .collect::<Vec<_>>();
+        candidates.push(insert::ScoredBacklinkNode {
+            node: new_node_idx,
+            score: target_scorer.score(new_node_idx),
+            is_new: true,
+        });
         let replacement = insert::select_best_backlink_candidates(
             candidates,
             layer_slice.len(),
