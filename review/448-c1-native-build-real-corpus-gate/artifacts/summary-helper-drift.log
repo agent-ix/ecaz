@@ -1,0 +1,5 @@
+ERROR:  tqhnsw grouped heap-f32 rerank requires build_source_column, rerank_source_column, or TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN to name a raw real[], bytea, or ecvector heap column
+CONTEXT:  SQL statement "SELECT id
+                                     FROM tqhnsw_real_50k_corpus
+                                     ORDER BY embedding <#> $1
+                                     LIMIT 10"
