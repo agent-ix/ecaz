@@ -722,7 +722,7 @@ fn tqhnsw_planner_integration_snapshot(
     ))
 }
 
-fn encode_embedding_to_tqvector(
+fn encode_embedding_to_ecqvector(
     embedding: Vec<f32>,
     bits: i32,
     seed: i64,
@@ -734,13 +734,9 @@ fn encode_embedding_to_tqvector(
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
-fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
-    encode_embedding_to_tqvector(embedding, bits, seed).unwrap_or_else(|e| pgrx::error!("{e}"))
-}
-
-#[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn encode_to_ecqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
-    encode_embedding_to_tqvector(embedding, bits, seed).unwrap_or_else(|e| pgrx::error!("{e}"))
+    encode_embedding_to_ecqvector(embedding, bits, seed)
+        .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
@@ -964,9 +960,9 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_encode_embedding_to_tqvector_rejects_dimensions_over_u16_max() {
+    fn test_encode_embedding_to_ecqvector_rejects_dimensions_over_u16_max() {
         let oversized = vec![0.0_f32; usize::from(u16::MAX) + 1];
-        let err = encode_embedding_to_tqvector(oversized, 4, 42).unwrap_err();
+        let err = encode_embedding_to_ecqvector(oversized, 4, 42).unwrap_err();
         assert!(
             err.contains("exceeds maximum 65535"),
             "oversized embeddings should fail with an explicit dimension limit error"
@@ -1016,7 +1012,7 @@ mod unit_tests {
     fn test_tqvector_negative_query_inner_product_negates_query_score() {
         let vector = vec![0.5_f32, -1.0, 0.25, 0.75, -0.5, 1.25, -0.75, 0.125];
         let query = vec![-0.25_f32, 0.75, 1.0, -0.5, 0.25, -1.0, 0.5, 0.875];
-        let candidate = encode_embedding_to_tqvector(vector, 4, 42)
+        let candidate = encode_embedding_to_ecqvector(vector, 4, 42)
             .expect("candidate should encode successfully");
 
         let base = score_query_inner_product(&candidate, &query)
@@ -1123,7 +1119,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(&format!(
             "INSERT INTO {name} VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
         ))
         .expect("seed insert should succeed");
         Spi::run(&format!(
@@ -1809,7 +1805,7 @@ mod tests {
                 .enumerate()
                 .map(|(batch_row, embedding)| {
                     format!(
-                        "({}, encode_to_tqvector({}, {RECALL_BITS}, {RECALL_SEED}))",
+                        "({}, encode_to_ecvector({}, {RECALL_BITS}, {RECALL_SEED}))",
                         batch_offset + batch_row,
                         format_recall_vector_sql_literal(embedding),
                     )
@@ -1833,7 +1829,7 @@ mod tests {
                 .map(|(batch_row, embedding)| {
                     let source = format_recall_vector_sql_literal(embedding);
                     format!(
-                        "({}, {}, encode_to_tqvector({}, {RECALL_BITS}, {RECALL_SEED}))",
+                        "({}, {}, encode_to_ecvector({}, {RECALL_BITS}, {RECALL_SEED}))",
                         batch_offset + batch_row,
                         source,
                         source,
@@ -2276,7 +2272,7 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_small_seqscan \
-             SELECT g, encode_to_tqvector(ARRAY[g::real, (g * 0.25)::real, (g * -0.5)::real, 1.0::real], 4, 42) \
+             SELECT g, encode_to_ecvector(ARRAY[g::real, (g * 0.25)::real, (g * -0.5)::real, 1.0::real], 4, 42) \
              FROM generate_series(1, 50) AS g",
         )
         .expect("insert should succeed");
@@ -2322,9 +2318,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_scan_plan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -2373,7 +2369,7 @@ mod tests {
         // flips the FR-020 crossover back toward seqscan at 10K rows.
         Spi::run(
             "INSERT INTO tqhnsw_ac1_large \
-             SELECT g, encode_to_tqvector( \
+             SELECT g, encode_to_ecvector( \
                  ARRAY( \
                      SELECT ((get_byte( \
                               decode(md5(g::text) \
@@ -2437,9 +2433,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_admin_snapshot VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -2499,7 +2495,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_admin_snapshot VALUES
-             (4, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+             (4, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("live insert should succeed");
 
@@ -2533,7 +2529,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_admin_snapshot VALUES
-             (5, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+             (5, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("duplicate insert should succeed");
 
@@ -2590,7 +2586,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_admin_snapshot_empty VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("first insert should succeed");
 
@@ -2644,9 +2640,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_cost_snapshot VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -3023,9 +3019,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_nonempty_build VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -3168,10 +3164,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_source_build VALUES
-             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
-             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
-             (3, ARRAY[-1.0, 0.5, 0.0, 1.0], encode_to_tqvector(ARRAY[0.8, -0.4, 0.1, 0.7], 4, 42)),
-             (4, ARRAY[-0.8, 0.4, 0.2, 0.9], encode_to_tqvector(ARRAY[-0.7, -0.2, 0.3, 0.6], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ARRAY[-1.0, 0.5, 0.0, 1.0], encode_to_ecvector(ARRAY[0.8, -0.4, 0.1, 0.7], 4, 42)),
+             (4, ARRAY[-0.8, 0.4, 0.2, 0.9], encode_to_ecvector(ARRAY[-0.7, -0.2, 0.3, 0.6], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -3237,7 +3233,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_source_build VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3365,7 +3361,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_small_source_build VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3458,7 +3454,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_small_dim_build VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3510,7 +3506,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_turboquant_storage_build VALUES \
-                 ({id}, encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3631,7 +3627,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_graph_reads VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3740,7 +3736,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_rerank_reads VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3814,7 +3810,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_codebook_reads VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3910,7 +3906,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_reject VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -3959,7 +3955,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_enabled VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -4054,7 +4050,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_window VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -4098,7 +4094,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_compare VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -4198,12 +4194,12 @@ mod tests {
                 format!(
                     "INSERT INTO {table_name} VALUES \
                      ({id}, ARRAY[{source}]::real[], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[{source}]::real[]), \
-                     encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                     encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
                 )
             } else {
                 format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                     ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
                 )
             };
             Spi::run(&insert_sql).expect("insert should succeed");
@@ -4274,7 +4270,7 @@ mod tests {
                 format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
             Spi::run(&format!(
                 "INSERT INTO {table_name} VALUES \
-                 ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                 ({id}, {source}, encode_to_ecvector({embedding}, 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -4314,12 +4310,12 @@ mod tests {
                 let source = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(id));
                 format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                     ({id}, {source}, encode_to_ecvector({embedding}, 4, 42))"
                 )
             } else {
                 format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, encode_to_tqvector({embedding}, 4, 42))"
+                     ({id}, encode_to_ecvector({embedding}, 4, 42))"
                 )
             };
             Spi::run(&insert_sql).expect("insert should succeed");
@@ -4386,15 +4382,15 @@ mod tests {
             let insert_sql = match (source, source_raw) {
                 (Some(source), Some(source_raw)) => format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, {source}, tests.tqhnsw_debug_pack_f32_bytea({source_raw}), encode_to_tqvector({embedding}, 4, 42))"
+                     ({id}, {source}, tests.tqhnsw_debug_pack_f32_bytea({source_raw}), encode_to_ecvector({embedding}, 4, 42))"
                 ),
                 (Some(source), None) => format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, {source}, encode_to_tqvector({embedding}, 4, 42))"
+                     ({id}, {source}, encode_to_ecvector({embedding}, 4, 42))"
                 ),
                 (None, None) => format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, encode_to_tqvector({embedding}, 4, 42))"
+                     ({id}, encode_to_ecvector({embedding}, 4, 42))"
                 ),
                 (None, Some(_)) => unreachable!(
                     "persisted TurboQuant rerank-source fixtures require source real[]"
@@ -6618,7 +6614,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_scope VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -6670,7 +6666,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_strategy VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -6719,7 +6715,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_limit VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -6763,7 +6759,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_summary VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -6919,10 +6915,10 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_scalar_runtime_summary VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -7026,7 +7022,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_comparison_rows VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -7213,10 +7209,10 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_scalar_runtime_comparison_rows VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -7301,7 +7297,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_order_drift_summary VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -7522,10 +7518,10 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_scalar_runtime_order_drift_summary VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -7662,7 +7658,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_rows VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -7848,7 +7844,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_live_window VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -8002,10 +7998,10 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_scalar_runtime_windowed_rows VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -8109,7 +8105,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_summary VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -8395,10 +8391,10 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_scalar_runtime_windowed_summary VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-0.25, 0.9, 0.1, -0.4], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -8536,9 +8532,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_duplicate_source_build VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
-             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
-             (3, ARRAY[-1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[-0.6, -0.1, 0.0, 0.3], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
+             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
+             (3, ARRAY[-1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[-0.6, -0.1, 0.0, 0.3], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8589,7 +8585,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_source_column VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8612,7 +8608,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_source_type VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0]::double precision[], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0]::double precision[], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8636,7 +8632,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_rerank_source_type_turboquant VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8659,7 +8655,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_rerank_source_column VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8683,7 +8679,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_rerank_source_type VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8717,7 +8713,7 @@ mod tests {
             let source = format_recall_vector_sql_literal(&source);
             Spi::run(&format!(
                 "INSERT INTO {table_name} VALUES \
-                 ({id}, ({source})::ecvector, encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ({source})::ecvector, encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -8792,7 +8788,7 @@ mod tests {
                 format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_embedding(id));
             Spi::run(&format!(
                 "INSERT INTO {table_name} VALUES \
-                 ({id}, {source}, ({rerank_source})::ecvector, encode_to_tqvector({embedding}, 4, 42))"
+                 ({id}, {source}, ({rerank_source})::ecvector, encode_to_ecvector({embedding}, 4, 42))"
             ))
             .expect("insert should succeed");
         }
@@ -8873,7 +8869,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bad_source_dim VALUES
-             (1, ARRAY[1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8896,7 +8892,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_null_source VALUES
-             (1, NULL, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, NULL, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8919,7 +8915,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_expression_source VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -8942,8 +8938,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_partial_source VALUES
-             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
-             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -9116,9 +9112,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_duplicate_build VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -9214,7 +9210,7 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_append VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -9224,7 +9220,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_append VALUES
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -9258,9 +9254,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_tail_reuse VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -9282,7 +9278,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_tail_reuse VALUES
-             (4, encode_to_tqvector(ARRAY[0.5, -0.5, 0.1, 0.2], 4, 42))",
+             (4, encode_to_ecvector(ARRAY[0.5, -0.5, 0.1, 0.2], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -9542,8 +9538,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -9566,7 +9562,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate VALUES
-             (3, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+             (3, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("duplicate insert should succeed");
 
@@ -9718,7 +9714,7 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -9730,14 +9726,14 @@ mod tests {
         for id in 2..=10 {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
-                 ({id}, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))"
+                 ({id}, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))"
             ))
             .expect("duplicate insert should succeed until inline heap tid capacity is exhausted");
         }
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
-             (11, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+             (11, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("insert should fail once duplicate heap tid capacity is exhausted");
     }
@@ -9754,9 +9750,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_source_live VALUES
-             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
-             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
-             (3, ARRAY[0.8, 0.2, 0.3, -0.6], encode_to_tqvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ARRAY[0.8, 0.2, 0.3, -0.6], encode_to_ecvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -9766,7 +9762,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_source_live VALUES
-             (4, ARRAY[0.7, 0.3, 0.2, -0.4], encode_to_tqvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
+             (4, ARRAY[0.7, 0.3, 0.2, -0.4], encode_to_ecvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
         .expect("live insert should succeed on build_source_column indexes");
 
@@ -9807,9 +9803,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_ecvector_source_live VALUES
-             (1, ('[1.0,0.0,0.5,-1.0]')::ecvector, encode_to_tqvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
-             (2, ('[0.9,0.1,0.4,-0.8]')::ecvector, encode_to_tqvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
-             (3, ('[0.8,0.2,0.3,-0.6]')::ecvector, encode_to_tqvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
+             (1, ('[1.0,0.0,0.5,-1.0]')::ecvector, encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
+             (2, ('[0.9,0.1,0.4,-0.8]')::ecvector, encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
+             (3, ('[0.8,0.2,0.3,-0.6]')::ecvector, encode_to_ecvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -9819,7 +9815,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_ecvector_source_live VALUES
-             (4, ('[0.7,0.3,0.2,-0.4]')::ecvector, encode_to_tqvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
+             (4, ('[0.7,0.3,0.2,-0.4]')::ecvector, encode_to_ecvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
         .expect("live insert should succeed on ecvector build_source_column indexes");
 
@@ -9875,7 +9871,7 @@ mod tests {
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
-              encode_to_tqvector(
+              encode_to_ecvector(
                   ARRAY[0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5,
                         0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2]::real[],
                   4,
@@ -9944,7 +9940,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
@@ -9995,7 +9991,7 @@ mod tests {
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
-              encode_to_tqvector(
+              encode_to_ecvector(
                   ARRAY[0.2, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5,
                         0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2]::real[],
                   4,
@@ -10126,7 +10122,7 @@ mod tests {
                 .join(", ");
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
@@ -10252,7 +10248,7 @@ mod tests {
             };
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_vacuum_pass1_grouped_duplicates VALUES \
-                 ({id}, ARRAY[{source}]::real[], encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42))"
+                 ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
@@ -10530,7 +10526,7 @@ mod tests {
                     format_recall_vector_sql_literal(&candidate_embedding);
                 Spi::run(&format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({candidate_id}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                     ({candidate_id}, encode_to_ecvector({candidate_embedding_sql}, 4, 42))"
                 ))
                 .expect("live insert should succeed on an explicit turboquant index");
 
@@ -10609,7 +10605,7 @@ mod tests {
             format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES \
-             (17, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+             (17, encode_to_ecvector({inserted_embedding_sql}, 4, 42))"
         ))
         .expect("insert should reach aminsert before rejecting a storage-format mismatch");
     }
@@ -10684,7 +10680,7 @@ mod tests {
             format_recall_vector_sql_literal(&runtime_fixture_embedding(17));
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES \
-             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+             (17, {inserted_source_sql}, encode_to_ecvector({inserted_embedding_sql}, 4, 42))"
         ))
         .expect(
             "insert should reach aminsert before rejecting the reverse storage-format mismatch",
@@ -10754,7 +10750,7 @@ mod tests {
         let inserted_source_sql = format_recall_vector_sql_literal(&pq_fastscan_runtime_source(17));
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES \
-             (17, {inserted_source_sql}, encode_to_tqvector({inserted_embedding_sql}, 4, 42))"
+             (17, {inserted_source_sql}, encode_to_ecvector({inserted_embedding_sql}, 4, 42))"
         ))
         .expect("matching reloption/metadata pairs should accept insert cleanly after REINDEX");
 
@@ -10808,7 +10804,7 @@ mod tests {
                     format_recall_vector_sql_literal(&candidate_embedding);
                 Spi::run(&format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({candidate_id}, {candidate_source_sql}, encode_to_tqvector({candidate_embedding_sql}, 4, 42))"
+                     ({candidate_id}, {candidate_source_sql}, encode_to_ecvector({candidate_embedding_sql}, 4, 42))"
                 ))
                 .expect("live insert should succeed on an explicit pq_fastscan index");
 
@@ -10891,7 +10887,7 @@ mod tests {
                 "INSERT INTO {table_name} VALUES (
                     {id},
                     ARRAY[{source}]::real[],
-                    encode_to_tqvector(ARRAY[{embedding}]::real[], 4, 42)
+                    encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42)
                 )",
                 source = source
                     .iter()
@@ -11058,7 +11054,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_empty_insert VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("insert should succeed");
 
@@ -11111,8 +11107,8 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_empty_insert_reuse VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("sequential inserts should succeed");
 
@@ -11152,7 +11148,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
@@ -11179,7 +11175,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("repairing insert should succeed");
 
@@ -11219,7 +11215,7 @@ mod tests {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_level_shape VALUES (
                     {id},
-                    encode_to_tqvector(ARRAY[
+                    encode_to_ecvector(ARRAY[
                         {id}.0,
                         {two}.0,
                         {three}.0,
@@ -11278,7 +11274,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_level_promotion VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
@@ -11293,7 +11289,7 @@ mod tests {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_level_promotion VALUES (
                     {id},
-                    encode_to_tqvector(ARRAY[
+                    encode_to_ecvector(ARRAY[
                         {id}.0,
                         {two}.0,
                         {three}.0,
@@ -11341,7 +11337,7 @@ mod tests {
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_live_forward_links VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
@@ -11357,7 +11353,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_live_forward_links VALUES
-             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
+             (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("second insert should succeed");
 
@@ -11412,10 +11408,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_built_forward_links VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11438,7 +11434,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_built_forward_links VALUES
-             (5, encode_to_tqvector(ARRAY[1.0, 0.2, 0.1, 0.0], 4, 42))",
+             (5, encode_to_ecvector(ARRAY[1.0, 0.2, 0.1, 0.0], 4, 42))",
         )
         .expect("live insert should succeed");
 
@@ -11506,7 +11502,7 @@ mod tests {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_upper_layer_links VALUES (
                     {id},
-                    encode_to_tqvector(ARRAY[
+                    encode_to_ecvector(ARRAY[
                         {id}.0,
                         {two}.0,
                         {three}.0,
@@ -11599,7 +11595,7 @@ mod tests {
             let z = if id % 2 == 0 { 0.25 } else { -0.25 };
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
-                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, 0.0], 4, 42))",
+                 ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, {z}, 0.0], 4, 42))",
             ))
             .expect("seed insert should succeed");
         }
@@ -11622,7 +11618,7 @@ mod tests {
             let z = if id % 2 == 0 { 0.25 } else { -0.25 };
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
-                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, {z}, {w}], 4, 42))",
+                 ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, {z}, {w}], 4, 42))",
             ))
             .expect("live insert should succeed");
 
@@ -11694,10 +11690,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_graph_reachable VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11717,7 +11713,7 @@ mod tests {
             let delta = (id - 4) as f32 * 0.02;
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_graph_reachable VALUES
-                 ({id}, encode_to_tqvector(ARRAY[1.0, {delta}, 0.1, 0.0], 4, 42))",
+                 ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, 0.1, 0.0], 4, 42))",
             ))
             .expect("live insert should succeed");
 
@@ -11764,9 +11760,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_noop VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11833,9 +11829,9 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_repeat VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11872,9 +11868,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_pass1_duplicates VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11925,9 +11921,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_pass1_scan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -11989,11 +11985,11 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
         ))
         .expect("seed inserts should succeed");
         Spi::run(&format!(
@@ -12078,11 +12074,11 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(&format!(
             "INSERT INTO {table_name} VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))"
         ))
         .expect("seed inserts should succeed");
         Spi::run(&format!(
@@ -12151,11 +12147,11 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_pass2_unlink VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.25, -0.75, 1.0, 0.5], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[-0.5, -1.0, 0.75, 0.25], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -12209,14 +12205,14 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_pass2_replace VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.9, 0.1, 0.45, -0.9], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.8, 0.2, 0.4, -0.8], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.7, 0.3, 0.35, -0.7], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[0.6, 0.4, 0.3, -0.6], 4, 42)),
-             (6, encode_to_tqvector(ARRAY[0.5, 0.5, 0.25, -0.5], 4, 42)),
-             (7, encode_to_tqvector(ARRAY[0.4, 0.6, 0.2, -0.4], 4, 42)),
-             (8, encode_to_tqvector(ARRAY[0.3, 0.7, 0.15, -0.3], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.45, -0.9], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.8, 0.2, 0.4, -0.8], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.7, 0.3, 0.35, -0.7], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[0.6, 0.4, 0.3, -0.6], 4, 42)),
+             (6, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.5], 4, 42)),
+             (7, encode_to_ecvector(ARRAY[0.4, 0.6, 0.2, -0.4], 4, 42)),
+             (8, encode_to_ecvector(ARRAY[0.3, 0.7, 0.15, -0.3], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -12334,7 +12330,7 @@ mod tests {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_vacuum_pass2_upper_replace VALUES (
                     {id},
-                    encode_to_tqvector(ARRAY[
+                    encode_to_ecvector(ARRAY[
                         {id}.0,
                         {two}.0,
                         {three}.0,
@@ -12469,9 +12465,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_pass1_repeat VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
@@ -12528,7 +12524,7 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_reinsert VALUES
-             (1, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -12548,7 +12544,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_vacuum_reinsert VALUES
-             (2, encode_to_tqvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
+             (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
         )
         .expect("replacement insert should succeed");
 
@@ -12592,9 +12588,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_debug_scan_result_count_fixture VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -12638,9 +12634,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_debug_scan_profile_fixture VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -12808,10 +12804,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_debug_scan_profile_limited_fixture VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -12887,10 +12883,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_debug_scan_heap_fetch_fixture VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -12955,10 +12951,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_debug_reachable_live_fixture VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13007,7 +13003,7 @@ mod tests {
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_scan_scaffold VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13033,7 +13029,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_scan_scaffold_idempotent VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13255,7 +13251,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_scaffold VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13279,8 +13275,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_exec_scaffold VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13360,9 +13356,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_sql_ordered_exec VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
@@ -13439,14 +13435,14 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_graph_first_ordered_scores VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.92, 0.08, 0.0, 0.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.75, 0.25, 0.0, 0.0], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.55, 0.45, 0.0, 0.0], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[0.35, 0.65, 0.0, 0.0], 4, 42)),
-             (6, encode_to_tqvector(ARRAY[0.15, 0.85, 0.0, 0.0], 4, 42)),
-             (7, encode_to_tqvector(ARRAY[-0.2, 0.98, 0.0, 0.0], 4, 42)),
-             (8, encode_to_tqvector(ARRAY[-0.7, 0.3, 0.0, 0.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.92, 0.08, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.75, 0.25, 0.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.55, 0.45, 0.0, 0.0], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[0.35, 0.65, 0.0, 0.0], 4, 42)),
+             (6, encode_to_ecvector(ARRAY[0.15, 0.85, 0.0, 0.0], 4, 42)),
+             (7, encode_to_ecvector(ARRAY[-0.2, 0.98, 0.0, 0.0], 4, 42)),
+             (8, encode_to_ecvector(ARRAY[-0.7, 0.3, 0.0, 0.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13635,9 +13631,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_orderby_lifecycle VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13681,9 +13677,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_result_lifecycle VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13766,9 +13762,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_result_heap_progress VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13831,9 +13827,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_entry_candidate_state VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13881,9 +13877,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_entry_candidate_lifecycle VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -13966,9 +13962,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_successor_candidate_state VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14039,9 +14035,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_candidate_frontier_state VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14158,9 +14154,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_candidate_frontier_limit VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14202,9 +14198,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_session_runtime_frontier_limit VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14249,7 +14245,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_session_ef_search_reloption VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14287,7 +14283,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_session_ef_search_override VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14323,9 +14319,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_frontier_head_lifecycle VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14382,8 +14378,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_frontier_head_consume VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14470,11 +14466,11 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_frontier_head_refill VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42)),
-             (5, encode_to_tqvector(ARRAY[-0.5, 0.5, 1.0, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[-0.5, 0.5, 1.0, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14569,10 +14565,10 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bootstrap_consume_state VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
-             (4, encode_to_tqvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.5, -1.0, 1.0, 0.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14624,9 +14620,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bootstrap_candidate_materialize VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14671,9 +14667,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_bootstrap_phase_transition VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14721,9 +14717,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_visited_seed_state VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14774,9 +14770,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_current_neighbors VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14814,9 +14810,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_entry_point_neighbors VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14859,9 +14855,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_duplicate_exec VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -14944,8 +14940,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_exhaustion VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -15035,8 +15031,8 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_exhaustion_rescan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -15121,7 +15117,7 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_backward_scan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -15146,9 +15142,9 @@ mod tests {
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_duplicate_rescan VALUES
-             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (3, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
@@ -20584,7 +20580,7 @@ mod tests {
             .map(|(id, vector)| {
                 let source = format_recall_vector_sql_literal(vector);
                 format!(
-                    "({id}, {source}, encode_to_tqvector({source}, {RECALL_BITS}, {RECALL_SEED}))"
+                    "({id}, {source}, encode_to_ecvector({source}, {RECALL_BITS}, {RECALL_SEED}))"
                 )
             })
             .collect::<Vec<_>>()

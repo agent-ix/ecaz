@@ -86,12 +86,6 @@ IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'encode_to_ecvector_wrapper';
 
-CREATE FUNCTION encode_to_tqvector(real[], integer, bigint)
-RETURNS ecvector
-IMMUTABLE STRICT PARALLEL SAFE
-LANGUAGE c
-AS 'MODULE_PATHNAME', 'encode_to_ecvector_wrapper';
-
 CREATE FUNCTION ecvector(ecvector, integer, boolean)
 RETURNS ecvector
 IMMUTABLE STRICT PARALLEL SAFE
