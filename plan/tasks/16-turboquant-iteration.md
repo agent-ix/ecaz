@@ -340,6 +340,9 @@ canonical-row position.
 
 ### Deferred Follow-Ons (post-ADR-042/native build)
 
+Primary tracking file:
+- `plan/tasks/17-post-native-build-storage-and-lever4-followons.md`
+
 - [ ] Rerun packet `440` at q200 ×≥2 if the persisted `source_raw`
   supported-path lane still matters after native build reshapes the runtime.
 - [ ] Lever-4 `full_lut` ef_search matrix (`64 / 128 / 256`) and final

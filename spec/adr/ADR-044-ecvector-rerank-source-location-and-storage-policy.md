@@ -96,6 +96,23 @@ specifically because build throughput is not under control yet. Revisit
 this ADR after native build lands, when storage-policy measurements are
 less confounded by the outgoing builder.
 
+Reopen criteria are explicit, not "someday after ADR-042":
+
+1. ADR-042 native HNSW build lands on the branch under test.
+2. A fresh 50k real-corpus `EXTERNAL` TurboQuant build establishes a stable
+   native-build baseline.
+3. `EXTENDED`, `MAIN`, and `PLAIN` build on that same native builder either:
+   - within about `±20%` of the new stable baseline, or
+   - with any remaining gap explained by profiling rather than mystery.
+4. Only then rerun the deferred q200/storage-policy cells and use them for a
+   product default decision.
+
+Tracking for that reopen work now lives in
+`plan/tasks/17-post-native-build-storage-and-lever4-followons.md`, which also
+owns the carried-forward `EXTENDED` / `MAIN` build-collapse bug note and the
+lever-4 `ef_search` matrix that must land before lever 4 can become a
+persisted default.
+
 ## Option catalog
 
 Three families: heap-storage tuning, heap-storage + structural
