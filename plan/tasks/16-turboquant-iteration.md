@@ -162,6 +162,22 @@ the LUT 4x. Composes with tiling.
   The result is now explicit: the decisive lever is still heap storage
   layout, and on the same inline `ecvector` serious lane `pq_fastscan`
   remains faster than `turboquant`.
+- **Packet `447` closes the mixed-inline tradeoff question.** Forcing
+  canonical `ecvector` inline is not a storage-footprint explosion so much as
+  a storage-placement shift: total heap+TOAST bytes stay about flat
+  (`823.0MB` default vs `819.2MB` inline), but the heap working set moves from
+  `468` pages to `50,000` pages on a cluster with `16,384` buffer pages.
+  Consequences measured on the 50k seam:
+  - vacuum scan cost stayed essentially flat (`19.121s` default vs `19.250s`
+    inline) because total pages scanned stay nearly the same
+  - fresh TurboQuant build time was slightly better inline
+    (`180.774s -> 173.784s`, `-3.87%`)
+  - small row rewrites became materially heavier inline
+    (`4.0MB -> 14.3MB` WAL on the steady 1k-row update batch, `3.56x`, with
+    HOT dropping from `38` to `0`)
+  So the inline lever is now clearly a workload policy question: strong
+  serious-lane win for read-mostly rows, real row-churn penalty for mutable
+  rows.
 
 ## Landing checklist
 
@@ -193,12 +209,12 @@ unless called out.
   Packet `437` showed `-16%` at `ef_search = 128` on one cell. Before
   lever 4 becomes any kind of persisted default, run `ef_search = 64 /
   128 / 256` so the decision rests on a shape, not a point.
-- [ ] **Mixed-inline storage cost measured as an explicit tradeoff.**
+- [x] **Mixed-inline storage cost measured as an explicit tradeoff.**
   Packet `441` showed heap footprint grew from `43MB` to `390MB`
   (≈9×) for the `-35%` latency win. Quantify what this means for
   buffer-cache pressure, vacuum cost per page, WAL on updates, and
   index build time — all named as a tradeoff in the readout, not just
-  a win.
+  a win. Closed in packet `447`.
 
 ### Productization
 
