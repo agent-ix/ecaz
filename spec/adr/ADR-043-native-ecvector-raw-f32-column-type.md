@@ -169,6 +169,11 @@ surfaces are still broader than the intended end-state.
   insert, scan, and vacuum
 - `tqvector` retained as the TurboQuant-family sibling artifact
   type rather than the canonical row type
+- compact canonical `tqvector` artifact layout:
+  - per-datum bytes are `dim + gamma + code bytes`
+  - `bits=4` and `seed=42` are enforced invariants, not per-row bytes
+  - the sibling stays self-describing enough for SQL/operator use
+    without carrying the old 8-byte seed field in every row
 
 ### Still follow-up work
 
@@ -182,24 +187,35 @@ surfaces are still broader than the intended end-state.
 ### Quantized sibling artifacts
 
 Persisted quantized artifacts — used for explicit family-specific
-tests and tooling, not as user-facing row types — live in separate
+tests, tooling, and debugging, not as user-facing row types — live in separate
 sibling types. Current head:
 
 - `tqvector` — TurboQuant-family persisted quantized artifact.
   Op class: `tqvector_ip_ops`. Encoder: `encode_to_tqvector(...)`.
+  Current wire contract is compact and canonical:
+  - row bytes contain `dim`, `gamma`, and packed code bytes
+  - `bits` is fixed to `4`
+  - `seed` is fixed to `42`
+  - text/binary input rejects non-canonical `bits`/`seed`
 
 Rules:
 
 - Sibling types are **never** the default for a user's row column.
   `ecvector` is. A sibling is used only when a test or tool needs
   to materialize the quantized bytes of a specific family for
-  inspection / regression / explicit-compare.
+  inspection / debugging / regression / explicit-compare.
 - Adding a new quantized family adds a new family-specific sibling
   (e.g. `pqfsvector` for a PqFastScan-family artifact). Do not
   reuse a generic quantized type name across families.
 - The indexed-column resolution layer (`src/am/source.rs`)
   distinguishes canonical `ecvector` from artifact sibling types
   so build / insert / scan / vacuum can treat them differently.
+- Current head intentionally keeps `dim` inline in `tqvector` instead
+  of hoisting it fully to typmod. The reason is practical, not
+  conceptual: PostgreSQL output/operator functions for `tqvector`
+  do not receive typmod, so a pure `gamma + code bytes` datum would
+  break the current sibling SQL surface. The compact inline-`dim`
+  contract is the chosen compromise.
 
 ## Scope
 

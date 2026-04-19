@@ -1,11 +1,14 @@
 # tqvector
 
-A PostgreSQL extension written in Rust (pgrx) that provides the `tqvector` data type and `tqhnsw` index access method for approximate nearest neighbor search over TurboQuant-compressed vectors.
+A PostgreSQL extension written in Rust (pgrx) that provides the canonical
+`ecvector(dim)` row type plus the `tqhnsw` index access method for approximate
+nearest neighbor search.
 
-- **`tqvector` type** — TurboQuant-compressed vector codes (~8x smaller than fp32)
+- **`ecvector(dim)`** — canonical exact/raw row type
+- **`tqvector`** — explicit TurboQuant artifact/debugging type
 - **`<#>` operator** — negative inner product distance for ORDER BY ASC
-- **`tqhnsw` index** — HNSW graph index over compressed codes
-- **`encode_to_tqvector()`** — compress fp32 arrays to tqvector in SQL
+- **`tqhnsw` index** — HNSW graph index with per-index storage formats
+- **`encode_to_ecvector()`** — encode fp32 arrays into the canonical row type
 
 ## Quick Start
 
@@ -18,19 +21,31 @@ cargo pgrx install --sudo --release
 ```sql
 CREATE EXTENSION tqvector;
 
--- Encode and store a vector
---   args: float4[] input, codebook_bits (4), rng_seed (42)
-INSERT INTO memories (tq_code)
-VALUES (encode_to_tqvector(ARRAY[1.0, 2.0, ...]::float4[], 4, 42));
+CREATE TABLE memories (
+    id bigint generated always as identity primary key,
+    embedding ecvector(4)
+);
 
--- Create HNSW index
-CREATE INDEX ON memories USING tqhnsw (tq_code) WITH (m=8, ef_construction=64);
+-- Encode and store a canonical vector
+--   args: float4[] input, codebook_bits (4), rng_seed (42)
+INSERT INTO memories (embedding)
+VALUES (encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42));
+
+-- Create HNSW index over the canonical row type
+CREATE INDEX ON memories
+USING tqhnsw (embedding ecvector_ip_ops)
+WITH (m = 8, ef_construction = 64);
 
 -- Query nearest neighbors
 SELECT * FROM memories
-ORDER BY tq_code <#> encode_to_tqvector($query::float4[], 4, 42)
+ORDER BY embedding <#> ARRAY[1.0, 2.0, 3.0, 4.0]::float4[]
 LIMIT 10;
 ```
+
+`tqvector` is not the canonical row type. It is a family-specific TurboQuant
+artifact surface for explicit tests, tooling, and debugging. Future persisted
+quantized families should add their own family-specific sibling types rather
+than overloading `ecvector`.
 
 ## Choosing A Format
 
@@ -45,15 +60,14 @@ LIMIT 10;
 ```sql
 -- Default / explicit TurboQuant index
 CREATE INDEX ON memories
-USING tqhnsw (tq_code)
+USING tqhnsw (embedding ecvector_ip_ops)
 WITH (storage_format = 'turboquant', m = 8, ef_construction = 64);
 
--- PqFastScan index with a raw source column for grouped-code derivation
+-- PqFastScan index on the same canonical row column
 CREATE INDEX ON memories
-USING tqhnsw (tq_code)
+USING tqhnsw (embedding ecvector_ip_ops)
 WITH (
     storage_format = 'pq_fastscan',
-    build_source_column = 'embedding_raw',
     m = 8,
     ef_construction = 64
 );

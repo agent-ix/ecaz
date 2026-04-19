@@ -134,11 +134,22 @@ the LUT 4x. Composes with tiling.
 - **Packet `442` replaces the old canonical quantized-row surface with a
   canonical `ecvector` row model.** The indexed column can now be raw
   `ecvector(dim)` by default, and `heap_f32`/build-source paths fall back to
-  that indexed column when no alternate source column is configured.
-- **Packet `443` narrows the persisted quantized sibling back to the
-  family-specific `tqvector` name.** The quant artifact remains available for
-  explicit persisted TurboQuant-family tests, but it is no longer the
-  canonical row type.
+  that indexed column when no alternate source column is configured. The old
+  public-row meaning of `tqvector` was removed from the product model.
+- **Packet `443` narrows `tqvector` to the TurboQuant-family persisted
+  quantized artifact.** Commit `8e2add6` renames the transitional
+  `ecqvector` sibling back to `tqvector` (`tqvector_ip_ops`,
+  `encode_to_tqvector(...)`, `IndexedVectorKind::Tqvector`). The name's
+  scope has been narrowed: `tqvector` is now an explicit artifact type for
+  TurboQuant-family tests/tooling/debugging, not a canonical row type.
+  Taxonomy rule established: family-specific persisted quantized artifacts use
+  family-specific sibling names.
+- **Packet `445` compacts the TurboQuant sibling artifact and locks in
+  canonical/sibling separation.** Current head now stores `tqvector` as a
+  compact canonical artifact (`dim + gamma + code bytes`; `bits=4`,
+  `seed=42` are enforced invariants, not per-row bytes) and adds a pg test
+  proving an indexed `ecvector` column does not silently fall back to a
+  sibling `tqvector` column on `pq_fastscan`.
 
 ## Landing checklist
 
@@ -181,15 +192,71 @@ unless called out.
   - Name: **RESOLVED — `ecvector`** (Ecaz).
   - pgvector cast policy: lean install-time conditional.
   - Bare-typmod support: tentative yes.
-- [x] **Task 17 implementation: `ecvector` column type.** Packet `442`
-  lands the canonical `ecvector` row model, and packet `443` restores
-  `tqvector` as the explicit TurboQuant-family sibling artifact type
-  rather than the canonical row surface.
+- [x] **`ecvector` column type landed.** Packet `442` lands the canonical
+  `ecvector` row model; packet `443` narrows `tqvector` to the
+  TurboQuant-family sibling artifact.
 - [ ] **Task 16's head-to-head measurement uses `ecvector`, not the
   bytea+`STORAGE PLAIN` recipe.** The recipe was the research surface;
   the closure measurement runs on the productized type so the
   "narrow the gap" answer is in the same terms users will adopt.
-- [ ] **Document `ecvector` as the column type** in README/quickstart.
+- [x] **Document `ecvector` as THE canonical column type** in
+  README/quickstart. Packet `445` updates the root README quick start and
+  storage-format examples so they create `ecvector` row columns and treat
+  `tqvector` only as an artifact/debugging type.
+
+### Quant fields (sibling artifact type contract)
+
+Packet `443` narrowed `tqvector` to a family-specific sibling artifact.
+Before task 16 merges, the contract around that name needs to be
+nailed down so `tqvector` does not silently drift back into the
+canonical-row position.
+
+- [x] **Audit default-resolution paths** in `src/am/build.rs`,
+  `src/am/insert.rs`, `src/am/scan.rs`, `src/am/vacuum.rs` to confirm
+  that when the indexed column is canonical `ecvector`, no fallback
+  ever resolves to a `tqvector` sibling. Sibling access must be
+  reachable only via explicit fixture / configuration. Packet `445`
+  confirms the default-resolution behavior and the runtime explanation
+  surface. This is the ADR-043 §Validation "sibling-type containment"
+  contract.
+- [x] **pg_test: canonical vs sibling separation.** Add a regression
+  test that builds a tqhnsw index on an `ecvector` column in a table
+  that *also* has a `tqvector` column, and asserts the scan/rerank
+  path reads the `ecvector` column, not the sibling. Packet `445`
+  lands `test_pq_fastscan_indexed_ecvector_ignores_tqvector_sibling`
+  to lock in that a table carrying both does not silently resolve to
+  the artifact.
+- [x] **pg_test: encoder round-trip for `tqvector` artifact.**
+  `encode_to_tqvector(...) → tqvector column → decode` must preserve
+  the expected bytes for the current TurboQuant wire format. Packet
+  `445` lands `test_encode_to_tqvector_round_trips_canonical_artifact_layout`.
+- [x] **Test-surface audit: no accidental `ecqvector` leftovers.**
+  Packet `443` review focus §1 asks this explicitly. Grep `src/`,
+  `sql/`, `tests/`, and `scripts/` for `ecqvector`; none should
+  remain in runtime or user-facing paths (only in the packet `442`
+  and `443` request files, plus this plan's historical notes, which are
+  intentional artifacts).
+- [x] **Documentation: sibling-type rule written down.** The
+  "family-specific persisted quantized artifacts use family-specific
+  sibling names" taxonomy rule is captured in ADR-043 §Quantized
+  sibling artifacts, and packet `445` adds a README pointer so the
+  canonical-vs-sibling rule is visible from the repo front door.
+- [ ] **Rename public-facing error text and doc references.** Packet
+  `443` updated error-text in `src/am/{build,scan,insert,vacuum}.rs`
+  to describe the sibling as `tqvector`. Before merge, scan remaining
+  docs (`spec/tests.md`, plan files, review-area READMEs) for stale
+  `ecqvector` / old-canonical-`tqvector` wording and update. Do not
+  preserve the old names as aliases.
+- [x] **Compact `tqvector` into the shared efficient-storage family.**
+  Packet `445` removes per-row `bits` and `seed` bytes and keeps
+  `tqvector` as a canonical TurboQuant-family artifact with
+  `bits=4`/`seed=42` enforced at the type surface. Current per-row
+  payload is `dim + gamma + code bytes`, shrinking the artifact row
+  overhead from 15 raw bytes (`dim + bits + seed + gamma`) to 6 raw
+  bytes (`dim + gamma`) before the packed codes. The earlier
+  typmod-only 8-byte target was not viable on current head because the
+  `tqvector` output/operator functions do not receive typmod; keeping
+  `dim` inline is the deliberate compact compromise.
 
 ### Lever decisions
 

@@ -64,9 +64,9 @@ pub mod bench_api {
 
 extension_sql_file!("../sql/bootstrap.sql", name = "bootstrap", bootstrap);
 
-/// Number of datum header bytes: dim(2) + bits(1) + seed(8).
-pub const HEADER_BYTES: usize = 11;
-/// Minimum valid wire payload: header plus gamma.
+/// Number of per-datum descriptor bytes: dim(2).
+pub const HEADER_BYTES: usize = 2;
+/// Minimum valid wire payload: descriptor plus gamma.
 pub const MIN_BINARY_BYTES: usize = HEADER_BYTES + 4;
 const ECVECTOR_MAX_DIM: usize = u16::MAX as usize;
 pub(crate) const DEFAULT_QUANT_BITS: u8 = 4;
@@ -75,6 +75,24 @@ pub(crate) const DEFAULT_QUANT_SEED: u64 = 42;
 fn validate_bits(bits: u8) -> Result<(), String> {
     if !(2..=8).contains(&bits) {
         return Err(format!("bits must be between 2 and 8, got {bits}"));
+    }
+    Ok(())
+}
+
+fn validate_tqvector_seed(seed: u64) -> Result<(), String> {
+    if seed != DEFAULT_QUANT_SEED {
+        return Err(format!(
+            "tqvector seed must use the canonical default ({DEFAULT_QUANT_SEED}), got {seed}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_tqvector_bits(bits: u8) -> Result<(), String> {
+    if bits != DEFAULT_QUANT_BITS {
+        return Err(format!(
+            "tqvector bits must use the canonical default ({DEFAULT_QUANT_BITS}), got {bits}"
+        ));
     }
     Ok(())
 }
@@ -182,6 +200,8 @@ pub fn parse_text(s: &str) -> Result<(u16, u8, u64, f32, Vec<u8>), String> {
     let dim = dim.ok_or("missing dim")?;
     let bits = bits.ok_or("missing bits")?;
     validate_bits(bits)?;
+    validate_tqvector_bits(bits)?;
+    validate_tqvector_seed(seed)?;
 
     let codes = hex::decode(rest).map_err(|e| format!("hex decode: {e}"))?;
     let expected = code_len(dim as usize, bits);
@@ -203,10 +223,11 @@ pub fn format_text(dim: u16, bits: u8, seed: u64, gamma: f32, codes: &[u8]) -> S
 }
 
 fn pack(dim: u16, bits: u8, seed: u64, gamma: f32, codes: &[u8]) -> Vec<u8> {
+    validate_bits(bits).expect("tqvector pack must only be called with valid bits");
+    validate_tqvector_bits(bits).expect("tqvector pack must only be called with canonical bits");
+    validate_tqvector_seed(seed).expect("tqvector pack must only be called with canonical seed");
     let mut buf = Vec::with_capacity(MIN_BINARY_BYTES + codes.len());
     buf.extend_from_slice(&dim.to_le_bytes());
-    buf.push(bits);
-    buf.extend_from_slice(&seed.to_le_bytes());
     buf.extend_from_slice(&gamma.to_le_bytes());
     buf.extend_from_slice(codes);
     buf
@@ -221,11 +242,10 @@ fn unpack(data: &[u8]) -> Result<(u16, u8, u64, f32, &[u8]), String> {
     }
 
     let dim = u16::from_le_bytes(data[0..2].try_into().expect("dim bytes"));
-    let bits = data[2];
-    validate_bits(bits)?;
-    let seed = u64::from_le_bytes(data[3..11].try_into().expect("seed bytes"));
-    let gamma = f32::from_le_bytes(data[11..15].try_into().expect("gamma bytes"));
-    let codes = &data[15..];
+    let bits = DEFAULT_QUANT_BITS;
+    let seed = DEFAULT_QUANT_SEED;
+    let gamma = f32::from_le_bytes(data[2..6].try_into().expect("gamma bytes"));
+    let codes = &data[6..];
     let expected = code_len(dim as usize, bits);
     if codes.len() != expected {
         return Err(format!(
@@ -728,7 +748,9 @@ fn encode_embedding_to_tqvector(
     seed: i64,
 ) -> Result<Vec<u8>, String> {
     let bits = u8::try_from(bits).map_err(|_| "bits must fit into u8".to_string())?;
-    let seed = seed as u64;
+    let seed = u64::try_from(seed).map_err(|_| "seed must fit into u64".to_string())?;
+    validate_tqvector_bits(bits)?;
+    validate_tqvector_seed(seed)?;
     let (dim, gamma, code_bytes) = quantize_embedding_to_code(&embedding, bits, seed)?;
     Ok(pack(dim, bits, seed, gamma, &code_bytes))
 }
@@ -894,7 +916,7 @@ mod unit_tests {
 
     #[test]
     fn test_unpack_rejects_truncated_binary() {
-        assert!(unpack(&[0_u8; 14]).is_err());
+        assert!(unpack(&[0_u8; 5]).is_err());
     }
 
     #[test]
@@ -2130,6 +2152,19 @@ mod tests {
         .expect("query should return one row");
 
         assert_eq!(bytes, pack(4, 4, 42, 0.5, &[0x11, 0x22, 0x33]));
+    }
+
+    #[pg_test]
+    fn test_encode_to_tqvector_round_trips_canonical_artifact_layout() {
+        let expected = encode_embedding_to_tqvector(vec![1.0, 0.0, 0.5, -1.0], 4, 42)
+            .expect("canonical tqvector artifact should encode");
+        let actual = Spi::get_one::<Vec<u8>>(
+            "SELECT tqvector_send(encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("SPI query should succeed")
+        .expect("query should return one row");
+
+        assert_eq!(actual, expected);
     }
 
     #[pg_test]
@@ -5019,6 +5054,106 @@ mod tests {
             Some("source_raw"),
             "the index-aware runtime settings helper should surface the persisted rerank source column name",
         );
+    }
+
+    #[pg_test]
+    fn test_pq_fastscan_indexed_ecvector_ignores_tqvector_sibling() {
+        let _lock = env_var_test_lock();
+
+        let table_name = "tqhnsw_pq_fastscan_indexed_ecvector_tqvector_sibling";
+        let index_name = "tqhnsw_pq_fastscan_indexed_ecvector_tqvector_sibling_idx";
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                artifact tqvector,
+                embedding ecvector
+            )"
+        ))
+        .expect("table creation should succeed");
+
+        for id in 1..=16 {
+            let artifact =
+                format_recall_vector_sql_literal(&turboquant_binary_runtime_rerank_source(id));
+            let embedding = format_recall_vector_sql_literal(&runtime_fixture_embedding(id));
+            Spi::run(&format!(
+                "INSERT INTO {table_name} VALUES \
+                 ({id}, encode_to_tqvector({artifact}, 4, 42), encode_to_ecvector({embedding}, 4, 42))"
+            ))
+            .expect("insert should succeed");
+        }
+
+        Spi::run(&format!(
+            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+             (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'pq_fastscan')"
+        ))
+        .expect("index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode").as_deref(),
+            Some("heap_f32"),
+            "indexed ecvector pq_fastscan indexes should still default to heap_f32 rerank even when the table carries a tqvector sibling",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_mode_resolution")
+                .as_deref(),
+            Some("default_heap_f32_with_indexed_column"),
+            "the runtime settings helper should explain that heap_f32 came from the indexed ecvector column, not the tqvector sibling",
+        );
+        assert_eq!(
+            fetch_pq_fastscan_index_runtime_text(index_oid, "pq_fastscan_rerank_source_column")
+                .as_deref(),
+            None,
+            "the indexed ecvector default should not resolve a sibling tqvector column as the rerank source",
+        );
+
+        let query = pq_fastscan_runtime_query();
+        let observed =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) };
+        let emitted_scores =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) }
+                .into_iter()
+                .collect::<HashMap<_, _>>();
+        let exact_scores = (1..=16)
+            .map(|id| {
+                let heap_tid = heap_tid_for_row(table_name, id);
+                (
+                    (heap_tid.block_number, heap_tid.offset_number),
+                    -dot_product(&query, &runtime_fixture_embedding(id)),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert!(
+            !observed.is_empty(),
+            "indexed ecvector pq_fastscan output should still emit ordered results when a sibling tqvector column is present",
+        );
+        for (heap_tid, _approx_score, comparison_score, _approx_rank) in observed {
+            let comparison_score = comparison_score.expect(
+                "indexed ecvector pq_fastscan scans should attach exact comparison scores by default",
+            );
+            let expected = exact_scores
+                .get(&heap_tid)
+                .copied()
+                .expect("every emitted heap tid should map back to an exact indexed-ecvector score");
+            assert_f32_close(
+                comparison_score,
+                expected,
+                "the default indexed-ecvector heap rerank should score against the indexed ecvector column, not a sibling tqvector artifact",
+            );
+            assert_f32_close(
+                emitted_scores
+                    .get(&heap_tid)
+                    .copied()
+                    .expect("emitted score should be present for every observed heap tid"),
+                expected,
+                "the order-by score should match the indexed ecvector exact comparison score",
+            );
+        }
     }
 
     #[pg_test]
@@ -20788,7 +20923,7 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "canonical quantizer defaults")]
+    #[should_panic(expected = "canonical default")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(
             "CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)",
@@ -20822,7 +20957,7 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "too short")]
     fn test_binary_recv_rejects_truncated_bytes() {
-        let _ = unsafe { recv_via_string_info(&[0_u8; 14]) };
+        let _ = unsafe { recv_via_string_info(&[0_u8; 5]) };
     }
 
     unsafe fn recv_via_string_info(bytes: &[u8]) -> Vec<u8> {
