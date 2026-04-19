@@ -104,5 +104,5 @@ pub(crate) use self::scan_debug::{
     debug_rescan_with_multiple_orderbys, debug_rescan_with_unused_key_buffer,
     debug_top_level_oracle_k_seed_heap_tids, debug_top_level_oracle_k_seed_scan_heap_tids,
     debug_top_level_oracle_scan_heap_tids, debug_top_level_reachable_heap_tids,
-    debug_visited_seed_lifecycle,
+    debug_turboquant_scan_stage_profile, debug_visited_seed_lifecycle,
 };

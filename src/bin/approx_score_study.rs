@@ -18,6 +18,8 @@ const BITS: u8 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StudyMode {
+    FullLut,
+    TiledLut,
     Int8Approx,
     BinarySign,
     GroupedMeanF32,
@@ -29,6 +31,8 @@ enum StudyMode {
 impl StudyMode {
     fn parse(value: &str) -> Self {
         match value {
+            "full-lut" => Self::FullLut,
+            "tiled-lut" => Self::TiledLut,
             "int8-approx" => Self::Int8Approx,
             "binary-sign" => Self::BinarySign,
             "grouped-f32" => Self::GroupedMeanF32,
@@ -41,6 +45,8 @@ impl StudyMode {
 
     fn label(self) -> &'static str {
         match self {
+            Self::FullLut => "full_lut_no_qjl_4bit",
+            Self::TiledLut => "tiled_lut_no_qjl_4bit",
             Self::Int8Approx => "int8_approx_no_qjl_4bit",
             Self::BinarySign => "binary_sign_no_qjl_4bit",
             Self::GroupedMeanF32 => "grouped_mean_f32_no_qjl_4bit",
@@ -66,6 +72,7 @@ struct Config {
     group_size: usize,
     train_size: usize,
     kmeans_iters: usize,
+    tile_size: usize,
 }
 
 impl Default for Config {
@@ -84,6 +91,7 @@ impl Default for Config {
             group_size: 16,
             train_size: 4096,
             kmeans_iters: 15,
+            tile_size: 512,
         }
     }
 }
@@ -281,7 +289,26 @@ fn main() {
             config.group_size, config.train_size, config.kmeans_iters
         );
     }
+    if matches!(config.study_mode, StudyMode::TiledLut) {
+        println!("tile_size={}", config.tile_size);
+    }
     match config.study_mode {
+        StudyMode::FullLut => run_lut_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            capture_limits.as_slice(),
+            false,
+        ),
+        StudyMode::TiledLut => run_lut_study(
+            &config,
+            &quantizer,
+            &queries,
+            &codes,
+            capture_limits.as_slice(),
+            true,
+        ),
         StudyMode::Int8Approx => {
             run_int8_study(&config, &quantizer, &queries, &codes, &capture_limits)
         }
@@ -321,6 +348,84 @@ fn main() {
             GroupedScoreMode::U8,
         ),
     }
+}
+
+fn run_lut_study(
+    config: &Config,
+    quantizer: &ProdQuantizer,
+    queries: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    capture_limits: &[usize],
+    tiled: bool,
+) {
+    let mut aggregate = StudyAggregate::new(capture_limits.len());
+
+    for query in queries {
+        let exact_prepared = quantizer.prepare_ip_query(query);
+        let mut exact_scores = Vec::with_capacity(codes.len());
+        let mut approx_scores = Vec::with_capacity(codes.len());
+
+        if tiled {
+            let approx_prepared =
+                quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(query, config.tile_size);
+            for code in codes {
+                exact_scores.push(quantizer.score_ip_from_parts(&exact_prepared, 0.0, code));
+                approx_scores.push(
+                    quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(&approx_prepared, code),
+                );
+            }
+        } else {
+            let approx_prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(query);
+            for code in codes {
+                exact_scores.push(quantizer.score_ip_from_parts(&exact_prepared, 0.0, code));
+                approx_scores
+                    .push(quantizer.score_ip_from_parts_lut_no_qjl_4bit(&approx_prepared, code));
+            }
+        }
+
+        aggregate.record(&exact_scores, &approx_scores, config.top_k, capture_limits);
+    }
+
+    let exact_prepared = quantizer.prepare_ip_query(&queries[0]);
+    let exact_elapsed = time_scores(config.bench_iters, || {
+        let mut sum = 0.0_f32;
+        for code in codes {
+            sum += quantizer.score_ip_from_parts(&exact_prepared, 0.0, code);
+        }
+        black_box(sum);
+    });
+    let approx_elapsed = if tiled {
+        let approx_prepared =
+            quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&queries[0], config.tile_size);
+        time_scores(config.bench_iters, || {
+            let mut sum = 0.0_f32;
+            for code in codes {
+                sum += quantizer.score_ip_from_parts_tiled_lut_no_qjl_4bit(&approx_prepared, code);
+            }
+            black_box(sum);
+        })
+    } else {
+        let approx_prepared = quantizer.prepare_ip_query_lut_no_qjl_4bit(&queries[0]);
+        time_scores(config.bench_iters, || {
+            let mut sum = 0.0_f32;
+            for code in codes {
+                sum += quantizer.score_ip_from_parts_lut_no_qjl_4bit(&approx_prepared, code);
+            }
+            black_box(sum);
+        })
+    };
+
+    let score_count = (codes.len() * config.bench_iters) as f64;
+    let exact_ns_per_score = exact_elapsed.as_secs_f64() * 1e9 / score_count;
+    let approx_ns_per_score = approx_elapsed.as_secs_f64() * 1e9 / score_count;
+
+    aggregate.print(config.query_count, config.top_k, capture_limits);
+    println!(
+        "microbench exact_ns_per_score={:.1} approx_ns_per_score={:.1} speedup={:.2}x",
+        exact_ns_per_score,
+        approx_ns_per_score,
+        exact_ns_per_score / approx_ns_per_score.max(f64::EPSILON)
+    );
 }
 
 fn run_int8_study(
@@ -639,6 +744,7 @@ fn parse_args() -> Config {
             "--kmeans-iters" => {
                 config.kmeans_iters = parse_usize_arg("--kmeans-iters", args.next())
             }
+            "--tile-size" => config.tile_size = parse_usize_arg("--tile-size", args.next()),
             "--help" => {
                 print_help();
                 std::process::exit(0);
@@ -654,6 +760,7 @@ fn parse_args() -> Config {
     assert!(config.group_size > 0, "--group-size must be positive");
     assert!(config.train_size > 0, "--train-size must be positive");
     assert!(config.kmeans_iters > 0, "--kmeans-iters must be positive");
+    assert!(config.tile_size > 0, "--tile-size must be positive");
     assert_eq!(
         DIM % config.group_size,
         0,
@@ -676,7 +783,8 @@ fn print_help() {
     println!("  --seed <u64>        default: 42");
     println!("  --top-k <n>         default: 10");
     println!("  --bench-iters <n>   default: 8");
-    println!("  --study-mode <mode> default: int8-approx; one of: int8-approx, binary-sign, grouped-f32, grouped-u8, grouped-pq-f32, grouped-pq-u8");
+    println!("  --study-mode <mode> default: int8-approx; one of: full-lut, tiled-lut, int8-approx, binary-sign, grouped-f32, grouped-u8, grouped-pq-f32, grouped-pq-u8");
+    println!("  --tile-size <n>     default: 512; used by tiled-lut mode");
     println!("  --group-size <n>    default: 16; required for grouped study modes");
     println!("  --train-size <n>    default: 4096; grouped-pq training sample cap");
     println!("  --kmeans-iters <n>  default: 15; grouped-pq k-means iterations");
@@ -1193,6 +1301,11 @@ fn parse_vector_tsv_line(line: &str) -> Vec<f32> {
         .map(|(_, vector)| vector)
         .unwrap_or(line)
         .trim();
+    let vector_text = vector_text
+        .strip_prefix('[')
+        .unwrap_or(vector_text)
+        .strip_suffix(']')
+        .unwrap_or(vector_text);
     assert!(
         !vector_text.is_empty(),
         "vector TSV line must contain comma-separated floats"

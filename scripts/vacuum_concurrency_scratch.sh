@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/vacuum_concurrency_scratch.sh [--duration SECONDS]
+  scripts/vacuum_concurrency_scratch.sh [--duration SECONDS] [--socket-dir DIR] [--port PORT]
 
 Runs a scratch-cluster tqhnsw vacuum harness with concurrent INSERT, graph scan,
 and VACUUM workers against the same index.
@@ -20,11 +20,21 @@ EOF
 }
 
 duration=60
+socket_dir=""
+port=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --duration)
             duration="$2"
+            shift 2
+            ;;
+        --socket-dir)
+            socket_dir="$2"
+            shift 2
+            ;;
+        --port)
+            port="$2"
             shift 2
             ;;
         -h|--help)
@@ -47,16 +57,18 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 scratch_psql="${repo_root}/scripts/pg17_scratch_psql.sh"
-
-export PGHOST="${PGHOST:-/tmp/tqvector_pgrx_home}"
-export PGPORT="${PGPORT:-28817}"
-export PGDATABASE="${PGDATABASE:-postgres}"
-export TQV_PSQL_BIN="${TQV_PSQL_BIN:-${HOME}/.pgrx/17.9/pgrx-install/bin/psql}"
+scratch_psql_args=()
+if [[ -n "${socket_dir}" ]]; then
+    scratch_psql_args+=( --socket-dir "${socket_dir}" )
+fi
+if [[ -n "${port}" ]]; then
+    scratch_psql_args+=( --port "${port}" )
+fi
 
 run_sql() {
     local database="$1"
     local sql="$2"
-    "${scratch_psql}" --db "${database}" --sql "${sql}"
+    "${scratch_psql}" "${scratch_psql_args[@]}" --db "${database}" --sql "${sql}"
 }
 
 read_worker_iterations() {

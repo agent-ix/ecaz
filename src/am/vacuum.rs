@@ -9,6 +9,7 @@ type BulkDeleteCallback =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VacuumFormatAdapter {
     TurboQuant { code_len: usize },
+    TurboQuantHotCold(graph::TurboQuantHotColdLayout),
     PqFastScan(graph::PqFastScanLayout),
 }
 
@@ -33,9 +34,16 @@ impl VacuumHeapSourceScorer {
                 heap_relation,
                 source_column,
                 "build_source_column",
-                source::SourceTypePolicy::RealArrayOnly,
+                source::SourceTypePolicy::BuildSource,
             )
         };
+        unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
+    }
+
+    unsafe fn new_with_attribute(
+        heap_relation: pg_sys::Relation,
+        source_attribute: source::SourceAttribute,
+    ) -> Self {
         let slot = unsafe {
             source::allocate_heap_slot(
                 heap_relation,
@@ -132,17 +140,46 @@ impl VacuumSearchMetric {
         index_relation: pg_sys::Relation,
         heap_relation: pg_sys::Relation,
     ) -> Self {
+        if heap_relation.is_null() {
+            pgrx::error!("tqhnsw vacuum requires a heap relation for source-backed indexes");
+        }
+
         let index_options = unsafe { options::relation_options(index_relation) };
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
-                if heap_relation.is_null() {
-                    pgrx::error!(
-                        "tqhnsw vacuum requires a heap relation for build_source_column indexes"
-                    );
-                }
-                Self::Source(unsafe { VacuumHeapSourceScorer::new(heap_relation, source_column) })
+                let source_attribute = unsafe {
+                    source::resolve_source_attribute(
+                        heap_relation,
+                        source_column,
+                        "build_source_column",
+                        source::SourceTypePolicy::BuildSource,
+                    )
+                };
+                Self::Source(unsafe {
+                    VacuumHeapSourceScorer::new_with_attribute(heap_relation, source_attribute)
+                })
             }
-            None => Self::Code,
+            None => {
+                let indexed_attribute = unsafe {
+                    source::resolve_indexed_vector_attribute(
+                        heap_relation,
+                        index_relation,
+                        "indexed column",
+                    )
+                };
+                match indexed_attribute.kind {
+                    source::IndexedVectorKind::Ecvector => Self::Source(unsafe {
+                        VacuumHeapSourceScorer::new_with_attribute(
+                            heap_relation,
+                            source::SourceAttribute {
+                                attnum: indexed_attribute.attnum,
+                                kind: source::SourceDatumKind::Ecvector,
+                            },
+                        )
+                    }),
+                    source::IndexedVectorKind::Tqvector => Self::Code,
+                }
+            }
         }
     }
 
@@ -167,6 +204,9 @@ impl VacuumFormatAdapter {
     fn graph_storage(self) -> graph::GraphStorageDescriptor {
         match self {
             Self::TurboQuant { code_len } => graph::GraphStorageDescriptor::TurboQuant { code_len },
+            Self::TurboQuantHotCold(layout) => {
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout)
+            }
             Self::PqFastScan(layout) => graph::GraphStorageDescriptor::PqFastScan(layout),
         }
     }
@@ -216,6 +256,10 @@ enum ElementVacuumUpdate {
     TurboQuant {
         tid: page::ItemPointer,
         tuple: page::TqElementTuple,
+    },
+    TurboQuantHot {
+        tid: page::ItemPointer,
+        tuple: page::TqTurboHotTuple,
     },
     PqFastScanHot {
         tid: page::ItemPointer,
@@ -322,6 +366,9 @@ fn resolve_vacuum_format_adapter(
         graph::GraphStorageDescriptor::TurboQuant { code_len } => {
             Ok(VacuumFormatAdapter::TurboQuant { code_len })
         }
+        graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+            Ok(VacuumFormatAdapter::TurboQuantHotCold(layout))
+        }
         graph::GraphStorageDescriptor::PqFastScan(layout) => {
             Ok(VacuumFormatAdapter::PqFastScan(layout))
         }
@@ -416,6 +463,7 @@ unsafe fn run_bulkdelete_with_adapter(
 
     unsafe { format.repair_graph_connections(index_relation, heap_relation, &finalize_tids) };
     unsafe { format.finalize_fully_dead_elements(index_relation, &finalize_tids) };
+    unsafe { repair_metadata_entry_point_after_vacuum(index_relation, storage, &finalize_tids) };
 
     unsafe {
         (*stats).num_pages = block_count;
@@ -424,6 +472,38 @@ unsafe fn run_bulkdelete_with_adapter(
         (*stats).tuples_removed += removed_heap_tids as f64;
     }
     stats
+}
+
+unsafe fn repair_metadata_entry_point_after_vacuum(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    finalize_tids: &[page::ItemPointer],
+) {
+    if finalize_tids.is_empty() {
+        return;
+    }
+
+    let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
+    let replacement =
+        unsafe { shared::highest_level_live_entry_candidate(index_relation, storage) };
+
+    unsafe {
+        shared::with_locked_metadata_page(index_relation, |metadata| {
+            if metadata.entry_point != page::ItemPointer::INVALID
+                && !finalized.contains(&metadata.entry_point)
+            {
+                return;
+            }
+
+            if let Some(replacement) = replacement {
+                metadata.entry_point = replacement.tid;
+                metadata.max_level = replacement.level;
+            } else {
+                metadata.entry_point = page::ItemPointer::INVALID;
+                metadata.max_level = 0;
+            }
+        })
+    };
 }
 
 unsafe fn rewrite_page_pass1(
@@ -523,6 +603,37 @@ unsafe fn plan_page_pass1(
                     tuple: element,
                 });
             }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                    continue;
+                }
+                let mut element =
+                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!("tqhnsw failed to decode vacuum TurboQuant V3 tuple: {e}")
+                        });
+                let starting_len = element.heaptids.len();
+                element.heaptids.retain(|heap_tid| unsafe {
+                    !heap_tid_is_dead(*heap_tid, callback, callback_state)
+                });
+                let removed = starting_len.saturating_sub(element.heaptids.len());
+
+                if !element.deleted && !element.heaptids.is_empty() {
+                    plan.live_elements += 1;
+                }
+                if !element.deleted && element.heaptids.is_empty() {
+                    plan.finalize_tids.push(tid);
+                }
+                if removed == 0 {
+                    continue;
+                }
+
+                plan.removed_heap_tids += removed;
+                plan.updates.push(ElementVacuumUpdate::TurboQuantHot {
+                    tid,
+                    tuple: element,
+                });
+            }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                     continue;
@@ -572,6 +683,7 @@ unsafe fn apply_page_pass1_updates(
     for update in updates {
         let tid = match update {
             ElementVacuumUpdate::TurboQuant { tid, .. }
+            | ElementVacuumUpdate::TurboQuantHot { tid, .. }
             | ElementVacuumUpdate::PqFastScanHot { tid, .. } => *tid,
         };
         let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
@@ -593,6 +705,11 @@ unsafe fn apply_page_pass1_updates(
             ElementVacuumUpdate::TurboQuant { tuple, .. } => tuple.encode().unwrap_or_else(|e| {
                 pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}")
             }),
+            ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
+                tuple.encode().unwrap_or_else(|e| {
+                    pgrx::error!("tqhnsw failed to encode vacuum TurboQuant V3 tuple: {e}")
+                })
+            }
             ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
                 tuple.encode().unwrap_or_else(|e| {
                     pgrx::error!("tqhnsw failed to encode vacuum grouped hot tuple: {e}")
@@ -731,6 +848,23 @@ unsafe fn collect_repair_requests_on_page(
                 let element =
                     page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
                         pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
+                    });
+                (
+                    element.level,
+                    element.deleted,
+                    element.heaptids.is_empty(),
+                    element.neighbortid,
+                )
+            }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "tqhnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
+                        )
                     });
                 (
                     element.level,
@@ -1237,6 +1371,33 @@ unsafe fn collect_linear_repair_candidates_on_page(
                     code: element.code,
                 }
             }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
+                    continue;
+                }
+                let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "tqhnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
+                        )
+                    });
+                let rerank = unsafe {
+                    graph::load_rerank_payload(
+                        index_relation,
+                        element.reranktid,
+                        layout.rerank_code_len,
+                    )
+                };
+                graph::GraphElement {
+                    tid,
+                    level: element.level,
+                    deleted: element.deleted,
+                    heaptids: element.heaptids,
+                    gamma: rerank.gamma,
+                    neighbortid: element.neighbortid,
+                    code: rerank.code,
+                }
+            }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
                     continue;
@@ -1720,6 +1881,24 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                     tuple: element,
                 });
             }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                let mut element =
+                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!(
+                                "tqhnsw failed to decode finalize TurboQuant V3 tuple: {e}"
+                            )
+                        });
+                if element.deleted || !element.heaptids.is_empty() {
+                    continue;
+                }
+
+                element.deleted = true;
+                updates.push(ElementVacuumUpdate::TurboQuantHot {
+                    tid: *tid,
+                    tuple: element,
+                });
+            }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 let mut element = page::TqGroupedHotTuple::decode(
                     tuple_bytes,
@@ -1884,6 +2063,9 @@ mod tests {
                 graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                     VacuumFormatAdapter::TurboQuant { code_len }
                 }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    VacuumFormatAdapter::TurboQuantHotCold(layout)
+                }
                 graph::GraphStorageDescriptor::PqFastScan(layout) => {
                     VacuumFormatAdapter::PqFastScan(layout)
                 }
@@ -1902,6 +2084,9 @@ mod tests {
             match graph::GraphStorageDescriptor::from_metadata(&pq_fastscan_metadata()).unwrap() {
                 graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                     VacuumFormatAdapter::TurboQuant { code_len }
+                }
+                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                    VacuumFormatAdapter::TurboQuantHotCold(layout)
                 }
                 graph::GraphStorageDescriptor::PqFastScan(layout) => {
                     VacuumFormatAdapter::PqFastScan(layout)

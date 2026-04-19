@@ -1,4 +1,7 @@
-use std::{ffi::c_int, ptr};
+use std::{
+    ffi::{c_int, CStr},
+    ptr,
+};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgTupleDesc};
 
@@ -6,14 +9,36 @@ use super::page;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SourceTypePolicy {
-    RealArrayOnly,
-    RealArrayOrBytea,
+    BuildSource,
+    RerankSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub(super) enum SourceDatumKind {
+    #[default]
+    Unknown = 0,
+    RealArray = 1,
+    Bytea = 2,
+    Ecvector = 3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum IndexedVectorKind {
+    Ecvector,
+    Tqvector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct SourceAttribute {
     pub(super) attnum: i32,
-    pub(super) type_oid: pg_sys::Oid,
+    pub(super) kind: SourceDatumKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct IndexedVectorAttribute {
+    pub(super) attnum: i32,
+    pub(super) kind: IndexedVectorKind,
 }
 
 pub(super) fn average_source_representatives(
@@ -37,15 +62,15 @@ pub(super) fn average_source_representatives(
 pub(super) unsafe fn resolve_source_attnum(
     heap_relation: pg_sys::Relation,
     source_column: &str,
+    source_label: &str,
 ) -> i32 {
-    let source_column = std::ffi::CString::new(source_column).unwrap_or_else(|_| {
-        pgrx::error!("tqhnsw build_source_column contains an invalid NUL byte")
-    });
+    let source_column = std::ffi::CString::new(source_column)
+        .unwrap_or_else(|_| pgrx::error!("tqhnsw {source_label} contains an invalid NUL byte"));
     let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
     let attnum = i32::from(attnum);
     if attnum <= 0 {
         pgrx::error!(
-            "tqhnsw build_source_column \"{}\" does not name a user column on the heap relation",
+            "tqhnsw {source_label} \"{}\" does not name a user column on the heap relation",
             source_column.to_string_lossy()
         );
     }
@@ -58,37 +83,184 @@ pub(super) unsafe fn resolve_source_attribute(
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column) };
+    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
+    unsafe { resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy) }
+}
+
+pub(super) unsafe fn resolve_source_attribute_by_attnum(
+    heap_relation: pg_sys::Relation,
+    source_attnum: i32,
+    source_label: &str,
+    type_policy: SourceTypePolicy,
+) -> SourceAttribute {
     let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
     let att = tuple_desc
         .get(source_attnum as usize - 1)
         .expect("resolved source attribute should exist");
     if att.attisdropped {
-        pgrx::error!("tqhnsw {source_label} \"{source_column}\" references a dropped column");
+        pgrx::error!("tqhnsw {source_label} references a dropped column");
     }
 
-    match type_policy {
-        SourceTypePolicy::RealArrayOnly => {
-            if att.atttypid != pg_sys::FLOAT4ARRAYOID {
-                pgrx::error!(
-                    "tqhnsw {source_label} \"{source_column}\" must be real[], got type oid {}",
-                    u32::from(att.atttypid)
-                );
-            }
+    let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();
+    let valid = match type_policy {
+        SourceTypePolicy::BuildSource => {
+            matches!(kind, SourceDatumKind::RealArray | SourceDatumKind::Ecvector)
         }
-        SourceTypePolicy::RealArrayOrBytea => {
-            if att.atttypid != pg_sys::FLOAT4ARRAYOID && att.atttypid != pg_sys::BYTEAOID {
-                pgrx::error!(
-                    "tqhnsw {source_label} \"{source_column}\" must be real[] or bytea, got type oid {}",
-                    u32::from(att.atttypid)
-                );
-            }
-        }
+        SourceTypePolicy::RerankSource => matches!(
+            kind,
+            SourceDatumKind::RealArray | SourceDatumKind::Bytea | SourceDatumKind::Ecvector
+        ),
+    };
+    if !valid {
+        let expected = match type_policy {
+            SourceTypePolicy::BuildSource => "real[] or ecvector",
+            SourceTypePolicy::RerankSource => "real[], bytea, or ecvector",
+        };
+        pgrx::error!(
+            "tqhnsw {source_label} at heap attnum {} must be {expected}, got type oid {}",
+            source_attnum,
+            u32::from(att.atttypid),
+        );
     }
 
     SourceAttribute {
         attnum: source_attnum,
-        type_oid: att.atttypid,
+        kind,
+    }
+}
+
+pub(super) unsafe fn resolve_single_base_heap_index_attnum(
+    index_info: *mut pg_sys::IndexInfo,
+    label: &str,
+) -> i32 {
+    if index_info.is_null() {
+        pgrx::error!("tqhnsw {label} received a null IndexInfo");
+    }
+    let index_info = unsafe { &*index_info };
+    if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
+        pgrx::error!("tqhnsw {label} currently supports single-column indexes only");
+    }
+    if !index_info.ii_Expressions.is_null() {
+        pgrx::error!("tqhnsw {label} does not support expression indexes yet");
+    }
+    if !index_info.ii_Predicate.is_null() {
+        pgrx::error!("tqhnsw {label} does not support partial indexes yet");
+    }
+
+    let attnum = i32::from(index_info.ii_IndexAttrNumbers[0]);
+    if attnum <= 0 {
+        pgrx::error!("tqhnsw {label} requires a base heap column index key");
+    }
+    attnum
+}
+
+pub(super) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    label: &str,
+) -> SourceAttribute {
+    let indexed = unsafe { resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label) };
+    if indexed.kind != IndexedVectorKind::Ecvector {
+        pgrx::error!("tqhnsw {label} must be ecvector");
+    }
+    SourceAttribute {
+        attnum: indexed.attnum,
+        kind: SourceDatumKind::Ecvector,
+    }
+}
+
+pub(super) unsafe fn resolve_indexed_ecvector_attribute(
+    heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    label: &str,
+) -> SourceAttribute {
+    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
+    if index_info.is_null() {
+        pgrx::error!("tqhnsw {label} could not build index metadata");
+    }
+    let attribute = unsafe {
+        resolve_indexed_ecvector_attribute_from_index_info(heap_relation, index_info, label)
+    };
+    unsafe { pg_sys::pfree(index_info.cast()) };
+    attribute
+}
+
+pub(super) unsafe fn resolve_indexed_vector_attribute_from_index_info(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+    label: &str,
+) -> IndexedVectorAttribute {
+    let indexed_attnum = unsafe { resolve_single_base_heap_index_attnum(index_info, label) };
+    let tuple_desc = unsafe { PgTupleDesc::from_pg_copy((*heap_relation).rd_att) };
+    let att = tuple_desc
+        .get(indexed_attnum as usize - 1)
+        .expect("resolved indexed attribute should exist");
+    if att.attisdropped {
+        pgrx::error!("tqhnsw {label} references a dropped column");
+    }
+
+    let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
+        .unwrap_or_else(|| pgrx::error!("tqhnsw {label} must be ecvector or tqvector"));
+    IndexedVectorAttribute {
+        attnum: indexed_attnum,
+        kind,
+    }
+}
+
+pub(super) unsafe fn resolve_indexed_vector_attribute(
+    heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    label: &str,
+) -> IndexedVectorAttribute {
+    let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
+    if index_info.is_null() {
+        pgrx::error!("tqhnsw {label} could not build index metadata");
+    }
+    let attribute =
+        unsafe { resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label) };
+    unsafe { pg_sys::pfree(index_info.cast()) };
+    attribute
+}
+
+unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVectorKind> {
+    let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+    let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+    if formatted.is_null() {
+        return None;
+    }
+    let name = unsafe { CStr::from_ptr(formatted) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { pg_sys::pfree(formatted.cast()) };
+    let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+    match type_name {
+        "ecvector" => Some(IndexedVectorKind::Ecvector),
+        "tqvector" => Some(IndexedVectorKind::Tqvector),
+        _ => None,
+    }
+}
+
+unsafe fn resolve_source_datum_kind(type_oid: pg_sys::Oid) -> Option<SourceDatumKind> {
+    match type_oid {
+        pg_sys::FLOAT4ARRAYOID => Some(SourceDatumKind::RealArray),
+        pg_sys::BYTEAOID => Some(SourceDatumKind::Bytea),
+        _ => {
+            let base_type_oid = unsafe { pg_sys::getBaseType(type_oid) };
+            let formatted = unsafe { pg_sys::format_type_be(base_type_oid) };
+            if formatted.is_null() {
+                return None;
+            }
+            let name = unsafe { CStr::from_ptr(formatted) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe { pg_sys::pfree(formatted.cast()) };
+            let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
+            if type_name == "ecvector" {
+                Some(SourceDatumKind::Ecvector)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -215,14 +387,14 @@ impl Drop for FlatFloat4ArrayRef {
     }
 }
 
-pub(super) struct FlatFloat4ByteaRef {
+pub(super) struct FlatFloat4VarlenaRef {
     varlena_ptr: *mut pg_sys::varlena,
     owned: bool,
     data_ptr: *const f32,
     len: usize,
 }
 
-impl FlatFloat4ByteaRef {
+impl FlatFloat4VarlenaRef {
     pub(super) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
             pgrx::error!("tqhnsw does not support NULL {label}");
@@ -258,7 +430,7 @@ impl FlatFloat4ByteaRef {
     }
 }
 
-impl Drop for FlatFloat4ByteaRef {
+impl Drop for FlatFloat4VarlenaRef {
     fn drop(&mut self) {
         if self.owned {
             unsafe { pg_sys::pfree(self.varlena_ptr.cast()) };
@@ -268,33 +440,30 @@ impl Drop for FlatFloat4ByteaRef {
 
 pub(super) enum FlatFloat4SourceRef {
     Array(FlatFloat4ArrayRef),
-    Bytea(FlatFloat4ByteaRef),
+    Varlena(FlatFloat4VarlenaRef),
 }
 
 impl FlatFloat4SourceRef {
     pub(super) unsafe fn from_datum(
         datum: pg_sys::Datum,
-        type_oid: pg_sys::Oid,
+        kind: SourceDatumKind,
         label: &str,
     ) -> Self {
-        match type_oid {
-            pg_sys::FLOAT4ARRAYOID => {
+        match kind {
+            SourceDatumKind::RealArray => {
                 Self::Array(unsafe { FlatFloat4ArrayRef::from_datum(datum, label) })
             }
-            pg_sys::BYTEAOID => {
-                Self::Bytea(unsafe { FlatFloat4ByteaRef::from_datum(datum, label) })
+            SourceDatumKind::Bytea | SourceDatumKind::Ecvector => {
+                Self::Varlena(unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) })
             }
-            _ => pgrx::error!(
-                "tqhnsw {label} must be real[] or bytea, got type oid {}",
-                u32::from(type_oid)
-            ),
+            _ => pgrx::error!("tqhnsw {label} must be real[], bytea, or ecvector"),
         }
     }
 
     pub(super) fn as_slice(&self) -> &[f32] {
         match self {
             Self::Array(array) => array.as_slice(),
-            Self::Bytea(bytea) => bytea.as_slice(),
+            Self::Varlena(varlena) => varlena.as_slice(),
         }
     }
 }
@@ -309,7 +478,7 @@ pub(super) unsafe fn load_source_from_heap_row(
 ) -> FlatFloat4SourceRef {
     unsafe { fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot, label) };
     let source_datum = unsafe { required_slot_datum(slot, source_attribute.attnum, label) };
-    unsafe { FlatFloat4SourceRef::from_datum(source_datum, source_attribute.type_oid, label) }
+    unsafe { FlatFloat4SourceRef::from_datum(source_datum, source_attribute.kind, label) }
 }
 
 pub(super) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {

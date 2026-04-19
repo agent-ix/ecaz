@@ -80,6 +80,37 @@ fn debug_item_pointer_coords(tid: page::ItemPointer) -> HeapTidCoords {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_graph_storage(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+) -> graph::GraphStorageDescriptor {
+    graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
+        .unwrap_or_else(|e| pgrx::error!("tqhnsw debug failed to resolve graph storage: {e}"))
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+fn debug_graph_tuple_tag(storage: graph::GraphStorageDescriptor) -> u8 {
+    match storage {
+        graph::GraphStorageDescriptor::TurboQuant { .. } => page::TQ_ELEMENT_TAG,
+        graph::GraphStorageDescriptor::TurboQuantHotCold(_) => page::TQ_TURBO_HOT_TAG,
+        graph::GraphStorageDescriptor::PqFastScan(_) => page::TQ_GROUPED_HOT_TAG,
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_load_neighbor_tids_for_layer(
+    index_relation: pg_sys::Relation,
+    storage: graph::GraphStorageDescriptor,
+    element_tid: page::ItemPointer,
+    m: usize,
+    layer: u8,
+) -> Vec<page::ItemPointer> {
+    let (element, neighbors) =
+        unsafe { graph::load_exact_graph_adjacency(index_relation, element_tid, storage) };
+    graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, m, layer)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 fn debug_runtime_ordered_head(opaque: &mut TqScanOpaque) -> DebugCandidateHead {
     let current = active_result_state_ref(opaque).current();
     if current.has_element() {
@@ -334,6 +365,22 @@ type DebugGroupedRerankProfile = (
     i64,
     i64,
     i64,
+);
+
+#[cfg(any(test, feature = "pg_test"))]
+type DebugTurboQuantScanStageProfile = (
+    i64,
+    i64,
+    i32,
+    i64,
+    i32,
+    i32,
+    i64,
+    i32,
+    i64,
+    String,
+    bool,
+    bool,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1123,14 +1170,80 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+) -> DebugTurboQuantScanStageProfile {
+    let scan_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+    let scan = scan_state.scan;
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
+    if !matches!(
+        opaque.scan_graph_storage,
+        graph::GraphStorageDescriptor::TurboQuant { .. }
+            | graph::GraphStorageDescriptor::TurboQuantHotCold(_)
+    ) {
+        unsafe { debug_end_heap_backed_scan(scan_state) };
+        pgrx::error!("debug turboquant scan stage profile requires a turboquant index");
+    }
+    if opaque.cached_quantizer.is_null() {
+        unsafe { debug_end_heap_backed_scan(scan_state) };
+        pgrx::error!("debug turboquant scan stage profile requires a prepared quantizer");
+    }
+
+    let debug_profile = opaque.debug_profile;
+    let rerank_score_calls = debug_profile
+        .grouped_rerank_quantized_score_calls
+        .saturating_add(debug_profile.grouped_rerank_heap_score_calls);
+    let rerank_score_elapsed_us = debug_profile
+        .grouped_rerank_quantized_score_elapsed_us
+        .saturating_add(debug_profile.grouped_rerank_heap_score_elapsed_us);
+    let traversal_residual_elapsed_us = debug_profile
+        .amrescan_total_elapsed_us
+        .saturating_sub(debug_profile.binary_prefilter_score_elapsed_us)
+        .saturating_sub(debug_profile.candidate_score_elapsed_us)
+        .saturating_sub(rerank_score_elapsed_us);
+    let exact_score_mode = turboquant_exact_score_mode_name(opaque).to_owned();
+    let exact_score_uses_lut = turboquant_exact_score_uses_lut(opaque);
+    let exact_score_uses_qjl = turboquant_exact_score_uses_qjl(opaque);
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+
+    (
+        i64::try_from(debug_profile.amrescan_total_elapsed_us).expect("timing should fit in i64"),
+        i64::try_from(traversal_residual_elapsed_us).expect("timing should fit in i64"),
+        i32::try_from(debug_profile.binary_prefilter_score_calls)
+            .expect("counter should fit in i32"),
+        i64::try_from(debug_profile.binary_prefilter_score_elapsed_us)
+            .expect("timing should fit in i64"),
+        i32::try_from(debug_profile.binary_prefilter_survivor_candidates)
+            .expect("counter should fit in i32"),
+        i32::try_from(debug_profile.candidate_score_calls).expect("counter should fit in i32"),
+        i64::try_from(debug_profile.candidate_score_elapsed_us).expect("timing should fit in i64"),
+        i32::try_from(rerank_score_calls).expect("counter should fit in i32"),
+        i64::try_from(rerank_score_elapsed_us).expect("timing should fit in i64"),
+        exact_score_mode,
+        exact_score_uses_lut,
+        exact_score_uses_qjl,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_collect_element_tids_at_level(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     target_level: u8,
 ) -> Vec<page::ItemPointer> {
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
@@ -1162,13 +1275,20 @@ unsafe fn debug_collect_element_tids_at_level(
 
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+            if tuple_bytes.first().copied() != Some(element_tag) {
                 continue;
             }
 
-            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw debug failed to decode top-level element tuple: {e}")
-            });
+            let element = unsafe {
+                graph::load_exact_graph_element(
+                    index_relation,
+                    page::ItemPointer {
+                        block_number,
+                        offset_number,
+                    },
+                    storage,
+                )
+            };
             if element.deleted || element.heaptids.is_empty() || element.level != target_level {
                 continue;
             }
@@ -1188,12 +1308,13 @@ unsafe fn debug_collect_element_tids_at_level(
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_collect_element_tids_at_or_above_level(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
     min_level: u8,
 ) -> Vec<page::ItemPointer> {
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    let element_tag = debug_graph_tuple_tag(storage);
     let mut tids = Vec::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
@@ -1225,13 +1346,20 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+            if tuple_bytes.first().copied() != Some(element_tag) {
                 continue;
             }
 
-            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw debug failed to decode layer-oracle element tuple: {e}")
-            });
+            let element = unsafe {
+                graph::load_exact_graph_element(
+                    index_relation,
+                    page::ItemPointer {
+                        block_number,
+                        offset_number,
+                    },
+                    storage,
+                )
+            };
             if element.deleted || element.heaptids.is_empty() || element.level < min_level {
                 continue;
             }
@@ -1251,11 +1379,12 @@ unsafe fn debug_collect_element_tids_at_or_above_level(
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_collect_element_tid_by_heap_tid(
     index_relation: pg_sys::Relation,
-    code_len: usize,
+    storage: graph::GraphStorageDescriptor,
 ) -> std::collections::HashMap<HeapTidCoords, page::ItemPointer> {
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    let element_tag = debug_graph_tuple_tag(storage);
     let mut map = std::collections::HashMap::new();
 
     for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
@@ -1287,13 +1416,20 @@ unsafe fn debug_collect_element_tid_by_heap_tid(
 
             let tuple_bytes =
                 unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
+            if tuple_bytes.first().copied() != Some(element_tag) {
                 continue;
             }
 
-            let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw debug failed to decode element tuple while mapping seeds: {e}")
-            });
+            let element = unsafe {
+                graph::load_exact_graph_element(
+                    index_relation,
+                    page::ItemPointer {
+                        block_number,
+                        offset_number,
+                    },
+                    storage,
+                )
+            };
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -1332,23 +1468,24 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
         return Vec::new();
     }
 
-    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
-    let mut heap_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
-    }
-    .into_iter()
-    .filter_map(|element_tid| {
-        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
-        if element.deleted {
-            return None;
-        }
-        element
-            .heaptids
-            .first()
-            .copied()
-            .map(debug_item_pointer_coords)
-    })
-    .collect::<Vec<_>>();
+    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
+    let mut heap_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }
+            .into_iter()
+            .filter_map(|element_tid| {
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, element_tid, storage)
+                };
+                if element.deleted {
+                    return None;
+                }
+                element
+                    .heaptids
+                    .first()
+                    .copied()
+                    .map(debug_item_pointer_coords)
+            })
+            .collect::<Vec<_>>();
     heap_tids.sort_unstable();
     heap_tids.dedup();
 
@@ -1368,7 +1505,7 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
         return Vec::new();
     }
 
-    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -1379,7 +1516,8 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
             continue;
         }
 
-        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
+        let element =
+            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
         if element.deleted {
             continue;
         }
@@ -1389,10 +1527,10 @@ pub(crate) unsafe fn debug_top_level_reachable_heap_tids(
         }
 
         for neighbor_tid in unsafe {
-            graph::load_neighbor_tids_for_layer(
+            debug_load_neighbor_tids_for_layer(
                 index_relation,
+                storage,
                 element_tid,
-                code_len,
                 m,
                 metadata.max_level,
             )
@@ -1421,7 +1559,7 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
         return Vec::new();
     }
 
-    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let m = usize::from(metadata.m);
     let mut queue = std::collections::VecDeque::from([metadata.entry_point]);
     let mut visited = std::collections::HashSet::new();
@@ -1432,15 +1570,16 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
             continue;
         }
 
-        let element = unsafe { graph::load_graph_element(index_relation, element_tid, code_len) };
+        let element =
+            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
         if element.deleted || element.heaptids.is_empty() {
             continue;
         }
         reachable.push(element_tid);
 
-        for neighbor_tid in
-            unsafe { graph::load_layer0_neighbor_tids(index_relation, element_tid, code_len, m) }
-        {
+        for neighbor_tid in unsafe {
+            debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
+        } {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -1481,17 +1620,17 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let code_len = opaque.scan_code_len;
+    let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let top_level_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
-    };
+    let top_level_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut heap_tids = top_level_tids
         .into_iter()
         .filter_map(|seed_tid| {
-            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            let element =
+                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 return None;
             }
@@ -1543,17 +1682,17 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let code_len = opaque.scan_code_len;
+    let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let top_level_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, code_len, metadata.max_level)
-    };
+    let top_level_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut seeds = top_level_tids
         .into_iter()
         .filter_map(|seed_tid| {
-            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            let element =
+                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 return None;
             }
@@ -1570,9 +1709,9 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         Vec::new()
     } else {
         let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates(
+            graph::search_layer0_result_candidates_with_storage(
                 index_relation,
-                code_len,
+                storage,
                 usize::from(opaque.scan_m),
                 ef_search.max(1),
                 seeds,
@@ -1594,7 +1733,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
             }
 
             let element =
-                unsafe { graph::load_graph_element(index_relation, candidate.node, code_len) };
+                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -1639,16 +1778,17 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let code_len = opaque.scan_code_len;
+    let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
     let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer) };
+        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
         .filter_map(|seed_tid| {
-            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            let element =
+                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 return None;
             }
@@ -1667,9 +1807,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         let mut carrydown_seeds = seeds;
         for current_layer in (1..=layer).rev() {
             carrydown_seeds = unsafe {
-                graph::search_layer_result_candidates(
+                graph::search_layer_result_candidates_with_storage(
                     index_relation,
-                    code_len,
+                    storage,
                     usize::from(opaque.scan_m),
                     current_layer,
                     ef_search.max(1),
@@ -1690,9 +1830,9 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         }
 
         let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates(
+            graph::search_layer0_result_candidates_with_storage(
                 index_relation,
-                code_len,
+                storage,
                 usize::from(opaque.scan_m),
                 ef_search.max(1),
                 carrydown_seeds,
@@ -1714,7 +1854,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
             }
 
             let element =
-                unsafe { graph::load_graph_element(index_relation, candidate.node, code_len) };
+                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -1758,16 +1898,17 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let code_len = opaque.scan_code_len;
+    let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
     let layer_tids =
-        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, code_len, layer) };
+        unsafe { debug_collect_element_tids_at_or_above_level(index_relation, storage, layer) };
 
     let mut seeds = layer_tids
         .into_iter()
         .filter_map(|seed_tid| {
-            let element = unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+            let element =
+                unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 return None;
             }
@@ -1788,17 +1929,18 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         }
 
         let seed_element =
-            unsafe { graph::load_graph_element(index_relation, seed.node, code_len) };
+            unsafe { graph::load_exact_graph_element(index_relation, seed.node, storage) };
         if !seed_element.deleted {
             scored_elements.push((seed.score, seed_element.heaptids.clone()));
         }
 
         for neighbor_tid in unsafe {
-            graph::load_layer0_neighbor_tids(
+            debug_load_neighbor_tids_for_layer(
                 index_relation,
+                storage,
                 seed.node,
-                code_len,
                 usize::from(opaque.scan_m),
+                0,
             )
         } {
             if !visited_elements.insert(neighbor_tid) {
@@ -1806,7 +1948,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
             }
 
             let neighbor =
-                unsafe { graph::load_graph_element(index_relation, neighbor_tid, code_len) };
+                unsafe { graph::load_exact_graph_element(index_relation, neighbor_tid, storage) };
             if neighbor.deleted || neighbor.heaptids.is_empty() {
                 continue;
             }
@@ -1861,11 +2003,11 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
     unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
-    let code_len = opaque.scan_code_len;
+    let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
     let element_by_heap_tid =
-        unsafe { debug_collect_element_tid_by_heap_tid(index_relation, code_len) };
+        unsafe { debug_collect_element_tid_by_heap_tid(index_relation, storage) };
     let seed_element_tids = seed_heap_tids
         .into_iter()
         .filter_map(|heap_tid| element_by_heap_tid.get(&heap_tid).copied())
@@ -1878,7 +2020,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
             .into_iter()
             .filter_map(|seed_tid| {
                 let element =
-                    unsafe { graph::load_graph_element(index_relation, seed_tid, code_len) };
+                    unsafe { graph::load_exact_graph_element(index_relation, seed_tid, storage) };
                 if element.deleted || element.heaptids.is_empty() {
                     return None;
                 }
@@ -1889,9 +2031,9 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
             })
             .collect::<Vec<_>>();
         let ordered_candidates = unsafe {
-            graph::search_layer0_result_candidates(
+            graph::search_layer0_result_candidates_with_storage(
                 index_relation,
-                code_len,
+                storage,
                 usize::from(opaque.scan_m),
                 ef_search.max(1),
                 seeds,
@@ -1913,7 +2055,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
             }
 
             let element =
-                unsafe { graph::load_graph_element(index_relation, candidate.node, code_len) };
+                unsafe { graph::load_exact_graph_element(index_relation, candidate.node, storage) };
             if element.deleted || element.heaptids.is_empty() {
                 continue;
             }
@@ -3007,7 +3149,11 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let consumed_neighbors = consumed
         .map(|candidate| {
             let (_, neighbors) = unsafe {
-                graph::load_graph_adjacency(index_relation, candidate.node, opaque.scan_code_len)
+                graph::load_exact_graph_adjacency(
+                    index_relation,
+                    candidate.node,
+                    opaque.scan_graph_storage,
+                )
             };
             neighbors
                 .tids
@@ -3255,7 +3401,11 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         prefetched_tid
     };
     let (_element, neighbors) = unsafe {
-        graph::load_graph_adjacency(index_relation, current_result_tid, opaque.scan_code_len)
+        graph::load_exact_graph_adjacency(
+            index_relation,
+            current_result_tid,
+            opaque.scan_graph_storage,
+        )
     };
 
     unsafe { tqhnsw_amendscan(scan) };
@@ -3433,9 +3583,9 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
         return Vec::new();
     }
 
-    let code_len = crate::code_len(metadata.dimensions as usize, metadata.bits);
+    let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
     let (_element, neighbors) =
-        unsafe { graph::load_graph_adjacency(index_relation, metadata.entry_point, code_len) };
+        unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     neighbors
         .tids

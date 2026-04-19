@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/run_real_corpus_recall_scratch.sh gate \
+  scripts/run_real_corpus_recall_scratch.sh [--db DB] [--socket-dir DIR] [--port PORT] gate \
       --prefix tqhnsw_real_50k \
       --queries-table tqhnsw_real_50k_queries_50 \
       [--storage-format turboquant|pq_fastscan] \
@@ -12,7 +12,7 @@ Usage:
       [--detach] \
       [--output-dir /path/to/output]
 
-  scripts/run_real_corpus_recall_scratch.sh summary \
+  scripts/run_real_corpus_recall_scratch.sh [--db DB] [--socket-dir DIR] [--port PORT] summary \
       --m 8 \
       --ef-search 128 \
       --queries-table tqhnsw_real_50k_queries_50 \
@@ -39,6 +39,9 @@ EOF
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 output_dir="${TQV_REAL_RECALL_OUTPUT_DIR:-${repo_root}/tmp/real_corpus_runs}"
+socket_dir=""
+port=""
+database="${TQV_PG_DATABASE:-postgres}"
 
 subcommand=""
 detach=0
@@ -58,6 +61,31 @@ slugify() {
 sql_escape_literal() {
     printf '%s' "$1" | sed "s/'/''/g"
 }
+
+if [[ $# -eq 0 ]]; then
+    usage >&2
+    exit 2
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --db)
+            database="$2"
+            shift 2
+            ;;
+        --socket-dir)
+            socket_dir="$2"
+            shift 2
+            ;;
+        --port)
+            port="$2"
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 if [[ $# -eq 0 ]]; then
     usage >&2
@@ -210,7 +238,15 @@ fi
 
 printf '%s;\n' "$run_sql" >"$sql_file"
 
-cmd=( "${script_dir}/pg17_scratch_psql.sh" --sql "${run_sql};" )
+cmd=( "${script_dir}/pg17_scratch_psql.sh" )
+cmd+=( --db "$database" )
+if [[ -n "$socket_dir" ]]; then
+    cmd+=( --socket-dir "$socket_dir" )
+fi
+if [[ -n "$port" ]]; then
+    cmd+=( --port "$port" )
+fi
+cmd+=( --sql "${run_sql};" )
 
 if [[ "$detach" -eq 1 ]]; then
     nohup "${cmd[@]}" >"$out_file" 2>"$log_file" < /dev/null &

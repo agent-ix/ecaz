@@ -24,6 +24,7 @@ struct TqHnswReloptions {
     ef_construction: i32,
     ef_search: i32,
     build_source_column_offset: i32,
+    rerank_source_column_offset: i32,
     storage_format_offset: i32,
 }
 
@@ -61,6 +62,7 @@ pub(super) struct TqHnswOptions {
     pub(super) ef_construction: i32,
     pub(super) ef_search: i32,
     pub(super) build_source_column: Option<String>,
+    pub(super) rerank_source_column: Option<String>,
     pub(super) storage_format: StorageFormat,
 }
 
@@ -70,6 +72,7 @@ impl TqHnswOptions {
         ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
         ef_search: TQHNSW_DEFAULT_EF_SEARCH,
         build_source_column: None,
+        rerank_source_column: None,
         storage_format: StorageFormat::DEFAULT,
     };
 }
@@ -206,13 +209,24 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"build_source_column\0".as_ptr().cast(),
-                b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
+                b"Optional alternate heap column name supplying raw real[] or ecvector values for source-backed graph construction instead of the indexed ecvector column.\0"
                     .as_ptr()
                     .cast(),
                 ptr::null(),
                 None,
                 None,
                 offset_of!(TqHnswReloptions, build_source_column_offset) as i32,
+            );
+            pg_sys::add_local_string_reloption(
+                &mut relopts,
+                b"rerank_source_column\0".as_ptr().cast(),
+                b"Optional alternate heap column name supplying raw real[], bytea, or ecvector values for grouped heap_f32 rerank instead of the indexed ecvector column.\0"
+                    .as_ptr()
+                    .cast(),
+                ptr::null(),
+                None,
+                None,
+                offset_of!(TqHnswReloptions, rerank_source_column_offset) as i32,
             );
             pg_sys::add_local_string_reloption(
                 &mut relopts,
@@ -268,6 +282,13 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
             "build_source_column",
         )
     };
+    let rerank_source_column = unsafe {
+        read_string_reloption(
+            rd_options,
+            reloptions.rerank_source_column_offset,
+            "rerank_source_column",
+        )
+    };
     let storage_format = match unsafe {
         read_string_reloption(
             rd_options,
@@ -286,6 +307,7 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
         ef_construction: reloptions.ef_construction,
         ef_search: reloptions.ef_search,
         build_source_column,
+        rerank_source_column,
         storage_format,
     }
 }

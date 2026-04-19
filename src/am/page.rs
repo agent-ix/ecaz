@@ -13,6 +13,7 @@ pub const TQ_NEIGHBOR_TAG: u8 = 0x02;
 pub const TQ_GROUPED_HOT_TAG: u8 = 0x03;
 pub const TQ_RERANK_TAG: u8 = 0x04;
 pub const TQ_GROUPED_CODEBOOK_TAG: u8 = 0x05;
+pub const TQ_TURBO_HOT_TAG: u8 = 0x06;
 pub const HEAPTID_INLINE_CAPACITY: usize = 10;
 pub const ITEM_POINTER_BYTES: usize = 6;
 pub const METADATA_BLOCK_NUMBER: u32 = 0;
@@ -35,6 +36,7 @@ const METADATA_SPECIAL_BYTES: usize = align_up(METADATA_BYTES, ALIGNMENT_BYTES);
 
 pub const INDEX_FORMAT_V1_SCALAR: u16 = 1;
 pub const INDEX_FORMAT_V2_GROUPED: u16 = 2;
+pub const INDEX_FORMAT_V3_TURBO_HOT_COLD: u16 = 3;
 pub const PAYLOAD_FLAG_BINARY_SIDECAR: u8 = 1 << 0;
 pub const PAYLOAD_FLAG_GROUPED_SEARCH_CODE: u8 = 1 << 1;
 pub const PAYLOAD_FLAG_COLD_RERANK_PAYLOAD: u8 = 1 << 2;
@@ -171,7 +173,9 @@ pub struct CurrentFormatMetadata {
 impl MetadataPage {
     pub fn graph_storage_format(&self) -> Result<GraphStorageFormat, String> {
         match self.format_version {
-            INDEX_FORMAT_V1_SCALAR => Ok(GraphStorageFormat::TurboQuant),
+            INDEX_FORMAT_V1_SCALAR | INDEX_FORMAT_V3_TURBO_HOT_COLD => {
+                Ok(GraphStorageFormat::TurboQuant)
+            }
             INDEX_FORMAT_V2_GROUPED => Ok(GraphStorageFormat::PqFastScan),
             other => Err(format!("unsupported metadata format version: {other}")),
         }
@@ -206,6 +210,45 @@ impl MetadataPage {
             payload_flags,
             search_bits: current.bits,
             rerank_codec_kind: RerankCodecKind::None,
+            search_subvector_count: 0,
+            search_subvector_dim: 0,
+            grouped_codebook_head: ItemPointer::INVALID,
+        }
+    }
+
+    pub fn current_v3_turbo_hot_cold(current: CurrentFormatMetadata) -> Self {
+        let mut payload_flags = PAYLOAD_FLAG_COLD_RERANK_PAYLOAD;
+        if current.persisted_binary_sidecar {
+            payload_flags |= PAYLOAD_FLAG_BINARY_SIDECAR;
+        }
+
+        Self {
+            m: current.m,
+            ef_construction: current.ef_construction,
+            entry_point: current.entry_point,
+            dimensions: current.dimensions,
+            bits: current.bits,
+            max_level: current.max_level,
+            seed: current.seed,
+            inserted_since_rebuild: current.inserted_since_rebuild,
+            format_version: INDEX_FORMAT_V3_TURBO_HOT_COLD,
+            transform_kind: if current.dimensions == 0 {
+                TransformKind::Unknown
+            } else {
+                TransformKind::Srht
+            },
+            search_codec_kind: if current.dimensions == 0 || current.bits == 0 {
+                SearchCodecKind::Unknown
+            } else {
+                SearchCodecKind::ScalarQuantized
+            },
+            payload_flags,
+            search_bits: current.bits,
+            rerank_codec_kind: if current.dimensions == 0 || current.bits == 0 {
+                RerankCodecKind::None
+            } else {
+                RerankCodecKind::ScalarQuantized
+            },
             search_subvector_count: 0,
             search_subvector_dim: 0,
             grouped_codebook_head: ItemPointer::INVALID,
@@ -249,7 +292,7 @@ impl MetadataPage {
             u16::from_le_bytes(input[30..32].try_into().expect("format version bytes"));
         if !matches!(
             format_version,
-            INDEX_FORMAT_V1_SCALAR | INDEX_FORMAT_V2_GROUPED
+            INDEX_FORMAT_V1_SCALAR | INDEX_FORMAT_V2_GROUPED | INDEX_FORMAT_V3_TURBO_HOT_COLD
         ) {
             return Err(format!("invalid metadata format version: {format_version}"));
         }
@@ -407,6 +450,27 @@ pub struct TqGroupedHotTupleRef<'a> {
     pub reranktid: ItemPointer,
     binary_word_bytes: &'a [u8],
     pub search_code: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TqTurboHotTuple {
+    pub level: u8,
+    pub deleted: bool,
+    pub heaptids: Vec<ItemPointer>,
+    pub neighbortid: ItemPointer,
+    pub reranktid: ItemPointer,
+    pub binary_words: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TqTurboHotTupleRef<'a> {
+    pub level: u8,
+    pub deleted: bool,
+    heaptid_bytes: &'a [u8],
+    heaptid_count: usize,
+    pub neighbortid: ItemPointer,
+    pub reranktid: ItemPointer,
+    binary_word_bytes: &'a [u8],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -741,6 +805,138 @@ impl TqGroupedHotTuple {
     }
 }
 
+impl<'a> TqTurboHotTupleRef<'a> {
+    pub fn decode(input: &'a [u8], binary_word_count: usize) -> Result<Self, String> {
+        let expected_len = TqTurboHotTuple::encoded_len(binary_word_count);
+        if input.len() != expected_len {
+            return Err(format!(
+                "turbo hot tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_TURBO_HOT_TAG {
+            return Err(format!("invalid turbo hot tuple tag: {}", input[0]));
+        }
+
+        let heaptid_bytes_start = 3;
+        let heaptid_bytes_len = HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES;
+        let heaptid_bytes = &input[heaptid_bytes_start..heaptid_bytes_start + heaptid_bytes_len];
+        let mut cursor = heaptid_bytes_start + heaptid_bytes_len;
+
+        let heaptid_count = input[cursor] as usize;
+        cursor += 1;
+        if heaptid_count > HEAPTID_INLINE_CAPACITY {
+            return Err(format!(
+                "invalid heap tid count: got {heaptid_count}, max {}",
+                HEAPTID_INLINE_CAPACITY
+            ));
+        }
+
+        let neighbortid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
+        cursor += ITEM_POINTER_BYTES;
+        let reranktid = ItemPointer::decode(&input[cursor..cursor + ITEM_POINTER_BYTES])?;
+        cursor += ITEM_POINTER_BYTES;
+        let binary_word_bytes_len = binary_word_count * size_of::<u64>();
+        let binary_word_bytes = &input[cursor..cursor + binary_word_bytes_len];
+
+        Ok(Self {
+            level: input[1],
+            deleted: input[2] != 0,
+            heaptid_bytes,
+            heaptid_count,
+            neighbortid,
+            reranktid,
+            binary_word_bytes,
+        })
+    }
+
+    pub fn heaptid_count(&self) -> usize {
+        self.heaptid_count
+    }
+
+    pub fn heaptids(&self) -> impl Iterator<Item = ItemPointer> + '_ {
+        self.heaptid_bytes
+            .chunks_exact(ITEM_POINTER_BYTES)
+            .take(self.heaptid_count)
+            .map(|chunk| {
+                ItemPointer::decode(chunk)
+                    .expect("borrowed turbo hot tuple should only expose validated tid bytes")
+            })
+    }
+
+    pub fn collect_heaptids(&self) -> Vec<ItemPointer> {
+        self.heaptids().collect()
+    }
+
+    pub fn binary_words(&self) -> impl Iterator<Item = u64> + '_ {
+        self.binary_word_bytes
+            .chunks_exact(size_of::<u64>())
+            .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("validated u64 sidecar chunk")))
+    }
+
+    pub fn binary_word_count(&self) -> usize {
+        self.binary_word_bytes.len() / size_of::<u64>()
+    }
+
+    pub fn collect_binary_words(&self) -> Vec<u64> {
+        self.binary_words().collect()
+    }
+}
+
+impl TqTurboHotTuple {
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        if self.heaptids.len() > HEAPTID_INLINE_CAPACITY {
+            return Err(format!(
+                "too many heap tids: got {}, max {}",
+                self.heaptids.len(),
+                HEAPTID_INLINE_CAPACITY
+            ));
+        }
+
+        let mut out = Vec::with_capacity(Self::encoded_len(self.binary_words.len()));
+        out.push(TQ_TURBO_HOT_TAG);
+        out.push(self.level);
+        out.push(u8::from(self.deleted));
+
+        for tid in &self.heaptids {
+            tid.encode_into(&mut out);
+        }
+        for _ in self.heaptids.len()..HEAPTID_INLINE_CAPACITY {
+            ItemPointer::INVALID.encode_into(&mut out);
+        }
+
+        out.push(self.heaptids.len() as u8);
+        self.neighbortid.encode_into(&mut out);
+        self.reranktid.encode_into(&mut out);
+        for word in &self.binary_words {
+            out.extend_from_slice(&word.to_le_bytes());
+        }
+        Ok(out)
+    }
+
+    pub fn decode(input: &[u8], binary_word_count: usize) -> Result<Self, String> {
+        let hot = TqTurboHotTupleRef::decode(input, binary_word_count)?;
+        Ok(Self {
+            level: hot.level,
+            deleted: hot.deleted,
+            heaptids: hot.collect_heaptids(),
+            neighbortid: hot.neighbortid,
+            reranktid: hot.reranktid,
+            binary_words: hot.collect_binary_words(),
+        })
+    }
+
+    pub fn encoded_len(binary_word_count: usize) -> usize {
+        1 + 1
+            + 1
+            + HEAPTID_INLINE_CAPACITY * ITEM_POINTER_BYTES
+            + 1
+            + ITEM_POINTER_BYTES
+            + ITEM_POINTER_BYTES
+            + binary_word_count * size_of::<u64>()
+    }
+}
+
 impl<'a> TqRerankTupleRef<'a> {
     pub fn decode(input: &'a [u8], code_len: usize) -> Result<Self, String> {
         let expected_len = TqRerankTuple::encoded_len(code_len);
@@ -1047,6 +1243,10 @@ impl DataPage {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub fn insert_turbo_hot(&mut self, tuple: &TqTurboHotTuple) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub fn read_grouped_hot(
         &self,
         tid: ItemPointer,
@@ -1062,6 +1262,14 @@ impl DataPage {
 
     pub fn read_rerank(&self, tid: ItemPointer, code_len: usize) -> Result<TqRerankTuple, String> {
         TqRerankTuple::decode(self.raw_tuple(tid)?, code_len)
+    }
+
+    pub fn read_turbo_hot(
+        &self,
+        tid: ItemPointer,
+        binary_word_count: usize,
+    ) -> Result<TqTurboHotTuple, String> {
+        TqTurboHotTuple::decode(self.raw_tuple(tid)?, binary_word_count)
     }
 
     pub fn insert_grouped_codebook(
@@ -1099,6 +1307,14 @@ impl DataPage {
         &mut self,
         tid: ItemPointer,
         tuple: &TqGroupedHotTuple,
+    ) -> Result<(), String> {
+        self.update_raw_tuple(tid, tuple.encode()?)
+    }
+
+    pub fn update_turbo_hot(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqTurboHotTuple,
     ) -> Result<(), String> {
         self.update_raw_tuple(tid, tuple.encode()?)
     }
@@ -1194,6 +1410,10 @@ impl DataPageChain {
         self.insert_raw_tuple(tuple.encode()?)
     }
 
+    pub fn insert_turbo_hot(&mut self, tuple: &TqTurboHotTuple) -> Result<ItemPointer, String> {
+        self.insert_raw_tuple(tuple.encode()?)
+    }
+
     pub fn insert_rerank(&mut self, tuple: &TqRerankTuple) -> Result<ItemPointer, String> {
         self.insert_raw_tuple(tuple.encode())
     }
@@ -1230,6 +1450,16 @@ impl DataPageChain {
         self.get_page(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .read_grouped_hot(tid, binary_word_count, search_code_len)
+    }
+
+    pub fn read_turbo_hot(
+        &self,
+        tid: ItemPointer,
+        binary_word_count: usize,
+    ) -> Result<TqTurboHotTuple, String> {
+        self.get_page(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .read_turbo_hot(tid, binary_word_count)
     }
 
     pub fn read_rerank(&self, tid: ItemPointer, code_len: usize) -> Result<TqRerankTuple, String> {
@@ -1276,6 +1506,16 @@ impl DataPageChain {
         self.get_page_mut(tid.block_number)
             .ok_or_else(|| format!("block {} not found", tid.block_number))?
             .update_grouped_hot(tid, tuple)
+    }
+
+    pub fn update_turbo_hot(
+        &mut self,
+        tid: ItemPointer,
+        tuple: &TqTurboHotTuple,
+    ) -> Result<(), String> {
+        self.get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("block {} not found", tid.block_number))?
+            .update_turbo_hot(tid, tuple)
     }
 
     pub fn update_rerank(&mut self, tid: ItemPointer, tuple: &TqRerankTuple) -> Result<(), String> {
@@ -1392,7 +1632,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_graph_storage_format_distinguishes_v1_and_v2() {
+    fn metadata_graph_storage_format_distinguishes_v1_v2_and_v3() {
         let v1 = MetadataPage::current_v1_scalar(CurrentFormatMetadata {
             m: 8,
             ef_construction: 64,
@@ -1432,6 +1672,48 @@ mod tests {
             v2.graph_storage_format().unwrap(),
             GraphStorageFormat::PqFastScan
         );
+
+        let v3 = MetadataPage::current_v3_turbo_hot_cold(CurrentFormatMetadata {
+            m: 8,
+            ef_construction: 64,
+            entry_point: tid(1, 1),
+            dimensions: 16,
+            bits: 4,
+            max_level: 2,
+            seed: 42,
+            inserted_since_rebuild: 0,
+            persisted_binary_sidecar: true,
+        });
+        assert_eq!(
+            v3.graph_storage_format().unwrap(),
+            GraphStorageFormat::TurboQuant
+        );
+        assert_eq!(
+            v3.payload_flags,
+            PAYLOAD_FLAG_BINARY_SIDECAR | PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+        );
+        assert_eq!(v3.search_codec_kind, SearchCodecKind::ScalarQuantized);
+        assert_eq!(v3.rerank_codec_kind, RerankCodecKind::ScalarQuantized);
+    }
+
+    #[test]
+    fn metadata_roundtrip_preserves_v3_turbo_hot_cold_layout() {
+        let metadata = MetadataPage::current_v3_turbo_hot_cold(CurrentFormatMetadata {
+            m: 16,
+            ef_construction: 128,
+            entry_point: tid(12, 3),
+            dimensions: 1536,
+            bits: 4,
+            max_level: 5,
+            seed: 99,
+            inserted_since_rebuild: 7,
+            persisted_binary_sidecar: true,
+        });
+
+        let encoded = metadata.encode();
+        let decoded = MetadataPage::decode(&encoded).unwrap();
+        assert_eq!(decoded, metadata);
+        assert_eq!(decoded.format_version, INDEX_FORMAT_V3_TURBO_HOT_COLD);
     }
 
     #[test]
@@ -1538,6 +1820,45 @@ mod tests {
     }
 
     #[test]
+    fn turbo_hot_tuple_roundtrip() {
+        let tuple = TqTurboHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(10, 1), tid(11, 2)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqTurboHotTuple::decode(&encoded, 2).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn turbo_hot_tuple_ref_exposes_borrowed_payloads() {
+        let tuple = TqTurboHotTuple {
+            level: 1,
+            deleted: true,
+            heaptids: vec![tid(10, 1), tid(11, 2), tid(12, 3)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0xAAAA_BBBB_CCCC_DDDD],
+        };
+
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqTurboHotTupleRef::decode(&encoded, 1).unwrap();
+
+        assert_eq!(decoded.level, tuple.level);
+        assert_eq!(decoded.deleted, tuple.deleted);
+        assert_eq!(decoded.heaptid_count(), tuple.heaptids.len());
+        assert_eq!(decoded.collect_heaptids(), tuple.heaptids);
+        assert_eq!(decoded.neighbortid, tuple.neighbortid);
+        assert_eq!(decoded.reranktid, tuple.reranktid);
+        assert_eq!(decoded.collect_binary_words(), tuple.binary_words);
+    }
+
+    #[test]
     fn rerank_tuple_roundtrip() {
         let tuple = TqRerankTuple {
             gamma: -0.75,
@@ -1577,6 +1898,23 @@ mod tests {
         let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
         let tuple_tid = page.insert_grouped_hot(&tuple).unwrap();
         let decoded = page.read_grouped_hot(tuple_tid, 2, 3).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn turbo_hot_tuple_page_roundtrip() {
+        let tuple = TqTurboHotTuple {
+            level: 2,
+            deleted: false,
+            heaptids: vec![tid(10, 1), tid(11, 2)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF, 0x0F0E_0D0C_0B0A_0908],
+        };
+
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+        let tuple_tid = page.insert_turbo_hot(&tuple).unwrap();
+        let decoded = page.read_turbo_hot(tuple_tid, 2).unwrap();
         assert_eq!(decoded, tuple);
     }
 
@@ -1700,6 +2038,29 @@ mod tests {
     }
 
     #[test]
+    fn page_chain_extends_for_multiple_turbo_hot_tuples() {
+        let tuple = TqTurboHotTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![tid(10, 1)],
+            neighbortid: tid(20, 4),
+            reranktid: tid(21, 5),
+            binary_words: vec![0x0123_4567_89AB_CDEF; 64],
+        };
+
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let mut last_tid = ItemPointer::INVALID;
+        for _ in 0..20 {
+            last_tid = chain.insert_turbo_hot(&tuple).unwrap();
+        }
+
+        assert!(chain.pages().len() > 1);
+        assert!(last_tid.block_number > FIRST_DATA_BLOCK_NUMBER);
+        let decoded = chain.read_turbo_hot(last_tid, 64).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
     fn page_chain_extends_for_multiple_rerank_tuples() {
         let tuple = TqRerankTuple {
             gamma: 0.25,
@@ -1788,6 +2149,21 @@ mod tests {
         };
         let encoded = tuple.encode().unwrap();
         let decoded = TqGroupedHotTuple::decode(&encoded, 1, 2).unwrap();
+        assert_eq!(decoded, tuple);
+    }
+
+    #[test]
+    fn miri_turbo_hot_tuple_roundtrip() {
+        let tuple = TqTurboHotTuple {
+            level: 1,
+            deleted: false,
+            heaptids: vec![tid(1, 1)],
+            neighbortid: tid(2, 1),
+            reranktid: tid(3, 1),
+            binary_words: vec![0xDEAD_BEEF_CAFE_BABE],
+        };
+        let encoded = tuple.encode().unwrap();
+        let decoded = TqTurboHotTuple::decode(&encoded, 1).unwrap();
         assert_eq!(decoded, tuple);
     }
 

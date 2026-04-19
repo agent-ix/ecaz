@@ -41,6 +41,7 @@ These task files are the parallel execution breakdown for `tqvector`.
 21. `21-simd-modernization.md` — executes ADR-039 + task-08 hot-path follow-up: AVX-512 specializations and ARM SVE/SVE2 backend under existing runtime dispatch
 22. `22-additive-residual-quantization.md` — executes ADR-037: **evaluate-gated** feasibility study of AQ / RVQ as PqFastScan successor; three decision gates, shelf-on-fail OK
 23. `23-lsq-codebook-refinement.md` — executes ADR-038: drop-in k-means replacement, +2–5% recall, no wire format change, low priority fill-in
+24. `24-post-native-build-storage-and-lever4-followons.md` — post-ADR-042 follow-up: reopen ADR-044 on a stable native builder, carry forward the `EXTENDED` / `MAIN` build-collapse bug, and close the lever-4 `ef_search` matrix before any persisted-default decision
 
 ## Coordination rules
 
