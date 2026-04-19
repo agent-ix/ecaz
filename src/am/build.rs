@@ -3,8 +3,6 @@ use std::collections::HashSet;
 use std::ffi::c_void;
 use std::ptr;
 
-use hnsw_rs::anndists::dist::distances::Distance;
-use hnsw_rs::prelude::Hnsw;
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 use rand::Rng;
 use rand::SeedableRng;
@@ -15,7 +13,7 @@ use crate::quant::{
     prod::ProdQuantizer,
 };
 
-use super::{options, page, shared, source, wal, P_NEW};
+use super::{graph, insert, options, page, search, shared, source, wal, P_NEW};
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -1092,49 +1090,72 @@ fn centroid_slice_mut(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BuildCodeDistance {
-    dimensions: usize,
-    bits: u8,
-    seed: u64,
-    score_offset: f32,
+enum BuildGraphMetric {
+    Code {
+        dimensions: usize,
+        bits: u8,
+        seed: u64,
+    },
+    Source,
 }
 
-impl BuildCodeDistance {
-    fn new(dimensions: usize, bits: u8, seed: u64, tuples: &[BuildTuple]) -> Self {
-        // HNSW expects non-negative distances. Derive the offset from the actual
-        // encoded self-scores so QJL-enabled 4-bit lanes cannot underflow below 0.
-        let score_offset = tuples
+impl BuildGraphMetric {
+    fn for_state(state: &BuildState) -> Self {
+        if state
+            .heap_tuples
             .iter()
-            .map(|tuple| {
-                crate::score_code_inner_product(dimensions, bits, seed, &tuple.code, &tuple.code)
-            })
-            .fold(0.0_f32, f32::max);
+            .all(|tuple| tuple.source_vector.is_some())
+        {
+            Self::Source
+        } else {
+            Self::Code {
+                dimensions: state
+                    .dimensions
+                    .expect("non-empty build should record dimensions")
+                    as usize,
+                bits: state.bits.expect("non-empty build should record bits"),
+                seed: state.seed.expect("non-empty build should record seed"),
+            }
+        }
+    }
 
-        Self {
-            dimensions,
-            bits,
-            seed,
-            score_offset,
+    fn score_between(self, state: &BuildState, left_idx: usize, right_idx: usize) -> f32 {
+        match self {
+            Self::Code {
+                dimensions,
+                bits,
+                seed,
+            } => -crate::score_code_inner_product(
+                dimensions,
+                bits,
+                seed,
+                &state.heap_tuples[left_idx].code,
+                &state.heap_tuples[right_idx].code,
+            ),
+            Self::Source => -score_source_inner_product(
+                state.heap_tuples[left_idx]
+                    .source_vector
+                    .as_ref()
+                    .expect("source graph build requires source vectors"),
+                state.heap_tuples[right_idx]
+                    .source_vector
+                    .as_ref()
+                    .expect("source graph build requires source vectors"),
+            ),
         }
     }
 }
 
-impl Distance<u8> for BuildCodeDistance {
-    fn eval(&self, va: &[u8], vb: &[u8]) -> f32 {
-        self.score_offset
-            - crate::score_code_inner_product(self.dimensions, self.bits, self.seed, va, vb)
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeBuildNode {
+    level: u8,
+    neighbor_slots: Vec<Option<usize>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct BuildVectorDistance {
-    score_offset: f32,
-}
-
-impl Distance<f32> for BuildVectorDistance {
-    fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
-        self.score_offset - score_source_inner_product(va, vb)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeForwardSelection {
+    layer: u8,
+    node_idx: usize,
 }
 
 pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: &BuildState) {
@@ -1333,154 +1354,11 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
             state.heap_tuples.len()
         ];
     }
-
-    if state
-        .heap_tuples
-        .iter()
-        .all(|tuple| tuple.source_vector.is_some())
-    {
-        return build_hnsw_graph_from_source(state);
-    }
-
-    let dimensions = state
-        .dimensions
-        .expect("non-empty build should record dimensions") as usize;
-    let bits = state.bits.expect("non-empty build should record bits");
-    let seed = state.seed.expect("non-empty build should record seed");
-    let max_level_cap = page::max_level_that_fits(
-        u16::try_from(state.options.m).expect("validated m should fit into u16"),
-        state.page_size,
-    );
-    let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
-    let hnsw = Hnsw::new_with_seed(
-        m,
-        state.heap_tuples.len(),
-        max_layer,
-        usize::try_from(state.options.ef_construction)
-            .expect("validated ef_construction should be non-negative"),
-        deterministic_hnsw_build_seed(state, 0x5343_414c_4152_5f31),
-        BuildCodeDistance::new(dimensions, bits, seed, &state.heap_tuples),
-    );
-
-    for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
-        hnsw.insert((&tuple.code, origin_id));
-    }
-
-    let mut nodes = vec![
-        HnswBuildNode {
-            level: 0,
-            neighbor_slots: empty_neighbor_slots(0, m),
-            score_neighbors: Vec::new(),
-        };
-        state.heap_tuples.len()
-    ];
-    for point in hnsw.get_point_indexation() {
-        let origin_id = point.get_origin_id();
-        let level = point.get_point_id().0.min(max_level_cap);
-        let neighborhoods = point.get_neighborhood_id();
-        let neighbor_slots = pack_point_neighbor_slots(origin_id, level, m, &neighborhoods);
-        let score_neighbors = flatten_point_neighbors(origin_id, level, &neighborhoods);
-        nodes[origin_id] = HnswBuildNode {
-            level,
-            neighbor_slots,
-            score_neighbors,
-        };
-    }
-
-    nodes
-}
-
-fn build_hnsw_graph_from_source(state: &BuildState) -> Vec<HnswBuildNode> {
-    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
-    let max_level_cap = page::max_level_that_fits(
-        u16::try_from(state.options.m).expect("validated m should fit into u16"),
-        state.page_size,
-    );
-    let max_layer = usize::from(max_level_cap).saturating_add(1).max(1);
-    let score_offset = state
-        .heap_tuples
-        .iter()
-        .map(|tuple| {
-            tuple
-                .source_vector
-                .as_ref()
-                .expect("source graph build requires source vectors")
-                .iter()
-                .map(|value| value * value)
-                .sum::<f32>()
-        })
-        .fold(0.0_f32, f32::max);
-    let hnsw = Hnsw::new_with_seed(
-        m,
-        state.heap_tuples.len(),
-        max_layer,
-        usize::try_from(state.options.ef_construction)
-            .expect("validated ef_construction should be non-negative"),
-        deterministic_hnsw_build_seed(state, 0x534f_5552_4345_5f31),
-        BuildVectorDistance { score_offset },
-    );
-
-    for (origin_id, tuple) in state.heap_tuples.iter().enumerate() {
-        let source = tuple
-            .source_vector
-            .as_ref()
-            .expect("source graph build requires source vectors");
-        hnsw.insert((source.as_slice(), origin_id));
-    }
-
-    let mut nodes = vec![
-        HnswBuildNode {
-            level: 0,
-            neighbor_slots: empty_neighbor_slots(0, m),
-            score_neighbors: Vec::new(),
-        };
-        state.heap_tuples.len()
-    ];
-    for point in hnsw.get_point_indexation() {
-        let origin_id = point.get_origin_id();
-        let level = point.get_point_id().0.min(max_level_cap);
-        let neighborhoods = point.get_neighborhood_id();
-        let neighbor_slots = pack_point_neighbor_slots(origin_id, level, m, &neighborhoods);
-        let score_neighbors = flatten_point_neighbors(origin_id, level, &neighborhoods);
-        nodes[origin_id] = HnswBuildNode {
-            level,
-            neighbor_slots,
-            score_neighbors,
-        };
-    }
-
-    nodes
+    build_native_hnsw_graph(state, BuildGraphMetric::for_state(state))
 }
 
 fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
     vec![None; page::neighbor_slots(level, m as u16)]
-}
-
-fn deterministic_hnsw_build_seed(state: &BuildState, domain_tag: u64) -> u64 {
-    let base_seed = state.seed.expect("non-empty build should record seed");
-    let dimensions = u64::from(
-        state
-            .dimensions
-            .expect("non-empty build should record dimensions"),
-    );
-    let bits = u64::from(state.bits.expect("non-empty build should record bits"));
-    let tuple_count =
-        u64::try_from(state.heap_tuples.len()).expect("tuple count should fit into u64");
-    let build_hash = base_seed
-        ^ domain_tag
-        ^ dimensions.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ bits.wrapping_mul(0xA24B_AED4_963E_E407)
-        ^ (state.options.m as u64).wrapping_mul(0x94D0_49BB_1331_11EB)
-        ^ (state.options.ef_construction as u64).wrapping_mul(0xD134_2543_DE82_EF95)
-        ^ tuple_count.wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    splitmix64(build_hash)
-}
-
-fn splitmix64(mut x: u64) -> u64 {
-    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    x ^ (x >> 31)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -1535,87 +1413,268 @@ pub(super) fn build_scored_neighbor_graph(state: &BuildState) -> Vec<Vec<usize>>
     graph
 }
 
-fn flatten_point_neighbors(
+fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<HnswBuildNode> {
+    let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
+    let m_u16 = u16::try_from(state.options.m).expect("validated m should fit into u16");
+    let ef_construction = usize::try_from(state.options.ef_construction)
+        .expect("validated ef_construction should be non-negative");
+    let mut nodes = Vec::with_capacity(state.heap_tuples.len());
+    let mut entry_idx = None;
+    let mut max_level = 0_u8;
+
+    for node_idx in 0..state.heap_tuples.len() {
+        let level = insert::choose_insert_level(
+            m_u16,
+            state.seed.expect("non-empty build should record seed"),
+            state.heap_tuples[node_idx].heap_tids[0],
+            state.heap_tuples[node_idx].code.len(),
+        );
+        let mut node = NativeBuildNode {
+            level,
+            neighbor_slots: empty_neighbor_slots(level, m),
+        };
+
+        if let Some(current_entry_idx) = entry_idx {
+            let entry_candidate =
+                search::BeamCandidate::new(current_entry_idx, metric.score_between(state, node_idx, current_entry_idx));
+            let selections = populate_native_upper_layer_forward_slots(
+                &mut node.neighbor_slots,
+                &nodes,
+                state,
+                metric,
+                node_idx,
+                level,
+                entry_candidate,
+                max_level,
+                m,
+                ef_construction,
+            );
+            let descended_seed = graph::greedy_descend_with_successors(
+                entry_candidate,
+                max_level,
+                |source_idx, layer| {
+                    load_native_successor_candidates(
+                        &nodes, state, metric, node_idx, source_idx, layer, m,
+                    )
+                },
+            );
+            let layer0_candidates = graph::search_layer0_result_candidates_with_successors(
+                ef_construction,
+                [descended_seed],
+                |source_idx| {
+                    load_native_successor_candidates(
+                        &nodes, state, metric, node_idx, source_idx, 0, m,
+                    )
+                },
+            );
+            let mut selections = selections;
+            write_native_layer_forward_candidates(
+                &mut node.neighbor_slots,
+                &mut selections,
+                0,
+                m,
+                layer0_candidates,
+            );
+            add_native_backlinks(&mut nodes, state, metric, node_idx, &selections, m);
+        }
+
+        nodes.push(node);
+        if entry_idx.is_none() || level > max_level {
+            entry_idx = Some(node_idx);
+            max_level = level;
+        }
+    }
+
+    nodes
+        .into_iter()
+        .enumerate()
+        .map(|(node_idx, node)| HnswBuildNode {
+            level: node.level,
+            score_neighbors: flatten_native_neighbor_slots(node_idx, node.level, m, &node.neighbor_slots),
+            neighbor_slots: node.neighbor_slots,
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn populate_native_upper_layer_forward_slots(
+    slots: &mut [Option<usize>],
+    nodes: &[NativeBuildNode],
+    state: &BuildState,
+    metric: BuildGraphMetric,
+    query_idx: usize,
+    insert_level: u8,
+    entry_candidate: search::BeamCandidate<usize>,
+    entry_level: u8,
+    m: usize,
+    ef_construction: usize,
+) -> Vec<NativeForwardSelection> {
+    let mut selections = Vec::new();
+    if entry_level == 0 {
+        return selections;
+    }
+
+    let mut seeds = vec![entry_candidate];
+    for current_layer in (1..=entry_level).rev() {
+        seeds = graph::search_layer0_result_candidates_with_successors(
+            ef_construction,
+            seeds,
+            |source_idx| {
+                load_native_successor_candidates(
+                    nodes,
+                    state,
+                    metric,
+                    query_idx,
+                    source_idx,
+                    current_layer,
+                    m,
+                )
+            },
+        );
+        if current_layer <= insert_level {
+            write_native_layer_forward_candidates(slots, &mut selections, current_layer, m, seeds.clone());
+        }
+        if seeds.is_empty() {
+            break;
+        }
+    }
+
+    selections
+}
+
+fn load_native_successor_candidates(
+    nodes: &[NativeBuildNode],
+    state: &BuildState,
+    metric: BuildGraphMetric,
+    query_idx: usize,
+    source_idx: usize,
+    layer: u8,
+    m: usize,
+) -> Vec<search::BeamCandidate<usize>> {
+    let Some((start, end)) = graph::layer_slot_bounds(nodes[source_idx].level, m, layer) else {
+        return Vec::new();
+    };
+
+    nodes[source_idx].neighbor_slots[start.min(nodes[source_idx].neighbor_slots.len())..end.min(nodes[source_idx].neighbor_slots.len())]
+        .iter()
+        .filter_map(|neighbor_idx| {
+            let neighbor_idx = (*neighbor_idx)?;
+            Some(search::BeamCandidate::new(
+                neighbor_idx,
+                metric.score_between(state, query_idx, neighbor_idx),
+            ))
+        })
+        .collect()
+}
+
+fn write_native_layer_forward_candidates(
+    slots: &mut [Option<usize>],
+    selections: &mut Vec<NativeForwardSelection>,
+    layer: u8,
+    m: usize,
+    candidates: impl IntoIterator<Item = search::BeamCandidate<usize>>,
+) {
+    let Some((start, end)) = insert::selected_forward_slot_bounds(m, slots.len(), layer) else {
+        return;
+    };
+
+    for (slot, candidate) in slots[start..end]
+        .iter_mut()
+        .zip(candidates.into_iter().take(end.saturating_sub(start)))
+    {
+        *slot = Some(candidate.node);
+        selections.push(NativeForwardSelection {
+            layer,
+            node_idx: candidate.node,
+        });
+    }
+}
+
+fn add_native_backlinks(
+    nodes: &mut [NativeBuildNode],
+    state: &BuildState,
+    metric: BuildGraphMetric,
+    new_node_idx: usize,
+    selections: &[NativeForwardSelection],
+    m: usize,
+) {
+    let mut pending = selections.to_vec();
+    pending.sort_unstable_by(|left, right| {
+        left.node_idx
+            .cmp(&right.node_idx)
+            .then_with(|| left.layer.cmp(&right.layer))
+    });
+    pending.dedup();
+
+    for selection in pending {
+        let Some((start, end)) =
+            insert::backlink_slot_bounds(m, nodes[selection.node_idx].neighbor_slots.len(), selection.layer)
+        else {
+            continue;
+        };
+        let layer_slice = &mut nodes[selection.node_idx].neighbor_slots[start..end];
+        if layer_slice.contains(&Some(new_node_idx)) {
+            continue;
+        }
+        if let Some(slot) = layer_slice.iter_mut().find(|slot| slot.is_none()) {
+            *slot = Some(new_node_idx);
+            continue;
+        }
+
+        let candidates = layer_slice
+            .iter()
+            .filter_map(|slot| {
+                let neighbor_idx = (*slot)?;
+                Some(insert::ScoredBacklinkNode {
+                    node: neighbor_idx,
+                    score: metric.score_between(state, selection.node_idx, neighbor_idx),
+                    is_new: false,
+                })
+            })
+            .chain(std::iter::once(insert::ScoredBacklinkNode {
+                node: new_node_idx,
+                score: metric.score_between(state, selection.node_idx, new_node_idx),
+                is_new: true,
+            }))
+            .collect::<Vec<_>>();
+        let replacement = insert::select_best_backlink_candidates(
+            candidates,
+            layer_slice.len(),
+            usize::cmp,
+        );
+        if !replacement.contains(&new_node_idx) {
+            continue;
+        }
+        for (slot, replacement_idx) in layer_slice.iter_mut().zip(replacement.into_iter()) {
+            *slot = Some(replacement_idx);
+        }
+    }
+}
+
+fn flatten_native_neighbor_slots(
     origin_id: usize,
     level: u8,
-    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
+    m: usize,
+    slots: &[Option<usize>],
 ) -> Vec<usize> {
     let mut seen = HashSet::new();
     let mut flattened = Vec::new();
 
-    for layer in 0..=usize::from(level) {
-        if let Some(layer_neighbors) = neighbors_per_layer.get(layer) {
-            for neighbor in layer_neighbors {
-                if neighbor.d_id != origin_id && seen.insert(neighbor.d_id) {
-                    flattened.push(neighbor.d_id);
-                }
+    for layer in 0..=level {
+        let Some((start, end)) = graph::layer_slot_bounds(level, m, layer) else {
+            continue;
+        };
+        for neighbor_idx in slots[start.min(slots.len())..end.min(slots.len())]
+            .iter()
+            .flatten()
+        {
+            if *neighbor_idx != origin_id && seen.insert(*neighbor_idx) {
+                flattened.push(*neighbor_idx);
             }
         }
     }
 
     flattened
-}
-
-fn pack_point_neighbor_slots(
-    origin_id: usize,
-    level: u8,
-    m: usize,
-    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
-) -> Vec<Option<usize>> {
-    let mut slots = vec![None; page::neighbor_slots(level, m as u16)];
-    fill_point_neighbor_layer_slots(
-        &mut slots,
-        origin_id,
-        0,
-        0,
-        m.saturating_mul(2),
-        neighbors_per_layer,
-    );
-
-    for layer in 1..=usize::from(level) {
-        let start = m.saturating_mul(2) + ((layer - 1) * m);
-        fill_point_neighbor_layer_slots(
-            &mut slots,
-            origin_id,
-            layer,
-            start,
-            m,
-            neighbors_per_layer,
-        );
-    }
-
-    slots
-}
-
-fn fill_point_neighbor_layer_slots(
-    slots: &mut [Option<usize>],
-    origin_id: usize,
-    layer: usize,
-    start: usize,
-    width: usize,
-    neighbors_per_layer: &[Vec<hnsw_rs::hnsw::Neighbour>],
-) {
-    if width == 0 || start >= slots.len() {
-        return;
-    }
-
-    let Some(layer_neighbors) = neighbors_per_layer.get(layer) else {
-        return;
-    };
-
-    let end = start.saturating_add(width).min(slots.len());
-    let mut next_slot = start;
-    for neighbor in layer_neighbors {
-        if neighbor.d_id == origin_id {
-            continue;
-        }
-        if next_slot >= end {
-            break;
-        }
-
-        slots[next_slot] = Some(neighbor.d_id);
-        next_slot += 1;
-    }
 }
 
 fn score_source_inner_product(left: &[f32], right: &[f32]) -> f32 {
@@ -2239,27 +2298,32 @@ mod tests {
     }
 
     #[test]
-    fn pack_point_neighbor_slots_preserves_layer_boundaries_with_padding() {
-        let slots = pack_point_neighbor_slots(
-            10,
+    fn native_forward_slot_packing_preserves_layer_boundaries_with_padding() {
+        let mut slots = empty_neighbor_slots(2, 2);
+        let mut selections = Vec::new();
+        write_native_layer_forward_candidates(
+            &mut slots,
+            &mut selections,
+            0,
             2,
-            2,
-            &[
-                vec![
-                    hnsw_rs::hnsw::Neighbour::new(11, 0.1, hnsw_rs::hnsw::PointId(0, 11)),
-                    hnsw_rs::hnsw::Neighbour::new(12, 0.2, hnsw_rs::hnsw::PointId(0, 12)),
-                ],
-                vec![hnsw_rs::hnsw::Neighbour::new(
-                    13,
-                    0.3,
-                    hnsw_rs::hnsw::PointId(1, 13),
-                )],
-                vec![hnsw_rs::hnsw::Neighbour::new(
-                    14,
-                    0.4,
-                    hnsw_rs::hnsw::PointId(2, 14),
-                )],
+            [
+                search::BeamCandidate::new(11, 0.1),
+                search::BeamCandidate::new(12, 0.2),
             ],
+        );
+        write_native_layer_forward_candidates(
+            &mut slots,
+            &mut selections,
+            1,
+            2,
+            [search::BeamCandidate::new(13, 0.3)],
+        );
+        write_native_layer_forward_candidates(
+            &mut slots,
+            &mut selections,
+            2,
+            2,
+            [search::BeamCandidate::new(14, 0.4)],
         );
 
         assert_eq!(

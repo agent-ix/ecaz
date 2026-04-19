@@ -690,7 +690,12 @@ unsafe fn run_insert_with_adapter(
     false
 }
 
-fn choose_insert_level(m: u16, seed: u64, heap_tid: page::ItemPointer, code_len: usize) -> u8 {
+pub(super) fn choose_insert_level(
+    m: u16,
+    seed: u64,
+    heap_tid: page::ItemPointer,
+    code_len: usize,
+) -> u8 {
     let max_level = max_insert_level_that_fits(m, code_len, pg_sys::BLCKSZ as usize);
     if max_level == 0 {
         return 0;
@@ -745,7 +750,7 @@ pub(crate) fn debug_insert_level_for_heap_tid(
     choose_insert_level(m, seed, heap_tid, code_len)
 }
 
-fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
+pub(super) fn empty_insert_neighbor_slots(level: u8, m: u16) -> Vec<page::ItemPointer> {
     vec![page::ItemPointer::INVALID; page::neighbor_slots(level, m)]
 }
 
@@ -756,6 +761,28 @@ fn insert_ef_construction(metadata: &page::MetadataPage) -> usize {
         "validated tqhnsw indexes should always persist ef_construction >= 1"
     );
     ef.max(1)
+}
+
+pub(super) fn select_best_backlink_candidates<NodeId, TieBreakFn>(
+    mut candidates: Vec<ScoredBacklinkNode<NodeId>>,
+    keep_len: usize,
+    mut tie_break: TieBreakFn,
+) -> Vec<NodeId>
+where
+    NodeId: Copy,
+    TieBreakFn: FnMut(&NodeId, &NodeId) -> Ordering,
+{
+    candidates.sort_unstable_by(|left, right| {
+        left.score
+            .total_cmp(&right.score)
+            .then_with(|| left.is_new.cmp(&right.is_new))
+            .then_with(|| tie_break(&left.node, &right.node))
+    });
+    candidates
+        .into_iter()
+        .take(keep_len)
+        .map(|candidate| candidate.node)
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -782,10 +809,10 @@ enum BacklinkMutationKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct ScoredBacklinkCandidate {
-    tid: page::ItemPointer,
-    score: f32,
-    is_new: bool,
+pub(super) struct ScoredBacklinkNode<NodeId> {
+    pub(super) node: NodeId,
+    pub(super) score: f32,
+    pub(super) is_new: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1226,14 +1253,21 @@ unsafe fn select_backlink_rewrite_slice(
     target_element: &graph::GraphElement,
     existing_slice: &[page::ItemPointer],
 ) -> Vec<page::ItemPointer> {
-    let mut candidates = existing_slice
+    let new_candidate = ScoredBacklinkNode {
+        node: planner.new_element_tid,
+        score: unsafe {
+            metric.score_new_backlink_candidate(planner.metadata, target_element, planner.new_tuple)
+        },
+        is_new: true,
+    };
+    let candidates = existing_slice
         .iter()
         .copied()
         .filter(|tid| *tid != page::ItemPointer::INVALID)
         .map(|tid| unsafe {
             let element = graph::load_exact_graph_element(index_relation, tid, planner.storage);
-            ScoredBacklinkCandidate {
-                tid,
+            ScoredBacklinkNode {
+                node: tid,
                 score: metric.score_existing_backlink_candidate(
                     planner.metadata,
                     target_element,
@@ -1242,25 +1276,9 @@ unsafe fn select_backlink_rewrite_slice(
                 is_new: false,
             }
         })
+        .chain(std::iter::once(new_candidate))
         .collect::<Vec<_>>();
-    candidates.push(ScoredBacklinkCandidate {
-        tid: planner.new_element_tid,
-        score: unsafe {
-            metric.score_new_backlink_candidate(planner.metadata, target_element, planner.new_tuple)
-        },
-        is_new: true,
-    });
-    candidates.sort_unstable_by(|left, right| {
-        left.score
-            .total_cmp(&right.score)
-            .then_with(|| left.is_new.cmp(&right.is_new))
-            .then_with(|| compare_item_pointers(&left.tid, &right.tid))
-    });
-    candidates
-        .into_iter()
-        .take(existing_slice.len())
-        .map(|candidate| candidate.tid)
-        .collect()
+    select_best_backlink_candidates(candidates, existing_slice.len(), compare_item_pointers)
 }
 
 fn score_backlink_candidate(
@@ -1338,7 +1356,11 @@ fn insert_backlink_if_free(
     true
 }
 
-fn selected_forward_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+pub(super) fn selected_forward_slot_bounds(
+    m: usize,
+    total_slots: usize,
+    layer: u8,
+) -> Option<(usize, usize)> {
     let (start, end) = backlink_slot_bounds(m, total_slots, layer)?;
     if layer == 0 {
         return Some((start, start.saturating_add(m).min(end)));
@@ -1346,7 +1368,11 @@ fn selected_forward_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Opti
     Some((start, end))
 }
 
-fn backlink_slot_bounds(m: usize, total_slots: usize, layer: u8) -> Option<(usize, usize)> {
+pub(super) fn backlink_slot_bounds(
+    m: usize,
+    total_slots: usize,
+    layer: u8,
+) -> Option<(usize, usize)> {
     if total_slots == 0 {
         return None;
     }

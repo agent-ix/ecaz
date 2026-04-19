@@ -22,7 +22,6 @@ dhat-heap = ["dhat"]
 
 [dependencies]
 pgrx = "0.17"
-hnsw_rs = { path = "vendor/hnsw_rs" }
 hex = "0.4"
 rand = "0.8"
 rand_chacha = "0.3"
@@ -37,6 +36,7 @@ pgrx-tests = "0.17"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.5"
 iai-callgrind = "0.14"
+hnsw_rs = { path = "vendor/hnsw_rs" }
 
 [build-dependencies]
 cc = "1"
