@@ -23,10 +23,15 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 pgrx_home="${PGRX_HOME:-${HOME}/.pgrx}"
 socket_dir=""
 port=""
+database="${PGDATABASE:-postgres}"
 forwarded_args=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --db)
+      database="$2"
+      shift 2
+      ;;
     --socket-dir)
       socket_dir="$2"
       shift 2
@@ -52,7 +57,7 @@ if [[ -n "$port" ]]; then
 else
   export PGPORT="${PGPORT:-28817}"
 fi
-export PGDATABASE="${PGDATABASE:-postgres}"
+export PGDATABASE="$database"
 export TQV_PSQL_BIN="${TQV_PSQL_BIN:-${pgrx_home}/17.9/pgrx-install/bin/psql}"
 
 exec bash "${repo_root}/scripts/bench_sql_latency.sh" "${forwarded_args[@]}"
