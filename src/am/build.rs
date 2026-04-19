@@ -1146,6 +1146,36 @@ impl BuildGraphMetric {
     }
 }
 
+struct NativeBuildQueryScorer<'a> {
+    state: &'a BuildState,
+    metric: BuildGraphMetric,
+    query_idx: usize,
+    cache: Vec<Option<f32>>,
+}
+
+impl<'a> NativeBuildQueryScorer<'a> {
+    fn new(state: &'a BuildState, metric: BuildGraphMetric, query_idx: usize) -> Self {
+        Self {
+            state,
+            metric,
+            query_idx,
+            cache: vec![None; state.heap_tuples.len()],
+        }
+    }
+
+    fn score(&mut self, candidate_idx: usize) -> f32 {
+        if let Some(score) = self.cache[candidate_idx] {
+            return score;
+        }
+
+        let score = self
+            .metric
+            .score_between(self.state, self.query_idx, candidate_idx);
+        self.cache[candidate_idx] = Some(score);
+        score
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeBuildNode {
     level: u8,
@@ -1441,14 +1471,13 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
         };
 
         if let Some(current_entry_idx) = entry_idx {
+            let mut query_scorer = NativeBuildQueryScorer::new(state, metric, node_idx);
             let entry_candidate =
-                search::BeamCandidate::new(current_entry_idx, metric.score_between(state, node_idx, current_entry_idx));
+                search::BeamCandidate::new(current_entry_idx, query_scorer.score(current_entry_idx));
             let (mut selections, layer0_seeds) = populate_native_upper_layer_forward_slots(
                 &mut node.neighbor_slots,
                 &nodes,
-                state,
-                metric,
-                node_idx,
+                &mut query_scorer,
                 level,
                 entry_candidate,
                 max_level,
@@ -1460,7 +1489,11 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
                 layer0_seeds,
                 |source_idx| {
                     load_native_successor_candidates(
-                        &nodes, state, metric, node_idx, source_idx, 0, m,
+                        &nodes,
+                        &mut query_scorer,
+                        source_idx,
+                        0,
+                        m,
                     )
                 },
             );
@@ -1496,9 +1529,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
 fn populate_native_upper_layer_forward_slots(
     slots: &mut [Option<usize>],
     nodes: &[NativeBuildNode],
-    state: &BuildState,
-    metric: BuildGraphMetric,
-    query_idx: usize,
+    query_scorer: &mut NativeBuildQueryScorer<'_>,
     insert_level: u8,
     entry_candidate: search::BeamCandidate<usize>,
     entry_level: u8,
@@ -1523,9 +1554,7 @@ fn populate_native_upper_layer_forward_slots(
             |source_idx| {
                 load_native_successor_candidates(
                     nodes,
-                    state,
-                    metric,
-                    query_idx,
+                    query_scorer,
                     source_idx,
                     current_layer,
                     m,
@@ -1545,9 +1574,7 @@ fn populate_native_upper_layer_forward_slots(
 
 fn load_native_successor_candidates(
     nodes: &[NativeBuildNode],
-    state: &BuildState,
-    metric: BuildGraphMetric,
-    query_idx: usize,
+    query_scorer: &mut NativeBuildQueryScorer<'_>,
     source_idx: usize,
     layer: u8,
     m: usize,
@@ -1564,10 +1591,7 @@ fn load_native_successor_candidates(
         .iter()
         .filter_map(|neighbor_idx| {
             let neighbor_idx = (*neighbor_idx)?;
-            Some(search::BeamCandidate::new(
-                neighbor_idx,
-                metric.score_between(state, query_idx, neighbor_idx),
-            ))
+            Some(search::BeamCandidate::new(neighbor_idx, query_scorer.score(neighbor_idx)))
         })
         .collect()
 }
