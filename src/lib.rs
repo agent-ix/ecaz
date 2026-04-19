@@ -1102,8 +1102,6 @@ mod tests {
             .lock()
             .expect("env-var test lock should not be poisoned")
     }
-    #[cfg(test)]
-    use hnsw_rs::prelude::{AnnT, Distance, Hnsw};
     use rand::Rng;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -1168,39 +1166,6 @@ mod tests {
         }
 
         vectors
-    }
-
-    #[cfg(test)]
-    fn random_clustered_vectors(
-        n: usize,
-        dim: usize,
-        n_clusters: usize,
-        spread: f32,
-        seed: u64,
-    ) -> Vec<Vec<f32>> {
-        let centers = random_unit_vectors(n_clusters, dim, seed + 100_000);
-        let mut rng = ChaCha8Rng::seed_from_u64(seed + 200_000);
-        let mut corpus = Vec::with_capacity(n);
-
-        for i in 0..n {
-            let center = &centers[i % n_clusters];
-            let mut values = center
-                .iter()
-                .map(|&coordinate| {
-                    let u1 = rng.gen_range(0.0001_f32..1.0_f32);
-                    let u2 = rng.gen_range(0.0_f32..std::f32::consts::TAU);
-                    let noise = (-2.0 * u1.ln()).sqrt() * u2.cos() * spread;
-                    coordinate + noise
-                })
-                .collect::<Vec<_>>();
-            let norm = values.iter().map(|value| value * value).sum::<f32>().sqrt();
-            for value in &mut values {
-                *value /= norm.max(f32::EPSILON);
-            }
-            corpus.push(values);
-        }
-
-        corpus
     }
 
     fn dot_product(a: &[f32], b: &[f32]) -> f32 {
@@ -1533,19 +1498,6 @@ mod tests {
             .collect()
     }
 
-    #[cfg(test)]
-    fn encode_recall_corpus_payloads(corpus: &[Vec<f32>]) -> Vec<Vec<u8>> {
-        let quantizer = ProdQuantizer::cached(
-            RECALL_DIM,
-            u8::try_from(RECALL_BITS).expect("recall bits should fit into u8"),
-            RECALL_SEED as u64,
-        );
-        corpus
-            .iter()
-            .map(|vector| quantizer.pack_payload(&quantizer.encode(vector)))
-            .collect()
-    }
-
     fn brute_force_top_k_code_inner_product(
         corpus_codes: &[Vec<u8>],
         query_code: &[u8],
@@ -1574,230 +1526,6 @@ mod tests {
         });
         scores.truncate(k);
         scores.into_iter().map(|(i, _)| i).collect()
-    }
-
-    #[cfg(test)]
-    fn brute_force_top_k_exact_quantized(
-        corpus_payloads: &[Vec<u8>],
-        query: &[f32],
-        k: usize,
-    ) -> Vec<usize> {
-        let quantizer = ProdQuantizer::cached(
-            RECALL_DIM,
-            u8::try_from(RECALL_BITS).expect("recall bits should fit into u8"),
-            RECALL_SEED as u64,
-        );
-        let prepared = quantizer.prepare_ip_query(query);
-        let mut scores = corpus_payloads
-            .iter()
-            .enumerate()
-            .map(|(i, payload)| (i, quantizer.score_ip_encoded(&prepared, payload)))
-            .collect::<Vec<_>>();
-        scores.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.0.cmp(&b.0))
-        });
-        scores.truncate(k);
-        scores.into_iter().map(|(i, _)| i).collect()
-    }
-
-    #[cfg(test)]
-    #[derive(Debug, Clone, Copy)]
-    struct RecallBuildCodeDistance {
-        score_offset: f32,
-    }
-
-    #[cfg(test)]
-    impl RecallBuildCodeDistance {
-        fn new() -> Self {
-            let quantizer = ProdQuantizer::cached(
-                RECALL_DIM,
-                u8::try_from(RECALL_BITS).expect("recall bits should fit into u8"),
-                RECALL_SEED as u64,
-            );
-            let max_abs_centroid = quantizer
-                .codebook
-                .iter()
-                .map(|value| value.abs())
-                .fold(0.0_f32, f32::max);
-            Self {
-                score_offset: RECALL_DIM as f32 * max_abs_centroid * max_abs_centroid,
-            }
-        }
-    }
-
-    #[cfg(test)]
-    impl Distance<u8> for RecallBuildCodeDistance {
-        fn eval(&self, va: &[u8], vb: &[u8]) -> f32 {
-            self.score_offset
-                - score_code_inner_product(
-                    RECALL_DIM,
-                    u8::try_from(RECALL_BITS).expect("recall bits should fit into u8"),
-                    RECALL_SEED as u64,
-                    va,
-                    vb,
-                )
-        }
-    }
-
-    #[cfg(test)]
-    #[derive(Debug, Clone, Copy)]
-    struct RecallSourceDistance {
-        score_offset: f32,
-    }
-
-    #[cfg(test)]
-    impl Distance<f32> for RecallSourceDistance {
-        fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
-            self.score_offset - dot_product(va, vb)
-        }
-    }
-
-    #[cfg(test)]
-    fn recall_neighbor_tuple_aligned_bytes(payload_len: usize) -> usize {
-        let tuple_len = 4 + payload_len + 4;
-        let remainder = tuple_len % 8;
-        if remainder == 0 {
-            tuple_len
-        } else {
-            tuple_len + (8 - remainder)
-        }
-    }
-
-    #[cfg(test)]
-    fn recall_max_level_that_fits(m: u16) -> u8 {
-        let usable_page_bytes = 8192_usize.saturating_sub(24);
-        let mut level = 0_u8;
-        loop {
-            let payload_len = crate::bench_api::neighbor_tuple_encoded_len(level, m);
-            if recall_neighbor_tuple_aligned_bytes(payload_len) > usable_page_bytes {
-                return level.saturating_sub(1);
-            }
-            if level == u8::MAX {
-                return level;
-            }
-            level = level.saturating_add(1);
-        }
-    }
-
-    #[cfg(test)]
-    fn probe_hnsw_rs_code_graph_recall(
-        corpus: &[Vec<f32>],
-        queries: &[Vec<f32>],
-        m: usize,
-        ef_search: usize,
-    ) -> (f32, f32, f32) {
-        let corpus_codes = encode_recall_corpus_codes(corpus);
-        let corpus_payloads = encode_recall_corpus_payloads(corpus);
-        let max_layer = usize::from(recall_max_level_that_fits(
-            u16::try_from(m).expect("m should fit into u16"),
-        ))
-        .saturating_add(1)
-        .max(1);
-        let hnsw = Hnsw::new(
-            m,
-            corpus_codes.len(),
-            max_layer,
-            usize::try_from(RECALL_EF_CONSTRUCTION).expect("ef_construction should fit usize"),
-            RecallBuildCodeDistance::new(),
-        );
-        let build_started = Instant::now();
-        let corpus_code_slices = corpus_codes
-            .iter()
-            .enumerate()
-            .map(|(origin_id, code)| (code.as_slice(), origin_id))
-            .collect::<Vec<_>>();
-        hnsw.parallel_insert_slice(&corpus_code_slices);
-        let build_elapsed = build_started.elapsed();
-
-        let mut hnsw_hits = 0_i32;
-        let mut build_code_hits = 0_i32;
-        let mut exact_hits = 0_i32;
-        let search_started = Instant::now();
-        for query in queries {
-            let truth_ids = brute_force_top_k(corpus, query, RECALL_K)
-                .into_iter()
-                .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                .collect::<Vec<_>>();
-            let query_code = encode_recall_query_code(query);
-            let hnsw_ids = hnsw
-                .search_neighbours(query_code.as_slice(), RECALL_K, ef_search)
-                .into_iter()
-                .map(|neighbor| i64::try_from(neighbor.d_id).expect("origin id should fit i64"))
-                .collect::<Vec<_>>();
-            let build_code_ids =
-                brute_force_top_k_code_inner_product(&corpus_codes, &query_code, RECALL_K)
-                    .into_iter()
-                    .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                    .collect::<Vec<_>>();
-            let exact_ids = brute_force_top_k_exact_quantized(&corpus_payloads, query, RECALL_K)
-                .into_iter()
-                .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                .collect::<Vec<_>>();
-
-            hnsw_hits += recall_top_k_overlap(&truth_ids, &hnsw_ids);
-            build_code_hits += recall_top_k_overlap(&truth_ids, &build_code_ids);
-            exact_hits += recall_top_k_overlap(&truth_ids, &exact_ids);
-        }
-        let search_elapsed = search_started.elapsed();
-        println!(
-            "hnsw-rs code graph timings: m={m} ef_search={ef_search} build={build_elapsed:?} search={search_elapsed:?}"
-        );
-
-        let denom = (queries.len() * RECALL_K) as f32;
-        (
-            hnsw_hits as f32 / denom,
-            build_code_hits as f32 / denom,
-            exact_hits as f32 / denom,
-        )
-    }
-
-    #[cfg(test)]
-    fn probe_hnsw_rs_source_graph_recall(
-        corpus: &[Vec<f32>],
-        queries: &[Vec<f32>],
-        m: usize,
-        ef_search: usize,
-    ) -> f32 {
-        let max_layer = usize::from(recall_max_level_that_fits(
-            u16::try_from(m).expect("m should fit into u16"),
-        ))
-        .saturating_add(1)
-        .max(1);
-        let hnsw = Hnsw::new(
-            m,
-            corpus.len(),
-            max_layer,
-            usize::try_from(RECALL_EF_CONSTRUCTION).expect("ef_construction should fit usize"),
-            RecallSourceDistance { score_offset: 1.0 },
-        );
-        let build_started = Instant::now();
-        for (origin_id, vector) in corpus.iter().enumerate() {
-            hnsw.insert((vector.as_slice(), origin_id));
-        }
-        let build_elapsed = build_started.elapsed();
-
-        let mut hnsw_hits = 0_i32;
-        let search_started = Instant::now();
-        for query in queries {
-            let truth_ids = brute_force_top_k(corpus, query, RECALL_K)
-                .into_iter()
-                .map(|idx| i64::try_from(idx).expect("origin id should fit into i64"))
-                .collect::<Vec<_>>();
-            let hnsw_ids = hnsw
-                .search_neighbours(query.as_slice(), RECALL_K, ef_search)
-                .into_iter()
-                .map(|neighbor| i64::try_from(neighbor.d_id).expect("origin id should fit i64"))
-                .collect::<Vec<_>>();
-            hnsw_hits += recall_top_k_overlap(&truth_ids, &hnsw_ids);
-        }
-        let search_elapsed = search_started.elapsed();
-        println!(
-            "hnsw-rs source graph timings: m={m} ef_search={ef_search} build={build_elapsed:?} search={search_elapsed:?}"
-        );
-
-        hnsw_hits as f32 / (queries.len() * RECALL_K) as f32
     }
 
     fn create_recall_table(table_name: &str) {
@@ -16499,6 +16227,16 @@ mod tests {
             .collect();
         let exact_quantized_row_indices_top10 = include_exact_quantized_top10.then(|| {
             Spi::connect(|client| {
+                // The "exact quantized" baseline must come from a table-level
+                // sort over persisted embeddings, not whichever tqhnsw index
+                // the planner happens to prefer on a multi-index corpus table.
+                Spi::run("SET LOCAL enable_indexscan = off")
+                    .expect("disabling index scans for exact quantized baseline should succeed");
+                Spi::run("SET LOCAL enable_indexonlyscan = off").expect(
+                    "disabling index-only scans for exact quantized baseline should succeed",
+                );
+                Spi::run("SET LOCAL enable_bitmapscan = off")
+                    .expect("disabling bitmap scans for exact quantized baseline should succeed");
                 queries
                     .iter()
                     .map(|query| {
@@ -20961,67 +20699,31 @@ mod tests {
         assert_external_recall_smoke_probe(prefix, Some("pq_fastscan"));
     }
 
-    #[cfg(test)]
-    #[test]
-    #[ignore]
-    fn test_hnsw_rs_code_graph_recall_uniform_10k() {
-        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
-        let queries = random_unit_vectors(20, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
-        let ef_search = 128_usize;
+    #[pg_test]
+    fn test_tqhnsw_external_summary_exact_baseline_multiidx() {
+        let prefix = "tqhnsw_recall_external_summary_multiidx";
+        create_external_recall_smoke_tables(prefix, 64, 8);
+        create_external_recall_smoke_indexes(prefix, None);
+        create_external_recall_smoke_indexes(prefix, Some("turboquant"));
+        create_external_recall_smoke_indexes(prefix, Some("pq_fastscan"));
 
-        let (hnsw_recall_at_10, build_code_recall_at_10, exact_quantized_recall_at_10) =
-            probe_hnsw_rs_code_graph_recall(&corpus, &queries, 8, ef_search);
-        println!(
-            "hnsw-rs code graph probe: queries={} m=8 ef_search={ef_search} hnsw={hnsw_recall_at_10:.4} build_code={build_code_recall_at_10:.4} exact={exact_quantized_recall_at_10:.4}",
-            queries.len()
+        let corpus_table = format!("{prefix}_corpus");
+        let queries_table = format!("{prefix}_queries");
+        let turboquant_m8_index = external_recall_index_name(prefix, Some("turboquant"), 8);
+
+        let summary = probe_graph_scan_recall_external_summary_for_relation(
+            &corpus_table,
+            &queries_table,
+            &turboquant_m8_index,
+            8,
+            128,
         );
-    }
 
-    #[cfg(test)]
-    #[test]
-    #[ignore]
-    fn test_hnsw_rs_source_graph_recall_uniform_10k() {
-        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
-        let queries = random_unit_vectors(20, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
-        let ef_search = 128_usize;
-
-        let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 8, ef_search);
-        println!(
-            "hnsw-rs source graph probe: queries={} m=8 ef_search={ef_search} hnsw={hnsw_recall_at_10:.4}",
-            queries.len()
-        );
-    }
-
-    #[cfg(test)]
-    #[test]
-    #[ignore]
-    fn test_hnsw_rs_source_graph_recall_clustered_10k() {
-        let corpus =
-            random_clustered_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, 50, 0.3, RECALL_SEED as u64);
-        let queries =
-            random_clustered_vectors(20, RECALL_DIM, 50, 0.3, (RECALL_SEED as u64) + 500_000);
-        let ef_search = 128_usize;
-
-        let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 8, ef_search);
-        println!(
-            "hnsw-rs source graph clustered probe: queries={} m=8 ef_search={ef_search} hnsw={hnsw_recall_at_10:.4}",
-            queries.len()
-        );
-    }
-
-    #[cfg(test)]
-    #[test]
-    #[ignore]
-    fn test_hnsw_rs_source_graph_recall_uniform_10k_m16_ef200() {
-        let corpus = random_unit_vectors(RECALL_CORPUS_SIZE, RECALL_DIM, RECALL_SEED as u64);
-        let queries = random_unit_vectors(20, RECALL_DIM, (RECALL_SEED as u64) + 1_000_000);
-        let ef_search = 200_usize;
-
-        let hnsw_recall_at_10 = probe_hnsw_rs_source_graph_recall(&corpus, &queries, 16, ef_search);
-        println!(
-            "hnsw-rs source graph probe: queries={} m=16 ef_search={ef_search} hnsw={hnsw_recall_at_10:.4}",
-            queries.len()
-        );
+        assert_eq!(summary.0, 8);
+        assert_eq!(summary.1, 128);
+        assert_eq!(summary.2, 64);
+        assert_eq!(summary.3, 8);
+        assert!((0.0..=1.0).contains(&summary.9));
     }
 
     #[pg_test]
