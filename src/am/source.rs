@@ -26,7 +26,7 @@ pub(super) enum SourceDatumKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum IndexedVectorKind {
     Ecvector,
-    Ecqvector,
+    Tqvector,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +200,7 @@ pub(super) unsafe fn resolve_indexed_vector_attribute_from_index_info(
     }
 
     let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
-        .unwrap_or_else(|| pgrx::error!("tqhnsw {label} must be ecvector or ecqvector"));
+        .unwrap_or_else(|| pgrx::error!("tqhnsw {label} must be ecvector or tqvector"));
     IndexedVectorAttribute {
         attnum: indexed_attnum,
         kind,
@@ -235,7 +235,7 @@ unsafe fn resolve_indexed_vector_kind(type_oid: pg_sys::Oid) -> Option<IndexedVe
     let type_name = name.rsplit('.').next().unwrap_or(&name).trim_matches('"');
     match type_name {
         "ecvector" => Some(IndexedVectorKind::Ecvector),
-        "ecqvector" => Some(IndexedVectorKind::Ecqvector),
+        "tqvector" => Some(IndexedVectorKind::Tqvector),
         _ => None,
     }
 }

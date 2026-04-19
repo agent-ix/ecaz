@@ -722,7 +722,7 @@ fn tqhnsw_planner_integration_snapshot(
     ))
 }
 
-fn encode_embedding_to_ecqvector(
+fn encode_embedding_to_tqvector(
     embedding: Vec<f32>,
     bits: i32,
     seed: i64,
@@ -734,8 +734,8 @@ fn encode_embedding_to_ecqvector(
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
-fn encode_to_ecqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
-    encode_embedding_to_ecqvector(embedding, bits, seed)
+fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
+    encode_embedding_to_tqvector(embedding, bits, seed)
         .unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
@@ -960,9 +960,9 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_encode_embedding_to_ecqvector_rejects_dimensions_over_u16_max() {
+    fn test_encode_embedding_to_tqvector_rejects_dimensions_over_u16_max() {
         let oversized = vec![0.0_f32; usize::from(u16::MAX) + 1];
-        let err = encode_embedding_to_ecqvector(oversized, 4, 42).unwrap_err();
+        let err = encode_embedding_to_tqvector(oversized, 4, 42).unwrap_err();
         assert!(
             err.contains("exceeds maximum 65535"),
             "oversized embeddings should fail with an explicit dimension limit error"
@@ -1012,7 +1012,7 @@ mod unit_tests {
     fn test_tqvector_negative_query_inner_product_negates_query_score() {
         let vector = vec![0.5_f32, -1.0, 0.25, 0.75, -0.5, 1.25, -0.75, 0.125];
         let query = vec![-0.25_f32, 0.75, 1.0, -0.5, 0.25, -1.0, 0.5, 0.875];
-        let candidate = encode_embedding_to_ecqvector(vector, 4, 42)
+        let candidate = encode_embedding_to_tqvector(vector, 4, 42)
             .expect("candidate should encode successfully");
 
         let base = score_query_inner_product(&candidate, &query)
@@ -2124,7 +2124,7 @@ mod tests {
     #[pg_test]
     fn test_binary_send_matches_internal_layout() {
         let bytes = Spi::get_one::<Vec<u8>>(
-            "SELECT ecqvector_send('[dim=4,bits=4,seed=42,gamma=0.5]:112233'::ecqvector)",
+            "SELECT tqvector_send('[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector)",
         )
         .expect("SPI query should succeed")
         .expect("query should return one row");
@@ -8951,7 +8951,7 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_spans_multiple_data_pages() {
-        Spi::run("CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding ecqvector)")
+        Spi::run("CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
 
         let dim = 256_usize;
@@ -8963,7 +8963,7 @@ mod tests {
                 .collect::<Vec<_>>();
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_multipage_build VALUES \
-                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::ecqvector)",
+                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
             .expect("insert should succeed");
@@ -8971,7 +8971,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_multipage_build_idx ON tqhnsw_multipage_build USING tqhnsw \
-             (embedding ecqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
@@ -9059,7 +9059,7 @@ mod tests {
 
     #[pg_test]
     fn test_build_keeps_element_neighbor_local() {
-        Spi::run("CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding ecqvector)")
+        Spi::run("CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
 
         let dim = 256_usize;
@@ -9071,7 +9071,7 @@ mod tests {
                 .collect::<Vec<_>>();
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_build_locality VALUES \
-                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::ecqvector)",
+                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
             .expect("insert should succeed");
@@ -9079,7 +9079,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_build_locality_idx ON tqhnsw_build_locality USING tqhnsw \
-             (embedding ecqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
@@ -9155,18 +9155,18 @@ mod tests {
     #[pg_test]
     fn test_non_empty_index_build_keeps_gamma_distinct() {
         Spi::run(
-            "CREATE TABLE tqhnsw_duplicate_build_gamma (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_duplicate_build_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_duplicate_build_gamma VALUES
-             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::ecqvector),
-             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::ecqvector)",
+             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector),
+             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
         )
         .expect("insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_duplicate_build_gamma_idx ON tqhnsw_duplicate_build_gamma USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
@@ -9301,7 +9301,7 @@ mod tests {
 
     #[pg_test]
     fn test_tqhnsw_insert_allocates_new_page_when_tail_is_full() {
-        Spi::run("CREATE TABLE tqhnsw_insert_new_page (id bigint primary key, embedding ecqvector)")
+        Spi::run("CREATE TABLE tqhnsw_insert_new_page (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
 
         let default_m = 8_u16;
@@ -9353,13 +9353,13 @@ mod tests {
         let second_code = vec![0x22_u8; large_code_len];
         Spi::run(&format!(
             "INSERT INTO tqhnsw_insert_new_page VALUES
-             (1, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::ecqvector)",
+             (1, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             hex::encode(first_code),
         ))
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_new_page_idx ON tqhnsw_insert_new_page USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
@@ -9379,7 +9379,7 @@ mod tests {
 
         Spi::run(&format!(
             "INSERT INTO tqhnsw_insert_new_page VALUES
-             (2, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::ecqvector)",
+             (2, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             hex::encode(second_code),
         ))
         .expect("insert should succeed");
@@ -9396,7 +9396,7 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_insert_reuses_new_tail_page_after_rollover() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_rollover_reuse (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_insert_rollover_reuse (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
 
@@ -9472,14 +9472,14 @@ mod tests {
 
         Spi::run(&format!(
             "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
-             (embedding ecqvector_ip_ops) WITH (m = {m})"
+             (embedding tqvector_ip_ops) WITH (m = {m})"
         ))
         .expect("index creation should succeed");
 
         for id in 1..=elements_per_page {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
-                 ({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::ecqvector)",
+                 ({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
                 hex::encode(vec![id as u8; code_len]),
             ))
             .expect("live insert should succeed");
@@ -9499,7 +9499,7 @@ mod tests {
 
         Spi::run(&format!(
             "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
-             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::ecqvector)",
+             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             elements_per_page + 1,
             hex::encode(vec![0xaa_u8; code_len]),
         ))
@@ -9515,7 +9515,7 @@ mod tests {
 
         Spi::run(&format!(
             "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
-             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::ecqvector)",
+             ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             elements_per_page + 2,
             hex::encode(vec![0xbb_u8; code_len]),
         ))
@@ -9597,17 +9597,17 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_insert_keeps_gamma_distinct() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_duplicate_gamma (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_insert_duplicate_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
-             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::ecqvector)",
+             (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector)",
         )
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_duplicate_gamma_idx ON tqhnsw_insert_duplicate_gamma USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
@@ -9625,7 +9625,7 @@ mod tests {
 
         Spi::run(
             "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
-             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::ecqvector)",
+             (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
         )
         .expect("gamma-distinct insert should succeed");
 
@@ -9672,16 +9672,16 @@ mod tests {
     #[pg_test]
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_non_empty_index_build_rejects_non_finite_gamma() {
-        Spi::run("CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding ecqvector)")
+        Spi::run("CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_build_nan_gamma VALUES
-             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::ecqvector)",
+             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
         )
         .expect("insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_build_nan_gamma_idx ON tqhnsw_build_nan_gamma USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should fail");
     }
@@ -9690,17 +9690,17 @@ mod tests {
     #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
     fn test_tqhnsw_insert_rejects_non_finite_gamma() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_nan_gamma_idx ON tqhnsw_insert_nan_gamma USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_nan_gamma VALUES
-             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::ecqvector)",
+             (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
         )
         .expect("insert should fail");
     }
@@ -13491,18 +13491,18 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_gettuple_tracks_current_result_state() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_result_state (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_gettuple_result_state (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_result_state VALUES
-             (1, encode_to_ecqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_ecqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_gettuple_result_state_idx ON tqhnsw_gettuple_result_state USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
@@ -13578,18 +13578,18 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_gettuple_emits_orderby_score() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_orderby_score (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_gettuple_orderby_score (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_gettuple_orderby_score VALUES
-             (1, encode_to_ecqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
-             (2, encode_to_ecqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_gettuple_orderby_score_idx ON tqhnsw_gettuple_orderby_score USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
@@ -15219,7 +15219,7 @@ mod tests {
     #[pg_test]
     fn test_tqhnsw_gettuple_duplicate_scan_drains_selected_duplicates() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_duplicate_multipage (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_gettuple_duplicate_multipage (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
 
@@ -15230,7 +15230,7 @@ mod tests {
         for id in 1..=10 {
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
-                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::ecqvector)",
+                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(&duplicate_payload),
             ))
             .expect("duplicate insert should succeed");
@@ -15242,7 +15242,7 @@ mod tests {
                 .collect::<Vec<_>>();
             Spi::run(&format!(
                 "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
-                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::ecqvector)",
+                 ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
             .expect("insert should succeed");
@@ -15250,7 +15250,7 @@ mod tests {
 
         Spi::run(
             "CREATE INDEX tqhnsw_gettuple_duplicate_multipage_idx ON tqhnsw_gettuple_duplicate_multipage USING tqhnsw \
-             (embedding ecqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+             (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
@@ -20791,22 +20791,22 @@ mod tests {
     #[should_panic(expected = "canonical quantizer defaults")]
     fn test_tqhnsw_insert_rejects_mismatched_seed() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding ecqvector)",
+            "CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
-             (1, encode_to_ecqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+             (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
             "CREATE INDEX tqhnsw_insert_seed_mismatch_idx ON tqhnsw_insert_seed_mismatch USING tqhnsw \
-             (embedding ecqvector_ip_ops)",
+             (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
             "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
-             (2, encode_to_ecqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 43))",
+             (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 43))",
         )
         .expect("insert should fail");
     }

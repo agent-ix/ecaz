@@ -177,7 +177,7 @@ impl VacuumSearchMetric {
                             },
                         )
                     }),
-                    source::IndexedVectorKind::Ecqvector => Self::Code,
+                    source::IndexedVectorKind::Tqvector => Self::Code,
                 }
             }
         }

@@ -131,12 +131,14 @@ the LUT 4x. Composes with tiling.
   `438`.** `scripts/vacuum_concurrency_scratch.sh --duration 60` now passes
   on current head; the stale metadata-entry-point repair lives in generic
   AM code (`src/am/shared.rs`, `src/am/vacuum.rs`, `src/am/scan.rs`).
-- **Packet `442` replaces the old quantized-row surface with a canonical
-  `ecvector` row model plus `ecqvector` sibling artifact type.** The indexed
-  column can now be raw `ecvector(dim)` by default, `heap_f32`/build-source
-  paths fall back to that indexed column when no alternate source column is
-  configured, and the explicit quantized-artifact tests now live on
-  `ecqvector` instead of the removed `tqvector` SQL type.
+- **Packet `442` replaces the old canonical quantized-row surface with a
+  canonical `ecvector` row model.** The indexed column can now be raw
+  `ecvector(dim)` by default, and `heap_f32`/build-source paths fall back to
+  that indexed column when no alternate source column is configured.
+- **Packet `443` narrows the persisted quantized sibling back to the
+  family-specific `tqvector` name.** The quant artifact remains available for
+  explicit persisted TurboQuant-family tests, but it is no longer the
+  canonical row type.
 
 ## Landing checklist
 
@@ -180,9 +182,9 @@ unless called out.
   - pgvector cast policy: lean install-time conditional.
   - Bare-typmod support: tentative yes.
 - [x] **Task 17 implementation: `ecvector` column type.** Packet `442`
-  lands the canonical `ecvector` row model and removes the prior
-  `tqvector` SQL type in favor of an explicit `ecqvector` sibling
-  artifact type.
+  lands the canonical `ecvector` row model, and packet `443` restores
+  `tqvector` as the explicit TurboQuant-family sibling artifact type
+  rather than the canonical row surface.
 - [ ] **Task 16's head-to-head measurement uses `ecvector`, not the
   bytea+`STORAGE PLAIN` recipe.** The recipe was the research surface;
   the closure measurement runs on the productized type so the

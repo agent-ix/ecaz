@@ -563,7 +563,7 @@ pub(crate) enum PqFastScanRerankModeResolution {
     DefaultHeapF32WithIndexedColumn,
     DefaultHeapF32WithRerankSourceColumn,
     DefaultHeapF32WithBuildSourceColumn,
-    DefaultQuantizedWithIndexedEcqvector,
+    DefaultQuantizedWithIndexedTqvector,
     DefaultQuantizedTurboQuantStorage,
     NonPqFastScanStorage,
 }
@@ -579,8 +579,8 @@ impl PqFastScanRerankModeResolution {
             Self::DefaultHeapF32WithBuildSourceColumn => {
                 "default_heap_f32_with_build_source_column"
             }
-            Self::DefaultQuantizedWithIndexedEcqvector => {
-                "default_quantized_with_indexed_ecqvector"
+            Self::DefaultQuantizedWithIndexedTqvector => {
+                "default_quantized_with_indexed_tqvector"
             }
             Self::DefaultQuantizedTurboQuantStorage => "default_quantized_turboquant_storage",
             Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
@@ -1211,7 +1211,7 @@ fn default_grouped_rerank_mode_resolution(
             } else if has_default_heap_f32_source {
                 PqFastScanRerankModeResolution::DefaultHeapF32WithIndexedColumn
             } else {
-                PqFastScanRerankModeResolution::DefaultQuantizedWithIndexedEcqvector
+                PqFastScanRerankModeResolution::DefaultQuantizedWithIndexedTqvector
             }
         }
         super::options::StorageFormat::TurboQuant => {
@@ -1550,7 +1550,7 @@ unsafe fn configure_grouped_heap_rerank_state(
                 attnum: indexed_attribute.attnum,
                 kind: source::SourceDatumKind::Ecvector,
             },
-            source::IndexedVectorKind::Ecqvector => pgrx::error!(
+            source::IndexedVectorKind::Tqvector => pgrx::error!(
                 "tqhnsw grouped heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[], bytea, or ecvector heap column",
                 PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
             ),
@@ -6904,7 +6904,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_ecqvector_pq_fastscan_default_rerank_resolves_to_quantized() {
+    fn indexed_tqvector_pq_fastscan_default_rerank_resolves_to_quantized() {
         let options = super::super::options::TqHnswOptions {
             m: super::super::TQHNSW_DEFAULT_M,
             ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
@@ -6917,12 +6917,12 @@ mod tests {
         assert_eq!(
             default_grouped_rerank_mode(&options, false),
             GroupedRerankMode::Quantized,
-            "indexed ecqvector pq_fastscan indexes should default rerank to quantized"
+            "indexed tqvector pq_fastscan indexes should default rerank to quantized"
         );
         assert_eq!(
             default_grouped_rerank_mode_resolution(&options, false),
-            PqFastScanRerankModeResolution::DefaultQuantizedWithIndexedEcqvector,
-            "indexed ecqvector pq_fastscan defaults should explain that quantized came from the indexed ecqvector column"
+            PqFastScanRerankModeResolution::DefaultQuantizedWithIndexedTqvector,
+            "indexed tqvector pq_fastscan defaults should explain that quantized came from the indexed tqvector column"
         );
     }
 

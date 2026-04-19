@@ -1,25 +1,25 @@
-CREATE TYPE ecqvector;
+CREATE TYPE tqvector;
 CREATE TYPE ecvector;
 
-CREATE FUNCTION ecqvector_in(cstring)
-RETURNS ecqvector
+CREATE FUNCTION tqvector_in(cstring)
+RETURNS tqvector
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_in_wrapper';
 
-CREATE FUNCTION ecqvector_out(ecqvector)
+CREATE FUNCTION tqvector_out(tqvector)
 RETURNS cstring
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_out_wrapper';
 
-CREATE FUNCTION ecqvector_recv(internal)
-RETURNS ecqvector
+CREATE FUNCTION tqvector_recv(internal)
+RETURNS tqvector
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_recv_wrapper';
 
-CREATE FUNCTION ecqvector_send(ecqvector)
+CREATE FUNCTION tqvector_send(tqvector)
 RETURNS bytea
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
@@ -55,12 +55,12 @@ IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'ecvector_send_wrapper';
 
-CREATE TYPE ecqvector (
+CREATE TYPE tqvector (
     INTERNALLENGTH = variable,
-    INPUT = ecqvector_in,
-    OUTPUT = ecqvector_out,
-    RECEIVE = ecqvector_recv,
-    SEND = ecqvector_send,
+    INPUT = tqvector_in,
+    OUTPUT = tqvector_out,
+    RECEIVE = tqvector_recv,
+    SEND = tqvector_send,
     STORAGE = external
 );
 
@@ -74,11 +74,11 @@ CREATE TYPE ecvector (
     STORAGE = external
 );
 
-CREATE FUNCTION encode_to_ecqvector(real[], integer, bigint)
-RETURNS ecqvector
+CREATE FUNCTION encode_to_tqvector(real[], integer, bigint)
+RETURNS tqvector
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
-AS 'MODULE_PATHNAME', 'encode_to_ecqvector_wrapper';
+AS 'MODULE_PATHNAME', 'encode_to_tqvector_wrapper';
 
 CREATE FUNCTION encode_to_ecvector(real[], integer, bigint)
 RETURNS ecvector
@@ -133,25 +133,25 @@ WITH FUNCTION ecvector_from_bytea(bytea, integer, boolean);
 CREATE CAST (ecvector AS bytea)
 WITH FUNCTION ecvector_to_bytea(ecvector, integer, boolean);
 
-CREATE FUNCTION ecqvector_inner_product(ecqvector, ecqvector)
+CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_inner_product_wrapper';
 
-CREATE FUNCTION ecqvector_negative_inner_product(ecqvector, ecqvector)
+CREATE FUNCTION tqvector_negative_inner_product(tqvector, tqvector)
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_negative_inner_product_wrapper';
 
-CREATE FUNCTION ecqvector_query_inner_product(ecqvector, real[])
+CREATE FUNCTION tqvector_query_inner_product(tqvector, real[])
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqvector_query_inner_product_wrapper';
 
-CREATE FUNCTION ecqvector_negative_query_inner_product(ecqvector, real[])
+CREATE FUNCTION tqvector_negative_query_inner_product(tqvector, real[])
 RETURNS float4
 IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
@@ -187,15 +187,15 @@ LANGUAGE c
 AS 'MODULE_PATHNAME', 'tqhnsw_handler';
 
 CREATE OPERATOR <#> (
-    PROCEDURE = ecqvector_negative_inner_product,
-    LEFTARG = ecqvector,
-    RIGHTARG = ecqvector,
+    PROCEDURE = tqvector_negative_inner_product,
+    LEFTARG = tqvector,
+    RIGHTARG = tqvector,
     COMMUTATOR = <#>
 );
 
 CREATE OPERATOR <#> (
-    PROCEDURE = ecqvector_negative_query_inner_product,
-    LEFTARG = ecqvector,
+    PROCEDURE = tqvector_negative_query_inner_product,
+    LEFTARG = tqvector,
     RIGHTARG = real[]
 );
 
@@ -214,10 +214,10 @@ CREATE OPERATOR <#> (
 
 CREATE ACCESS METHOD tqhnsw TYPE INDEX HANDLER tqhnsw_handler;
 
-CREATE OPERATOR CLASS ecqvector_ip_ops
-DEFAULT FOR TYPE ecqvector USING tqhnsw AS
-    OPERATOR 1 <#>(ecqvector, real[]) FOR ORDER BY float_ops,
-    FUNCTION 1 ecqvector_query_inner_product(ecqvector, real[]);
+CREATE OPERATOR CLASS tqvector_ip_ops
+DEFAULT FOR TYPE tqvector USING tqhnsw AS
+    OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
+    FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);
 
 CREATE OPERATOR CLASS ecvector_ip_ops
 DEFAULT FOR TYPE ecvector USING tqhnsw AS

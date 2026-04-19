@@ -427,7 +427,7 @@ unsafe fn build_heap_tuple_from_indexed_datum(
             let source_vector = Some(source_vector.unwrap_or(index_vector));
             build_quantized_build_tuple(dimensions, gamma, code, heap_tid, source_vector)
         }
-        source::IndexedVectorKind::Ecqvector => {
+        source::IndexedVectorKind::Tqvector => {
             let original = vector_datum
                 .cast_mut_ptr::<std::ffi::c_void>()
                 .cast::<pg_sys::varlena>();
@@ -439,10 +439,10 @@ unsafe fn build_heap_tuple_from_indexed_datum(
             }
 
             let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
-                .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed ecqvector: {e}"));
+                .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed tqvector: {e}"));
             if bits != crate::DEFAULT_QUANT_BITS || seed != crate::DEFAULT_QUANT_SEED {
                 pgrx::error!(
-                    "tqhnsw indexed ecqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
+                    "tqhnsw indexed tqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                     bits,

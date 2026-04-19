@@ -446,7 +446,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                             },
                         ),
                     ),
-                    source::IndexedVectorKind::Ecqvector => InsertSearchMetric::Code,
+                    source::IndexedVectorKind::Tqvector => InsertSearchMetric::Code,
                 };
             }
             run_insert_with_adapter(
