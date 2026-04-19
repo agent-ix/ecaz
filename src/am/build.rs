@@ -2339,6 +2339,267 @@ mod tests {
     }
 
     #[test]
+    fn flatten_native_neighbor_slots_dedups_and_skips_origin() {
+        let slots = vec![
+            Some(0),
+            Some(1),
+            None,
+            Some(1),
+            Some(2),
+            Some(0),
+            Some(2),
+            None,
+        ];
+
+        assert_eq!(
+            flatten_native_neighbor_slots(0, 2, 2, &slots),
+            vec![1, 2],
+            "flattening should preserve first-seen layer order while skipping self-links and duplicates",
+        );
+    }
+
+    #[test]
+    fn add_native_backlinks_uses_free_slot_before_rewrite() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples: vec![
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x00],
+                    source_vector: Some(vec![1.0, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 2,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x01],
+                    source_vector: Some(vec![0.3, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 3,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x02],
+                    source_vector: Some(vec![0.9, 0.0]),
+                    source_count: 1,
+                },
+            ],
+            dimensions: Some(2),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let mut nodes = vec![
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(1), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+        ];
+
+        add_native_backlinks(
+            &mut nodes,
+            &state,
+            BuildGraphMetric::Source,
+            2,
+            &[NativeForwardSelection {
+                layer: 0,
+                node_idx: 0,
+            }],
+            2,
+        );
+
+        assert_eq!(
+            nodes[0].neighbor_slots,
+            vec![Some(1), Some(2), None, None],
+            "a target with free layer capacity should admit the new backlink without rewriting the existing slice",
+        );
+    }
+
+    #[test]
+    fn add_native_backlinks_rewrites_full_slice_for_better_candidate() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 2,
+                ef_construction: 32,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 6,
+            heap_tuples: vec![
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x00],
+                    source_vector: Some(vec![1.0, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 2,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x01],
+                    source_vector: Some(vec![0.1, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 3,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x02],
+                    source_vector: Some(vec![0.95, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 4,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x03],
+                    source_vector: Some(vec![0.2, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 5,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x04],
+                    source_vector: Some(vec![0.3, 0.0]),
+                    source_count: 1,
+                },
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 1,
+                        offset_number: 6,
+                    }],
+                    dimensions: 2,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code: vec![0x05],
+                    source_vector: Some(vec![0.4, 0.0]),
+                    source_count: 1,
+                },
+            ],
+            dimensions: Some(2),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let mut nodes = vec![
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(1), Some(3), Some(4), Some(5)],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+            NativeBuildNode {
+                level: 0,
+                neighbor_slots: vec![Some(0), None, None, None],
+            },
+        ];
+
+        add_native_backlinks(
+            &mut nodes,
+            &state,
+            BuildGraphMetric::Source,
+            2,
+            &[NativeForwardSelection {
+                layer: 0,
+                node_idx: 0,
+            }],
+            2,
+        );
+
+        assert_eq!(
+            nodes[0].neighbor_slots,
+            vec![Some(2), Some(5), Some(4), Some(3)],
+            "a full backlink slice should be rewritten with the best scored M/2M candidates, including the new node when it outranks an existing backlink",
+        );
+    }
+
+    #[test]
     fn average_source_representative_weights_by_duplicate_count() {
         let mut representative = vec![1.0, 0.0];
         source::average_source_representatives(&mut representative, 1, &[0.0, 1.0], 1);
