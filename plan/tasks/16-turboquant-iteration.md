@@ -1,7 +1,9 @@
 # Task 16: TurboQuant Iteration with PqFastScan Learnings
 
-Status: in progress — levers 1–3 landed and were measured; lever-4 / lever-5
-comparison closed in packet `437`, but the serious-lane closure goal is still open.
+Status: ready to land — the canonical `ecvector` row-model / `tqvector`
+sibling-artifact refactor is landed and measured enough to merge. Remaining
+build-sensitive storage-policy and lever-tuning work is deferred until after
+ADR-042 native HNSW build.
 
 Follow-on to ADR-032.
 
@@ -191,19 +193,32 @@ the LUT 4x. Composes with tiling.
     sketch)
   ADR-043 now explicitly defers the storage-policy default to ADR-044 instead
   of overstating packet `447` as the final answer.
+- **Quiet-window follow-up showed the old build path is now the confounder.**
+  The remaining storage-policy work is no longer blocked on update-path
+  ambiguity:
+  - `EXTERNAL` / default larger-text update probe: `369,048` WAL bytes and
+    `27` HOT updates per steady 1k-row batch
+  - `EXTENDED` larger-text update probe: `364,144` WAL bytes and `40` HOT
+  - `MAIN` larger-text update probe: `12,661,104` WAL bytes and `0` HOT
+  - `PLAIN` larger-text update probe: `12,642,488` WAL bytes and `0` HOT
+  But quiet-window TurboQuant builds on the current old builder were wildly
+  unstable on the non-default surfaces:
+  - task-16 baseline builds: `180.774s` (`EXTERNAL`), `173.784s` (`PLAIN`)
+  - `EXTENDED` build: `1292.15s` before termination
+  - `MAIN` build: exceeded `24:27` before termination
+  That is enough evidence to defer the rest of ADR-044 until after
+  ADR-042/native build instead of blocking task 16 merge on an outgoing build
+  path.
 
 ## Landing checklist
 
-Task 16's formal subtasks (1–7 above) are all closed. Before task 16 can
-**merge**, the following items still need to land. Items are independent
-unless called out.
+Task 16's formal subtasks (1–7 above) are all closed. The row-model /
+artifact-shape refactor is ready to land. Remaining performance-policy work is
+explicitly deferred to post-ADR-042 follow-on work and does **not** block task
+16 merge.
 
-### Measurement
+### Merge-Ready
 
-- [ ] **Rerun packet `440` at q200 ×≥2.** One run per side established
-  `-4.33%` for persisted `source_raw` vs `source`. Rerun to confirm the
-  direction survives restart noise. Cheap; unblocks treating the supported
-  path as a validated runtime win rather than a single-cell inference.
 - [x] **Rerun the inline serious-lane hypothesis at q200 ×≥2 on the
   productized `ecvector` surface.** Packet `446` supersedes the old
   `bytea`/duplicate-column seam with two q200 runs each on inline
@@ -228,23 +243,12 @@ unless called out.
   buffer-cache pressure, vacuum cost per page, WAL on updates, and
   index build time — all named as a tradeoff in the readout, not just
   a win. Closed in packet `447`.
-- [ ] **ADR-044 storage-policy matrix measured.** Packet `447` is enough to
-  prove "`PLAIN` is fast and costly", but not enough to choose a default.
-  Before task 16 closes the `ecvector` storage-policy question, land:
-  - the `EXTENDED` q200 serious-lane + WAL/HOT cell
-  - the `MAIN` sanity cell
-  - the `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
-  - the larger touched-column update probe
-  - the detoast-vs-decompress read-path decomposition if practical
-  - the C1 index-side cold-page rerank-payload design sketch from ADR-044
 
 ### Productization
 
-- [ ] **ADR-043 ratified.** Status PROPOSED → ACCEPTED. Open-questions
-  resolution:
-  - Name: **RESOLVED — `ecvector`** (Ecaz).
-  - pgvector cast policy: lean install-time conditional.
-  - Bare-typmod support: tentative yes.
+- [x] **ADR-043 ratified.** Status is already `ACCEPTED`; the canonical
+  name, row-model decision, and sibling-artifact taxonomy are settled on
+  current head.
 - [x] **`ecvector` column type landed.** Packet `442` lands the canonical
   `ecvector` row model; packet `443` narrows `tqvector` to the
   TurboQuant-family sibling artifact.
@@ -294,12 +298,10 @@ canonical-row position.
   sibling names" taxonomy rule is captured in ADR-043 §Quantized
   sibling artifacts, and packet `445` adds a README pointer so the
   canonical-vs-sibling rule is visible from the repo front door.
-- [ ] **Rename public-facing error text and doc references.** Packet
-  `443` updated error-text in `src/am/{build,scan,insert,vacuum}.rs`
-  to describe the sibling as `tqvector`. Before merge, scan remaining
-  docs (`spec/tests.md`, plan files, review-area READMEs) for stale
-  `ecqvector` / old-canonical-`tqvector` wording and update. Do not
-  preserve the old names as aliases.
+- [x] **Rename public-facing error text and doc references.** Grep now shows
+  `ecqvector` survives only in this plan's historical notes; runtime code,
+  SQL, tests, scripts, README, and ADRs are on the `ecvector` /
+  `tqvector` taxonomy.
 - [x] **Compact `tqvector` into the shared efficient-storage family.**
   Packet `445` removes per-row `bits` and `seed` bytes and keeps
   `tqvector` as a canonical TurboQuant-family artifact with
@@ -310,20 +312,6 @@ canonical-row position.
   typmod-only 8-byte target was not viable on current head because the
   `tqvector` output/operator functions do not receive typmod; keeping
   `dim` inline is the deliberate compact compromise.
-
-### Lever decisions
-
-- [ ] **Lever 4 (`full_lut` on quantized lane).** After the ef_search
-  matrix, decide: persist as reloption, flip as default, or leave as
-  experimental `TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE` env. Document
-  the choice + rationale.
-- [ ] **Lever 5 (`int8_approx`).** On current x86 host, packet `437`
-  showed `+2.97%` regression on heap-f32 lane and neck-and-neck on
-  quantized. Direction is "not justified on this host"; keep code on
-  branch until NEON / Graviton / Apple hardware tests. Add per-hardware
-  tuning notes to ADR-025 naming the NEON-no-f32-gather constraint and
-  the cache-hierarchy deltas that could invert the lever-4/lever-5
-  ordering on Arm.
 
 ### Infrastructure and hygiene
 
@@ -346,9 +334,25 @@ canonical-row position.
 
 ### Merge
 
-- [ ] All measurement items above green.
-- [ ] ADR-043 ACCEPTED; canonical `ecvector` row model landed.
+- [x] Merge-blocking row-model / artifact-shape measurements green enough.
+- [x] ADR-043 ACCEPTED; canonical `ecvector` row model landed.
 - [ ] Task 16 merged to `main`.
+
+### Deferred Follow-Ons (post-ADR-042/native build)
+
+- [ ] Rerun packet `440` at q200 ×≥2 if the persisted `source_raw`
+  supported-path lane still matters after native build reshapes the runtime.
+- [ ] Lever-4 `full_lut` ef_search matrix (`64 / 128 / 256`) and final
+  lever-4 / lever-5 persisted-default decision.
+- [ ] ADR-044 storage-policy matrix on the native build path:
+  - `EXTENDED` q200 serious-lane cell
+  - `MAIN` q200 sanity cell
+  - `PLAIN + fillfactor` sweep (`70 / 80 / 90`)
+  - detoast-vs-decompress decomposition if still useful
+  - C1 index-side cold-page rerank-payload sketch
+- [ ] Revisit whether `ecvector` column-storage optimization should happen in
+  heap policy space at all, or whether native build plus index-owned raw-f32
+  payload makes the heap-policy question mostly moot.
 
 ### Unblocks on merge
 

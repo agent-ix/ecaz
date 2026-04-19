@@ -60,9 +60,41 @@ any of those.
 
 ## Decision
 
-**Not yet made.** Status is PROPOSED. Coder-1 runs the measurement
-matrix in §Measurement plan, and the decision criteria in
-§Decision criteria select one of the options in §Option catalog.
+**Final storage-policy choice deferred until after ADR-042 native HNSW
+build.** Task 16 does not block on closing this ADR.
+
+Current product answer:
+
+- keep current-head `EXTERNAL` as the `ecvector` default
+- keep `PLAIN` as the documented expert lever for read-mostly rows
+- do not spend more task-16 time optimizing `ecvector` column storage on
+  the old pre-ADR-042 build path
+
+Why the deferral is intentional:
+
+- Task 16 already landed the canonical `ecvector` row model, the
+  `tqvector` sibling-artifact contract, and the real `ecvector`
+  head-to-head data needed to land the shape refactor.
+- The update-path measurements are already decisive enough to preserve
+  the current guidance:
+  - `EXTERNAL` / default larger-text update probe: `369,048` WAL bytes
+    per steady 1k-row batch, `27` HOT updates
+  - `EXTENDED` larger-text update probe: `364,144` WAL bytes, `40` HOT
+  - `MAIN` larger-text update probe: `12,661,104` WAL bytes, `0` HOT
+  - `PLAIN` larger-text update probe: `12,642,488` WAL bytes, `0` HOT
+- The remaining missing cells are now dominated by the old build path.
+  On the quiet machine, timed TurboQuant builds on non-default storage
+  surfaces were far outside the task-16 baseline band:
+  - earlier task-16 baselines: `180.774s` (`EXTERNAL` default),
+    `173.784s` (`PLAIN`)
+  - `EXTENDED` quiet-window build: `1292.15s` before termination
+  - `MAIN` quiet-window build: exceeded `24:27` before termination
+
+That makes further storage-policy tuning on the old build path a poor
+use of task-16 time. The next refactor is ADR-042 native HNSW build
+specifically because build throughput is not under control yet. Revisit
+this ADR after native build lands, when storage-policy measurements are
+less confounded by the outgoing builder.
 
 ## Option catalog
 
@@ -310,7 +342,7 @@ used (`task16_ecvector` DB, 50k real corpus, m=16, ef_search=128,
 q200, `warm-after-prime3`, `cached-plan` timing, confirming
 reruns).
 
-### Must-measure (block the decision until landed)
+### Must-measure (post-ADR-042 follow-on)
 
 1. **A2: `EXTENDED` cell.** Same table as `447`'s default surface
    but with `ALTER COLUMN embedding SET STORAGE EXTENDED`.
@@ -328,7 +360,7 @@ reruns).
 3. **A3: `MAIN` sanity check.** One cell. Likely close to `PLAIN`
    at 1536-dim; measurement confirms or denies.
 
-### Should-measure (informs the architectural decision)
+### Should-measure (post-ADR-042 follow-on)
 
 4. **Decompose packet-`441`'s `1386us` decode bucket into detoast
    vs decompress components.** If decompression is a large fraction,
@@ -342,7 +374,7 @@ reruns).
    non-embedding column (e.g., a 100-byte text) tests whether the
    `3.56×` WAL multiplier is worst-case-only or applies broadly.
 
-### Estimate (informs whether to build, not measure)
+### Estimate (post-ADR-042 follow-on)
 
 6. **Engineering sketch for C1 (index-side cold-page payload).**
    Not a measurement — a design note. Should cover:
@@ -354,7 +386,7 @@ reruns).
 
 ## Decision criteria
 
-Once the measurement plan lands, the decision selects **one**
+Once the deferred measurement plan lands, the decision selects **one**
 option as the default product storage for `ecvector`, plus any
 number of additional options as documented expert knobs.
 
@@ -400,8 +432,8 @@ number of additional options as documented expert knobs.
 ### Negative
 
 - The measurement plan is several cells and takes non-trivial
-  scratch-DB time. Blocks task-16 merge-ready on this ADR's
-  resolution.
+  scratch-DB time. It no longer blocks task-16 merge-ready; the work is
+  explicitly deferred until after ADR-042 native build.
 - If C1 lands, it implies an `INDEX_FORMAT` bump with all the
   rebuild/compat implications that carries.
 
