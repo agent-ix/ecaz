@@ -211,8 +211,8 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                             page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                                 .unwrap_or_else(|e| {
                                     pgrx::error!(
-                                        "tqhnsw failed to decode TurboQuant V3 tuple while counting: {e}"
-                                    )
+                                "tqhnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                            )
                                 });
                         if !element.deleted && !element.heaptids.is_empty() {
                             count += 1;

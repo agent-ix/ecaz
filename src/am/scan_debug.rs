@@ -1469,23 +1469,23 @@ pub(crate) unsafe fn debug_all_top_level_heap_tids(index_oid: pg_sys::Oid) -> Ve
     }
 
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
-    let mut heap_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
-    }
-    .into_iter()
-    .filter_map(|element_tid| {
-        let element =
-            unsafe { graph::load_exact_graph_element(index_relation, element_tid, storage) };
-        if element.deleted {
-            return None;
-        }
-        element
-            .heaptids
-            .first()
-            .copied()
-            .map(debug_item_pointer_coords)
-    })
-    .collect::<Vec<_>>();
+    let mut heap_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) }
+            .into_iter()
+            .filter_map(|element_tid| {
+                let element = unsafe {
+                    graph::load_exact_graph_element(index_relation, element_tid, storage)
+                };
+                if element.deleted {
+                    return None;
+                }
+                element
+                    .heaptids
+                    .first()
+                    .copied()
+                    .map(debug_item_pointer_coords)
+            })
+            .collect::<Vec<_>>();
     heap_tids.sort_unstable();
     heap_tids.dedup();
 
@@ -1577,9 +1577,9 @@ pub(crate) unsafe fn debug_layer0_reachable_live_element_tids(
         }
         reachable.push(element_tid);
 
-        for neighbor_tid in
-            unsafe { debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0) }
-        {
+        for neighbor_tid in unsafe {
+            debug_load_neighbor_tids_for_layer(index_relation, storage, element_tid, m, 0)
+        } {
             if !visited.contains(&neighbor_tid) {
                 queue.push_back(neighbor_tid);
             }
@@ -1623,9 +1623,8 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
     let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let top_level_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
-    };
+    let top_level_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut heap_tids = top_level_tids
         .into_iter()
@@ -1686,9 +1685,8 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
     let storage = opaque.scan_graph_storage;
     let quantizer = unsafe { &*opaque.cached_quantizer };
     let prepared_query = unsafe { &*opaque.prepared_query };
-    let top_level_tids = unsafe {
-        debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level)
-    };
+    let top_level_tids =
+        unsafe { debug_collect_element_tids_at_level(index_relation, storage, metadata.max_level) };
 
     let mut seeds = top_level_tids
         .into_iter()
@@ -3586,9 +3584,8 @@ pub(crate) unsafe fn debug_entry_point_neighbor_tids(index_oid: pg_sys::Oid) -> 
     }
 
     let storage = unsafe { debug_graph_storage(index_relation, &metadata) };
-    let (_element, neighbors) = unsafe {
-        graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage)
-    };
+    let (_element, neighbors) =
+        unsafe { graph::load_exact_graph_adjacency(index_relation, metadata.entry_point, storage) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     neighbors
         .tids

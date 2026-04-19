@@ -209,7 +209,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"build_source_column\0".as_ptr().cast(),
-                b"Optional heap column name supplying raw real[] vectors for ambuild graph construction.\0"
+                b"Optional alternate heap column name supplying raw real[] or ecvector values for source-backed graph construction instead of the indexed ecvector column.\0"
                     .as_ptr()
                     .cast(),
                 ptr::null(),
@@ -220,7 +220,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
             pg_sys::add_local_string_reloption(
                 &mut relopts,
                 b"rerank_source_column\0".as_ptr().cast(),
-                b"Optional heap column name supplying raw real[] or bytea vectors for grouped heap_f32 rerank.\0"
+                b"Optional alternate heap column name supplying raw real[], bytea, or ecvector values for grouped heap_f32 rerank instead of the indexed ecvector column.\0"
                     .as_ptr()
                     .cast(),
                 ptr::null(),

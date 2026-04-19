@@ -119,6 +119,118 @@ the LUT 4x. Composes with tiling.
 - A packed raw-f32 rerank source helps that serious lane, but the lever-4 /
   lever-5 live matrix shows lever 4 helps the quantized lane more than lever 5,
   while neither closes the serious lane.
+- **Packet `441` located the remaining serious-lane cost in heap-source
+  storage layout, not scorer math.** Forcing `source_raw bytea` inline via
+  `ALTER COLUMN … SET STORAGE PLAIN` on a mixed-inline corpus reduced the
+  q200 serious lane from `4.838ms` to `3.137ms` (`-35.16%`) with recall
+  bit-identical (`graph_recall_at_10 = 0.9629`,
+  `mean_abs_score_error = 0`) and the rerank-decode micro-bucket collapsing
+  from `1386us` to `1us`. That is the measurement that productizes the
+  ADR-043 `ecvector` native-type direction.
+- **Vacuum-concurrency regression from packet `437` is fixed in packet
+  `438`.** `scripts/vacuum_concurrency_scratch.sh --duration 60` now passes
+  on current head; the stale metadata-entry-point repair lives in generic
+  AM code (`src/am/shared.rs`, `src/am/vacuum.rs`, `src/am/scan.rs`).
+- **Packet `442` replaces the old quantized-row surface with a canonical
+  `ecvector` row model plus `ecqvector` sibling artifact type.** The indexed
+  column can now be raw `ecvector(dim)` by default, `heap_f32`/build-source
+  paths fall back to that indexed column when no alternate source column is
+  configured, and the explicit quantized-artifact tests now live on
+  `ecqvector` instead of the removed `tqvector` SQL type.
+
+## Landing checklist
+
+Task 16's formal subtasks (1–7 above) are all closed. Before task 16 can
+**merge**, the following items still need to land. Items are independent
+unless called out.
+
+### Measurement
+
+- [ ] **Rerun packet `440` at q200 ×≥2.** One run per side established
+  `-4.33%` for persisted `source_raw` vs `source`. Rerun to confirm the
+  direction survives restart noise. Cheap; unblocks treating the supported
+  path as a validated runtime win rather than a single-cell inference.
+- [ ] **Rerun packet `441` at q200 ×≥2** on the `tqhnsw_real_50k_tq_mixed_inline_corpus`
+  surface. The `-35.16%` delta is far outside the packet-`432` noise
+  envelope, but one confirming run makes the task-16 headline number
+  bulletproof.
+- [ ] **Head-to-head vs PqFastScan on the same inline surface.** Task 16's
+  stated outcome goal is "narrow the TurboQuant vs PqFastScan latency gap
+  on the 50k warm real seam". No packet in the 422–441 arc has put
+  TurboQuant-with-inline-source next to PqFastScan on the same corpus,
+  recall target, and runtime. Add one q200 cell on PqFastScan against the
+  mixed-inline (or equivalent) surface. Without this cell, task 16 closes
+  the gap question by inference, not measurement.
+- [ ] **ef_search matrix for lever-4 `full_lut` on the quantized lane.**
+  Packet `437` showed `-16%` at `ef_search = 128` on one cell. Before
+  lever 4 becomes any kind of persisted default, run `ef_search = 64 /
+  128 / 256` so the decision rests on a shape, not a point.
+- [ ] **Mixed-inline storage cost measured as an explicit tradeoff.**
+  Packet `441` showed heap footprint grew from `43MB` to `390MB`
+  (≈9×) for the `-35%` latency win. Quantify what this means for
+  buffer-cache pressure, vacuum cost per page, WAL on updates, and
+  index build time — all named as a tradeoff in the readout, not just
+  a win.
+
+### Productization
+
+- [ ] **ADR-043 ratified.** Status PROPOSED → ACCEPTED. Open-questions
+  resolution:
+  - Name: **RESOLVED — `ecvector`** (Ecaz).
+  - pgvector cast policy: lean install-time conditional.
+  - Bare-typmod support: tentative yes.
+- [x] **Task 17 implementation: `ecvector` column type.** Packet `442`
+  lands the canonical `ecvector` row model and removes the prior
+  `tqvector` SQL type in favor of an explicit `ecqvector` sibling
+  artifact type.
+- [ ] **Task 16's head-to-head measurement uses `ecvector`, not the
+  bytea+`STORAGE PLAIN` recipe.** The recipe was the research surface;
+  the closure measurement runs on the productized type so the
+  "narrow the gap" answer is in the same terms users will adopt.
+- [ ] **Document `ecvector` as the column type** in README/quickstart.
+
+### Lever decisions
+
+- [ ] **Lever 4 (`full_lut` on quantized lane).** After the ef_search
+  matrix, decide: persist as reloption, flip as default, or leave as
+  experimental `TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE` env. Document
+  the choice + rationale.
+- [ ] **Lever 5 (`int8_approx`).** On current x86 host, packet `437`
+  showed `+2.97%` regression on heap-f32 lane and neck-and-neck on
+  quantized. Direction is "not justified on this host"; keep code on
+  branch until NEON / Graviton / Apple hardware tests. Add per-hardware
+  tuning notes to ADR-025 naming the NEON-no-f32-gather constraint and
+  the cache-hierarchy deltas that could invert the lever-4/lever-5
+  ordering on Arm.
+
+### Infrastructure and hygiene
+
+- [x] Vacuum concurrency regression fixed (packet `438`).
+- [ ] **Plan file outcome section updated** after each rerun /
+  head-to-head cell lands. Task 16's outcome narrative should reflect
+  measured truth, not just the 441 snapshot.
+- [ ] **Script-surface test for `ALTER INDEX … SET/RESET
+  (rerank_source_column)`.** Packet `440`'s methodology relies on the
+  ALTER cycle round-tripping; lock this in with a `pg_test` so a future
+  refactor cannot silently break the measurement reproducibility.
+- [ ] **`install_adr030_pg17_pg_test.sh` → backend `.so` version
+  assertion.** Packet `440` caught a stale-install hazard manually
+  (flat `~26.96ms` tipped it off). A script-level version check would
+  convert that manual diagnosis into an automatic safety belt.
+
+### Merge
+
+- [ ] All measurement items above green.
+- [ ] ADR-043 ACCEPTED; canonical `ecvector` row model landed.
+- [ ] Task 16 merged to `main`.
+
+### Unblocks on merge
+
+- ADR-042 (native HNSW build path) — already PROPOSED, composes with
+  ADR-043 per ADR-043 §Relationship.
+- Billion-scale follow-on work (ADR-034 DiskANN, ADR-035 SPANN) —
+  both benefit from `ecvector` as a compact, type-safe HeapF32 rerank
+  source.
 
 ## Out of scope
 

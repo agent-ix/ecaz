@@ -31,9 +31,16 @@ impl InsertHeapSourceScorer {
                 heap_relation,
                 source_column,
                 "build_source_column",
-                source::SourceTypePolicy::RealArrayOnly,
+                source::SourceTypePolicy::BuildSource,
             )
         };
+        unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
+    }
+
+    unsafe fn new_with_attribute(
+        heap_relation: pg_sys::Relation,
+        source_attribute: source::SourceAttribute,
+    ) -> Self {
         let slot = unsafe {
             source::allocate_heap_slot(
                 heap_relation,
@@ -176,22 +183,6 @@ impl Drop for InsertHeapSourceScorer {
 }
 
 impl InsertSearchMetric {
-    unsafe fn from_tuple(
-        heap_relation: pg_sys::Relation,
-        source_column: Option<&str>,
-        tuple: &build::BuildTuple,
-    ) -> Self {
-        match source_column {
-            Some(source_column) => {
-                if tuple.source_vector.is_none() {
-                    pgrx::error!("tqhnsw live insert source scoring requires source data");
-                }
-                Self::Source(unsafe { InsertHeapSourceScorer::new(heap_relation, source_column) })
-            }
-            None => Self::Code,
-        }
-    }
-
     unsafe fn score_new_tuple_against_element(
         &mut self,
         metadata: &page::MetadataPage,
@@ -287,7 +278,12 @@ impl InsertFormatAdapter {
                 )
             },
             Self::TurboQuantHotCold(layout) => unsafe {
-                find_duplicate_turbo_hot_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
+                find_duplicate_turbo_hot_element_tid(
+                    index_relation,
+                    tuple.gamma,
+                    &tuple.code,
+                    layout,
+                )
             },
             Self::PqFastScan(layout) => unsafe {
                 find_duplicate_grouped_element_tid(index_relation, tuple.gamma, &tuple.code, layout)
@@ -398,7 +394,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
     heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
-    _index_info: *mut pg_sys::IndexInfo,
+    index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
@@ -409,6 +405,11 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let tuple;
             let mut metric;
+            let indexed_attribute = source::resolve_indexed_vector_attribute_from_index_info(
+                heap_relation,
+                index_info,
+                "indexed column",
+            );
             if let Some(source_column) = options.build_source_column.as_deref() {
                 if values.is_null() || isnull.is_null() {
                     pgrx::error!("tqhnsw aminsert received null tuple value arrays");
@@ -416,14 +417,37 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
                 if *isnull {
                     pgrx::error!("tqhnsw does not support NULL indexed values");
                 }
-                let mut source_scorer = InsertHeapSourceScorer::new(heap_relation, source_column);
+                let source_attribute = source::resolve_source_attribute(
+                    heap_relation,
+                    source_column,
+                    "build_source_column",
+                    source::SourceTypePolicy::BuildSource,
+                );
+                let mut source_scorer =
+                    InsertHeapSourceScorer::new_with_attribute(heap_relation, source_attribute);
                 let source_vector = source_scorer
                     .load_source_vector(heap_tid, "tqhnsw live insert build_source_column");
-                tuple = build::build_heap_tuple_with_source(*values, heap_tid, source_vector);
+                tuple = build::build_heap_tuple_with_source(
+                    *values,
+                    heap_tid,
+                    source_vector,
+                    indexed_attribute.kind,
+                );
                 metric = InsertSearchMetric::Source(source_scorer);
             } else {
-                tuple = build::build_heap_tuple(values, isnull, heap_tid);
-                metric = InsertSearchMetric::from_tuple(heap_relation, None, &tuple);
+                tuple = build::build_heap_tuple(values, isnull, heap_tid, indexed_attribute.kind);
+                metric = match indexed_attribute.kind {
+                    source::IndexedVectorKind::Ecvector => InsertSearchMetric::Source(
+                        InsertHeapSourceScorer::new_with_attribute(
+                            heap_relation,
+                            source::SourceAttribute {
+                                attnum: indexed_attribute.attnum,
+                                kind: source::SourceDatumKind::Ecvector,
+                            },
+                        ),
+                    ),
+                    source::IndexedVectorKind::Ecqvector => InsertSearchMetric::Code,
+                };
             }
             run_insert_with_adapter(
                 format,
@@ -543,7 +567,7 @@ unsafe fn run_insert_with_adapter(
                 || tuple.seed != metadata.seed
             {
                 pgrx::error!(
-                    "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+                    "tqhnsw aminsert requires matching quantized index shape ({},{},{}) but got ({},{},{})",
                     metadata.dimensions,
                     metadata.bits,
                     metadata.seed,
@@ -555,15 +579,13 @@ unsafe fn run_insert_with_adapter(
 
             let active_format = resolve_insert_format_adapter(index_relation, metadata)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
-            if let Some(element_tid) =
-                active_format.find_duplicate(
-                    index_relation,
-                    heap_relation,
-                    metadata,
-                    tuple,
-                    code_len,
-                )
-            {
+            if let Some(element_tid) = active_format.find_duplicate(
+                index_relation,
+                heap_relation,
+                metadata,
+                tuple,
+                code_len,
+            ) {
                 active_format.coalesce_duplicate(index_relation, element_tid, heap_tid);
                 return;
             }
@@ -593,7 +615,7 @@ unsafe fn run_insert_with_adapter(
         || tuple.seed != metadata_snapshot.seed
     {
         pgrx::error!(
-            "tqhnsw aminsert requires matching tqvector shape ({},{},{}) but got ({},{},{})",
+            "tqhnsw aminsert requires matching quantized index shape ({},{},{}) but got ({},{},{})",
             metadata_snapshot.dimensions,
             metadata_snapshot.bits,
             metadata_snapshot.seed,
@@ -651,13 +673,12 @@ unsafe fn run_insert_with_adapter(
     let storage = format.graph_storage();
     shared::with_locked_metadata_page(index_relation, |metadata| {
         metadata.inserted_since_rebuild = metadata.inserted_since_rebuild.saturating_add(1);
-        let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID
-            || {
-                let entry = unsafe {
-                    graph::load_exact_graph_element(index_relation, metadata.entry_point, storage)
-                };
-                entry.deleted || entry.heaptids.is_empty()
+        let entry_point_needs_repair = metadata.entry_point == page::ItemPointer::INVALID || {
+            let entry = unsafe {
+                graph::load_exact_graph_element(index_relation, metadata.entry_point, storage)
             };
+            entry.deleted || entry.heaptids.is_empty()
+        };
         if entry_point_needs_repair || insert_level > metadata.max_level {
             // Metadata must always advertise a live element at
             // metadata.max_level. The new tuple is already appended, so
@@ -1593,9 +1614,7 @@ unsafe fn append_turbo_hot_cold_tuple(
         tids: neighbor_tids.to_vec(),
     }
     .encode()
-    .unwrap_or_else(|e| {
-        pgrx::error!("tqhnsw failed to encode TurboQuant V3 neighbor tuple: {e}")
-    });
+    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode TurboQuant V3 neighbor tuple: {e}"));
     let rerank_payload = placeholder_payload.rerank.encode();
     let hot_tuple_len = page::TqTurboHotTuple::encoded_len(layout.binary_word_count);
     let required_bytes = page::raw_tuple_storage_bytes(neighbor_payload.len())
@@ -1755,9 +1774,7 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!(
-            "tqhnsw failed to allocate fallback TurboQuant V3 data buffer for aminsert"
-        );
+        pgrx::error!("tqhnsw failed to allocate fallback TurboQuant V3 data buffer for aminsert");
     }
 
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
@@ -1791,9 +1808,7 @@ unsafe fn append_turbo_hot_cold_tuple_to_new_page(
         )
     };
     if rerank_offset == pg_sys::InvalidOffsetNumber {
-        pgrx::error!(
-            "tqhnsw failed to write fallback TurboQuant V3 rerank tuple during aminsert"
-        );
+        pgrx::error!("tqhnsw failed to write fallback TurboQuant V3 rerank tuple during aminsert");
     }
 
     let persisted_binary_quantizer = crate::quant::prod::ProdQuantizer::cached(
@@ -1860,7 +1875,7 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
         pgrx::error!("{PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE}");
     }
     let source_vector = tuple.source_vector.as_deref().unwrap_or_else(|| {
-        pgrx::error!("tqhnsw PqFastScan live insert requires build_source_column source data")
+        pgrx::error!("tqhnsw PqFastScan live insert requires raw source data")
     });
     let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
     let search_code =
@@ -1885,6 +1900,7 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
     let options = unsafe { options::relation_options(index_relation) };
     let state = build::BuildState {
         options,
+        indexed_vector_kind: source::IndexedVectorKind::Ecvector,
         page_size: pg_sys::BLCKSZ as usize,
         scanned_tuples: tuple.heap_tids.len(),
         heap_tuples: vec![tuple.clone()],
@@ -2306,7 +2322,11 @@ unsafe fn find_duplicate_turbo_hot_element_tid(
             }
 
             let rerank = unsafe {
-                graph::load_rerank_payload(index_relation, element.reranktid, layout.rerank_code_len)
+                graph::load_rerank_payload(
+                    index_relation,
+                    element.reranktid,
+                    layout.rerank_code_len,
+                )
             };
             if rerank.code == code && rerank.gamma.to_bits() == gamma.to_bits() {
                 unsafe { pg_sys::UnlockReleaseBuffer(buffer) };

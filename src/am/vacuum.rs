@@ -34,9 +34,16 @@ impl VacuumHeapSourceScorer {
                 heap_relation,
                 source_column,
                 "build_source_column",
-                source::SourceTypePolicy::RealArrayOnly,
+                source::SourceTypePolicy::BuildSource,
             )
         };
+        unsafe { Self::new_with_attribute(heap_relation, source_attribute) }
+    }
+
+    unsafe fn new_with_attribute(
+        heap_relation: pg_sys::Relation,
+        source_attribute: source::SourceAttribute,
+    ) -> Self {
         let slot = unsafe {
             source::allocate_heap_slot(
                 heap_relation,
@@ -133,17 +140,46 @@ impl VacuumSearchMetric {
         index_relation: pg_sys::Relation,
         heap_relation: pg_sys::Relation,
     ) -> Self {
+        if heap_relation.is_null() {
+            pgrx::error!("tqhnsw vacuum requires a heap relation for source-backed indexes");
+        }
+
         let index_options = unsafe { options::relation_options(index_relation) };
         match index_options.build_source_column.as_deref() {
             Some(source_column) => {
-                if heap_relation.is_null() {
-                    pgrx::error!(
-                        "tqhnsw vacuum requires a heap relation for build_source_column indexes"
-                    );
-                }
-                Self::Source(unsafe { VacuumHeapSourceScorer::new(heap_relation, source_column) })
+                let source_attribute = unsafe {
+                    source::resolve_source_attribute(
+                        heap_relation,
+                        source_column,
+                        "build_source_column",
+                        source::SourceTypePolicy::BuildSource,
+                    )
+                };
+                Self::Source(unsafe {
+                    VacuumHeapSourceScorer::new_with_attribute(heap_relation, source_attribute)
+                })
             }
-            None => Self::Code,
+            None => {
+                let indexed_attribute = unsafe {
+                    source::resolve_indexed_vector_attribute(
+                        heap_relation,
+                        index_relation,
+                        "indexed column",
+                    )
+                };
+                match indexed_attribute.kind {
+                    source::IndexedVectorKind::Ecvector => Self::Source(unsafe {
+                        VacuumHeapSourceScorer::new_with_attribute(
+                            heap_relation,
+                            source::SourceAttribute {
+                                attnum: indexed_attribute.attnum,
+                                kind: source::SourceDatumKind::Ecvector,
+                            },
+                        )
+                    }),
+                    source::IndexedVectorKind::Ecqvector => Self::Code,
+                }
+            }
         }
     }
 
@@ -448,7 +484,8 @@ unsafe fn repair_metadata_entry_point_after_vacuum(
     }
 
     let finalized: HashSet<_> = finalize_tids.iter().copied().collect();
-    let replacement = unsafe { shared::highest_level_live_entry_candidate(index_relation, storage) };
+    let replacement =
+        unsafe { shared::highest_level_live_entry_candidate(index_relation, storage) };
 
     unsafe {
         shared::with_locked_metadata_page(index_relation, |metadata| {
@@ -592,7 +629,10 @@ unsafe fn plan_page_pass1(
                 }
 
                 plan.removed_heap_tids += removed;
-                plan.updates.push(ElementVacuumUpdate::TurboQuantHot { tid, tuple: element });
+                plan.updates.push(ElementVacuumUpdate::TurboQuantHot {
+                    tid,
+                    tuple: element,
+                });
             }
             graph::GraphStorageDescriptor::PqFastScan(layout) => {
                 if tuple_bytes.first().copied() != Some(page::TQ_GROUPED_HOT_TAG) {
@@ -820,13 +860,12 @@ unsafe fn collect_repair_requests_on_page(
                 if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
                     continue;
                 }
-                let element =
-                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "tqhnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
-                            )
-                        });
+                let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "tqhnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
+                        )
+                    });
                 (
                     element.level,
                     element.deleted,
@@ -1336,13 +1375,12 @@ unsafe fn collect_linear_repair_candidates_on_page(
                 if tuple_bytes.first().copied() != Some(page::TQ_TURBO_HOT_TAG) {
                     continue;
                 }
-                let element =
-                    page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "tqhnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
-                            )
-                        });
+                let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "tqhnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
+                        )
+                    });
                 let rerank = unsafe {
                     graph::load_rerank_payload(
                         index_relation,

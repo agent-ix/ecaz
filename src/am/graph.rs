@@ -58,8 +58,7 @@ impl GraphStorageDescriptor {
                     }
                     if metadata.payload_flags & page::PAYLOAD_FLAG_COLD_RERANK_PAYLOAD == 0 {
                         return Err(
-                            "TurboQuant V3 metadata must advertise cold rerank payloads"
-                                .to_owned(),
+                            "TurboQuant V3 metadata must advertise cold rerank payloads".to_owned()
                         );
                     }
                     if metadata.search_codec_kind != page::SearchCodecKind::ScalarQuantized {
@@ -189,8 +188,7 @@ impl GraphStorageDescriptor {
             (
                 Self::TurboQuant { .. } | Self::TurboQuantHotCold(_),
                 options::StorageFormat::TurboQuant
-            )
-                | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
+            ) | (Self::PqFastScan(_), options::StorageFormat::PqFastScan)
         )
     }
 }
@@ -371,8 +369,9 @@ pub(crate) unsafe fn load_exact_graph_element(
                 })
             }
             .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode turbo hot tuple: {e}"));
-            let rerank =
-                unsafe { load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len) };
+            let rerank = unsafe {
+                load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len)
+            };
             GraphElement {
                 tid: element_tid,
                 level: hot.level,

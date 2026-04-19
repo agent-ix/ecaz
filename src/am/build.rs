@@ -5,7 +5,7 @@ use std::ptr;
 
 use hnsw_rs::anndists::dist::distances::Distance;
 use hnsw_rs::prelude::Hnsw;
-use pgrx::{itemptr::item_pointer_get_both, pg_sys, varlena, FromDatum, PgBox};
+use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -36,6 +36,7 @@ pub(super) struct BuildTuple {
 #[derive(Debug)]
 pub(super) struct BuildState {
     pub(super) options: options::TqHnswOptions,
+    pub(super) indexed_vector_kind: source::IndexedVectorKind,
     pub(super) page_size: usize,
     pub(super) scanned_tuples: usize,
     pub(super) heap_tuples: Vec<BuildTuple>,
@@ -56,7 +57,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
         pgrx::pgrx_extern_c_guard(|| {
             let state = &mut *state.cast::<BuildState>();
             let heap_tid = shared::decode_heap_tid(tid);
-            let tuple = build_heap_tuple(values, isnull, heap_tid);
+            let tuple = build_heap_tuple(values, isnull, heap_tid, state.indexed_vector_kind);
             state.push(tuple);
         })
     }
@@ -123,8 +124,23 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sy
 impl BuildState {
     pub(super) fn new(index_relation: pg_sys::Relation) -> Self {
         let options = unsafe { options::relation_options(index_relation) };
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
+            source::IndexedVectorKind::Ecvector
+        } else {
+            let heap_relation =
+                unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+            let indexed_attribute = unsafe {
+                source::resolve_indexed_vector_attribute(heap_relation, index_relation, "indexed column")
+            };
+            unsafe {
+                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
+            indexed_attribute.kind
+        };
         Self {
             options,
+            indexed_vector_kind,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 0,
             heap_tuples: Vec::new(),
@@ -214,7 +230,7 @@ impl BuildState {
             (Some(dimensions), Some(bits), Some(seed)) => {
                 if tuple.dimensions != dimensions || tuple.bits != bits || tuple.seed != seed {
                     pgrx::error!(
-                        "tqhnsw ambuild requires a single tqvector shape; saw ({},{},{}) after ({},{},{})",
+                        "tqhnsw ambuild requires a single quantized index shape; saw ({},{},{}) after ({},{},{})",
                         tuple.dimensions,
                         tuple.bits,
                         tuple.seed,
@@ -285,7 +301,7 @@ fn validate_grouped_rerank_source_column(
             heap_relation,
             source_column,
             "rerank_source_column",
-            source::SourceTypePolicy::RealArrayOrBytea,
+            source::SourceTypePolicy::RerankSource,
         )
     };
 }
@@ -321,6 +337,7 @@ pub(super) unsafe fn build_heap_tuple(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: page::ItemPointer,
+    indexed_vector_kind: source::IndexedVectorKind,
 ) -> BuildTuple {
     if values.is_null() || isnull.is_null() {
         pgrx::error!("tqhnsw ambuild received null tuple value arrays");
@@ -331,35 +348,109 @@ pub(super) unsafe fn build_heap_tuple(
 
     let datum = unsafe { *values };
     if datum.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null tqvector datum");
+        pgrx::error!("tqhnsw ambuild received a null indexed datum");
     }
 
-    let original = datum
-        .cast_mut_ptr::<std::ffi::c_void>()
-        .cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    let is_copy = !std::ptr::eq(varlena, original);
-    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if is_copy {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
+    unsafe { build_heap_tuple_from_indexed_datum(datum, heap_tid, indexed_vector_kind, None) }
+}
 
-    let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
-
+fn build_quantized_build_tuple(
+    dimensions: u16,
+    gamma: f32,
+    code: Vec<u8>,
+    heap_tid: page::ItemPointer,
+    source_vector: Option<Vec<f32>>,
+) -> BuildTuple {
     if !gamma.is_finite() {
         pgrx::error!("tqhnsw does not support non-finite gamma values");
+    }
+
+    if let Some(source_vector) = source_vector {
+        if source_vector.is_empty() {
+            pgrx::error!("tqhnsw build_source_column vectors must not be empty");
+        }
+        if source_vector.len() != dimensions as usize {
+            pgrx::error!(
+                "tqhnsw build_source_column dimension mismatch: source dim {} vs indexed ecvector dim {}",
+                source_vector.len(),
+                dimensions
+            );
+        }
+
+        return BuildTuple {
+            heap_tids: vec![heap_tid],
+            dimensions,
+            bits: crate::DEFAULT_QUANT_BITS,
+            seed: crate::DEFAULT_QUANT_SEED,
+            gamma,
+            code,
+            source_vector: Some(source_vector),
+            source_count: 1,
+        };
     }
 
     BuildTuple {
         heap_tids: vec![heap_tid],
         dimensions,
-        bits,
-        seed,
+        bits: crate::DEFAULT_QUANT_BITS,
+        seed: crate::DEFAULT_QUANT_SEED,
         gamma,
-        code: code.to_vec(),
+        code,
         source_vector: None,
         source_count: 0,
+    }
+}
+
+unsafe fn build_heap_tuple_from_indexed_datum(
+    vector_datum: pg_sys::Datum,
+    heap_tid: page::ItemPointer,
+    indexed_vector_kind: source::IndexedVectorKind,
+    source_vector: Option<Vec<f32>>,
+) -> BuildTuple {
+    match indexed_vector_kind {
+        source::IndexedVectorKind::Ecvector => {
+            let indexed_vector = unsafe {
+                source::FlatFloat4SourceRef::from_datum(
+                    vector_datum,
+                    source::SourceDatumKind::Ecvector,
+                    "indexed ecvector column",
+                )
+            };
+            let index_vector = indexed_vector.as_slice().to_vec();
+            drop(indexed_vector);
+            let (dimensions, gamma, code) = crate::quantize_embedding_to_code(
+                &index_vector,
+                crate::DEFAULT_QUANT_BITS,
+                crate::DEFAULT_QUANT_SEED,
+            )
+            .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed ecvector: {e}"));
+            let source_vector = Some(source_vector.unwrap_or(index_vector));
+            build_quantized_build_tuple(dimensions, gamma, code, heap_tid, source_vector)
+        }
+        source::IndexedVectorKind::Ecqvector => {
+            let original = vector_datum
+                .cast_mut_ptr::<std::ffi::c_void>()
+                .cast::<pg_sys::varlena>();
+            let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
+            let is_copy = !std::ptr::eq(varlena, original);
+            let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) }.to_vec();
+            if is_copy {
+                unsafe { pg_sys::pfree(varlena.cast()) };
+            }
+
+            let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
+                .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed ecqvector: {e}"));
+            if bits != crate::DEFAULT_QUANT_BITS || seed != crate::DEFAULT_QUANT_SEED {
+                pgrx::error!(
+                    "tqhnsw indexed ecqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
+                    crate::DEFAULT_QUANT_BITS,
+                    crate::DEFAULT_QUANT_SEED,
+                    bits,
+                    seed
+                );
+            }
+            build_quantized_build_tuple(dimensions, gamma, code.to_vec(), heap_tid, source_vector)
+        }
     }
 }
 
@@ -367,48 +458,18 @@ pub(super) unsafe fn build_heap_tuple_with_source(
     vector_datum: pg_sys::Datum,
     heap_tid: page::ItemPointer,
     source_vector: Vec<f32>,
+    indexed_vector_kind: source::IndexedVectorKind,
 ) -> BuildTuple {
     if vector_datum.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null tqvector datum");
+        pgrx::error!("tqhnsw ambuild received a null indexed datum");
     }
-
-    let original = vector_datum
-        .cast_mut_ptr::<std::ffi::c_void>()
-        .cast::<pg_sys::varlena>();
-    let varlena = unsafe { pg_sys::pg_detoast_datum_packed(original.cast()) };
-    let is_copy = !std::ptr::eq(varlena, original);
-    let bytes = unsafe { varlena::varlena_to_byte_slice(varlena) }.to_vec();
-    if is_copy {
-        unsafe { pg_sys::pfree(varlena.cast()) };
-    }
-
-    let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
-
-    if !gamma.is_finite() {
-        pgrx::error!("tqhnsw does not support non-finite gamma values");
-    }
-
-    if source_vector.is_empty() {
-        pgrx::error!("tqhnsw build_source_column arrays must not be empty");
-    }
-    if source_vector.len() != dimensions as usize {
-        pgrx::error!(
-            "tqhnsw build_source_column dimension mismatch: source dim {} vs tqvector dim {}",
-            source_vector.len(),
-            dimensions
-        );
-    }
-
-    BuildTuple {
-        heap_tids: vec![heap_tid],
-        dimensions,
-        bits,
-        seed,
-        gamma,
-        code: code.to_vec(),
-        source_vector: Some(source_vector),
-        source_count: 1,
+    unsafe {
+        build_heap_tuple_from_indexed_datum(
+            vector_datum,
+            heap_tid,
+            indexed_vector_kind,
+            Some(source_vector),
+        )
     }
 }
 
@@ -422,13 +483,19 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         .build_source_column
         .clone()
         .expect("source scan should only run when build_source_column is configured");
-    let index_attnum = unsafe { source_build_index_attnum(index_info) };
+    let indexed_attribute = unsafe {
+        source::resolve_indexed_vector_attribute_from_index_info(
+            heap_relation,
+            index_info,
+            "indexed column",
+        )
+    };
     let source_attribute = unsafe {
         source::resolve_source_attribute(
             heap_relation,
             &source_column,
             "build_source_column",
-            source::SourceTypePolicy::RealArrayOnly,
+            source::SourceTypePolicy::BuildSource,
         )
     };
 
@@ -468,19 +535,29 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
     } {
         scanned_tuples += 1.0;
         let heap_tid = unsafe { decode_slot_tid(slot) };
-        let vector_datum =
-            unsafe { source::required_slot_datum(slot, index_attnum, "indexed tqvector column") };
+        let vector_datum = unsafe {
+            source::required_slot_datum(slot, indexed_attribute.attnum, "indexed column")
+        };
         let source_datum = unsafe {
             source::required_slot_datum(slot, source_attribute.attnum, "tqhnsw build_source_column")
         };
         let source_vector = unsafe {
-            Vec::<f32>::from_polymorphic_datum(source_datum, false, pg_sys::FLOAT4ARRAYOID)
-        }
-        .unwrap_or_else(|| {
-            pgrx::error!("tqhnsw build_source_column \"{source_column}\" cannot be NULL")
-        });
+            source::FlatFloat4SourceRef::from_datum(
+                source_datum,
+                source_attribute.kind,
+                "tqhnsw build_source_column",
+            )
+        };
+        let source_vector = source_vector.as_slice().to_vec();
 
-        let tuple = unsafe { build_heap_tuple_with_source(vector_datum, heap_tid, source_vector) };
+        let tuple = unsafe {
+            build_heap_tuple_with_source(
+                vector_datum,
+                heap_tid,
+                source_vector,
+                indexed_attribute.kind,
+            )
+        };
         state.push(tuple);
     }
 
@@ -491,28 +568,6 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
         pg_sys::ExecDropSingleTupleTableSlot(slot);
     }
     scanned_tuples
-}
-
-unsafe fn source_build_index_attnum(index_info: *mut pg_sys::IndexInfo) -> i32 {
-    if index_info.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null IndexInfo");
-    }
-    let index_info = unsafe { &*index_info };
-    if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
-        pgrx::error!("tqhnsw build_source_column currently supports single-column indexes only");
-    }
-    if !index_info.ii_Expressions.is_null() {
-        pgrx::error!("tqhnsw build_source_column does not support expression indexes yet");
-    }
-    if !index_info.ii_Predicate.is_null() {
-        pgrx::error!("tqhnsw build_source_column does not support partial indexes yet");
-    }
-
-    let attnum = i32::from(index_info.ii_IndexAttrNumbers[0]);
-    if attnum <= 0 {
-        pgrx::error!("tqhnsw build_source_column requires a base heap column index key");
-    }
-    attnum
 }
 
 unsafe fn decode_slot_tid(slot: *mut pg_sys::TupleTableSlot) -> page::ItemPointer {
@@ -1148,9 +1203,6 @@ pub(super) fn pq_fastscan_flush_output(
 pub(super) fn default_pq_fastscan_flush_output(
     state: &BuildState,
 ) -> Result<BuildFlushOutput, String> {
-    if state.options.build_source_column.is_none() {
-        return Err("tqhnsw pq_fastscan build currently requires build_source_column".to_owned());
-    }
     let dimensions = state
         .dimensions
         .expect("non-empty build should record dimensions");
@@ -1731,6 +1783,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 0,
             heap_tuples: Vec::new(),
@@ -1805,6 +1858,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
@@ -1874,6 +1928,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
@@ -1926,6 +1981,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
@@ -1999,6 +2055,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
@@ -2067,6 +2124,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
@@ -2094,6 +2152,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: vec![
@@ -2347,6 +2406,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
@@ -2426,6 +2486,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
@@ -2455,6 +2516,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::TurboQuant,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 16,
             heap_tuples: (0..16)
@@ -2514,6 +2576,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
@@ -2575,6 +2638,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
@@ -2641,6 +2705,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
@@ -2718,6 +2783,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
@@ -2800,6 +2866,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
@@ -2858,6 +2925,7 @@ mod tests {
                 rerank_source_column: None,
                 storage_format: options::StorageFormat::PqFastScan,
             },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
