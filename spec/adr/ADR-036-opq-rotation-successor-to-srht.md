@@ -117,9 +117,9 @@ per-index artifact (a few MB at 1536d).
 ### GPU acceleration (optional)
 
 OPQ training — alternating rotation update (closed-form SVD /
-Procrustes over a dxd scatter) and per-subvector k-means — is
+Procrustes over a d×d scatter) and per-subvector k-means — is
 well-matched to GPU execution. Reference implementations in
-FAISS-GPU and cuVS report **10–50x** speedups over CPU on
+FAISS-GPU and cuVS report **10–50×** speedups over CPU on
 consumer GPUs (3060 / 3090 class) for multi-million-vector
 training samples.
 

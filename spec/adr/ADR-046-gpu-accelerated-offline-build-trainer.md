@@ -25,7 +25,7 @@ All four are embarrassingly parallel in ways GPUs are good at
 (dense linear algebra, k-means, k-NN graph construction via
 CAGRA/cuVS) and are expensive in ways that matter at scale.
 Published reference implementations (FAISS-GPU, cuVS, CAGRA,
-Microsoft's DiskANN GPU build) demonstrate 10–100x speedups on
+Microsoft's DiskANN GPU build) demonstrate 10–100× speedups on
 builds for multi-million-vector corpora.
 
 Ecaz ships as a Postgres extension. Linking CUDA into the
@@ -117,12 +117,12 @@ builds. Concretely:
 For training-heavy quantizers on large corpora, expected GPU
 speedups:
 
-- OPQ k-means + rotation: **10–50x** on consumer GPUs (3060 /
+- OPQ k-means + rotation: **10–50×** on consumer GPUs (3060 /
   3090 class).
-- AQ / RVQ joint optimization: **20–80x** (more iterations, more
+- AQ / RVQ joint optimization: **20–80×** (more iterations, more
   to parallelize).
-- LSQ refinement: **10–30x**.
-- SymphonyQG initial k-NN graph (CAGRA): **20–100x** vs
+- LSQ refinement: **10–30×**.
+- SymphonyQG initial k-NN graph (CAGRA): **20–100×** vs
   CPU hnswlib-style build.
 
 Below ~1M vectors the CPU path is typically not the bottleneck
@@ -189,8 +189,8 @@ automatic-GPU-on-CREATE-INDEX becomes a priority.
 
 ### GPU encoding at insert time
 
-Rejected. Per-tuple CUDA launch overhead (~5–10 us) exceeds the
-per-vector CPU encode cost (~1–3 us) at tqvector's tuple sizes.
+Rejected. Per-tuple CUDA launch overhead (~5–10 μs) exceeds the
+per-vector CPU encode cost (~1–3 μs) at tqvector's tuple sizes.
 Would regress insert latency, not improve it.
 
 ### GPU on the query path

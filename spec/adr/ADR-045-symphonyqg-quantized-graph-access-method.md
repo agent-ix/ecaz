@@ -21,8 +21,8 @@ three things that tqvector currently treats as separate layers:
 3. **A quantization-aware edge-selection rule** at build time that
    prunes against the same quantized distance the scan will use.
 
-Reported results: 1.5–4.5x QPS over competitive baselines at 95%
-recall, 8x faster build than NGT-QG. The authors are the RaBitQ /
+Reported results: 1.5–4.5× QPS over competitive baselines at 95%
+recall, 8× faster build than NGT-QG. The authors are the RaBitQ /
 FastScan lineage, so the paper composes cleanly with the techniques
 already proposed in ADR-030 (FastScan) and ADR-031 (RaBitQ).
 
@@ -76,7 +76,7 @@ insert skeletons, with two structural changes:
    additional real edges (not dummies). Storage grows modestly;
    traversal issues only full-width kernels with no tail path.
 
-2. **Quantization-aware edge selection.** The RNG / alpha-pruning
+2. **Quantization-aware edge selection.** The RNG / α-pruning
    rule evaluates candidate edges using the RaBitQ distance, not
    fp32. The built graph is self-consistent with the scoring path.
 
@@ -121,11 +121,11 @@ benches.
 ### Build-time cost
 
 Per-node out-degree padding and RaBitQ-aware pruning together
-inflate build time relative to `ec_hnsw` by an estimated 1.3–2x,
+inflate build time relative to `ec_hnsw` by an estimated 1.3–2×,
 dominated by evaluating RaBitQ distances during neighbor
 selection (cheaper than fp32, but evaluated more often because
 the pruning rule is stricter). This is offset by the paper's
-reported **8x build speedup vs NGT-QG** once the kernel is SIMD-tuned.
+reported **8× build speedup vs NGT-QG** once the kernel is SIMD-tuned.
 
 Large-corpus builds are a candidate for GPU acceleration — see
 ADR-046 for the offline-trainer push model. CAGRA (cuVS) can
@@ -138,7 +138,7 @@ optional; the CPU path remains authoritative.
 Scoring kernel reduces to XOR + POPCNT at ~8 ns/candidate
 (ADR-031 measurement), issued in full-width SIMD batches because
 adjacency is padded. Rerank elimination (Stage 3) removes the
-~14 us/candidate fp32 tail entirely. Expected end-to-end: 2–4x
+~14 μs/candidate fp32 tail entirely. Expected end-to-end: 2–4×
 QPS over current `ec_hnsw` at equal recall, consistent with the
 paper's reported range.
 
@@ -179,7 +179,7 @@ A minimal subset: keep PQ4 + rerank, but pad the neighbor lists
 to FastScan batch width. Captures the SIMD-saturation half of
 the paper without the quantizer swap. Worth considering as a
 fallback if the RaBitQ accuracy gate fails, though the gain is
-modest (~1.2–1.5x QPS estimated) without the rerank elimination.
+modest (~1.2–1.5× QPS estimated) without the rerank elimination.
 
 ### Full SymphonyQG as a replacement for `ec_hnsw`
 

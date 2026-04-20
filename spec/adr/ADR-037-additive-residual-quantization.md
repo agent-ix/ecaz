@@ -141,14 +141,14 @@ factors — most impactful in SPANN.
 AQ / RVQ training — joint optimization of M stacked codebooks
 via alternating residual assignment and codebook update — is the
 highest-leverage GPU target of any proposed quantizer. FAISS-GPU
-and cuVS report **20–80x** speedups over CPU on consumer GPUs;
+and cuVS report **20–80×** speedups over CPU on consumer GPUs;
 the gap widens with M because per-iteration work scales with the
 number of codebooks.
 
 Encoding per vector is the harder part: beam search over M
 codebooks is branchy and latency-sensitive. GPU helps only for
-batched offline encoding (full-corpus reencode during `CREATE
-INDEX` or `REINDEX`). Per-tuple insert encoding remains CPU.
+batched offline encoding (full-corpus reencode during CREATE
+INDEX or REINDEX). Per-tuple insert encoding remains CPU.
 
 tqvector exposes GPU training through ADR-046's push-model
 trainer: `tqvector-train --quantizer=aq --backend=gpu` produces

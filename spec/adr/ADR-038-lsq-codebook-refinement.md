@@ -121,7 +121,7 @@ corpora before shipping as default.
 
 LSQ's iterated joint codebook optimization parallelizes across
 training vectors and subvector groups. Expected GPU speedup on
-consumer hardware: **10–30x**, smaller than AQ because the
+consumer hardware: **10–30×**, smaller than AQ because the
 per-iteration work is lighter and k-means already launches
 reasonably well on CPU at training-sample sizes.
 
