@@ -180,7 +180,7 @@ fn empty_metadata(state: &BuildState) -> VamanaMetadataPage {
     )
 }
 
-fn default_group_size(dimensions: u16) -> usize {
+pub(super) fn default_group_size(dimensions: u16) -> usize {
     let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions as usize);
     transform_dim.min(PQ_FASTSCAN_TARGET_GROUP_SIZE)
 }
@@ -366,7 +366,7 @@ fn write_metadata_to_buffer(
     unsafe { wal_txn.finish() };
 }
 
-unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
+pub(super) unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageChain) {
     for staged_page in chain.pages() {
         let buffer = unsafe {
             pg_sys::ReadBufferExtended(
@@ -413,7 +413,7 @@ unsafe fn write_data_pages(index_relation: pg_sys::Relation, chain: &DataPageCha
     }
 }
 
-unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
+pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> ItemPointer {
     if tid.is_null() {
         pgrx::error!("ec_diskann ambuild received a null heap tid");
     }
