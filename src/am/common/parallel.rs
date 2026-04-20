@@ -143,6 +143,12 @@ pub(crate) struct EcParallelCoordinatorSnapshot {
     pub(crate) result_publish_generation: u32,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct EcParallelCoordinatorResultSelection {
+    pub(crate) coordinator: EcParallelCoordinatorSnapshot,
+    pub(crate) selected_result_slot: EcParallelCoordinatorResultSlotSnapshot,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) execution_phase: u32,
@@ -971,6 +977,51 @@ pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     Ok(load_coordinator_result_slot_snapshot(unsafe { &*slot }))
 }
 
+pub(crate) unsafe fn select_best_parallel_scan_coordinator_result_slot(
+    state: *mut EcParallelScanState,
+) -> Result<Option<EcParallelCoordinatorResultSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    let mut selected: Option<EcParallelCoordinatorResultSlotSnapshot> = None;
+
+    for slot_index in 0..attachment.result_slot_count {
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+        if snapshot.observed_rescan_epoch != attachment.rescan_epoch {
+            continue;
+        }
+        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
+            continue;
+        }
+        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_SCORE_VALID == 0 {
+            continue;
+        }
+        if !snapshot.runtime.element_tid.is_valid() {
+            continue;
+        }
+
+        let should_replace = match selected {
+            None => true,
+            Some(current) => snapshot
+                .runtime
+                .score
+                .total_cmp(&current.runtime.score)
+                .then_with(|| snapshot.slot_index.cmp(&current.slot_index))
+                .is_lt(),
+        };
+        if should_replace {
+            selected = Some(snapshot);
+        }
+    }
+
+    Ok(selected.map(
+        |selected_result_slot| EcParallelCoordinatorResultSelection {
+            coordinator,
+            selected_result_slot,
+        },
+    ))
+}
+
 pub(crate) unsafe fn reset_parallel_scan_state(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<u32>, &'static str> {
@@ -1331,6 +1382,166 @@ mod tests {
                 result_publish_generation: 1,
             },
             "publishing a first result slot should update the coordinator counters"
+        );
+    }
+
+    #[test]
+    fn select_best_parallel_scan_coordinator_result_slot_returns_none_without_live_results() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { select_best_parallel_scan_coordinator_result_slot(attachment.state) }
+                .expect("selection should succeed"),
+            None,
+            "coordinator selection should stay empty until at least one worker publishes a live result"
+        );
+    }
+
+    #[test]
+    fn select_best_parallel_scan_coordinator_result_slot_prefers_lowest_score() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 10,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 11,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -6.5,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                },
+            )
+        }
+        .expect("second publish should succeed");
+
+        let selection =
+            unsafe { select_best_parallel_scan_coordinator_result_slot(attachment.state) }
+                .expect("selection should succeed")
+                .expect("selection should surface the best published slot");
+        assert_eq!(
+            selection.coordinator,
+            EcParallelCoordinatorSnapshot {
+                flags: 0,
+                claimed_worker_slots: 2,
+                published_result_slots: 2,
+                result_publish_generation: 2,
+            },
+            "selection should carry the current coordinator counters too"
+        );
+        assert_eq!(
+            selection.selected_result_slot.slot_index, second_slot,
+            "selection should pick the lowest-score published slot"
+        );
+        assert_eq!(
+            selection.selected_result_slot.runtime.score, -6.5,
+            "selection should surface the selected slot's score"
+        );
+    }
+
+    #[test]
+    fn select_best_parallel_scan_coordinator_result_slot_breaks_ties_by_slot_index() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second claim should succeed");
+
+        for slot_index in [second_slot, first_slot] {
+            unsafe {
+                publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                    EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                        element_tid: EcParallelItemPointer {
+                            block_number: 20 + slot_index,
+                            offset_number: 1,
+                        },
+                        heap_tid: EcParallelItemPointer::INVALID,
+                        score: -5.0,
+                        approx_score: None,
+                        comparison_score: None,
+                        approx_rank_base: None,
+                        pending_count: 1,
+                        pending_index: 0,
+                    },
+                )
+            }
+            .expect("publish should succeed");
+        }
+
+        let selection =
+            unsafe { select_best_parallel_scan_coordinator_result_slot(attachment.state) }
+                .expect("selection should succeed")
+                .expect("selection should surface a published slot");
+        assert_eq!(
+            selection.selected_result_slot.slot_index,
+            first_slot,
+            "score ties should break toward the lower slot index for deterministic coordinator selection"
         );
     }
 

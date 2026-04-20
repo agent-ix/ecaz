@@ -157,6 +157,11 @@ See ADR-040 for the full shape. Summary:
   state there, while the true shared top-K heap ordering and merge path remain
   deferred to the next Task 18 packets.
 
+- **Coordinator selection staging.** Shared helpers can now scan the published
+  coordinator result slots and pick the current best staged result by score,
+  with slot-index tie-breaking for determinism. This is still a read-only seam;
+  the real shared top-K heap mutation path remains deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
