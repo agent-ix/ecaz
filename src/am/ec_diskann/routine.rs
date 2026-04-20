@@ -310,7 +310,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             .unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
             });
-            insert::append_live_node(
+            let new_tid = insert::append_live_node(
                 index_relation,
                 &materialized_metadata,
                 heap_tid,
@@ -318,6 +318,15 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 &forward_neighbors,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
+            insert::add_backlinks_if_free(
+                index_relation,
+                &materialized_metadata,
+                &forward_neighbors,
+                new_tid,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert backlink update failed: {e}")
+            });
             false
         })
     }
@@ -723,7 +732,39 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[cfg(any(test, feature = "pg_test"))]
 #[pgrx::pg_schema]
 mod tests {
-    use pgrx::{pg_test, Spi};
+    use super::{scan_state, PersistedGraphReader};
+    use crate::storage::page::ItemPointer;
+    use pgrx::{pg_sys, pg_test, Spi};
+
+    fn parse_ctid(ctid: &str) -> ItemPointer {
+        let inner = ctid
+            .trim()
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+            .expect("ctid should have (block,offset) format");
+        let (block_number, offset_number) = inner
+            .split_once(',')
+            .expect("ctid should contain a comma separator");
+        ItemPointer {
+            block_number: block_number
+                .trim()
+                .parse()
+                .expect("ctid block number should parse"),
+            offset_number: offset_number
+                .trim()
+                .parse()
+                .expect("ctid offset number should parse"),
+        }
+    }
+
+    fn heap_tid_for_row(table_name: &str, id: i64) -> ItemPointer {
+        let ctid = Spi::get_one::<String>(&format!(
+            "SELECT ctid::text FROM {table_name} WHERE id = {id}"
+        ))
+        .expect("SPI query should succeed")
+        .expect("table row should exist");
+        parse_ctid(&ctid)
+    }
 
     #[pg_test]
     fn test_ec_diskann_sql_ordered_index_scan_executes() {
@@ -848,7 +889,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_diskann_unique_insert_appends_live_node() {
+    fn test_ec_diskann_unique_insert_is_scan_reachable() {
         Spi::run(
             "CREATE TABLE ec_diskann_unique_insert_append (id bigint primary key, embedding ecvector)",
         )
@@ -868,12 +909,131 @@ mod tests {
             "INSERT INTO ec_diskann_unique_insert_append VALUES
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
-        .expect("second distinct insert should append a live node");
+        .expect("second distinct insert should append a live node and backfill free backlinks");
 
-        let row_count = Spi::get_one::<i64>("SELECT count(*) FROM ec_diskann_unique_insert_append")
-            .expect("count query should succeed")
-            .expect("count should be non-null");
-        assert_eq!(row_count, 2);
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_diskann_unique_insert_append_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_unique_insert_append", 1);
+        let row2_heap_tid = heap_tid_for_row("ec_diskann_unique_insert_append", 2);
+        let mut row1_tid = ItemPointer::INVALID;
+        let mut row2_tid = ItemPointer::INVALID;
+        for tid in reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed")
+        {
+            let tuple = reader.read_node(tid).expect("node decode should succeed");
+            if tuple.primary_heaptid == row1_heap_tid {
+                row1_tid = tid;
+            }
+            if tuple.primary_heaptid == row2_heap_tid {
+                row2_tid = tid;
+            }
+        }
+        assert_ne!(
+            row1_tid,
+            ItemPointer::INVALID,
+            "seed row should have a node tid"
+        );
+        assert_ne!(
+            row2_tid,
+            ItemPointer::INVALID,
+            "inserted row should have a node tid"
+        );
+        let row2_tuple = reader
+            .read_node(row2_tid)
+            .expect("inserted node should decode");
+        let row2_neighbors = row2_tuple
+            .neighbors
+            .iter()
+            .take(row2_tuple.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            row2_neighbors.contains(&row1_tid),
+            "the inserted node should retain the seed node as a forward neighbor in the free-backlink slice: got {:?}",
+            row2_neighbors,
+        );
+        let row1_tuple = reader.read_node(row1_tid).expect("seed node should decode");
+        let row1_neighbors = row1_tuple
+            .neighbors
+            .iter()
+            .take(row1_tuple.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            row1_neighbors.contains(&row2_tid),
+            "the seed node should receive a backlink to the inserted node before scan reachability is checked: got {:?}",
+            row1_neighbors,
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM ec_diskann_unique_insert_append \
+                     ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.25, -0.5]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .map(|row| {
+                    row["QUERY PLAN"]
+                        .value::<String>()
+                        .expect("plan row should decode")
+                        .expect("plan row should be non-null")
+                })
+                .collect::<Vec<_>>();
+            rows.join("\n")
+        });
+        assert!(
+            plan.contains("Index Scan using ec_diskann_unique_insert_append_idx"),
+            "reachability test should run through ec_diskann at runtime: {plan}"
+        );
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_unique_insert_append \
+                     ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.25, -0.5]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            ordered_ids,
+            vec![2],
+            "the inserted row should become reachable through the runtime ec_diskann graph scan",
+        );
     }
 
     #[pg_test]
