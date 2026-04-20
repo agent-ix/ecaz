@@ -48,7 +48,7 @@ Adopt a **push-model offline build trainer** as the official
 path for GPU acceleration of training-heavy quantizers and index
 builds. Concretely:
 
-1. **`tqvector-train` CLI**, a separate binary outside the
+1. **`ecaz-train` CLI**, a separate binary outside the
    extension. Takes vectors as input, produces a versioned
    artifact file. Pluggable backend: CPU (default, no CUDA) or
    GPU (cuVS / FAISS-GPU / custom kernels).
@@ -56,7 +56,7 @@ builds. Concretely:
    header including: format version, quantizer type, dim, bits,
    seed, training-sample hash, backend tag, creation time.
 3. **SQL load path.** `CREATE INDEX ... WITH (codebook =
-   '/path/to/artifact')` or a `tqvector.load_training_artifact()`
+   '/path/to/artifact')` or a `ecaz.load_training_artifact()`
    SQL function. Index build consumes the artifact instead of
    training in-process.
 4. **CPU path remains authoritative.** Every artifact reproducible
@@ -99,7 +99,7 @@ builds. Concretely:
 - Build routines that accept a preloaded artifact in place of
   training in-process.
 
-### What `tqvector-train` contains
+### What `ecaz-train` contains
 
 - Ingestion (reads vectors from file, from Postgres via libpq,
   or from stdin).
@@ -107,7 +107,7 @@ builds. Concretely:
   in-extension).
 - Optional GPU trainer behind a feature flag (`--backend=gpu`),
   linking cuVS / FAISS / custom kernels. Packaged separately —
-  distributors can ship `tqvector-train` with or without CUDA.
+  distributors can ship `ecaz-train` with or without CUDA.
 - Deterministic output given the same seed and sample (CPU).
   GPU output required to match CPU output within a published
   tolerance.
@@ -148,7 +148,7 @@ makes this a user choice rather than an architecture commitment.
   dim/bits/quantizer-type. No code execution surface.
 - Reproducibility: CPU backend is canonical. GPU runs include a
   `--verify-against-cpu` mode for release validation.
-- Packaging: extension ships as today. `tqvector-train` ships as
+- Packaging: extension ships as today. `ecaz-train` ships as
   an adjacent crate with optional `gpu` feature; distributors
   can produce a CUDA-enabled build without touching the
   extension.
@@ -157,14 +157,14 @@ makes this a user choice rather than an architecture commitment.
 
 ```sql
 -- Train offline:
---   tqvector-train \
+--   ecaz-train \
 --     --quantizer=opq --dim=1536 --bits=4 \
 --     --backend=gpu \
 --     --input=corpus.f32 \
 --     --output=opq.artifact
 
 CREATE INDEX ON t USING symphony (embedding)
-  WITH (training_artifact = '/var/lib/tqvector/opq.artifact');
+  WITH (training_artifact = '/var/lib/ecaz/opq.artifact');
 ```
 
 No change for users who never opt in — in-process CPU training
@@ -190,7 +190,7 @@ automatic-GPU-on-CREATE-INDEX becomes a priority.
 ### GPU encoding at insert time
 
 Rejected. Per-tuple CUDA launch overhead (~5–10 μs) exceeds the
-per-vector CPU encode cost (~1–3 μs) at tqvector's tuple sizes.
+per-vector CPU encode cost (~1–3 μs) at ecaz's tuple sizes.
 Would regress insert latency, not improve it.
 
 ### GPU on the query path

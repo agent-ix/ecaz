@@ -39,7 +39,7 @@ PQ structure rather than replacing it.
 
 ## Decision
 
-tqvector will treat **LSQ as a low-priority codebook refinement
+ecaz will treat **LSQ as a low-priority codebook refinement
 lever** for the PqFastScan pipeline. Unlike OPQ and AQ, LSQ does
 not change the wire format, does not change the scoring kernel,
 and does not require a new quantizer. It is a drop-in training
@@ -129,8 +129,8 @@ Per-vector iterated-local-search encoding is harder to
 GPU-accelerate (branchy, per-vector state) but can be batched at
 build time if pursued.
 
-tqvector exposes the training path through ADR-046's push-model
-trainer: `tqvector-train --quantizer=lsq --backend=gpu` produces
+ecaz exposes the training path through ADR-046's push-model
+trainer: `ecaz-train --quantizer=lsq --backend=gpu` produces
 an artifact with refined codebooks, wire-compatible with the
 PqFastScan format per this ADR's no-format-change scope. CPU
 trainer remains canonical.

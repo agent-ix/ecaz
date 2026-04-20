@@ -12,7 +12,7 @@ date: 2026-04-19
 SymphonyQG (Gou, Gao, Xu — SIGMOD 2025, "Towards Symphonious
 Integration of Quantization and Graph for Approximate Nearest
 Neighbor Search") is a quantized-graph ANN method that co-designs
-three things that tqvector currently treats as separate layers:
+three things that ecaz currently treats as separate layers:
 
 1. **A graph index** (HNSW/Vamana-style) whose neighbor-list layout
    is aligned to the SIMD batch size used by the scoring kernel.
@@ -26,7 +26,7 @@ recall, 8× faster build than NGT-QG. The authors are the RaBitQ /
 FastScan lineage, so the paper composes cleanly with the techniques
 already proposed in ADR-030 (FastScan) and ADR-031 (RaBitQ).
 
-tqvector's current state leaves this on the table:
+ecaz's current state leaves this on the table:
 
 - ADR-031 treats RaBitQ as a **prefilter**, with exact rerank as
   the final stage. SymphonyQG eliminates rerank.
@@ -191,7 +191,7 @@ no-auto-upgrade discipline.
 
 Rejected. SymphonyQG is the direct successor to the techniques
 already accepted or proposed (RaBitQ, FastScan, HNSW). Deferring
-it leaves tqvector with a three-stage pipeline that SymphonyQG's
+it leaves ecaz with a three-stage pipeline that SymphonyQG's
 authors have already demonstrated is unnecessary.
 
 ## References

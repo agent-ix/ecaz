@@ -34,7 +34,7 @@ aside.
 
 ## Decision
 
-tqvector will treat **OPQ as the successor to SRHT** in the PqFastScan
+ecaz will treat **OPQ as the successor to SRHT** in the PqFastScan
 pipeline, landing after tasks 15 and 16 and after DiskANN (ADR-034) is
 stable. OPQ becomes the rotation front-end; the rest of the pipeline
 (grouped PQ4, FastScan SIMD scoring, binary prefilter, hot/cold split)
@@ -54,7 +54,7 @@ OPQ is deliberately not part of the task-15 PqFastScan landing. Reasons:
 
 OPQ becomes load-bearing when:
 
-- ADR-034 (DiskANN) lands and pushes tqvector into the 500M–3B band,
+- ADR-034 (DiskANN) lands and pushes ecaz into the 500M–3B band,
   where index-size bytes are more expensive and recall-per-byte
   improvements translate to fewer rerank reads.
 - ADR-035 (SPANN) is under serious consideration, because SPANN's
@@ -123,8 +123,8 @@ FAISS-GPU and cuVS report **10–50×** speedups over CPU on
 consumer GPUs (3060 / 3090 class) for multi-million-vector
 training samples.
 
-tqvector will expose this through the push-model offline
-trainer defined in ADR-046: `tqvector-train --quantizer=opq
+ecaz will expose this through the push-model offline
+trainer defined in ADR-046: `ecaz-train --quantizer=opq
 --backend=gpu` produces a portable artifact (rotation matrix +
 codebooks) that the extension loads at `CREATE INDEX` time. The
 server itself remains CUDA-free; the CPU trainer is
@@ -147,7 +147,7 @@ format. Migration path: REINDEX, same as any PQ retraining.
 
 ### Keep SRHT
 
-Defensible if tqvector's scale target stays below ~500M vectors,
+Defensible if ecaz's scale target stays below ~500M vectors,
 where the 10–20% recall-per-byte difference doesn't meaningfully
 affect latency or storage budget. Makes OPQ optional rather than
 required.

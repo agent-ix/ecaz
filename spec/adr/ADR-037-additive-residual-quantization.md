@@ -42,7 +42,7 @@ FAISS implements AQ variants (`IndexResidualQuantizer`,
 
 ## Decision
 
-tqvector will **evaluate AQ/RVQ as PqFastScan v2** — a potential
+ecaz will **evaluate AQ/RVQ as PqFastScan v2** — a potential
 successor compression scheme for the scoring kernel. This is the
 most speculative of the proposed frontier ADRs: the win is large,
 but it is not a drop-in replacement.
@@ -147,11 +147,11 @@ number of codebooks.
 
 Encoding per vector is the harder part: beam search over M
 codebooks is branchy and latency-sensitive. GPU helps only for
-batched offline encoding (full-corpus reencode during CREATE
-INDEX or REINDEX). Per-tuple insert encoding remains CPU.
+batched offline encoding (full-corpus reencode during
+`CREATE INDEX` or `REINDEX`). Per-tuple insert encoding remains CPU.
 
-tqvector exposes GPU training through ADR-046's push-model
-trainer: `tqvector-train --quantizer=aq --backend=gpu` produces
+ecaz exposes GPU training through ADR-046's push-model
+trainer: `ecaz-train --quantizer=aq --backend=gpu` produces
 an artifact containing the M codebooks and training metadata,
 loaded at `CREATE INDEX` time. The extension remains CUDA-free;
 the CPU trainer is canonical; GPU output gates on
@@ -172,7 +172,7 @@ ADR-032.
 
 ### Stay on PQ
 
-The simplest path. Acceptable if tqvector's scale targets stay
+The simplest path. Acceptable if ecaz's scale targets stay
 below 1B and/or SPANN is not pursued. AQ's value proposition is
 almost entirely realized in the scale bands where storage bytes
 compound.
