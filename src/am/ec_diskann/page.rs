@@ -73,7 +73,12 @@ impl VamanaMetadataPage {
             needs_medoid_refresh: false,
             transform_kind: VAMANA_TRANSFORM_KIND_SRHT,
             search_codec_kind: VAMANA_SEARCH_CODEC_GROUPED_PQ,
-            payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE | PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            // V0 reranks from the heap `ecvector` row (ADR-044
+            // default); there is no index-side cold payload chain.
+            // `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` stays clear per
+            // ADR-046 frozen rule 1 / ADR-047 frozen rule 4
+            // (packet 11018).
+            payload_flags: PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
             search_subvector_count: 0,
             search_subvector_dim: 0,
             grouped_codebook_head: ItemPointer::INVALID,
@@ -199,6 +204,25 @@ mod tests {
         let encoded = metadata.encode();
         let decoded = VamanaMetadataPage::decode(&encoded).expect("decode");
         assert_eq!(metadata.alpha.to_bits(), decoded.alpha.to_bits());
+    }
+
+    // LA-005b: empty() clears PAYLOAD_FLAG_COLD_RERANK_PAYLOAD on V0
+    // (ADR-046 frozen rule 1, ADR-047 frozen rule 4, packet 11018).
+    // V0 reranks from the heap `ecvector` row — there is no
+    // index-side cold payload chain to advertise.
+    #[test]
+    fn la_005b_empty_clears_cold_rerank_flag() {
+        let metadata = VamanaMetadataPage::empty(32, 100, 1.2, 1536, 0);
+        assert_eq!(
+            metadata.payload_flags & PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            0,
+            "V0 metadata must not set PAYLOAD_FLAG_COLD_RERANK_PAYLOAD",
+        );
+        assert_ne!(
+            metadata.payload_flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+            0,
+            "grouped-PQ4 flag still set",
+        );
     }
 
     // LA-006: needs_medoid_refresh flag toggles round-trip correctly.

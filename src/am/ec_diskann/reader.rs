@@ -99,16 +99,20 @@ impl<'a> PersistedGraphReader<'a> {
         })
     }
 
-    /// Iterate every non-deleted tuple in the chain in
-    /// `(block, offset)` order, yielding `(tid, tuple)` pairs. A
-    /// decode error is yielded as `Err` and callers should stop
-    /// iteration.
+    /// Iterate every live tuple in the chain in `(block, offset)`
+    /// order, yielding `(tid, tuple)` pairs. "Live" means
+    /// [`VamanaNodeTuple::is_live`]: not tombstoned AND still has at
+    /// least one heap TID (primary or overflow). A stripped-but-not-
+    /// tombstoned tuple (vacuum pass 1 done, pass 3 not yet) is
+    /// skipped — it has no heap row to emit and is not a valid scan
+    /// entry point. A decode error is yielded as `Err` and callers
+    /// should stop iteration.
     pub fn iter_live_tids(
         &self,
     ) -> impl Iterator<Item = Result<(ItemPointer, VamanaNodeTuple), String>> + '_ {
         self.iter_tids()
             .filter_map(move |tid| match self.read_node(tid) {
-                Ok(t) if !t.deleted => Some(Ok((tid, t))),
+                Ok(t) if t.is_live() => Some(Ok((tid, t))),
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
             })
@@ -714,15 +718,26 @@ mod tests {
         assert!(s.visited.capacity() >= 64);
     }
 
-    // Helper: persist N nodes, tombstone the given node ids in place,
-    // and return the updated chain alongside the node→TID map. Used by
-    // the live-TID iteration tests below.
-    fn persisted_with_tombstones(
+    /// What to apply to each marked node in a persisted chain fixture.
+    #[derive(Clone, Copy)]
+    enum DeathKind {
+        /// Vacuum pass 3: `deleted = true`, payload retained.
+        Tombstone,
+        /// Vacuum pass 1: `primary_heaptid = INVALID`, no overflow,
+        /// `deleted` stays `false`. Used to exercise the live-tuple
+        /// predicate (packets 11023/11027/11028).
+        StripNoTombstone,
+    }
+
+    // Helper: persist N nodes, mutate the given nodes per their
+    // `DeathKind`, and return the updated chain alongside the node→TID
+    // map. Used by the live-TID iteration tests below.
+    fn persisted_with_deaths(
         n: usize,
         max_degree: u16,
-        to_tombstone: &[u32],
+        deaths: &[(u32, DeathKind)],
     ) -> (crate::storage::page::DataPageChain, Vec<ItemPointer>) {
-        use crate::am::ec_diskann::vacuum::mark_deleted;
+        use crate::am::ec_diskann::vacuum::{mark_deleted, strip_dead_primary_heaptid};
         let g = chain_graph(n, max_degree as usize);
         let payloads = synth_payloads(n, 0, 0);
         let mut persisted = persist_vamana_graph(
@@ -735,7 +750,7 @@ mod tests {
             0,
         )
         .expect("persist");
-        for &node_id in to_tombstone {
+        for &(node_id, kind) in deaths {
             let tid = persisted.node_to_tid[node_id as usize];
             let page = persisted
                 .chain
@@ -743,11 +758,29 @@ mod tests {
                 .expect("page");
             let bytes = page.raw_tuple(tid).expect("raw").to_vec();
             let mut tuple = VamanaNodeTuple::decode(&bytes, max_degree, 0, 0).expect("decode");
-            mark_deleted(&mut tuple);
+            match kind {
+                DeathKind::Tombstone => mark_deleted(&mut tuple),
+                DeathKind::StripNoTombstone => {
+                    let stripped = strip_dead_primary_heaptid(&mut tuple, |_| true);
+                    assert!(stripped, "strip primary heaptid");
+                }
+            }
             let patched = tuple.encode(max_degree, 0, 0).expect("encode");
             page.update_raw_tuple(tid, patched).expect("patch");
         }
         (persisted.chain, persisted.node_to_tid)
+    }
+
+    fn persisted_with_tombstones(
+        n: usize,
+        max_degree: u16,
+        to_tombstone: &[u32],
+    ) -> (crate::storage::page::DataPageChain, Vec<ItemPointer>) {
+        let deaths: Vec<(u32, DeathKind)> = to_tombstone
+            .iter()
+            .map(|&id| (id, DeathKind::Tombstone))
+            .collect();
+        persisted_with_deaths(n, max_degree, &deaths)
     }
 
     // RD-013: iter_tids walks every TID in (block, offset) order and
@@ -854,5 +887,88 @@ mod tests {
 
         let got = reader.first_live_tid().expect("ok");
         assert!(got.is_none(), "expected None, got {got:?}");
+    }
+
+    // RD-017: strip-without-tombstone regression (packets 11023/11027/
+    // 11028). A tuple with `deleted = false` but `primary_heaptid ==
+    // INVALID && !has_overflow_heaptids` — the transient state between
+    // ADR-047 pass 1 (strip) and pass 3 (tombstone) — must NOT be
+    // reported as live.
+    #[test]
+    fn rd_017_iter_live_tids_skips_stripped_without_tombstone() {
+        let n = 8;
+        // Node 2 stripped (pass 1, no tombstone yet); node 5
+        // tombstoned; the rest alive. Both kinds must be skipped.
+        let deaths = [
+            (2u32, DeathKind::StripNoTombstone),
+            (5u32, DeathKind::Tombstone),
+        ];
+        let (chain, node_to_tid) = persisted_with_deaths(n, 4, &deaths);
+        let reader = PersistedGraphReader::new(&chain, 4, 0, 0);
+
+        let live: Vec<ItemPointer> = reader
+            .iter_live_tids()
+            .map(|item| item.expect("ok").0)
+            .collect();
+        assert_eq!(live.len(), n - 2, "stripped and tombstoned excluded");
+        assert!(!live.contains(&node_to_tid[2]), "stripped node leaked");
+        assert!(!live.contains(&node_to_tid[5]), "tombstoned node leaked");
+
+        // Sanity — the stripped tuple decodes with deleted=false but
+        // is_live()=false.
+        let bytes = chain
+            .get_page(node_to_tid[2].block_number)
+            .expect("page")
+            .raw_tuple(node_to_tid[2])
+            .expect("raw")
+            .to_vec();
+        let stripped_tuple = VamanaNodeTuple::decode(&bytes, 4, 0, 0).expect("decode");
+        assert!(!stripped_tuple.deleted);
+        assert_eq!(stripped_tuple.primary_heaptid, ItemPointer::INVALID);
+        assert!(!stripped_tuple.is_live());
+    }
+
+    // RD-018: first_live_tid skips a leading stripped-without-tombstone
+    // run. Regression for packets 11023/11027/11028 — even though
+    // `deleted` is still false, a tuple with no primary heap TID is
+    // not a valid entry point.
+    #[test]
+    fn rd_018_first_live_tid_skips_stripped_without_tombstone() {
+        let n = 6;
+        let deaths = [
+            (0u32, DeathKind::StripNoTombstone),
+            (1u32, DeathKind::StripNoTombstone),
+        ];
+        let (chain, node_to_tid) = persisted_with_deaths(n, 4, &deaths);
+        let reader = PersistedGraphReader::new(&chain, 4, 0, 0);
+
+        let got = reader.first_live_tid().expect("ok").expect("live exists");
+        assert_ne!(got, node_to_tid[0]);
+        assert_ne!(got, node_to_tid[1]);
+    }
+
+    // RD-019: overflow-only tuples ARE live — primary stripped but
+    // `has_overflow_heaptids` carries heap TIDs. Complementary to
+    // RD-017: confirms is_live() doesn't over-filter.
+    #[test]
+    fn rd_019_overflow_only_tuple_is_live() {
+        // Synthesise a tuple directly (no helper yet for "strip primary
+        // but keep overflow"); assert the predicate only, not persist.
+        let mut t = VamanaNodeTuple::placeholder(4, 0, 0);
+        t.primary_heaptid = ItemPointer::INVALID;
+        t.has_overflow_heaptids = true;
+        assert!(t.is_live(), "overflow chain keeps the tuple live");
+
+        t.has_overflow_heaptids = false;
+        assert!(!t.is_live(), "no primary, no overflow ⇒ not live");
+
+        t.primary_heaptid = ItemPointer {
+            block_number: 42,
+            offset_number: 1,
+        };
+        assert!(t.is_live(), "primary TID restored ⇒ live");
+
+        t.deleted = true;
+        assert!(!t.is_live(), "tombstoned overrides heap TIDs");
     }
 }
