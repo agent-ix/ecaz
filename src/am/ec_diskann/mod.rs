@@ -1,10 +1,9 @@
-//! Access-method scaffolding for the `ec_diskann` (Vamana) implementation.
+//! `ec_diskann` is the Vamana-based secondary access method.
 //!
-//! Phase 1A landing: skeleton + handler registration only. All scan,
-//! insert, build, and vacuum callbacks intentionally error at runtime
-//! with `not yet implemented` until subsequent phases of task 17 fill
-//! them in. Reloption parsing and metadata-page layout are deferred to
-//! phase 1B and phase 1C respectively.
+//! The module owns the AM callback surface plus the persisted Vamana
+//! helpers that support build, ordered scan, live insert, vacuum
+//! repair, and planner costing for grouped-PQ-backed `ecvector`
+//! indexes.
 
 mod ambuild;
 pub mod build;
