@@ -468,7 +468,7 @@ unsafe fn validate_single_ecvector_attribute(
     }
 }
 
-unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
+pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
     let original = datum
         .cast_mut_ptr::<std::ffi::c_void>()
         .cast::<pg_sys::varlena>();

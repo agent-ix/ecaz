@@ -5,8 +5,11 @@ use pgrx::pg_sys;
 
 use super::{
     ECDISKANN_DEFAULT_ALPHA, ECDISKANN_DEFAULT_BUILD_LIST_SIZE, ECDISKANN_DEFAULT_GRAPH_DEGREE,
+    ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
     ECDISKANN_MAX_ALPHA, ECDISKANN_MAX_BUILD_LIST_SIZE, ECDISKANN_MAX_GRAPH_DEGREE,
+    ECDISKANN_MAX_RERANK_BUDGET, ECDISKANN_MAX_SCAN_LIST_SIZE, ECDISKANN_MAX_TOP_K,
     ECDISKANN_MIN_ALPHA, ECDISKANN_MIN_BUILD_LIST_SIZE, ECDISKANN_MIN_GRAPH_DEGREE,
+    ECDISKANN_MIN_RERANK_BUDGET, ECDISKANN_MIN_SCAN_LIST_SIZE, ECDISKANN_MIN_TOP_K,
 };
 
 #[repr(C)]
@@ -15,6 +18,9 @@ struct TqDiskannReloptions {
     vl_len_: i32,
     graph_degree: i32,
     build_list_size: i32,
+    list_size: i32,
+    rerank_budget: i32,
+    top_k: i32,
     // Postgres real reloptions are stored as C doubles; alpha is downcast to
     // f32 when constructing `TqDiskannOptions` per ADR-034 / task 17 decision
     // (pgvectorscale-compatible f32 surface, f64 storage inside the relopt
@@ -52,6 +58,9 @@ impl StorageFormat {
 pub(super) struct TqDiskannOptions {
     pub(super) graph_degree: i32,
     pub(super) build_list_size: i32,
+    pub(super) list_size: i32,
+    pub(super) rerank_budget: i32,
+    pub(super) top_k: i32,
     pub(super) alpha: f32,
     pub(super) storage_format: StorageFormat,
 }
@@ -60,6 +69,9 @@ impl TqDiskannOptions {
     pub(super) const DEFAULT: Self = Self {
         graph_degree: ECDISKANN_DEFAULT_GRAPH_DEGREE,
         build_list_size: ECDISKANN_DEFAULT_BUILD_LIST_SIZE,
+        list_size: ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+        rerank_budget: ECDISKANN_DEFAULT_RERANK_BUDGET,
+        top_k: ECDISKANN_DEFAULT_TOP_K,
         alpha: ECDISKANN_DEFAULT_ALPHA,
         storage_format: StorageFormat::DEFAULT,
     };
@@ -95,6 +107,39 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
                 ECDISKANN_MIN_BUILD_LIST_SIZE,
                 ECDISKANN_MAX_BUILD_LIST_SIZE,
                 offset_of!(TqDiskannReloptions, build_list_size) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"list_size\0".as_ptr().cast(),
+                b"Greedy frontier width used during ec_diskann scan (L_search).\0"
+                    .as_ptr()
+                    .cast(),
+                ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+                ECDISKANN_MIN_SCAN_LIST_SIZE,
+                ECDISKANN_MAX_SCAN_LIST_SIZE,
+                offset_of!(TqDiskannReloptions, list_size) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"rerank_budget\0".as_ptr().cast(),
+                b"How many ec_diskann scan candidates to exact-rerank from the heap.\0"
+                    .as_ptr()
+                    .cast(),
+                ECDISKANN_DEFAULT_RERANK_BUDGET,
+                ECDISKANN_MIN_RERANK_BUDGET,
+                ECDISKANN_MAX_RERANK_BUDGET,
+                offset_of!(TqDiskannReloptions, rerank_budget) as i32,
+            );
+            pg_sys::add_local_int_reloption(
+                &mut relopts,
+                b"top_k\0".as_ptr().cast(),
+                b"How many exact-reranked ec_diskann results to return before executor truncation.\0"
+                    .as_ptr()
+                    .cast(),
+                ECDISKANN_DEFAULT_TOP_K,
+                ECDISKANN_MIN_TOP_K,
+                ECDISKANN_MAX_TOP_K,
+                offset_of!(TqDiskannReloptions, top_k) as i32,
             );
             pg_sys::add_local_real_reloption(
                 &mut relopts,
@@ -169,6 +214,9 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDis
     TqDiskannOptions {
         graph_degree: reloptions.graph_degree,
         build_list_size: reloptions.build_list_size,
+        list_size: reloptions.list_size,
+        rerank_budget: reloptions.rerank_budget,
+        top_k: reloptions.top_k,
         alpha: reloptions.alpha as f32,
         storage_format,
     }
@@ -177,4 +225,18 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDis
 #[allow(dead_code)]
 pub(super) fn storage_format_name(fmt: StorageFormat) -> &'static str {
     fmt.as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diskann_default_options_include_scan_runtime_defaults() {
+        let defaults = TqDiskannOptions::DEFAULT;
+        assert_eq!(defaults.list_size, ECDISKANN_DEFAULT_SCAN_LIST_SIZE);
+        assert_eq!(defaults.rerank_budget, ECDISKANN_DEFAULT_RERANK_BUDGET);
+        assert_eq!(defaults.top_k, ECDISKANN_DEFAULT_TOP_K);
+        assert_eq!(defaults.storage_format, StorageFormat::PqFastScan);
+    }
 }
