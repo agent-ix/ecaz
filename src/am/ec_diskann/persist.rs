@@ -28,8 +28,10 @@
 //! [`NodePayload`] entries, then ships the resulting page chain into a
 //! GenericXLog transaction.
 
-use crate::am::ec_diskann::tuple::VamanaNodeTuple;
+use crate::am::common::training::GroupedPq4Model;
+use crate::am::ec_diskann::tuple::{VamanaCodebookTuple, VamanaNodeTuple};
 use crate::am::ec_diskann::vamana::{bfs_reachable, VamanaGraph};
+use crate::quant::grouped_pq::GROUPED_PQ_CENTROIDS;
 use crate::storage::page::{DataPageChain, ItemPointer};
 
 /// Per-node fixed payload (primary heap TID + binary sidecar + search
@@ -208,6 +210,72 @@ pub fn persist_vamana_graph(
         persistence_order,
         unreached,
     })
+}
+
+/// Stage a grouped-PQ4 codebook as a `nexttid`-linked chain of
+/// [`VamanaCodebookTuple`]s in `chain` and return the head TID.
+///
+/// One tuple per group is appended in group-index order. Each shard's
+/// `nexttid` points to the next group's shard; the last shard carries
+/// `ItemPointer::INVALID` as its terminator. Uses the same
+/// placeholder-then-patch technique as node persistence: insert every
+/// shard with `nexttid = INVALID` first (so we know every TID), then
+/// re-encode each non-terminal shard with its successor's TID via
+/// [`crate::storage::page::DataPage::update_raw_tuple`]. Encoded length
+/// is a pure function of `centroid_count`, so the update always fits.
+pub fn stage_grouped_codebook_chain(
+    chain: &mut DataPageChain,
+    model: &GroupedPq4Model,
+) -> Result<ItemPointer, String> {
+    if model.group_count == 0 {
+        return Err("grouped codebook staging requires at least one group".into());
+    }
+    if model.codebooks.len() != model.group_count {
+        return Err(format!(
+            "model codebook count {} does not match group_count {}",
+            model.codebooks.len(),
+            model.group_count
+        ));
+    }
+    let centroid_count = model.group_size * GROUPED_PQ_CENTROIDS;
+    for (group_index, codebook) in model.codebooks.iter().enumerate() {
+        if codebook.len() != centroid_count {
+            return Err(format!(
+                "grouped codebook {} length mismatch: got {}, expected {}",
+                group_index,
+                codebook.len(),
+                centroid_count
+            ));
+        }
+    }
+
+    let mut shard_tids = Vec::with_capacity(model.group_count);
+    for (group_index, codebook) in model.codebooks.iter().enumerate() {
+        let group_index_u16 = u16::try_from(group_index)
+            .map_err(|_| format!("grouped codebook index {group_index} does not fit in u16"))?;
+        let placeholder = VamanaCodebookTuple {
+            group_index: group_index_u16,
+            nexttid: ItemPointer::INVALID,
+            centroids: codebook.clone(),
+        };
+        let tid = chain.insert_raw_tuple(placeholder.encode())?;
+        shard_tids.push(tid);
+    }
+
+    for i in 0..shard_tids.len().saturating_sub(1) {
+        let patched = VamanaCodebookTuple {
+            group_index: u16::try_from(i).expect("validated group index fits in u16"),
+            nexttid: shard_tids[i + 1],
+            centroids: model.codebooks[i].clone(),
+        };
+        let tid = shard_tids[i];
+        let page = chain
+            .get_page_mut(tid.block_number)
+            .ok_or_else(|| format!("page {} missing during codebook patch", tid.block_number))?;
+        page.update_raw_tuple(tid, patched.encode())?;
+    }
+
+    Ok(shard_tids[0])
 }
 
 #[cfg(test)]
@@ -471,5 +539,89 @@ mod tests {
                 assert_eq!(decoded.neighbors[slot], persisted.node_to_tid[nbr_id as usize]);
             }
         }
+    }
+
+    fn synth_grouped_pq4_model(group_count: usize, group_size: usize) -> GroupedPq4Model {
+        let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
+        let codebooks = (0..group_count)
+            .map(|g| {
+                (0..centroid_count)
+                    .map(|i| (g * 1000 + i) as f32 * 0.125)
+                    .collect()
+            })
+            .collect();
+        GroupedPq4Model {
+            codebooks,
+            group_count,
+            group_size,
+            transform_dim: group_size * group_count,
+            signs: vec![1.0; group_size * group_count],
+        }
+    }
+
+    // CB-001: empty model errors cleanly.
+    #[test]
+    fn cb_001_empty_model_errors() {
+        let model = GroupedPq4Model {
+            codebooks: vec![],
+            group_count: 0,
+            group_size: 4,
+            transform_dim: 0,
+            signs: vec![],
+        };
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let err =
+            stage_grouped_codebook_chain(&mut chain, &model).expect_err("empty should fail");
+        assert!(err.contains("at least one group"), "got: {err}");
+    }
+
+    // CB-002: centroid-count mismatch errors and names the bad group.
+    #[test]
+    fn cb_002_centroid_count_mismatch_errors() {
+        let mut model = synth_grouped_pq4_model(2, 4);
+        model.codebooks[1].pop();
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let err = stage_grouped_codebook_chain(&mut chain, &model)
+            .expect_err("mismatch should fail");
+        assert!(err.contains("length mismatch"), "got: {err}");
+    }
+
+    // CB-003: single-group model stages one shard with nexttid = INVALID.
+    #[test]
+    fn cb_003_single_group_terminates_chain() {
+        let model = synth_grouped_pq4_model(1, 4);
+        let centroid_count = model.group_size * GROUPED_PQ_CENTROIDS;
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage");
+        let page = chain.get_page(head.block_number).expect("head page");
+        let raw = page.raw_tuple(head).expect("raw");
+        let decoded = VamanaCodebookTuple::decode(raw, centroid_count).expect("decode");
+        assert_eq!(decoded.group_index, 0);
+        assert_eq!(decoded.nexttid, ItemPointer::INVALID);
+        assert_eq!(decoded.centroids, model.codebooks[0]);
+    }
+
+    // CB-004: multi-group chain — traversing nexttid reaches every shard
+    // in group-index order; the last shard's nexttid is INVALID.
+    #[test]
+    fn cb_004_multi_group_chain_links_all_shards() {
+        let group_count = 4;
+        let group_size = 8;
+        let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
+        let model = synth_grouped_pq4_model(group_count, group_size);
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage");
+
+        let mut cursor = head;
+        for expected_group in 0..group_count {
+            assert_ne!(cursor, ItemPointer::INVALID);
+            let page = chain.get_page(cursor.block_number).expect("page");
+            let raw = page.raw_tuple(cursor).expect("raw");
+            let decoded = VamanaCodebookTuple::decode(raw, centroid_count).expect("decode");
+            assert_eq!(decoded.group_index as usize, expected_group);
+            assert_eq!(decoded.centroids, model.codebooks[expected_group]);
+            cursor = decoded.nexttid;
+        }
+        assert_eq!(cursor, ItemPointer::INVALID, "chain must terminate");
     }
 }
