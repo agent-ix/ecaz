@@ -2,7 +2,7 @@
 id: ADR-037
 title: "Additive / Residual Quantization as PqFastScan v2 Compression"
 status: PROPOSED
-impact: Affects ADR-030, ADR-032, ADR-034, ADR-035, ADR-036
+impact: Affects ADR-030, ADR-032, ADR-034, ADR-035, ADR-036, ADR-046
 date: 2026-04-18
 ---
 # ADR-037: Additive / Residual Quantization (AQ / RVQ)
@@ -136,6 +136,32 @@ slightly faster at equal recall target.
 ~2× smaller index at equivalent recall. Compounds through replication
 factors — most impactful in SPANN.
 
+### GPU acceleration (optional)
+
+AQ / RVQ training — joint optimization of M stacked codebooks
+via alternating residual assignment and codebook update — is the
+highest-leverage GPU target of any proposed quantizer. FAISS-GPU
+and cuVS report **20–80×** speedups over CPU on consumer GPUs;
+the gap widens with M because per-iteration work scales with the
+number of codebooks.
+
+Encoding per vector is the harder part: beam search over M
+codebooks is branchy and latency-sensitive. GPU helps only for
+batched offline encoding (full-corpus reencode during CREATE
+INDEX or REINDEX). Per-tuple insert encoding remains CPU.
+
+tqvector exposes GPU training through ADR-046's push-model
+trainer: `tqvector-train --quantizer=aq --backend=gpu` produces
+an artifact containing the M codebooks and training metadata,
+loaded at `CREATE INDEX` time. The extension remains CUDA-free;
+the CPU trainer is canonical; GPU output gates on
+CPU-equivalence within documented tolerance.
+
+At the SPANN / billion-scale regime where AQ's value
+proposition matters most, the GPU path is the difference
+between builds that finish overnight and builds that finish in
+a work-week. Below ~10M vectors the CPU path is acceptable.
+
 ### Migration path
 
 REINDEX only; no auto-upgrade. Consistent with the
@@ -184,3 +210,4 @@ completes.
 - Chen et al., "Quantization for Approximate Nearest Neighbor
   Search" — RVQ treatments
 - FAISS `IndexResidualQuantizer`, `IndexLocalSearchQuantizer`
+- ADR-046: GPU-accelerated offline build trainer

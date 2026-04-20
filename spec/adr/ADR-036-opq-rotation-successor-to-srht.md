@@ -2,7 +2,7 @@
 id: ADR-036
 title: "OPQ Rotation as Successor to SRHT in the PqFastScan Pipeline"
 status: PROPOSED
-impact: Affects ADR-006, ADR-024, ADR-030, ADR-032
+impact: Affects ADR-006, ADR-024, ADR-030, ADR-032, ADR-046
 date: 2026-04-18
 ---
 # ADR-036: OPQ Rotation for PqFastScan
@@ -114,6 +114,28 @@ together.
 None. OPQ adds no per-vector bytes; the rotation matrix is a single
 per-index artifact (a few MB at 1536d).
 
+### GPU acceleration (optional)
+
+OPQ training — alternating rotation update (closed-form SVD /
+Procrustes over a d×d scatter) and per-subvector k-means — is
+well-matched to GPU execution. Reference implementations in
+FAISS-GPU and cuVS report **10–50×** speedups over CPU on
+consumer GPUs (3060 / 3090 class) for multi-million-vector
+training samples.
+
+tqvector will expose this through the push-model offline
+trainer defined in ADR-046: `tqvector-train --quantizer=opq
+--backend=gpu` produces a portable artifact (rotation matrix +
+codebooks) that the extension loads at `CREATE INDEX` time. The
+server itself remains CUDA-free; the CPU trainer is
+authoritative and GPU output is gated on bit-equivalence (within
+documented numerical tolerance).
+
+GPU acceleration is not required to adopt OPQ. At corpora below
+~1M vectors CPU training is already acceptable; the GPU path
+exists to keep OPQ viable at SPANN-era (ADR-035) scales where
+training sample sizes grow into the tens of millions.
+
 ### Compatibility
 
 New wire-format bump required: OPQ-rotated PqFastScan indexes are
@@ -148,5 +170,6 @@ composite project; not appropriate as a single decision.
 - ADR-032: Coexisting Index Formats — TurboQuant and PqFastScan
 - ADR-037: Additive / Residual Quantization (proposed peer)
 - ADR-038: Local Search Quantization codebook refinement (proposed peer)
+- ADR-046: GPU-accelerated offline build trainer
 - Ge et al., "Optimized Product Quantization" (CVPR 2013)
 - FAISS documentation: `IndexPreTransform + OPQMatrix + IndexPQ`
