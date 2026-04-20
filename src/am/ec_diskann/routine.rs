@@ -1,10 +1,13 @@
-use std::{cell::RefCell, ffi::c_void, ptr};
+use std::{cell::RefCell, collections::HashSet, ffi::c_void, ptr, slice};
 
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, FromDatum, PgBox, PgMemoryContexts};
 
 use crate::{
     quant::grouped_pq::{build_grouped_pq_lut_f32, grouped_pq_score_f32, GROUPED_PQ_CENTROIDS},
-    storage::page::ItemPointer,
+    storage::{
+        page::{DataPageChain, ItemPointer},
+        wal,
+    },
 };
 
 use super::{
@@ -16,7 +19,18 @@ use super::{
         build_grouped_pq_lut_from_persisted, encode_query_srht, read_grouped_codebook_chain,
     },
     scan_state::{self, DiskannScanOpaque},
+    tuple::VamanaNodeTuple,
+    vacuum,
 };
+
+type BulkDeleteCallback = unsafe extern "C-unwind" fn(pg_sys::ItemPointer, *mut c_void) -> bool;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TupleRewrite {
+    tid: ItemPointer,
+    expected_raw: Vec<u8>,
+    replacement_raw: Vec<u8>,
+}
 
 fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -337,25 +351,31 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
 }
 
 unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
-    _info: *mut pg_sys::IndexVacuumInfo,
-    _stats: *mut pg_sys::IndexBulkDeleteResult,
-    _callback: pg_sys::IndexBulkDeleteCallback,
-    _callback_state: *mut c_void,
+    info: *mut pg_sys::IndexVacuumInfo,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+    callback: pg_sys::IndexBulkDeleteCallback,
+    callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!("ec_diskann ambulkdelete is not yet implemented (task 17 phase 5)");
+            let Some(callback) = callback else {
+                return ec_diskann_noop_vacuum_stats((*info).index, stats)
+                    .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
+            };
+            run_diskann_bulkdelete((*info).index, stats, callback, callback_state)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
         })
     }
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
-    _info: *mut pg_sys::IndexVacuumInfo,
-    _stats: *mut pg_sys::IndexBulkDeleteResult,
+    info: *mut pg_sys::IndexVacuumInfo,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!("ec_diskann amvacuumcleanup is not yet implemented (task 17 phase 5)");
+            ec_diskann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
         })
     }
 }
@@ -814,8 +834,412 @@ fn sort_and_dedup_item_pointers(tids: &mut Vec<ItemPointer>) {
     tids.dedup();
 }
 
+unsafe fn ec_diskann_noop_vacuum_stats(
+    index_relation: pg_sys::Relation,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
+    let stats = if stats.is_null() {
+        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+    } else {
+        stats
+    };
+
+    unsafe {
+        (*stats).num_pages = pg_sys::RelationGetNumberOfBlocksInFork(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+        );
+        (*stats).estimated_count = false;
+        (*stats).num_index_tuples = count_live_node_tuples(index_relation)? as f64;
+    }
+
+    Ok(stats)
+}
+
+unsafe fn run_diskann_bulkdelete(
+    index_relation: pg_sys::Relation,
+    stats: *mut pg_sys::IndexBulkDeleteResult,
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+) -> Result<*mut pg_sys::IndexBulkDeleteResult, String> {
+    let stats = if stats.is_null() {
+        unsafe { PgBox::<pg_sys::IndexBulkDeleteResult>::alloc0().into_pg() }
+    } else {
+        stats
+    };
+    let block_count = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let (metadata, original_chain) =
+        unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let graph_degree_r = metadata.graph_degree_r;
+    let binary_word_count = scan_state::metadata_binary_word_count(&metadata);
+    let search_code_len = scan_state::metadata_search_code_len(&metadata);
+    let node_tids = collect_node_tids(
+        &original_chain,
+        graph_degree_r,
+        binary_word_count,
+        search_code_len,
+    )?;
+    let mut mutated_chain = original_chain.clone();
+
+    let mut removed_heap_tids = 0usize;
+    let mut finalize_tids = Vec::new();
+    for &tid in &node_tids {
+        let mut tuple = read_chain_node(
+            &mutated_chain,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            tid,
+        )?;
+        let original_tuple = tuple.clone();
+        removed_heap_tids += insert::vacuum_bound_heap_rows(
+            &mut mutated_chain,
+            tid,
+            &mut tuple,
+            |heap_tid| unsafe { callback_marks_heap_tid_dead(callback, callback_state, heap_tid) },
+        )?;
+        if tuple != original_tuple {
+            write_chain_node(
+                &mut mutated_chain,
+                graph_degree_r,
+                binary_word_count,
+                search_code_len,
+                tid,
+                &tuple,
+            )?;
+        }
+        if vacuum::is_fully_dead(&tuple) {
+            finalize_tids.push(tid);
+        }
+    }
+
+    let dead_set: HashSet<_> = finalize_tids.iter().copied().collect();
+    if !dead_set.is_empty() {
+        for &tid in &node_tids {
+            let mut tuple = read_chain_node(
+                &mutated_chain,
+                graph_degree_r,
+                binary_word_count,
+                search_code_len,
+                tid,
+            )?;
+            if !tuple.is_live() {
+                continue;
+            }
+            if vacuum::repair_neighbors(&mut tuple, &dead_set) != 0 {
+                write_chain_node(
+                    &mut mutated_chain,
+                    graph_degree_r,
+                    binary_word_count,
+                    search_code_len,
+                    tid,
+                    &tuple,
+                )?;
+            }
+        }
+    }
+
+    let mut finalized_entry_point = false;
+    for &tid in &finalize_tids {
+        let mut tuple = read_chain_node(
+            &mutated_chain,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            tid,
+        )?;
+        if tuple.deleted || !vacuum::is_fully_dead(&tuple) {
+            continue;
+        }
+        vacuum::mark_deleted(&mut tuple);
+        write_chain_node(
+            &mut mutated_chain,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            tid,
+            &tuple,
+        )?;
+        if tid == metadata.entry_point {
+            finalized_entry_point = true;
+        }
+    }
+
+    let rewrites = collect_tuple_rewrites(&original_chain, &mutated_chain)?;
+    unsafe { apply_tuple_rewrites(index_relation, &rewrites)? };
+    if finalized_entry_point {
+        unsafe {
+            insert::with_locked_metadata_page(index_relation, |metadata| {
+                metadata.needs_medoid_refresh = true;
+                Ok(())
+            })?
+        };
+    }
+
+    unsafe {
+        (*stats).num_pages = block_count;
+        (*stats).estimated_count = false;
+        (*stats).num_index_tuples = count_live_tuples_in_chain(
+            &mutated_chain,
+            graph_degree_r,
+            binary_word_count,
+            search_code_len,
+        )? as f64;
+        (*stats).tuples_removed += removed_heap_tids as f64;
+    }
+    Ok(stats)
+}
+
+fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
+    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    count_live_tuples_in_chain(
+        &chain,
+        metadata.graph_degree_r,
+        scan_state::metadata_binary_word_count(&metadata),
+        scan_state::metadata_search_code_len(&metadata),
+    )
+}
+
+fn count_live_tuples_in_chain(
+    chain: &DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+) -> Result<usize, String> {
+    let reader =
+        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
+    let live_count = reader
+        .iter_live_tids()
+        .try_fold(0usize, |count, item| item.map(|_| count + 1))?;
+    Ok(live_count)
+}
+
+fn collect_node_tids(
+    chain: &DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+) -> Result<Vec<ItemPointer>, String> {
+    let reader =
+        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
+    reader.iter_node_tids().collect()
+}
+
+fn read_chain_node(
+    chain: &DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+    tid: ItemPointer,
+) -> Result<VamanaNodeTuple, String> {
+    let reader =
+        PersistedGraphReader::new(chain, graph_degree_r, binary_word_count, search_code_len);
+    reader.read_node(tid)
+}
+
+fn write_chain_node(
+    chain: &mut DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+    tid: ItemPointer,
+    tuple: &VamanaNodeTuple,
+) -> Result<(), String> {
+    let encoded = tuple.encode(graph_degree_r, binary_word_count, search_code_len)?;
+    let page = chain.get_page_mut(tid.block_number).ok_or_else(|| {
+        format!(
+            "ec_diskann vacuum rewrite could not find page {} for ({},{})",
+            tid.block_number, tid.block_number, tid.offset_number
+        )
+    })?;
+    page.update_raw_tuple(tid, encoded)
+}
+
+fn collect_tuple_rewrites(
+    original_chain: &DataPageChain,
+    mutated_chain: &DataPageChain,
+) -> Result<Vec<TupleRewrite>, String> {
+    if original_chain.pages().len() != mutated_chain.pages().len() {
+        return Err(format!(
+            "ec_diskann vacuum rewrite page-count mismatch: original {}, mutated {}",
+            original_chain.pages().len(),
+            mutated_chain.pages().len()
+        ));
+    }
+
+    let mut rewrites = Vec::new();
+    for (original_page, mutated_page) in original_chain.pages().iter().zip(mutated_chain.pages()) {
+        if original_page.block_number() != mutated_page.block_number() {
+            return Err(format!(
+                "ec_diskann vacuum rewrite block mismatch: original {}, mutated {}",
+                original_page.block_number(),
+                mutated_page.block_number()
+            ));
+        }
+        if original_page.tuple_count() != mutated_page.tuple_count() {
+            return Err(format!(
+                "ec_diskann vacuum rewrite tuple-count mismatch on block {}: original {}, mutated {}",
+                original_page.block_number(),
+                original_page.tuple_count(),
+                mutated_page.tuple_count()
+            ));
+        }
+
+        for offset in 1..=original_page.tuple_count() {
+            let tid = ItemPointer {
+                block_number: original_page.block_number(),
+                offset_number: offset as u16,
+            };
+            let expected_raw = original_page.raw_tuple(tid)?.to_vec();
+            let replacement_raw = mutated_page.raw_tuple(tid)?.to_vec();
+            if expected_raw != replacement_raw {
+                rewrites.push(TupleRewrite {
+                    tid,
+                    expected_raw,
+                    replacement_raw,
+                });
+            }
+        }
+    }
+    Ok(rewrites)
+}
+
+unsafe fn apply_tuple_rewrites(
+    index_relation: pg_sys::Relation,
+    rewrites: &[TupleRewrite],
+) -> Result<(), String> {
+    let mut cursor = 0usize;
+    while cursor < rewrites.len() {
+        let block_number = rewrites[cursor].tid.block_number;
+        let block_start = cursor;
+        while cursor < rewrites.len() && rewrites[cursor].tid.block_number == block_number {
+            cursor += 1;
+        }
+        let block_rewrites = &rewrites[block_start..cursor];
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_diskann vacuum rewrite could not open data block {block_number}"
+            ));
+        }
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let page_result = (|| -> Result<(), String> {
+            let page = unsafe { pg_sys::BufferGetPage(buffer) };
+            let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+            for rewrite in block_rewrites {
+                let (tuple_ptr, tuple_len) =
+                    unsafe { vacuum_page_tuple_location(page, page_size, rewrite.tid)? };
+                let current_raw =
+                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+                if current_raw != rewrite.expected_raw.as_slice() {
+                    return Err(format!(
+                        "ec_diskann vacuum rewrite detected stale tuple contents at ({},{})",
+                        rewrite.tid.block_number, rewrite.tid.offset_number
+                    ));
+                }
+            }
+
+            let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+            let writable_page =
+                unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+            for rewrite in block_rewrites {
+                let (tuple_ptr, tuple_len) =
+                    unsafe { vacuum_page_tuple_location(writable_page, page_size, rewrite.tid)? };
+                if tuple_len != rewrite.replacement_raw.len() {
+                    return Err(format!(
+                        "ec_diskann vacuum rewrite length mismatch at ({},{}): got {}, expected {}",
+                        rewrite.tid.block_number,
+                        rewrite.tid.offset_number,
+                        rewrite.replacement_raw.len(),
+                        tuple_len
+                    ));
+                }
+                unsafe {
+                    ptr::copy_nonoverlapping(
+                        rewrite.replacement_raw.as_ptr(),
+                        tuple_ptr,
+                        rewrite.replacement_raw.len(),
+                    );
+                }
+            }
+            unsafe { wal_txn.finish() };
+            Ok(())
+        })();
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        page_result?;
+    }
+    Ok(())
+}
+
+unsafe fn callback_marks_heap_tid_dead(
+    callback: BulkDeleteCallback,
+    callback_state: *mut c_void,
+    heap_tid: ItemPointer,
+) -> bool {
+    let mut raw_tid = pg_sys::ItemPointerData::default();
+    unsafe {
+        pgrx::itemptr::item_pointer_set_all(
+            &mut raw_tid,
+            heap_tid.block_number,
+            heap_tid.offset_number,
+        );
+        callback(&mut raw_tid, callback_state)
+    }
+}
+
+unsafe fn vacuum_page_tuple_location(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+) -> Result<(*mut u8, usize), String> {
+    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+        return Err(format!(
+            "ec_diskann vacuum target ({},{}) has invalid offset {} (max {})",
+            tid.block_number, tid.offset_number, tid.offset_number, max_offset
+        ));
+    }
+
+    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
+    if item_id.is_null() {
+        return Err(format!(
+            "ec_diskann vacuum target ({},{}) returned a null item id",
+            tid.block_number, tid.offset_number
+        ));
+    }
+    let item_id_ref = unsafe { &*item_id };
+    if item_id_ref.lp_flags() == 0 {
+        return Err(format!(
+            "ec_diskann vacuum target ({},{}) points at an unused slot",
+            tid.block_number, tid.offset_number
+        ));
+    }
+
+    let tuple_offset = item_id_ref.lp_off() as usize;
+    let tuple_len = item_id_ref.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_diskann vacuum target ({},{}) has invalid tuple bounds",
+            tid.block_number, tid.offset_number
+        ));
+    }
+
+    let tuple_ptr = unsafe { (page as *mut u8).add(tuple_offset) };
+    Ok((tuple_ptr, tuple_len))
+}
+
 fn expand_scan_results_with_bound_heap_tids(
-    chain: &crate::storage::page::DataPageChain,
+    chain: &DataPageChain,
     node_results: &[scan::ScanResult],
     top_k: usize,
 ) -> Result<Vec<scan::ScanResult>, String> {
@@ -912,6 +1336,13 @@ mod tests {
     use crate::am::ec_diskann::page::VamanaMetadataPage;
     use crate::storage::page::{DataPageChain, ItemPointer};
     use pgrx::{pg_sys, pg_test, Spi};
+    use std::{collections::HashSet, ffi::c_void, ptr};
+
+    fn index_oid(index_name: &str) -> pg_sys::Oid {
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+            .expect("SPI query should succeed")
+            .expect("index oid should exist")
+    }
 
     fn parse_ctid(ctid: &str) -> ItemPointer {
         let inner = ctid
@@ -944,12 +1375,12 @@ mod tests {
     }
 
     fn index_metadata(index_name: &str) -> VamanaMetadataPage {
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid(index_name),
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
         let (metadata, _) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
             .expect("materialize_chain_from_index should succeed");
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -957,16 +1388,98 @@ mod tests {
     }
 
     fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
-        let index_relation =
-            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid(index_name),
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
         let materialized = unsafe { scan_state::materialize_chain_from_index(index_relation) }
             .expect("materialize_chain_from_index should succeed");
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         materialized
+    }
+
+    #[derive(Debug, Default)]
+    struct DebugVacuumCallbackState {
+        dead_tids: HashSet<ItemPointer>,
+    }
+
+    unsafe extern "C-unwind" fn debug_vacuum_dead_tid_callback(
+        itemptr: pg_sys::ItemPointer,
+        state: *mut c_void,
+    ) -> bool {
+        let state = unsafe { &*(state.cast::<DebugVacuumCallbackState>()) };
+        let (block_number, offset_number) =
+            pgrx::itemptr::item_pointer_get_both(unsafe { *itemptr });
+        state.dead_tids.contains(&ItemPointer {
+            block_number,
+            offset_number,
+        })
+    }
+
+    unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::IndexBulkDeleteResult {
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+        info.index = index_relation;
+        let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+
+        let stats = unsafe {
+            super::ec_diskann_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
+        };
+        let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
+        let result = unsafe { *stats };
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        result
+    }
+
+    unsafe fn debug_vacuum_remove_heap_tids(
+        index_oid: pg_sys::Oid,
+        dead_tids: &[ItemPointer],
+    ) -> pg_sys::IndexBulkDeleteResult {
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid,
+                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+            )
+        };
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+        let heap_relation = if heap_oid == pg_sys::InvalidOid {
+            ptr::null_mut()
+        } else {
+            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) }
+        };
+        let mut info = pgrx::PgBox::<pg_sys::IndexVacuumInfo>::alloc0();
+        info.index = index_relation;
+        info.heaprel = heap_relation;
+        let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
+        let mut callback_state = DebugVacuumCallbackState {
+            dead_tids: dead_tids.iter().copied().collect(),
+        };
+
+        let stats = unsafe {
+            super::ec_diskann_ambulkdelete(
+                info_ptr,
+                ptr::null_mut(),
+                Some(debug_vacuum_dead_tid_callback),
+                (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
+            )
+        };
+        let stats = unsafe { super::ec_diskann_amvacuumcleanup(info_ptr, stats) };
+        let result = unsafe { *stats };
+
+        unsafe {
+            if !heap_relation.is_null() {
+                pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
+            }
+            pg_sys::index_close(
+                index_relation,
+                pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE,
+            );
+        }
+        result
     }
 
     #[pg_test]
@@ -1746,6 +2259,268 @@ mod tests {
             ordered_ids,
             (1..=12_i64).collect::<Vec<_>>(),
             "runtime scan should expand multi-tuple duplicate overflow chains",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_vacuum_noop_stats_on_empty_index() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_vacuum_noop_empty (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_vacuum_noop_empty_idx ON ec_diskann_vacuum_noop_empty USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let stats = unsafe { debug_vacuum_stats(index_oid("ec_diskann_vacuum_noop_empty_idx")) };
+        assert_eq!(stats.num_index_tuples, 0.0);
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert!(!stats.estimated_count);
+        assert!(
+            stats.num_pages >= 1,
+            "vacuum stats should at least report the metadata page",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_vacuum_promotes_duplicate_overflow_primary() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_vacuum_duplicate_promote (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_vacuum_duplicate_promote_idx ON ec_diskann_vacuum_duplicate_promote USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_vacuum_duplicate_promote VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("duplicate seed rows should insert");
+
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_vacuum_duplicate_promote", 1);
+        let row2_heap_tid = heap_tid_for_row("ec_diskann_vacuum_duplicate_promote", 2);
+        Spi::run("DELETE FROM ec_diskann_vacuum_duplicate_promote WHERE id = 1")
+            .expect("delete should succeed");
+
+        let stats = unsafe {
+            debug_vacuum_remove_heap_tids(
+                index_oid("ec_diskann_vacuum_duplicate_promote_idx"),
+                &[row1_heap_tid],
+            )
+        };
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 1.0);
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_vacuum_duplicate_promote_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let node_tids = reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node iteration should succeed");
+        assert_eq!(node_tids.len(), 1);
+        let node_tid = node_tids[0];
+        let node_tuple = reader.read_node(node_tid).expect("node should decode");
+        assert_eq!(
+            node_tuple.primary_heaptid, row2_heap_tid,
+            "vacuum should promote the surviving overflow heap tid into the primary slot",
+        );
+        assert!(
+            !node_tuple.has_overflow_heaptids,
+            "a lone surviving duplicate should clear the overflow flag after promotion",
+        );
+        assert_eq!(
+            insert::bound_heap_tids_for_owner(&chain, node_tid, node_tuple.primary_heaptid)
+                .expect("bound heap tids should decode"),
+            vec![row2_heap_tid],
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_vacuum_duplicate_promote \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(ordered_ids, vec![2]);
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_vacuum_unlinks_and_tombstones_dead_node() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_vacuum_unlink_dead (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_vacuum_unlink_dead_idx ON ec_diskann_vacuum_unlink_dead USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_vacuum_unlink_dead VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("seed and appended row should insert");
+
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_vacuum_unlink_dead", 1);
+        let row2_heap_tid = heap_tid_for_row("ec_diskann_vacuum_unlink_dead", 2);
+        let (prefill_metadata, prefill_chain) =
+            index_materialized_chain("ec_diskann_vacuum_unlink_dead_idx");
+        let prefill_reader = PersistedGraphReader::new(
+            &prefill_chain,
+            prefill_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&prefill_metadata),
+            scan_state::metadata_search_code_len(&prefill_metadata),
+        );
+        let row1_tid = prefill_reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node iteration should succeed")
+            .into_iter()
+            .find(|&tid| {
+                prefill_reader
+                    .read_node(tid)
+                    .expect("node should decode")
+                    .primary_heaptid
+                    == row1_heap_tid
+            })
+            .expect("row 1 node tid should exist");
+        let row2_tid = prefill_reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node iteration should succeed")
+            .into_iter()
+            .find(|&tid| {
+                prefill_reader
+                    .read_node(tid)
+                    .expect("node should decode")
+                    .primary_heaptid
+                    == row2_heap_tid
+            })
+            .expect("row 2 node tid should exist");
+
+        Spi::run("DELETE FROM ec_diskann_vacuum_unlink_dead WHERE id = 2")
+            .expect("delete should succeed");
+        let stats = unsafe {
+            debug_vacuum_remove_heap_tids(
+                index_oid("ec_diskann_vacuum_unlink_dead_idx"),
+                &[row2_heap_tid],
+            )
+        };
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 1.0);
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_vacuum_unlink_dead_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let row1_tuple = reader
+            .read_node(row1_tid)
+            .expect("row 1 node should decode");
+        let row1_neighbors = row1_tuple
+            .neighbors
+            .iter()
+            .take(row1_tuple.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            !row1_neighbors.contains(&row2_tid),
+            "vacuum pass 2 should unlink dead neighbor references from live nodes",
+        );
+
+        let row2_tuple = reader
+            .read_node(row2_tid)
+            .expect("row 2 node should decode");
+        assert_eq!(row2_tuple.primary_heaptid, ItemPointer::INVALID);
+        assert!(
+            row2_tuple.deleted,
+            "vacuum pass 3 should tombstone fully dead tuples",
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_vacuum_unlink_dead \
+                     ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.25, -0.5]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(ordered_ids, vec![1]);
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_vacuum_sets_medoid_refresh_flag() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_vacuum_medoid_refresh (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_vacuum_medoid_refresh_idx ON ec_diskann_vacuum_medoid_refresh USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_vacuum_medoid_refresh VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("seed row should insert");
+
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_vacuum_medoid_refresh", 1);
+        Spi::run("DELETE FROM ec_diskann_vacuum_medoid_refresh WHERE id = 1")
+            .expect("delete should succeed");
+        let stats = unsafe {
+            debug_vacuum_remove_heap_tids(
+                index_oid("ec_diskann_vacuum_medoid_refresh_idx"),
+                &[row1_heap_tid],
+            )
+        };
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 0.0);
+
+        let metadata = index_metadata("ec_diskann_vacuum_medoid_refresh_idx");
+        assert!(
+            metadata.needs_medoid_refresh,
+            "vacuum should own the monotonic medoid-refresh flag when the entry point dies",
         );
     }
 }
