@@ -327,6 +327,9 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             .unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann unique insert backlink update failed: {e}")
             });
+            insert::increment_inserted_since_rebuild(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert metadata update failed: {e}")
+            });
             false
         })
     }
@@ -733,6 +736,7 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[pgrx::pg_schema]
 mod tests {
     use super::{scan_state, PersistedGraphReader};
+    use crate::am::ec_diskann::page::VamanaMetadataPage;
     use crate::storage::page::ItemPointer;
     use pgrx::{pg_sys, pg_test, Spi};
 
@@ -764,6 +768,19 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("table row should exist");
         parse_ctid(&ctid)
+    }
+
+    fn index_metadata(index_name: &str) -> VamanaMetadataPage {
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (metadata, _) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        metadata
     }
 
     #[pg_test]
@@ -862,6 +879,15 @@ mod tests {
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("first insert should bootstrap the empty ec_diskann index");
+        let metadata = index_metadata("ec_diskann_bootstrap_insert_exec_idx");
+        assert_eq!(
+            metadata.inserted_since_rebuild, 1,
+            "bootstrap insert should initialize inserted_since_rebuild to one",
+        );
+        assert!(
+            !metadata.needs_medoid_refresh,
+            "bootstrap insert should not set needs_medoid_refresh",
+        );
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
         Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
         Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
@@ -921,6 +947,14 @@ mod tests {
         let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
             .expect("materialize_chain_from_index should succeed");
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        assert_eq!(
+            metadata.inserted_since_rebuild, 2,
+            "true new-node inserts should increment inserted_since_rebuild",
+        );
+        assert!(
+            !metadata.needs_medoid_refresh,
+            "insert should leave needs_medoid_refresh ownership to maintenance paths",
+        );
         let reader = PersistedGraphReader::new(
             &chain,
             metadata.graph_degree_r,
@@ -1071,6 +1105,16 @@ mod tests {
              $$",
         )
         .expect("duplicate insert should fail through the appended-node duplicate probe");
+
+        let metadata = index_metadata("ec_diskann_duplicate_after_append_idx");
+        assert_eq!(
+            metadata.inserted_since_rebuild, 2,
+            "duplicate inserts must not advance inserted_since_rebuild",
+        );
+        assert!(
+            !metadata.needs_medoid_refresh,
+            "duplicate inserts should not set needs_medoid_refresh",
+        );
     }
 
     #[pg_test]

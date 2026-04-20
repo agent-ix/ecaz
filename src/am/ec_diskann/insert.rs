@@ -629,6 +629,20 @@ pub(super) unsafe fn add_backlinks_if_free(
     Ok(changed)
 }
 
+pub(super) unsafe fn increment_inserted_since_rebuild(
+    index_relation: pg_sys::Relation,
+) -> Result<u64, String> {
+    unsafe {
+        with_locked_metadata_page(index_relation, |metadata| {
+            metadata.inserted_since_rebuild = metadata
+                .inserted_since_rebuild
+                .checked_add(1)
+                .ok_or_else(|| "ec_diskann inserted_since_rebuild overflowed u64".to_owned())?;
+            Ok(metadata.inserted_since_rebuild)
+        })
+    }
+}
+
 fn sort_and_dedup_backlink_targets(targets: &mut Vec<ItemPointer>) {
     targets.sort_unstable_by(|left, right| {
         left.block_number
