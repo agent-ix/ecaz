@@ -1,5 +1,5 @@
 [package]
-name = "tqvector-fuzz"
+name = "ecaz-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-tqvector = { path = "..", features = ["bench"] }
+ecaz = { path = "..", features = ["bench"] }
 
 [[bin]]
 name = "fuzz_parse_text"

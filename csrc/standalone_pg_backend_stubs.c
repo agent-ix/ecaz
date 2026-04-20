@@ -48,7 +48,7 @@ typedef struct ErrorData {
     MemoryContext assoc_context;
 } ErrorData;
 
-extern void tqvector_test_pg_backend_panic(const char *message);
+extern void ecaz_test_pg_backend_panic(const char *message);
 
 static MemoryContextData tqvector_test_memory_context_storage = {0};
 
@@ -124,7 +124,7 @@ static void tqvector_set_text(char **slot, const char *fmt, va_list args) {
     *slot = tqvector_vformat(fmt, args);
 }
 
-void tqvector_test_pg_backend_stubs_anchor(void) {}
+void ecaz_test_pg_backend_stubs_anchor(void) {}
 
 int errstart(int elevel, const char *domain) {
     tqvector_free_error(&tqvector_current_error);
@@ -183,7 +183,7 @@ void errfinish(const char *filename, int lineno, const char *funcname) {
 
     if (tqvector_current_error.elevel >= 21) {
         const char *message = tqvector_current_error.message;
-        tqvector_test_pg_backend_panic(message != NULL ? message : "Postgres ERROR");
+        ecaz_test_pg_backend_panic(message != NULL ? message : "Postgres ERROR");
         abort();
     }
 }

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     fwht_in_place, orthonormal_fwht_in_place, pad_input, sign_vector, simd_backend, srht,
     ProdQuantizer,
 };

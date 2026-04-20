@@ -107,7 +107,7 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
 
 pub(crate) fn explain_option_snapshot() -> ExplainOptionSnapshot {
     ExplainOptionSnapshot {
-        option_name: "tqvector",
+        option_name: "ecaz",
         pg18_custom_explain_option_ready: cfg!(feature = "pg18"),
         pg18_explain_per_node_hook_ready: cfg!(feature = "pg18"),
     }
@@ -125,7 +125,7 @@ pub(crate) fn should_emit_explain_properties(context: ExplainHookContext<'_>) ->
 
 pub(crate) fn explain_output_group() -> ExplainOutputGroup {
     ExplainOutputGroup {
-        group_label: "TQVector Stats",
+        group_label: "Ecaz Stats",
         opened_with: "ExplainOpenGroup",
         closed_with: "ExplainCloseGroup",
     }
@@ -202,7 +202,7 @@ impl TqExplainCounters {
 static PREVIOUS_EXPLAIN_PER_NODE_HOOK: OnceLock<pg_sys::explain_per_node_hook_type> =
     OnceLock::new();
 #[cfg(feature = "pg18")]
-static TQVECTOR_EXPLAIN_REGISTERED: AtomicBool = AtomicBool::new(false);
+static ECAZ_EXPLAIN_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "pg18")]
 fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
@@ -214,7 +214,7 @@ fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
 
 #[cfg(feature = "pg18")]
 fn explain_extension_id() -> i32 {
-    unsafe { pg_sys::GetExplainExtensionId(c"tqvector".as_ptr()) }
+    unsafe { pg_sys::GetExplainExtensionId(c"ecaz".as_ptr()) }
 }
 
 #[cfg(feature = "pg18")]
@@ -287,7 +287,7 @@ unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, counters: TqExp
 }
 
 #[cfg(feature = "pg18")]
-unsafe extern "C-unwind" fn tqvector_explain_option_handler(
+unsafe extern "C-unwind" fn ecaz_explain_option_handler(
     es: *mut pg_sys::ExplainState,
     opt: *mut pg_sys::DefElem,
     _pstate: *mut pg_sys::ParseState,
@@ -297,7 +297,7 @@ unsafe extern "C-unwind" fn tqvector_explain_option_handler(
             let enabled = pg_sys::defGetBoolean(opt);
             let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
             if state.is_null() {
-                pgrx::error!("tqvector failed to allocate EXPLAIN option state");
+                pgrx::error!("ecaz failed to allocate EXPLAIN option state");
             }
             *state = enabled;
             pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
@@ -306,7 +306,7 @@ unsafe extern "C-unwind" fn tqvector_explain_option_handler(
 }
 
 #[cfg(feature = "pg18")]
-unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
+unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
     planstate: *mut pg_sys::PlanState,
     ancestors: *mut pg_sys::List,
     relationship: *const std::ffi::c_char,
@@ -352,17 +352,17 @@ unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
 #[cfg(feature = "pg18")]
 pub(crate) unsafe fn register_pg18_explain_hooks() {
     unsafe {
-        if TQVECTOR_EXPLAIN_REGISTERED.load(Ordering::Acquire) {
+        if ECAZ_EXPLAIN_REGISTERED.load(Ordering::Acquire) {
             return;
         }
 
         pg_sys::RegisterExtensionExplainOption(
-            c"tqvector".as_ptr(),
-            Some(tqvector_explain_option_handler),
+            c"ecaz".as_ptr(),
+            Some(ecaz_explain_option_handler),
         );
         let _ = PREVIOUS_EXPLAIN_PER_NODE_HOOK.set(pg_sys::explain_per_node_hook);
-        pg_sys::explain_per_node_hook = Some(tqvector_explain_per_node_hook);
-        TQVECTOR_EXPLAIN_REGISTERED.store(true, Ordering::Release);
+        pg_sys::explain_per_node_hook = Some(ecaz_explain_per_node_hook);
+        ECAZ_EXPLAIN_REGISTERED.store(true, Ordering::Release);
     }
 }
 
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(
             explain_option_snapshot(),
             ExplainOptionSnapshot {
-                option_name: "tqvector",
+                option_name: "ecaz",
                 pg18_custom_explain_option_ready: cfg!(feature = "pg18"),
                 pg18_explain_per_node_hook_ready: cfg!(feature = "pg18"),
             }
@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(
             explain_output_group(),
             ExplainOutputGroup {
-                group_label: "TQVector Stats",
+                group_label: "Ecaz Stats",
                 opened_with: "ExplainOpenGroup",
                 closed_with: "ExplainCloseGroup",
             }

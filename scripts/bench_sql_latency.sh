@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# SQL-level latency benchmarks for tqvector HNSW scan.
-# Requires: running PostgreSQL with tqvector extension installed.
+# SQL-level latency benchmarks for the Ecaz HNSW scan.
+# Requires: running PostgreSQL with the ecaz extension installed.
 #
 # Two invocation modes:
 #

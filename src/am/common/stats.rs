@@ -37,7 +37,7 @@ pub(crate) struct TqStatsSummary {
 
 pub(crate) fn stats_snapshot() -> StatsSnapshot {
     StatsSnapshot {
-        function_name: "tqvector_stats",
+        function_name: "ecaz_stats",
         pg18_pgstat_kind_ready: pgstat_kind_ready(),
         pg18_sql_function_ready: cfg!(feature = "pg18"),
     }
@@ -62,7 +62,7 @@ pub(crate) fn pgstat_kind_blocker() -> Option<&'static str> {
     #[cfg(feature = "pg18")]
     {
         Some(
-            "custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL",
+            "custom pgstat kind registration requires loading ecaz via shared_preload_libraries on PG18 and restarting PostgreSQL",
         )
     }
 
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(
             stats_snapshot(),
             StatsSnapshot {
-                function_name: "tqvector_stats",
+                function_name: "ecaz_stats",
                 pg18_pgstat_kind_ready: false,
                 pg18_sql_function_ready: cfg!(feature = "pg18"),
             }

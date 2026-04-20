@@ -116,7 +116,7 @@ trap cleanup EXIT INT TERM
 run_sql postgres "SELECT 1" >/dev/null
 run_sql postgres "DROP DATABASE IF EXISTS ${harness_db} WITH (FORCE)" >/dev/null
 run_sql postgres "CREATE DATABASE ${harness_db}" >/dev/null
-run_sql "${harness_db}" "CREATE EXTENSION tqvector" >/dev/null
+run_sql "${harness_db}" "CREATE EXTENSION ecaz" >/dev/null
 
 probe_exists="$(
     run_sql "${harness_db}" "SELECT to_regprocedure('tests.ec_hnsw_debug_scan_result_count(oid,real[])') IS NOT NULL"

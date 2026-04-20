@@ -15,7 +15,7 @@ The extension SHALL be installable via standard PostgreSQL extension management.
 
 ### SQL Objects Created
 
-`CREATE EXTENSION tqvector` SHALL register:
+`CREATE EXTENSION ecaz` SHALL register:
 
 1. **Type**: `tqvector` (with in/out/send/recv functions)
 2. **Functions**:
@@ -38,9 +38,9 @@ The extension SHALL be installable via standard PostgreSQL extension management.
 ### Extension Control File
 
 ```
-comment = 'TurboQuant compressed vector type with HNSW index'
+comment = 'Ecaz compressed vector extension with HNSW index'
 default_version = '0.1.1'
-module_pathname = '$libdir/tqvector'
+module_pathname = '$libdir/ecaz'
 relocatable = false
 superuser = true
 ```
@@ -52,10 +52,10 @@ The extension SHALL compile and install on PostgreSQL 17 and 18 via pgrx feature
 ## Acceptance Criteria
 
 ### FR-012-AC-1: Clean install
-`CREATE EXTENSION tqvector` on a fresh database SHALL succeed without errors.
+`CREATE EXTENSION ecaz` on a fresh database SHALL succeed without errors.
 
 ### FR-012-AC-2: Clean uninstall
-`DROP EXTENSION tqvector CASCADE` SHALL remove all objects without orphans in pg_type, pg_operator, or pg_am.
+`DROP EXTENSION ecaz CASCADE` SHALL remove all objects without orphans in pg_type, pg_operator, or pg_am.
 
 ### FR-012-AC-3: Multi-version support
 `cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.

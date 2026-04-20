@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Full NFR-003 recall benchmark suite via SQL.
 
-Requires: running PostgreSQL with tqvector extension installed.
+Requires: running PostgreSQL with the ecaz extension installed.
 Usage: PGDATABASE=tqvector_bench python3 scripts/bench_recall.py
 """
 

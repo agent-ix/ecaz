@@ -6,7 +6,7 @@ Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 
 ## Scope
 
-Flip tqvector from "PG18-ready, PG17-running" to "PG18-primary, PG17-fallback"
+Flip Ecaz from "PG18-ready, PG17-running" to "PG18-primary, PG17-fallback"
 once PG18 GA is tagged and pgrx supports it. Activate the PG18 callback and
 diagnostic scaffolding that task 11 already built but left gated under
 `readiness=false` snapshots.
@@ -14,7 +14,7 @@ diagnostic scaffolding that task 11 already built but left gated under
 This shared-infrastructure slice now has:
 - PG18 as the default CI/build target
 - PG17 preserved as the compatibility fallback
-- one stable `tqvector` extension identity across the upgrade
+- one stable `ecaz` extension identity across the upgrade
 
 ## Context
 
@@ -41,7 +41,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 ### Cargo / module identity
 
 - [x] **`pg18` Cargo feature.** `pg18` is the default Cargo feature and PG14–PG16 are dropped.
-- [x] **`PG_MODULE_MAGIC_EXT`.** Module magic now reports tqvector name/version on PG18 while preserving the existing library identity.
+- [x] **`PG_MODULE_MAGIC_EXT`.** Module magic now reports ecaz name/version on PG18 while preserving the existing library identity.
 - [x] **CI matrix.** PG18 is the primary row; PG17 remains the fallback row.
 
 ### IndexAmRoutine callback wiring
@@ -54,18 +54,18 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 ### EXPLAIN hook activation
 
-- [x] **`RegisterExtensionExplainOption`.** `_PG_init()` registers the `tqvector` EXPLAIN option on PG18.
+- [x] **`RegisterExtensionExplainOption`.** `_PG_init()` registers the `ecaz` EXPLAIN option on PG18.
 - [x] **`explain_per_node_hook` registration.** The per-node hook is installed and chained through the previous hook.
 - [x] **Counter storage in `TqScanOpaque`.** `TqExplainCounters` is live in the scan opaque and emitted through the PG18 hook.
-- [x] **Acceptance.** `EXPLAIN (FORMAT JSON, tqvector, ANALYZE, COSTS OFF)` on an `ec_hnsw`
-  index scan emits the `TQVector Stats` group with the documented properties. Text output still
+- [x] **Acceptance.** `EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)` on an `ec_hnsw`
+  index scan emits the `Ecaz Stats` group with the documented properties. Text output still
   exposes the same properties even though core PostgreSQL does not render the group wrapper there.
 
 ### pgstat-kind activation
 
-- [x] **Register custom pgstat-kind.** PG18 now has a preload-aware registration path through a small C shim over `pgstat_internal.h`. Registration succeeds when `tqvector` is loaded through `shared_preload_libraries`; non-preloaded sessions keep the current backend-local fallback.
+- [x] **Register custom pgstat-kind.** PG18 now has a preload-aware registration path through a small C shim over `pgstat_internal.h`. Registration succeeds when `ecaz` is loaded through `shared_preload_libraries`; non-preloaded sessions keep the current backend-local fallback.
 - [x] **Increment sites.** Shared scan counters now increment at the live scan seams that already feed EXPLAIN.
-- [x] **`tqvector_stats()` SQL function.** PG18 now exposes the shared pgstat snapshot when registration is active, and otherwise falls back to backend-local counters so non-preloaded sessions still have a descriptive SQL surface.
+- [x] **`ecaz_stats()` SQL function.** PG18 now exposes the shared pgstat snapshot when registration is active, and otherwise falls back to backend-local counters so non-preloaded sessions still have a descriptive SQL surface.
 
 ### ReadStream activation
 
@@ -102,7 +102,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 ## Unblocks
 
 - Natural planner selection of ec_hnsw on PG18.
-- `EXPLAIN (ANALYZE, tqvector)` visibility for operators.
+- `EXPLAIN (ANALYZE, ecaz)` visibility for operators.
 - Async I/O cold-cache performance.
 - Dropping the PG14–PG16 compatibility burden from the build matrix.
 
@@ -110,8 +110,8 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 - Any new feature work that doesn't come from the PG18 surface. This task
   is infrastructure, not a feature vehicle.
-- pg_upgrade testing for other extensions. ADR-017 only covers tqvector
-  identity.
+- pg_upgrade testing for other extensions. ADR-047 only covers the Ecaz
+  extension identity, while the `tqvector` datum remains the TurboQuant family surface.
 
 ## Notes
 

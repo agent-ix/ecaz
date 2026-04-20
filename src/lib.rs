@@ -21,8 +21,8 @@ const MODULE_VERSION_CSTR: &core::ffi::CStr = {
     }
 };
 
-// Use explicit fields so PG18 module metadata reports the tqvector name/version correctly.
-pgrx::pg_module_magic!(name = c"tqvector", version = MODULE_VERSION_CSTR);
+// Use explicit fields so PG18 module metadata reports the ecaz name/version correctly.
+pgrx::pg_module_magic!(name = c"ecaz", version = MODULE_VERSION_CSTR);
 
 #[allow(dead_code)]
 mod am;
@@ -775,7 +775,7 @@ fn ec_hnsw_planner_integration_snapshot(
 #[cfg(feature = "pg18")]
 #[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
-fn tqvector_stats() -> TableIterator<
+fn ecaz_stats() -> TableIterator<
     'static,
     (
         name!(total_distance_calcs, i64),
@@ -2797,7 +2797,7 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("pg18 blocker should be non-null"),
             if cfg!(feature = "pg18") {
-                "custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL"
+                "custom pgstat kind registration requires loading ecaz via shared_preload_libraries on PG18 and restarting PostgreSQL"
             } else {
                 "custom pgstat kind registration remains gated outside this build"
             }
@@ -2823,7 +2823,7 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
-    fn test_pg18_tqvector_stats_reports_backend_local_counters() {
+    fn test_pg18_ecaz_stats_reports_backend_local_counters() {
         Spi::run(
             "CREATE TABLE pg18_tqvector_stats_fixture (id bigint primary key, embedding ecvector)",
         )
@@ -2849,13 +2849,13 @@ mod tests {
         .expect("query should succeed");
 
         assert!(
-            Spi::get_one::<i64>("SELECT total_scans_started FROM tqvector_stats()")
+            Spi::get_one::<i64>("SELECT total_scans_started FROM ecaz_stats()")
                 .expect("stats query should succeed")
                 .expect("scan counter should be non-null")
                 >= 1
         );
         assert!(
-            Spi::get_one::<i64>("SELECT total_distance_calcs FROM tqvector_stats()")
+            Spi::get_one::<i64>("SELECT total_distance_calcs FROM ecaz_stats()")
                 .expect("stats query should succeed")
                 .expect("distance counter should be non-null")
                 > 0
@@ -2868,7 +2868,7 @@ mod tests {
     #[pg_test]
     fn test_pg18_module_identity_reports_loaded_module_version() {
         let version = Spi::get_one::<String>(
-            "SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'tqvector'",
+            "SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'",
         )
         .expect("module query should succeed")
         .expect("module version should be visible");
@@ -2877,7 +2877,7 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
-    fn test_pg18_explain_option_emits_tqvector_stats_group() {
+    fn test_pg18_explain_option_emits_ecaz_stats_group() {
         Spi::run("CREATE TABLE pg18_explain_fixture (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
@@ -2896,7 +2896,7 @@ mod tests {
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
-                    "EXPLAIN (FORMAT JSON, tqvector, ANALYZE, COSTS OFF)
+                    "EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)
                      SELECT id FROM pg18_explain_fixture
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      LIMIT 1",
@@ -2916,8 +2916,8 @@ mod tests {
             lines.join("\n")
         });
 
-        if !plan.contains("TQVector Stats") {
-            panic!("missing TQVector Stats in plan: {plan:?}");
+        if !plan.contains("Ecaz Stats") {
+            panic!("missing Ecaz Stats in plan: {plan:?}");
         }
         if !plan.contains("Elements Scored") {
             panic!("missing Elements Scored in plan: {plan:?}");

@@ -1,7 +1,7 @@
 //! Microbenchmarks for Lloyd-Max codebook generation.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode};
-use tqvector::bench_api::lloyd_max;
+use ecaz::bench_api::lloyd_max;
 
 fn bench_lloyd_max(c: &mut Criterion) {
     let mut group = c.benchmark_group("codebook/lloyd_max");

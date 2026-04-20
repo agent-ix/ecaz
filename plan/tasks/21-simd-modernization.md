@@ -18,7 +18,7 @@ runtime-dispatch infrastructure and test the same equivalence harness:
    preferred where available (Graviton 3+, Apple M4+).
 
 Both threads share: `src/quant/simd.rs` runtime dispatch, the
-`TQVECTOR_SIMD` override, and the existing equivalence test coverage.
+`ECAZ_SIMD` override, and the existing equivalence test coverage.
 
 ## Why pair them
 
@@ -74,11 +74,11 @@ Both threads share: `src/quant/simd.rs` runtime dispatch, the
 
 ## Shared subtasks
 
-- [ ] **`TQVECTOR_SIMD` override matrix.** Document the valid
+- [ ] **`ECAZ_SIMD` override matrix.** Document the valid
   override strings so operators can pin a backend for comparative
   measurement. Matrix: `scalar | avx2 | avx512 | neon | sve | sve2`.
 - [ ] **Feature-detection snapshot.** Extend the existing
-  `src/quant/simd.rs` dispatch metadata so `EXPLAIN (tqvector)` can
+  `src/quant/simd.rs` dispatch metadata so `EXPLAIN (ecaz)` can
   surface which backend the scan used. Ties into task 19's EXPLAIN
   counter activation.
 

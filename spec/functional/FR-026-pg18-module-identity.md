@@ -16,7 +16,7 @@ On PG18, the extension SHALL use `PG_MODULE_MAGIC_EXT` to declare its name and v
 
 Current staged behavior:
 - On PG18, module identity and version reporting are now live via explicit `pg_module_magic!`
-  name/version fields, preserving the single `tqvector` extension identity.
+  name/version fields, preserving the single `ecaz` extension identity.
 - The explicit-field form is used as a repo-local workaround for current `pgrx 0.17` PG18
   shorthand behavior.
 - PG17 still uses the standard module magic surface without name/version reporting.
@@ -26,7 +26,7 @@ Current staged behavior:
 ```rust
 #[cfg(feature = "pg18")]
 PG_MODULE_MAGIC_EXT(
-    .name = "tqvector",
+    .name = "ecaz",
     .version = env!("CARGO_PKG_VERSION"),  // reads from Cargo.toml
 );
 
@@ -37,9 +37,9 @@ PG_MODULE_MAGIC;
 ### Observable Behavior
 
 ```sql
-SELECT * FROM pg_get_loaded_modules() WHERE module_name = 'tqvector';
+SELECT * FROM pg_get_loaded_modules() WHERE module_name = 'ecaz';
 -- module_name | version
--- tqvector | 0.1.1
+-- ecaz | 0.1.1
 ```
 
 ### PG Version Compatibility
@@ -49,7 +49,7 @@ On PG17, the standard `PG_MODULE_MAGIC` macro is used. The extension name and ve
 ## Acceptance Criteria
 
 ### FR-026-AC-1: Module visible
-On PG18, `SELECT module_name, version FROM pg_get_loaded_modules() WHERE module_name = 'tqvector'`
+On PG18, `SELECT module_name, version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'`
 SHALL return one row with the correct version.
 
 ### FR-026-AC-2: Version matches Cargo.toml

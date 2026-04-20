@@ -2,7 +2,7 @@
 
 ## Overview
 
-tqvector is a PostgreSQL extension (pgrx) with three main subsystems:
+Ecaz is a PostgreSQL extension (pgrx) with three main subsystems:
 
 1. **Quantizer core** — TurboQuant compression (MSE + QJL two-stage quantization)
 2. **HNSW index** — graph-based approximate nearest neighbor index access method

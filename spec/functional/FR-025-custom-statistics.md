@@ -15,8 +15,8 @@ traces:
 On PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
 
 Current staged behavior:
-- On PG18, `tqvector_stats()` is live.
-- When `tqvector` is loaded through `shared_preload_libraries`, `_PG_init()` registers the custom
+- On PG18, `ecaz_stats()` is live.
+- When `ecaz` is loaded through `shared_preload_libraries`, `_PG_init()` registers the custom
   pgstat kind through the preload-only C shim and the SQL surface reads the shared snapshot.
 - In ordinary non-preloaded PG18 sessions, the same SQL surface falls back to backend-local
   counters and diagnostics continue to report `pg18_pgstat_kind_ready = false`.
@@ -34,7 +34,7 @@ PG18 introduces `pgstat_register_kind()` which allows extensions to register cus
 
 ```rust
 #[repr(C)]
-struct TqVectorStats {
+struct EcazStats {
     total_distance_calcs: i64,       // Total score_ip_from_parts calls
     total_graph_hops: i64,           // Total bootstrap expansion node visits
     total_linear_pages: i64,         // Total linear scan pages read
@@ -50,25 +50,25 @@ struct TqVectorStats {
 In `_PG_init()`:
 
 ```rust
-static TQVECTOR_STATS_KIND: PgStat_KindInfo = PgStat_KindInfo {
+static ECAZ_STATS_KIND: PgStat_KindInfo = PgStat_KindInfo {
     fixed_amount: true,
     accessed_across_databases: true,
     write_to_file: true,
     shared_size: size_of::<TqVectorSharedStats>(),
-    name: "tqvector",
+    name: "ecaz",
     // ... callbacks
 };
 
-const TQVECTOR_PGSTAT_KIND: PgStat_Kind = PGSTAT_KIND_CUSTOM_MIN + 1;
+const ECAZ_PGSTAT_KIND: PgStat_Kind = PGSTAT_KIND_CUSTOM_MIN + 1;
 
-pgstat_register_kind(TQVECTOR_PGSTAT_KIND, &TQVECTOR_STATS_KIND);
+pgstat_register_kind(ECAZ_PGSTAT_KIND, &ECAZ_STATS_KIND);
 ```
 
 ### SQL Interface
 
 ```sql
 -- Read current statistics
-SELECT * FROM tqvector_stats();
+SELECT * FROM ecaz_stats();
 
 -- Returns:
 --   total_distance_calcs  | 1234567
@@ -98,20 +98,20 @@ SELECT * FROM tqvector_stats();
 ### PG Version Compatibility
 
 On PG17, the custom statistics API does not exist. The extension SHALL not register any pgstat
-kind, `tqvector_stats()` SHALL NOT be defined, and counter increments SHALL be compiled out. On
+kind, `ecaz_stats()` SHALL NOT be defined, and counter increments SHALL be compiled out. On
 PG18, the shared pgstat path requires preload-time activation; without preload, the SQL surface
 falls back to backend-local counters.
 
 ## Acceptance Criteria
 
 ### FR-025-AC-1: Stats function exists
-On PG18, `SELECT * FROM tqvector_stats()` SHALL return a row with all defined counters.
+On PG18, `SELECT * FROM ecaz_stats()` SHALL return a row with all defined counters.
 
 ### FR-025-AC-2: Counters increment
 After running 10 HNSW scan queries, `total_scans_started` SHALL be ≥ 10 and `total_distance_calcs` SHALL be > 0.
 
 ### FR-025-AC-3: Reset blocker documented
-Until PostgreSQL exposes a reset surface for custom pgstat kinds in this environment, tqvector
+Until PostgreSQL exposes a reset surface for custom pgstat kinds in this environment, Ecaz
 SHALL document the limitation rather than claim that `pg_stat_reset_shared(text)` can reset the
 custom kind directly.
 
@@ -119,7 +119,7 @@ custom kind directly.
 Counters SHALL accumulate across queries within a session. They SHALL NOT reset between queries.
 
 ### FR-025-AC-5: PG17 graceful absence
-On PG17, calling `tqvector_stats()` SHALL raise an appropriate error or the function SHALL not exist.
+On PG17, calling `ecaz_stats()` SHALL raise an appropriate error or the function SHALL not exist.
 
 ## References
 

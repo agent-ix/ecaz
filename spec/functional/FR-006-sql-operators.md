@@ -67,7 +67,7 @@ Current staged behavior:
 - ADR-011 is retired and the live cost model can now select `ec_hnsw` naturally.
 - On PG18, the `<#>` ordering semantics are now exposed through live
   `amtranslatestrategy` / `amtranslatecmptype` callbacks plus `amconsistentordering = true`.
-- On PG18, `EXPLAIN (tqvector)` is also live through the registered EXPLAIN option and per-node
+- On PG18, `EXPLAIN (ecaz)` is also live through the registered EXPLAIN option and per-node
   hook. Shared pgstat remains preload-gated, but EXPLAIN and planner selection are no longer
   descriptive-only.
 

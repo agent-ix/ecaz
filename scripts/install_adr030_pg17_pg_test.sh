@@ -20,7 +20,7 @@ repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
 pgrx_home="${PGRX_HOME:-/tmp/tqvector_pgrx_home}"
 pg_config="/home/peter/.pgrx/17.9/pgrx-install/bin/pg_config"
-release_artifact="${repo_root}/target/release/libtqvector.so"
+release_artifact="${repo_root}/target/release/libecaz.so"
 
 artifact_sha256() {
     sha256sum "$1" | awk '{print $1}'
@@ -64,7 +64,7 @@ PGRX_HOME="${pgrx_home}" cargo pgrx install \
     --no-default-features
 
 pkglibdir="$("${pg_config}" --pkglibdir)"
-installed_backend="${pkglibdir}/tqvector.so"
+installed_backend="${pkglibdir}/ecaz.so"
 
 if [[ ! -f "${release_artifact}" ]]; then
     echo "[install] expected release artifact missing: ${release_artifact}" >&2

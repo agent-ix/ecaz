@@ -28,7 +28,7 @@ Published reference implementations (FAISS-GPU, cuVS, CAGRA,
 Microsoft's DiskANN GPU build) demonstrate 10–100x speedups on
 builds for multi-million-vector corpora.
 
-tqvector ships as a Postgres extension. Linking CUDA into the
+Ecaz ships as a Postgres extension. Linking CUDA into the
 server process is architecturally hostile: it forces the database
 host to carry a GPU driver, enlarges the trust surface, and
 couples release cycles of the extension to NVIDIA's stack.

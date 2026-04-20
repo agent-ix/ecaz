@@ -30,45 +30,45 @@ typedef struct TqVectorPgStatShared
 } TqVectorPgStatShared;
 
 /*
- * Claim a stable tqvector-specific custom kind instead of the shared
+ * Claim a stable ecaz-specific custom kind instead of the shared
  * PGSTAT_KIND_EXPERIMENTAL slot so preload-time registration does not collide
  * with other extensions using the experimental ID.
  */
-#define TQVECTOR_PGSTAT_KIND	((PgStat_Kind) (PGSTAT_KIND_CUSTOM_MIN + 1))
+#define ECAZ_PGSTAT_KIND	((PgStat_Kind) (PGSTAT_KIND_CUSTOM_MIN + 1))
 
-static void tqvector_pgstat_init_shmem(void *stats);
-static void tqvector_pgstat_reset_all(TimestampTz ts);
-static void tqvector_pgstat_snapshot(void);
+static void ecaz_pgstat_init_shmem(void *stats);
+static void ecaz_pgstat_reset_all(TimestampTz ts);
+static void ecaz_pgstat_snapshot(void);
 
-static const PgStat_KindInfo tqvector_pgstat_kind = {
-	.name = "tqvector",
+static const PgStat_KindInfo ecaz_pgstat_kind = {
+	.name = "ecaz",
 	.fixed_amount = true,
 	.accessed_across_databases = true,
 	.write_to_file = true,
 	.shared_size = sizeof(TqVectorPgStatShared),
 	.shared_data_off = offsetof(TqVectorPgStatShared, stats),
 	.shared_data_len = sizeof(((TqVectorPgStatShared *) 0)->stats),
-	.init_shmem_cb = tqvector_pgstat_init_shmem,
-	.reset_all_cb = tqvector_pgstat_reset_all,
-	.snapshot_cb = tqvector_pgstat_snapshot,
+	.init_shmem_cb = ecaz_pgstat_init_shmem,
+	.reset_all_cb = ecaz_pgstat_reset_all,
+	.snapshot_cb = ecaz_pgstat_snapshot,
 };
 
-static bool tqvector_pgstat_loaded = false;
+static bool ecaz_pgstat_loaded = false;
 
 void
-tqvector_pg18_pgstat_anchor(void)
+ecaz_pg18_pgstat_anchor(void)
 {
 }
 
 static TqVectorPgStatShared *
-tqvector_pgstat_shared(void)
+ecaz_pgstat_shared(void)
 {
 	return (TqVectorPgStatShared *)
-		pgstat_get_custom_shmem_data(TQVECTOR_PGSTAT_KIND);
+		pgstat_get_custom_shmem_data(ECAZ_PGSTAT_KIND);
 }
 
 static void
-tqvector_pgstat_init_shmem(void *stats)
+ecaz_pgstat_init_shmem(void *stats)
 {
 	TqVectorPgStatShared *stats_shmem = (TqVectorPgStatShared *) stats;
 
@@ -76,9 +76,9 @@ tqvector_pgstat_init_shmem(void *stats)
 }
 
 static void
-tqvector_pgstat_reset_all(TimestampTz ts)
+ecaz_pgstat_reset_all(TimestampTz ts)
 {
-	TqVectorPgStatShared *stats_shmem = tqvector_pgstat_shared();
+	TqVectorPgStatShared *stats_shmem = ecaz_pgstat_shared();
 	(void) ts;
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
@@ -95,12 +95,12 @@ tqvector_pgstat_reset_all(TimestampTz ts)
 }
 
 static void
-tqvector_pgstat_snapshot(void)
+ecaz_pgstat_snapshot(void)
 {
-	TqVectorPgStatShared *stats_shmem = tqvector_pgstat_shared();
+	TqVectorPgStatShared *stats_shmem = ecaz_pgstat_shared();
 	TqVectorPgStatCounters *stat_snap =
 		(TqVectorPgStatCounters *)
-		pgstat_get_custom_snapshot_data(TQVECTOR_PGSTAT_KIND);
+		pgstat_get_custom_snapshot_data(ECAZ_PGSTAT_KIND);
 	TqVectorPgStatCounters reset;
 
 	pgstat_copy_changecounted_stats(stat_snap,
@@ -124,34 +124,34 @@ tqvector_pgstat_snapshot(void)
 }
 
 bool
-tqvector_pg18_pgstat_register_kind(void)
+ecaz_pg18_pgstat_register_kind(void)
 {
-	if (tqvector_pgstat_loaded)
+	if (ecaz_pgstat_loaded)
 		return true;
 
 	if (!process_shared_preload_libraries_in_progress)
 		return false;
 
-	pgstat_register_kind(TQVECTOR_PGSTAT_KIND, &tqvector_pgstat_kind);
-	tqvector_pgstat_loaded = true;
+	pgstat_register_kind(ECAZ_PGSTAT_KIND, &ecaz_pgstat_kind);
+	ecaz_pgstat_loaded = true;
 	return true;
 }
 
 bool
-tqvector_pg18_pgstat_is_registered(void)
+ecaz_pg18_pgstat_is_registered(void)
 {
-	return tqvector_pgstat_loaded;
+	return ecaz_pgstat_loaded;
 }
 
 bool
-tqvector_pg18_pgstat_record(const TqVectorPgStatCounters *delta)
+ecaz_pg18_pgstat_record(const TqVectorPgStatCounters *delta)
 {
 	TqVectorPgStatShared *stats_shmem;
 
-	if (!tqvector_pgstat_loaded || delta == NULL)
+	if (!ecaz_pgstat_loaded || delta == NULL)
 		return false;
 
-	stats_shmem = tqvector_pgstat_shared();
+	stats_shmem = ecaz_pgstat_shared();
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
 	pgstat_begin_changecount_write(&stats_shmem->changecount);
@@ -169,16 +169,16 @@ tqvector_pg18_pgstat_record(const TqVectorPgStatCounters *delta)
 }
 
 bool
-tqvector_pg18_pgstat_snapshot(TqVectorPgStatCounters *out)
+ecaz_pg18_pgstat_snapshot(TqVectorPgStatCounters *out)
 {
 	TqVectorPgStatCounters *snapshot;
 
-	if (!tqvector_pgstat_loaded || out == NULL)
+	if (!ecaz_pgstat_loaded || out == NULL)
 		return false;
 
-	pgstat_snapshot_fixed(TQVECTOR_PGSTAT_KIND);
+	pgstat_snapshot_fixed(ECAZ_PGSTAT_KIND);
 	snapshot = (TqVectorPgStatCounters *)
-		pgstat_get_custom_snapshot_data(TQVECTOR_PGSTAT_KIND);
+		pgstat_get_custom_snapshot_data(ECAZ_PGSTAT_KIND);
 	memcpy(out, snapshot, sizeof(*out));
 
 	return true;

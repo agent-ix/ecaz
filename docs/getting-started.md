@@ -25,7 +25,7 @@ cargo pgrx install --sudo --release
 Connect to your local PostgreSQL and try:
 
 ```sql
-CREATE EXTENSION tqvector;
+CREATE EXTENSION ecaz;
 
 -- Create a table with a tqvector column
 CREATE TABLE items (

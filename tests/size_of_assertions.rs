@@ -2,7 +2,7 @@
 //! Ensures that payload sizes, struct sizes, and wire formats
 //! remain stable across code changes.
 
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     mse_code_len, payload_len, qjl_code_len, ItemPointer, TqElementTuple, HEAPTID_INLINE_CAPACITY,
     ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
 };

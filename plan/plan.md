@@ -372,7 +372,7 @@ and validated on `pg18-shared-infra-merge`.
   5. FR-020-AC-1 validated: EXPLAIN shows index scan on 10K-row table
   6. FR-020-AC-2 validated: planner prefers seqscan on 50-row table
 - **Dependencies:** A4 (recall gate must pass), D1 (scaffolding must be complete)
-- **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan without `enable_seqscan = off`. EXPLAIN (tqvector) shows scan stats on PG18.
+- **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan without `enable_seqscan = off`. EXPLAIN (ecaz) shows scan stats on PG18.
 - **Status:** the shared-infrastructure slice is complete on `pg18-shared-infra-merge`: live
   costing, `amgettreeheight`, strategy translation, EXPLAIN hooks, ReadStream scan/vacuum wiring,
   preload-aware shared pgstat registration, and PG18 module identity all validate locally on PG18
@@ -500,7 +500,7 @@ Exit criteria:
 - [ ] `FR-020-AC-4`: `amgettreeheight` returns max_level on PG18
 - [ ] `FR-020-AC-5`: ADR-011 marked superseded
 - [ ] Strategy translation: `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `COMPARE_INVALID` otherwise for `FR-023`
-- [ ] Custom EXPLAIN: `EXPLAIN (tqvector)` shows scan counters on PG18 for `FR-024`
+- [ ] Custom EXPLAIN: `EXPLAIN (ecaz)` shows scan counters on PG18 for `FR-024`
 - [ ] Async I/O: ReadStream prefetch improves cold-cache scan latency on PG18 for `FR-019`
 
 Entrance criteria:

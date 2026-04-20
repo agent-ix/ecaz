@@ -2,7 +2,7 @@
 
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
-use tqvector::bench_api::fwht_in_place;
+use ecaz::bench_api::fwht_in_place;
 
 #[library_benchmark]
 fn fwht_2048() {

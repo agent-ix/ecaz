@@ -25,7 +25,7 @@ fn main() {
     let bits = 4u8;
     let seed = 42u64;
 
-    let quantizer = tqvector::bench_api::ProdQuantizer::new(dim, bits, seed);
+    let quantizer = ecaz::bench_api::ProdQuantizer::new(dim, bits, seed);
     let query = random_unit_vector(dim, 1);
     let prepared = quantizer.prepare_ip_query(&query);
 

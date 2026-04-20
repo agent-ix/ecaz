@@ -1,5 +1,5 @@
 [package]
-name = "tqvector"
+name = "ecaz"
 version = "0.1.1"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "pgrx_embed_tqvector"
+name = "pgrx_embed_ecaz"
 path = "./src/bin/pgrx_embed.rs"
 
 [features]

@@ -1,4 +1,4 @@
-# tqvector PG18 Upgrade & Optimization Plan
+# Ecaz PG18 Upgrade & Optimization Plan
 
 ## Overview
 
@@ -329,18 +329,18 @@ amroutine.amconsistentordering = true;  // we do ORDER BY
 ### PG18 API
 
 ```c
-RegisterExtensionExplainOption("tqvector", handler, GUCCheckBooleanExplainOption);
+RegisterExtensionExplainOption("ecaz", handler, GUCCheckBooleanExplainOption);
 explain_per_node_hook = ec_hnsw_explain_hook;
 ```
 
 ### What to expose
 
-`EXPLAIN (tqvector) SELECT ... ORDER BY embedding <#> query LIMIT 10`:
+`EXPLAIN (ecaz) SELECT ... ORDER BY embedding <#> query LIMIT 10`:
 
 ```
 Index Scan using idx_embedding on items
   Order By: (embedding <#> '{...}'::real[])
-  TQVector Stats:
+  Ecaz Stats:
     Bootstrap candidates expanded: 3
     Bootstrap pages read: 47
     Linear scan pages read: 0
@@ -383,7 +383,7 @@ pgstat_register_kind(PGSTAT_KIND_EXPERIMENTAL, &ec_hnsw_kind_info);
 - Bootstrap hit rate (queries satisfied entirely by graph traversal)
 - Quantizer cache hit/miss
 
-These would be visible via a `tqvector_stats()` SQL function or a custom view.
+These would be visible via an `ecaz_stats()` SQL function or a custom view.
 
 ### Priority
 

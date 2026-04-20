@@ -2,7 +2,7 @@
 
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
-use tqvector::bench_api::{pack_mse_indices, pack_qjl_signs, unpack_mse_indices};
+use ecaz::bench_api::{pack_mse_indices, pack_qjl_signs, unpack_mse_indices};
 
 use rand::Rng;
 use rand::SeedableRng;

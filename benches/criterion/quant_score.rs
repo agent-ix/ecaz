@@ -4,7 +4,7 @@
 mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::ProdQuantizer;
+use ecaz::bench_api::ProdQuantizer;
 
 fn bench_score_ip_encoded(c: &mut Criterion) {
     let mut group = c.benchmark_group("quant/score_ip_encoded");

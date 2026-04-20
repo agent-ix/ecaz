@@ -51,7 +51,7 @@ The implementation MAY use an internal transform workspace whose dimension is `n
 ## Acceptance Criteria
 
 ### FR-001-AC-1: Type exists after CREATE EXTENSION
-After `CREATE EXTENSION tqvector`, the type `tqvector` SHALL be visible in `pg_type`.
+After `CREATE EXTENSION ecaz`, the type `tqvector` SHALL be visible in `pg_type`.
 
 ### FR-001-AC-2: Varlena storage
 Values stored in `tqvector` columns SHALL be TOASTable. A 1536-dim, 4-bit datum SHALL occupy `11 + 4 + 576 + 192 = 783` bytes total: 11-byte datum prefix, 772-byte quantized payload, and 768-byte `code_bytes` section.

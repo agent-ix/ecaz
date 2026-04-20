@@ -103,4 +103,4 @@ pub unsafe extern "C-unwind" fn _PG_init() {
 `cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
 
 ### FR-027-AC-4: _PG_init called
-On PG18, `CREATE EXTENSION tqvector` SHALL invoke `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.
+On PG18, `CREATE EXTENSION ecaz` SHALL invoke `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.

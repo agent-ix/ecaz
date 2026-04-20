@@ -10,7 +10,7 @@ Implement SIMD-accelerated versions of performance-critical functions on x86_64 
 
 - [x] **AVX2+FMA implementations.** `fwht`, `score_ip_encoded`, `score_ip_codes_lite`, padded SRHT query prep, and 3-bit decode/scoring specializations are merged on `main`.
 - [x] **NEON implementations.** 3-bit encoded/code-to-code scorers and the sign-lane fix are merged on `main`; runtime validation still requires aarch64 hardware.
-- [x] **Runtime feature detection.** Cached runtime dispatch lives in `src/quant/simd.rs` with `TQVECTOR_SIMD` override support.
+- [x] **Runtime feature detection.** Cached runtime dispatch lives in `src/quant/simd.rs` with `ECAZ_SIMD` override support.
 - [x] **Equivalence tests.** Coverage now includes production dims, tail dims, large FWHT sizes, and exhaustive QJL sign-lane validation.
 - [x] **Throughput benchmark.** Current validation on the merged branch shows `fwht/2048` at about `895 ns` with `avx2+fma` vs `2909 ns` scalar (`~3.25x` faster); direct current-main vs merged Criterion checks show `prepare_ip_query/d1536_b4` improving from about `21.9 us` to `5.46 us` and `score_ip_encoded/d1536_b4` from about `6.34 us` to `1.38 us`.
 

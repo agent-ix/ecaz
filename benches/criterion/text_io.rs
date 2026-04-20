@@ -4,7 +4,7 @@
 mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{format_text, parse_text, ProdQuantizer};
+use ecaz::bench_api::{format_text, parse_text, ProdQuantizer};
 
 fn bench_parse_text(c: &mut Criterion) {
     let mut group = c.benchmark_group("text_io/parse");

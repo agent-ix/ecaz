@@ -1,7 +1,7 @@
 //! Microbenchmarks for MSE/QJL bit-packing and unpacking.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     mse_code_len, pack_mse_indices, pack_qjl_signs, qjl_code_len, unpack_mse_indices,
     unpack_qjl_signs,
 };

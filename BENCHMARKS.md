@@ -1,4 +1,4 @@
-# tqvector Benchmark Report
+# Ecaz Benchmark Report
 
 ## Environment
 

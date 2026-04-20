@@ -1,4 +1,4 @@
-# tqvector
+# Ecaz
 
 A PostgreSQL extension written in Rust (pgrx) that provides the canonical
 `ecvector(dim)` row type plus the `ec_hnsw` index access method for approximate
@@ -19,7 +19,7 @@ cargo pgrx install --sudo --release
 ```
 
 ```sql
-CREATE EXTENSION tqvector;
+CREATE EXTENSION ecaz;
 
 CREATE TABLE memories (
     id bigint generated always as identity primary key,

@@ -5,7 +5,7 @@ mod helpers;
 
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
-use tqvector::bench_api::ProdQuantizer;
+use ecaz::bench_api::ProdQuantizer;
 
 #[library_benchmark]
 fn score_ip_encoded_1536_4() -> f32 {

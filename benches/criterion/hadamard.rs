@@ -4,7 +4,7 @@
 mod helpers;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     fwht_in_place, inverse_srht, orthonormal_fwht_in_place, pad_input, sign_vector, srht,
     transform_dim,
 };

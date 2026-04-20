@@ -41,7 +41,7 @@ fn detect_backend() -> SimdBackend {
 }
 
 fn forced_backend_from_env() -> Option<SimdBackend> {
-    let requested = env::var("TQVECTOR_SIMD").ok()?;
+    let requested = env::var("ECAZ_SIMD").ok()?;
     match requested.trim().to_ascii_lowercase().as_str() {
         "" | "auto" => None,
         "scalar" => Some(SimdBackend::Scalar),
@@ -49,7 +49,7 @@ fn forced_backend_from_env() -> Option<SimdBackend> {
         "avx2" | "avx2_fma" | "avx2+fma" => Some(SimdBackend::Avx2Fma),
         #[cfg(target_arch = "aarch64")]
         "neon" => Some(SimdBackend::Neon),
-        other => panic!("unsupported TQVECTOR_SIMD value: {other}"),
+        other => panic!("unsupported ECAZ_SIMD value: {other}"),
     }
 }
 

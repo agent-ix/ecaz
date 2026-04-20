@@ -5,7 +5,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     inverse_srht, pack_mse_indices, pack_qjl_signs, pad_input, payload_len, sign_vector, srht,
     transform_dim, unpack_mse_indices, unpack_qjl_signs, ProdQuantizer,
 };

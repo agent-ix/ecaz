@@ -1,15 +1,15 @@
 use std::ffi::{c_char, CStr};
 
-#[link(name = "tqvector_pg_test_stubs", kind = "static")]
+#[link(name = "ecaz_pg_test_stubs", kind = "static")]
 unsafe extern "C" {
-    fn tqvector_test_pg_backend_stubs_anchor();
+    fn ecaz_test_pg_backend_stubs_anchor();
 }
 
 #[used]
-static STUBS_ANCHOR: unsafe extern "C" fn() = tqvector_test_pg_backend_stubs_anchor;
+static STUBS_ANCHOR: unsafe extern "C" fn() = ecaz_test_pg_backend_stubs_anchor;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn tqvector_test_pg_backend_panic(message: *const c_char) -> ! {
+pub unsafe extern "C-unwind" fn ecaz_test_pg_backend_panic(message: *const c_char) -> ! {
     let message = if message.is_null() {
         "Postgres ERROR".to_owned()
     } else {

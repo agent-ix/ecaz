@@ -29,7 +29,7 @@ fn main() {
     let seed = 42u64;
 
     // Build quantizer once (not profiled for per-encode cost)
-    let quantizer = tqvector::bench_api::ProdQuantizer::new(dim, bits, seed);
+    let quantizer = ecaz::bench_api::ProdQuantizer::new(dim, bits, seed);
     let vector = random_unit_vector(dim, 99);
 
     // Profile 1000 encode iterations

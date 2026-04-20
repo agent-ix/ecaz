@@ -8,7 +8,7 @@ date: 2026-04-06
 
 ## Context
 
-tqvector was built targeting PG17. PostgreSQL 18 (released 2025-09-25) introduces:
+Ecaz was built targeting PG17. PostgreSQL 18 (released 2025-09-25) introduces:
 
 1. **Async I/O subsystem** — `ReadStream` API with `io_method=sync|worker|io_uring`. Thomas Munro's prototype on pgvector HNSW showed 4x cold-cache speedup.
 2. **New IndexAmRoutine callbacks** — `amgettreeheight`, `amtranslatestrategy`, `amtranslatecmptype` for planner integration.
@@ -17,7 +17,7 @@ tqvector was built targeting PG17. PostgreSQL 18 (released 2025-09-25) introduce
 5. **GIN parallel build** — Reusable `ParallelContext` + `Sharedsort` infrastructure for parallel index construction.
 6. **`PG_MODULE_MAGIC_EXT`** — Extension name/version reporting.
 
-tqvector has several production blockers that PG18 features directly address:
+Ecaz has several production blockers that PG18 features directly address:
 - Cost model is disabled (`f64::MAX`) — planner never selects the index
 - All page reads are synchronous — poor cold-cache performance on network storage
 - Vacuum is a no-op — dead tuples accumulate
@@ -45,7 +45,7 @@ Adopt PostgreSQL 18 as the primary build target and default feature. PG17 remain
 - Extension version visible via `pg_get_loaded_modules()`
 
 ### Negative
-- Shared pgstat activation on PG18 still requires `shared_preload_libraries = 'tqvector'` plus a restart
+- Shared pgstat activation on PG18 still requires `shared_preload_libraries = 'ecaz'` plus a restart
 - Conditional compilation (`#[cfg(feature = "pg18")]`) still adds maintenance complexity
 - PG17 users do not get async I/O, EXPLAIN hooks, or shared pgstat integration
 - Current `pgrx 0.17` PG18 support still needs a repo-local explicit `pg_module_magic!` field assignment and a small C shim over `pgstat_internal.h`

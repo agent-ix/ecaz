@@ -13,7 +13,7 @@ fn main() {
             .file("csrc/standalone_pg_backend_stubs.c")
             .cargo_metadata(false)
             .flag_if_supported("-std=c11")
-            .compile("tqvector_pg_test_stubs");
+            .compile("ecaz_pg_test_stubs");
         println!("cargo:rustc-link-search=native={out_dir}");
     }
 
@@ -39,7 +39,7 @@ fn main() {
         for flag in cppflags.to_string_lossy().split_whitespace() {
             build.flag(flag);
         }
-        build.compile("tqvector_pg18_pgstat_shim");
+        build.compile("ecaz_pg18_pgstat_shim");
         println!("cargo:rustc-link-search=native={out_dir}");
     }
 }

@@ -1,6 +1,6 @@
 ---
 artifact_type: master-requirements
-name: tqvector
+name: ecaz
 org: agent-ix
 component_type: pgrx-extension
 tags:
@@ -27,13 +27,13 @@ standards_alignment:
   - ieee-828
 ---
 # Master Requirements Specification
-## tqvector — PostgreSQL Extension for TurboQuant Vector Search
+## Ecaz — PostgreSQL Extension for TurboQuant Vector Search
 
 ---
 
 ## 1. Purpose
 
-This document defines the **scope, intent, and governing requirements framework** for `tqvector`, a PostgreSQL extension written in Rust (pgrx) that registers a native `tqvector` data type and HNSW index access method over TurboQuant-compressed vectors.
+This document defines the **scope, intent, and governing requirements framework** for Ecaz, a PostgreSQL extension written in Rust (pgrx) that registers a native `tqvector` data type and HNSW index access method over TurboQuant-compressed vectors.
 
 It establishes:
 - The problem space: native approximate nearest neighbor (ANN) search in PostgreSQL using TurboQuant quantization for 8x storage compression with provably unbiased inner product estimation
@@ -41,7 +41,7 @@ It establishes:
 - The authoritative structure for requirements, verification, and change control
 - The relationship between the TurboQuant algorithm (arXiv:2504.19874), the HNSW graph structure (`hnsw_rs` crate for bulk build + own page-level graph for runtime), and the Postgres extension interface (pgrx)
 
-This document is the **top-level requirements artifact** for the `tqvector` repository.
+This document is the **top-level requirements artifact** for Ecaz.
 
 ---
 
@@ -78,14 +78,14 @@ This specification does not govern:
 
 ### 3.1 System Description
 
-`tqvector` is a PostgreSQL extension that brings TurboQuant-compressed vector storage and HNSW approximate nearest neighbor search directly into the database engine. It is the central component of the agent vector memory system architecture.
+Ecaz is a PostgreSQL extension that brings TurboQuant-compressed vector storage and HNSW approximate nearest neighbor search directly into the database engine. It is the central component of the agent vector memory system architecture.
 
 **Why build this instead of using existing extensions:**
 - **pgvecto.rs**: deprecated, superseded by VectorChord
 - **VectorChord**: AGPLv3 / ELv2 licensing — problematic for product use
 - **pgvector HNSW**: MIT licensed (reference for page layout), but stores fp32 vectors — no compression, 8x larger storage
 
-`tqvector` combines:
+Ecaz combines:
 1. An **own quantizer core** implementing the TurboQuant two-stage algorithm (MSE + QJL) with AVX2+FMA and NEON SIMD acceleration
 2. The `hnsw_rs` crate for graph construction during bulk index build
 3. pgvector's page layout as the direct reference for Postgres storage integration

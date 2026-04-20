@@ -541,8 +541,8 @@ disk but does not refresh the already-created SQL objects in the database.
 For the scratch cluster, the fix is:
 
 ```sql
-DROP EXTENSION IF EXISTS tqvector CASCADE;
-CREATE EXTENSION tqvector CASCADE;
+DROP EXTENSION IF EXISTS ecaz CASCADE;
+CREATE EXTENSION ecaz CASCADE;
 ```
 
 This will drop dependent scratch relations. Use a clean scratch database or be

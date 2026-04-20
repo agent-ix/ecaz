@@ -10,7 +10,7 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::f32::consts::PI;
 
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     decode_indices, decode_mse_only, lloyd_max, orthonormal_fwht_in_place, pad_input, qjl_project,
     quantize_to_indices, sign_vector, srht, transform_dim, EncodedTq, ProdQuantizer,
 };
@@ -505,7 +505,7 @@ fn run_tail_mse_reference(
             let padded = pad_input(vector, transform);
             let rotated = srht(&padded, &signs);
             let indices = quantize_to_indices(&codebook, &rotated, transform);
-            tqvector::bench_api::pack_mse_indices(&indices, bits - 1)
+            ecaz::bench_api::pack_mse_indices(&indices, bits - 1)
         })
         .collect();
 
@@ -528,7 +528,7 @@ fn run_tail_mse_reference(
             .iter()
             .enumerate()
             .map(|(i, packed)| {
-                let indices = tqvector::bench_api::unpack_mse_indices(packed, transform, bits - 1);
+                let indices = ecaz::bench_api::unpack_mse_indices(packed, transform, bits - 1);
                 let mse_values = decode_indices(&codebook, &indices);
                 let score = mse_values
                     .iter()
@@ -612,7 +612,7 @@ fn run_tail_full_reference(
                 .map(|value| value >= 0.0)
                 .collect();
             (
-                tqvector::bench_api::pack_mse_indices(&indices, bits - 1),
+                ecaz::bench_api::pack_mse_indices(&indices, bits - 1),
                 gamma,
                 qjl_bits,
             )
@@ -641,7 +641,7 @@ fn run_tail_full_reference(
             .iter()
             .enumerate()
             .map(|(i, (packed, gamma, qjl_bits))| {
-                let indices = tqvector::bench_api::unpack_mse_indices(packed, transform, bits - 1);
+                let indices = ecaz::bench_api::unpack_mse_indices(packed, transform, bits - 1);
                 let mse_values = decode_indices(&codebook, &indices);
                 let mse_sum: f32 = mse_values
                     .iter()
@@ -772,7 +772,7 @@ fn run_tiled_full_reference(
                 .map(|value| value >= 0.0)
                 .collect();
             (
-                tqvector::bench_api::pack_mse_indices(&indices, bits - 1),
+                ecaz::bench_api::pack_mse_indices(&indices, bits - 1),
                 gamma,
                 qjl_bits,
             )
@@ -801,7 +801,7 @@ fn run_tiled_full_reference(
             .iter()
             .enumerate()
             .map(|(i, (packed, gamma, qjl_bits))| {
-                let indices = tqvector::bench_api::unpack_mse_indices(packed, dim, bits - 1);
+                let indices = ecaz::bench_api::unpack_mse_indices(packed, dim, bits - 1);
                 let mse_values = decode_indices(&codebook, &indices);
                 let mse_sum: f32 = mse_values
                     .iter()

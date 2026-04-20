@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     build_grouped_pq_lut_f32 as shared_build_grouped_pq_lut_f32,
     encode_grouped_pq as shared_encode_grouped_pq, grouped_pq_nibble,
     grouped_pq_score_f32 as shared_grouped_pq_score_f32,
@@ -981,11 +981,11 @@ fn prepare_grouped_pq_query(
         let row_min = row
             .iter()
             .copied()
-            .fold(f32::INFINITY, |acc, value| acc.min(value));
+            .fold(f32::INFINITY, |acc: f32, value| acc.min(value));
         let row_max = row
             .iter()
             .copied()
-            .fold(f32::NEG_INFINITY, |acc, value| acc.max(value));
+            .fold(f32::NEG_INFINITY, |acc: f32, value| acc.max(value));
         let scale = ((row_max - row_min) / 255.0).max(f32::EPSILON);
         row_bias[group_index] = row_min;
         row_scale[group_index] = scale;
@@ -1180,11 +1180,11 @@ fn prepare_grouped_mean_query(
         let row_min = row
             .iter()
             .copied()
-            .fold(f32::INFINITY, |acc, value| acc.min(value));
+            .fold(f32::INFINITY, |acc: f32, value| acc.min(value));
         let row_max = row
             .iter()
             .copied()
-            .fold(f32::NEG_INFINITY, |acc, value| acc.max(value));
+            .fold(f32::NEG_INFINITY, |acc: f32, value| acc.max(value));
         let scale = ((row_max - row_min) / 255.0).max(f32::EPSILON);
         row_bias[group_index] = row_min;
         row_scale[group_index] = scale;

@@ -1,8 +1,8 @@
 ---
 artifact_type: test-matrix
-name: tqvector
+name: ecaz
 ---
-# Test Matrix — tqvector
+# Test Matrix — Ecaz
 
 Bidirectional traceability between requirements and test cases.
 
@@ -53,7 +53,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-047 | ReadStream state carriers reset cleanly for reuse | FR-019 | Unit-test `GraphPrefetchState::reset(...)` and `LinearPrefetchState::reset(...)` so the staged D1 seam already matches `read_stream_reset()` and `amrescan` lifecycle expectations |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
 | TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires the `tqvector` option, `IndexScan` node kind, and `ec_hnsw` access method |
-| TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
+| TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"Ecaz Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
 | TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
 | TC-046 | Cumulative statistics summary computes derived rates | FR-025 | Unit-test pure FR-025 summary logic for `bootstrap_hit_rate` and `quantizer_cache_rate`, including zero-denominator handling |
 | TC-039 | Metadata tree-height callback value matches max_level | FR-020 | Unit-test `metadata_tree_height_callback_value(max_level)` across edge cases, including `u8::MAX` |
@@ -222,14 +222,14 @@ Bidirectional traceability between requirements and test cases.
 | TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + ec_hnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data |
 | TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
 | TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
-| TC-218 | EXPLAIN (tqvector) recognized | FR-024-AC-1 | `EXPLAIN (tqvector) SELECT ...` parses without error |
-| TC-219 | EXPLAIN (tqvector) shows stats | FR-024-AC-2 | Output includes Bootstrap Expansions, Elements Scored, etc. |
-| TC-220 | EXPLAIN without tqvector option: no extra output | FR-024-AC-3 | Standard EXPLAIN does not show tqvector stats |
-| TC-221 | EXPLAIN (tqvector, ANALYZE) shows actuals | FR-024-AC-4 | Non-zero counter values in output |
-| TC-222 | tqvector_stats() returns counters | FR-025-AC-1 | SELECT * FROM tqvector_stats() returns row |
+| TC-218 | EXPLAIN (ecaz) recognized | FR-024-AC-1 | `EXPLAIN (ecaz) SELECT ...` parses without error |
+| TC-219 | EXPLAIN (ecaz) shows stats | FR-024-AC-2 | Output includes Bootstrap Expansions, Elements Scored, etc. |
+| TC-220 | EXPLAIN without ecaz option: no extra output | FR-024-AC-3 | Standard EXPLAIN does not show Ecaz stats |
+| TC-221 | EXPLAIN (ecaz, ANALYZE) shows actuals | FR-024-AC-4 | Non-zero counter values in output |
+| TC-222 | ecaz_stats() returns counters | FR-025-AC-1 | SELECT * FROM ecaz_stats() returns row |
 | TC-223 | Stats counters increment | FR-025-AC-2 | Run 10 scans, verify total_scans_started ≥ 10 |
 | TC-224 | Stats reset works | FR-025-AC-3 | Reset, verify all counters zero |
-| TC-225 | pg_get_loaded_modules shows tqvector | FR-026-AC-1 | Query pg_get_loaded_modules, verify name and version |
+| TC-225 | pg_get_loaded_modules shows ecaz | FR-026-AC-1 | Query pg_get_loaded_modules, verify name and version |
 | TC-226 | Module version matches Cargo.toml | FR-026-AC-2 | Compare reported version to Cargo.toml version field |
 | TC-227 | PG18 build succeeds | FR-027-AC-1 | `cargo pgrx build --features pg18 --release` exits 0 |
 | TC-228 | PG17 build succeeds | FR-027-AC-2 | `cargo pgrx build --features pg17 --release` exits 0 |
@@ -241,9 +241,9 @@ Bidirectional traceability between requirements and test cases.
 | TC-234 | Vacuum updates pg_class.reltuples | FR-022-AC-6 | Delete 100 rows from 1000-row table, VACUUM, verify `SELECT reltuples FROM pg_class WHERE relname = 'idx'` reflects ~900 |
 | TC-235 | Strategy translation callbacks registered | FR-023-AC-1 | On PG18, verify `amtranslatestrategy` and `amtranslatecmptype` are non-null in IndexAmRoutine via pg_am inspection |
 | TC-236 | amtranslatecmptype reverse mapping | FR-023-AC-3 | Verify `amtranslatecmptype(COMPARE_LT)` returns strategy 1 |
-| TC-237 | EXPLAIN hook chains with previous hook | FR-024-AC-5 | Install a dummy explain_per_node_hook before loading tqvector, verify both hooks fire on EXPLAIN |
+| TC-237 | EXPLAIN hook chains with previous hook | FR-024-AC-5 | Install a dummy explain_per_node_hook before loading ecaz, verify both hooks fire on EXPLAIN |
 | TC-238 | Stats persist within session | FR-025-AC-4 | Run 5 scans, read stats, run 5 more scans, verify counters accumulated (not reset between queries) |
-| TC-239 | tqvector_stats() absent on PG17 | FR-025-AC-5 | Compile with `--features pg17`, verify `SELECT * FROM tqvector_stats()` raises ERROR or function does not exist |
+| TC-239 | ecaz_stats() absent on PG17 | FR-025-AC-5 | Compile with `--features pg17`, verify `SELECT * FROM ecaz_stats()` raises ERROR or function does not exist |
 | TC-240 | PG17 and PG18 tests both pass | FR-027-AC-3 | CI matrix: `cargo pgrx test pg17` and `cargo pgrx test pg18` both exit 0 |
 
 ## PG18 Benchmarks

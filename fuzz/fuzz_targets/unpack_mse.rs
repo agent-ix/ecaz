@@ -16,5 +16,5 @@ fuzz_target!(|data: &[u8]| {
     if packed.len() != expected_len {
         return;
     }
-    let _ = tqvector::bench_api::unpack_mse_indices(packed, dim, bits_per_index);
+    let _ = ecaz::bench_api::unpack_mse_indices(packed, dim, bits_per_index);
 });

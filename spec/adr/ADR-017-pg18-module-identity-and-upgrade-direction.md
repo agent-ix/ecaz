@@ -1,11 +1,16 @@
 ---
 id: ADR-017
 title: "Keep a single tqvector extension identity through the PostgreSQL 18 upgrade"
-status: DECIDED
+status: SUPERSEDED
+superseded_by: ADR-047
 impact: MEDIUM for FR-012, US-004
 date: 2026-04-06
 ---
 # ADR-017: Keep a single tqvector extension identity through the PostgreSQL 18 upgrade
+
+> **SUPERSEDED (2026-04-20):** Ecaz now carries the extension, module, and admin identity. See
+> [ADR-047](ADR-047-rename-extension-identity-to-ecaz.md). Historical context preserved below for
+> the original PG18-upgrade direction.
 
 ## Context
 

@@ -1,7 +1,7 @@
 //! Microbenchmarks for page tuple encode/decode.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use tqvector::bench_api::{
+use ecaz::bench_api::{
     CurrentFormatMetadata, DataPage, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple,
 };
 

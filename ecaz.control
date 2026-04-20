@@ -1,0 +1,5 @@
+comment = 'Ecaz compressed vector extension with HNSW index'
+default_version = '0.1.1'
+module_pathname = '$libdir/ecaz'
+relocatable = false
+superuser = true
