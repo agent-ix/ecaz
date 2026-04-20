@@ -1,9 +1,11 @@
 # Review Request: PG18 Shared-Infra Merge And Wiring
 
-Current head: `b5f98fc`
+Current head: `c13a6aa`
 
 Scope:
 - `Cargo.toml`
+- `build.rs`
+- `csrc/pg18_pgstat_shim.c`
 - `Makefile`
 - `.github/workflows/ci.yml`
 - `README.md`
@@ -24,6 +26,7 @@ Scope:
 - `src/am/ec_hnsw/scan.rs`
 - `src/am/ec_hnsw/shared.rs`
 - `src/lib.rs`
+- `src/pg18_pgstat_shim.rs`
 
 Problem:
 - `main` had already split the AM into `common` and `ec_hnsw` modules while `origin/pg18`
@@ -55,9 +58,13 @@ What changed:
     snapshot/test surfaces
 - Finished staged PG18 statistics plumbing:
   - `_PG_init()` now calls `register_pg18_stats()`
-  - `tqvector_stats()` is live on PG18 as a backend-local summary over cumulative counters
-  - the shared pgstat-kind path remains explicitly gated, with the blocker surfaced in snapshots
-    and docs instead of being silently implied
+  - `tqvector_stats()` is live on PG18
+  - a PG18-only C shim now owns the `pgstat_internal.h` boundary and registers a fixed custom
+    pgstat kind during shared preload
+  - `tqvector_stats()` reads the shared pgstat snapshot when that registration is active, and
+    otherwise falls back to the existing backend-local counters in non-preloaded sessions
+  - diagnostics snapshots now report the preload/runtime blocker instead of the old bindings/shim
+    code blocker
 - Finished ReadStream / async-I/O shared wiring:
   - pure callback/state helpers in `src/am/common/stream.rs` now map to PG18 callback signatures
   - scan graph prefetch, linear fallback reads, and vacuum tuple counting all have PG18-specific
@@ -68,15 +75,18 @@ What changed:
 Live now:
 - PG18 AM callback surface for tree height and strategy/compare translation
 - PG18 EXPLAIN option registration and per-node hook registration
-- PG18 backend-local `tqvector_stats()` SQL surface
+- PG18 shared pgstat registration path via `shared_preload_libraries`
+- PG18 `tqvector_stats()` SQL surface, with shared-snapshot reads when preloaded and backend-local
+  fallback otherwise
 - PG18 ReadStream-backed graph-neighbor prefetch, linear fallback block reads, and vacuum tuple
   counting code paths
 - PG18 module identity / SQL surface expectations in tests and docs
 - PG17 fallback build/test/lint path
 
 Still gated:
-- Shared pgstat-kind registration is not live yet. The current blocker is:
-  `custom pgstat kind registration still needs shared_preload_libraries setup plus pgrx bindings or a shim for pgstat_internal.h`
+- Shared pgstat activation still requires runtime preload configuration:
+  `custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL`
+- This machine still cannot run PG18 build/test/lint because `pgrx` does not manage a PG18 install.
 - No pipeline-specific or storage-format-specific PG18 enablement was added in this slice.
 
 Validation:
@@ -97,8 +107,8 @@ Review focus:
 - Whether the PG18 callback wiring is attached at the right shared-AM seams without leaking
   pipeline-specific behavior into this branch
 - Whether the EXPLAIN hook registration and chaining logic are correct and safe under PG18
-- Whether the staged stats story is clear: backend-local `tqvector_stats()` is live, shared
-  pgstat-kind remains gated, and the blocker is surfaced consistently
+- Whether the staged stats story is clear now that the shared pgstat path exists but still depends
+  on preload-time activation, with backend-local fallback left in place for ordinary sessions
 - Whether the ReadStream integration points sit in the right shared/module boundaries and preserve
   PG17 fallback behavior
 - Whether the docs/spec/task updates accurately describe what is live versus still blocked
@@ -106,7 +116,7 @@ Review focus:
 Questions to answer:
 - Are any of the PG18 callback / EXPLAIN / ReadStream hooks attached too deep in `ec_hnsw` runtime
   code when they should stay in `common` shared infrastructure?
-- Is the current backend-local `tqvector_stats()` surface the right staged contract until shared
-  pgstat-kind registration is available, or should any naming / documentation be tightened now?
-- Is the remaining shared pgstat blocker stated clearly enough for the next slice to pick up
-  without rediscovering the `shared_preload_libraries` / `pgstat_internal.h` gap?
+- Is the shim boundary the right long-lived place for `pgstat_internal.h`, or should more of the
+  registration/snapshot logic move out of C once `pgrx` exposes better PG18 internals?
+- Is the shared-snapshot plus backend-local fallback behavior the right contract for
+  `tqvector_stats()` until preload-aware PG18 validation is available in this repo?

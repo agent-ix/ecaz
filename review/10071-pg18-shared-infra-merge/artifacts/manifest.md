@@ -1,7 +1,7 @@
 # Artifact Manifest
 
 Packet: `10071-pg18-shared-infra-merge`
-Head: `b5f98fc`
+Head: `c13a6aa`
 
 This packet makes no measurement claims.
 
