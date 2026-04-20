@@ -45,6 +45,7 @@ use super::{
 
 const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
+pub(super) const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DerivedInsertPayload {
@@ -249,6 +250,127 @@ pub(super) fn insert_backlink_if_free(
         tuple.neighbor_count = u16::try_from(slot_idx + 1).expect("neighbor count fits in u16");
     }
     true
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct BacklinkMutation {
+    pub(super) target_tid: ItemPointer,
+    pub(super) kind: BacklinkMutationKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum BacklinkMutationKind {
+    InsertIfFree,
+    RewriteFullSlice {
+        expected_neighbors: Vec<ItemPointer>,
+        expected_neighbor_count: u16,
+        replacement_neighbors: Vec<ItemPointer>,
+        replacement_neighbor_count: u16,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BacklinkMutationOutcome {
+    NoChange,
+    Changed,
+    RetryReplan,
+}
+
+pub(super) fn plan_backlink_mutation(
+    target_tid: ItemPointer,
+    target_tuple: &VamanaNodeTuple,
+    target_source_vector: &[f32],
+    existing_candidates: &[ForwardNeighborCandidate],
+    new_tid: ItemPointer,
+    new_source_vector: &[f32],
+    alpha: f32,
+    max_degree: usize,
+) -> Result<Option<BacklinkMutation>, String> {
+    if target_tid == ItemPointer::INVALID {
+        return Err("ec_diskann backlink plan requires a valid target tid".into());
+    }
+    if new_tid == ItemPointer::INVALID {
+        return Err("ec_diskann backlink plan requires a valid new tid".into());
+    }
+    if target_tuple.neighbors.contains(&new_tid) {
+        return Ok(None);
+    }
+    if target_tuple.neighbors.contains(&ItemPointer::INVALID) {
+        return Ok(Some(BacklinkMutation {
+            target_tid,
+            kind: BacklinkMutationKind::InsertIfFree,
+        }));
+    }
+
+    let mut candidates = existing_candidates.to_vec();
+    candidates.push(ForwardNeighborCandidate {
+        tid: new_tid,
+        source_vector: new_source_vector.to_vec(),
+    });
+    let selected =
+        select_insert_forward_neighbors(target_source_vector, &candidates, alpha, max_degree)?;
+    if !selected.contains(&new_tid) {
+        return Ok(None);
+    }
+
+    let replacement_neighbor_count = u16::try_from(selected.len())
+        .map_err(|_| "ec_diskann backlink rewrite neighbor_count exceeds u16".to_owned())?;
+    let mut replacement_neighbors = vec![ItemPointer::INVALID; target_tuple.neighbors.len()];
+    for (slot, tid) in replacement_neighbors.iter_mut().zip(selected.iter()) {
+        *slot = *tid;
+    }
+
+    Ok(Some(BacklinkMutation {
+        target_tid,
+        kind: BacklinkMutationKind::RewriteFullSlice {
+            expected_neighbors: target_tuple.neighbors.clone(),
+            expected_neighbor_count: target_tuple.neighbor_count,
+            replacement_neighbors,
+            replacement_neighbor_count,
+        },
+    }))
+}
+
+pub(super) fn apply_backlink_mutation(
+    tuple: &mut VamanaNodeTuple,
+    new_tid: ItemPointer,
+    mutation: &BacklinkMutation,
+) -> BacklinkMutationOutcome {
+    match &mutation.kind {
+        BacklinkMutationKind::InsertIfFree => {
+            if insert_backlink_if_free(tuple, new_tid) {
+                BacklinkMutationOutcome::Changed
+            } else {
+                BacklinkMutationOutcome::NoChange
+            }
+        }
+        BacklinkMutationKind::RewriteFullSlice {
+            expected_neighbors,
+            expected_neighbor_count,
+            replacement_neighbors,
+            replacement_neighbor_count,
+        } => {
+            if tuple.neighbors.contains(&new_tid) {
+                return BacklinkMutationOutcome::NoChange;
+            }
+            if insert_backlink_if_free(tuple, new_tid) {
+                return BacklinkMutationOutcome::Changed;
+            }
+            if tuple.neighbors != *expected_neighbors
+                || tuple.neighbor_count != *expected_neighbor_count
+            {
+                return BacklinkMutationOutcome::RetryReplan;
+            }
+            if tuple.neighbors == *replacement_neighbors
+                && tuple.neighbor_count == *replacement_neighbor_count
+            {
+                return BacklinkMutationOutcome::NoChange;
+            }
+            tuple.neighbors.clone_from(replacement_neighbors);
+            tuple.neighbor_count = *replacement_neighbor_count;
+            BacklinkMutationOutcome::Changed
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -629,6 +751,117 @@ pub(super) unsafe fn add_backlinks_if_free(
     Ok(changed)
 }
 
+pub(super) unsafe fn apply_backlink_mutations(
+    index_relation: pg_sys::Relation,
+    metadata: &VamanaMetadataPage,
+    mutations: &[BacklinkMutation],
+    new_tid: ItemPointer,
+) -> Result<Vec<ItemPointer>, String> {
+    if new_tid == ItemPointer::INVALID {
+        return Err("ec_diskann backlink rewrite requires a valid new node tid".into());
+    }
+    if mutations.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut sorted = mutations.to_vec();
+    sort_and_dedup_backlink_mutations(&mut sorted);
+    let binary_word_count = scan_state::metadata_binary_word_count(metadata);
+    let search_code_len = scan_state::metadata_search_code_len(metadata);
+    let mut retries = Vec::new();
+    let mut start = 0usize;
+
+    while start < sorted.len() {
+        let block_number = sorted[start].target_tid.block_number;
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_diskann backlink rewrite could not open target block {block_number}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let writable_page =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let mut page_changed = false;
+        let page_result = (|| -> Result<(), String> {
+            while start < sorted.len() && sorted[start].target_tid.block_number == block_number {
+                let mutation = &sorted[start];
+                start += 1;
+
+                let (tuple_ptr, tuple_len) =
+                    unsafe { page_tuple_location(writable_page, page_size, mutation.target_tid)? };
+                let tuple_bytes =
+                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+                let mut tuple = VamanaNodeTuple::decode(
+                    tuple_bytes,
+                    metadata.graph_degree_r,
+                    binary_word_count,
+                    search_code_len,
+                )?;
+                if !tuple.is_live() {
+                    continue;
+                }
+
+                match apply_backlink_mutation(&mut tuple, new_tid, mutation) {
+                    BacklinkMutationOutcome::NoChange => {}
+                    BacklinkMutationOutcome::RetryReplan => retries.push(mutation.target_tid),
+                    BacklinkMutationOutcome::Changed => {
+                        let encoded = tuple.encode(
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if encoded.len() != tuple_len {
+                            return Err(format!(
+                                "ec_diskann backlink rewrite target tuple size changed from {} to {} at ({},{})",
+                                tuple_len,
+                                encoded.len(),
+                                mutation.target_tid.block_number,
+                                mutation.target_tid.offset_number
+                            ));
+                        }
+                        unsafe {
+                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
+                        };
+                        page_changed = true;
+                    }
+                }
+            }
+            Ok(())
+        })();
+
+        match page_result {
+            Ok(()) => {
+                if page_changed {
+                    unsafe { wal_txn.finish() };
+                } else {
+                    std::mem::drop(wal_txn);
+                }
+            }
+            Err(error) => {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(error);
+            }
+        }
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    sort_and_dedup_backlink_targets(&mut retries);
+    Ok(retries)
+}
+
 pub(super) unsafe fn increment_inserted_since_rebuild(
     index_relation: pg_sys::Relation,
 ) -> Result<u64, String> {
@@ -650,6 +883,20 @@ fn sort_and_dedup_backlink_targets(targets: &mut Vec<ItemPointer>) {
             .then_with(|| left.offset_number.cmp(&right.offset_number))
     });
     targets.dedup();
+}
+
+fn sort_and_dedup_backlink_mutations(mutations: &mut Vec<BacklinkMutation>) {
+    mutations.sort_unstable_by(|left, right| {
+        left.target_tid
+            .block_number
+            .cmp(&right.target_tid.block_number)
+            .then_with(|| {
+                left.target_tid
+                    .offset_number
+                    .cmp(&right.target_tid.offset_number)
+            })
+    });
+    mutations.dedup_by(|left, right| left.target_tid == right.target_tid);
 }
 
 unsafe fn page_tuple_location(
@@ -1174,5 +1421,128 @@ mod tests {
             !insert_backlink_if_free(&mut full, backlink_tid),
             "full tuples must stay unchanged in the free-capacity slice"
         );
+    }
+
+    #[test]
+    fn in_013_plan_backlink_mutation_rewrites_full_slice_for_kept_candidate() {
+        let target_tid = ItemPointer {
+            block_number: 4,
+            offset_number: 1,
+        };
+        let existing_tid = ItemPointer {
+            block_number: 5,
+            offset_number: 1,
+        };
+        let new_tid = ItemPointer {
+            block_number: 6,
+            offset_number: 1,
+        };
+        let mut target = VamanaNodeTuple::placeholder(1, 0, 0);
+        target.neighbor_count = 1;
+        target.neighbors[0] = existing_tid;
+
+        let mutation = plan_backlink_mutation(
+            target_tid,
+            &target,
+            &[1.0, 0.0],
+            &[ForwardNeighborCandidate {
+                tid: existing_tid,
+                source_vector: vec![-1.0, 0.0],
+            }],
+            new_tid,
+            &[1.0, 0.0],
+            1.2,
+            1,
+        )
+        .expect("plan should succeed")
+        .expect("new candidate should survive prune");
+
+        assert_eq!(
+            mutation,
+            BacklinkMutation {
+                target_tid,
+                kind: BacklinkMutationKind::RewriteFullSlice {
+                    expected_neighbors: vec![existing_tid],
+                    expected_neighbor_count: 1,
+                    replacement_neighbors: vec![new_tid],
+                    replacement_neighbor_count: 1,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn in_014_apply_backlink_mutation_requests_retry_for_stale_full_slice() {
+        let old_tid = ItemPointer {
+            block_number: 5,
+            offset_number: 1,
+        };
+        let drifted_tid = ItemPointer {
+            block_number: 7,
+            offset_number: 1,
+        };
+        let new_tid = ItemPointer {
+            block_number: 6,
+            offset_number: 1,
+        };
+        let mutation = BacklinkMutation {
+            target_tid: ItemPointer {
+                block_number: 4,
+                offset_number: 1,
+            },
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_neighbors: vec![old_tid],
+                expected_neighbor_count: 1,
+                replacement_neighbors: vec![new_tid],
+                replacement_neighbor_count: 1,
+            },
+        };
+        let mut tuple = VamanaNodeTuple::placeholder(1, 0, 0);
+        tuple.neighbor_count = 1;
+        tuple.neighbors[0] = drifted_tid;
+
+        assert_eq!(
+            apply_backlink_mutation(&mut tuple, new_tid, &mutation),
+            BacklinkMutationOutcome::RetryReplan,
+        );
+        assert_eq!(
+            tuple.neighbors,
+            vec![drifted_tid],
+            "stale plans must leave the reopened tuple unchanged",
+        );
+    }
+
+    #[test]
+    fn in_015_apply_backlink_mutation_rewrites_full_slice_after_replan() {
+        let old_tid = ItemPointer {
+            block_number: 5,
+            offset_number: 1,
+        };
+        let new_tid = ItemPointer {
+            block_number: 6,
+            offset_number: 1,
+        };
+        let mutation = BacklinkMutation {
+            target_tid: ItemPointer {
+                block_number: 4,
+                offset_number: 1,
+            },
+            kind: BacklinkMutationKind::RewriteFullSlice {
+                expected_neighbors: vec![old_tid],
+                expected_neighbor_count: 1,
+                replacement_neighbors: vec![new_tid],
+                replacement_neighbor_count: 1,
+            },
+        };
+        let mut tuple = VamanaNodeTuple::placeholder(1, 0, 0);
+        tuple.neighbor_count = 1;
+        tuple.neighbors[0] = old_tid;
+
+        assert_eq!(
+            apply_backlink_mutation(&mut tuple, new_tid, &mutation),
+            BacklinkMutationOutcome::Changed,
+        );
+        assert_eq!(tuple.neighbors, vec![new_tid]);
+        assert_eq!(tuple.neighbor_count, 1);
     }
 }
