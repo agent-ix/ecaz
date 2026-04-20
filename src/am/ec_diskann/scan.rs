@@ -426,9 +426,7 @@ mod tests {
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        let prefilter = |t: &VamanaNodeTuple| {
-            (t.primary_heaptid.block_number - 1000) as f32
-        };
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
         let rerank_calls = Cell::new(0usize);
         let rerank = |_: ItemPointer| {
             rerank_calls.set(rerank_calls.get() + 1);
@@ -442,7 +440,11 @@ mod tests {
             top_k: 3,
         };
         vamana_scan(&reader, params, prefilter, rerank).expect("scan");
-        assert_eq!(rerank_calls.get(), 3, "rerank must be called exactly `budget` times");
+        assert_eq!(
+            rerank_calls.get(),
+            3,
+            "rerank must be called exactly `budget` times"
+        );
     }
 
     // SC-004: top_k truncates the reranked result.
@@ -455,9 +457,7 @@ mod tests {
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        let prefilter = |t: &VamanaNodeTuple| {
-            (t.primary_heaptid.block_number - 1000) as f32
-        };
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
         let rerank = |hip: ItemPointer| (hip.block_number - 1000) as f32;
 
         let params = ScanParams {
@@ -517,11 +517,26 @@ mod tests {
         };
 
         for p in [
-            ScanParams { list_size: 0, ..base },
-            ScanParams { rerank_budget: 0, ..base },
+            ScanParams {
+                list_size: 0,
+                ..base
+            },
+            ScanParams {
+                rerank_budget: 0,
+                ..base
+            },
             ScanParams { top_k: 0, ..base },
-            ScanParams { rerank_budget: 5, list_size: 4, top_k: 1, ..base },
-            ScanParams { rerank_budget: 2, top_k: 3, ..base },
+            ScanParams {
+                rerank_budget: 5,
+                list_size: 4,
+                top_k: 1,
+                ..base
+            },
+            ScanParams {
+                rerank_budget: 2,
+                top_k: 3,
+                ..base
+            },
         ] {
             assert!(vamana_scan(&reader, p, &prefilter, &rerank).is_err());
         }
@@ -534,8 +549,9 @@ mod tests {
     fn sc_007_end_to_end_matches_brute_force() {
         let n = 64;
         let mut rng = ChaCha8Rng::seed_from_u64(23);
-        let points: Vec<(f32, f32)> =
-            (0..n).map(|_| (rng.gen::<f32>(), rng.gen::<f32>())).collect();
+        let points: Vec<(f32, f32)> = (0..n)
+            .map(|_| (rng.gen::<f32>(), rng.gen::<f32>()))
+            .collect();
         let build_dist = |a: u32, b: u32| {
             let (ax, ay) = points[a as usize];
             let (bx, by) = points[b as usize];
@@ -547,9 +563,8 @@ mod tests {
         let graph = build_vamana_graph(n, medoid, 8, 40, 1.2, 29, build_dist);
 
         let payloads = synth_payloads(n, 0, 0);
-        let persisted =
-            persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 0, 0)
-                .expect("persist");
+        let persisted = persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 0, 0)
+            .expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 8, 0, 0);
 
         let query = (rng.gen::<f32>(), rng.gen::<f32>());
@@ -578,8 +593,7 @@ mod tests {
         let res = vamana_scan(&reader, params, prefilter, rerank).expect("scan");
 
         // Brute-force top-5.
-        let mut all: Vec<(u32, f32)> =
-            (0..n as u32).map(|i| (i, query_dist_node(i))).collect();
+        let mut all: Vec<(u32, f32)> = (0..n as u32).map(|i| (i, query_dist_node(i))).collect();
         all.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let brute_top: Vec<u32> = all.iter().take(5).map(|(i, _)| *i).collect();
 
@@ -595,10 +609,7 @@ mod tests {
         let brute_set: HashSet<u32> = brute_top.into_iter().collect();
         let got_set: HashSet<u32> = got_nodes.into_iter().collect();
         let overlap = brute_set.intersection(&got_set).count();
-        assert!(
-            overlap >= 4,
-            "top-5 recall too low: overlap {overlap} / 5"
-        );
+        assert!(overlap >= 4, "top-5 recall too low: overlap {overlap} / 5");
     }
 
     // SC-008: ScanResult carries primary_heaptid from the decoded
@@ -612,9 +623,7 @@ mod tests {
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        let prefilter = |t: &VamanaNodeTuple| {
-            (t.primary_heaptid.block_number - 1000) as f32
-        };
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
         let rerank = |hip: ItemPointer| (hip.block_number - 1000) as f32;
         let params = ScanParams {
             entry_point: persisted.entry_point_tid,
@@ -641,9 +650,7 @@ mod tests {
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        let prefilter = |t: &VamanaNodeTuple| {
-            (t.primary_heaptid.block_number - 1000) as f32
-        };
+        let prefilter = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
         let rerank = |hip: ItemPointer| {
             let node = (hip.block_number - 1000) as f32;
             // Invert: distance = 100 - node, so larger node = smaller dist.
@@ -671,8 +678,9 @@ mod tests {
     fn sc_010_greedy_descent_exposed() {
         let n = 50;
         let mut rng = ChaCha8Rng::seed_from_u64(31);
-        let points: Vec<(f32, f32)> =
-            (0..n).map(|_| (rng.gen::<f32>(), rng.gen::<f32>())).collect();
+        let points: Vec<(f32, f32)> = (0..n)
+            .map(|_| (rng.gen::<f32>(), rng.gen::<f32>()))
+            .collect();
         let dist = |a: u32, b: u32| {
             let (ax, ay) = points[a as usize];
             let (bx, by) = points[b as usize];
@@ -709,8 +717,8 @@ mod tests {
             let dy = ay - query.1;
             dx * dx + dy * dy
         };
-        let frontier = greedy_descent(&reader, out.metadata.entry_point, 20, &prefilter)
-            .expect("descent");
+        let frontier =
+            greedy_descent(&reader, out.metadata.entry_point, 20, &prefilter).expect("descent");
         assert_eq!(frontier.len(), 20.min(n));
         for pair in frontier.windows(2) {
             assert!(pair[0].score <= pair[1].score);
@@ -729,8 +737,7 @@ mod tests {
             persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 4, 0, 0);
 
-        let prefilter_a =
-            |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
+        let prefilter_a = |t: &VamanaNodeTuple| (t.primary_heaptid.block_number - 1000) as f32;
         let rerank_a = |hip: ItemPointer| (hip.block_number - 1000) as f32;
         let prefilter_b =
             |t: &VamanaNodeTuple| (n as f32) - (t.primary_heaptid.block_number - 1000) as f32;
@@ -749,15 +756,16 @@ mod tests {
 
         use crate::am::ec_diskann::reader::VisitedState;
         let mut scratch = VisitedState::new();
-        let reused_a =
-            vamana_scan_with(&reader, &mut scratch, params_a, prefilter_a, rerank_a)
-                .expect("reused a");
-        let reused_b =
-            vamana_scan_with(&reader, &mut scratch, params_b, prefilter_b, rerank_b)
-                .expect("reused b");
+        let reused_a = vamana_scan_with(&reader, &mut scratch, params_a, prefilter_a, rerank_a)
+            .expect("reused a");
+        let reused_b = vamana_scan_with(&reader, &mut scratch, params_b, prefilter_b, rerank_b)
+            .expect("reused b");
 
         assert_eq!(fresh_a, reused_a, "first reuse must match fresh");
-        assert_eq!(fresh_b, reused_b, "second reuse must match fresh (clear worked)");
+        assert_eq!(
+            fresh_b, reused_b,
+            "second reuse must match fresh (clear worked)"
+        );
     }
 
     /// What to apply to each marked node in a persisted chain fixture.
@@ -791,10 +799,12 @@ mod tests {
         .expect("persist");
         for &(node_id, kind) in deaths {
             let tid = persisted.node_to_tid[node_id as usize];
-            let page = persisted.chain.get_page_mut(tid.block_number).expect("page");
+            let page = persisted
+                .chain
+                .get_page_mut(tid.block_number)
+                .expect("page");
             let bytes = page.raw_tuple(tid).expect("raw").to_vec();
-            let mut tuple =
-                VamanaNodeTuple::decode(&bytes, max_degree, 0, 0).expect("decode");
+            let mut tuple = VamanaNodeTuple::decode(&bytes, max_degree, 0, 0).expect("decode");
             match kind {
                 DeathKind::Tombstone => mark_deleted(&mut tuple),
                 DeathKind::StripNoTombstone => {
@@ -851,10 +861,7 @@ mod tests {
             .expect("fallback exists");
         assert_ne!(got, dead_medoid, "must not return the dead preferred TID");
 
-        let expected = reader
-            .first_live_tid()
-            .expect("ok")
-            .expect("live exists");
+        let expected = reader.first_live_tid().expect("ok").expect("live exists");
         assert_eq!(got, expected);
     }
 
@@ -889,12 +896,12 @@ mod tests {
         let got = resolve_entry_point(&reader, stripped_medoid)
             .expect("ok")
             .expect("fallback exists");
-        assert_ne!(got, stripped_medoid, "must not return the stripped preferred TID");
+        assert_ne!(
+            got, stripped_medoid,
+            "must not return the stripped preferred TID"
+        );
 
-        let expected = reader
-            .first_live_tid()
-            .expect("ok")
-            .expect("live exists");
+        let expected = reader.first_live_tid().expect("ok").expect("live exists");
         assert_eq!(got, expected);
     }
 

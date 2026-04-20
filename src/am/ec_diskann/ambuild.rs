@@ -290,10 +290,7 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
     }
 }
 
-unsafe fn initialize_metadata_page(
-    index_relation: pg_sys::Relation,
-    metadata: VamanaMetadataPage,
-) {
+unsafe fn initialize_metadata_page(index_relation: pg_sys::Relation, metadata: VamanaMetadataPage) {
     let existing_blocks = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -326,10 +323,7 @@ unsafe fn initialize_metadata_page(
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
 }
 
-unsafe fn overwrite_metadata_page(
-    index_relation: pg_sys::Relation,
-    metadata: &VamanaMetadataPage,
-) {
+unsafe fn overwrite_metadata_page(index_relation: pg_sys::Relation, metadata: &VamanaMetadataPage) {
     let buffer = unsafe {
         pg_sys::ReadBufferExtended(
             index_relation,

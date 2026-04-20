@@ -213,12 +213,10 @@ impl VamanaNodeTuple {
         binary_word_count: usize,
         search_code_len: usize,
     ) -> Result<Self, String> {
-        let expected_len =
-            Self::encoded_len(graph_degree_r, binary_word_count, search_code_len);
+        let expected_len = Self::encoded_len(graph_degree_r, binary_word_count, search_code_len);
         if input.len() != expected_len {
             return Err(format!(
-                "vamana node tuple length mismatch: got {}, expected {expected_len}"
-                ,
+                "vamana node tuple length mismatch: got {}, expected {expected_len}",
                 input.len()
             ));
         }
@@ -577,7 +575,10 @@ mod tests {
         let mut encoded = tuple.encode();
         encoded[0] = TQ_VAMANA_NODE_TAG;
         let err = VamanaCodebookTuple::decode(&encoded, 8).expect_err("decode should fail");
-        assert!(err.contains("invalid vamana codebook tuple tag"), "got: {err}");
+        assert!(
+            err.contains("invalid vamana codebook tuple tag"),
+            "got: {err}"
+        );
     }
 
     // LA-033: wrong length is rejected and names the expected value.
