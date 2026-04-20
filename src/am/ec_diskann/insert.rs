@@ -20,7 +20,10 @@ use pgrx::pg_sys;
 use crate::am::common::training;
 use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
 use crate::quant::prod::ProdQuantizer;
-use crate::storage::page::{DataPageChain, ItemPointer};
+use crate::storage::page::{
+    element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
+    FIRST_DATA_BLOCK_NUMBER,
+};
 use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
@@ -35,10 +38,12 @@ use super::{
     },
     persist::{stage_grouped_codebook_chain, NodePayload},
     reader::PersistedGraphReader,
+    tuple::VamanaNodeTuple,
     vamana::{robust_prune, Candidate},
 };
 
 const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
+const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DerivedInsertPayload {
@@ -147,18 +152,11 @@ pub(super) fn derive_insert_payload_from_persisted(
 
 pub(super) fn duplicate_candidate_tids_by_payload(
     reader: &PersistedGraphReader<'_>,
-    metadata: &VamanaMetadataPage,
     payload: &DerivedInsertPayload,
 ) -> Result<Vec<ItemPointer>, String> {
     let mut matches = Vec::new();
-    for tid in reader.iter_tids() {
-        if metadata.grouped_codebook_head != ItemPointer::INVALID
-            && (tid.block_number > metadata.grouped_codebook_head.block_number
-                || (tid.block_number == metadata.grouped_codebook_head.block_number
-                    && tid.offset_number >= metadata.grouped_codebook_head.offset_number))
-        {
-            break;
-        }
+    for tid in reader.iter_node_tids() {
+        let tid = tid?;
         let tuple = reader.read_node(tid)?;
         if tuple.deleted || tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
@@ -367,6 +365,136 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
     Ok(EmptyInsertBootstrapOutput { metadata, chain })
 }
 
+pub(super) unsafe fn append_live_node(
+    index_relation: pg_sys::Relation,
+    metadata: &VamanaMetadataPage,
+    heap_tid: ItemPointer,
+    payload: &DerivedInsertPayload,
+    forward_neighbors: &[ItemPointer],
+) -> Result<ItemPointer, String> {
+    if heap_tid == ItemPointer::INVALID {
+        return Err("ec_diskann append requires a valid heap tid".into());
+    }
+    if forward_neighbors.len() > metadata.graph_degree_r as usize {
+        return Err(format!(
+            "ec_diskann append forward-neighbor count {} exceeds graph degree {}",
+            forward_neighbors.len(),
+            metadata.graph_degree_r
+        ));
+    }
+
+    let mut tuple = VamanaNodeTuple::placeholder(
+        metadata.graph_degree_r,
+        payload.binary_words.len(),
+        payload.search_code.len(),
+    );
+    tuple.primary_heaptid = heap_tid;
+    tuple.binary_words = payload.binary_words.clone();
+    tuple.search_code = payload.search_code.clone();
+    tuple.neighbor_count = u16::try_from(forward_neighbors.len())
+        .map_err(|_| "forward neighbor count does not fit in u16".to_owned())?;
+    for (slot, neighbor) in forward_neighbors.iter().copied().enumerate() {
+        tuple.neighbors[slot] = neighbor;
+    }
+
+    let encoded = tuple.encode(
+        metadata.graph_degree_r,
+        payload.binary_words.len(),
+        payload.search_code.len(),
+    )?;
+    if !element_or_neighbor_tuple_fits(encoded.len(), pg_sys::BLCKSZ as usize) {
+        return Err(format!(
+            "ec_diskann append node payload {} exceeds page capacity {}",
+            encoded.len(),
+            pg_sys::BLCKSZ as usize
+        ));
+    }
+
+    let existing_blocks = unsafe {
+        pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
+    };
+    let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+        existing_blocks - 1
+    } else {
+        P_NEW
+    };
+    unsafe {
+        append_live_node_payload(
+            index_relation,
+            &encoded,
+            raw_tuple_storage_bytes(encoded.len()),
+            target_block,
+        )
+    }
+}
+
+unsafe fn append_live_node_payload(
+    index_relation: pg_sys::Relation,
+    encoded: &[u8],
+    required_bytes: usize,
+    target_block: pg_sys::BlockNumber,
+) -> Result<ItemPointer, String> {
+    let read_mode = if target_block == P_NEW {
+        pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK
+    } else {
+        pg_sys::ReadBufferMode::RBM_NORMAL
+    };
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            target_block,
+            read_mode,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err("ec_diskann failed to allocate append buffer".into());
+    }
+
+    if target_block != P_NEW {
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    }
+
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let page_ptr =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    if target_block == P_NEW {
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+    } else {
+        let free_space = unsafe { pg_sys::PageGetFreeSpace(page_ptr) as usize };
+        if free_space < required_bytes {
+            std::mem::drop(wal_txn);
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            return unsafe {
+                append_live_node_payload(index_relation, encoded, required_bytes, P_NEW)
+            };
+        }
+    }
+
+    let block_number = unsafe { pg_sys::BufferGetBlockNumber(buffer) };
+    let offset_number = unsafe {
+        pg_sys::PageAddItemExtended(
+            page_ptr,
+            encoded.as_ptr().cast_mut().cast(),
+            encoded.len(),
+            pg_sys::InvalidOffsetNumber,
+            0,
+        )
+    };
+    if offset_number == pg_sys::InvalidOffsetNumber {
+        return Err("ec_diskann failed to append live node tuple".into());
+    }
+
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    Ok(ItemPointer {
+        block_number,
+        offset_number,
+    })
+}
+
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {
     if left.len() != right.len() {
         return Err(format!(
@@ -573,8 +701,7 @@ mod tests {
             payload.search_code.len(),
         );
 
-        let matches =
-            duplicate_candidate_tids_by_payload(&reader, &metadata, &payload).expect("lookup");
+        let matches = duplicate_candidate_tids_by_payload(&reader, &payload).expect("lookup");
 
         assert_eq!(
             matches.len(),
@@ -647,8 +774,7 @@ mod tests {
             payload.search_code.len(),
         );
 
-        let tid =
-            duplicate_candidate_tids_by_payload(&reader, &metadata, &payload).expect("lookup");
+        let tid = duplicate_candidate_tids_by_payload(&reader, &payload).expect("lookup");
         assert!(
             tid.is_empty(),
             "deleted or stripped tuples must not be eligible duplicate targets"
@@ -708,5 +834,84 @@ mod tests {
         )
         .expect_err("dimension mismatch should fail");
         assert!(err.contains("dimension mismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn in_010_duplicate_lookup_finds_match_after_codebook_tail() {
+        let (metadata, chain, vectors, model) = staged_metadata(true);
+        let source = &vectors[0];
+        let payload =
+            derive_insert_payload_from_persisted(&metadata, &chain, source).expect("derive");
+        let mut node_chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+
+        let mut first = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        first.binary_words = payload.binary_words.clone();
+        first.search_code = payload.search_code.clone();
+        first.primary_heaptid = ItemPointer {
+            block_number: 500,
+            offset_number: 1,
+        };
+        node_chain
+            .insert_raw_tuple(
+                first
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("first tuple should encode"),
+            )
+            .expect("first tuple");
+
+        stage_grouped_codebook_chain(&mut node_chain, &model).expect("stage codebooks");
+
+        let mut appended = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        appended.binary_words = payload.binary_words.clone();
+        appended.search_code = payload.search_code.clone();
+        appended.primary_heaptid = ItemPointer {
+            block_number: 501,
+            offset_number: 1,
+        };
+        node_chain
+            .insert_raw_tuple(
+                appended
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("appended tuple should encode"),
+            )
+            .expect("appended tuple");
+
+        let reader = PersistedGraphReader::new(
+            &node_chain,
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+
+        let matches = duplicate_candidate_tids_by_payload(&reader, &payload).expect("lookup");
+        assert_eq!(
+            matches,
+            vec![
+                ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                ItemPointer {
+                    block_number: 1,
+                    offset_number: 4,
+                },
+            ]
+        );
     }
 }
