@@ -45,6 +45,14 @@ use crate::storage::page::{ItemPointer, ITEM_POINTER_BYTES};
 /// without ambiguity.
 pub const TQ_VAMANA_NODE_TAG: u8 = 0x06;
 
+/// Tuple-type tag for a Vamana grouped-PQ4 codebook shard. Distinct
+/// from `TQ_VAMANA_NODE_TAG` and from the ec_hnsw tags so shared page
+/// walkers can dispatch on tag byte alone. Codebooks live in the same
+/// `DataPageChain` as node tuples; the metadata page's
+/// `grouped_codebook_head` TID is the head of a `nexttid`-linked chain
+/// of these shards (one per grouped-PQ4 group).
+pub const TQ_VAMANA_CODEBOOK_TAG: u8 = 0x07;
+
 /// Bit positions inside the `flags` byte at offset 1.
 pub const FLAG_DELETED: u8 = 1 << 0;
 pub const FLAG_HAS_OVERFLOW_HEAPTIDS: u8 = 1 << 1;
@@ -268,6 +276,78 @@ impl VamanaNodeTuple {
     }
 }
 
+/// One shard of a grouped-PQ4 codebook. Shards are linked via `nexttid`
+/// into a chain whose head TID the metadata page stores in
+/// `grouped_codebook_head`. Fixed encoded length per
+/// `centroid_count` (= `group_size * GROUPED_PQ_CENTROIDS`) so the
+/// same placeholder-then-patch update pattern used for node tuples
+/// works for codebook shards during build.
+///
+/// Layout (little-endian):
+///
+/// ```text
+/// [0]  tag: u8                = TQ_VAMANA_CODEBOOK_TAG (0x07)
+/// [1]  group_index: u16
+/// [3]  nexttid: ItemPointer   (6)
+/// [9]  centroids: [f32; centroid_count]
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct VamanaCodebookTuple {
+    pub group_index: u16,
+    pub nexttid: ItemPointer,
+    pub centroids: Vec<f32>,
+}
+
+impl VamanaCodebookTuple {
+    pub fn encoded_len(centroid_count: usize) -> usize {
+        1 + 2 + ITEM_POINTER_BYTES + centroid_count * std::mem::size_of::<f32>()
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(Self::encoded_len(self.centroids.len()));
+        out.push(TQ_VAMANA_CODEBOOK_TAG);
+        out.extend_from_slice(&self.group_index.to_le_bytes());
+        self.nexttid.encode_into(&mut out);
+        for centroid in &self.centroids {
+            out.extend_from_slice(&centroid.to_le_bytes());
+        }
+        out
+    }
+
+    pub fn decode(input: &[u8], centroid_count: usize) -> Result<Self, String> {
+        let expected = Self::encoded_len(centroid_count);
+        if input.len() != expected {
+            return Err(format!(
+                "vamana codebook tuple length mismatch: got {}, expected {expected}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_VAMANA_CODEBOOK_TAG {
+            return Err(format!(
+                "invalid vamana codebook tuple tag: got 0x{:02x}, expected 0x{:02x}",
+                input[0], TQ_VAMANA_CODEBOOK_TAG
+            ));
+        }
+        let group_index = u16::from_le_bytes(input[1..3].try_into().expect("group index bytes"));
+        let nexttid = ItemPointer::decode(&input[3..3 + ITEM_POINTER_BYTES])?;
+        let mut cursor = 3 + ITEM_POINTER_BYTES;
+        let mut centroids = Vec::with_capacity(centroid_count);
+        for _ in 0..centroid_count {
+            centroids.push(f32::from_le_bytes(
+                input[cursor..cursor + 4]
+                    .try_into()
+                    .expect("centroid f32 bytes"),
+            ));
+            cursor += 4;
+        }
+        Ok(Self {
+            group_index,
+            nexttid,
+            centroids,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -452,5 +532,65 @@ mod tests {
         tuple.search_code.pop();
         let err = tuple.validate(4, 2, 8).expect_err("validate should fail");
         assert!(err.contains("search_code length mismatch"), "got: {err}");
+    }
+
+    // LA-030: codebook-tuple round-trip at a non-trivial centroid count.
+    #[test]
+    fn la_030_codebook_tuple_roundtrip() {
+        let tuple = VamanaCodebookTuple {
+            group_index: 3,
+            nexttid: make_tid(42, 7),
+            centroids: (0..64).map(|i| i as f32 * 0.25).collect(),
+        };
+        let encoded = tuple.encode();
+        assert_eq!(encoded.len(), VamanaCodebookTuple::encoded_len(64));
+        let decoded = VamanaCodebookTuple::decode(&encoded, 64).expect("decode");
+        assert_eq!(tuple, decoded);
+    }
+
+    // LA-031: placeholder (INVALID nexttid) and patched tuple encode to
+    // the same length — required for update_raw_tuple on the chain when
+    // we patch nexttid after staging every shard.
+    #[test]
+    fn la_031_codebook_placeholder_patched_same_length() {
+        let placeholder = VamanaCodebookTuple {
+            group_index: 0,
+            nexttid: ItemPointer::INVALID,
+            centroids: vec![0.0; 16 * 4],
+        };
+        let patched = VamanaCodebookTuple {
+            group_index: 0,
+            nexttid: make_tid(99, 1),
+            centroids: vec![0.0; 16 * 4],
+        };
+        assert_eq!(placeholder.encode().len(), patched.encode().len());
+    }
+
+    // LA-032: foreign tag byte is rejected.
+    #[test]
+    fn la_032_codebook_foreign_tag_rejected() {
+        let tuple = VamanaCodebookTuple {
+            group_index: 0,
+            nexttid: ItemPointer::INVALID,
+            centroids: vec![0.0; 8],
+        };
+        let mut encoded = tuple.encode();
+        encoded[0] = TQ_VAMANA_NODE_TAG;
+        let err = VamanaCodebookTuple::decode(&encoded, 8).expect_err("decode should fail");
+        assert!(err.contains("invalid vamana codebook tuple tag"), "got: {err}");
+    }
+
+    // LA-033: wrong length is rejected and names the expected value.
+    #[test]
+    fn la_033_codebook_wrong_length_rejected() {
+        let tuple = VamanaCodebookTuple {
+            group_index: 0,
+            nexttid: ItemPointer::INVALID,
+            centroids: vec![0.0; 8],
+        };
+        let mut encoded = tuple.encode();
+        encoded.push(0);
+        let err = VamanaCodebookTuple::decode(&encoded, 8).expect_err("decode should fail");
+        assert!(err.contains("length mismatch"), "got: {err}");
     }
 }
