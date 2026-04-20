@@ -153,14 +153,10 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 scan_state::metadata_binary_word_count(&materialized_metadata),
                 scan_state::metadata_search_code_len(&materialized_metadata),
             );
-            let duplicate_candidates = insert::duplicate_candidate_tids_by_payload(
-                &reader,
-                &materialized_metadata,
-                &payload,
-            )
-            .unwrap_or_else(|e| {
-                pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
-            });
+            let duplicate_candidates =
+                insert::duplicate_candidate_tids_by_payload(&reader, &payload).unwrap_or_else(
+                    |e| pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}"),
+                );
             let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
             });
@@ -314,12 +310,15 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             .unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
             });
-            pgrx::error!(
-                "ec_diskann unique insert append/backlink writes are not yet implemented (task 17 phase 7): planned {} forward neighbors from entry ({},{})",
-                forward_neighbors.len(),
-                entry_point.block_number,
-                entry_point.offset_number
-            );
+            insert::append_live_node(
+                index_relation,
+                &materialized_metadata,
+                heap_tid,
+                &payload,
+                &forward_neighbors,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
+            false
         })
     }
 }
@@ -849,42 +848,69 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_diskann_unique_insert_hits_forward_planning_boundary() {
+    fn test_ec_diskann_unique_insert_appends_live_node() {
         Spi::run(
-            "CREATE TABLE ec_diskann_second_insert_boundary (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_diskann_unique_insert_append (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX ec_diskann_second_insert_boundary_idx ON ec_diskann_second_insert_boundary USING ec_diskann \
+            "CREATE INDEX ec_diskann_unique_insert_append_idx ON ec_diskann_unique_insert_append USING ec_diskann \
              (embedding ecvector_diskann_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO ec_diskann_second_insert_boundary VALUES
+            "INSERT INTO ec_diskann_unique_insert_append VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("first insert should bootstrap");
 
         Spi::run(
+            "INSERT INTO ec_diskann_unique_insert_append VALUES
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("second distinct insert should append a live node");
+
+        let row_count = Spi::get_one::<i64>("SELECT count(*) FROM ec_diskann_unique_insert_append")
+            .expect("count query should succeed")
+            .expect("count should be non-null");
+        assert_eq!(row_count, 2);
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_duplicate_after_append_hits_boundary() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_duplicate_after_append (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_duplicate_after_append_idx ON ec_diskann_duplicate_after_append USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_duplicate_after_append VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
+        )
+        .expect("bootstrap and append inserts should succeed");
+
+        Spi::run(
             "DO $$
              BEGIN
                BEGIN
-                 INSERT INTO ec_diskann_second_insert_boundary VALUES
-                   (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42));
-                 RAISE EXCEPTION 'expected unique ec_diskann insert planning to stop at the write boundary';
+                 INSERT INTO ec_diskann_duplicate_after_append VALUES
+                   (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42));
+                 RAISE EXCEPTION 'expected duplicate ec_diskann insert to fail after append';
                EXCEPTION
                  WHEN OTHERS THEN
-                   IF SQLERRM NOT LIKE '%ec_diskann unique insert append/backlink writes are not yet implemented%' THEN
+                   IF SQLERRM NOT LIKE '%ec_diskann duplicate bind is not yet implemented%' THEN
                      RAISE;
                    END IF;
-                   IF SQLERRM NOT LIKE '%planned 1 forward neighbors%' THEN
-                     RAISE;
-                   END IF;
-               END;
+                 END;
              END
              $$",
         )
-        .expect("boundary insert should fail with the expected message");
+        .expect("duplicate insert should fail through the appended-node duplicate probe");
     }
 
     #[pg_test]

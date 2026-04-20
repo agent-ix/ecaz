@@ -29,7 +29,7 @@
 
 use std::collections::HashSet;
 
-use crate::am::ec_diskann::tuple::VamanaNodeTuple;
+use crate::am::ec_diskann::tuple::{VamanaNodeTuple, TQ_VAMANA_NODE_TAG};
 use crate::storage::page::{DataPageChain, ItemPointer};
 
 /// Handle to a persisted Vamana graph. Holds a borrowed
@@ -84,6 +84,23 @@ impl<'a> PersistedGraphReader<'a> {
         Ok(tuple.neighbors.into_iter().take(count).collect())
     }
 
+    /// Return the tuple-type tag byte at `tid` without decoding the
+    /// rest of the payload. Used by mixed-tag chain walkers so node
+    /// iteration can skip staged grouped-codebook tuples.
+    pub fn tuple_tag(&self, tid: ItemPointer) -> Result<u8, String> {
+        let page = self
+            .chain
+            .get_page(tid.block_number)
+            .ok_or_else(|| format!("page {} not found in chain", tid.block_number))?;
+        let raw = page.raw_tuple(tid)?;
+        raw.first().copied().ok_or_else(|| {
+            format!(
+                "tuple at ({},{}) is empty",
+                tid.block_number, tid.offset_number
+            )
+        })
+    }
+
     /// Iterate every occupied TID in the chain in
     /// `(block_number, offset_number)` order, without decoding.
     /// Includes tombstoned tuples; callers that want live-only
@@ -99,23 +116,39 @@ impl<'a> PersistedGraphReader<'a> {
         })
     }
 
-    /// Iterate every live tuple in the chain in `(block, offset)`
-    /// order, yielding `(tid, tuple)` pairs. "Live" means
-    /// [`VamanaNodeTuple::is_live`]: not tombstoned AND still has at
-    /// least one heap TID (primary or overflow). A stripped-but-not-
-    /// tombstoned tuple (vacuum pass 1 done, pass 3 not yet) is
-    /// skipped — it has no heap row to emit and is not a valid scan
-    /// entry point. A decode error is yielded as `Err` and callers
-    /// should stop iteration.
-    pub fn iter_live_tids(
-        &self,
-    ) -> impl Iterator<Item = Result<(ItemPointer, VamanaNodeTuple), String>> + '_ {
+    /// Iterate only the occupied node-tuple TIDs in `(block, offset)`
+    /// order. Mixed-tag chains may also contain grouped-codebook
+    /// tuples; those are skipped by tag instead of being handed to the
+    /// node decoder.
+    pub fn iter_node_tids(&self) -> impl Iterator<Item = Result<ItemPointer, String>> + '_ {
         self.iter_tids()
-            .filter_map(move |tid| match self.read_node(tid) {
-                Ok(t) if t.is_live() => Some(Ok((tid, t))),
+            .filter_map(move |tid| match self.tuple_tag(tid) {
+                Ok(TQ_VAMANA_NODE_TAG) => Some(Ok(tid)),
                 Ok(_) => None,
                 Err(e) => Some(Err(e)),
             })
+    }
+
+    /// Iterate every live tuple in the chain in `(block, offset)`
+    /// order, yielding `(tid, tuple)` pairs. Mixed-tag non-node
+    /// tuples (currently grouped-codebook shards) are skipped by tag.
+    /// "Live" means [`VamanaNodeTuple::is_live`]: not tombstoned AND
+    /// still has at least one heap TID (primary or overflow). A
+    /// stripped-but-not-tombstoned tuple (vacuum pass 1 done, pass 3
+    /// not yet) is skipped — it has no heap row to emit and is not a
+    /// valid scan entry point. A decode error is yielded as `Err` and
+    /// callers should stop iteration.
+    pub fn iter_live_tids(
+        &self,
+    ) -> impl Iterator<Item = Result<(ItemPointer, VamanaNodeTuple), String>> + '_ {
+        self.iter_node_tids().filter_map(move |item| match item {
+            Ok(tid) => match self.read_node(tid) {
+                Ok(t) if t.is_live() => Some(Ok((tid, t))),
+                Ok(_) => None,
+                Err(e) => Some(Err(e)),
+            },
+            Err(e) => Some(Err(e)),
+        })
     }
 
     /// Return the lowest-block, lowest-offset live TID in the chain,
@@ -309,6 +342,7 @@ mod tests {
     use super::*;
     use crate::am::ec_diskann::build::{build_and_persist_vamana, BuildParams};
     use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload};
+    use crate::am::ec_diskann::tuple::VamanaCodebookTuple;
     use crate::am::ec_diskann::vamana::{
         approximate_medoid, build_vamana_graph, greedy_search, VamanaGraph,
     };
@@ -446,8 +480,9 @@ mod tests {
     fn rd_006_greedy_matches_in_memory_oracle() {
         let n = 40;
         let mut rng = ChaCha8Rng::seed_from_u64(11);
-        let points: Vec<(f32, f32)> =
-            (0..n).map(|_| (rng.gen::<f32>(), rng.gen::<f32>())).collect();
+        let points: Vec<(f32, f32)> = (0..n)
+            .map(|_| (rng.gen::<f32>(), rng.gen::<f32>()))
+            .collect();
         let dist = |a: u32, b: u32| {
             let (ax, ay) = points[a as usize];
             let (bx, by) = points[b as usize];
@@ -459,9 +494,8 @@ mod tests {
         let graph = build_vamana_graph(n, medoid, 8, 32, 1.2, 13, dist);
 
         let payloads = synth_payloads(n, 0, 0);
-        let persisted =
-            persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 0, 0)
-                .expect("persist");
+        let persisted = persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 0, 0)
+            .expect("persist");
         let reader = PersistedGraphReader::new(&persisted.chain, 8, 0, 0);
 
         // Query point is a fresh random 2D.
@@ -531,8 +565,8 @@ mod tests {
             .map(|(i, &tid)| (tid, i as u32))
             .collect();
         let qd = |t: ItemPointer| ((n - 1) as u32 - tid_to_node[&t]) as f32;
-        let res = greedy_search_persisted(&reader, persisted.entry_point_tid, 3, qd)
-            .expect("greedy");
+        let res =
+            greedy_search_persisted(&reader, persisted.entry_point_tid, 3, qd).expect("greedy");
         let target = persisted.node_to_tid[5];
         assert_eq!(res.frontier[0].tid, target, "top-1 must be the target");
         assert_eq!(res.frontier[0].distance, 0.0);
@@ -596,8 +630,9 @@ mod tests {
     fn rd_010_bridge_from_build_output() {
         let n = 32;
         let mut rng = ChaCha8Rng::seed_from_u64(17);
-        let points: Vec<(f32, f32)> =
-            (0..n).map(|_| (rng.gen::<f32>(), rng.gen::<f32>())).collect();
+        let points: Vec<(f32, f32)> = (0..n)
+            .map(|_| (rng.gen::<f32>(), rng.gen::<f32>()))
+            .collect();
         let dist = |a: u32, b: u32| {
             let (ax, ay) = points[a as usize];
             let (bx, by) = points[b as usize];
@@ -670,28 +705,26 @@ mod tests {
             greedy_search_persisted(&reader, persisted.entry_point_tid, 4, qd_b).expect("fresh b");
 
         let mut scratch = VisitedState::new();
-        let reused_a = greedy_search_persisted_with(
-            &reader,
-            &mut scratch,
-            persisted.entry_point_tid,
-            4,
-            qd_a,
-        )
-        .expect("reused a");
-        let reused_b = greedy_search_persisted_with(
-            &reader,
-            &mut scratch,
-            persisted.entry_point_tid,
-            4,
-            qd_b,
-        )
-        .expect("reused b");
+        let reused_a =
+            greedy_search_persisted_with(&reader, &mut scratch, persisted.entry_point_tid, 4, qd_a)
+                .expect("reused a");
+        let reused_b =
+            greedy_search_persisted_with(&reader, &mut scratch, persisted.entry_point_tid, 4, qd_b)
+                .expect("reused b");
 
         let tids = |r: &PersistedGreedyResult| -> Vec<ItemPointer> {
             r.frontier.iter().map(|c| c.tid).collect()
         };
-        assert_eq!(tids(&fresh_a), tids(&reused_a), "first reuse must match fresh");
-        assert_eq!(tids(&fresh_b), tids(&reused_b), "second reuse must match fresh (clear worked)");
+        assert_eq!(
+            tids(&fresh_a),
+            tids(&reused_a),
+            "first reuse must match fresh"
+        );
+        assert_eq!(
+            tids(&fresh_b),
+            tids(&reused_b),
+            "second reuse must match fresh (clear worked)"
+        );
     }
 
     // RD-012: VisitedState::clear + reserve are independently
@@ -740,16 +773,9 @@ mod tests {
         use crate::am::ec_diskann::vacuum::{mark_deleted, strip_dead_primary_heaptid};
         let g = chain_graph(n, max_degree as usize);
         let payloads = synth_payloads(n, 0, 0);
-        let mut persisted = persist_vamana_graph(
-            &g,
-            0,
-            DEFAULT_PAGE_SIZE,
-            &payloads,
-            max_degree,
-            0,
-            0,
-        )
-        .expect("persist");
+        let mut persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, max_degree, 0, 0)
+                .expect("persist");
         for &(node_id, kind) in deaths {
             let tid = persisted.node_to_tid[node_id as usize];
             let page = persisted
@@ -781,6 +807,40 @@ mod tests {
             .map(|&id| (id, DeathKind::Tombstone))
             .collect();
         persisted_with_deaths(n, max_degree, &deaths)
+    }
+
+    fn mixed_node_and_codebook_chain(first_node_live: bool) -> DataPageChain {
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+
+        let mut first = VamanaNodeTuple::placeholder(4, 0, 0);
+        first.deleted = !first_node_live;
+        first.primary_heaptid = ItemPointer {
+            block_number: 100,
+            offset_number: 1,
+        };
+        chain
+            .insert_raw_tuple(first.encode(4, 0, 0).expect("first node"))
+            .expect("first node insert");
+
+        let codebook = VamanaCodebookTuple {
+            group_index: 0,
+            nexttid: ItemPointer::INVALID,
+            centroids: vec![0.0, 1.0, 2.0, 3.0],
+        };
+        chain
+            .insert_raw_tuple(codebook.encode())
+            .expect("codebook insert");
+
+        let mut second = VamanaNodeTuple::placeholder(4, 0, 0);
+        second.primary_heaptid = ItemPointer {
+            block_number: 101,
+            offset_number: 1,
+        };
+        chain
+            .insert_raw_tuple(second.encode(4, 0, 0).expect("second node"))
+            .expect("second node insert");
+
+        chain
     }
 
     // RD-013: iter_tids walks every TID in (block, offset) order and
@@ -867,12 +927,7 @@ mod tests {
         assert_ne!(got, node_to_tid[1]);
 
         // And it must equal iter_live_tids().next().
-        let via_iter = reader
-            .iter_live_tids()
-            .next()
-            .expect("some")
-            .expect("ok")
-            .0;
+        let via_iter = reader.iter_live_tids().next().expect("some").expect("ok").0;
         assert_eq!(got, via_iter);
     }
 
@@ -970,5 +1025,50 @@ mod tests {
 
         t.deleted = true;
         assert!(!t.is_live(), "tombstoned overrides heap TIDs");
+    }
+
+    // RD-020: mixed-tag chains can hold grouped-codebook tuples
+    // between node tuples; iter_live_tids must skip the codebook and
+    // still surface the later node.
+    #[test]
+    fn rd_020_iter_live_tids_skips_grouped_codebook_tuples() {
+        let chain = mixed_node_and_codebook_chain(true);
+        let reader = PersistedGraphReader::new(&chain, 4, 0, 0);
+
+        let live = reader
+            .iter_live_tids()
+            .map(|item| item.expect("ok").0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            live,
+            vec![
+                ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                ItemPointer {
+                    block_number: 1,
+                    offset_number: 3,
+                },
+            ]
+        );
+    }
+
+    // RD-021: first_live_tid must keep scanning past a grouped-codebook
+    // tuple when the leading node is dead and a later appended node is
+    // the only live entry point candidate.
+    #[test]
+    fn rd_021_first_live_tid_skips_grouped_codebook_gap() {
+        let chain = mixed_node_and_codebook_chain(false);
+        let reader = PersistedGraphReader::new(&chain, 4, 0, 0);
+
+        let got = reader.first_live_tid().expect("ok").expect("live exists");
+        assert_eq!(
+            got,
+            ItemPointer {
+                block_number: 1,
+                offset_number: 3,
+            }
+        );
     }
 }
