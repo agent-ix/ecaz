@@ -379,6 +379,93 @@ pub(super) fn bound_heap_tids_for_owner(
     Ok(heap_tids)
 }
 
+fn rewrite_overflow_tuple_in_chain(
+    chain: &mut DataPageChain,
+    tid: ItemPointer,
+    tuple: &VamanaOverflowTuple,
+) -> Result<(), String> {
+    let encoded = tuple.encode()?;
+    let page = chain.get_page_mut(tid.block_number).ok_or_else(|| {
+        format!(
+            "ec_diskann overflow rewrite could not find page {} for ({},{})",
+            tid.block_number, tid.block_number, tid.offset_number
+        )
+    })?;
+    page.update_raw_tuple(tid, encoded)
+}
+
+pub(super) fn vacuum_bound_heap_rows<P>(
+    chain: &mut DataPageChain,
+    owner_tid: ItemPointer,
+    tuple: &mut VamanaNodeTuple,
+    dead_pred: P,
+) -> Result<usize, String>
+where
+    P: Fn(ItemPointer) -> bool,
+{
+    if owner_tid == ItemPointer::INVALID {
+        return Err("ec_diskann vacuum bound heap rows requires a valid owner tid".into());
+    }
+
+    let overflow_refs = overflow_tuple_refs_for_owner(chain, owner_tid)?;
+    let mut removed_heap_tids = 0usize;
+
+    let mut primary_heaptid = if tuple.primary_heaptid != ItemPointer::INVALID {
+        if dead_pred(tuple.primary_heaptid) {
+            removed_heap_tids += 1;
+            None
+        } else {
+            Some(tuple.primary_heaptid)
+        }
+    } else {
+        None
+    };
+
+    let mut live_overflow_heap_tids = Vec::new();
+    for overflow_ref in &overflow_refs {
+        for heap_tid in overflow_ref
+            .tuple
+            .heap_tids
+            .iter()
+            .take(overflow_ref.tuple.heap_tid_count as usize)
+            .copied()
+        {
+            if dead_pred(heap_tid) {
+                removed_heap_tids += 1;
+            } else {
+                live_overflow_heap_tids.push(heap_tid);
+            }
+        }
+    }
+
+    if primary_heaptid.is_none() && !live_overflow_heap_tids.is_empty() {
+        primary_heaptid = Some(live_overflow_heap_tids.remove(0));
+    }
+
+    tuple.primary_heaptid = primary_heaptid.unwrap_or(ItemPointer::INVALID);
+    tuple.has_overflow_heaptids = !live_overflow_heap_tids.is_empty();
+
+    let used_overflow_tuple_count = live_overflow_heap_tids
+        .len()
+        .div_ceil(VAMANA_OVERFLOW_HEAPTID_CAPACITY);
+    for (index, overflow_ref) in overflow_refs.iter().enumerate() {
+        let start = index * VAMANA_OVERFLOW_HEAPTID_CAPACITY;
+        let end = live_overflow_heap_tids
+            .len()
+            .min(start + VAMANA_OVERFLOW_HEAPTID_CAPACITY);
+        let mut updated = VamanaOverflowTuple::placeholder(owner_tid);
+        for heap_tid in &live_overflow_heap_tids[start..end] {
+            updated.push_heap_tid(*heap_tid)?;
+        }
+        if index + 1 < used_overflow_tuple_count {
+            updated.nexttid = overflow_refs[index + 1].tid;
+        }
+        rewrite_overflow_tuple_in_chain(chain, overflow_ref.tid, &updated)?;
+    }
+
+    Ok(removed_heap_tids)
+}
+
 fn plan_duplicate_bind(
     existing_node_tid: ItemPointer,
     existing_node: &VamanaNodeTuple,
