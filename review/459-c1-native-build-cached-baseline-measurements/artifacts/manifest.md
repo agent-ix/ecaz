@@ -1,0 +1,57 @@
+# Artifact Manifest
+
+- Artifact: `turboquant-gate.sql`
+  - Head SHA: `b1bba4f5796b676abc8d1caa173fef8d3c115721`
+  - Packet: `459-c1-native-build-cached-baseline-measurements`
+  - Lane: cached real-corpus external gate
+  - Fixture: `tqhnsw_real_50k_corpus` + `tqhnsw_real_50k_queries_50`
+  - Storage format: `turboquant`
+  - Rerank mode: default source-backed turboquant quantized path
+  - Command: `./scripts/run_real_corpus_recall_scratch.sh --socket-dir /home/peter/.pgrx --port 28817 gate --prefix tqhnsw_real_50k --storage-format turboquant --queries-table tqhnsw_real_50k_queries_50`
+  - Timestamp: `2026-04-19T23:37:33Z`
+  - Surface isolation: shared cached corpus/query tables with one index family per prefix
+  - Key result lines cited in `request.md`: SQL driver for the TurboQuant gate rerun
+
+- Artifact: `turboquant-gate.tsv`
+  - Head SHA: `b1bba4f5796b676abc8d1caa173fef8d3c115721`
+  - Packet: `459-c1-native-build-cached-baseline-measurements`
+  - Lane: cached real-corpus external gate
+  - Fixture: `tqhnsw_real_50k_corpus` + `tqhnsw_real_50k_queries_50`
+  - Storage format: `turboquant`
+  - Rerank mode: default source-backed turboquant quantized path
+  - Command: `./scripts/run_real_corpus_recall_scratch.sh --socket-dir /home/peter/.pgrx --port 28817 gate --prefix tqhnsw_real_50k --storage-format turboquant --queries-table tqhnsw_real_50k_queries_50`
+  - Timestamp: `2026-04-19T23:37:33Z`
+  - Surface isolation: shared cached corpus/query tables with one index family per prefix
+  - Key result lines cited in `request.md`:
+    - `8	40	0.886		t`
+    - `8	128	0.93	0.89	t`
+    - `8	200	0.93		t`
+    - `16	200	0.964		t`
+
+- Artifact: `pq-fastscan-gate.sql`
+  - Head SHA: `b1bba4f5796b676abc8d1caa173fef8d3c115721`
+  - Packet: `459-c1-native-build-cached-baseline-measurements`
+  - Lane: cached real-corpus external gate
+  - Fixture: `tqhnsw_real_50k_corpus` + `tqhnsw_real_50k_queries_50`
+  - Storage format: `pq_fastscan`
+  - Rerank mode: default source-backed pq_fastscan heap-f32 path
+  - Command: `./scripts/run_real_corpus_recall_scratch.sh --socket-dir /home/peter/.pgrx --port 28817 gate --prefix tqhnsw_real_50k --storage-format pq_fastscan --queries-table tqhnsw_real_50k_queries_50`
+  - Timestamp: `2026-04-19T23:37:33Z`
+  - Surface isolation: shared cached corpus/query tables with one index family per prefix
+  - Key result lines cited in `request.md`: SQL driver for the PqFastScan gate rerun
+
+- Artifact: `pq-fastscan-gate.tsv`
+  - Head SHA: `b1bba4f5796b676abc8d1caa173fef8d3c115721`
+  - Packet: `459-c1-native-build-cached-baseline-measurements`
+  - Lane: cached real-corpus external gate
+  - Fixture: `tqhnsw_real_50k_corpus` + `tqhnsw_real_50k_queries_50`
+  - Storage format: `pq_fastscan`
+  - Rerank mode: default source-backed pq_fastscan heap-f32 path
+  - Command: `./scripts/run_real_corpus_recall_scratch.sh --socket-dir /home/peter/.pgrx --port 28817 gate --prefix tqhnsw_real_50k --storage-format pq_fastscan --queries-table tqhnsw_real_50k_queries_50`
+  - Timestamp: `2026-04-19T23:37:33Z`
+  - Surface isolation: shared cached corpus/query tables with one index family per prefix
+  - Key result lines cited in `request.md`:
+    - `8	40	0.886		t`
+    - `8	128	0.93	0.89	t`
+    - `8	200	0.93		t`
+    - `16	200	0.968		t`
