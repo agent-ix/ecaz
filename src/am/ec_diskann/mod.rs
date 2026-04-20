@@ -8,6 +8,7 @@
 
 mod ambuild;
 pub mod build;
+mod insert;
 mod options;
 pub mod page;
 pub mod persist;
