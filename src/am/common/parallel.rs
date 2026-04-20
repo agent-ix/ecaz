@@ -1,10 +1,10 @@
-use std::ffi::c_void;
+use std::ffi::{c_int, c_void};
 use std::mem::size_of;
 
 use pgrx::pg_sys;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 1;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 2;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -13,15 +13,58 @@ pub(crate) struct EcParallelScanState {
     version: u16,
     flags: u16,
     descriptor_bytes: pg_sys::Size,
-    rescan_epoch: u32,
+    coordinator_bytes: pg_sys::Size,
+    worker_slot_bytes: pg_sys::Size,
+    worker_slot_count: u32,
     reserved_worker_slots: u32,
+    rescan_epoch: u32,
+    reserved0: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelCoordinatorState {
+    pub(crate) flags: u32,
+    pub(crate) claimed_worker_slots: u32,
+    reserved0: u32,
+    reserved1: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelWorkerSlot {
+    pub(crate) flags: u32,
+    pub(crate) slot_index: u32,
+    pub(crate) observed_rescan_epoch: u32,
+    reserved0: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ParallelScanAttachment {
     pub(crate) state: *mut EcParallelScanState,
+    pub(crate) coordinator: *mut EcParallelCoordinatorState,
+    worker_slots: *mut EcParallelWorkerSlot,
     pub(crate) descriptor_bytes: pg_sys::Size,
+    pub(crate) worker_slot_count: u32,
+    worker_slot_bytes: pg_sys::Size,
     pub(crate) rescan_epoch: u32,
+}
+
+impl ParallelScanAttachment {
+    pub(crate) unsafe fn worker_slot(
+        &self,
+        slot_index: u32,
+    ) -> Result<*mut EcParallelWorkerSlot, &'static str> {
+        if slot_index >= self.worker_slot_count {
+            return Err("parallel worker slot index was outside the descriptor capacity");
+        }
+        let offset = checked_mul_size(
+            self.worker_slot_bytes,
+            slot_index as pg_sys::Size,
+            "parallel worker slot offset",
+        );
+        Ok(unsafe { self.worker_slots.cast::<u8>().add(offset) }.cast())
+    }
 }
 
 fn maxalign(size: pg_sys::Size) -> pg_sys::Size {
@@ -30,19 +73,116 @@ fn maxalign(size: pg_sys::Size) -> pg_sys::Size {
     (size + align - 1) & !(align - 1)
 }
 
+fn checked_add_size(lhs: pg_sys::Size, rhs: pg_sys::Size, context: &str) -> pg_sys::Size {
+    lhs.checked_add(rhs)
+        .unwrap_or_else(|| panic!("{context} overflowed pg_sys::Size"))
+}
+
+fn checked_mul_size(lhs: pg_sys::Size, rhs: pg_sys::Size, context: &str) -> pg_sys::Size {
+    lhs.checked_mul(rhs)
+        .unwrap_or_else(|| panic!("{context} overflowed pg_sys::Size"))
+}
+
 pub(crate) fn ec_parallel_scan_state_size() -> pg_sys::Size {
     maxalign(size_of::<EcParallelScanState>())
 }
 
-fn initialize_parallel_scan_state(state: &mut EcParallelScanState) {
+pub(crate) fn ec_parallel_scan_coordinator_size() -> pg_sys::Size {
+    maxalign(size_of::<EcParallelCoordinatorState>())
+}
+
+pub(crate) fn ec_parallel_scan_worker_slot_size() -> pg_sys::Size {
+    maxalign(size_of::<EcParallelWorkerSlot>())
+}
+
+fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size {
+    let worker_slot_bytes = checked_mul_size(
+        ec_parallel_scan_worker_slot_size(),
+        worker_slot_count as pg_sys::Size,
+        "parallel worker slot descriptor size",
+    );
+    maxalign(checked_add_size(
+        checked_add_size(
+            ec_parallel_scan_state_size(),
+            ec_parallel_scan_coordinator_size(),
+            "parallel scan state plus coordinator size",
+        ),
+        worker_slot_bytes,
+        "parallel scan descriptor size",
+    ))
+}
+
+pub(crate) fn ec_parallel_scan_worker_slot_capacity() -> u32 {
+    let max_workers = unsafe { pg_sys::max_parallel_workers_per_gather }.max(0) as u32;
+    max_workers.saturating_add(1)
+}
+
+pub(crate) fn ec_parallel_scan_descriptor_size() -> pg_sys::Size {
+    ec_parallel_scan_descriptor_size_for(ec_parallel_scan_worker_slot_capacity())
+}
+
+unsafe fn coordinator_ptr(state: *mut EcParallelScanState) -> *mut EcParallelCoordinatorState {
+    unsafe { state.cast::<u8>().add(ec_parallel_scan_state_size()) }.cast()
+}
+
+unsafe fn worker_slots_ptr(state: *mut EcParallelScanState) -> *mut EcParallelWorkerSlot {
+    let coordinator_offset = checked_add_size(
+        ec_parallel_scan_state_size(),
+        unsafe { (*state).coordinator_bytes },
+        "parallel worker slot base offset",
+    );
+    unsafe { state.cast::<u8>().add(coordinator_offset) }.cast()
+}
+
+unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
+    let state_ref = unsafe { &mut *state };
+    state_ref.reserved_worker_slots = 0;
+
+    unsafe {
+        *coordinator_ptr(state) = EcParallelCoordinatorState {
+            flags: 0,
+            claimed_worker_slots: 0,
+            reserved0: 0,
+            reserved1: 0,
+        };
+    }
+
+    for slot_index in 0..state_ref.worker_slot_count {
+        let slot = unsafe {
+            worker_slots_ptr(state)
+                .cast::<u8>()
+                .add(checked_mul_size(
+                    state_ref.worker_slot_bytes,
+                    slot_index as pg_sys::Size,
+                    "parallel worker slot reset offset",
+                ))
+                .cast::<EcParallelWorkerSlot>()
+        };
+        unsafe {
+            *slot = EcParallelWorkerSlot {
+                flags: 0,
+                slot_index,
+                observed_rescan_epoch: state_ref.rescan_epoch,
+                reserved0: 0,
+            };
+        }
+    }
+}
+
+fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_count: u32) {
     *state = EcParallelScanState {
         magic: EC_PARALLEL_SCAN_STATE_MAGIC,
         version: EC_PARALLEL_SCAN_STATE_VERSION,
         flags: 0,
-        descriptor_bytes: ec_parallel_scan_state_size(),
-        rescan_epoch: 0,
+        descriptor_bytes: ec_parallel_scan_descriptor_size_for(worker_slot_count),
+        coordinator_bytes: ec_parallel_scan_coordinator_size(),
+        worker_slot_bytes: ec_parallel_scan_worker_slot_size(),
+        worker_slot_count,
         reserved_worker_slots: 0,
+        rescan_epoch: 0,
+        reserved0: 0,
     };
+    unsafe { reset_parallel_scan_layout(state) };
 }
 
 unsafe fn validate_parallel_scan_state(
@@ -59,13 +199,25 @@ unsafe fn validate_parallel_scan_state(
     if state_ref.version != EC_PARALLEL_SCAN_STATE_VERSION {
         return Err("AM-private parallel scan state version was not initialized");
     }
-    if state_ref.descriptor_bytes < ec_parallel_scan_state_size() {
-        return Err("AM-private parallel scan state size was smaller than the shared header");
+    if state_ref.coordinator_bytes < ec_parallel_scan_coordinator_size() {
+        return Err("AM-private parallel scan coordinator size was smaller than the shared header");
+    }
+    if state_ref.worker_slot_bytes < ec_parallel_scan_worker_slot_size() {
+        return Err("AM-private parallel worker slot size was smaller than the shared header");
+    }
+    let minimum_descriptor_bytes =
+        ec_parallel_scan_descriptor_size_for(state_ref.worker_slot_count);
+    if state_ref.descriptor_bytes < minimum_descriptor_bytes {
+        return Err("AM-private parallel scan descriptor size was smaller than the shared layout");
     }
 
     Ok(ParallelScanAttachment {
         state,
+        coordinator: unsafe { coordinator_ptr(state) },
+        worker_slots: unsafe { worker_slots_ptr(state) },
         descriptor_bytes: state_ref.descriptor_bytes,
+        worker_slot_count: state_ref.worker_slot_count,
+        worker_slot_bytes: state_ref.worker_slot_bytes,
         rescan_epoch: state_ref.rescan_epoch,
     })
 }
@@ -111,14 +263,31 @@ pub(crate) unsafe fn parallel_scan_attachment(
     Ok(Some(unsafe { validate_parallel_scan_state(state) }?))
 }
 
-pub(crate) unsafe fn initialize_parallel_scan_target(
+pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     target: *mut c_void,
+    worker_slot_count: u32,
 ) -> Result<(), &'static str> {
     if target.is_null() {
         return Err("AM-private parallel scan target was null");
     }
-    unsafe { initialize_parallel_scan_state(&mut *target.cast::<EcParallelScanState>()) };
+    unsafe {
+        initialize_parallel_scan_state(
+            &mut *target.cast::<EcParallelScanState>(),
+            worker_slot_count,
+        )
+    };
     Ok(())
+}
+
+pub(crate) unsafe fn initialize_parallel_scan_target(
+    target: *mut c_void,
+) -> Result<(), &'static str> {
+    unsafe {
+        initialize_parallel_scan_target_with_worker_slots(
+            target,
+            ec_parallel_scan_worker_slot_capacity(),
+        )
+    }
 }
 
 pub(crate) unsafe fn reset_parallel_scan_state(
@@ -127,31 +296,35 @@ pub(crate) unsafe fn reset_parallel_scan_state(
     let Some(state) = (unsafe { parallel_scan_state_ptr(parallel_scan) })? else {
         return Ok(None);
     };
-    let state_ref = unsafe { &mut *state };
-    if state_ref.magic != EC_PARALLEL_SCAN_STATE_MAGIC
-        || state_ref.version != EC_PARALLEL_SCAN_STATE_VERSION
-    {
-        return Err("AM-private parallel scan state was not initialized before rescan");
-    }
-    state_ref.rescan_epoch = state_ref.rescan_epoch.wrapping_add(1);
-    Ok(Some(state_ref.rescan_epoch))
+    let rescan_epoch = {
+        let state_ref = unsafe { &mut *state };
+        if state_ref.magic != EC_PARALLEL_SCAN_STATE_MAGIC
+            || state_ref.version != EC_PARALLEL_SCAN_STATE_VERSION
+        {
+            return Err("AM-private parallel scan state was not initialized before rescan");
+        }
+        state_ref.rescan_epoch = state_ref.rescan_epoch.wrapping_add(1);
+        state_ref.rescan_epoch
+    };
+    unsafe { reset_parallel_scan_layout(state) };
+    Ok(Some(rescan_epoch))
 }
 
 #[cfg(feature = "pg17")]
 pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
-    _nkeys: std::ffi::c_int,
-    _norderbys: std::ffi::c_int,
+    _nkeys: c_int,
+    _norderbys: c_int,
 ) -> pg_sys::Size {
-    ec_parallel_scan_state_size()
+    ec_parallel_scan_descriptor_size()
 }
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe extern "C-unwind" fn ec_amestimateparallelscan(
     _index_relation: pg_sys::Relation,
-    _nkeys: std::ffi::c_int,
-    _norderbys: std::ffi::c_int,
+    _nkeys: c_int,
+    _norderbys: c_int,
 ) -> pg_sys::Size {
-    ec_parallel_scan_state_size()
+    ec_parallel_scan_descriptor_size()
 }
 
 pub(crate) unsafe extern "C-unwind" fn ec_aminitparallelscan(target: *mut c_void) {
@@ -178,21 +351,21 @@ pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexSc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::size_of;
     use std::ptr;
 
     #[repr(C, align(8))]
     struct TestParallelScanStorage {
-        bytes: [u8; 256],
+        bytes: [u8; 1024],
     }
 
     impl Default for TestParallelScanStorage {
         fn default() -> Self {
-            Self { bytes: [0; 256] }
+            Self { bytes: [0; 1024] }
         }
     }
 
     const TEST_PARALLEL_SCAN_OFFSET: usize = 64;
+    const TEST_WORKER_SLOT_COUNT: u32 = 3;
 
     unsafe fn test_parallel_scan_desc(
         storage: &mut TestParallelScanStorage,
@@ -217,16 +390,39 @@ mod tests {
     }
 
     #[test]
-    fn ec_parallel_scan_state_size_is_maxaligned() {
-        let descriptor_bytes = ec_parallel_scan_state_size();
+    fn ec_parallel_scan_layout_sizes_are_maxaligned() {
+        assert_eq!(
+            ec_parallel_scan_state_size() % size_of::<usize>(),
+            0,
+            "parallel scan state header should stay MAXALIGN-sized"
+        );
+        assert_eq!(
+            ec_parallel_scan_coordinator_size() % size_of::<usize>(),
+            0,
+            "parallel scan coordinator header should stay MAXALIGN-sized"
+        );
+        assert_eq!(
+            ec_parallel_scan_worker_slot_size() % size_of::<usize>(),
+            0,
+            "parallel worker slot header should stay MAXALIGN-sized"
+        );
+    }
+
+    #[test]
+    fn descriptor_size_covers_state_coordinator_and_slots() {
+        let descriptor_bytes = ec_parallel_scan_descriptor_size_for(TEST_WORKER_SLOT_COUNT);
+        let minimum = ec_parallel_scan_state_size()
+            + ec_parallel_scan_coordinator_size()
+            + ec_parallel_scan_worker_slot_size() * TEST_WORKER_SLOT_COUNT as pg_sys::Size;
+
         assert!(
-            descriptor_bytes >= size_of::<EcParallelScanState>(),
-            "shared parallel scan descriptor must cover the common header"
+            descriptor_bytes >= minimum,
+            "descriptor size should cover the shared state, coordinator, and worker slots"
         );
         assert_eq!(
             descriptor_bytes % size_of::<usize>(),
             0,
-            "shared parallel scan descriptor must stay MAXALIGN-sized"
+            "descriptor size should stay MAXALIGN-sized"
         );
     }
 
@@ -236,7 +432,10 @@ mod tests {
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
         let target = unsafe { test_parallel_scan_target(&mut storage) };
 
-        unsafe { initialize_parallel_scan_target(target) }.expect("parallel target should init");
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
         let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
             .expect("parallel descriptor should validate")
             .expect("parallel descriptor should expose AM state");
@@ -247,22 +446,75 @@ mod tests {
         );
         assert_eq!(
             attachment.descriptor_bytes,
-            ec_parallel_scan_state_size(),
+            ec_parallel_scan_descriptor_size_for(TEST_WORKER_SLOT_COUNT),
             "attachment should report the initialized descriptor size"
+        );
+        assert_eq!(
+            attachment.worker_slot_count, TEST_WORKER_SLOT_COUNT,
+            "attachment should report the configured worker slot capacity"
         );
         assert_eq!(
             attachment.rescan_epoch, 0,
             "freshly initialized parallel scan state should start at epoch zero"
         );
+        assert_eq!(
+            unsafe { (*attachment.coordinator).claimed_worker_slots },
+            0,
+            "freshly initialized coordinator state should start with no claimed worker slots"
+        );
     }
 
     #[test]
-    fn reset_parallel_scan_state_advances_rescan_epoch() {
+    fn initialize_parallel_scan_target_seeds_slot_headers() {
         let mut storage = TestParallelScanStorage::default();
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
         let target = unsafe { test_parallel_scan_target(&mut storage) };
 
-        unsafe { initialize_parallel_scan_target(target) }.expect("parallel target should init");
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        for slot_index in 0..TEST_WORKER_SLOT_COUNT {
+            let slot = unsafe { attachment.worker_slot(slot_index) }
+                .expect("slot index should stay within the configured capacity");
+            assert_eq!(
+                unsafe { *slot },
+                EcParallelWorkerSlot {
+                    flags: 0,
+                    slot_index,
+                    observed_rescan_epoch: 0,
+                    reserved0: 0,
+                },
+                "worker slot headers should be initialized deterministically"
+            );
+        }
+    }
+
+    #[test]
+    fn reset_parallel_scan_state_advances_epoch_and_reinitializes_layout() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        unsafe {
+            (*attachment.coordinator).claimed_worker_slots = 2;
+            (*attachment
+                .worker_slot(1)
+                .expect("slot index should stay in bounds"))
+            .flags = 7;
+        }
+
         assert_eq!(
             unsafe { reset_parallel_scan_state(parallel_scan) }
                 .expect("parallel rescan should succeed")
@@ -270,12 +522,50 @@ mod tests {
             1,
             "first rescan should advance the shared epoch to one"
         );
+
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should keep validating")
+            .expect("parallel descriptor should keep exposing AM state");
         assert_eq!(
-            unsafe { reset_parallel_scan_state(parallel_scan) }
-                .expect("parallel rescan should keep succeeding")
-                .expect("parallel rescan should keep using the initialized state"),
-            2,
-            "each rescan should advance the shared epoch once"
+            unsafe { (*attachment.coordinator).claimed_worker_slots },
+            0,
+            "rescan should clear coordinator-side worker slot claims"
+        );
+        assert_eq!(
+            unsafe {
+                *attachment
+                    .worker_slot(1)
+                    .expect("slot index should stay in bounds")
+            },
+            EcParallelWorkerSlot {
+                flags: 0,
+                slot_index: 1,
+                observed_rescan_epoch: 1,
+                reserved0: 0,
+            },
+            "rescan should stamp worker slots with the new shared epoch"
+        );
+    }
+
+    #[test]
+    fn worker_slot_lookup_rejects_out_of_bounds_indices() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        let err = unsafe { attachment.worker_slot(TEST_WORKER_SLOT_COUNT) }
+            .expect_err("slot lookup should reject indices outside the descriptor capacity");
+        assert!(
+            err.contains("outside"),
+            "out-of-bounds slot lookup should fail with the capacity check"
         );
     }
 

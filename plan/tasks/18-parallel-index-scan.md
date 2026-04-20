@@ -139,6 +139,11 @@ See ADR-040 for the full shape. Summary:
   visibility only flips once the coordinator and worker-local traversal
   contracts are live.
 
+- **Descriptor sizing.** `amestimateparallelscan` does not receive the chosen
+  executor worker count, so the staged shared descriptor reserves coordinator
+  and worker-slot headers for up to `max_parallel_workers_per_gather + 1`
+  participants. Actual worker claiming stays deferred to the next slice.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

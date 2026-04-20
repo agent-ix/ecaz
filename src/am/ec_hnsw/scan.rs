@@ -1076,6 +1076,7 @@ fn validate_runtime_scan_format(
 fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
     opaque.parallel_scan_state = ptr::null_mut();
     opaque.parallel_scan_rescan_epoch = 0;
+    opaque.parallel_scan_worker_slot_count = 0;
 }
 
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
@@ -1088,6 +1089,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
         Ok(Some(attachment)) => {
             opaque.parallel_scan_state = attachment.state;
             opaque.parallel_scan_rescan_epoch = attachment.rescan_epoch;
+            opaque.parallel_scan_worker_slot_count = attachment.worker_slot_count;
         }
         Ok(None) => clear_parallel_scan_state(opaque),
         Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
@@ -5091,6 +5093,7 @@ pub(super) struct TqScanOpaque {
     pub(super) rescan_called: bool,
     parallel_scan_state: *mut super::parallel::EcParallelScanState,
     parallel_scan_rescan_epoch: u32,
+    parallel_scan_worker_slot_count: u32,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5166,6 +5169,7 @@ impl Default for TqScanOpaque {
             rescan_called: false,
             parallel_scan_state: ptr::null_mut(),
             parallel_scan_rescan_epoch: 0,
+            parallel_scan_worker_slot_count: 0,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -5383,8 +5387,12 @@ mod tests {
         }
 
         let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
-        unsafe { crate::am::ec_hnsw::parallel::initialize_parallel_scan_target(target) }
-            .expect("parallel scan target should initialize");
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
         assert_eq!(
             unsafe { crate::am::ec_hnsw::parallel::reset_parallel_scan_state(parallel_scan) }
                 .expect("parallel scan reset should succeed")
@@ -5408,6 +5416,10 @@ mod tests {
         assert_eq!(
             opaque.parallel_scan_rescan_epoch, 1,
             "scan state should capture the current shared rescan epoch"
+        );
+        assert_eq!(
+            opaque.parallel_scan_worker_slot_count, 2,
+            "scan state should capture the shared worker slot capacity too"
         );
     }
 
