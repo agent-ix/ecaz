@@ -2,6 +2,10 @@
 use std::ffi::{c_void, CStr, CString};
 #[cfg(feature = "pg18")]
 use std::ptr;
+#[cfg(feature = "pg18")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "pg18")]
+use std::sync::OnceLock;
 
 #[cfg(feature = "pg18")]
 use pgrx::pg_sys;
@@ -195,9 +199,18 @@ impl TqExplainCounters {
 }
 
 #[cfg(feature = "pg18")]
-static mut PREVIOUS_EXPLAIN_PER_NODE_HOOK: pg_sys::explain_per_node_hook_type = None;
+static PREVIOUS_EXPLAIN_PER_NODE_HOOK: OnceLock<pg_sys::explain_per_node_hook_type> =
+    OnceLock::new();
 #[cfg(feature = "pg18")]
-static mut TQVECTOR_EXPLAIN_REGISTERED: bool = false;
+static TQVECTOR_EXPLAIN_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "pg18")]
+fn previous_explain_per_node_hook() -> pg_sys::explain_per_node_hook_type {
+    PREVIOUS_EXPLAIN_PER_NODE_HOOK
+        .get()
+        .copied()
+        .unwrap_or(None)
+}
 
 #[cfg(feature = "pg18")]
 fn explain_extension_id() -> i32 {
@@ -308,7 +321,7 @@ unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
             {
                 let explain_option_enabled = explain_option_enabled(es);
                 if !explain_option_enabled {
-                    if let Some(previous_hook) = PREVIOUS_EXPLAIN_PER_NODE_HOOK {
+                    if let Some(previous_hook) = previous_explain_per_node_hook() {
                         previous_hook(planstate, ancestors, relationship, plan_name, es);
                     }
                     return;
@@ -329,7 +342,7 @@ unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
                 }
             }
 
-            if let Some(previous_hook) = PREVIOUS_EXPLAIN_PER_NODE_HOOK {
+            if let Some(previous_hook) = previous_explain_per_node_hook() {
                 previous_hook(planstate, ancestors, relationship, plan_name, es);
             }
         })
@@ -339,7 +352,7 @@ unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
 #[cfg(feature = "pg18")]
 pub(crate) unsafe fn register_pg18_explain_hooks() {
     unsafe {
-        if TQVECTOR_EXPLAIN_REGISTERED {
+        if TQVECTOR_EXPLAIN_REGISTERED.load(Ordering::Acquire) {
             return;
         }
 
@@ -347,9 +360,9 @@ pub(crate) unsafe fn register_pg18_explain_hooks() {
             c"tqvector".as_ptr(),
             Some(tqvector_explain_option_handler),
         );
-        PREVIOUS_EXPLAIN_PER_NODE_HOOK = pg_sys::explain_per_node_hook;
+        let _ = PREVIOUS_EXPLAIN_PER_NODE_HOOK.set(pg_sys::explain_per_node_hook);
         pg_sys::explain_per_node_hook = Some(tqvector_explain_per_node_hook);
-        TQVECTOR_EXPLAIN_REGISTERED = true;
+        TQVECTOR_EXPLAIN_REGISTERED.store(true, Ordering::Release);
     }
 }
 

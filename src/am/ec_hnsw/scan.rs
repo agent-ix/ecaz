@@ -916,7 +916,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             let index_options = super::options::relation_options((*scan).indexRelation);
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
             if opaque.rescan_called {
-                finish_scan_stats(opaque);
+                finalize_scan_stats(opaque);
+                flush_scan_stats(opaque);
             }
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
@@ -1651,7 +1652,8 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScan
             let opaque_ptr = (*scan).opaque;
             if !opaque_ptr.is_null() {
                 let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
-                finish_scan_stats(opaque);
+                finalize_scan_stats(opaque);
+                flush_scan_stats(opaque);
                 #[cfg(feature = "pg18")]
                 {
                     end_read_stream(&mut opaque.graph_read_stream);
@@ -3613,7 +3615,7 @@ fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     opaque.result_state.clear();
     opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
-    finish_scan_stats(opaque);
+    finalize_scan_stats(opaque);
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -3726,7 +3728,7 @@ fn ensure_linear_read_stream(
     opaque.linear_read_stream
 }
 
-fn finish_scan_stats(opaque: &mut TqScanOpaque) {
+fn finalize_scan_stats(opaque: &mut TqScanOpaque) {
     if opaque.stats_scan_finalized || !opaque.rescan_called {
         return;
     }
@@ -3734,10 +3736,16 @@ fn finish_scan_stats(opaque: &mut TqScanOpaque) {
         super::stats::record_bootstrap_only_scan();
         opaque.stats_delta.record_bootstrap_only_scan();
     }
-    // Keep preload-on shared stats off the hot path by flushing one aggregate per scan.
+    opaque.stats_scan_finalized = true;
+}
+
+fn flush_scan_stats(opaque: &mut TqScanOpaque) {
+    if !opaque.rescan_called || opaque.stats_delta.is_zero() {
+        return;
+    }
+    // Shared pgstat snapshots are updated during scan teardown/rescan, not mid-scan.
     super::stats::flush_shared_delta(opaque.stats_delta);
     opaque.stats_delta.reset();
-    opaque.stats_scan_finalized = true;
 }
 
 type VisibleCandidateFrontierState = search::VisibleFrontier<page::ItemPointer>;
@@ -6539,6 +6547,34 @@ mod tests {
             -quantizer.score_ip_from_parts(&prepared, encoded.gamma, &payload.rerank_code);
 
         assert_eq!(observed, expected);
+    }
+
+    #[test]
+    fn miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta() {
+        let vector = vec![0.1_f32];
+        let query = vec![0.25_f32];
+        let quantizer = Arc::new(ProdQuantizer::new(vector.len(), 4, 42));
+        let prepared_query = Box::new(quantizer.prepare_ip_query(&query));
+        let encoded = quantizer.encode(&vector);
+        let mut code_bytes = encoded.mse_packed.clone();
+        code_bytes.extend_from_slice(&encoded.qjl_packed);
+        let cached_quantizer = Arc::into_raw(quantizer);
+        let prepared_query = Box::into_raw(prepared_query);
+
+        let mut opaque = TqScanOpaque {
+            cached_quantizer,
+            prepared_query,
+            ..TqScanOpaque::default()
+        };
+        let opaque_ptr = &mut opaque as *mut TqScanOpaque;
+
+        let score =
+            unsafe { score_scan_element_result(&mut *opaque_ptr, encoded.gamma, &code_bytes) };
+
+        assert!(score.is_finite());
+        assert_eq!(unsafe { (*opaque_ptr).stats_delta.total_distance_calcs }, 1);
+
+        free_scan_prepared_query(&mut opaque);
     }
 
     #[test]
