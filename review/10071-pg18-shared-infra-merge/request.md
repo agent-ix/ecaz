@@ -1,6 +1,6 @@
 # Review Request: PG18 Shared-Infra Merge And Wiring
 
-Current head: `c13a6aa`
+Current head: `01f28d1`
 
 Scope:
 - `Cargo.toml`
@@ -68,8 +68,16 @@ What changed:
 - Finished ReadStream / async-I/O shared wiring:
   - pure callback/state helpers in `src/am/common/stream.rs` now map to PG18 callback signatures
   - scan graph prefetch, linear fallback reads, and vacuum tuple counting all have PG18-specific
-    ReadStream attach points
+  ReadStream attach points
   - PG17 keeps the legacy buffer-read fallback path
+- Finished the remaining PG18 validation-facing cleanup:
+  - `build.rs` now asks the active PG18 `pg_config` for `cppflags` before compiling the pgstat shim
+  - PG18 `ReadStream` call sites now use the correct `InvalidBuffer`/`Buffer` comparisons
+  - PG18 test helpers now match the current `index_beginscan` signature
+  - PG18 module identity now uses explicit `pg_module_magic!` name/version fields so
+    `pg_get_loaded_modules()` reports `tqvector` / `0.1.1` correctly under `pgrx 0.17`
+  - PG18 EXPLAIN tests now validate the structured JSON output path that actually preserves the
+    `TQVector Stats` group label in core PostgreSQL
 - Updated docs/spec/task text so the staged PG18 boundary is accurate after the merge.
 
 Live now:
@@ -86,22 +94,16 @@ Live now:
 Still gated:
 - Shared pgstat activation still requires runtime preload configuration:
   `custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL`
-- This machine still cannot run PG18 build/test/lint because `pgrx` does not manage a PG18 install.
 - No pipeline-specific or storage-format-specific PG18 enablement was added in this slice.
 
 Validation:
 - Passed:
-  - `cargo test --no-default-features --features pg17`
-  - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-  - `bash scripts/run_pgrx_pg17_test.sh`
-- Attempted but blocked by local environment:
   - `cargo test`
   - `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
   - `cargo pgrx test pg18`
-- The PG18 failure mode on this machine is consistent and environment-specific:
-  `Postgres 'pg18' is not managed by pgrx`
-  `~/.pgrx/config.toml` only advertises pg17, and the local `~/.pgrx/18.3` tree does not contain a
-  built `pgrx-install/bin/pg_config`.
+  - `cargo test --no-default-features --features pg17`
+  - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
+  - `bash scripts/run_pgrx_pg17_test.sh`
 
 Review focus:
 - Whether the PG18 callback wiring is attached at the right shared-AM seams without leaking
@@ -111,6 +113,8 @@ Review focus:
   on preload-time activation, with backend-local fallback left in place for ordinary sessions
 - Whether the ReadStream integration points sit in the right shared/module boundaries and preserve
   PG17 fallback behavior
+- Whether the explicit `pg_module_magic!` name/version assignment is the right repo-local
+  workaround for current `pgrx 0.17` PG18 shorthand behavior
 - Whether the docs/spec/task updates accurately describe what is live versus still blocked
 
 Questions to answer:
@@ -120,3 +124,5 @@ Questions to answer:
   registration/snapshot logic move out of C once `pgrx` exposes better PG18 internals?
 - Is the shared-snapshot plus backend-local fallback behavior the right contract for
   `tqvector_stats()` until preload-aware PG18 validation is available in this repo?
+- Should the `pg_module_magic!(name, version)` shorthand issue be upstreamed as a `pgrx` bug now
+  that this branch carries an explicit-field workaround?
