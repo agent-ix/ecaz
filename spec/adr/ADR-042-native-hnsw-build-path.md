@@ -1,7 +1,7 @@
 ---
 id: ADR-042
 title: "Native HNSW build path — retire hnsw_rs from production BUILD"
-status: PROPOSED
+status: DECIDED
 impact: Affects FR-008 (HNSW build), FR-016 (HNSW insert), FR-021 (parallel build), ADR-002, ADR-003, ADR-030
 date: 2026-04-18
 ---

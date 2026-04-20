@@ -1,7 +1,8 @@
 ---
 id: ADR-002
 title: "hnsw_rs has no delete — own the graph in Postgres pages"
-status: DECIDED
+status: SUPERSEDED
+superseded_by: ADR-042
 impact: HIGH for FR-010 (HNSW vacuum)
 date: 2026-04-03
 ---

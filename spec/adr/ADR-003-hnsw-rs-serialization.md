@@ -1,7 +1,8 @@
 ---
 id: ADR-003
 title: "Walk hnsw_rs graph and write to Postgres pages"
-status: DECIDED
+status: SUPERSEDED
+superseded_by: ADR-042
 impact: HIGH for FR-007 (page layout), FR-008 (build)
 date: 2026-04-03
 ---
