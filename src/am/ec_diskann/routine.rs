@@ -9,9 +9,11 @@ use crate::{
 
 use super::{
     ambuild, insert, options,
-    reader::PersistedGraphReader,
+    reader::{PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
-    scan_query::{build_grouped_pq_lut_from_persisted, encode_query_srht, read_grouped_codebook_chain},
+    scan_query::{
+        build_grouped_pq_lut_from_persisted, encode_query_srht, read_grouped_codebook_chain,
+    },
     scan_state::{self, DiskannScanOpaque},
 };
 
@@ -96,28 +98,35 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
 
             let source_vector = ambuild::ecvector_datum_to_vec(datum);
             let heap_tid = ambuild::decode_heap_tid(heap_tid);
-            let metadata = insert::read_metadata_page(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to read metadata: {e}"));
+            let metadata = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to read metadata: {e}")
+            });
 
             if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
                 let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
                     if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
                         return Ok(false);
                     }
-                    let output =
-                        insert::bootstrap_empty_insert_output(index_relation, heap_tid, &source_vector)?;
+                    let output = insert::bootstrap_empty_insert_output(
+                        index_relation,
+                        heap_tid,
+                        &source_vector,
+                    )?;
                     ambuild::write_data_pages(index_relation, &output.chain);
                     *metadata = output.metadata;
                     Ok(true)
                 })
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}"));
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}")
+                });
                 if bootstrapped {
                     return false;
                 }
             }
 
-            let refreshed = insert::read_metadata_page(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}"));
+            let refreshed = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}")
+            });
             if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
                 pgrx::error!(
                     "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
@@ -126,26 +135,36 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 );
             }
 
-            let (materialized_metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}"));
-            let payload =
-                insert::derive_insert_payload_from_persisted(&materialized_metadata, &chain, &source_vector)
-                    .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}"));
+            let (materialized_metadata, chain) =
+                scan_state::materialize_chain_from_index(index_relation).unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}")
+                });
+            let payload = insert::derive_insert_payload_from_persisted(
+                &materialized_metadata,
+                &chain,
+                &source_vector,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}")
+            });
             let reader = PersistedGraphReader::new(
                 &chain,
                 materialized_metadata.graph_degree_r,
                 scan_state::metadata_binary_word_count(&materialized_metadata),
                 scan_state::metadata_search_code_len(&materialized_metadata),
             );
-            let duplicate_candidates =
-                insert::duplicate_candidate_tids_by_payload(&reader, &materialized_metadata, &payload)
-                    .unwrap_or_else(|e| {
-                        pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
-                    });
+            let duplicate_candidates = insert::duplicate_candidate_tids_by_payload(
+                &reader,
+                &materialized_metadata,
+                &payload,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
+            });
+            let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+            });
             if !duplicate_candidates.is_empty() {
-                let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
-                    pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
-                });
                 let slot = scan_state::allocate_heap_slot(heap_relation).unwrap_or_else(|e| {
                     pgrx::error!("ec_diskann aminsert could not allocate duplicate-probe slot: {e}")
                 });
@@ -157,24 +176,16 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
                         return false;
                     }
-                    if scan_state::fetch_heap_row_version(
+                    let Ok(existing_vector) = fetch_heap_source_vector(
                         heap_relation,
-                        candidate_tuple.primary_heaptid,
                         snapshot,
                         slot,
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                    let Ok(datum) = scan_state::required_slot_datum(
-                        slot,
                         source_attnum,
+                        candidate_tuple.primary_heaptid,
                         "duplicate probe source vector",
                     ) else {
                         return false;
                     };
-                    let existing_vector = ambuild::ecvector_datum_to_vec(datum);
                     existing_vector == source_vector
                 });
                 pg_sys::ExecDropSingleTupleTableSlot(slot);
@@ -187,7 +198,128 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 }
             }
 
-            pgrx::error!("ec_diskann non-empty aminsert is not yet implemented (task 17 phase 7)");
+            let entry_point = scan::resolve_entry_point(&reader, materialized_metadata.entry_point)
+                .unwrap_or_else(|e| {
+                    pgrx::error!(
+                        "ec_diskann unique insert planning could not resolve entry point: {e}"
+                    )
+                });
+            let Some(entry_point) = entry_point else {
+                pgrx::error!("ec_diskann unique insert planning found no live entry point");
+            };
+
+            let group_count = usize::from(materialized_metadata.search_subvector_count);
+            let group_size = usize::from(materialized_metadata.search_subvector_dim);
+            if group_count == 0 || group_size == 0 {
+                pgrx::error!(
+                    "ec_diskann unique insert planning requires grouped-PQ metadata: group_count={}, group_size={}",
+                    group_count,
+                    group_size
+                );
+            }
+            let build_list_size = usize::from(materialized_metadata.build_list_size_l);
+            if build_list_size == 0 {
+                pgrx::error!("ec_diskann unique insert planning requires build_list_size_l > 0");
+            }
+            let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+                &chain,
+                materialized_metadata.grouped_codebook_head,
+                group_count,
+                group_size,
+                materialized_metadata.dimensions as usize,
+                materialized_metadata.seed,
+                &source_vector,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!(
+                    "ec_diskann unique insert planning failed to build grouped-PQ LUT: {e}"
+                )
+            });
+            if helper_group_count != group_count {
+                pgrx::error!(
+                    "ec_diskann unique insert planning grouped-PQ helper returned group_count {}, expected {}",
+                    helper_group_count,
+                    group_count
+                );
+            }
+
+            let slot = scan_state::allocate_heap_slot(heap_relation).unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert planning could not allocate heap slot: {e}")
+            });
+            let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+            let rerank_error = RefCell::new(None::<String>);
+            let mut visited = VisitedState::new();
+            let exact_candidates = scan::vamana_scan_with(
+                &reader,
+                &mut visited,
+                ScanParams {
+                    entry_point,
+                    list_size: build_list_size,
+                    rerank_budget: build_list_size,
+                    top_k: build_list_size,
+                },
+                |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
+                |heap_tid| match exact_heap_rerank_distance(
+                    heap_relation,
+                    snapshot,
+                    slot,
+                    source_attnum,
+                    &source_vector,
+                    heap_tid,
+                ) {
+                    Ok(distance) => distance,
+                    Err(error) => {
+                        if rerank_error.borrow().is_none() {
+                            *rerank_error.borrow_mut() = Some(error);
+                        }
+                        f32::INFINITY
+                    }
+                },
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert planning scan failed: {e}"));
+            if let Some(error) = rerank_error.into_inner() {
+                pg_sys::ExecDropSingleTupleTableSlot(slot);
+                pgrx::error!("ec_diskann unique insert planning exact rerank failed: {error}");
+            }
+            let planning_candidates = exact_candidates
+                .into_iter()
+                .map(|candidate| {
+                    let source_vector = fetch_heap_source_vector(
+                        heap_relation,
+                        snapshot,
+                        slot,
+                        source_attnum,
+                        candidate.primary_heaptid,
+                        "forward-neighbor planning source vector",
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_diskann unique insert planning could not materialize candidate heap vector: {e}"
+                        )
+                    });
+                    insert::ForwardNeighborCandidate {
+                        tid: candidate.tid,
+                        source_vector,
+                    }
+                })
+                .collect::<Vec<_>>();
+            pg_sys::ExecDropSingleTupleTableSlot(slot);
+
+            let forward_neighbors = insert::select_insert_forward_neighbors(
+                &source_vector,
+                &planning_candidates,
+                materialized_metadata.alpha,
+                materialized_metadata.graph_degree_r as usize,
+            )
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_diskann unique insert forward-neighbor selection failed: {e}")
+            });
+            pgrx::error!(
+                "ec_diskann unique insert append/backlink writes are not yet implemented (task 17 phase 7): planned {} forward neighbors from entry ({},{})",
+                forward_neighbors.len(),
+                entry_point.block_number,
+                entry_point.offset_number
+            );
         })
     }
 }
@@ -258,8 +390,9 @@ unsafe extern "C-unwind" fn ec_diskann_ambeginscan(
             let opaque_state = DiskannScanOpaque::new(metadata, chain, options)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann ambeginscan failed: {e}"));
 
-            let opaque =
-                PgBox::<DiskannScanOpaque>::alloc_in_context(PgMemoryContexts::CurrentMemoryContext);
+            let opaque = PgBox::<DiskannScanOpaque>::alloc_in_context(
+                PgMemoryContexts::CurrentMemoryContext,
+            );
             ptr::write(opaque.as_ptr(), opaque_state);
             (*scan).opaque = opaque.into_pg().cast();
             scan
@@ -308,7 +441,9 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             if raw_query.is_empty() {
                 pgrx::error!("ec_diskann scan query must not be empty");
             }
-            if opaque.metadata.dimensions != 0 && raw_query.len() != opaque.metadata.dimensions as usize {
+            if opaque.metadata.dimensions != 0
+                && raw_query.len() != opaque.metadata.dimensions as usize
+            {
                 pgrx::error!(
                     "ec_diskann scan query dimension mismatch: index dim {}, query dim {}",
                     opaque.metadata.dimensions,
@@ -368,7 +503,9 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             opaque.query_lut =
                 build_grouped_pq_lut_f32(&opaque.query_rotated, &opaque.flat_codebooks, group_size);
             if helper_group_count != group_count || helper_lut != opaque.query_lut {
-                pgrx::error!("ec_diskann scan LUT reconstruction drifted from the persisted helper path");
+                pgrx::error!(
+                    "ec_diskann scan LUT reconstruction drifted from the persisted helper path"
+                );
             }
 
             let reader = PersistedGraphReader::new(
@@ -378,20 +515,26 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 opaque.search_code_len(),
             );
             let entry_point = scan::resolve_entry_point(&reader, opaque.metadata.entry_point)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan entry-point resolution failed: {e}"));
+                .unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan entry-point resolution failed: {e}")
+                });
             let Some(entry_point) = entry_point else {
                 opaque.rescan_called = true;
                 return;
             };
 
-            let heap_relation_state = scan_state::resolve_scan_heap_relation(scan)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap relation setup failed: {e}"));
+            let heap_relation_state =
+                scan_state::resolve_scan_heap_relation(scan).unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan heap relation setup failed: {e}")
+                });
             let snapshot_state = scan_state::resolve_scan_snapshot(scan)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann scan snapshot setup failed: {e}"));
             let slot = scan_state::allocate_heap_slot(heap_relation_state.0)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann scan heap slot setup failed: {e}"));
-            let source_attnum = indexed_ecvector_attnum((*scan).indexRelation)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann scan source-column resolution failed: {e}"));
+            let source_attnum =
+                indexed_ecvector_attnum((*scan).indexRelation).unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
+                });
             let rerank_error = RefCell::new(None::<String>);
             let results = scan::vamana_scan_with(
                 &reader,
@@ -404,13 +547,13 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                 },
                 |tuple| -grouped_pq_score_f32(&opaque.query_lut, group_count, &tuple.search_code),
                 |heap_tid| match exact_heap_rerank_distance(
-                        heap_relation_state.0,
-                        snapshot_state.0,
-                        slot,
-                        source_attnum,
-                        &raw_query,
-                        heap_tid,
-                    ) {
+                    heap_relation_state.0,
+                    snapshot_state.0,
+                    slot,
+                    source_attnum,
+                    &raw_query,
+                    heap_tid,
+                ) {
                     Ok(distance) => distance,
                     Err(error) => {
                         if rerank_error.borrow().is_none() {
@@ -518,13 +661,17 @@ unsafe fn exact_heap_rerank_distance(
     raw_query: &[f32],
     heap_tid: ItemPointer,
 ) -> Result<f32, String> {
-    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
-    let datum = unsafe {
-        scan_state::required_slot_datum(slot, source_attnum, "heap rerank source vector")?
+    let source_vector = unsafe {
+        fetch_heap_source_vector(
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            heap_tid,
+            "heap rerank source vector",
+        )?
     };
-    let source_vector = unsafe { ambuild::ecvector_datum_to_vec(datum) };
     if source_vector.len() != raw_query.len() {
-        unsafe { pg_sys::ExecClearTuple(slot) };
         return Err(format!(
             "ec_diskann heap rerank dimension mismatch: query dim {}, heap dim {}",
             raw_query.len(),
@@ -536,8 +683,22 @@ unsafe fn exact_heap_rerank_distance(
         .zip(source_vector.iter())
         .map(|(left, right)| left * right)
         .sum::<f32>();
-    unsafe { pg_sys::ExecClearTuple(slot) };
     Ok(distance)
+}
+
+unsafe fn fetch_heap_source_vector(
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    heap_tid: ItemPointer,
+    context: &str,
+) -> Result<Vec<f32>, String> {
+    unsafe { scan_state::fetch_heap_row_version(heap_relation, heap_tid, snapshot, slot)? };
+    let datum = unsafe { scan_state::required_slot_datum(slot, source_attnum, context)? };
+    let source_vector = unsafe { ambuild::ecvector_datum_to_vec(datum) };
+    unsafe { pg_sys::ExecClearTuple(slot) };
+    Ok(source_vector)
 }
 
 unsafe extern "C-unwind" fn ec_diskann_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
@@ -634,7 +795,11 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        assert_eq!(ordered_ids.len(), 2, "query should return the requested LIMIT");
+        assert_eq!(
+            ordered_ids.len(),
+            2,
+            "query should return the requested LIMIT"
+        );
         assert_eq!(
             ordered_ids[0], 1,
             "runtime ordered ec_diskann scan should return the nearest vector first"
@@ -684,7 +849,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_diskann_second_insert_still_errors() {
+    fn test_ec_diskann_unique_insert_hits_forward_planning_boundary() {
         Spi::run(
             "CREATE TABLE ec_diskann_second_insert_boundary (id bigint primary key, embedding ecvector)",
         )
@@ -706,10 +871,13 @@ mod tests {
                BEGIN
                  INSERT INTO ec_diskann_second_insert_boundary VALUES
                    (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42));
-                 RAISE EXCEPTION 'expected non-empty ec_diskann insert to fail in this slice';
+                 RAISE EXCEPTION 'expected unique ec_diskann insert planning to stop at the write boundary';
                EXCEPTION
                  WHEN OTHERS THEN
-                   IF SQLERRM NOT LIKE '%ec_diskann non-empty aminsert is not yet implemented%' THEN
+                   IF SQLERRM NOT LIKE '%ec_diskann unique insert append/backlink writes are not yet implemented%' THEN
+                     RAISE;
+                   END IF;
+                   IF SQLERRM NOT LIKE '%planned 1 forward neighbors%' THEN
                      RAISE;
                    END IF;
                END;

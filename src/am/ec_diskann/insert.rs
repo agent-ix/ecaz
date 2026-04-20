@@ -24,18 +24,19 @@ use crate::storage::page::{DataPageChain, ItemPointer};
 use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
+use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
 use super::{
     ambuild,
     build::{build_and_persist_vamana, BuildOutput, BuildParams},
     options,
     page::{
-        VAMANA_METADATA_BYTES, VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR,
+        VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, VAMANA_METADATA_BYTES,
         VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
     },
     persist::{stage_grouped_codebook_chain, NodePayload},
     reader::PersistedGraphReader,
+    vamana::{robust_prune, Candidate},
 };
-use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
 
 const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
 
@@ -43,6 +44,12 @@ const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
 pub(super) struct DerivedInsertPayload {
     pub(super) binary_words: Vec<u64>,
     pub(super) search_code: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct ForwardNeighborCandidate {
+    pub(super) tid: ItemPointer,
+    pub(super) source_vector: Vec<f32>,
 }
 
 pub(super) fn derive_insert_payload_from_persisted(
@@ -82,7 +89,9 @@ pub(super) fn derive_insert_payload_from_persisted(
         );
     }
     if metadata.grouped_codebook_head == ItemPointer::INVALID {
-        return Err("ec_diskann insert payload derivation requires persisted grouped codebooks".into());
+        return Err(
+            "ec_diskann insert payload derivation requires persisted grouped codebooks".into(),
+        );
     }
 
     let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
@@ -159,6 +168,60 @@ pub(super) fn duplicate_candidate_tids_by_payload(
         }
     }
     Ok(matches)
+}
+
+pub(super) fn select_insert_forward_neighbors(
+    source_vector: &[f32],
+    candidates: &[ForwardNeighborCandidate],
+    alpha: f32,
+    max_degree: usize,
+) -> Result<Vec<ItemPointer>, String> {
+    if source_vector.is_empty() {
+        return Err("ec_diskann insert planning requires a non-empty source vector".into());
+    }
+    if !(alpha.is_finite() && alpha >= 1.0) {
+        return Err(format!(
+            "ec_diskann insert planning alpha must be finite and >= 1.0, got {alpha}"
+        ));
+    }
+    if max_degree == 0 {
+        return Err("ec_diskann insert planning max_degree must be > 0".into());
+    }
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let source_distances = candidates
+        .iter()
+        .map(|candidate| source_inner_product_distance(source_vector, &candidate.source_vector))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut pairwise_distances = vec![vec![0.0_f32; candidates.len()]; candidates.len()];
+    for left in 0..candidates.len() {
+        for right in (left + 1)..candidates.len() {
+            let distance = source_inner_product_distance(
+                &candidates[left].source_vector,
+                &candidates[right].source_vector,
+            )?;
+            pairwise_distances[left][right] = distance;
+            pairwise_distances[right][left] = distance;
+        }
+    }
+
+    let initial = source_distances
+        .into_iter()
+        .enumerate()
+        .map(|(idx, distance)| Candidate {
+            node: idx as u32,
+            distance,
+        })
+        .collect::<Vec<_>>();
+    let kept = robust_prune(u32::MAX, initial, alpha, max_degree, |left, right| {
+        pairwise_distances[left as usize][right as usize]
+    });
+    Ok(kept
+        .into_iter()
+        .map(|idx| candidates[idx as usize].tid)
+        .collect())
 }
 
 #[derive(Debug, Clone)]
@@ -238,8 +301,12 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
         return Err("ec_diskann empty-index bootstrap requires a non-empty source vector".into());
     }
 
-    let dimensions = u16::try_from(source_vector.len())
-        .map_err(|_| format!("ec_diskann insert source dimension {} exceeds u16", source_vector.len()))?;
+    let dimensions = u16::try_from(source_vector.len()).map_err(|_| {
+        format!(
+            "ec_diskann insert source dimension {} exceeds u16",
+            source_vector.len()
+        )
+    })?;
     let seed = DEFAULT_QUANT_SEED;
     let group_size = ambuild::default_group_size(dimensions);
     let source_refs = vec![source_vector];
@@ -288,14 +355,32 @@ pub(super) unsafe fn bootstrap_empty_insert_output(
         has_binary_sidecar,
     };
 
-    let BuildOutput { mut metadata, persisted } =
-        build_and_persist_vamana(params, &payloads, |_, _| 0.0)?;
+    let BuildOutput {
+        mut metadata,
+        persisted,
+    } = build_and_persist_vamana(params, &payloads, |_, _| 0.0)?;
     let mut chain = persisted.chain;
     let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
     metadata.grouped_codebook_head = codebook_head;
     metadata.inserted_since_rebuild = 1;
 
     Ok(EmptyInsertBootstrapOutput { metadata, chain })
+}
+
+fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {
+    if left.len() != right.len() {
+        return Err(format!(
+            "ec_diskann exact distance dimension mismatch: left dim {}, right dim {}",
+            left.len(),
+            right.len()
+        ));
+    }
+    let ip = left
+        .iter()
+        .zip(right.iter())
+        .map(|(lhs, rhs)| lhs * rhs)
+        .sum::<f32>();
+    Ok((-ip).max(0.0))
 }
 
 #[cfg(test)]
@@ -320,17 +405,23 @@ mod tests {
 
     fn staged_metadata(
         with_binary_sidecar: bool,
-    ) -> (VamanaMetadataPage, DataPageChain, Vec<Vec<f32>>, training::GroupedPq4Model) {
+    ) -> (
+        VamanaMetadataPage,
+        DataPageChain,
+        Vec<Vec<f32>>,
+        training::GroupedPq4Model,
+    ) {
         let vectors = training_vectors();
         let refs: Vec<&[f32]> = vectors.iter().map(Vec::as_slice).collect();
         let dimensions = vectors[0].len();
         let seed = 42_u64;
         let group_size = 4_usize;
-        let model =
-            train_grouped_pq4_model(&refs, dimensions, seed, group_size, refs.len(), 6).expect("train");
+        let model = train_grouped_pq4_model(&refs, dimensions, seed, group_size, refs.len(), 6)
+            .expect("train");
 
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
-        let codebook_head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage codebooks");
+        let codebook_head =
+            stage_grouped_codebook_chain(&mut chain, &model).expect("stage codebooks");
 
         let mut metadata = VamanaMetadataPage::empty(32, 100, 1.2, dimensions as u16, seed);
         metadata.search_subvector_count = model.group_count as u16;
@@ -355,8 +446,7 @@ mod tests {
             derive_insert_payload_from_persisted(&metadata, &chain, source).expect("derive");
 
         let expected_search_code = training::derive_grouped_pq4_code(source, &model);
-        let quantizer =
-            ProdQuantizer::cached(source.len(), DEFAULT_QUANT_BITS, metadata.seed);
+        let quantizer = ProdQuantizer::cached(source.len(), DEFAULT_QUANT_BITS, metadata.seed);
         let encoded = quantizer.encode(source);
         let mut code = encoded.mse_packed;
         code.extend_from_slice(&encoded.qjl_packed);
@@ -375,7 +465,10 @@ mod tests {
         let observed =
             derive_insert_payload_from_persisted(&metadata, &chain, source).expect("derive");
 
-        assert_eq!(observed.search_code, training::derive_grouped_pq4_code(source, &model));
+        assert_eq!(
+            observed.search_code,
+            training::derive_grouped_pq4_code(source, &model)
+        );
         assert!(
             observed.binary_words.is_empty(),
             "payload should omit binary sidecar words when the flag is clear"
@@ -483,7 +576,11 @@ mod tests {
         let matches =
             duplicate_candidate_tids_by_payload(&reader, &metadata, &payload).expect("lookup");
 
-        assert_eq!(matches.len(), 2, "both live payload matches should be returned");
+        assert_eq!(
+            matches.len(),
+            2,
+            "both live payload matches should be returned"
+        );
         assert_eq!(matches[0].block_number, 1);
         assert_eq!(matches[0].offset_number, 1);
     }
@@ -556,5 +653,60 @@ mod tests {
             tid.is_empty(),
             "deleted or stripped tuples must not be eligible duplicate targets"
         );
+    }
+
+    #[test]
+    fn in_008_forward_neighbor_selection_prunes_on_exact_vectors() {
+        let source = vec![1.0_f32, 0.0];
+        let candidates = vec![
+            ForwardNeighborCandidate {
+                tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                source_vector: vec![0.0, 1.0],
+            },
+            ForwardNeighborCandidate {
+                tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 2,
+                },
+                source_vector: vec![0.0, -1.0],
+            },
+            ForwardNeighborCandidate {
+                tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 3,
+                },
+                source_vector: vec![-1.0, 0.0],
+            },
+        ];
+
+        let selected =
+            select_insert_forward_neighbors(&source, &candidates, 1.2, 2).expect("select");
+
+        assert_eq!(
+            selected,
+            vec![candidates[0].tid, candidates[1].tid],
+            "the exact-vector alpha prune should retain the two orthogonal neighbors"
+        );
+    }
+
+    #[test]
+    fn in_009_forward_neighbor_selection_rejects_dimension_mismatch() {
+        let err = select_insert_forward_neighbors(
+            &[1.0, 0.0],
+            &[ForwardNeighborCandidate {
+                tid: ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                source_vector: vec![1.0, 0.0, -1.0],
+            }],
+            1.2,
+            4,
+        )
+        .expect_err("dimension mismatch should fail");
+        assert!(err.contains("dimension mismatch"), "got: {err}");
     }
 }
