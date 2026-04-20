@@ -122,9 +122,59 @@ pub(crate) fn stream_snapshot() -> ReadStreamSnapshot {
         linear_stream_mode: linear.stream_mode,
         graph_stream_access_pattern: graph.access_pattern,
         linear_stream_access_pattern: linear.access_pattern,
-        pg18_callback_surface_ready: false,
-        pg18_scan_wiring_ready: false,
-        pg18_vacuum_wiring_ready: false,
+        pg18_callback_surface_ready: cfg!(feature = "pg18"),
+        pg18_scan_wiring_ready: cfg!(feature = "pg18"),
+        pg18_vacuum_wiring_ready: cfg!(feature = "pg18"),
+    }
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn write_stream_block(per_buffer_data: *mut std::ffi::c_void, block_number: u32) {
+    let block_slot = per_buffer_data.cast::<pg_sys::BlockNumber>();
+    if !block_slot.is_null() {
+        unsafe {
+            *block_slot = block_number;
+        }
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn graph_prefetch_cb(
+    _stream: *mut pg_sys::ReadStream,
+    callback_private_data: *mut std::ffi::c_void,
+    per_buffer_data: *mut std::ffi::c_void,
+) -> pg_sys::BlockNumber {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &mut *callback_private_data.cast::<GraphPrefetchState>();
+            match graph_prefetch_callback(state) {
+                ReadStreamCallbackResult::Block(block_number) => {
+                    write_stream_block(per_buffer_data, block_number);
+                    block_number
+                }
+                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+            }
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn linear_prefetch_cb(
+    _stream: *mut pg_sys::ReadStream,
+    callback_private_data: *mut std::ffi::c_void,
+    per_buffer_data: *mut std::ffi::c_void,
+) -> pg_sys::BlockNumber {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let state = &mut *callback_private_data.cast::<LinearPrefetchState>();
+            match linear_prefetch_callback(state) {
+                ReadStreamCallbackResult::Block(block_number) => {
+                    write_stream_block(per_buffer_data, block_number);
+                    block_number
+                }
+                ReadStreamCallbackResult::EndOfStream => pg_sys::InvalidBlockNumber,
+            }
+        })
     }
 }
 
@@ -137,7 +187,7 @@ mod tests {
     };
 
     #[test]
-    fn stream_snapshot_stays_explicitly_unwired_until_pg18_support_exists() {
+    fn stream_snapshot_matches_build_target() {
         assert_eq!(
             stream_snapshot(),
             ReadStreamSnapshot {
@@ -145,9 +195,9 @@ mod tests {
                 linear_stream_mode: "READ_STREAM_SEQUENTIAL",
                 graph_stream_access_pattern: "random",
                 linear_stream_access_pattern: "sequential",
-                pg18_callback_surface_ready: false,
-                pg18_scan_wiring_ready: false,
-                pg18_vacuum_wiring_ready: false,
+                pg18_callback_surface_ready: cfg!(feature = "pg18"),
+                pg18_scan_wiring_ready: cfg!(feature = "pg18"),
+                pg18_vacuum_wiring_ready: cfg!(feature = "pg18"),
             }
         );
     }
@@ -264,3 +314,5 @@ mod tests {
         );
     }
 }
+#[cfg(feature = "pg18")]
+use pgrx::pg_sys;

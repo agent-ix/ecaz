@@ -14,6 +14,10 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
 
     amroutine.amcanorder = false;
     amroutine.amcanorderbyop = true;
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amconsistentordering = true;
+    }
     amroutine.amcanbackward = false;
     amroutine.amcanunique = false;
     amroutine.amcanmulticol = false;
@@ -39,6 +43,10 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amvacuumcleanup = Some(vacuum::ec_hnsw_amvacuumcleanup);
     amroutine.amcanreturn = None;
     amroutine.amcostestimate = Some(cost::ec_hnsw_amcostestimate);
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amgettreeheight = Some(cost::ec_hnsw_amgettreeheight);
+    }
     amroutine.amoptions = Some(options::ec_hnsw_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
@@ -54,6 +62,11 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amestimateparallelscan = None;
     amroutine.aminitparallelscan = None;
     amroutine.amparallelrescan = None;
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amtranslatestrategy = Some(cost::ec_hnsw_amtranslatestrategy);
+        amroutine.amtranslatecmptype = Some(cost::ec_hnsw_amtranslatecmptype);
+    }
 
     amroutine
 }

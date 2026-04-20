@@ -57,6 +57,12 @@ pub(crate) unsafe fn planner_integration_snapshot(
     unsafe { shared::planner_integration_snapshot(index_relation) }
 }
 
+pub(crate) unsafe fn explain_counters_from_index_scan_state(
+    index_state: *mut pgrx::pg_sys::IndexScanState,
+) -> explain::TqExplainCounters {
+    unsafe { scan::explain_counters_from_index_scan_state(index_state) }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
 pub(crate) use self::shared::{

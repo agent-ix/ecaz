@@ -96,8 +96,8 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
 pub(crate) fn explain_option_snapshot() -> ExplainOptionSnapshot {
     ExplainOptionSnapshot {
         option_name: "tqvector",
-        pg18_custom_explain_option_ready: false,
-        pg18_explain_per_node_hook_ready: false,
+        pg18_custom_explain_option_ready: cfg!(feature = "pg18"),
+        pg18_explain_per_node_hook_ready: cfg!(feature = "pg18"),
     }
 }
 
@@ -186,6 +186,160 @@ impl TqExplainCounters {
     }
 }
 
+#[cfg(feature = "pg18")]
+static mut PREVIOUS_EXPLAIN_PER_NODE_HOOK: pg_sys::explain_per_node_hook_type = None;
+#[cfg(feature = "pg18")]
+static mut TQVECTOR_EXPLAIN_REGISTERED: bool = false;
+
+#[cfg(feature = "pg18")]
+fn explain_extension_id() -> i32 {
+    unsafe { pg_sys::GetExplainExtensionId(c"tqvector".as_ptr()) }
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn explain_option_enabled(es: *mut pg_sys::ExplainState) -> bool {
+    let state = unsafe { pg_sys::GetExplainExtensionState(es, explain_extension_id()) };
+    if state.is_null() {
+        return false;
+    }
+
+    unsafe { *(state.cast::<bool>()) }
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn explain_node_kind(planstate: *mut pg_sys::PlanState) -> ExplainNodeKind {
+    match unsafe { (*planstate).type_ } {
+        pg_sys::NodeTag::T_IndexScanState => ExplainNodeKind::IndexScan,
+        _ => ExplainNodeKind::Other,
+    }
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -> Option<String> {
+    let index_relation = unsafe { (*index_state).iss_RelationDesc };
+    if index_relation.is_null() {
+        return None;
+    }
+
+    let am_oid = unsafe { (*(*index_relation).rd_rel).relam };
+    let am_name_ptr = unsafe { pg_sys::get_am_name(am_oid) };
+    if am_name_ptr.is_null() {
+        return None;
+    }
+
+    let name = unsafe { CStr::from_ptr(am_name_ptr) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { pg_sys::pfree(am_name_ptr.cast()) };
+    Some(name)
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn emit_explain_properties(
+    es: *mut pg_sys::ExplainState,
+    counters: TqExplainCounters,
+) {
+    let group = explain_output_group();
+    let group_label = CString::new(group.group_label).expect("group label should not contain NUL");
+    unsafe {
+        pg_sys::ExplainOpenGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
+    }
+
+    for property in counters.explain_properties() {
+        let property_name =
+            CString::new(property.property_name).expect("property name should not contain NUL");
+        unsafe {
+            match property.value {
+                ExplainPropertyValue::Integer(value) => pg_sys::ExplainPropertyInteger(
+                    property_name.as_ptr(),
+                    ptr::null(),
+                    i64::from(value),
+                    es,
+                ),
+                ExplainPropertyValue::Bool(value) => {
+                    pg_sys::ExplainPropertyBool(property_name.as_ptr(), value, es)
+                }
+            }
+        }
+    }
+
+    unsafe {
+        pg_sys::ExplainCloseGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
+    }
+}
+
+#[cfg(feature = "pg18")]
+unsafe extern "C-unwind" fn tqvector_explain_option_handler(
+    es: *mut pg_sys::ExplainState,
+    opt: *mut pg_sys::DefElem,
+    _pstate: *mut pg_sys::ParseState,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let enabled = pg_sys::defGetBoolean(opt);
+            let state = pg_sys::palloc0(std::mem::size_of::<bool>()).cast::<bool>();
+            if state.is_null() {
+                pgrx::error!("tqvector failed to allocate EXPLAIN option state");
+            }
+            *state = enabled;
+            pg_sys::SetExplainExtensionState(es, explain_extension_id(), state.cast::<c_void>());
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
+    planstate: *mut pg_sys::PlanState,
+    ancestors: *mut pg_sys::List,
+    relationship: *const std::ffi::c_char,
+    plan_name: *const std::ffi::c_char,
+    es: *mut pg_sys::ExplainState,
+) {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            if !planstate.is_null()
+                && !es.is_null()
+                && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
+            {
+                let index_state = planstate.cast::<pg_sys::IndexScanState>();
+                let access_method_name = explain_access_method_name(index_state)
+                    .unwrap_or_else(|| "<unknown>".to_owned());
+                let context = ExplainHookContext {
+                    explain_option_enabled: explain_option_enabled(es),
+                    node_kind: explain_node_kind(planstate),
+                    access_method_name: access_method_name.as_str(),
+                };
+                if should_emit_explain_properties(context) {
+                    let counters =
+                        crate::am::ec_hnsw::explain_counters_from_index_scan_state(index_state);
+                    emit_explain_properties(es, counters);
+                }
+            }
+
+            if let Some(previous_hook) = PREVIOUS_EXPLAIN_PER_NODE_HOOK {
+                previous_hook(planstate, ancestors, relationship, plan_name, es);
+            }
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe fn register_pg18_explain_hooks() {
+    unsafe {
+        if TQVECTOR_EXPLAIN_REGISTERED {
+            return;
+        }
+
+        pg_sys::RegisterExtensionExplainOption(
+            c"tqvector".as_ptr(),
+            Some(tqvector_explain_option_handler),
+        );
+        PREVIOUS_EXPLAIN_PER_NODE_HOOK = pg_sys::explain_per_node_hook;
+        pg_sys::explain_per_node_hook = Some(tqvector_explain_per_node_hook);
+        TQVECTOR_EXPLAIN_REGISTERED = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -196,13 +350,13 @@ mod tests {
     };
 
     #[test]
-    fn explain_option_snapshot_stays_explicitly_unwired_until_pg18_support_exists() {
+    fn explain_option_snapshot_matches_build_target() {
         assert_eq!(
             explain_option_snapshot(),
             ExplainOptionSnapshot {
                 option_name: "tqvector",
-                pg18_custom_explain_option_ready: false,
-                pg18_explain_per_node_hook_ready: false,
+                pg18_custom_explain_option_ready: cfg!(feature = "pg18"),
+                pg18_explain_per_node_hook_ready: cfg!(feature = "pg18"),
             }
         );
     }
@@ -377,3 +531,10 @@ mod tests {
         }));
     }
 }
+#[cfg(feature = "pg18")]
+use std::ffi::{c_void, CStr, CString};
+#[cfg(feature = "pg18")]
+use std::ptr;
+
+#[cfg(feature = "pg18")]
+use pgrx::pg_sys;

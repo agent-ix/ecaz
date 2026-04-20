@@ -1,3 +1,6 @@
+#[cfg(feature = "pg18")]
+use std::sync::atomic::{AtomicU64, Ordering};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StatsSnapshot {
     pub function_name: &'static str,
@@ -33,7 +36,128 @@ pub(crate) fn stats_snapshot() -> StatsSnapshot {
     StatsSnapshot {
         function_name: "tqvector_stats",
         pg18_pgstat_kind_ready: false,
-        pg18_sql_function_ready: false,
+        pg18_sql_function_ready: cfg!(feature = "pg18"),
+    }
+}
+
+#[cfg(feature = "pg18")]
+static TOTAL_DISTANCE_CALCS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static TOTAL_GRAPH_HOPS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static TOTAL_LINEAR_PAGES: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static TOTAL_SCANS_STARTED: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static TOTAL_SCANS_BOOTSTRAP_ONLY: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static QUANTIZER_CACHE_HITS: AtomicU64 = AtomicU64::new(0);
+#[cfg(feature = "pg18")]
+static QUANTIZER_CACHE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn pgstat_kind_blocker() -> Option<&'static str> {
+    #[cfg(feature = "pg18")]
+    {
+        Some(
+            "custom pgstat kind registration still needs shared_preload_libraries setup plus pgrx bindings or a shim for pgstat_internal.h",
+        )
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        None
+    }
+}
+
+#[cfg(feature = "pg18")]
+fn load_counter(counter: &AtomicU64) -> u64 {
+    counter.load(Ordering::Relaxed)
+}
+
+#[cfg(feature = "pg18")]
+fn increment(counter: &AtomicU64) {
+    counter.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn current_backend_stats_counters() -> TqStatsCounters {
+    TqStatsCounters {
+        total_distance_calcs: load_counter(&TOTAL_DISTANCE_CALCS),
+        total_graph_hops: load_counter(&TOTAL_GRAPH_HOPS),
+        total_linear_pages: load_counter(&TOTAL_LINEAR_PAGES),
+        total_scans_started: load_counter(&TOTAL_SCANS_STARTED),
+        total_scans_bootstrap_only: load_counter(&TOTAL_SCANS_BOOTSTRAP_ONLY),
+        quantizer_cache_hits: load_counter(&QUANTIZER_CACHE_HITS),
+        quantizer_cache_misses: load_counter(&QUANTIZER_CACHE_MISSES),
+    }
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn current_backend_stats_counters() -> TqStatsCounters {
+    TqStatsCounters::default()
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_distance_calc() {
+    increment(&TOTAL_DISTANCE_CALCS);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_distance_calc() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_graph_hop() {
+    increment(&TOTAL_GRAPH_HOPS);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_graph_hop() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_linear_page() {
+    increment(&TOTAL_LINEAR_PAGES);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_linear_page() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_scan_started() {
+    increment(&TOTAL_SCANS_STARTED);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_scan_started() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_bootstrap_only_scan() {
+    increment(&TOTAL_SCANS_BOOTSTRAP_ONLY);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_bootstrap_only_scan() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_quantizer_cache_hit() {
+    increment(&QUANTIZER_CACHE_HITS);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_quantizer_cache_hit() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) fn record_quantizer_cache_miss() {
+    increment(&QUANTIZER_CACHE_MISSES);
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn record_quantizer_cache_miss() {}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe fn register_pg18_stats() {
+    if let Some(_blocker) = pgstat_kind_blocker() {
+        // `_PG_init()` still centralizes PG18 diagnostics setup so the blocker
+        // stays explicit until shared-preload registration is implemented.
     }
 }
 
@@ -102,13 +226,13 @@ mod tests {
     use super::{stats_snapshot, StatsSnapshot, TqStatsCounters, TqStatsSummary};
 
     #[test]
-    fn stats_snapshot_stays_explicitly_unwired_until_pg18_support_exists() {
+    fn stats_snapshot_matches_build_target() {
         assert_eq!(
             stats_snapshot(),
             StatsSnapshot {
                 function_name: "tqvector_stats",
                 pg18_pgstat_kind_ready: false,
-                pg18_sql_function_ready: false,
+                pg18_sql_function_ready: cfg!(feature = "pg18"),
             }
         );
     }

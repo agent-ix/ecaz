@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint test pg-test deny audit-unsafe build install clean
+.PHONY: fmt fmt-check lint lint-pg17 test pg-test pg-test-pg17 deny audit-unsafe build install clean
 .PHONY: bench bench-iai dhat-encode dhat-score proptest layout-check miri
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode
 .PHONY: ci-quick ci-nightly
@@ -13,6 +13,9 @@ fmt-check:
 
 ## Run Clippy (deny warnings)
 lint:
+	cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings
+
+lint-pg17:
 	cargo clippy --all-targets --no-default-features --features pg17,bench -- -D warnings
 
 ## Run unit tests (no Postgres required)
@@ -21,7 +24,10 @@ test:
 
 ## Run pgrx integration tests (requires: cargo pgrx init)
 pg-test:
-	cargo pgrx test
+	cargo pgrx test pg18
+
+pg-test-pg17:
+	cargo pgrx test pg17
 
 ## Check dependency licenses
 deny:

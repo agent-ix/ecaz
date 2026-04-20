@@ -515,6 +515,47 @@ where
     }
 }
 
+#[cfg(feature = "pg18")]
+pub(crate) unsafe fn with_graph_storage_tuple_from_buffer<R, F>(
+    buffer: pg_sys::Buffer,
+    element_tid: page::ItemPointer,
+    storage: GraphStorageDescriptor,
+    f: F,
+) -> R
+where
+    F: FnOnce(GraphTupleRef<'_>) -> R,
+{
+    match storage {
+        GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
+            read_page_tuple_from_buffer(buffer, element_tid, "element", |tuple_bytes| {
+                Ok(f(GraphTupleRef::Scalar(page::TqElementTupleRef::decode(
+                    tuple_bytes, code_len,
+                )?)))
+            })
+        },
+        GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
+            read_page_tuple_from_buffer(buffer, element_tid, "turbo hot", |tuple_bytes| {
+                Ok(f(GraphTupleRef::TurboHot(page::TqTurboHotTupleRef::decode(
+                    tuple_bytes,
+                    layout.binary_word_count,
+                )?)))
+            })
+        },
+        GraphStorageDescriptor::PqFastScan(layout) => unsafe {
+            read_page_tuple_from_buffer(buffer, element_tid, "grouped hot", |tuple_bytes| {
+                Ok(f(GraphTupleRef::GroupedHot(
+                    page::TqGroupedHotTupleRef::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )?,
+                )))
+            })
+        },
+    }
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 pub(crate) unsafe fn with_grouped_rerank_tuple<R, F>(
     index_relation: pg_sys::Relation,
@@ -1605,6 +1646,45 @@ where
     let decoded = decode(tuple_bytes);
     unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     decoded
+}
+
+#[cfg(feature = "pg18")]
+unsafe fn read_page_tuple_from_buffer<T, DecodeFn>(
+    buffer: pg_sys::Buffer,
+    tuple_tid: page::ItemPointer,
+    tuple_kind: &str,
+    decode: DecodeFn,
+) -> Result<T, String>
+where
+    DecodeFn: FnOnce(&[u8]) -> Result<T, String>,
+{
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
+    if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
+        pgrx::error!(
+            "ec_hnsw graph read found {tuple_kind} tuple offset {} out of range on block {}",
+            tuple_tid.offset_number,
+            tuple_tid.block_number
+        );
+    }
+
+    let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
+    if item_id.lp_flags() == 0 {
+        pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");
+    }
+
+    let tuple_offset = item_id.lp_off() as usize;
+    let tuple_len = item_id.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        pgrx::error!(
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
+            tuple_tid.block_number
+        );
+    }
+
+    let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+    decode(tuple_bytes)
 }
 
 #[cfg(test)]

@@ -36,7 +36,7 @@ pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
 
 [dependencies]
-pgrx = "0.18"   # or whichever version adds pg18 support
+pgrx = "0.17"
 ```
 
 ### Conditional Compilation Strategy
@@ -87,7 +87,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
     #[cfg(feature = "pg18")]
     {
         register_explain_option();
-        register_pgstat_kind();
+        register_pg18_stats();
     }
 }
 ```
@@ -104,4 +104,4 @@ pub unsafe extern "C-unwind" fn _PG_init() {
 `cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
 
 ### FR-027-AC-4: _PG_init called
-On PG18, `CREATE EXTENSION tqvector` SHALL invoke `_PG_init`, registering the EXPLAIN option and pgstat kind.
+On PG18, `CREATE EXTENSION tqvector` SHALL invoke `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.

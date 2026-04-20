@@ -100,11 +100,28 @@ pub(crate) unsafe fn current_planner_cost_constants() -> PlannerCostConstants {
     }
 }
 
+#[cfg_attr(feature = "pg18", allow(dead_code))]
 pub(crate) fn metadata_fallback_tree_height(max_level: u8) -> PlannerTreeHeightInput {
     PlannerTreeHeightInput {
         tree_height: f64::from(max_level),
         source: "metadata_fallback",
         pg18_callback_ready: false,
+    }
+}
+
+pub(crate) fn resolved_tree_height_input(max_level: u8) -> PlannerTreeHeightInput {
+    #[cfg(feature = "pg18")]
+    {
+        PlannerTreeHeightInput {
+            tree_height: f64::from(amgettreeheight_callback_value(max_level)),
+            source: "amgettreeheight_callback",
+            pg18_callback_ready: true,
+        }
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        metadata_fallback_tree_height(max_level)
     }
 }
 
@@ -137,7 +154,59 @@ pub(crate) fn strategy_translation_snapshot() -> StrategyTranslationSnapshot {
     StrategyTranslationSnapshot {
         ordering_strategy: 1,
         ordering_compare_type: amtranslatestrategy_callback(1),
-        pg18_callback_ready: false,
+        pg18_callback_ready: cfg!(feature = "pg18"),
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            let metadata = shared::read_metadata_page(rel);
+            amgettreeheight_callback_value(metadata.max_level)
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatestrategy(
+    strategy: pg_sys::StrategyNumber,
+    _opfamily: pg_sys::Oid,
+) -> pg_sys::CompareType::Type {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| match amtranslatestrategy_callback(i32::from(strategy)) {
+            PlannerCompareType::Invalid => pg_sys::CompareType::COMPARE_INVALID,
+            PlannerCompareType::Lt => pg_sys::CompareType::COMPARE_LT,
+            PlannerCompareType::Le => pg_sys::CompareType::COMPARE_LE,
+            PlannerCompareType::Eq => pg_sys::CompareType::COMPARE_EQ,
+            PlannerCompareType::Ge => pg_sys::CompareType::COMPARE_GE,
+            PlannerCompareType::Gt => pg_sys::CompareType::COMPARE_GT,
+            PlannerCompareType::Ne => pg_sys::CompareType::COMPARE_NE,
+            PlannerCompareType::Overlap => pg_sys::CompareType::COMPARE_OVERLAP,
+            PlannerCompareType::ContainedBy => pg_sys::CompareType::COMPARE_CONTAINED_BY,
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amtranslatecmptype(
+    compare_type: pg_sys::CompareType::Type,
+    _opfamily: pg_sys::Oid,
+) -> pg_sys::StrategyNumber {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            amtranslatecmptype_callback(match compare_type {
+                pg_sys::CompareType::COMPARE_LT => PlannerCompareType::Lt,
+                pg_sys::CompareType::COMPARE_LE => PlannerCompareType::Le,
+                pg_sys::CompareType::COMPARE_EQ => PlannerCompareType::Eq,
+                pg_sys::CompareType::COMPARE_GE => PlannerCompareType::Ge,
+                pg_sys::CompareType::COMPARE_GT => PlannerCompareType::Gt,
+                pg_sys::CompareType::COMPARE_NE => PlannerCompareType::Ne,
+                pg_sys::CompareType::COMPARE_OVERLAP => PlannerCompareType::Overlap,
+                pg_sys::CompareType::COMPARE_CONTAINED_BY => PlannerCompareType::ContainedBy,
+                _ => PlannerCompareType::Invalid,
+            }) as pg_sys::StrategyNumber
+        })
     }
 }
 
@@ -213,7 +282,7 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
             let index_info = (*path).indexinfo;
             let index_oid = (*index_info).indexoid;
             let index_relation = pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE);
-            let estimate = compute_amcostestimate(index_relation);
+            let estimate = compute_amcostestimate(index_relation, index_info);
             pg_sys::index_close(index_relation, pg_sys::NoLock as pg_sys::LOCKMODE);
 
             *index_startup_cost = estimate.startup_cost;
@@ -225,7 +294,35 @@ pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
     }
 }
 
-unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
+unsafe fn planner_tree_height_from_index_info(
+    index_info: *mut pg_sys::IndexOptInfo,
+    max_level: u8,
+) -> PlannerTreeHeightInput {
+    #[cfg(feature = "pg18")]
+    {
+        let planner_tree_height = unsafe { (*index_info).tree_height };
+        if planner_tree_height > 0 {
+            return PlannerTreeHeightInput {
+                tree_height: f64::from(planner_tree_height),
+                source: "amgettreeheight_callback",
+                pg18_callback_ready: true,
+            };
+        }
+
+        return resolved_tree_height_input(max_level);
+    }
+
+    #[cfg(not(feature = "pg18"))]
+    {
+        let _ = index_info;
+        metadata_fallback_tree_height(max_level)
+    }
+}
+
+unsafe fn compute_amcostestimate(
+    index_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexOptInfo,
+) -> PlannerCostEstimate {
     let relation_options = unsafe { options::relation_options(index_relation) };
     let tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = unsafe {
@@ -241,7 +338,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     }
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
-    let tree_height = metadata_fallback_tree_height(metadata.max_level);
+    let tree_height = unsafe { planner_tree_height_from_index_info(index_info, metadata.max_level) };
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_planner_cost(
@@ -261,7 +358,8 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
 mod tests {
     use super::{
         amgettreeheight_callback_value, amtranslatecmptype_callback, amtranslatestrategy_callback,
-        estimate_planner_cost, metadata_fallback_tree_height, strategy_translation_snapshot,
+        estimate_planner_cost, metadata_fallback_tree_height, resolved_tree_height_input,
+        strategy_translation_snapshot,
         PlannerCompareType, PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs,
         PlannerTreeHeightInput, StrategyTranslationSnapshot, LUT_CPU_DIMENSION_SCALE,
     };
@@ -410,25 +508,39 @@ mod tests {
     }
 
     #[test]
-    fn planner_cost_tree_height_defaults_to_metadata_until_pg18_callback_exists() {
+    fn planner_cost_tree_height_snapshot_matches_build_target() {
         assert_eq!(
-            metadata_fallback_tree_height(4),
+            resolved_tree_height_input(4),
             PlannerTreeHeightInput {
                 tree_height: 4.0,
-                source: "metadata_fallback",
-                pg18_callback_ready: false,
+                source: if cfg!(feature = "pg18") {
+                    "amgettreeheight_callback"
+                } else {
+                    "metadata_fallback"
+                },
+                pg18_callback_ready: cfg!(feature = "pg18"),
             }
         );
+        if !cfg!(feature = "pg18") {
+            assert_eq!(
+                metadata_fallback_tree_height(4),
+                PlannerTreeHeightInput {
+                    tree_height: 4.0,
+                    source: "metadata_fallback",
+                    pg18_callback_ready: false,
+                }
+            );
+        }
     }
 
     #[test]
-    fn strategy_translation_snapshot_stays_explicitly_unwired_until_pg18_support_exists() {
+    fn strategy_translation_snapshot_matches_build_target() {
         assert_eq!(
             strategy_translation_snapshot(),
             StrategyTranslationSnapshot {
                 ordering_strategy: 1,
                 ordering_compare_type: PlannerCompareType::Lt,
-                pg18_callback_ready: false,
+                pg18_callback_ready: cfg!(feature = "pg18"),
             }
         );
     }

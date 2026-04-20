@@ -27,7 +27,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Lint
-        run: cargo clippy --all-targets --no-default-features --features pg17,bench -- -D warnings
+        run: cargo clippy --all-targets --no-default-features --features pg18,bench -- -D warnings
 
       - name: Unit tests
         run: cargo test
@@ -43,7 +43,35 @@ jobs:
       - name: Unsafe audit
         run: bash scripts/check_unsafe_comments.sh
 
-  pgrx:
+  pgrx-pg18:
+    name: pgrx pg18
+    runs-on: ubuntu-24.04
+    env:
+      PGRX_HOME: /tmp/tqvector_pgrx_home
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install PostgreSQL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+
+      - name: Install cargo-pgrx
+        run: cargo install cargo-pgrx --version 0.17.0 --locked
+
+      - name: Initialize pgrx for pg18 and pg17
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
+
+      - name: pg18 tests
+        run: cargo pgrx test pg18
+
+  pgrx-pg17:
     name: pgrx pg17
     runs-on: ubuntu-24.04
     env:
@@ -60,13 +88,13 @@ jobs:
       - name: Install PostgreSQL build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-server-dev-17 clang llvm pkg-config libssl-dev
+          sudo apt-get install -y postgresql-server-dev-18 postgresql-server-dev-17 clang llvm pkg-config libssl-dev
 
       - name: Install cargo-pgrx
         run: cargo install cargo-pgrx --version 0.17.0 --locked
 
-      - name: Initialize pgrx for pg17
-        run: cargo pgrx init --pg17 /usr/lib/postgresql/17/bin/pg_config
+      - name: Initialize pgrx for pg18 and pg17
+        run: cargo pgrx init --pg18 /usr/lib/postgresql/18/bin/pg_config --pg17 /usr/lib/postgresql/17/bin/pg_config
 
       - name: pg17 tests
         run: cargo pgrx test pg17

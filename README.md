@@ -76,6 +76,22 @@ WITH (
 Switching an index from one storage format to the other requires `REINDEX`.
 There is no in-place format upgrade.
 
+## Development
+
+- [Rust](https://rustup.rs/) stable
+- [cargo-pgrx](https://github.com/pgcentralfoundation/pgrx) `0.17`
+- PostgreSQL 17 or 18 development headers
+
+```bash
+cargo pgrx init
+make fmt
+make lint
+make lint-pg17
+make test
+make pg-test
+make pg-test-pg17
+```
+
 ## Performance
 
 Measured on 1536-dimensional OpenAI embeddings ([DBpedia corpus](docs/recall-methodology.md)):

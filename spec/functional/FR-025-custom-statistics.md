@@ -27,8 +27,11 @@ Current staged behavior:
   `tqvector_stats()` exists on PG17.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
-- Those helpers SHALL stay descriptive only; they do not imply that `tqvector_stats()` exists on
-  PG17 or that any counters are being accumulated through PostgreSQL's statistics system.
+- On the current PG18 branch, the shared scan infrastructure MAY already accumulate backend-local
+  counters and expose them through `tqvector_stats()` while still reporting
+  `pg18_pgstat_kind_ready = false` until the preload-time pgstat registration path is implemented.
+- Those helpers SHALL stay descriptive about the shared pgstat-kind boundary; they do not imply
+  that PostgreSQL's global statistics system is already accumulating tqvector counters.
 
 ### PG18 Custom Statistics API
 
@@ -98,10 +101,10 @@ SELECT pg_stat_reset_shared('tqvector');
 
 ### PG Version Compatibility
 
-On PG17, the custom statistics API does not exist. The extension SHALL not register any pgstat kind. The `tqvector_stats()` function SHALL NOT be defined. Counter increments SHALL be compiled out.
-During the current staged implementation, a reusable planner-owned counter struct may exist in
-`am/stats.rs`, pure summary helpers for the intended derived rates may also exist there, but no
-PostgreSQL pgstat kind is registered and no SQL-visible cumulative statistics are exposed.
+On PG17, the custom statistics API does not exist. The extension SHALL not register any pgstat
+kind. The `tqvector_stats()` function SHALL NOT be defined. Counter increments SHALL be compiled
+out. During the current staged implementation, PG18 may expose backend-local SQL-visible counters
+before the shared pgstat-kind path lands, but no PostgreSQL global pgstat kind is registered yet.
 
 ## Acceptance Criteria
 

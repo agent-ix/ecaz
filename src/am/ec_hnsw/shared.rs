@@ -2,6 +2,8 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
+#[cfg(feature = "pg18")]
+use super::stream;
 use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
 use crate::storage::wal;
 
@@ -159,88 +161,132 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
+        return 0;
+    }
     let mut count = 0_usize;
 
-    for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
-        let buffer = unsafe {
-            pg_sys::ReadBufferExtended(
+    #[cfg(feature = "pg18")]
+    {
+        let mut linear_state = stream::LinearPrefetchState::new(
+            page::FIRST_DATA_BLOCK_NUMBER,
+            block_count.saturating_sub(1).max(page::FIRST_DATA_BLOCK_NUMBER),
+        );
+        let stream = unsafe {
+            pg_sys::read_stream_begin_relation(
+                pg_sys::READ_STREAM_SEQUENTIAL as i32,
+                ptr::null_mut(),
                 index_relation,
                 pg_sys::ForkNumber::MAIN_FORKNUM,
-                block_number,
-                pg_sys::ReadBufferMode::RBM_NORMAL,
-                ptr::null_mut(),
+                Some(stream::linear_prefetch_cb),
+                (&mut linear_state as *mut stream::LinearPrefetchState).cast(),
+                std::mem::size_of::<pg_sys::BlockNumber>(),
             )
         };
-        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
-        let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
-        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
-        let line_pointer_count = page_line_pointer_count(page_ptr);
-
-        for offset in 1..=line_pointer_count {
-            let item_id = unsafe { &*page_item_id(page_ptr, offset) };
-            if item_id.lp_flags() == 0 {
-                continue;
+        unsafe { pg_sys::read_stream_reset(stream) };
+        loop {
+            let mut per_buffer_data = ptr::null_mut();
+            let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
+            if buffer == pg_sys::InvalidBuffer {
+                break;
             }
+            let block_number = if per_buffer_data.is_null() {
+                page::FIRST_DATA_BLOCK_NUMBER
+            } else {
+                unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
+            };
+            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+            count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        }
+        unsafe { pg_sys::read_stream_end(stream) };
+    }
 
-            let tuple_offset = item_id.lp_off() as usize;
-            let tuple_len = item_id.lp_len() as usize;
-            if tuple_offset + tuple_len > page_size {
-                pgrx::error!(
-                    "ec_hnsw found invalid tuple bounds while counting vacuum tuples on block {block_number}"
-                );
-            }
+    #[cfg(not(feature = "pg18"))]
+    {
+        for block_number in page::FIRST_DATA_BLOCK_NUMBER..block_count {
+            let buffer = unsafe {
+                pg_sys::ReadBufferExtended(
+                    index_relation,
+                    pg_sys::ForkNumber::MAIN_FORKNUM,
+                    block_number,
+                    pg_sys::ReadBufferMode::RBM_NORMAL,
+                    ptr::null_mut(),
+                )
+            };
+            unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+            count += unsafe { count_live_elements_on_buffer(storage, buffer, block_number) };
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+        }
+    }
 
-            let tuple_bytes =
-                unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-            match storage {
-                graph::GraphStorageDescriptor::TurboQuant { code_len } => {
-                    if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
-                        let element = page::TqElementTuple::decode(tuple_bytes, code_len)
-                            .unwrap_or_else(|e| {
-                                pgrx::error!(
-                                    "ec_hnsw failed to decode element tuple while counting: {e}"
-                                )
-                            });
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            count += 1;
-                        }
-                    }
-                }
-                graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
-                    if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
-                        let element =
-                            page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                                .unwrap_or_else(|e| {
-                                    pgrx::error!(
-                                "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
-                            )
-                                });
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            count += 1;
-                        }
-                    }
-                }
-                graph::GraphStorageDescriptor::PqFastScan(layout) => {
-                    if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
-                        let element = page::TqGroupedHotTuple::decode(
-                            tuple_bytes,
-                            layout.binary_word_count,
-                            layout.search_code_len,
-                        )
+    count
+}
+
+unsafe fn count_live_elements_on_buffer(
+    storage: graph::GraphStorageDescriptor,
+    buffer: pg_sys::Buffer,
+    block_number: u32,
+) -> usize {
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    let mut count = 0_usize;
+
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            pgrx::error!(
+                "ec_hnsw found invalid tuple bounds while counting vacuum tuples on block {block_number}"
+            );
+        }
+
+        let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        match storage {
+            graph::GraphStorageDescriptor::TurboQuant { code_len } => {
+                if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
+                    let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
-                            pgrx::error!(
-                                "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
-                            )
+                            pgrx::error!("ec_hnsw failed to decode element tuple while counting: {e}")
                         });
-                        if !element.deleted && !element.heaptids.is_empty() {
-                            count += 1;
-                        }
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        count += 1;
+                    }
+                }
+            }
+            graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
+                if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
+                    let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                        .unwrap_or_else(|e| {
+                            pgrx::error!("ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}")
+                        });
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        count += 1;
+                    }
+                }
+            }
+            graph::GraphStorageDescriptor::PqFastScan(layout) => {
+                if tuple_bytes.first().copied() == Some(page::TQ_GROUPED_HOT_TAG) {
+                    let element = page::TqGroupedHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                        layout.search_code_len,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_hnsw failed to decode grouped hot tuple while counting: {e}")
+                    });
+                    if !element.deleted && !element.heaptids.is_empty() {
+                        count += 1;
                     }
                 }
             }
         }
-
-        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
     }
 
     count
@@ -627,7 +673,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     };
     let index_pages = f64::from(block_count);
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    let tree_height = super::cost::metadata_fallback_tree_height(metadata.max_level);
+    let tree_height = super::cost::resolved_tree_height_input(metadata.max_level);
     let constants = unsafe { super::cost::current_planner_cost_constants() };
     // Block 0 is always the metadata page; an empty index has block_count == 1.
     // FR-020's "Empty index (0 data pages)" gate must trip on
@@ -737,8 +783,13 @@ pub(crate) unsafe fn planner_integration_snapshot(
         planner_gate_reason: explain.planner_gate_reason,
         next_runtime_blocker:
             "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next",
-        next_pg18_blocker:
-            "pgrx pg18 feature support and callback bindings are not yet implemented",
+        next_pg18_blocker: if diagnostics.pg18_pgstat_kind_ready {
+            "no merged PG18 blocker remains on main"
+        } else {
+            super::stats::pgstat_kind_blocker().unwrap_or(
+                "custom pgstat kind registration remains gated outside this build",
+            )
+        },
     }
 }
 

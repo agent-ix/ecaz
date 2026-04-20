@@ -39,7 +39,7 @@ PG_MODULE_MAGIC;
 ```sql
 SELECT * FROM pg_get_loaded_modules() WHERE name = 'tqvector';
 -- name     | version
--- tqvector | 0.1.0
+-- tqvector | 0.1.1
 ```
 
 ### PG Version Compatibility

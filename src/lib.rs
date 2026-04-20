@@ -3,7 +3,7 @@ use pgrx::ffi::CString;
 use pgrx::prelude::*;
 use pgrx::{pg_sys, Internal};
 
-pgrx::pg_module_magic!();
+pgrx::pg_module_magic!(name, version);
 
 #[allow(dead_code)]
 mod am;
@@ -15,8 +15,13 @@ pub(crate) mod storage;
 use quant::prod::{payload_len, ProdQuantizer};
 
 #[pg_guard]
-pub extern "C-unwind" fn _PG_init() {
+pub unsafe extern "C-unwind" fn _PG_init() {
     am::register_gucs();
+    #[cfg(feature = "pg18")]
+    unsafe {
+        am::explain::register_pg18_explain_hooks();
+        am::stats::register_pg18_stats();
+    }
 }
 
 /// Public API surface for benchmarks and integration tests.
@@ -743,6 +748,41 @@ fn ec_hnsw_planner_integration_snapshot(
         snapshot.planner_gate_reason.to_owned(),
         snapshot.next_runtime_blocker.to_owned(),
         snapshot.next_pg18_blocker.to_owned(),
+    ))
+}
+
+#[cfg(feature = "pg18")]
+#[pg_extern(stable)]
+#[allow(clippy::type_complexity)]
+fn tqvector_stats() -> TableIterator<
+    'static,
+    (
+        name!(total_distance_calcs, i64),
+        name!(total_graph_hops, i64),
+        name!(total_linear_pages, i64),
+        name!(total_scans_started, i64),
+        name!(total_scans_bootstrap_only, i64),
+        name!(quantizer_cache_hits, i64),
+        name!(quantizer_cache_misses, i64),
+        name!(bootstrap_hit_rate, f64),
+        name!(quantizer_cache_rate, f64),
+    ),
+> {
+    let summary = am::stats::current_backend_stats_counters().summary();
+    TableIterator::once((
+        i64::try_from(summary.total_distance_calcs)
+            .expect("distance calc counter should fit in i64"),
+        i64::try_from(summary.total_graph_hops).expect("graph hop counter should fit in i64"),
+        i64::try_from(summary.total_linear_pages).expect("linear page counter should fit in i64"),
+        i64::try_from(summary.total_scans_started).expect("scan counter should fit in i64"),
+        i64::try_from(summary.total_scans_bootstrap_only)
+            .expect("bootstrap-only counter should fit in i64"),
+        i64::try_from(summary.quantizer_cache_hits)
+            .expect("quantizer cache-hit counter should fit in i64"),
+        i64::try_from(summary.quantizer_cache_misses)
+            .expect("quantizer cache-miss counter should fit in i64"),
+        summary.bootstrap_hit_rate,
+        summary.quantizer_cache_rate,
     ))
 }
 
@@ -2510,14 +2550,19 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("tree height source should be non-null"),
-            "metadata_fallback"
+            if cfg!(feature = "pg18") {
+                "amgettreeheight_callback"
+            } else {
+                "metadata_fallback"
+            }
         );
-        assert!(
-            !Spi::get_one::<bool>(
+        assert_eq!(
+            Spi::get_one::<bool>(
                 "SELECT pg18_tree_height_callback_ready FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
-            .expect("pg18 tree-height callback flag should be non-null")
+            .expect("pg18 tree-height callback flag should be non-null"),
+            cfg!(feature = "pg18")
         );
         assert!(
             Spi::get_one::<f64>(
@@ -2669,12 +2714,13 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("planner cost callback live flag should be non-null")
         );
-        assert!(
-            !Spi::get_one::<bool>(
+        assert_eq!(
+            Spi::get_one::<bool>(
                 "SELECT pg18_callback_surface_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
-            .expect("pg18 callback readiness should be non-null")
+            .expect("pg18 callback readiness should be non-null"),
+            cfg!(feature = "pg18")
         );
         assert!(
             !Spi::get_one::<bool>(
@@ -2683,12 +2729,13 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("pg18 diagnostics readiness should be non-null")
         );
-        assert!(
-            !Spi::get_one::<bool>(
+        assert_eq!(
+            Spi::get_one::<bool>(
                 "SELECT pg18_read_stream_surface_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
-            .expect("pg18 read stream readiness should be non-null")
+            .expect("pg18 read stream readiness should be non-null"),
+            cfg!(feature = "pg18")
         );
         assert_eq!(
             Spi::get_one::<i32>(
@@ -2728,7 +2775,11 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("pg18 blocker should be non-null"),
-            "pgrx pg18 feature support and callback bindings are not yet implemented"
+            if cfg!(feature = "pg18") {
+                "custom pgstat kind registration still needs shared_preload_libraries setup plus pgrx bindings or a shim for pgstat_internal.h"
+            } else {
+                "custom pgstat kind registration remains gated outside this build"
+            }
         );
     }
 
@@ -2747,6 +2798,105 @@ mod tests {
         let _ = Spi::get_one::<bool>(
             "SELECT planner_scan_enabled FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_wrong_am_idx'::regclass)",
         );
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_tqvector_stats_reports_backend_local_counters() {
+        Spi::run("CREATE TABLE pg18_tqvector_stats_fixture (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO pg18_tqvector_stats_fixture VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX pg18_tqvector_stats_fixture_idx ON pg18_tqvector_stats_fixture USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET enable_seqscan = off").expect("set should succeed");
+
+        let _ = Spi::get_one::<i64>(
+            "SELECT id FROM pg18_tqvector_stats_fixture
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+             LIMIT 1",
+        )
+        .expect("query should succeed");
+
+        assert!(
+            Spi::get_one::<i64>("SELECT total_scans_started FROM tqvector_stats()")
+                .expect("stats query should succeed")
+                .expect("scan counter should be non-null")
+                >= 1
+        );
+        assert!(
+            Spi::get_one::<i64>("SELECT total_distance_calcs FROM tqvector_stats()")
+                .expect("stats query should succeed")
+                .expect("distance counter should be non-null")
+                > 0
+        );
+
+        Spi::run("RESET enable_seqscan").expect("reset should succeed");
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_module_identity_reports_loaded_module_version() {
+        let version = Spi::get_one::<String>(
+            "SELECT version FROM pg_get_loaded_modules() WHERE name = 'tqvector'",
+        )
+        .expect("module query should succeed")
+        .expect("module version should be visible");
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_explain_option_emits_tqvector_stats_group() {
+        Spi::run("CREATE TABLE pg18_explain_fixture (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO pg18_explain_fixture VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX pg18_explain_fixture_idx ON pg18_explain_fixture USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET enable_seqscan = off").expect("set should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (tqvector, ANALYZE, COSTS OFF)
+                     SELECT id FROM pg18_explain_fixture
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        });
+
+        assert!(plan.contains("TQVector Stats"));
+        assert!(plan.contains("Elements Scored"));
+
+        Spi::run("RESET enable_seqscan").expect("reset should succeed");
     }
 
     #[pg_test]

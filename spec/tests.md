@@ -233,7 +233,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-226 | Module version matches Cargo.toml | FR-026-AC-2 | Compare reported version to Cargo.toml version field |
 | TC-227 | PG18 build succeeds | FR-027-AC-1 | `cargo pgrx build --features pg18 --release` exits 0 |
 | TC-228 | PG17 build succeeds | FR-027-AC-2 | `cargo pgrx build --features pg17 --release` exits 0 |
-| TC-229 | _PG_init registers hooks | FR-027-AC-4 | After CREATE EXTENSION, verify EXPLAIN option and pgstat kind are registered |
+| TC-229 | _PG_init registers PG18 diagnostics | FR-027-AC-4 | After CREATE EXTENSION, verify the EXPLAIN option is registered and the remaining pgstat-kind blocker is explicit |
 | TC-230 | ADR-011 f64::MAX override removed | FR-020-AC-5 | Inspect source: no `f64::MAX` in cost.rs; ADR-011 status is SUPERSEDED |
 | TC-231 | CREATE INDEX CONCURRENTLY with parallel workers | FR-021-AC-4 | `SET max_parallel_maintenance_workers = 2; CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` succeeds, index is usable |
 | TC-232 | Parallel build uses GenericXLog | FR-021-AC-6 | Inspect source: all page writes in leader graph serialization use GenericXLogStart/Finish |

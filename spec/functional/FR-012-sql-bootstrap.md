@@ -39,7 +39,7 @@ The extension SHALL be installable via standard PostgreSQL extension management.
 
 ```
 comment = 'TurboQuant compressed vector type with HNSW index'
-default_version = '0.1.0'
+default_version = '0.1.1'
 module_pathname = '$libdir/tqvector'
 relocatable = false
 superuser = true
@@ -47,7 +47,7 @@ superuser = true
 
 ### PostgreSQL Version Support
 
-The extension SHALL compile and install on PostgreSQL 14, 15, 16, and 17 via pgrx feature flags.
+The extension SHALL compile and install on PostgreSQL 17 and 18 via pgrx feature flags, with PG18 as the default build target.
 
 ## Acceptance Criteria
 
@@ -58,4 +58,4 @@ The extension SHALL compile and install on PostgreSQL 14, 15, 16, and 17 via pgr
 `DROP EXTENSION tqvector CASCADE` SHALL remove all objects without orphans in pg_type, pg_operator, or pg_am.
 
 ### FR-012-AC-3: Multi-version support
-`cargo pgrx test` SHALL pass on pg14, pg15, pg16, and pg17.
+`cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
