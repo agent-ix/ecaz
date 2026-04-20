@@ -285,7 +285,7 @@ and never hold more than one data-page lock.
 - Phase 6A — `review/11023-phase6a-scan-algorithm-shell/`
 - VisitedState refactor — `review/11026-visited-state-reuse/`
 - ADR-045 — `spec/adr/ADR-045-page-layout-discipline-for-graph-access-methods.md`
-- ADR-046 — `spec/adr/ADR-046-vamana-insert-lock-ordering.md` (PROPOSED)
-- ADR-047 — `spec/adr/ADR-047-vamana-vacuum-lock-ordering.md` (PROPOSED)
+- ADR-046 — `spec/adr/ADR-046-vamana-insert-lock-ordering.md` (ACCEPTED)
+- ADR-047 — `spec/adr/ADR-047-vamana-vacuum-lock-ordering.md` (ACCEPTED)
 - Prior art: `src/am/scan.rs` (tqhnsw) — reference for reloption
   decode, query decode, and cached quantizer lookup patterns.
