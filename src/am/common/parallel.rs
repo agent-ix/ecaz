@@ -1,5 +1,6 @@
 use std::ffi::{c_int, c_void};
 use std::mem::size_of;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use pgrx::pg_sys;
 
@@ -22,22 +23,25 @@ pub(crate) struct EcParallelScanState {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct EcParallelCoordinatorState {
-    pub(crate) flags: u32,
-    pub(crate) claimed_worker_slots: u32,
+    pub(crate) flags: AtomicU32,
+    pub(crate) claimed_worker_slots: AtomicU32,
     reserved0: u32,
     reserved1: u32,
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct EcParallelWorkerSlot {
-    pub(crate) flags: u32,
+    pub(crate) flags: AtomicU32,
     pub(crate) slot_index: u32,
-    pub(crate) observed_rescan_epoch: u32,
+    pub(crate) observed_rescan_epoch: AtomicU32,
     reserved0: u32,
 }
+
+const EC_PARALLEL_WORKER_SLOT_FREE: u32 = 0;
+const EC_PARALLEL_WORKER_SLOT_CLAIMED: u32 = 1;
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct ParallelScanAttachment {
@@ -140,8 +144,8 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
 
     unsafe {
         *coordinator_ptr(state) = EcParallelCoordinatorState {
-            flags: 0,
-            claimed_worker_slots: 0,
+            flags: AtomicU32::new(0),
+            claimed_worker_slots: AtomicU32::new(0),
             reserved0: 0,
             reserved1: 0,
         };
@@ -160,9 +164,9 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
         };
         unsafe {
             *slot = EcParallelWorkerSlot {
-                flags: 0,
+                flags: AtomicU32::new(EC_PARALLEL_WORKER_SLOT_FREE),
                 slot_index,
-                observed_rescan_epoch: state_ref.rescan_epoch,
+                observed_rescan_epoch: AtomicU32::new(state_ref.rescan_epoch),
                 reserved0: 0,
             };
         }
@@ -290,6 +294,68 @@ pub(crate) unsafe fn initialize_parallel_scan_target(
     }
 }
 
+pub(crate) unsafe fn claim_parallel_scan_worker_slot(
+    attachment: &ParallelScanAttachment,
+) -> Result<u32, &'static str> {
+    for slot_index in 0..attachment.worker_slot_count {
+        let slot = unsafe { attachment.worker_slot(slot_index) }?;
+        let slot_ref = unsafe { &*slot };
+        let observed_rescan_epoch = slot_ref.observed_rescan_epoch.load(Ordering::Acquire);
+        if observed_rescan_epoch != attachment.rescan_epoch {
+            continue;
+        }
+
+        if slot_ref
+            .flags
+            .compare_exchange(
+                EC_PARALLEL_WORKER_SLOT_FREE,
+                EC_PARALLEL_WORKER_SLOT_CLAIMED,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .fetch_add(1, Ordering::AcqRel);
+            return Ok(slot_index);
+        }
+    }
+
+    Err("parallel worker slot capacity was exhausted")
+}
+
+pub(crate) unsafe fn release_parallel_scan_worker_slot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    rescan_epoch: u32,
+) -> Result<bool, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let slot = unsafe { attachment.worker_slot(slot_index) }?;
+    let slot_ref = unsafe { &*slot };
+    if slot_ref.observed_rescan_epoch.load(Ordering::Acquire) != rescan_epoch {
+        return Ok(false);
+    }
+
+    if slot_ref
+        .flags
+        .compare_exchange(
+            EC_PARALLEL_WORKER_SLOT_CLAIMED,
+            EC_PARALLEL_WORKER_SLOT_FREE,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_ok()
+    {
+        unsafe { &*attachment.coordinator }
+            .claimed_worker_slots
+            .fetch_sub(1, Ordering::AcqRel);
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
 pub(crate) unsafe fn reset_parallel_scan_state(
     parallel_scan: pg_sys::ParallelIndexScanDesc,
 ) -> Result<Option<u32>, &'static str> {
@@ -352,6 +418,14 @@ pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexSc
 mod tests {
     use super::*;
     use std::ptr;
+
+    fn worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> (u32, u32, u32) {
+        (
+            slot.flags.load(Ordering::Acquire),
+            slot.slot_index,
+            slot.observed_rescan_epoch.load(Ordering::Acquire),
+        )
+    }
 
     #[repr(C, align(8))]
     struct TestParallelScanStorage {
@@ -458,7 +532,9 @@ mod tests {
             "freshly initialized parallel scan state should start at epoch zero"
         );
         assert_eq!(
-            unsafe { (*attachment.coordinator).claimed_worker_slots },
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(Ordering::Acquire),
             0,
             "freshly initialized coordinator state should start with no claimed worker slots"
         );
@@ -482,16 +558,93 @@ mod tests {
             let slot = unsafe { attachment.worker_slot(slot_index) }
                 .expect("slot index should stay within the configured capacity");
             assert_eq!(
-                unsafe { *slot },
-                EcParallelWorkerSlot {
-                    flags: 0,
-                    slot_index,
-                    observed_rescan_epoch: 0,
-                    reserved0: 0,
-                },
+                worker_slot_snapshot(unsafe { &*slot }),
+                (EC_PARALLEL_WORKER_SLOT_FREE, slot_index, 0),
                 "worker slot headers should be initialized deterministically"
             );
         }
+    }
+
+    #[test]
+    fn claim_parallel_scan_worker_slot_claims_first_free_slots_in_order() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { claim_parallel_scan_worker_slot(&attachment) }
+                .expect("first claim should succeed"),
+            0,
+            "first claim should reserve slot zero"
+        );
+        assert_eq!(
+            unsafe { claim_parallel_scan_worker_slot(&attachment) }
+                .expect("second claim should succeed"),
+            1,
+            "second claim should reserve the next free slot"
+        );
+        assert_eq!(
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(Ordering::Acquire),
+            2,
+            "coordinator claim count should track the number of live claims"
+        );
+    }
+
+    #[test]
+    fn release_parallel_scan_worker_slot_drops_live_claims_only_once() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("claim should succeed before release");
+
+        assert!(
+            unsafe {
+                release_parallel_scan_worker_slot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                )
+            }
+            .expect("release should succeed"),
+            "release should report that it dropped a live claim"
+        );
+        assert!(
+            !unsafe {
+                release_parallel_scan_worker_slot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                )
+            }
+            .expect("double release should stay benign"),
+            "releasing the same slot twice should not underflow the claim count"
+        );
+        assert_eq!(
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(Ordering::Acquire),
+            0,
+            "coordinator claim count should return to zero after release"
+        );
     }
 
     #[test]
@@ -508,11 +661,14 @@ mod tests {
             .expect("parallel descriptor should validate")
             .expect("parallel descriptor should expose AM state");
         unsafe {
-            (*attachment.coordinator).claimed_worker_slots = 2;
-            (*attachment
+            (&*attachment.coordinator)
+                .claimed_worker_slots
+                .store(2, Ordering::Release);
+            (&*attachment
                 .worker_slot(1)
                 .expect("slot index should stay in bounds"))
-            .flags = 7;
+                .flags
+                .store(EC_PARALLEL_WORKER_SLOT_CLAIMED, Ordering::Release);
         }
 
         assert_eq!(
@@ -527,22 +683,19 @@ mod tests {
             .expect("parallel descriptor should keep validating")
             .expect("parallel descriptor should keep exposing AM state");
         assert_eq!(
-            unsafe { (*attachment.coordinator).claimed_worker_slots },
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(Ordering::Acquire),
             0,
             "rescan should clear coordinator-side worker slot claims"
         );
         assert_eq!(
-            unsafe {
-                *attachment
+            worker_slot_snapshot(unsafe {
+                &*attachment
                     .worker_slot(1)
                     .expect("slot index should stay in bounds")
-            },
-            EcParallelWorkerSlot {
-                flags: 0,
-                slot_index: 1,
-                observed_rescan_epoch: 1,
-                reserved0: 0,
-            },
+            }),
+            (EC_PARALLEL_WORKER_SLOT_FREE, 1, 1),
             "rescan should stamp worker slots with the new shared epoch"
         );
     }

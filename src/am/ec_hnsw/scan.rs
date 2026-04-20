@@ -1073,23 +1073,52 @@ fn validate_runtime_scan_format(
     unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
 }
 
+const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;
+
+fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        return;
+    }
+
+    match unsafe {
+        super::parallel::release_parallel_scan_worker_slot(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+            opaque.parallel_scan_rescan_epoch,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => pgrx::error!("ec_hnsw parallel scan release failed: {err}"),
+    }
+}
+
 fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
+    release_parallel_scan_state(opaque);
     opaque.parallel_scan_state = ptr::null_mut();
     opaque.parallel_scan_rescan_epoch = 0;
     opaque.parallel_scan_worker_slot_count = 0;
+    opaque.parallel_scan_worker_slot_index = INVALID_PARALLEL_SCAN_WORKER_SLOT;
 }
 
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
+    clear_parallel_scan_state(opaque);
     if scan.is_null() {
-        clear_parallel_scan_state(opaque);
         return;
     }
 
     match unsafe { super::parallel::parallel_scan_attachment((*scan).parallel_scan) } {
         Ok(Some(attachment)) => {
+            let worker_slot_index =
+                unsafe { super::parallel::claim_parallel_scan_worker_slot(&attachment) }
+                    .unwrap_or_else(|err| {
+                        pgrx::error!("ec_hnsw parallel scan claim failed: {err}")
+                    });
             opaque.parallel_scan_state = attachment.state;
             opaque.parallel_scan_rescan_epoch = attachment.rescan_epoch;
             opaque.parallel_scan_worker_slot_count = attachment.worker_slot_count;
+            opaque.parallel_scan_worker_slot_index = worker_slot_index;
         }
         Ok(None) => clear_parallel_scan_state(opaque),
         Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
@@ -1679,6 +1708,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScan
                 let opaque = &mut *opaque_ptr.cast::<TqScanOpaque>();
                 finalize_scan_stats(opaque);
                 flush_scan_stats(opaque);
+                clear_parallel_scan_state(opaque);
                 #[cfg(feature = "pg18")]
                 {
                     end_read_stream(&mut opaque.graph_read_stream);
@@ -5094,6 +5124,7 @@ pub(super) struct TqScanOpaque {
     parallel_scan_state: *mut super::parallel::EcParallelScanState,
     parallel_scan_rescan_epoch: u32,
     parallel_scan_worker_slot_count: u32,
+    parallel_scan_worker_slot_index: u32,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5170,6 +5201,7 @@ impl Default for TqScanOpaque {
             parallel_scan_state: ptr::null_mut(),
             parallel_scan_rescan_epoch: 0,
             parallel_scan_worker_slot_count: 0,
+            parallel_scan_worker_slot_index: INVALID_PARALLEL_SCAN_WORKER_SLOT,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -5420,6 +5452,77 @@ mod tests {
         assert_eq!(
             opaque.parallel_scan_worker_slot_count, 2,
             "scan state should capture the shared worker slot capacity too"
+        );
+        assert_eq!(
+            opaque.parallel_scan_worker_slot_index, 0,
+            "first scan attachment should claim the first shared worker slot"
+        );
+    }
+
+    #[test]
+    fn clear_parallel_scan_state_releases_claimed_worker_slot() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        let attachment =
+            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                .expect("parallel scan attachment should validate")
+                .expect("parallel scan attachment should expose AM-private state");
+        assert_eq!(
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(std::sync::atomic::Ordering::Acquire),
+            1,
+            "scan attachment should publish its worker-slot claim to the shared coordinator state"
+        );
+
+        clear_parallel_scan_state(&mut opaque);
+
+        let attachment =
+            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                .expect("parallel scan attachment should keep validating")
+                .expect("parallel scan attachment should keep exposing AM-private state");
+        assert_eq!(
+            unsafe { &*attachment.coordinator }
+                .claimed_worker_slots
+                .load(std::sync::atomic::Ordering::Acquire),
+            0,
+            "clearing scan state should release the previously claimed worker slot"
+        );
+        assert_eq!(
+            opaque.parallel_scan_worker_slot_index, INVALID_PARALLEL_SCAN_WORKER_SLOT,
+            "clearing scan state should drop the local worker-slot binding"
         );
     }
 

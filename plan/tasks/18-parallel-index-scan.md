@@ -142,7 +142,12 @@ See ADR-040 for the full shape. Summary:
 - **Descriptor sizing.** `amestimateparallelscan` does not receive the chosen
   executor worker count, so the staged shared descriptor reserves coordinator
   and worker-slot headers for up to `max_parallel_workers_per_gather + 1`
-  participants. Actual worker claiming stays deferred to the next slice.
+  participants.
+
+- **Worker-slot staging.** Scan attachment now claims and releases one shared
+  worker slot per live `TqScanOpaque`, keyed by the current rescan epoch.
+  `amcanparallel` still stays `false` until the coordinator heap and
+  worker-local traversal contracts are live.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
