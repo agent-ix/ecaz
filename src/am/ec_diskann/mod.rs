@@ -8,6 +8,7 @@
 
 mod ambuild;
 pub mod build;
+mod cost;
 mod insert;
 mod options;
 pub mod page;
@@ -45,4 +46,4 @@ pub(super) const ECDISKANN_DEFAULT_ALPHA: f32 = 1.2;
 pub(super) const ECDISKANN_MIN_ALPHA: f32 = 1.0;
 pub(super) const ECDISKANN_MAX_ALPHA: f32 = 2.0;
 
-pub(super) const ECDISKANN_PLANNER_SCAN_ENABLED: bool = false;
+pub(super) const ECDISKANN_PLANNER_SCAN_ENABLED: bool = true;
