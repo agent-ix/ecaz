@@ -322,7 +322,7 @@ where
         }
 
         if frontier.len() > list_size {
-            frontier.sort_by(|a, b| a.cmp(b));
+            frontier.sort();
             for c in &frontier[list_size..] {
                 scratch.in_frontier.remove(&c.tid);
             }
@@ -330,7 +330,7 @@ where
         }
     }
 
-    frontier.sort_by(|a, b| a.cmp(b));
+    frontier.sort();
     Ok(PersistedGreedyResult {
         frontier,
         visited: visited_order,

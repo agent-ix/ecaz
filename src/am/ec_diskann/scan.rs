@@ -303,7 +303,7 @@ where
         }
 
         if frontier.len() > list_size {
-            frontier.sort_by(|a, b| a.cmp(b));
+            frontier.sort();
             for c in &frontier[list_size..] {
                 scratch.in_frontier.remove(&c.tid);
             }
@@ -311,7 +311,7 @@ where
         }
     }
 
-    frontier.sort_by(|a, b| a.cmp(b));
+    frontier.sort();
     Ok(frontier)
 }
 
@@ -361,7 +361,7 @@ mod tests {
 
         // prefilter: distance = (n-1 - node_id); target = node 7.
         let prefilter = |t: &VamanaNodeTuple| {
-            let node = (t.primary_heaptid.block_number - 1000) as u32;
+            let node = t.primary_heaptid.block_number - 1000;
             ((n - 1) as u32 - node) as f32
         };
         let rerank = |hip: ItemPointer| ((n - 1) as u32 - (hip.block_number - 1000)) as f32;
@@ -374,7 +374,7 @@ mod tests {
         };
         let res = vamana_scan(&reader, params, prefilter, rerank).expect("scan");
         assert_eq!(res.len(), 1);
-        assert_eq!(res[0].tid, persisted.node_to_tid[(n - 1) as usize]);
+        assert_eq!(res[0].tid, persisted.node_to_tid[n - 1]);
         assert_eq!(res[0].distance, 0.0);
     }
 
@@ -538,7 +538,7 @@ mod tests {
                 ..base
             },
         ] {
-            assert!(vamana_scan(&reader, p, &prefilter, &rerank).is_err());
+            assert!(vamana_scan(&reader, p, prefilter, rerank).is_err());
         }
     }
 
@@ -576,11 +576,11 @@ mod tests {
         };
 
         let prefilter = |t: &VamanaNodeTuple| {
-            let node = (t.primary_heaptid.block_number - 1000) as u32;
+            let node = t.primary_heaptid.block_number - 1000;
             query_dist_node(node)
         };
         let rerank = |hip: ItemPointer| {
-            let node = (hip.block_number - 1000) as u32;
+            let node = hip.block_number - 1000;
             query_dist_node(node)
         };
 
@@ -599,7 +599,7 @@ mod tests {
 
         let got_nodes: Vec<u32> = res
             .iter()
-            .map(|r| (r.primary_heaptid.block_number - 1000) as u32)
+            .map(|r| r.primary_heaptid.block_number - 1000)
             .collect();
 
         // Top-1 must match brute force exactly.

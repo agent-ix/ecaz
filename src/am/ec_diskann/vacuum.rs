@@ -286,8 +286,8 @@ mod tests {
             search_code: vec![0xab; c],
             neighbors: {
                 let mut v = vec![ItemPointer::INVALID; r as usize];
-                for i in 0..6 {
-                    v[i] = tid(10 + i as u32, 1);
+                for (i, slot) in v.iter_mut().enumerate().take(6) {
+                    *slot = tid(10 + i as u32, 1);
                 }
                 v
             },
