@@ -10,6 +10,9 @@ use crate::{
 
 use super::{insert, options};
 
+// DiskANN/Vamana is a single-layer graph, so the planner should model
+// one graph-entry phase rather than the HNSW-style metadata-derived
+// multilevel descent.
 const DISKANN_SINGLE_LAYER_TREE_HEIGHT: f64 = 1.0;
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
@@ -50,6 +53,10 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     }
 
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
+    // A metadata decode failure means the index itself is structurally
+    // broken. Failing loudly during planning is preferable to masking
+    // corruption behind a gated cost and continuing with an invalid AM
+    // state.
     let metadata = unsafe { insert::read_metadata_page(index_relation) }
         .unwrap_or_else(|e| pgrx::error!("ec_diskann planner could not read metadata: {e}"));
     let constants = unsafe { current_planner_cost_constants() };
