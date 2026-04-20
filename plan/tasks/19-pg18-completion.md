@@ -1,6 +1,6 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
-Status: in progress — PG18 callback/EXPLAIN/ReadStream wiring is live on `main`; shared pgstat-kind registration remains gated on preload-time registration and missing `pgrx` bindings for `pgstat_internal.h`.
+Status: in progress — PG18 callback/EXPLAIN/ReadStream wiring is live on `main`; the shared pgstat-kind path now exists via a preload-only C shim over `pgstat_internal.h`, but PG18 validation in this repo still depends on a managed PG18 install and preload-aware test coverage.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 
@@ -61,9 +61,9 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 ### pgstat-kind activation
 
-- [ ] **Register custom pgstat-kind.** Still blocked: PostgreSQL requires preload-time registration and current `pgrx` bindings do not expose the `pgstat_internal.h` kind-registration surface.
+- [x] **Register custom pgstat-kind.** PG18 now has a preload-aware registration path through a small C shim over `pgstat_internal.h`. Registration succeeds when `tqvector` is loaded through `shared_preload_libraries`; non-preloaded sessions keep the current backend-local fallback.
 - [x] **Increment sites.** Shared scan counters now increment at the live scan seams that already feed EXPLAIN.
-- [x] **`tqvector_stats()` SQL function.** PG18 now exposes a backend-local SQL summary over the live counters while the shared pgstat kind stays gated.
+- [x] **`tqvector_stats()` SQL function.** PG18 now exposes the shared pgstat snapshot when registration is active, and otherwise falls back to backend-local counters so non-preloaded sessions still have a descriptive SQL surface.
 
 ### ReadStream activation
 
@@ -114,5 +114,5 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 ## Notes
 
 - Most of the work is flipping pre-built switches, not new design. Task 11 did the hard part by making the surface pure and testable without a running PG18.
-- The remaining blocker is narrow: shared pgstat-kind registration still needs a preload-aware path plus bindings/shim support for `PgStat_KindInfo` and `pgstat_register_kind()`.
+- The remaining blocker is narrower now: shared pgstat registration needs a PG18 environment that actually preloads `tqvector`, and the repo still lacks local PG18 validation on this machine.
 - Keep the PG17 fallback working until we have at least 3 months of PG18 CI history. Don't rip the `pg17` Cargo feature prematurely.

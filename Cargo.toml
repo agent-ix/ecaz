@@ -37,6 +37,7 @@ iai-callgrind = "0.14"
 
 [build-dependencies]
 cc = "1"
+pgrx-pg-config = "0.17"
 
 [profile.dev]
 panic = "unwind"

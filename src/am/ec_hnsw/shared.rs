@@ -170,7 +170,9 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
     {
         let mut linear_state = stream::LinearPrefetchState::new(
             page::FIRST_DATA_BLOCK_NUMBER,
-            block_count.saturating_sub(1).max(page::FIRST_DATA_BLOCK_NUMBER),
+            block_count
+                .saturating_sub(1)
+                .max(page::FIRST_DATA_BLOCK_NUMBER),
         );
         let stream = unsafe {
             pg_sys::read_stream_begin_relation(
@@ -247,13 +249,16 @@ unsafe fn count_live_elements_on_buffer(
             );
         }
 
-        let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
         match storage {
             graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                 if tuple_bytes.first().copied() == Some(page::TQ_ELEMENT_TAG) {
                     let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                         .unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode element tuple while counting: {e}")
+                            pgrx::error!(
+                                "ec_hnsw failed to decode element tuple while counting: {e}"
+                            )
                         });
                     if !element.deleted && !element.heaptids.is_empty() {
                         count += 1;
@@ -262,10 +267,15 @@ unsafe fn count_live_elements_on_buffer(
             }
             graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
                 if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
-                    let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
-                        .unwrap_or_else(|e| {
-                            pgrx::error!("ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}")
-                        });
+                    let element = page::TqTurboHotTuple::decode(
+                        tuple_bytes,
+                        layout.binary_word_count,
+                    )
+                    .unwrap_or_else(|e| {
+                        pgrx::error!(
+                            "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                        )
+                    });
                     if !element.deleted && !element.heaptids.is_empty() {
                         count += 1;
                     }
@@ -279,7 +289,9 @@ unsafe fn count_live_elements_on_buffer(
                         layout.search_code_len,
                     )
                     .unwrap_or_else(|e| {
-                        pgrx::error!("ec_hnsw failed to decode grouped hot tuple while counting: {e}")
+                        pgrx::error!(
+                            "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
+                        )
                     });
                     if !element.deleted && !element.heaptids.is_empty() {
                         count += 1;
@@ -786,9 +798,8 @@ pub(crate) unsafe fn planner_integration_snapshot(
         next_pg18_blocker: if diagnostics.pg18_pgstat_kind_ready {
             "no merged PG18 blocker remains on main"
         } else {
-            super::stats::pgstat_kind_blocker().unwrap_or(
-                "custom pgstat kind registration remains gated outside this build",
-            )
+            super::stats::pgstat_kind_blocker()
+                .unwrap_or("custom pgstat kind registration remains gated outside this build")
         },
     }
 }

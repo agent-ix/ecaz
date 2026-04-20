@@ -1,4 +1,6 @@
 #[cfg(feature = "pg18")]
+use crate::pg18_pgstat_shim;
+#[cfg(feature = "pg18")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,6 +10,7 @@ pub(crate) struct StatsSnapshot {
     pub pg18_sql_function_ready: bool,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TqStatsCounters {
     pub total_distance_calcs: u64,
@@ -35,7 +38,7 @@ pub(crate) struct TqStatsSummary {
 pub(crate) fn stats_snapshot() -> StatsSnapshot {
     StatsSnapshot {
         function_name: "tqvector_stats",
-        pg18_pgstat_kind_ready: false,
+        pg18_pgstat_kind_ready: pgstat_kind_ready(),
         pg18_sql_function_ready: cfg!(feature = "pg18"),
     }
 }
@@ -59,7 +62,7 @@ pub(crate) fn pgstat_kind_blocker() -> Option<&'static str> {
     #[cfg(feature = "pg18")]
     {
         Some(
-            "custom pgstat kind registration still needs shared_preload_libraries setup plus pgrx bindings or a shim for pgstat_internal.h",
+            "custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL",
         )
     }
 
@@ -77,6 +80,23 @@ fn load_counter(counter: &AtomicU64) -> u64 {
 #[cfg(feature = "pg18")]
 fn increment(counter: &AtomicU64) {
     counter.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(feature = "pg18")]
+fn record_shared_delta(delta: TqStatsCounters) {
+    unsafe {
+        let _ = pg18_pgstat_shim::record(&delta);
+    }
+}
+
+#[cfg(feature = "pg18")]
+fn pgstat_kind_ready() -> bool {
+    unsafe { pg18_pgstat_shim::is_registered() }
+}
+
+#[cfg(not(feature = "pg18"))]
+fn pgstat_kind_ready() -> bool {
+    false
 }
 
 #[cfg(feature = "pg18")]
@@ -98,8 +118,22 @@ pub(crate) fn current_backend_stats_counters() -> TqStatsCounters {
 }
 
 #[cfg(feature = "pg18")]
+pub(crate) fn current_stats_counters() -> TqStatsCounters {
+    unsafe { pg18_pgstat_shim::snapshot().unwrap_or_else(current_backend_stats_counters) }
+}
+
+#[cfg(not(feature = "pg18"))]
+pub(crate) fn current_stats_counters() -> TqStatsCounters {
+    current_backend_stats_counters()
+}
+
+#[cfg(feature = "pg18")]
 pub(crate) fn record_distance_calc() {
     increment(&TOTAL_DISTANCE_CALCS);
+    record_shared_delta(TqStatsCounters {
+        total_distance_calcs: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -108,6 +142,10 @@ pub(crate) fn record_distance_calc() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_graph_hop() {
     increment(&TOTAL_GRAPH_HOPS);
+    record_shared_delta(TqStatsCounters {
+        total_graph_hops: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -116,6 +154,10 @@ pub(crate) fn record_graph_hop() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_linear_page() {
     increment(&TOTAL_LINEAR_PAGES);
+    record_shared_delta(TqStatsCounters {
+        total_linear_pages: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -124,6 +166,10 @@ pub(crate) fn record_linear_page() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_scan_started() {
     increment(&TOTAL_SCANS_STARTED);
+    record_shared_delta(TqStatsCounters {
+        total_scans_started: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -132,6 +178,10 @@ pub(crate) fn record_scan_started() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_bootstrap_only_scan() {
     increment(&TOTAL_SCANS_BOOTSTRAP_ONLY);
+    record_shared_delta(TqStatsCounters {
+        total_scans_bootstrap_only: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -140,6 +190,10 @@ pub(crate) fn record_bootstrap_only_scan() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_quantizer_cache_hit() {
     increment(&QUANTIZER_CACHE_HITS);
+    record_shared_delta(TqStatsCounters {
+        quantizer_cache_hits: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -148,6 +202,10 @@ pub(crate) fn record_quantizer_cache_hit() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_quantizer_cache_miss() {
     increment(&QUANTIZER_CACHE_MISSES);
+    record_shared_delta(TqStatsCounters {
+        quantizer_cache_misses: 1,
+        ..TqStatsCounters::default()
+    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -155,9 +213,8 @@ pub(crate) fn record_quantizer_cache_miss() {}
 
 #[cfg(feature = "pg18")]
 pub(crate) unsafe fn register_pg18_stats() {
-    if let Some(_blocker) = pgstat_kind_blocker() {
-        // `_PG_init()` still centralizes PG18 diagnostics setup so the blocker
-        // stays explicit until shared-preload registration is implemented.
+    unsafe {
+        let _ = pg18_pgstat_shim::register_kind();
     }
 }
 

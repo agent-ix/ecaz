@@ -338,7 +338,8 @@ unsafe fn compute_amcostestimate(
     }
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let metadata = unsafe { shared::read_metadata_page(index_relation) };
-    let tree_height = unsafe { planner_tree_height_from_index_info(index_info, metadata.max_level) };
+    let tree_height =
+        unsafe { planner_tree_height_from_index_info(index_info, metadata.max_level) };
     let constants = unsafe { current_planner_cost_constants() };
 
     estimate_planner_cost(
@@ -359,9 +360,9 @@ mod tests {
     use super::{
         amgettreeheight_callback_value, amtranslatecmptype_callback, amtranslatestrategy_callback,
         estimate_planner_cost, metadata_fallback_tree_height, resolved_tree_height_input,
-        strategy_translation_snapshot,
-        PlannerCompareType, PlannerCostConstants, PlannerCostEstimate, PlannerCostInputs,
-        PlannerTreeHeightInput, StrategyTranslationSnapshot, LUT_CPU_DIMENSION_SCALE,
+        strategy_translation_snapshot, PlannerCompareType, PlannerCostConstants,
+        PlannerCostEstimate, PlannerCostInputs, PlannerTreeHeightInput,
+        StrategyTranslationSnapshot, LUT_CPU_DIMENSION_SCALE,
     };
 
     fn default_constants() -> PlannerCostConstants {

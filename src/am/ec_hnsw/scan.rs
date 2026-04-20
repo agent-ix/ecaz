@@ -2835,8 +2835,9 @@ fn release_prefetched_graph_buffers_if_any(
 unsafe fn cached_graph_element_with_prefetch(
     index_relation: pg_sys::Relation,
     opaque: *mut TqScanOpaque,
-    #[cfg_attr(not(feature = "pg18"), allow(unused_variables))]
-    prefetched_buffers: Option<&HashMap<u32, pg_sys::Buffer>>,
+    #[cfg_attr(not(feature = "pg18"), allow(unused_variables))] prefetched_buffers: Option<
+        &HashMap<u32, pg_sys::Buffer>,
+    >,
     element_tid: page::ItemPointer,
 ) -> (Arc<CachedGraphElement>, LoadedElementState) {
     #[cfg(feature = "pg18")]
@@ -2928,7 +2929,12 @@ where
                             });
                         } else {
                             let score = unsafe {
-                                score_grouped_candidate_context(index_relation, opaque, grouped, layer)
+                                score_grouped_candidate_context(
+                                    index_relation,
+                                    opaque,
+                                    grouped,
+                                    layer,
+                                )
                             };
                             candidates.push(search::BeamCandidate::with_source(
                                 neighbor.tid,
@@ -4473,8 +4479,9 @@ unsafe fn select_next_linear_scan_result(
             } else {
                 unsafe { *per_buffer_data.cast::<pg_sys::BlockNumber>() }
             };
-            let selected =
-                unsafe { select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number) };
+            let selected = unsafe {
+                select_linear_scan_result_from_buffer(opaque, code_len, buffer, block_number)
+            };
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             if selected.is_some() {
                 return selected;
@@ -4543,7 +4550,8 @@ unsafe fn select_linear_scan_result_from_buffer(
             pgrx::error!("ec_hnsw found invalid tuple bounds while scanning block {block_number}");
         }
 
-        let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
         if tuple_bytes.first().copied() != Some(page::TQ_ELEMENT_TAG) {
             opaque.explain_counters.record_element_skipped();
             continue;
@@ -4557,7 +4565,10 @@ unsafe fn select_linear_scan_result_from_buffer(
         }
 
         opaque.next_block_number = block_number;
-        debug_assert!(offset < u16::MAX, "scan offset should fit in page-local u16 range");
+        debug_assert!(
+            offset < u16::MAX,
+            "scan offset should fit in page-local u16 range"
+        );
         opaque.next_offset_number = offset + 1;
         let element_tid = page::ItemPointer {
             block_number,

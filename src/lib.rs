@@ -7,6 +7,8 @@ pgrx::pg_module_magic!(name, version);
 
 #[allow(dead_code)]
 mod am;
+#[cfg(feature = "pg18")]
+mod pg18_pgstat_shim;
 mod quant;
 #[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
 mod standalone_pg_backend_stubs;
@@ -768,7 +770,7 @@ fn tqvector_stats() -> TableIterator<
         name!(quantizer_cache_rate, f64),
     ),
 > {
-    let summary = am::stats::current_backend_stats_counters().summary();
+    let summary = am::stats::current_stats_counters().summary();
     TableIterator::once((
         i64::try_from(summary.total_distance_calcs)
             .expect("distance calc counter should fit in i64"),
@@ -2776,7 +2778,7 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("pg18 blocker should be non-null"),
             if cfg!(feature = "pg18") {
-                "custom pgstat kind registration still needs shared_preload_libraries setup plus pgrx bindings or a shim for pgstat_internal.h"
+                "custom pgstat kind registration requires loading tqvector via shared_preload_libraries on PG18 and restarting PostgreSQL"
             } else {
                 "custom pgstat kind registration remains gated outside this build"
             }
@@ -2803,8 +2805,10 @@ mod tests {
     #[cfg(feature = "pg18")]
     #[pg_test]
     fn test_pg18_tqvector_stats_reports_backend_local_counters() {
-        Spi::run("CREATE TABLE pg18_tqvector_stats_fixture (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE pg18_tqvector_stats_fixture (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
         Spi::run(
             "INSERT INTO pg18_tqvector_stats_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),

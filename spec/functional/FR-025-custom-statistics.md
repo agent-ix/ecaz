@@ -27,9 +27,11 @@ Current staged behavior:
   `tqvector_stats()` exists on PG17.
 - Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
   state together so productization work can inspect one consolidated PG18 diagnostics boundary.
-- On the current PG18 branch, the shared scan infrastructure MAY already accumulate backend-local
-  counters and expose them through `tqvector_stats()` while still reporting
-  `pg18_pgstat_kind_ready = false` until the preload-time pgstat registration path is implemented.
+- On the current PG18 branch, the shared scan infrastructure MAY expose backend-local counters
+  through `tqvector_stats()` in ordinary sessions while still reporting
+  `pg18_pgstat_kind_ready = false`. When the library is loaded through
+  `shared_preload_libraries`, the same SQL surface MAY read the shared custom pgstat snapshot
+  instead.
 - Those helpers SHALL stay descriptive about the shared pgstat-kind boundary; they do not imply
   that PostgreSQL's global statistics system is already accumulating tqvector counters.
 
@@ -83,8 +85,9 @@ SELECT * FROM tqvector_stats();
 --   bootstrap_hit_rate    | 0.85
 --   quantizer_cache_rate  | 0.99
 
--- Reset statistics
-SELECT pg_stat_reset_shared('tqvector');
+-- Resetting the custom kind currently requires PostgreSQL's pgstat reset API
+-- for the registered kind. The built-in pg_stat_reset_shared(text) SQL helper
+-- in the local PG18 tree does not yet accept custom kind names.
 ```
 
 ### Counter Increment Points

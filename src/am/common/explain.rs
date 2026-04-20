@@ -235,10 +235,7 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn emit_explain_properties(
-    es: *mut pg_sys::ExplainState,
-    counters: TqExplainCounters,
-) {
+unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, counters: TqExplainCounters) {
     let group = explain_output_group();
     let group_label = CString::new(group.group_label).expect("group label should not contain NUL");
     unsafe {

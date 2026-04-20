@@ -529,16 +529,16 @@ where
         GraphStorageDescriptor::TurboQuant { code_len } => unsafe {
             read_page_tuple_from_buffer(buffer, element_tid, "element", |tuple_bytes| {
                 Ok(f(GraphTupleRef::Scalar(page::TqElementTupleRef::decode(
-                    tuple_bytes, code_len,
+                    tuple_bytes,
+                    code_len,
                 )?)))
             })
         },
         GraphStorageDescriptor::TurboQuantHotCold(layout) => unsafe {
             read_page_tuple_from_buffer(buffer, element_tid, "turbo hot", |tuple_bytes| {
-                Ok(f(GraphTupleRef::TurboHot(page::TqTurboHotTupleRef::decode(
-                    tuple_bytes,
-                    layout.binary_word_count,
-                )?)))
+                Ok(f(GraphTupleRef::TurboHot(
+                    page::TqTurboHotTupleRef::decode(tuple_bytes, layout.binary_word_count)?,
+                )))
             })
         },
         GraphStorageDescriptor::PqFastScan(layout) => unsafe {
