@@ -54,7 +54,7 @@ See ADR-040 for the full shape. Summary:
 ### Coordinator and DSM
 
 - [ ] **DSM layout.** Define shared top-K heap, lock word, and worker state
-  slots in `src/am/parallel.rs`. Size computed by
+  slots in `src/am/common/parallel.rs`. Size computed by
   `amestimateparallelscan`.
 - [ ] **Shared top-K push/pop.** Lock-guarded; hot path is "is candidate
   better than current kth". Fast-reject without taking the lock when
@@ -106,7 +106,7 @@ See ADR-040 for the full shape. Summary:
 ## Owns
 
 - ADR-040
-- `src/am/parallel.rs` (new)
+- `src/am/common/parallel.rs` (new)
 - Parallel-scan callbacks in `src/am/mod.rs`
 
 ## Dependencies
@@ -133,6 +133,11 @@ See ADR-040 for the full shape. Summary:
 - Parallel vacuum.
 
 ## Notes
+
+- **Staging checkpoint.** The first landing wires the callback surface and the
+  shared AM-private descriptor while leaving `amcanparallel = false`. Planner
+  visibility only flips once the coordinator and worker-local traversal
+  contracts are live.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings

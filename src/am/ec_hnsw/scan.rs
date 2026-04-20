@@ -834,6 +834,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
                 pgrx::error!("ec_hnsw failed to allocate scan descriptor");
             }
 
+            (*scan).parallel_scan = ptr::null_mut();
             (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
             scan
         })
@@ -915,6 +916,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
 
             let index_options = super::options::relation_options((*scan).indexRelation);
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
+            bind_parallel_scan_state(scan, opaque);
             if opaque.rescan_called {
                 finalize_scan_stats(opaque);
                 flush_scan_stats(opaque);
@@ -1069,6 +1071,27 @@ fn validate_runtime_scan_format(
     metadata: &page::MetadataPage,
 ) -> Result<graph::GraphStorageDescriptor, String> {
     unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata) }
+}
+
+fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
+    opaque.parallel_scan_state = ptr::null_mut();
+    opaque.parallel_scan_rescan_epoch = 0;
+}
+
+fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
+    if scan.is_null() {
+        clear_parallel_scan_state(opaque);
+        return;
+    }
+
+    match unsafe { super::parallel::parallel_scan_attachment((*scan).parallel_scan) } {
+        Ok(Some(attachment)) => {
+            opaque.parallel_scan_state = attachment.state;
+            opaque.parallel_scan_rescan_epoch = attachment.rescan_epoch;
+        }
+        Ok(None) => clear_parallel_scan_state(opaque),
+        Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
+    }
 }
 
 fn pq_fastscan_env_var(canonical: &str, legacy: &str) -> Option<std::ffi::OsString> {
@@ -5066,6 +5089,8 @@ impl ScanExecutionPhase {
 #[derive(Debug)]
 pub(super) struct TqScanOpaque {
     pub(super) rescan_called: bool,
+    parallel_scan_state: *mut super::parallel::EcParallelScanState,
+    parallel_scan_rescan_epoch: u32,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5139,6 +5164,8 @@ impl Default for TqScanOpaque {
     fn default() -> Self {
         Self {
             rescan_called: false,
+            parallel_scan_state: ptr::null_mut(),
+            parallel_scan_rescan_epoch: 0,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -5331,6 +5358,56 @@ mod tests {
             refilled_after,
             vec![candidate_b.node],
             "bootstrap refill should only run for the candidate that actually materialized"
+        );
+    }
+
+    #[test]
+    fn bind_parallel_scan_state_captures_shared_rescan_epoch() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe { crate::am::ec_hnsw::parallel::initialize_parallel_scan_target(target) }
+            .expect("parallel scan target should initialize");
+        assert_eq!(
+            unsafe { crate::am::ec_hnsw::parallel::reset_parallel_scan_state(parallel_scan) }
+                .expect("parallel scan reset should succeed")
+                .expect("parallel scan reset should see initialized state"),
+            1,
+            "shared rescan epoch should advance before scan-side attachment"
+        );
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+
+        assert!(
+            !opaque.parallel_scan_state.is_null(),
+            "scan state should retain the shared AM-private descriptor when parallel scan is present"
+        );
+        assert_eq!(
+            opaque.parallel_scan_rescan_epoch, 1,
+            "scan state should capture the current shared rescan epoch"
         );
     }
 

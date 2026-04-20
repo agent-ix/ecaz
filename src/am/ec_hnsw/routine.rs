@@ -1,6 +1,6 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::{build, cost, insert, options, scan, vacuum};
+use super::{build, cost, insert, options, parallel, scan, vacuum};
 
 fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -27,6 +27,9 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amstorage = false;
     amroutine.amclusterable = false;
     amroutine.ampredlocks = false;
+    // The callback surface is wired, but planner-visible parallel scans stay
+    // disabled until Task 18 lands the shared coordinator and worker-local
+    // traversal semantics.
     amroutine.amcanparallel = false;
     amroutine.amcanbuildparallel = false;
     amroutine.amcaninclude = false;
@@ -59,9 +62,9 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amendscan = Some(scan::ec_hnsw_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
-    amroutine.amestimateparallelscan = None;
-    amroutine.aminitparallelscan = None;
-    amroutine.amparallelrescan = None;
+    amroutine.amestimateparallelscan = Some(parallel::ec_amestimateparallelscan);
+    amroutine.aminitparallelscan = Some(parallel::ec_aminitparallelscan);
+    amroutine.amparallelrescan = Some(parallel::ec_amparallelrescan);
     #[cfg(feature = "pg18")]
     {
         amroutine.amtranslatestrategy = Some(cost::ec_hnsw_amtranslatestrategy);
