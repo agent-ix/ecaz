@@ -1,6 +1,6 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
-Status: in progress — the shared PG18 infrastructure slice is now wired and validated on `pg18-shared-infra-merge`; PG17 fallback is preserved, and the remaining follow-ons are preload-aware shared-pgstat activation coverage, optional parallel-scan callbacks, and post-merge measurement.
+Status: in progress — the shared PG18 infrastructure slice is now wired and validated on `main`; PG17 fallback is preserved, preload-aware shared-pgstat activation coverage now has a dedicated repo lane, and the remaining follow-ons are optional parallel-scan callbacks and post-merge measurement.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 
@@ -66,6 +66,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - [x] **Register custom pgstat-kind.** PG18 now has a preload-aware registration path through a small C shim over `pgstat_internal.h`. Registration succeeds when `ecaz` is loaded through `shared_preload_libraries`; non-preloaded sessions keep the current backend-local fallback.
 - [x] **Increment sites.** Shared scan counters now increment at the live scan seams that already feed EXPLAIN.
 - [x] **`ecaz_stats()` SQL function.** PG18 now exposes the shared pgstat snapshot when registration is active, and otherwise falls back to backend-local counters so non-preloaded sessions still have a descriptive SQL surface.
+- [x] **Preload-aware validation coverage.** `scripts/run_pg18_preload_pgstat_test.sh` now starts a repo-local PG18 cluster with `shared_preload_libraries = 'ecaz'`, verifies the planner snapshot clears the PG18 blocker, and checks that `ecaz_stats()` exposes scan deltas across backend boundaries.
 
 ### ReadStream activation
 
@@ -117,7 +118,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 - Most of the work was flipping pre-built switches, not inventing new design. Task 11 did the
   hard part by making the surface pure and testable before the live PG18 binding work landed.
-- Local PG18 validation is now in place on this branch. The remaining blocker is narrower:
-  exercising the shared pgstat path in a preload-aware PG18 environment rather than the existing
-  backend-local fallback lane.
+- Local PG18 validation now covers both the ordinary fallback lane and the preload-aware shared
+  pgstat lane. The remaining PG18 follow-ons are measurement plus the still-optional parallel-scan
+  callback work.
 - Keep the PG17 fallback working until we have at least 3 months of PG18 CI history. Don't rip the `pg17` Cargo feature prematurely.

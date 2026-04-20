@@ -29,7 +29,7 @@ These pre-lane task files are retained only for historical context under
 
 ### Agent 2: Planner Integration
 
-11. `11-planner.md` — D1/D2 substantially complete on `main`; remaining follow-ons are preload-aware shared-pgstat validation, measurement, and optional parallel-scan callbacks
+11. `11-planner.md` — D1/D2 substantially complete on `main`; remaining follow-ons are measurement and optional parallel-scan callbacks
 
 ### Agent 3: SIMD / CI
 

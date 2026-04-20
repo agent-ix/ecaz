@@ -21,6 +21,8 @@ Current staged behavior:
   pg18 explicitly.
 - `_PG_init()` now registers the PG18 EXPLAIN hooks and shared-stats setup. Shared pgstat
   activation still depends on preload-time configuration.
+- `scripts/run_pg18_preload_pgstat_test.sh` now covers that preload-only PG18 shared-pgstat path
+  in a repo-local cluster, which the ordinary `cargo pgrx test pg18` lane cannot exercise.
 - The upgrade/diagnostics/read-stream snapshot helpers now describe live wired state rather than
   pure scaffolding.
 

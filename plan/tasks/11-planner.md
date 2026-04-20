@@ -1,12 +1,11 @@
 # Task 11: Planner Integration
 
 Status: substantially complete — the shared PG18 planner/diagnostics/read-stream slice is live on
-`pg18-shared-infra-merge`; remaining follow-ons are preload-aware shared-pgstat activation
-coverage, measurement, and optional parallel-scan callbacks.
+`main`; remaining follow-ons are measurement and optional parallel-scan callbacks.
 
 Progress notes:
 - Task 19 has now completed the planned PG18 shared-infrastructure landing on
-  `pg18-shared-infra-merge`: live `amcostestimate`, PG18 callback registration, EXPLAIN hook
+  `main`: live `amcostestimate`, PG18 callback registration, EXPLAIN hook
   registration, ReadStream scan/vacuum wiring, preload-aware shared pgstat registration, and
   PG18 module identity are all in place with PG17 fallback preserved.
 - Local validation now passes on both supported versions:
@@ -23,9 +22,9 @@ Progress notes:
   planner cost snapshots show the live callback path, diagnostics snapshots distinguish preload-time
   shared-pgstat gating from the otherwise-live PG18 surfaces, and ReadStream snapshots report the
   active PG18 scan/vacuum wiring.
-- The remaining gap in this task is not callback wiring. It is follow-on validation of the
-  preload-only shared pgstat lane plus later measurement/parallel-scan work that was always outside
-  the narrow shared-infrastructure landing.
+- The remaining gap in this task is not callback wiring. The preload-only shared pgstat lane now
+  has a dedicated repo validation script; what remains is later measurement work plus optional
+  parallel-scan callbacks that were always outside the narrow shared-infrastructure landing.
 
 ## Scope
 

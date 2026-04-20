@@ -245,6 +245,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-238 | Stats persist within session | FR-025-AC-4 | Run 5 scans, read stats, run 5 more scans, verify counters accumulated (not reset between queries) |
 | TC-239 | ecaz_stats() absent on PG17 | FR-025-AC-5 | Compile with `--features pg17`, verify `SELECT * FROM ecaz_stats()` raises ERROR or function does not exist |
 | TC-240 | PG17 and PG18 tests both pass | FR-027-AC-3 | CI matrix: `cargo pgrx test pg17` and `cargo pgrx test pg18` both exit 0 |
+| TC-241 | PG18 preload shared stats visible across backends | FR-025-AC-1, FR-027-AC-4 | `scripts/run_pg18_preload_pgstat_test.sh` starts a repo-local PG18 cluster with `shared_preload_libraries = 'ecaz'`, runs a scan in one backend, and verifies from another backend that `ecaz_stats()` and `ec_hnsw_planner_integration_snapshot(...)` see the shared pgstat path |
 
 ## PG18 Benchmarks
 

@@ -157,10 +157,11 @@ Release / quality-gate rollup: 62%
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
 2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts plus a verified warm per-cell seam on `main`; the next C1 work is optimization and normative `50K`/storage-result follow-through, not basic benchmark-integrity bring-up.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
-4. **Planner:** `pg18-shared-infra-merge` now has live PG18 callback bindings, EXPLAIN hooks,
+4. **Planner:** `main` now has live PG18 callback bindings, EXPLAIN hooks,
    ReadStream scan/vacuum wiring, shared pgstat registration via the preload-aware shim, and
-   module identity with PG17 fallback preserved. The remaining follow-ons are review, preload-aware
-   activation coverage, and measurement rather than PG18 toolchain bring-up.
+   module identity with PG17 fallback preserved. The preload-aware activation lane now exists in
+   repo, so the remaining follow-ons are measurement and optional parallel-scan work rather than
+   PG18 toolchain bring-up.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
 
 ## Current Major Blockers

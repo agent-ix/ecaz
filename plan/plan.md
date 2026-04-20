@@ -373,11 +373,11 @@ and validated on `pg18-shared-infra-merge`.
   6. FR-020-AC-2 validated: planner prefers seqscan on 50-row table
 - **Dependencies:** A4 (recall gate must pass), D1 (scaffolding must be complete)
 - **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan without `enable_seqscan = off`. EXPLAIN (ecaz) shows scan stats on PG18.
-- **Status:** the shared-infrastructure slice is complete on `pg18-shared-infra-merge`: live
+- **Status:** the shared-infrastructure slice is complete on `main`: live
   costing, `amgettreeheight`, strategy translation, EXPLAIN hooks, ReadStream scan/vacuum wiring,
   preload-aware shared pgstat registration, and PG18 module identity all validate locally on PG18
-  and PG17. Remaining follow-ons are preload-aware shared-pgstat activation coverage, measurement,
-  and optional parallel-scan callbacks.
+  and PG17. A dedicated preload-aware PG18 pgstat validation lane now exists in-repo. Remaining
+  follow-ons are measurement and optional parallel-scan callbacks.
 
 ### Track C: Post-Gate Verification (after A4 passes)
 
