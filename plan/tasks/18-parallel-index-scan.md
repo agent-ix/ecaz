@@ -151,6 +151,12 @@ See ADR-040 for the full shape. Summary:
   `amcanparallel` still stays `false` until the coordinator heap and
   worker-local traversal contracts are live.
 
+- **Coordinator-result staging.** The shared descriptor now also reserves one
+  coordinator-owned staged current-result slot per worker slot, keyed to the
+  same rescan epoch. Scan lifecycle publishes the current result element/score
+  state there, while the true shared top-K heap ordering and merge path remain
+  deferred to the next Task 18 packets.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

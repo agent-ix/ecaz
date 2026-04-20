@@ -1080,6 +1080,13 @@ fn saturating_u32_from_usize(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
+fn parallel_item_pointer(tid: page::ItemPointer) -> super::parallel::EcParallelItemPointer {
+    super::parallel::EcParallelItemPointer {
+        block_number: tid.block_number,
+        offset_number: tid.offset_number,
+    }
+}
+
 fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
     match phase {
         ScanExecutionPhase::GraphTraversal => {
@@ -1138,6 +1145,57 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     } {
         Ok(_) => {}
         Err(err) => pgrx::error!("ec_hnsw parallel scan snapshot publish failed: {err}"),
+    }
+
+    let current_result = active_result_state.current();
+    if current_result.has_element() {
+        let result_snapshot = super::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
+            element_tid: parallel_item_pointer(current_result.element_tid()),
+            heap_tid: if current_result.heap_tid() == page::ItemPointer::INVALID {
+                super::parallel::EcParallelItemPointer::INVALID
+            } else {
+                parallel_item_pointer(current_result.heap_tid())
+            },
+            score: current_result.score(),
+            approx_score: current_result
+                .approx_score_valid()
+                .then_some(current_result.approx_score()),
+            comparison_score: current_result
+                .comparison_score_valid()
+                .then_some(current_result.comparison_score()),
+            approx_rank_base: current_result
+                .approx_rank_valid()
+                .then_some(current_result.approx_rank_base()),
+            pending_count: u32::from(active_result_state.pending_count()),
+            pending_index: u32::from(active_result_state.pending_index()),
+        };
+
+        match unsafe {
+            super::parallel::publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+                opaque.parallel_scan_rescan_epoch,
+                result_snapshot,
+            )
+        } {
+            Ok(_) => {}
+            Err(err) => {
+                pgrx::error!("ec_hnsw parallel scan coordinator-result publish failed: {err}")
+            }
+        }
+    } else {
+        match unsafe {
+            super::parallel::clear_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+                opaque.parallel_scan_rescan_epoch,
+            )
+        } {
+            Ok(_) => {}
+            Err(err) => {
+                pgrx::error!("ec_hnsw parallel scan coordinator-result clear failed: {err}")
+            }
+        }
     }
 }
 
@@ -5700,6 +5758,70 @@ mod tests {
         assert!(
             snapshot.runtime.active_result_has_current,
             "worker snapshot should record whether the active result state still has a current row"
+        );
+
+        let coordinator_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert_eq!(
+            coordinator_snapshot.claimed_worker_slots, 1,
+            "coordinator snapshot should report the single claimed worker slot"
+        );
+        assert_eq!(
+            coordinator_snapshot.published_result_slots, 1,
+            "coordinator snapshot should report the single staged current result"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.flags, 0x03,
+            "plain staged current results should carry only the published and score-valid flags"
+        );
+        assert_eq!(
+            result_snapshot.runtime.element_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 28,
+                offset_number: 1,
+            },
+            "coordinator result snapshot should mirror the active result element tid"
+        );
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            "coordinator result snapshot should stay heap-tid invalid until pending drain materializes a heap row"
+        );
+        assert_eq!(
+            result_snapshot.runtime.score, -6.0,
+            "coordinator result snapshot should mirror the active result score"
+        );
+        assert_eq!(
+            result_snapshot.runtime.approx_score, None,
+            "plain active results should not synthesize an approximate score"
+        );
+        assert_eq!(
+            result_snapshot.runtime.comparison_score, None,
+            "plain active results should not synthesize a comparison score"
+        );
+        assert_eq!(
+            result_snapshot.runtime.approx_rank_base, None,
+            "plain active results should not synthesize an approximate rank"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_count, 2,
+            "coordinator result snapshot should mirror the pending heap-drain count"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_index, 0,
+            "coordinator result snapshot should mirror the pending heap-drain cursor"
         );
     }
 
