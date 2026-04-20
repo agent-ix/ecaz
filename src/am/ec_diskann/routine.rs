@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    ambuild, insert, options,
+    ambuild, cost, insert, options,
     page::VamanaMetadataPage,
     reader::{PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
@@ -168,7 +168,7 @@ fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> 
     amroutine.ambulkdelete = Some(ec_diskann_ambulkdelete);
     amroutine.amvacuumcleanup = Some(ec_diskann_amvacuumcleanup);
     amroutine.amcanreturn = None;
-    amroutine.amcostestimate = Some(ec_diskann_amcostestimate);
+    amroutine.amcostestimate = Some(cost::ec_diskann_amcostestimate);
     amroutine.amoptions = Some(options::ec_diskann_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
@@ -482,30 +482,6 @@ unsafe extern "C-unwind" fn ec_diskann_amvacuumcleanup(
         pgrx::pgrx_extern_c_guard(|| {
             ec_diskann_noop_vacuum_stats((*info).index, stats)
                 .unwrap_or_else(|e| pgrx::error!("ec_diskann amvacuumcleanup failed: {e}"))
-        })
-    }
-}
-
-unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
-    _root: *mut pg_sys::PlannerInfo,
-    _path: *mut pg_sys::IndexPath,
-    _loop_count: f64,
-    index_startup_cost: *mut pg_sys::Cost,
-    index_total_cost: *mut pg_sys::Cost,
-    index_selectivity: *mut pg_sys::Selectivity,
-    index_correlation: *mut f64,
-    index_pages: *mut f64,
-) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            // Phase 1A: surface a prohibitive cost so the planner never
-            // picks ec_diskann. Phase 9 replaces this with a real cost
-            // model once planner opt-in lands.
-            *index_startup_cost = pg_sys::disable_cost;
-            *index_total_cost = pg_sys::disable_cost;
-            *index_selectivity = 1.0;
-            *index_correlation = 0.0;
-            *index_pages = 0.0;
         })
     }
 }
@@ -1941,6 +1917,47 @@ mod tests {
         materialized
     }
 
+    fn explain_text(sql: &str) -> String {
+        Spi::connect(|client| {
+            let rows = client
+                .select(sql, None, &[])
+                .expect("EXPLAIN should succeed")
+                .first();
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<String>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL"),
+                );
+            }
+            lines.join("\n")
+        })
+    }
+
+    fn explain_ordered_diskann_ids(table_name: &str, query_array: &str, limit: usize) -> String {
+        explain_text(&format!(
+            "EXPLAIN (COSTS OFF) SELECT id FROM {table_name} \
+             ORDER BY embedding <#> {query_array} LIMIT {limit}"
+        ))
+    }
+
+    fn explain_plan_uses_index(plan: &str) -> bool {
+        plan.contains("Index Scan") || plan.contains("Index Only Scan")
+    }
+
+    fn diskann_large_query_array() -> String {
+        let mut out = String::from("ARRAY[");
+        for i in 0..64 {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!("{:.6}", i as f32 * 0.05 - 1.5));
+        }
+        out.push_str("]::real[]");
+        out
+    }
+
     #[derive(Debug, Clone)]
     struct VacuumRefillFixture {
         prefill_metadata: VamanaMetadataPage,
@@ -2281,31 +2298,14 @@ mod tests {
         Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
         Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
 
-        let plan = Spi::connect(|client| {
-            let rows = client
-                .select(
-                    "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM ec_diskann_sql_ordered_exec \
-                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
-                     LIMIT 2",
-                    None,
-                    &[],
-                )
-                .expect("EXPLAIN should succeed")
-                .first();
-            let mut lines = Vec::new();
-            for row in rows {
-                lines.push(
-                    row.get::<String>(1)
-                        .expect("plan row should decode")
-                        .expect("plan row should not be NULL"),
-                );
-            }
-            lines.join("\n")
-        });
+        let plan = explain_ordered_diskann_ids(
+            "ec_diskann_sql_ordered_exec",
+            "ARRAY[1.0, 0.0, 0.5, -1.0]::real[]",
+            2,
+        );
 
         assert!(
-            plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+            explain_plan_uses_index(&plan),
             "ordered execution test should route through ec_diskann at runtime: {plan}"
         );
 
@@ -2336,6 +2336,94 @@ mod tests {
         assert_eq!(
             ordered_ids[0], 1,
             "runtime ordered ec_diskann scan should return the nearest vector first"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_empty_index_remains_planner_gated() {
+        Spi::run("CREATE TABLE ec_diskann_empty_cost (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_empty_cost_idx ON ec_diskann_empty_cost USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("empty-index creation should succeed");
+
+        let plan = explain_ordered_diskann_ids(
+            "ec_diskann_empty_cost",
+            "ARRAY[1.0, 0.0, 0.5, -1.0]::real[]",
+            1,
+        );
+
+        assert!(
+            !explain_plan_uses_index(&plan),
+            "planner must not pick an empty ec_diskann index after Phase 9 activation: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_planner_prefers_seqscan_for_small_tables() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_small_seqscan (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_small_seqscan \
+             SELECT g, encode_to_ecvector(ARRAY[g::real, (g * 0.25)::real, (g * -0.5)::real, 1.0::real], 4, 42) \
+             FROM generate_series(1, 50) AS g",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_small_seqscan_idx ON ec_diskann_small_seqscan USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE ec_diskann_small_seqscan").expect("analyze should succeed");
+
+        let plan = explain_ordered_diskann_ids(
+            "ec_diskann_small_seqscan",
+            "ARRAY[1.0, 0.0, 0.5, -1.0]::real[]",
+            1,
+        );
+
+        assert!(
+            !explain_plan_uses_index(&plan),
+            "planner should prefer seqscan on a 50-row table even with ec_diskann Phase 9 activation: {plan}"
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_planner_chooses_index_scan_for_large_table() {
+        Spi::run("CREATE TABLE ec_diskann_large_plan (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_large_plan \
+             SELECT g, encode_to_ecvector( \
+                 ARRAY( \
+                     SELECT ((get_byte( \
+                              decode(md5(g::text) \
+                                     || md5((g + 999983)::text) \
+                                     || md5((g + 1999993)::text) \
+                                     || md5((g + 2999999)::text), 'hex'), \
+                              i)::real - 128.0) / 128.0)::real \
+                     FROM generate_series(0, 63) AS i), \
+                 4, 42) \
+             FROM generate_series(1, 10000) AS g",
+        )
+        .expect("10k-row insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_large_plan_idx ON ec_diskann_large_plan USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE ec_diskann_large_plan").expect("analyze should succeed");
+
+        let query_array = diskann_large_query_array();
+        let plan = explain_ordered_diskann_ids("ec_diskann_large_plan", &query_array, 10);
+
+        assert!(
+            plan.contains("Index Scan") && plan.contains("ec_diskann_large_plan_idx"),
+            "planner must naturally pick the ec_diskann index on a 10K-row table after Phase 9 activation: {plan}"
         );
     }
 
