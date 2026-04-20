@@ -94,10 +94,7 @@ pub fn is_fully_dead(tuple: &VamanaNodeTuple) -> bool {
 /// (chosen by the pgrx caller via greedy_search under shared lock)
 /// are appended in a separate step that this primitive does not
 /// own — it only removes the dead.
-pub fn repair_neighbors(
-    tuple: &mut VamanaNodeTuple,
-    dead_set: &HashSet<ItemPointer>,
-) -> usize {
+pub fn repair_neighbors(tuple: &mut VamanaNodeTuple, dead_set: &HashSet<ItemPointer>) -> usize {
     if dead_set.is_empty() {
         return 0;
     }
@@ -227,10 +224,7 @@ mod tests {
     // INVALID, updates neighbor_count.
     #[test]
     fn vc_006_repair_neighbors_compacts_and_pads() {
-        let mut t = make_tuple(
-            &[tid(1, 1), tid(2, 2), tid(3, 3), tid(4, 4)],
-            6,
-        );
+        let mut t = make_tuple(&[tid(1, 1), tid(2, 2), tid(3, 3), tid(4, 4)], 6);
         assert_eq!(t.neighbor_count, 4);
 
         let mut dead = HashSet::new();
@@ -263,10 +257,7 @@ mod tests {
     // graph topology beyond strict removals.
     #[test]
     fn vc_008_repair_is_stable() {
-        let mut t = make_tuple(
-            &[tid(1, 1), tid(2, 2), tid(3, 3), tid(4, 4), tid(5, 5)],
-            8,
-        );
+        let mut t = make_tuple(&[tid(1, 1), tid(2, 2), tid(3, 3), tid(4, 4), tid(5, 5)], 8);
         let mut dead = HashSet::new();
         dead.insert(tid(3, 3));
 
@@ -322,8 +313,7 @@ mod tests {
         let mut t = make_tuple(&[tid(1, 1), tid(2, 2), tid(3, 3)], 4);
 
         // Pass 1: heap row dies, primary stripped.
-        let stripped =
-            strip_dead_primary_heaptid(&mut t, |p| p == tid(100, 1));
+        let stripped = strip_dead_primary_heaptid(&mut t, |p| p == tid(100, 1));
         assert!(stripped);
         assert_eq!(t.primary_heaptid, ItemPointer::INVALID);
         assert!(!t.deleted, "stripping primary doesn't auto-delete");

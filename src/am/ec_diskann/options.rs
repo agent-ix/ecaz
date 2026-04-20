@@ -207,7 +207,9 @@ pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqDis
             "storage_format",
         )
     } {
-        Some(value) => StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}")),
+        Some(value) => {
+            StorageFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+        }
         None => StorageFormat::DEFAULT,
     };
 

@@ -205,12 +205,7 @@ where
 /// node_count)` indices are drawn uniformly without replacement; the
 /// medoid is the sample with the smallest sum of distances to the
 /// other samples. Cost: O(S²) distance evaluations.
-pub fn approximate_medoid<D>(
-    node_count: usize,
-    sample_cap: usize,
-    seed: u64,
-    dist: D,
-) -> u32
+pub fn approximate_medoid<D>(node_count: usize, sample_cap: usize, seed: u64, dist: D) -> u32
 where
     D: Fn(u32, u32) -> f32,
 {
@@ -543,8 +538,7 @@ mod tests {
             let exact_top10: Vec<u32> = all.into_iter().take(10).collect();
 
             let result = greedy_search(&graph, medoid, 64, qdist);
-            let approx_top10: Vec<u32> =
-                result.frontier.iter().take(10).map(|c| c.node).collect();
+            let approx_top10: Vec<u32> = result.frontier.iter().take(10).map(|c| c.node).collect();
 
             let overlap = approx_top10
                 .iter()

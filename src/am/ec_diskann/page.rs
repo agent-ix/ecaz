@@ -149,7 +149,9 @@ impl VamanaMetadataPage {
                     .expect("search_subvector_count bytes"),
             ),
             search_subvector_dim: u16::from_le_bytes(
-                input[40..42].try_into().expect("search_subvector_dim bytes"),
+                input[40..42]
+                    .try_into()
+                    .expect("search_subvector_dim bytes"),
             ),
             grouped_codebook_head: ItemPointer::decode(&input[42..48])?,
         })

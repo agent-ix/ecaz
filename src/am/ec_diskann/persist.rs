@@ -154,8 +154,7 @@ pub fn persist_vamana_graph(
             neighbors: vec![ItemPointer::INVALID; graph_degree_r as usize],
             neighbor_count: 0,
         };
-        let encoded =
-            placeholder.encode(graph_degree_r, binary_word_count, search_code_len)?;
+        let encoded = placeholder.encode(graph_degree_r, binary_word_count, search_code_len)?;
         let tid = chain.insert_raw_tuple(encoded)?;
         node_to_tid[node as usize] = tid;
     }
@@ -191,8 +190,7 @@ pub fn persist_vamana_graph(
             neighbors: neighbor_slots,
             neighbor_count,
         };
-        let encoded =
-            patched.encode(graph_degree_r, binary_word_count, search_code_len)?;
+        let encoded = patched.encode(graph_degree_r, binary_word_count, search_code_len)?;
         let tid = node_to_tid[node as usize];
         let page = chain
             .get_page_mut(tid.block_number)
@@ -282,9 +280,7 @@ pub fn stage_grouped_codebook_chain(
 mod tests {
     use super::*;
     use crate::am::ec_diskann::tuple::VamanaNodeTuple;
-    use crate::am::ec_diskann::vamana::{
-        approximate_medoid, build_vamana_graph,
-    };
+    use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph};
     use crate::storage::page::{DEFAULT_PAGE_SIZE, FIRST_DATA_BLOCK_NUMBER};
 
     fn synth_payloads(n: usize, w: usize, c: usize) -> Vec<NodePayload> {
@@ -367,8 +363,8 @@ mod tests {
     fn pe_006_single_node_persists() {
         let g = VamanaGraph::empty(1, 4);
         let payloads = synth_payloads(1, 2, 8);
-        let persisted = persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 2, 8)
-            .expect("persist");
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 2, 8).expect("persist");
         assert_eq!(persisted.node_to_tid.len(), 1);
         assert_eq!(persisted.entry_point_tid, persisted.node_to_tid[0]);
         assert_eq!(persisted.persistence_order, vec![0]);
@@ -391,10 +387,13 @@ mod tests {
         let n = 10;
         let g = make_chain_graph(n);
         let payloads = synth_payloads(n, 1, 4);
-        let persisted = persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 1, 4)
-            .expect("persist");
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 1, 4).expect("persist");
 
-        assert_eq!(persisted.persistence_order, (0..n as u32).collect::<Vec<_>>());
+        assert_eq!(
+            persisted.persistence_order,
+            (0..n as u32).collect::<Vec<_>>()
+        );
         assert!(persisted.unreached.is_empty());
 
         // Every node decodes; neighbor slots resolve to other nodes' TIDs.
@@ -404,10 +403,19 @@ mod tests {
             let page = persisted.chain.get_page(tid.block_number).expect("page");
             let raw = page.raw_tuple(tid).expect("raw");
             let decoded = VamanaNodeTuple::decode(raw, 4, 1, 4).expect("decode");
-            assert_eq!(decoded.primary_heaptid, payloads[node_id as usize].primary_heaptid);
-            assert_eq!(decoded.neighbor_count as usize, g.neighbors[node_id as usize].len());
+            assert_eq!(
+                decoded.primary_heaptid,
+                payloads[node_id as usize].primary_heaptid
+            );
+            assert_eq!(
+                decoded.neighbor_count as usize,
+                g.neighbors[node_id as usize].len()
+            );
             for (slot, &nbr_id) in g.neighbors[node_id as usize].iter().enumerate() {
-                assert_eq!(decoded.neighbors[slot], persisted.node_to_tid[nbr_id as usize]);
+                assert_eq!(
+                    decoded.neighbors[slot],
+                    persisted.node_to_tid[nbr_id as usize]
+                );
             }
             // Tail slots remain INVALID.
             for slot in &decoded.neighbors[g.neighbors[node_id as usize].len()..] {
@@ -428,8 +436,8 @@ mod tests {
         g.neighbors[2].push(3);
         g.neighbors[3].push(2);
         let payloads = synth_payloads(4, 0, 0);
-        let persisted = persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0)
-            .expect("persist");
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 4, 0, 0).expect("persist");
 
         // BFS from 0 reaches {0, 1}; unreached are {2, 3} in node-id order.
         assert_eq!(&persisted.persistence_order[..2], &[0u32, 1u32]);
@@ -458,17 +466,15 @@ mod tests {
             g.neighbors[i].push(((i + n - 1) % n) as u32);
         }
         let payloads = synth_payloads(n, 24, 192);
-        let persisted =
-            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 32, 24, 192)
-                .expect("persist");
+        let persisted = persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 32, 24, 192)
+            .expect("persist");
         assert!(
             persisted.chain.pages().len() >= 2,
             "expected multi-page chain, got {} pages",
             persisted.chain.pages().len()
         );
         assert_eq!(
-            persisted.entry_point_tid.block_number,
-            FIRST_DATA_BLOCK_NUMBER,
+            persisted.entry_point_tid.block_number, FIRST_DATA_BLOCK_NUMBER,
             "medoid should land on the first data block (BFS prefix)"
         );
     }
@@ -482,8 +488,8 @@ mod tests {
         let n = 5;
         let g = make_chain_graph(n);
         let payloads = synth_payloads(n, 2, 16);
-        let persisted = persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 8, 2, 16)
-            .expect("persist");
+        let persisted =
+            persist_vamana_graph(&g, 0, DEFAULT_PAGE_SIZE, &payloads, 8, 2, 16).expect("persist");
         for node_id in 0..n as u32 {
             let tid = persisted.node_to_tid[node_id as usize];
             let page = persisted.chain.get_page(tid.block_number).expect("page");
@@ -510,8 +516,9 @@ mod tests {
 
         let n = 50;
         let mut rng = ChaCha8Rng::seed_from_u64(7);
-        let points: Vec<(f32, f32)> =
-            (0..n).map(|_| (rng.gen::<f32>(), rng.gen::<f32>())).collect();
+        let points: Vec<(f32, f32)> = (0..n)
+            .map(|_| (rng.gen::<f32>(), rng.gen::<f32>()))
+            .collect();
         let dist = |a: u32, b: u32| {
             let (ax, ay) = points[a as usize];
             let (bx, by) = points[b as usize];
@@ -523,9 +530,8 @@ mod tests {
         let graph = build_vamana_graph(n, medoid, 8, 32, 1.2, 11, dist);
 
         let payloads = synth_payloads(n, 1, 4);
-        let persisted =
-            persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 1, 4)
-                .expect("persist");
+        let persisted = persist_vamana_graph(&graph, medoid, DEFAULT_PAGE_SIZE, &payloads, 8, 1, 4)
+            .expect("persist");
 
         assert_ne!(persisted.entry_point_tid, ItemPointer::INVALID);
         // For each node, the on-page tuple's neighbor TIDs must match
@@ -536,7 +542,10 @@ mod tests {
             let raw = page.raw_tuple(tid).expect("raw");
             let decoded = VamanaNodeTuple::decode(raw, 8, 1, 4).expect("decode");
             for (slot, &nbr_id) in graph.neighbors[node_id as usize].iter().enumerate() {
-                assert_eq!(decoded.neighbors[slot], persisted.node_to_tid[nbr_id as usize]);
+                assert_eq!(
+                    decoded.neighbors[slot],
+                    persisted.node_to_tid[nbr_id as usize]
+                );
             }
         }
     }
@@ -570,8 +579,7 @@ mod tests {
             signs: vec![],
         };
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
-        let err =
-            stage_grouped_codebook_chain(&mut chain, &model).expect_err("empty should fail");
+        let err = stage_grouped_codebook_chain(&mut chain, &model).expect_err("empty should fail");
         assert!(err.contains("at least one group"), "got: {err}");
     }
 
@@ -581,8 +589,8 @@ mod tests {
         let mut model = synth_grouped_pq4_model(2, 4);
         model.codebooks[1].pop();
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
-        let err = stage_grouped_codebook_chain(&mut chain, &model)
-            .expect_err("mismatch should fail");
+        let err =
+            stage_grouped_codebook_chain(&mut chain, &model).expect_err("mismatch should fail");
         assert!(err.contains("length mismatch"), "got: {err}");
     }
 

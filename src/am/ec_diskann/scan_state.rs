@@ -7,8 +7,8 @@ use crate::storage::page::{DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER};
 use super::{
     options::TqDiskannOptions,
     page::{
-        VAMANA_METADATA_BYTES, VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN,
-        PAYLOAD_FLAG_BINARY_SIDECAR,
+        VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, PAYLOAD_FLAG_BINARY_SIDECAR,
+        VAMANA_METADATA_BYTES,
     },
     reader::VisitedState,
     scan::ScanResult,
@@ -62,7 +62,8 @@ impl DiskannScanOpaque {
 }
 
 fn reloption_usize(value: i32, name: &str) -> Result<usize, String> {
-    usize::try_from(value).map_err(|_| format!("ec_diskann {name} reloption must be >= 0, got {value}"))
+    usize::try_from(value)
+        .map_err(|_| format!("ec_diskann {name} reloption must be >= 0, got {value}"))
 }
 
 pub(super) fn metadata_binary_word_count(metadata: &VamanaMetadataPage) -> usize {
@@ -133,7 +134,9 @@ pub(super) unsafe fn materialize_chain_from_index(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            return Err(format!("ec_diskann beginscan could not open data block {block_number}"));
+            return Err(format!(
+                "ec_diskann beginscan could not open data block {block_number}"
+            ));
         }
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
         let page_result = (|| -> Result<(), String> {
@@ -287,12 +290,7 @@ pub(super) unsafe fn release_owned_scan_heap_state(
         unsafe { pg_sys::UnregisterSnapshot(snapshot) };
     }
     if heap_relation_owned && !heap_relation.is_null() {
-        unsafe {
-            pg_sys::table_close(
-                heap_relation,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     }
 }
 

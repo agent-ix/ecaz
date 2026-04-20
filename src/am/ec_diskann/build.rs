@@ -27,8 +27,7 @@
 
 use crate::am::ec_diskann::page::{
     VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, PAYLOAD_FLAG_BINARY_SIDECAR,
-    PAYLOAD_FLAG_GROUPED_SEARCH_CODE, VAMANA_SEARCH_CODEC_GROUPED_PQ,
-    VAMANA_TRANSFORM_KIND_SRHT,
+    PAYLOAD_FLAG_GROUPED_SEARCH_CODE, VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
 };
 use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload, PersistedGraph};
 use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph};
@@ -140,7 +139,10 @@ where
         return Err("build_list_size_l must be > 0".into());
     }
     if !(params.alpha.is_finite() && params.alpha >= 1.0) {
-        return Err(format!("alpha must be finite and >= 1.0, got {}", params.alpha));
+        return Err(format!(
+            "alpha must be finite and >= 1.0, got {}",
+            params.alpha
+        ));
     }
     if params.dimensions == 0 {
         return Err("dimensions must be > 0".into());
@@ -343,9 +345,15 @@ mod tests {
         assert_eq!(out.metadata.dimensions, params.dimensions);
         assert_eq!(out.metadata.seed, params.seed);
         assert_eq!(out.metadata.transform_kind, VAMANA_TRANSFORM_KIND_SRHT);
-        assert_eq!(out.metadata.search_codec_kind, VAMANA_SEARCH_CODEC_GROUPED_PQ);
+        assert_eq!(
+            out.metadata.search_codec_kind,
+            VAMANA_SEARCH_CODEC_GROUPED_PQ
+        );
         assert_eq!(out.metadata.payload_flags, params.payload_flags());
-        assert_eq!(out.metadata.search_subvector_count, params.search_subvector_count);
+        assert_eq!(
+            out.metadata.search_subvector_count,
+            params.search_subvector_count
+        );
         assert_eq!(out.metadata.grouped_codebook_head, ItemPointer::INVALID);
 
         // Entry point = medoid TID; never INVALID for a non-empty build.
@@ -363,8 +371,8 @@ mod tests {
         let params = default_params(64);
         let mut payloads = synth_payloads(4, params.binary_word_count(), params.search_code_len());
         payloads[0].search_code.pop();
-        let err = build_and_persist_vamana(params, &payloads, |_, _| 0.0)
-            .expect_err("shape mismatch");
+        let err =
+            build_and_persist_vamana(params, &payloads, |_, _| 0.0).expect_err("shape mismatch");
         assert!(err.contains("search_code"), "got: {err}");
     }
 
@@ -417,7 +425,11 @@ mod tests {
         let c = (out.metadata.search_subvector_count as usize).div_ceil(2);
 
         for (node, tid) in out.persisted.node_to_tid.iter().enumerate() {
-            let page = out.persisted.chain.get_page(tid.block_number).expect("page");
+            let page = out
+                .persisted
+                .chain
+                .get_page(tid.block_number)
+                .expect("page");
             let bytes = page.raw_tuple(*tid).expect("tuple");
             let tuple = VamanaNodeTuple::decode(bytes, r, w, c).expect("decode");
             assert_eq!(tuple.primary_heaptid, payloads[node].primary_heaptid);

@@ -174,8 +174,8 @@ mod tests {
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
         let head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage");
 
-        let flat = read_grouped_codebook_chain(&chain, head, group_count, centroid_count)
-            .expect("read");
+        let flat =
+            read_grouped_codebook_chain(&chain, head, group_count, centroid_count).expect("read");
         assert_eq!(flat.len(), group_count * centroid_count);
 
         let mut expected = Vec::new();
@@ -214,8 +214,8 @@ mod tests {
         let model = synth_model(2, group_size);
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
         let head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage");
-        let err = read_grouped_codebook_chain(&chain, head, 3, centroid_count)
-            .expect_err("should fail");
+        let err =
+            read_grouped_codebook_chain(&chain, head, 3, centroid_count).expect_err("should fail");
         assert!(err.contains("terminated early"), "got: {err}");
     }
 
@@ -227,8 +227,8 @@ mod tests {
         let model = synth_model(3, group_size);
         let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
         let head = stage_grouped_codebook_chain(&mut chain, &model).expect("stage");
-        let err = read_grouped_codebook_chain(&chain, head, 2, centroid_count)
-            .expect_err("should fail");
+        let err =
+            read_grouped_codebook_chain(&chain, head, 2, centroid_count).expect_err("should fail");
         assert!(err.contains("longer than declared"), "got: {err}");
     }
 
@@ -278,8 +278,7 @@ mod tests {
         let training: Vec<Vec<f32>> = (0..n_train)
             .map(|_| (0..dims).map(|_| rng.gen::<f32>()).collect())
             .collect();
-        let training_refs: Vec<&[f32]> =
-            training.iter().map(|v| v.as_slice()).collect();
+        let training_refs: Vec<&[f32]> = training.iter().map(|v| v.as_slice()).collect();
         let model =
             train_grouped_pq4_model(&training_refs, dims, seed, group_size, 128, 4).expect("train");
 
