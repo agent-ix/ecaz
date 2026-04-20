@@ -162,6 +162,12 @@ See ADR-040 for the full shape. Summary:
   with slot-index tie-breaking for determinism. This is still a read-only seam;
   the real shared top-K heap mutation path remains deferred.
 
+- **Coordinator snapshot staging.** The coordinator header now carries an
+  explicit snapshot of the currently selected staged result slot and score.
+  Publish, clear, release, and rescan refresh that snapshot so later merge
+  work can read coordinator state directly without rescanning the staged slots
+  on every access.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
