@@ -182,9 +182,9 @@ cost estimate (higher layers = fewer hops to reach the neighborhood).
 
 ### Current State
 
-- `amcanbuildparallel = false` (routine.rs:27)
-- `build_hnsw_graph()` is single-threaded (build.rs:591-648)
-- Uses `hnsw_rs::Hnsw::insert()` in a serial loop (build.rs:630-632)
+- `amcanbuildparallel = false` (`src/am/ec_hnsw/routine.rs`)
+- `build_hnsw_graph()` is still single-threaded (`src/am/ec_hnsw/build.rs`)
+- The native `ec_hnsw` builder still runs leader-only after heap-tuple collection
 - Heap scan uses `table_index_build_scan` without parallel flags
 
 ### GIN Parallel Build Pattern (PG18)
@@ -215,11 +215,11 @@ The heap scan and tqvector encoding are embarrassingly parallel. Each worker:
 
 This parallelizes the I/O-bound heap scan and CPU-bound detoast/validation.
 
-### Phase 2: HNSW Graph Construction (future)
+### Phase 2: Native Graph Construction (future)
 
-`hnsw_rs::Hnsw` is not thread-safe for concurrent insertion. Options:
-1. **Keep serial** — leader builds graph from sorted tuples (matches GIN pattern)
-2. **Replace with thread-safe HNSW** — use a concurrent HNSW implementation
+The current native builder is still leader-only. Options:
+1. **Keep serial initially** — leader builds graph from sorted tuples (matches GIN pattern)
+2. **Parallelize the native builder** — shard candidate discovery / layer work inside Ecaz's own builder
 3. **Batch parallel** — partition vectors, build sub-graphs in parallel, merge
 
 Recommendation: Start with Phase 1 (parallel scan + encode), keep graph build serial.

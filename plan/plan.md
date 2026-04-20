@@ -144,7 +144,7 @@ Phases 0-3 and the build half of Phase 4 are complete. Preserving the record her
 
 ### Phase 4 (partial): HNSW bulk build — COMPLETE
 
-- [x] `FR-008` bulk build using `hnsw_rs` plus two-pass serialization
+- [x] `FR-008` bulk build using the native in-crate HNSW builder plus page serialization
 - [x] Scan lifecycle, query validation, metadata/prepared-query caching, bootstrap linear scan
 - [x] Insert shape validation, metadata init, duplicate coalescing, tail-page append/reuse
 - [x] AM module split: cost, vacuum, options, routine, build extracted from mod.rs

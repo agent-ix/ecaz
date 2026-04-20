@@ -128,7 +128,6 @@ See [Benchmarks](docs/benchmarks.md) for full results and methodology.
 ## References
 
 - [TurboQuant paper (arXiv:2504.19874)](https://arxiv.org/abs/2504.19874)
-- [hnsw_rs crate](https://crates.io/crates/hnsw_rs)
 - [pgvector](https://github.com/pgvector/pgvector) (page layout reference)
 - [pgrx](https://docs.rs/pgrx/latest/pgrx/)
 

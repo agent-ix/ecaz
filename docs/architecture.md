@@ -36,7 +36,8 @@ The `ec_hnsw` index uses a page layout modeled on pgvector's approach:
 - **Neighbor tuples** — store the HNSW graph adjacency lists
 - Standard PostgreSQL 8KB pages with WAL support
 
-Graph construction uses the `hnsw_rs` crate for bulk build, then the graph is materialized into PostgreSQL pages for runtime traversal.
+Graph construction and runtime traversal both use Ecaz-owned HNSW primitives,
+with the build output materialized into PostgreSQL pages for runtime traversal.
 
 ## SIMD Acceleration
 

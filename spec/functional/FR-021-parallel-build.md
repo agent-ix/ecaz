@@ -57,7 +57,7 @@ sequenceDiagram
     participant DSM as Shared Memory
     participant W1 as Worker 1
     participant W2 as Worker 2
-    participant HNSW as hnsw_rs
+    participant Graph as NativeBuildGraph
     participant Pages as Index Pages
 
     PG->>Leader: ambuild(heap_rel, index_rel, index_info)
@@ -107,10 +107,8 @@ sequenceDiagram
     Leader->>DSM: tuplesort_getdatum() [merge read all sorted tuples]
     Leader->>Leader: Collect BuildTuples with duplicate coalescing
 
-    Leader->>HNSW: Hnsw::new(m, n, max_layer, ef_construction, distance)
-    loop For each BuildTuple
-        Leader->>HNSW: insert(code, origin_id)
-    end
+    Leader->>Graph: build_hnsw_graph(merged_build_tuples)
+    Graph-->>Leader: Vec<HnswBuildNode>
 
     Note over Leader: Phase 3 — Serialize graph to pages (same as FR-008)
 
@@ -183,7 +181,11 @@ Tuples are sorted by encoded code bytes for efficient duplicate coalescing durin
 
 ### Graph Construction (Serial)
 
-After the merge read, the leader constructs the HNSW graph using the same `hnsw_rs::Hnsw` path as the current serial build (FR-008). The graph construction is CPU-bound, not I/O-bound, and `hnsw_rs::Hnsw` is not thread-safe — parallelizing it is a future optimization.
+After the merge read, the leader constructs the HNSW graph using the same
+native `build_hnsw_graph(...)` path as the current serial build (FR-008). The
+graph construction is CPU-bound, not I/O-bound, and remains leader-only today
+because `amcanbuildparallel` is still `false` and the native builder has not
+yet been parallelized.
 
 ### Worker Count Estimation
 

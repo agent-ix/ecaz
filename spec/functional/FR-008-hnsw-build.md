@@ -37,7 +37,8 @@ If `build_source_column` is provided, it SHALL name a `float4[]` column in the h
 
 ### `ambuild` — Bulk Index Build
 
-Called by `CREATE INDEX ... USING ec_hnsw`. Uses the `hnsw_rs` crate for graph construction, then serializes the graph to Postgres pages.
+Called by `CREATE INDEX ... USING ec_hnsw`. Uses Ecaz's native in-crate HNSW
+builder for graph construction, then serializes the graph to Postgres pages.
 
 #### Sequence Diagram
 
@@ -45,13 +46,13 @@ Called by `CREATE INDEX ... USING ec_hnsw`. Uses the `hnsw_rs` crate for graph c
 sequenceDiagram
     participant PG as PostgreSQL
     participant AM as ec_hnsw ambuild
-    participant HNSW as hnsw_rs::Hnsw
+    participant Graph as NativeBuildGraph
     participant Pages as Index Pages
 
     PG->>AM: ambuild(heap_rel, index_rel, index_info)
     AM->>AM: Parse amoptions (m, ef_construction, build_source_column)
 
-    Note over AM: Phase 1 — Heap Scan + Graph Build
+    Note over AM: Phase 1 — Heap Scan + BuildTuple collection
 
     AM->>PG: heap_beginscan()
     loop For each heap tuple
@@ -59,16 +60,18 @@ sequenceDiagram
         AM->>AM: Extract tqvector code bytes
         AM->>AM: Extract raw fp32 build vector from build_source_column
         AM->>AM: Cache origin_id -> heap_tid, code_bytes
-        AM->>HNSW: insert(origin_id, f32_vector)
     end
     AM->>PG: heap_endscan()
 
-    Note over AM: Phase 2 — Graph Serialization
+    Note over AM: Phase 2 — Native graph construction
+    AM->>Graph: build_hnsw_graph(state)
+    Graph-->>AM: Vec<HnswBuildNode>
+
+    Note over AM: Phase 3 — Graph Serialization
     Note over AM: Pass 1: Write tuples, collect TID mapping
 
-    loop For each point in hnsw graph
-        AM->>HNSW: get_origin_id(), get_neighborhood_id()
-        HNSW-->>AM: origin_id, neighbors_per_layer
+    loop For each build node
+        AM->>AM: Read origin_id, neighbors_per_layer from build output
         AM->>AM: Look up heap_tid, code_bytes from cache
         AM->>Pages: GenericXLogStart
         AM->>Pages: Write TqElementTuple (code bytes, heap_tid)
@@ -79,10 +82,8 @@ sequenceDiagram
 
     Note over AM: Pass 2: Fix up neighbor TID pointers
 
-    loop For each point in hnsw graph
-        AM->>HNSW: get_neighborhood_id()
-        HNSW-->>AM: neighbor origin_ids per layer
-        AM->>AM: Resolve origin_ids -> page TIDs via tid_map
+    loop For each build node
+        AM->>AM: Resolve neighbor node indexes -> page TIDs via tid_map
         AM->>Pages: GenericXLogStart
         AM->>Pages: Update TqNeighborTuple with resolved TIDs
         AM->>Pages: GenericXLogFinish
@@ -94,35 +95,27 @@ sequenceDiagram
     AM->>Pages: Write page 0 (M, ef_construction, entry_point, dim, bits)
     AM->>Pages: GenericXLogFinish
 
-    AM->>AM: Drop hnsw_rs::Hnsw and HashMap
+    AM->>AM: Drop native build graph state and heap cache
     AM-->>PG: Return index build result
 ```
 
-#### Phase 1: Heap Scan and Graph Construction
+#### Phase 1: Heap Scan and BuildTuple Collection
 
 1. Read `(m, ef_construction)` from WITH clause via amoptions
 2. Read `(dim, bits, seed)` from the first tqvector value encountered
 3. Allocate a `HashMap<usize, (ItemPointerData, Vec<u8>)>` mapping origin_id → (heap TID, tqvector code bytes)
 4. Scan the heap relation: for each row, extract the `tqvector` code bytes and, if configured, the raw fp32 embedding from a caller-supplied source column or expression
-5. Insert each raw f32 vector into an `hnsw_rs::Hnsw<f32, TqBuildDistance>` instance, using the row's sequential number as `origin_id`
-6. Cache `(heap_tid, tqvector_bytes)` in the HashMap keyed by origin_id
+5. Cache `(heap_tid, tqvector_bytes)` in the HashMap keyed by origin_id
+6. Collect the build input needed by the native builder, including raw fp32 source vectors when configured
 
-**Distance impl for hnsw_rs build:**
+#### Phase 2: Native Graph Construction
 
-```rust
-struct TqBuildDistance;
-
-impl Distance<f32> for TqBuildDistance {
-    fn eval(&self, va: &[f32], vb: &[f32]) -> f32 {
-        // Standard f32 inner product (negated for distance)
-        // Build uses raw f32 vectors, not compressed codes
-        // This is acceptable: build is a one-time bulk operation
-        -va.iter().zip(vb.iter()).map(|(a, b)| a * b).sum::<f32>()
-    }
-}
-```
-
-Build uses raw f32 vectors when they are available from the configured build input. This produces a higher-quality graph than building from lossy compressed distances. The `hnsw_rs` instance is dropped after graph extraction — it is never persisted or used at runtime.
+The native builder constructs an in-memory `Vec<HnswBuildNode>` using Ecaz-owned
+level assignment, candidate discovery, and backlink pruning logic. Build uses
+raw f32 vectors when they are available from the configured build input. This
+produces a higher-quality graph than building from lossy compressed distances.
+The temporary builder state is dropped after graph extraction — it is never
+persisted or used at runtime.
 
 If no raw-vector source is supplied, the implementation SHALL either:
 - reject index build with a clear ERROR explaining that raw vectors are required for the selected build mode, or
@@ -130,19 +123,19 @@ If no raw-vector source is supplied, the implementation SHALL either:
 
 The default behavior for v0.1 SHALL be to require a raw-vector source for bulk build.
 
-#### Phase 2: Graph Serialization — Two-Pass Page Write
+#### Phase 3: Graph Serialization — Two-Pass Page Write
 
-After `hnsw_rs` build completes, the graph is serialized to Postgres pages:
+After native graph build completes, the graph is serialized to Postgres pages:
 
 **Pass 1 — Write tuples, collect TID mapping:**
 
 ```
 tid_map: HashMap<usize, ItemPointerData> = {}
 
-for each point in hnsw.get_point_indexation():
-    origin_id = point.get_origin_id()
+for each build node in graph:
+    origin_id = build_node.origin_id
     (heap_tid, code_bytes) = heap_cache[origin_id]
-    neighbors_per_layer = point.get_neighborhood_id()
+    neighbors_per_layer = build_node.neighbors_per_layer
 
     page = get_or_extend_page(index)  // extend relation if current page full
     
@@ -161,9 +154,9 @@ for each point in hnsw.get_point_indexation():
 **Pass 2 — Fix up neighbor TID pointers:**
 
 ```
-for each point in hnsw.get_point_indexation():
-    origin_id = point.get_origin_id()
-    neighbors_per_layer = point.get_neighborhood_id()
+for each build node in graph:
+    origin_id = build_node.origin_id
+    neighbors_per_layer = build_node.neighbors_per_layer
     nbr_tuple = read_neighbor_tuple(tid_map[origin_id].neighbor_tid)
     
     for (layer, neighbors) in neighbors_per_layer:
@@ -172,7 +165,7 @@ for each point in hnsw.get_point_indexation():
             nbr_tuple.tids[layer][idx] = tid_map[nbr_origin_id]
 ```
 
-The two-pass approach is necessary because a point's index page TID is not known until it has been written, but neighbor tuples reference TIDs of other points.
+The two-pass approach is necessary because a node's index page TID is not known until it has been written, but neighbor tuples reference TIDs of other nodes.
 
 **Pass 3 — Write metadata page (page 0):**
 
@@ -182,7 +175,8 @@ All page writes in all three passes SHALL use GenericXLog (FR-011).
 
 #### Phase completion
 
-Drop the `hnsw_rs::Hnsw` instance and the heap cache HashMap. Report tuple count to Postgres.
+Drop the native build graph state and the heap cache HashMap. Report tuple
+count to Postgres.
 
 ---
 
@@ -209,7 +203,9 @@ Every page modification in ambuild SHALL be wrapped in GenericXLogStart/GenericX
 After ambuild, every neighbor TID in every TqNeighborTuple SHALL point to a valid TqElementTuple.
 
 ### FR-008-AC-5: Build uses f32 distance
-During ambuild in the default build mode, the hnsw_rs graph SHALL be constructed using f32 inner product distance from a supplied raw-vector source, not compressed code distance.
+During ambuild in the default build mode, the native graph builder SHALL use
+f32 inner product distance from a supplied raw-vector source, not compressed
+code distance.
 
 ### FR-008-AC-6: amoptions validation
 `WITH (m = 0)` SHALL raise ERROR. `WITH (m = 8, ef_construction = 64)` SHALL succeed.

@@ -12,9 +12,6 @@ tags:
   - simd
 implementation_language: rust
 relationships:
-  - target: "crate://hnsw_rs"
-    type: "calls"
-    cardinality: "1:1"
   - target: "crate://pgrx"
     type: "requires"
     cardinality: "1:1"
@@ -39,7 +36,7 @@ It establishes:
 - The problem space: native approximate nearest neighbor (ANN) search in PostgreSQL using TurboQuant quantization for 8x storage compression with provably unbiased inner product estimation
 - The boundaries of responsibility: type system, quantizer core, distance computation, index access method, SQL bootstrap — nothing above the Postgres extension boundary
 - The authoritative structure for requirements, verification, and change control
-- The relationship between the TurboQuant algorithm (arXiv:2504.19874), the HNSW graph structure (`hnsw_rs` crate for bulk build + own page-level graph for runtime), and the Postgres extension interface (pgrx)
+- The relationship between the TurboQuant algorithm (arXiv:2504.19874), the native Ecaz HNSW graph implementation, and the Postgres extension interface (pgrx)
 
 This document is the **top-level requirements artifact** for Ecaz.
 
@@ -67,7 +64,7 @@ This specification governs:
 
 This specification does not govern:
 - The TurboQuant research algorithm itself (owned by the paper: Zandieh et al., ICLR 2026)
-- The HNSW graph construction algorithm itself (owned by `hnsw_rs` crate, used for bulk build only)
+- The HNSW literature itself; Ecaz owns the concrete build/runtime implementation in this repo
 - Application-level schema design (e.g., `agent_memories` table — owned by the agent memory system)
 - Query routing or application-level orchestration (owned by upstream system components)
 - Cosine similarity or L2 distance metrics (inner product only in v0.1)
@@ -87,7 +84,7 @@ Ecaz is a PostgreSQL extension that brings TurboQuant-compressed vector storage 
 
 Ecaz combines:
 1. An **own quantizer core** implementing the TurboQuant two-stage algorithm (MSE + QJL) with AVX2+FMA and NEON SIMD acceleration
-2. The `hnsw_rs` crate for graph construction during bulk index build
+2. An Ecaz-owned native HNSW build/runtime implementation
 3. pgvector's page layout as the direct reference for Postgres storage integration
 4. pgrx for safe Rust ↔ Postgres FFI
 
@@ -411,9 +408,8 @@ Requirements declare status: DRAFT -> APPROVED -> IMPLEMENTED -> VERIFIED -> DEP
 ## 15. Governance Notes
 
 - Functional requirements SHALL precede code changes
-- The `hnsw_rs` crate API is an external dependency — changes to its public API require a CR
 - pgvector source is a reference, not a dependency — we translate page layout patterns, not link against it
-- The quantizer core is owned code — changes follow internal review process
+- The quantizer core and native HNSW builder are owned code — changes follow internal review process
 
 ---
 
@@ -421,25 +417,43 @@ Requirements declare status: DRAFT -> APPROVED -> IMPLEMENTED -> VERIFIED -> DEP
 
 ```
 src/
-├── lib.rs              # pgrx entry, type I/O, encode, distance, operators
-├── quant/              # Quantizer core
-│   ├── mod.rs          # Module definition, CodeIndex type
-│   ├── codebook.rs     # Lloyd-Max optimal scalar quantizer codebook generation
-│   ├── mse.rs          # MSE quantizer (SRHT rotation + codebook encoding)
-│   ├── qjl.rs          # QJL quantizer (Gaussian projection, 1-bit, bit-packed)
-│   ├── prod.rs         # ProdQuantizer orchestrator (encode, LUT score, pack/unpack)
-│   ├── hadamard.rs     # Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
-│   └── rotation.rs     # SRHT rotation (diagonal signs + FWHT)
-├── am/                 # HNSW index access method (raw pg_sys FFI)
-│   ├── mod.rs          # ec_hnsw_handler, capability flags
-│   ├── build.rs        # ambuild, ambuildempty
-│   ├── insert.rs       # aminsert
-│   ├── scan.rs         # ambeginscan, amrescan, amgettuple, amendscan
-│   ├── vacuum.rs       # ambulkdelete, amvacuumcleanup
-│   ├── cost.rs         # amcostestimate
-│   └── page.rs         # TqElementTuple, TqNeighborTuple, GenericXLog helpers
-├── storage.rs          # Packed code <-> bytes for Postgres varlena/index pages
-└── distance.rs         # Distance impl for hnsw_rs build + pg_extern wrappers
+├── lib.rs                   # pgrx entry, type I/O, encode, operators
+├── am/
+│   ├── mod.rs               # AM family registration
+│   ├── common/
+│   │   ├── cost.rs          # planner cost / tree height / strategy translation
+│   │   ├── explain.rs       # PG18 EXPLAIN hook plumbing
+│   │   ├── stats.rs         # stats snapshots and pgstat-facing helpers
+│   │   ├── stream.rs        # PG18 ReadStream helpers
+│   │   └── training.rs      # shared training helpers
+│   └── ec_hnsw/
+│       ├── build.rs         # native ambuild / ambuildempty
+│       ├── graph.rs         # graph traversal primitives
+│       ├── insert.rs        # aminsert
+│       ├── options.rs       # reloptions
+│       ├── page.rs          # tuple codec helpers
+│       ├── routine.rs       # IndexAmRoutine wiring
+│       ├── scan.rs          # ambeginscan / amrescan / amgettuple / amendscan
+│       ├── search.rs        # ordered graph search helpers
+│       ├── shared.rs        # metadata and shared AM helpers
+│       └── vacuum.rs        # ambulkdelete / amvacuumcleanup
+├── quant/                   # Quantizer core
+│   ├── mod.rs               # Module definition, CodeIndex type
+│   ├── codebook.rs          # Lloyd-Max optimal scalar quantizer codebook generation
+│   ├── grouped_pq.rs        # grouped-PQ family helpers
+│   ├── hadamard.rs          # Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
+│   ├── mse.rs               # MSE quantizer (SRHT rotation + codebook encoding)
+│   ├── prod.rs              # ProdQuantizer orchestrator
+│   ├── qjl.rs               # QJL quantizer (Gaussian projection, 1-bit, bit-packed)
+│   ├── rotation.rs          # SRHT rotation (diagonal signs + FWHT)
+│   ├── simd.rs              # runtime SIMD dispatch
+│   └── traits.rs            # quantizer / prepared-query traits
+├── storage/
+│   ├── mod.rs
+│   ├── page.rs              # packed page primitives
+│   └── wal.rs               # GenericXLog wrappers
+├── pg18_pgstat_shim.rs      # PG18 pgstat shim boundary
+└── standalone_pg_backend_stubs.rs
 ```
 
 ---
@@ -447,7 +461,6 @@ src/
 ## 17. References
 
 - TurboQuant paper: [arXiv:2504.19874](https://arxiv.org/abs/2504.19874) (Zandieh et al., ICLR 2026)
-- `hnsw_rs` crate: https://crates.io/crates/hnsw_rs
 - pgvector source: https://github.com/pgvector/pgvector
 - pgvector storage layout: https://lantern.dev/blog/pgvector-storage
 - pgrx framework: https://docs.rs/pgrx/latest/pgrx/

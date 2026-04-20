@@ -51,7 +51,7 @@ Adopt PostgreSQL 18 as the primary build target and default feature. PG17 remain
 - Current `pgrx 0.17` PG18 support still needs a repo-local explicit `pg_module_magic!` field assignment and a small C shim over `pgstat_internal.h`
 
 ### Neutral
-- Graph construction in parallel build remains serial (limited by `hnsw_rs` thread safety)
+- Graph construction in parallel build remains serial (the native builder is still leader-only)
 - `read_stream_reset()` distance reset behavior may require workarounds for HNSW burst patterns
 
 ## References
