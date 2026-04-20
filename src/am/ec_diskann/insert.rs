@@ -1,26 +1,42 @@
 //! Insert-time payload derivation support for `ec_diskann`.
 //!
-//! Phase 7 needs one pure-Rust seam before the pgrx callback can do
-//! any graph mutation: given the built index's metadata + persisted
-//! grouped codebooks, derive the new node's persisted payload
-//! (`search_code`, optional binary sidecar words) from an incoming
-//! source vector. This module owns exactly that seam.
+//! Phase 7 needs two insert-side seams before the full graph-mutation
+//! path lands:
 //!
-//! The pgrx callback still lives in `routine.rs` for now; later slices
-//! will move it here once the page-write / backlink / overflow story is
+//! 1. given the built index's metadata + persisted grouped codebooks,
+//!    derive the new node's persisted payload (`search_code`,
+//!    optional binary sidecar words) from an incoming source vector
+//! 2. bootstrap the first live row into an otherwise-empty index
+//!
+//! This module owns both seams. The general non-empty pgrx callback
+//! still lives in `routine.rs`; later slices will move more of that
+//! logic here once the page-write / backlink / overflow story is
 //! implemented.
+
+use std::{ptr, slice};
+
+use pgrx::pg_sys;
 
 use crate::am::common::training;
 use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::{DataPageChain, ItemPointer};
-use crate::DEFAULT_QUANT_BITS;
+use crate::storage::wal;
+use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
-use super::page::{
-    VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, VAMANA_SEARCH_CODEC_GROUPED_PQ,
-    VAMANA_TRANSFORM_KIND_SRHT,
+use super::{
+    ambuild,
+    build::{build_and_persist_vamana, BuildOutput, BuildParams},
+    options,
+    page::{
+        VAMANA_METADATA_BYTES, VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR,
+        VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
+    },
+    persist::{stage_grouped_codebook_chain, NodePayload},
 };
 use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
+
+const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DerivedInsertPayload {
@@ -117,6 +133,143 @@ pub(super) fn derive_insert_payload_from_persisted(
         binary_words,
         search_code,
     })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct EmptyInsertBootstrapOutput {
+    pub(super) metadata: VamanaMetadataPage,
+    pub(super) chain: DataPageChain,
+}
+
+pub(super) unsafe fn read_metadata_page(
+    index_relation: pg_sys::Relation,
+) -> Result<VamanaMetadataPage, String> {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            crate::storage::page::METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err("ec_diskann failed to open metadata buffer".into());
+    }
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+    let metadata = VamanaMetadataPage::decode(metadata_bytes);
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    metadata
+}
+
+pub(super) unsafe fn with_locked_metadata_page<T>(
+    index_relation: pg_sys::Relation,
+    f: impl FnOnce(&mut VamanaMetadataPage) -> Result<T, String>,
+) -> Result<T, String> {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            crate::storage::page::METADATA_BLOCK_NUMBER,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err("ec_diskann failed to open metadata buffer".into());
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+    let page = unsafe { pg_sys::BufferGetPage(buffer) };
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let special = unsafe { pg_sys::PageGetSpecialPointer(page) }.cast::<u8>();
+    let metadata_bytes = unsafe { slice::from_raw_parts(special, VAMANA_METADATA_BYTES) };
+    let mut metadata = VamanaMetadataPage::decode(metadata_bytes)?;
+    let result = f(&mut metadata)?;
+
+    let encoded = metadata.encode();
+    let special_size = (encoded.len() + 7) & !7;
+    let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+    let writable_page =
+        unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+    unsafe { pg_sys::PageInit(writable_page, page_size, special_size) };
+    let dst = unsafe { pg_sys::PageGetSpecialPointer(writable_page) }.cast::<u8>();
+    unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), dst, encoded.len()) };
+    unsafe { wal_txn.finish() };
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    Ok(result)
+}
+
+pub(super) unsafe fn bootstrap_empty_insert_output(
+    index_relation: pg_sys::Relation,
+    heap_tid: ItemPointer,
+    source_vector: &[f32],
+) -> Result<EmptyInsertBootstrapOutput, String> {
+    if source_vector.is_empty() {
+        return Err("ec_diskann empty-index bootstrap requires a non-empty source vector".into());
+    }
+
+    let dimensions = u16::try_from(source_vector.len())
+        .map_err(|_| format!("ec_diskann insert source dimension {} exceeds u16", source_vector.len()))?;
+    let seed = DEFAULT_QUANT_SEED;
+    let group_size = ambuild::default_group_size(dimensions);
+    let source_refs = vec![source_vector];
+    let model = training::train_grouped_pq4_model(
+        &source_refs,
+        source_vector.len(),
+        seed,
+        group_size,
+        1,
+        EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS,
+    )?;
+
+    let sidecar_word_count =
+        training::persisted_binary_sidecar_word_count(dimensions, DEFAULT_QUANT_BITS, seed);
+    let has_binary_sidecar = sidecar_word_count > 0;
+    let binary_words = if has_binary_sidecar {
+        let quantizer = ProdQuantizer::cached(source_vector.len(), DEFAULT_QUANT_BITS, seed);
+        let encoded = quantizer.encode(source_vector);
+        let mut code = encoded.mse_packed;
+        code.extend_from_slice(&encoded.qjl_packed);
+        training::derive_persisted_binary_words(&quantizer, &code)
+    } else {
+        Vec::new()
+    };
+
+    let payloads = vec![NodePayload {
+        primary_heaptid: heap_tid,
+        binary_words,
+        search_code: training::derive_grouped_pq4_code(source_vector, &model),
+    }];
+
+    let relopts = unsafe { options::relation_options(index_relation) };
+    let params = BuildParams {
+        graph_degree_r: u16::try_from(relopts.graph_degree)
+            .map_err(|_| "graph_degree does not fit in u16".to_owned())?,
+        build_list_size_l: u16::try_from(relopts.build_list_size)
+            .map_err(|_| "build_list_size does not fit in u16".to_owned())?,
+        alpha: relopts.alpha,
+        dimensions,
+        search_subvector_count: u16::try_from(model.group_count)
+            .map_err(|_| "search_subvector_count does not fit in u16".to_owned())?,
+        search_subvector_dim: u16::try_from(model.group_size)
+            .map_err(|_| "search_subvector_dim does not fit in u16".to_owned())?,
+        seed,
+        page_size: pg_sys::BLCKSZ as usize,
+        has_binary_sidecar,
+    };
+
+    let BuildOutput { mut metadata, persisted } =
+        build_and_persist_vamana(params, &payloads, |_, _| 0.0)?;
+    let mut chain = persisted.chain;
+    let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
+    metadata.grouped_codebook_head = codebook_head;
+    metadata.inserted_since_rebuild = 1;
+
+    Ok(EmptyInsertBootstrapOutput { metadata, chain })
 }
 
 #[cfg(test)]

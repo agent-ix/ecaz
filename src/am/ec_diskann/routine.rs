@@ -8,7 +8,7 @@ use crate::{
 };
 
 use super::{
-    ambuild, options,
+    ambuild, insert, options,
     reader::PersistedGraphReader,
     scan::{self, ScanParams},
     scan_query::{build_grouped_pq_lut_from_persisted, encode_query_srht, read_grouped_codebook_chain},
@@ -72,10 +72,10 @@ fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> 
 }
 
 unsafe extern "C-unwind" fn ec_diskann_aminsert(
-    _index_relation: pg_sys::Relation,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
-    _heap_tid: pg_sys::ItemPointer,
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
     _heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
@@ -83,7 +83,50 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!("ec_diskann aminsert is not yet implemented (task 17 phase 4)");
+            if values.is_null() || isnull.is_null() {
+                pgrx::error!("ec_diskann aminsert received null datum arrays");
+            }
+            if *isnull {
+                pgrx::error!("ec_diskann does not support NULL indexed values");
+            }
+            let datum = *values;
+            if datum.is_null() {
+                pgrx::error!("ec_diskann aminsert received a null indexed datum");
+            }
+
+            let source_vector = ambuild::ecvector_datum_to_vec(datum);
+            let heap_tid = ambuild::decode_heap_tid(heap_tid);
+            let metadata = insert::read_metadata_page(index_relation)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to read metadata: {e}"));
+
+            if metadata.dimensions == 0 && metadata.entry_point == ItemPointer::INVALID {
+                let bootstrapped = insert::with_locked_metadata_page(index_relation, |metadata| {
+                    if metadata.dimensions != 0 || metadata.entry_point != ItemPointer::INVALID {
+                        return Ok(false);
+                    }
+                    let output =
+                        insert::bootstrap_empty_insert_output(index_relation, heap_tid, &source_vector)?;
+                    ambuild::write_data_pages(index_relation, &output.chain);
+                    *metadata = output.metadata;
+                    Ok(true)
+                })
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann empty-index bootstrap insert failed: {e}"));
+                if bootstrapped {
+                    return false;
+                }
+            }
+
+            let refreshed = insert::read_metadata_page(index_relation)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to refresh metadata: {e}"));
+            if refreshed.dimensions != 0 && source_vector.len() != refreshed.dimensions as usize {
+                pgrx::error!(
+                    "ec_diskann insert source dimension mismatch: source dim {}, index dim {}",
+                    source_vector.len(),
+                    refreshed.dimensions
+                );
+            }
+
+            pgrx::error!("ec_diskann non-empty aminsert is not yet implemented (task 17 phase 7)");
         })
     }
 }
@@ -535,5 +578,83 @@ mod tests {
             ordered_ids[0], 1,
             "runtime ordered ec_diskann scan should return the nearest vector first"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_empty_index_bootstrap_insert_executes() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_bootstrap_insert_exec (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_bootstrap_insert_exec_idx ON ec_diskann_bootstrap_insert_exec USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_bootstrap_insert_exec VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("first insert should bootstrap the empty ec_diskann index");
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_bootstrap_insert_exec \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed after bootstrap")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(ordered_ids, vec![1]);
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_second_insert_still_errors() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_second_insert_boundary (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_second_insert_boundary_idx ON ec_diskann_second_insert_boundary USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_second_insert_boundary VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("first insert should bootstrap");
+
+        Spi::run(
+            "DO $$
+             BEGIN
+               BEGIN
+                 INSERT INTO ec_diskann_second_insert_boundary VALUES
+                   (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42));
+                 RAISE EXCEPTION 'expected non-empty ec_diskann insert to fail in this slice';
+               EXCEPTION
+                 WHEN OTHERS THEN
+                   IF SQLERRM NOT LIKE '%ec_diskann non-empty aminsert is not yet implemented%' THEN
+                     RAISE;
+                   END IF;
+               END;
+             END
+             $$",
+        )
+        .expect("boundary insert should fail with the expected message");
     }
 }
