@@ -27,8 +27,8 @@
 
 use crate::am::ec_diskann::page::{
     VamanaMetadataPage, INDEX_FORMAT_V3_DISKANN, PAYLOAD_FLAG_BINARY_SIDECAR,
-    PAYLOAD_FLAG_COLD_RERANK_PAYLOAD, PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
-    VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
+    PAYLOAD_FLAG_GROUPED_SEARCH_CODE, VAMANA_SEARCH_CODEC_GROUPED_PQ,
+    VAMANA_TRANSFORM_KIND_SRHT,
 };
 use crate::am::ec_diskann::persist::{persist_vamana_graph, NodePayload, PersistedGraph};
 use crate::am::ec_diskann::vamana::{approximate_medoid, build_vamana_graph};
@@ -85,11 +85,16 @@ impl BuildParams {
         (self.search_subvector_count as usize).div_ceil(2)
     }
 
-    /// Initial `payload_flags` byte for the metadata page, derived
-    /// from `has_binary_sidecar` plus the always-on grouped-PQ +
-    /// cold-rerank flags (per ADR-044's current default).
+    /// Initial `payload_flags` byte for the metadata page.
+    ///
+    /// V0 reranks from the heap `ecvector` row (ADR-044 default) and
+    /// writes no index-side cold payload chain. Per ADR-046 frozen
+    /// rule 1 and ADR-047 frozen rule 4, `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD`
+    /// must stay clear — setting it would advertise a cold chain that
+    /// does not exist and trip the scan path's rerank wiring. A future
+    /// ADR-044 C1 reopen is the only path that sets it (packet 11018).
     pub fn payload_flags(&self) -> u8 {
-        let mut flags = PAYLOAD_FLAG_GROUPED_SEARCH_CODE | PAYLOAD_FLAG_COLD_RERANK_PAYLOAD;
+        let mut flags = PAYLOAD_FLAG_GROUPED_SEARCH_CODE;
         if self.has_binary_sidecar {
             flags |= PAYLOAD_FLAG_BINARY_SIDECAR;
         }
@@ -264,6 +269,36 @@ mod tests {
         let payloads = synth_payloads(2, params.binary_word_count(), params.search_code_len());
         let err = build_and_persist_vamana(params, &payloads, |_, _| 0.0).expect_err("alpha");
         assert!(err.contains("alpha"), "got: {err}");
+    }
+
+    // BO-003b: payload_flags clears PAYLOAD_FLAG_COLD_RERANK_PAYLOAD
+    // on V0 builds (ADR-046 frozen rule 1, ADR-047 frozen rule 4,
+    // packet 11018). Sets GROUPED + BINARY_SIDECAR (when on) and
+    // nothing else.
+    #[test]
+    fn bo_003b_payload_flags_clears_cold_rerank_in_v0() {
+        use crate::am::ec_diskann::page::{
+            PAYLOAD_FLAG_BINARY_SIDECAR, PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
+        };
+
+        let params = default_params(64);
+        assert!(params.has_binary_sidecar);
+        let flags = params.payload_flags();
+        assert_eq!(
+            flags & PAYLOAD_FLAG_COLD_RERANK_PAYLOAD,
+            0,
+            "V0 must not set PAYLOAD_FLAG_COLD_RERANK_PAYLOAD",
+        );
+        assert_ne!(flags & PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0);
+        assert_ne!(flags & PAYLOAD_FLAG_BINARY_SIDECAR, 0);
+
+        let mut params_no_sidecar = params;
+        params_no_sidecar.has_binary_sidecar = false;
+        let flags_ns = params_no_sidecar.payload_flags();
+        assert_eq!(flags_ns & PAYLOAD_FLAG_COLD_RERANK_PAYLOAD, 0);
+        assert_eq!(flags_ns & PAYLOAD_FLAG_BINARY_SIDECAR, 0);
+        assert_ne!(flags_ns & PAYLOAD_FLAG_GROUPED_SEARCH_CODE, 0);
     }
 
     // BO-004: derivation rules — W=dimensions/64 when sidecar on,

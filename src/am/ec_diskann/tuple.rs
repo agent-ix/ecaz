@@ -109,6 +109,17 @@ impl VamanaNodeTuple {
         }
     }
 
+    /// Live-tuple predicate: not tombstoned AND still carries at least
+    /// one heap TID (primary or overflow chain). A stripped-but-not-
+    /// tombstoned tuple (vacuum pass 1 done, pass 3 not yet) returns
+    /// `false` here even though `deleted` is `false` — it has no heap
+    /// row to serve as an index entry and is not a valid scan
+    /// entry-point candidate. Reviewer packets 11023/11027/11028.
+    pub fn is_live(&self) -> bool {
+        !self.deleted
+            && (self.primary_heaptid != ItemPointer::INVALID || self.has_overflow_heaptids)
+    }
+
     /// Verify the tuple matches the index-constant `(R, W, C)` triple.
     /// All three must be supplied by the caller from the metadata page;
     /// they are not stored per-tuple.
