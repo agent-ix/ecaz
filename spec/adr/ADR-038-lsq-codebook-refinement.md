@@ -2,7 +2,7 @@
 id: ADR-038
 title: "Local Search Quantization as Codebook Refinement"
 status: PROPOSED
-impact: Affects ADR-030, ADR-032, ADR-037
+impact: Affects ADR-030, ADR-032, ADR-037, ADR-046
 date: 2026-04-18
 ---
 # ADR-038: Local Search Quantization (LSQ)
@@ -117,6 +117,30 @@ Expected 2–5% recall improvement at same bits on published
 benchmarks. We would validate on our own 50k real seam and larger
 corpora before shipping as default.
 
+### GPU acceleration (optional)
+
+LSQ's iterated joint codebook optimization parallelizes across
+training vectors and subvector groups. Expected GPU speedup on
+consumer hardware: **10–30x**, smaller than AQ because the
+per-iteration work is lighter and k-means already launches
+reasonably well on CPU at training-sample sizes.
+
+Per-vector iterated-local-search encoding is harder to
+GPU-accelerate (branchy, per-vector state) but can be batched at
+build time if pursued.
+
+tqvector exposes the training path through ADR-046's push-model
+trainer: `tqvector-train --quantizer=lsq --backend=gpu` produces
+an artifact with refined codebooks, wire-compatible with the
+PqFastScan format per this ADR's no-format-change scope. CPU
+trainer remains canonical.
+
+Given LSQ's modest recall improvement (2–5%), GPU acceleration
+is unlikely to be the deciding factor in adopting it. The GPU
+path exists primarily so that LSQ stacks cleanly on top of
+GPU-accelerated OPQ (ADR-036) and AQ (ADR-037) workflows
+without forcing a CPU fallback for the refinement step.
+
 ### Compatibility
 
 LSQ-trained codebooks are readable by any PqFastScan scan code
@@ -160,3 +184,4 @@ endpoint if AQ is deferred or rejected.
 - Martinez, Clement, Hoos, Little, "Revisiting Additive
   Quantization" / "LSQ" (ECCV 2016)
 - FAISS `IndexLocalSearchQuantizer`
+- ADR-046: GPU-accelerated offline build trainer
