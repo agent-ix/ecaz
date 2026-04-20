@@ -1,9 +1,66 @@
 # Task 17: DiskANN (Vamana) as Second Access Method
 
-Status: proposed — planning slice only. No code changes land under this task
-until the phased subtasks below are individually accepted.
+Status: **in progress — buildout phase unblocked 2026-04-19.** Native-HNSW-build
+lane has landed on main; ADR-046 and ADR-047 are ACCEPTED. Working branch:
+`adr034-diskann-rebased` (rebased onto main after the `ec_hnsw` rename).
 
 Executes ADR-034.
+
+## Current status (2026-04-19)
+
+### Landed on `adr034-diskann-rebased`
+
+- Phase 1 (Quantizer trait seam), Phase 2 (storage move), Phase 4 (AM
+  skeleton) — already absorbed into main via refactor branch.
+- Phase 5A (Vamana algorithm core), 5B (slim tuple), 5C-1 (persist
+  sequencer), 5C-2 (build orchestrator), 5D (persisted-graph reader),
+  6A (scan algorithm shell), 8A (vacuum primitives).
+- Option B: `VisitedState` scratch for allocation-free scan reuse.
+- ADR-045 (page-layout discipline), ADR-046 (insert lock ordering,
+  ACCEPTED), ADR-047 (vacuum lock ordering, ACCEPTED).
+- Module path: `src/am/ec_diskann/` (consistent with `ec_hnsw`).
+  SQL AM name: `ec_diskann`. FFI handler: `ec_diskann_handler`.
+
+### Code prep required before Phase 5C-3 / 6B
+
+These came out of the 2026-04-19 review feedback (packets 11004,
+11018, 11023, 11027, 11028). They are NOT blockers for ADR sign-off —
+both ADRs are ACCEPTED — but they are prerequisites for the pgrx
+buildout to land cleanly.
+
+- [ ] **Strengthen the live-tuple predicate** across
+      `ec_diskann::reader::{iter_live_tids, first_live_tid}`,
+      `ec_diskann::scan::resolve_entry_point`, and scan emission.
+      Current predicate is `!deleted`; correct predicate is
+      `!deleted && (primary_heaptid != INVALID || has_overflow_heaptids)`.
+      Add strip-without-tombstone regression tests (packets 11023,
+      11027, 11028 all trip on the same root bug).
+- [ ] **Clear `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` in V0 build.**
+      `BuildParams::payload_flags()` and `VamanaMetadataPage::empty()`
+      currently set it unconditionally. V0 reranks from the heap
+      `ecvector` row (ADR-044 default); the flag must be clear. Update
+      tests (packet 11018).
+- [ ] **Refresh `plan/design/diskann-build-algorithm.md`** for V0
+      hot-only persistence and reconcile the medoid sample cap
+      (`MEDOID_SAMPLE_CAP = 1000` per the Phase 5C-2 decision, not the
+      doc's original `10_000`). Doc-only (packet 11004).
+
+### Buildout phases, in order
+
+1. **Prep** — the three items above.
+2. **Phase 5C-3** — pgrx `ambuild` + quantizer wiring, now via
+   `am::common::training` (shipped by native-build lane).
+3. **Phase 6B** — pgrx scan wiring per `plan/design/diskann-scan-pgrx.md`.
+4. **Phase 7** — pgrx `aminsert` per ADR-046 frozen rules.
+5. **Phase 8B** — pgrx vacuum callback per ADR-047 frozen rules.
+6. **Phase 9** — cost model + planner opt-in.
+
+### ADR text edits for ACCEPTED flip
+
+ADR-046 and ADR-047 both carry a "Frozen implementation rules
+(2026-04-19 review)" section capturing the reviewer's answers. The
+earlier step lists remain as historical context; where a frozen rule
+differs, the frozen rule wins.
 
 ## Scope
 

@@ -1,9 +1,10 @@
 ---
 id: ADR-047
-title: "Vamana Vacuum Graph Repair Lock Ordering (ecdiskann)"
-status: PROPOSED
-impact: Affects FR-010 (analog for ecdiskann), ADR-027, ADR-034
+title: "Vamana Vacuum Graph Repair Lock Ordering (ec_diskann)"
+status: ACCEPTED
+impact: Affects FR-010 (analog for ec_diskann), ADR-027, ADR-034, ADR-045
 date: 2026-04-18
+accepted: 2026-04-19
 ---
 # ADR-047: Vamana Vacuum Graph Repair Lock Ordering
 
@@ -130,6 +131,79 @@ Vamana vacuum graph repair follows this write order:
 In short: ordered page scan, read-only replan, one data-page write
 lock at a time, fill-only writes, no metadata overlap, medoid
 migration deferred to rebuild.
+
+### Frozen implementation rules (2026-04-19 review)
+
+These seven rules freeze the implementation answers so Phase 8B can
+proceed without re-opening the ADR. Where they differ from the
+original step list above, the frozen rule wins.
+
+1. **Pass 1 is one interleaved ordered scan, not two global passes.**
+   For each page in ascending block order: open under
+   `BUFFER_LOCK_SHARE`, discover dead primary heap TIDs on that page,
+   and — if any need stripping — release `SHARE`, reopen the same
+   page alone under `BUFFER_LOCK_EXCLUSIVE`, strip them, WAL-log
+   once, release. Then continue to the next page. Matches the Phase
+   8A primitive boundary and keeps the pass count honest: pass 1,
+   pass 2, pass 3.
+
+2. **Medoid fallback: first live tuple.** If the metadata
+   entry-point tuple is in the delete-set or already tombstoned,
+   read-only planning falls back to the **lowest-block, lowest-offset
+   live tuple** in the chain (the same `resolve_entry_point →
+   first_live_tid` rule the scan path uses). Planning never runs
+   from a dead medoid.
+
+3. **Pass 3 finalizes on fully-dead tuples, not inbound-orphan
+   analysis.** A tuple is finalized (i.e., `deleted = true` flipped)
+   when it is fully dead: `primary_heaptid == INVALID &&
+   !has_overflow_heaptids`. Tombstoned tuples may still retain
+   neighbor payload and may still be traversed until a later vacuum
+   reaps them; that matches the Phase 8A `mark_deleted` contract and
+   avoids an O(N·R) inbound-edge bookkeeping surface.
+
+4. **V0 vacuum writes no cold rerank chain.** Pass 3 flips the hot
+   tuple's `deleted` bit only. There is no index-side cold payload
+   to sweep, because V0 insert never wrote one (ADR-046 frozen rule
+   1). A future ADR-044 C1 reopen is the only path that adds a
+   pass-3 cold-cleanup rule.
+
+5. **Repair replan cap.** `MAX_REPAIR_REPLAN_PASSES = 3` total
+   ordered repair passes per vacuum run. On exceed, log loudly and
+   leave remaining dead / `INVALID` slots for a later vacuum rather
+   than spinning. Reuses the insert-side precedent from ADR-046.
+
+6. **Vacuum and live insert run concurrently.** Both use the same
+   ordered-page-pass discipline and resolve write/write races
+   through bounded read-only replanning rather than global
+   serialization. No generation counter is required; stale
+   detection compares reopened tuple contents against the
+   read-only plan.
+
+7. **`needs_medoid_refresh` ownership is monotonic and
+   vacuum-only.** Vacuum sets `needs_medoid_refresh = true` when
+   the current entry-point tuple becomes fully dead / tombstoned.
+   Insert does **not** set this flag (ADR-046 frozen rule 5). Only
+   rebuild (or a future explicit medoid-refresh maintenance path)
+   clears it. This prevents ADR-046 and ADR-047 from fighting over
+   the same metadata decision bit.
+
+### Implementation corollaries
+
+- `RobustPrune` stays in the read-only planning window. Vacuum
+  repair is **best-effort connectivity repair**: planning may
+  evaluate `RobustPrune` over the union of live neighbors plus
+  proposed candidates, but the write phase only fills slots that
+  are dead or `INVALID` with the accepted candidates. Live
+  neighbors are never evicted under the page lock. If the accepted
+  set is smaller than the free-slot count, remaining slots stay
+  `INVALID`. This is the correct conservative contract for a
+  concurrent vacuum.
+- Insert's duplicate-binding lookup (ADR-046) must ignore tuples
+  that are tombstoned OR have `primary_heaptid == INVALID`. Once
+  pass 1 strips the heap TID, the node is no longer eligible for
+  duplicate binding, so pass 3 is monotonic with respect to
+  concurrent insert.
 
 ## Consequences
 
