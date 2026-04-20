@@ -187,11 +187,9 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 });
                 pg_sys::ExecDropSingleTupleTableSlot(slot);
                 if let Some(existing_tid) = duplicate_tid {
-                    pgrx::error!(
-                        "ec_diskann duplicate bind is not yet implemented (task 17 phase 7): existing node at ({},{})",
-                        existing_tid.block_number,
-                        existing_tid.offset_number
-                    );
+                    insert::bind_duplicate_heap_tid(index_relation, existing_tid, heap_tid)
+                        .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate bind failed: {e}"));
+                    return false;
                 }
             }
 
@@ -588,8 +586,14 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             if let Some(error) = rerank_error.into_inner() {
                 pgrx::error!("ec_diskann scan heap rerank failed: {error}");
             }
-            opaque.result_buf =
+            let node_results =
                 results.unwrap_or_else(|e| pgrx::error!("ec_diskann scan execution failed: {e}"));
+            opaque.result_buf = expand_scan_results_with_bound_heap_tids(
+                &opaque.chain,
+                &node_results,
+                opaque.top_k,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
             opaque.result_cursor = 0;
             opaque.rescan_called = true;
         })
@@ -806,12 +810,31 @@ unsafe fn plan_backlink_mutations(
 }
 
 fn sort_and_dedup_item_pointers(tids: &mut Vec<ItemPointer>) {
-    tids.sort_unstable_by(|left, right| {
-        left.block_number
-            .cmp(&right.block_number)
-            .then_with(|| left.offset_number.cmp(&right.offset_number))
-    });
+    tids.sort_unstable_by(insert::cmp_item_pointer_physical);
     tids.dedup();
+}
+
+fn expand_scan_results_with_bound_heap_tids(
+    chain: &crate::storage::page::DataPageChain,
+    node_results: &[scan::ScanResult],
+    top_k: usize,
+) -> Result<Vec<scan::ScanResult>, String> {
+    let mut expanded = Vec::with_capacity(top_k.min(node_results.len()));
+    for result in node_results {
+        let bound_heap_tids =
+            insert::bound_heap_tids_for_owner(chain, result.tid, result.primary_heaptid)?;
+        for heap_tid in bound_heap_tids {
+            expanded.push(scan::ScanResult {
+                tid: result.tid,
+                primary_heaptid: heap_tid,
+                distance: result.distance,
+            });
+            if expanded.len() >= top_k {
+                return Ok(expanded);
+            }
+        }
+    }
+    Ok(expanded)
 }
 
 unsafe fn exact_heap_rerank_distance(
@@ -885,9 +908,9 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[cfg(any(test, feature = "pg_test"))]
 #[pgrx::pg_schema]
 mod tests {
-    use super::{scan_state, PersistedGraphReader};
+    use super::{insert, scan_state, PersistedGraphReader};
     use crate::am::ec_diskann::page::VamanaMetadataPage;
-    use crate::storage::page::ItemPointer;
+    use crate::storage::page::{DataPageChain, ItemPointer};
     use pgrx::{pg_sys, pg_test, Spi};
 
     fn parse_ctid(ctid: &str) -> ItemPointer {
@@ -931,6 +954,19 @@ mod tests {
             .expect("materialize_chain_from_index should succeed");
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         metadata
+    }
+
+    fn index_materialized_chain(index_name: &str) -> (VamanaMetadataPage, DataPageChain) {
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let materialized = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        materialized
     }
 
     #[pg_test]
@@ -1433,7 +1469,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_ec_diskann_duplicate_after_append_hits_boundary() {
+    fn test_ec_diskann_duplicate_after_append_binds_existing_node() {
         Spi::run(
             "CREATE TABLE ec_diskann_duplicate_after_append (id bigint primary key, embedding ecvector)",
         )
@@ -1451,22 +1487,10 @@ mod tests {
         .expect("bootstrap and append inserts should succeed");
 
         Spi::run(
-            "DO $$
-             BEGIN
-               BEGIN
-                 INSERT INTO ec_diskann_duplicate_after_append VALUES
-                   (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42));
-                 RAISE EXCEPTION 'expected duplicate ec_diskann insert to fail after append';
-               EXCEPTION
-                 WHEN OTHERS THEN
-                   IF SQLERRM NOT LIKE '%ec_diskann duplicate bind is not yet implemented%' THEN
-                     RAISE;
-                   END IF;
-                 END;
-             END
-             $$",
+            "INSERT INTO ec_diskann_duplicate_after_append VALUES
+             (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
-        .expect("duplicate insert should fail through the appended-node duplicate probe");
+        .expect("duplicate insert should bind to the appended node");
 
         let metadata = index_metadata("ec_diskann_duplicate_after_append_idx");
         assert_eq!(
@@ -1477,10 +1501,79 @@ mod tests {
             !metadata.needs_medoid_refresh,
             "duplicate inserts should not set needs_medoid_refresh",
         );
+
+        let row2_heap_tid = heap_tid_for_row("ec_diskann_duplicate_after_append", 2);
+        let row3_heap_tid = heap_tid_for_row("ec_diskann_duplicate_after_append", 3);
+        let (materialized_metadata, chain) =
+            index_materialized_chain("ec_diskann_duplicate_after_append_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            materialized_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&materialized_metadata),
+            scan_state::metadata_search_code_len(&materialized_metadata),
+        );
+        let duplicate_node_tid = reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed")
+            .into_iter()
+            .find(|tid| {
+                reader
+                    .read_node(*tid)
+                    .expect("node decode should succeed")
+                    .primary_heaptid
+                    == row2_heap_tid
+            })
+            .expect("duplicate target node should exist");
+        let duplicate_tuple = reader
+            .read_node(duplicate_node_tid)
+            .expect("duplicate target node should decode");
+        assert!(
+            duplicate_tuple.has_overflow_heaptids,
+            "duplicate target should advertise an overflow chain after bind",
+        );
+        assert_eq!(
+            insert::bound_heap_tids_for_owner(
+                &chain,
+                duplicate_node_tid,
+                duplicate_tuple.primary_heaptid
+            )
+            .expect("bound heap tids should decode"),
+            vec![row2_heap_tid, row3_heap_tid],
+            "duplicate bind should preserve primary-first heap tid order",
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let mut ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_duplicate_after_append \
+                     ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.25, -0.5]::real[] \
+                     LIMIT 2",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        ordered_ids.sort_unstable();
+        assert_eq!(
+            ordered_ids,
+            vec![2, 3],
+            "runtime scan should expand duplicate-bound heap tids for the appended node",
+        );
     }
 
     #[pg_test]
-    fn test_ec_diskann_duplicate_insert_hits_duplicate_boundary() {
+    fn test_ec_diskann_duplicate_insert_binds_first_overflow_tuple() {
         Spi::run(
             "CREATE TABLE ec_diskann_duplicate_insert_boundary (id bigint primary key, embedding ecvector)",
         )
@@ -1497,21 +1590,162 @@ mod tests {
         .expect("first insert should bootstrap");
 
         Spi::run(
-            "DO $$
-             BEGIN
-               BEGIN
-                 INSERT INTO ec_diskann_duplicate_insert_boundary VALUES
-                   (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42));
-                 RAISE EXCEPTION 'expected duplicate ec_diskann insert to fail in this slice';
-               EXCEPTION
-                 WHEN OTHERS THEN
-                   IF SQLERRM NOT LIKE '%ec_diskann duplicate bind is not yet implemented%' THEN
-                     RAISE;
-                   END IF;
-               END;
-             END
-             $$",
+            "INSERT INTO ec_diskann_duplicate_insert_boundary VALUES
+             (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
-        .expect("duplicate insert should fail with the duplicate-boundary message");
+        .expect("duplicate insert should bind to the seed node");
+
+        let metadata = index_metadata("ec_diskann_duplicate_insert_boundary_idx");
+        assert_eq!(
+            metadata.inserted_since_rebuild, 1,
+            "duplicate bind must not advance inserted_since_rebuild",
+        );
+        assert!(
+            !metadata.needs_medoid_refresh,
+            "duplicate bind should not set needs_medoid_refresh",
+        );
+
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_duplicate_insert_boundary", 1);
+        let row2_heap_tid = heap_tid_for_row("ec_diskann_duplicate_insert_boundary", 2);
+        let (materialized_metadata, chain) =
+            index_materialized_chain("ec_diskann_duplicate_insert_boundary_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            materialized_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&materialized_metadata),
+            scan_state::metadata_search_code_len(&materialized_metadata),
+        );
+        let node_tids = reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed");
+        assert_eq!(
+            node_tids.len(),
+            1,
+            "duplicate bind should not create a new graph node"
+        );
+        let node_tid = node_tids[0];
+        let node_tuple = reader.read_node(node_tid).expect("seed node should decode");
+        assert!(
+            node_tuple.has_overflow_heaptids,
+            "duplicate bind should set the overflow flag on the seed node",
+        );
+        assert_eq!(
+            insert::bound_heap_tids_for_owner(&chain, node_tid, node_tuple.primary_heaptid)
+                .expect("bound heap tids should decode"),
+            vec![row1_heap_tid, row2_heap_tid],
+            "duplicate bind should preserve primary row first and overflow row second",
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let mut ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_duplicate_insert_boundary \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 2",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        ordered_ids.sort_unstable();
+        assert_eq!(
+            ordered_ids,
+            vec![1, 2],
+            "runtime scan should expand the duplicate-bound overflow heap tid",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_duplicate_bind_grows_second_overflow_tuple() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_duplicate_overflow_growth (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_duplicate_overflow_growth_idx ON ec_diskann_duplicate_overflow_growth USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops) WITH (list_size = 12, rerank_budget = 12, top_k = 12)",
+        )
+        .expect("index creation should succeed");
+        for id in 1..=12_i64 {
+            Spi::run(&format!(
+                "INSERT INTO ec_diskann_duplicate_overflow_growth VALUES \
+                 ({id}, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
+            ))
+            .expect("duplicate insert should succeed");
+        }
+
+        let metadata = index_metadata("ec_diskann_duplicate_overflow_growth_idx");
+        assert_eq!(
+            metadata.inserted_since_rebuild, 1,
+            "duplicate binds must keep inserted_since_rebuild pinned to the seed insert",
+        );
+
+        let (materialized_metadata, chain) =
+            index_materialized_chain("ec_diskann_duplicate_overflow_growth_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            materialized_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&materialized_metadata),
+            scan_state::metadata_search_code_len(&materialized_metadata),
+        );
+        let node_tids = reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed");
+        assert_eq!(
+            node_tids.len(),
+            1,
+            "twelve identical rows should still bind to a single graph node",
+        );
+        let node_tid = node_tids[0];
+        let node_tuple = reader.read_node(node_tid).expect("seed node should decode");
+        assert!(node_tuple.has_overflow_heaptids);
+        let bound_heap_tids =
+            insert::bound_heap_tids_for_owner(&chain, node_tid, node_tuple.primary_heaptid)
+                .expect("bound heap tids should decode");
+        assert_eq!(
+            bound_heap_tids.len(),
+            12,
+            "overflow expansion should surface every duplicate heap tid across multiple overflow tuples",
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let mut ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_duplicate_overflow_growth \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 12",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        ordered_ids.sort_unstable();
+        assert_eq!(
+            ordered_ids,
+            (1..=12_i64).collect::<Vec<_>>(),
+            "runtime scan should expand multi-tuple duplicate overflow chains",
+        );
     }
 }
