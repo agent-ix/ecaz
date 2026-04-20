@@ -362,8 +362,14 @@ unsafe extern "C-unwind" fn ec_diskann_ambulkdelete(
                 return ec_diskann_noop_vacuum_stats((*info).index, stats)
                     .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"));
             };
-            run_diskann_bulkdelete((*info).index, stats, callback, callback_state)
-                .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
+            run_diskann_bulkdelete(
+                (*info).index,
+                (*info).heaprel,
+                stats,
+                callback,
+                callback_state,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_diskann ambulkdelete failed: {e}"))
         })
     }
 }
@@ -858,6 +864,7 @@ unsafe fn ec_diskann_noop_vacuum_stats(
 
 unsafe fn run_diskann_bulkdelete(
     index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     callback: BulkDeleteCallback,
     callback_state: *mut c_void,
@@ -885,6 +892,7 @@ unsafe fn run_diskann_bulkdelete(
 
     let mut removed_heap_tids = 0usize;
     let mut finalize_tids = Vec::new();
+    let mut repair_target_tids = Vec::new();
     for &tid in &node_tids {
         let mut tuple = read_chain_node(
             &mutated_chain,
@@ -929,6 +937,7 @@ unsafe fn run_diskann_bulkdelete(
                 continue;
             }
             if vacuum::repair_neighbors(&mut tuple, &dead_set) != 0 {
+                repair_target_tids.push(tid);
                 write_chain_node(
                     &mut mutated_chain,
                     graph_degree_r,
@@ -939,6 +948,20 @@ unsafe fn run_diskann_bulkdelete(
                 )?;
             }
         }
+        let (heap_relation, heap_relation_owned) =
+            unsafe { resolve_vacuum_heap_relation(index_relation, heap_relation)? };
+        let fill_result = unsafe {
+            fill_vacuum_neighbor_slots(
+                index_relation,
+                heap_relation,
+                &metadata,
+                &mut mutated_chain,
+                &repair_target_tids,
+                &dead_set,
+            )
+        };
+        unsafe { release_owned_vacuum_heap_relation(heap_relation, heap_relation_owned) };
+        fill_result?;
     }
 
     let mut finalized_entry_point = false;
@@ -990,6 +1013,307 @@ unsafe fn run_diskann_bulkdelete(
         (*stats).tuples_removed += removed_heap_tids as f64;
     }
     Ok(stats)
+}
+
+unsafe fn resolve_vacuum_heap_relation(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+) -> Result<(pg_sys::Relation, bool), String> {
+    if !heap_relation.is_null() {
+        return Ok((heap_relation, false));
+    }
+
+    let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
+    if heap_oid == pg_sys::InvalidOid {
+        return Err("ec_diskann vacuum could not resolve heap relation".into());
+    }
+    Ok((
+        unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
+        true,
+    ))
+}
+
+unsafe fn release_owned_vacuum_heap_relation(
+    heap_relation: pg_sys::Relation,
+    heap_relation_owned: bool,
+) {
+    if heap_relation_owned && !heap_relation.is_null() {
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+}
+
+unsafe fn fill_vacuum_neighbor_slots(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    metadata: &VamanaMetadataPage,
+    chain: &mut DataPageChain,
+    repair_target_tids: &[ItemPointer],
+    dead_set: &HashSet<ItemPointer>,
+) -> Result<(), String> {
+    if repair_target_tids.is_empty() {
+        return Ok(());
+    }
+    let source_attnum = unsafe { indexed_ecvector_attnum(index_relation)? };
+    let slot = unsafe { scan_state::allocate_heap_slot(heap_relation)? };
+    let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+    let mut visited = VisitedState::new();
+
+    let repair_result = (|| -> Result<(), String> {
+        for &target_tid in repair_target_tids {
+            let planner = VacuumFillPlanner {
+                heap_relation,
+                snapshot,
+                slot,
+                source_attnum,
+                metadata,
+                chain,
+                dead_set,
+            };
+            let fill_candidates = unsafe {
+                plan_vacuum_fill_candidates_for_target(&planner, target_tid, &mut visited)?
+            };
+            if fill_candidates.is_empty() {
+                continue;
+            }
+
+            let mut tuple = read_chain_node(
+                chain,
+                metadata.graph_degree_r,
+                scan_state::metadata_binary_word_count(metadata),
+                scan_state::metadata_search_code_len(metadata),
+                target_tid,
+            )?;
+            let original_tuple = tuple.clone();
+            for candidate_tid in fill_candidates {
+                insert::insert_backlink_if_free(&mut tuple, candidate_tid);
+            }
+            if tuple != original_tuple {
+                write_chain_node(
+                    chain,
+                    metadata.graph_degree_r,
+                    scan_state::metadata_binary_word_count(metadata),
+                    scan_state::metadata_search_code_len(metadata),
+                    target_tid,
+                    &tuple,
+                )?;
+            }
+        }
+        Ok(())
+    })();
+
+    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
+    repair_result
+}
+
+struct VacuumFillPlanner<'a> {
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    metadata: &'a VamanaMetadataPage,
+    chain: &'a DataPageChain,
+    dead_set: &'a HashSet<ItemPointer>,
+}
+
+unsafe fn plan_vacuum_fill_candidates_for_target(
+    planner: &VacuumFillPlanner<'_>,
+    target_tid: ItemPointer,
+    visited: &mut VisitedState,
+) -> Result<Vec<ItemPointer>, String> {
+    let binary_word_count = scan_state::metadata_binary_word_count(planner.metadata);
+    let search_code_len = scan_state::metadata_search_code_len(planner.metadata);
+    let target_tuple = read_chain_node(
+        planner.chain,
+        planner.metadata.graph_degree_r,
+        binary_word_count,
+        search_code_len,
+        target_tid,
+    )?;
+    if !target_tuple.is_live() || target_tuple.primary_heaptid == ItemPointer::INVALID {
+        return Ok(Vec::new());
+    }
+
+    let free_slots = target_tuple.neighbors.len() - usize::from(target_tuple.neighbor_count);
+    if free_slots == 0 {
+        return Ok(Vec::new());
+    }
+
+    let target_source_vector = unsafe {
+        fetch_heap_source_vector(
+            planner.heap_relation,
+            planner.snapshot,
+            planner.slot,
+            planner.source_attnum,
+            target_tuple.primary_heaptid,
+            "vacuum repair target source vector",
+        )?
+    };
+    let existing_neighbor_tids = target_tuple
+        .neighbors
+        .iter()
+        .take(target_tuple.neighbor_count as usize)
+        .copied()
+        .filter(|tid| *tid != ItemPointer::INVALID && !planner.dead_set.contains(tid))
+        .collect::<Vec<_>>();
+    let mut existing_neighbor_set = existing_neighbor_tids
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+
+    let mut planning_candidates = Vec::with_capacity(existing_neighbor_tids.len());
+    for neighbor_tid in &existing_neighbor_tids {
+        let neighbor_tuple = read_chain_node(
+            planner.chain,
+            planner.metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            *neighbor_tid,
+        )?;
+        if !neighbor_tuple.is_live() || neighbor_tuple.primary_heaptid == ItemPointer::INVALID {
+            continue;
+        }
+        let neighbor_source_vector = unsafe {
+            fetch_heap_source_vector(
+                planner.heap_relation,
+                planner.snapshot,
+                planner.slot,
+                planner.source_attnum,
+                neighbor_tuple.primary_heaptid,
+                "vacuum repair neighbor source vector",
+            )?
+        };
+        planning_candidates.push(insert::ForwardNeighborCandidate {
+            tid: *neighbor_tid,
+            source_vector: neighbor_source_vector,
+        });
+    }
+
+    let group_count = usize::from(planner.metadata.search_subvector_count);
+    let group_size = usize::from(planner.metadata.search_subvector_dim);
+    if group_count == 0 || group_size == 0 {
+        return Err(format!(
+            "ec_diskann vacuum repair requires grouped-PQ metadata: group_count={}, group_size={}",
+            group_count, group_size
+        ));
+    }
+    let build_list_size = usize::from(planner.metadata.build_list_size_l);
+    if build_list_size == 0 {
+        return Err("ec_diskann vacuum repair requires build_list_size_l > 0".into());
+    }
+    let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
+        planner.chain,
+        planner.metadata.grouped_codebook_head,
+        group_count,
+        group_size,
+        planner.metadata.dimensions as usize,
+        planner.metadata.seed,
+        &target_source_vector,
+    )?;
+    if helper_group_count != group_count {
+        return Err(format!(
+            "ec_diskann vacuum repair grouped-PQ helper returned group_count {}, expected {}",
+            helper_group_count, group_count
+        ));
+    }
+
+    let node_results = {
+        let reader = PersistedGraphReader::new(
+            planner.chain,
+            planner.metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+        );
+        let entry_point = scan::resolve_entry_point(&reader, planner.metadata.entry_point)?;
+        let Some(entry_point) = entry_point else {
+            return Ok(Vec::new());
+        };
+        let rerank_error = RefCell::new(None::<String>);
+        let results = scan::vamana_scan_with(
+            &reader,
+            visited,
+            ScanParams {
+                entry_point,
+                list_size: build_list_size,
+                rerank_budget: build_list_size,
+                top_k: build_list_size,
+            },
+            |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
+            |heap_tid| match exact_heap_rerank_distance(
+                planner.heap_relation,
+                planner.snapshot,
+                planner.slot,
+                planner.source_attnum,
+                &target_source_vector,
+                heap_tid,
+            ) {
+                Ok(distance) => distance,
+                Err(error) => {
+                    if rerank_error.borrow().is_none() {
+                        *rerank_error.borrow_mut() = Some(error);
+                    }
+                    f32::INFINITY
+                }
+            },
+        )?;
+        if let Some(error) = rerank_error.into_inner() {
+            return Err(format!(
+                "ec_diskann vacuum repair exact rerank failed: {error}"
+            ));
+        }
+        results
+    };
+
+    existing_neighbor_set.insert(target_tid);
+    for result in node_results {
+        if planner.dead_set.contains(&result.tid) || !existing_neighbor_set.insert(result.tid) {
+            continue;
+        }
+
+        let candidate_tuple = read_chain_node(
+            planner.chain,
+            planner.metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            result.tid,
+        )?;
+        if !candidate_tuple.is_live() || candidate_tuple.primary_heaptid == ItemPointer::INVALID {
+            continue;
+        }
+        let candidate_source_vector = unsafe {
+            fetch_heap_source_vector(
+                planner.heap_relation,
+                planner.snapshot,
+                planner.slot,
+                planner.source_attnum,
+                candidate_tuple.primary_heaptid,
+                "vacuum repair candidate source vector",
+            )?
+        };
+        planning_candidates.push(insert::ForwardNeighborCandidate {
+            tid: result.tid,
+            source_vector: candidate_source_vector,
+        });
+    }
+
+    if planning_candidates.len() <= existing_neighbor_tids.len() {
+        return Ok(Vec::new());
+    }
+
+    let selected = insert::select_insert_forward_neighbors(
+        &target_source_vector,
+        &planning_candidates,
+        planner.metadata.alpha,
+        planner.metadata.graph_degree_r as usize,
+    )?;
+    let existing_neighbor_set = existing_neighbor_tids
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    Ok(selected
+        .into_iter()
+        .filter(|tid| !existing_neighbor_set.contains(tid))
+        .take(free_slots)
+        .collect())
 }
 
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
@@ -1372,6 +1696,15 @@ mod tests {
         .expect("SPI query should succeed")
         .expect("table row should exist");
         parse_ctid(&ctid)
+    }
+
+    fn row_id_for_heap_tid(table_name: &str, heap_tid: ItemPointer) -> i64 {
+        Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name} WHERE ctid = '({},{})'::tid",
+            heap_tid.block_number, heap_tid.offset_number
+        ))
+        .expect("SPI query should succeed")
+        .expect("table row should exist")
     }
 
     fn index_metadata(index_name: &str) -> VamanaMetadataPage {
@@ -2486,6 +2819,324 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         assert_eq!(ordered_ids, vec![1]);
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_vacuum_refills_broken_neighbor_slot() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_vacuum_refill_slot (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_vacuum_refill_slot_idx ON ec_diskann_vacuum_refill_slot USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 4, build_list_size = 10)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_vacuum_refill_slot VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.1, -1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.1, 0.0, -1.0, 0.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.1, 0.0, 0.0, -1.0, 0.0], 4, 42)),
+             (5, encode_to_ecvector(ARRAY[0.1, 0.0, 0.0, 0.0, -1.0], 4, 42)),
+             (6, encode_to_ecvector(ARRAY[1.0, 1.0, 1.0, 1.0, 1.0], 4, 42))",
+        )
+        .expect("fixture rows should insert");
+
+        let (prefill_metadata, prefill_chain) =
+            index_materialized_chain("ec_diskann_vacuum_refill_slot_idx");
+        let prefill_reader = PersistedGraphReader::new(
+            &prefill_chain,
+            prefill_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&prefill_metadata),
+            scan_state::metadata_search_code_len(&prefill_metadata),
+        );
+        let live_node_tids = prefill_reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node iteration should succeed");
+        let graph_degree = prefill_metadata.graph_degree_r as usize;
+        let binary_word_count = scan_state::metadata_binary_word_count(&prefill_metadata);
+        let search_code_len = scan_state::metadata_search_code_len(&prefill_metadata);
+        assert_eq!(
+            live_node_tids.len(),
+            graph_degree + 2,
+            "fixture should expose exactly two more live nodes than the graph degree",
+        );
+
+        let search_index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid("ec_diskann_vacuum_refill_slot_idx"),
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+        let heap_oid = unsafe { pg_sys::IndexGetRelation((*search_index_relation).rd_id, false) };
+        assert_ne!(heap_oid, pg_sys::InvalidOid, "heap relation should resolve");
+        let heap_relation =
+            unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let source_attnum = unsafe { super::indexed_ecvector_attnum(search_index_relation) }
+            .expect("indexed source attnum should resolve");
+        let slot = unsafe { scan_state::allocate_heap_slot(heap_relation) }
+            .expect("heap slot allocation should succeed");
+        let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+        let mut visited = super::VisitedState::new();
+
+        let fixture_plan = live_node_tids.iter().copied().find_map(|target_tid| {
+            let candidate_tids = live_node_tids
+                .iter()
+                .copied()
+                .filter(|tid| *tid != target_tid)
+                .collect::<Vec<_>>();
+            candidate_tids.iter().copied().find_map(|replacement_tid| {
+                let target_neighbors_before = candidate_tids
+                    .iter()
+                    .copied()
+                    .filter(|tid| *tid != replacement_tid)
+                    .collect::<Vec<_>>();
+                target_neighbors_before
+                    .iter()
+                    .copied()
+                    .find_map(|deleted_tid| {
+                        let deleted_heap_tid = prefill_reader
+                            .read_node(deleted_tid)
+                            .expect("deleted tuple should decode during fixture search")
+                            .primary_heaptid;
+                        let mut working_chain = prefill_chain.clone();
+                        let mut target_tuple_before = super::read_chain_node(
+                            &working_chain,
+                            prefill_metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                            target_tid,
+                        )
+                        .expect("target tuple should decode during fixture search");
+                        for slot in &mut target_tuple_before.neighbors {
+                            *slot = ItemPointer::INVALID;
+                        }
+                        for (slot, neighbor_tid) in
+                            target_neighbors_before.iter().copied().enumerate()
+                        {
+                            target_tuple_before.neighbors[slot] = neighbor_tid;
+                        }
+                        target_tuple_before.neighbor_count = prefill_metadata.graph_degree_r;
+                        super::write_chain_node(
+                            &mut working_chain,
+                            prefill_metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                            target_tid,
+                            &target_tuple_before,
+                        )
+                        .expect("target rewrite should encode during fixture search");
+
+                        let node_tids = super::collect_node_tids(
+                            &working_chain,
+                            prefill_metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )
+                        .expect("node tids should collect during fixture search");
+                        let mut finalize_tids = Vec::new();
+                        for &tid in &node_tids {
+                            let mut tuple = super::read_chain_node(
+                                &working_chain,
+                                prefill_metadata.graph_degree_r,
+                                binary_word_count,
+                                search_code_len,
+                                tid,
+                            )
+                            .expect("tuple should decode during pass-1 search");
+                            let original_tuple = tuple.clone();
+                            insert::vacuum_bound_heap_rows(
+                                &mut working_chain,
+                                tid,
+                                &mut tuple,
+                                |heap_tid| heap_tid == deleted_heap_tid,
+                            )
+                            .expect("pass-1 strip should succeed during fixture search");
+                            if tuple != original_tuple {
+                                super::write_chain_node(
+                                    &mut working_chain,
+                                    prefill_metadata.graph_degree_r,
+                                    binary_word_count,
+                                    search_code_len,
+                                    tid,
+                                    &tuple,
+                                )
+                                .expect("pass-1 rewrite should succeed during fixture search");
+                            }
+                            if super::vacuum::is_fully_dead(&tuple) {
+                                finalize_tids.push(tid);
+                            }
+                        }
+
+                        let dead_set = finalize_tids.iter().copied().collect::<HashSet<_>>();
+                        if !dead_set.contains(&deleted_tid) {
+                            return None;
+                        }
+                        for &tid in &node_tids {
+                            let mut tuple = super::read_chain_node(
+                                &working_chain,
+                                prefill_metadata.graph_degree_r,
+                                binary_word_count,
+                                search_code_len,
+                                tid,
+                            )
+                            .expect("tuple should decode during pass-2 search");
+                            if !tuple.is_live() {
+                                continue;
+                            }
+                            if super::vacuum::repair_neighbors(&mut tuple, &dead_set) != 0 {
+                                super::write_chain_node(
+                                    &mut working_chain,
+                                    prefill_metadata.graph_degree_r,
+                                    binary_word_count,
+                                    search_code_len,
+                                    tid,
+                                    &tuple,
+                                )
+                                .expect("pass-2 rewrite should succeed during fixture search");
+                            }
+                        }
+
+                        let planner = super::VacuumFillPlanner {
+                            heap_relation,
+                            snapshot,
+                            slot,
+                            source_attnum,
+                            metadata: &prefill_metadata,
+                            chain: &working_chain,
+                            dead_set: &dead_set,
+                        };
+                        let fill_candidates = unsafe {
+                            super::plan_vacuum_fill_candidates_for_target(
+                                &planner,
+                                target_tid,
+                                &mut visited,
+                            )
+                        }
+                        .expect("fixture search should plan vacuum fill candidates");
+                        if fill_candidates.contains(&replacement_tid) {
+                            Some((
+                                target_tid,
+                                target_neighbors_before.clone(),
+                                replacement_tid,
+                                deleted_tid,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+            })
+        });
+
+        unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
+        unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        unsafe {
+            pg_sys::index_close(
+                search_index_relation,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+
+        let Some((target_tid, target_neighbors_before, replacement_tid, deleted_tid)) =
+            fixture_plan
+        else {
+            panic!("fixture search should find a reachable vacuum refill candidate");
+        };
+
+        let mut mutated_chain = prefill_chain.clone();
+        let mut target_tuple_before = super::read_chain_node(
+            &mutated_chain,
+            prefill_metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            target_tid,
+        )
+        .expect("target tuple should decode before rewrite");
+        for slot in &mut target_tuple_before.neighbors {
+            *slot = ItemPointer::INVALID;
+        }
+        for (slot, neighbor_tid) in target_neighbors_before.iter().copied().enumerate() {
+            target_tuple_before.neighbors[slot] = neighbor_tid;
+        }
+        target_tuple_before.neighbor_count = prefill_metadata.graph_degree_r;
+        super::write_chain_node(
+            &mut mutated_chain,
+            prefill_metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            target_tid,
+            &target_tuple_before,
+        )
+        .expect("target rewrite should encode");
+        let rewrites = super::collect_tuple_rewrites(&prefill_chain, &mutated_chain)
+            .expect("target rewrite diff should collect");
+        assert_eq!(
+            rewrites.len(),
+            1,
+            "fixture rewrite should only touch the target tuple"
+        );
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid("ec_diskann_vacuum_refill_slot_idx"),
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            )
+        };
+        unsafe { super::apply_tuple_rewrites(index_relation, &rewrites) }
+            .expect("fixture rewrite should apply");
+        unsafe {
+            pg_sys::index_close(index_relation, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
+        };
+
+        let deleted_heap_tid = prefill_reader
+            .read_node(deleted_tid)
+            .expect("deleted tuple should decode before vacuum")
+            .primary_heaptid;
+        let deleted_row_id = row_id_for_heap_tid("ec_diskann_vacuum_refill_slot", deleted_heap_tid);
+
+        Spi::run(&format!(
+            "DELETE FROM ec_diskann_vacuum_refill_slot WHERE id = {deleted_row_id}"
+        ))
+        .expect("delete should succeed");
+        let stats = unsafe {
+            debug_vacuum_remove_heap_tids(
+                index_oid("ec_diskann_vacuum_refill_slot_idx"),
+                &[deleted_heap_tid],
+            )
+        };
+        assert_eq!(stats.tuples_removed, 1.0);
+        assert_eq!(stats.num_index_tuples, 5.0);
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_vacuum_refill_slot_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let target_tuple_after = reader
+            .read_node(target_tid)
+            .expect("target tuple should decode after vacuum");
+        let target_neighbors_after = target_tuple_after
+            .neighbors
+            .iter()
+            .take(target_tuple_after.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            !target_neighbors_after.contains(&deleted_tid),
+            "vacuum refill should still remove the deleted neighbor tid",
+        );
+        assert!(
+            target_neighbors_after.contains(&replacement_tid),
+            "vacuum refill should install the previously-missing live candidate into the freed slot; before={target_neighbors_before:?} after={target_neighbors_after:?} replacement={replacement_tid:?}",
+        );
+        assert_eq!(
+            target_neighbors_after.len(),
+            target_neighbors_before.len(),
+            "refill should restore the live node's neighbor count after the delete",
+        );
     }
 
     #[pg_test]
