@@ -1,6 +1,7 @@
 //! Access-method surfaces grouped by AM and shared helpers.
 
 pub(crate) mod common;
+mod ec_diskann;
 mod ec_hnsw;
 
 #[allow(unused_imports)]
