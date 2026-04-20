@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::options;
+use super::{ambuild, options};
 
 fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
@@ -33,8 +33,8 @@ fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> 
     amroutine.amparallelvacuumoptions = 0;
     amroutine.amkeytype = pg_sys::InvalidOid;
 
-    amroutine.ambuild = Some(ec_diskann_ambuild);
-    amroutine.ambuildempty = Some(ec_diskann_ambuildempty);
+    amroutine.ambuild = Some(ambuild::ec_diskann_ambuild);
+    amroutine.ambuildempty = Some(ambuild::ec_diskann_ambuildempty);
     amroutine.aminsert = Some(ec_diskann_aminsert);
     amroutine.aminsertcleanup = None;
     amroutine.ambulkdelete = Some(ec_diskann_ambulkdelete);
@@ -58,26 +58,6 @@ fn build_ec_diskann_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> 
     amroutine.amparallelrescan = None;
 
     amroutine
-}
-
-unsafe extern "C-unwind" fn ec_diskann_ambuild(
-    _heap_relation: pg_sys::Relation,
-    _index_relation: pg_sys::Relation,
-    _index_info: *mut pg_sys::IndexInfo,
-) -> *mut pg_sys::IndexBuildResult {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!("ec_diskann ambuild is not yet implemented (task 17 phase 2)");
-        })
-    }
-}
-
-unsafe extern "C-unwind" fn ec_diskann_ambuildempty(_index_relation: pg_sys::Relation) {
-    unsafe {
-        pgrx::pgrx_extern_c_guard(|| {
-            pgrx::error!("ec_diskann ambuildempty is not yet implemented (task 17 phase 2)");
-        })
-    }
 }
 
 unsafe extern "C-unwind" fn ec_diskann_aminsert(

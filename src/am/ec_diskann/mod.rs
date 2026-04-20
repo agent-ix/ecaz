@@ -6,6 +6,7 @@
 //! them in. Reloption parsing and metadata-page layout are deferred to
 //! phase 1B and phase 1C respectively.
 
+mod ambuild;
 pub mod build;
 mod options;
 pub mod page;

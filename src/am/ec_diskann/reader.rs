@@ -125,10 +125,10 @@ impl<'a> PersistedGraphReader<'a> {
     /// rebuild). Also the scaffold for ADR-047 pass-3 orphan
     /// detection.
     pub fn first_live_tid(&self) -> Result<Option<ItemPointer>, String> {
-        for item in self.iter_live_tids() {
-            return item.map(|(tid, _)| Some(tid));
+        match self.iter_live_tids().next() {
+            Some(item) => item.map(|(tid, _)| Some(tid)),
+            None => Ok(None),
         }
-        Ok(None)
     }
 }
 
