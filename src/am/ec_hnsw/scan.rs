@@ -1062,6 +1062,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             #[cfg(not(any(test, feature = "pg_test")))]
             let amrescan_total_elapsed_us = 0;
             record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
         })
     }
 }
@@ -1074,6 +1075,71 @@ fn validate_runtime_scan_format(
 }
 
 const INVALID_PARALLEL_SCAN_WORKER_SLOT: u32 = u32::MAX;
+
+fn saturating_u32_from_usize(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
+    match phase {
+        ScanExecutionPhase::GraphTraversal => {
+            super::parallel::EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL
+        }
+        ScanExecutionPhase::LinearFallback => {
+            super::parallel::EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK
+        }
+        ScanExecutionPhase::Exhausted => super::parallel::EC_PARALLEL_WORKER_PHASE_EXHAUSTED,
+    }
+}
+
+fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        return;
+    }
+
+    let active_result_state = active_result_state_ref(opaque);
+    let scheduler_frontier_len = if opaque.bootstrap_expansion.is_null() {
+        0
+    } else {
+        saturating_u32_from_usize(unsafe { &*opaque.bootstrap_expansion }.frontier_len())
+    };
+    let visited_count = if opaque.visited_tids.is_null() {
+        0
+    } else {
+        saturating_u32_from_usize(unsafe { &*opaque.visited_tids }.len())
+    };
+    let emitted_count = if opaque.emitted_result_tids.is_null() {
+        0
+    } else {
+        saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
+    };
+
+    let snapshot = super::parallel::EcParallelWorkerSlotRuntimeSnapshot {
+        execution_phase: parallel_scan_worker_phase(opaque.execution_phase),
+        scan_dimensions: u32::from(opaque.scan_dimensions),
+        bootstrap_frontier_limit: saturating_u32_from_usize(opaque.bootstrap_frontier_limit),
+        visible_frontier_len: saturating_u32_from_usize(visible_frontier_ref(opaque).len()),
+        scheduler_frontier_len,
+        visited_count,
+        emitted_count,
+        active_result_pending_count: u32::from(active_result_state.pending_count()),
+        active_result_has_current: active_result_state.current().has_element(),
+    };
+
+    match unsafe {
+        super::parallel::publish_parallel_scan_worker_slot_runtime_snapshot(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+            opaque.parallel_scan_rescan_epoch,
+            snapshot,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => pgrx::error!("ec_hnsw parallel scan snapshot publish failed: {err}"),
+    }
+}
 
 fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
     if opaque.parallel_scan_state.is_null()
@@ -1119,6 +1185,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.parallel_scan_rescan_epoch = attachment.rescan_epoch;
             opaque.parallel_scan_worker_slot_count = attachment.worker_slot_count;
             opaque.parallel_scan_worker_slot_index = worker_slot_index;
+            publish_parallel_scan_worker_slot_snapshot(opaque);
         }
         Ok(None) => clear_parallel_scan_state(opaque),
         Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
@@ -1996,6 +2063,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
+    publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn reset_scan_graph_cache(opaque: &mut TqScanOpaque) {
@@ -3663,6 +3731,7 @@ fn enter_linear_fallback_phase(opaque: &mut TqScanOpaque) {
     opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::LinearFallback;
     opaque.stats_used_linear_fallback = true;
+    publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
@@ -3671,6 +3740,7 @@ fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
     finalize_scan_stats(opaque);
+    publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -5523,6 +5593,113 @@ mod tests {
         assert_eq!(
             opaque.parallel_scan_worker_slot_index, INVALID_PARALLEL_SCAN_WORKER_SLOT,
             "clearing scan state should drop the local worker-slot binding"
+        );
+    }
+
+    #[test]
+    fn publish_parallel_scan_worker_slot_snapshot_mirrors_scan_runtime_state() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.scan_dimensions = 1536;
+        opaque.bootstrap_frontier_limit = 64;
+        visible_frontier_mut(&mut opaque).push(beam_candidate(24, 1, -3.0));
+        visible_frontier_mut(&mut opaque).push(beam_candidate(24, 2, -2.0));
+        reset_bootstrap_expansion_state(&mut opaque, 64);
+        bootstrap_expansion_mut(&mut opaque).seed(beam_candidate(25, 1, -4.0));
+        bootstrap_expansion_mut(&mut opaque).seed(beam_candidate(25, 2, -5.0));
+        reset_scan_visited_state(&mut opaque);
+        mark_visited_element(&mut opaque, tid(26, 1));
+        mark_visited_element(&mut opaque, tid(26, 2));
+        reset_scan_emitted_state(&mut opaque);
+        mark_emitted_element(&mut opaque, tid(27, 1));
+        opaque.result_state.set_current(tid(28, 1), -6.0);
+        opaque.result_state.store_pending(&[tid(29, 1), tid(29, 2)]);
+
+        publish_parallel_scan_worker_slot_snapshot(&opaque);
+
+        let snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            snapshot.flags, 1,
+            "claimed scan slots should stay marked as live in the shared worker snapshot"
+        );
+        assert_eq!(
+            snapshot.observed_rescan_epoch, 0,
+            "worker snapshot should stay keyed to the active shared epoch"
+        );
+        assert_eq!(
+            snapshot.runtime.execution_phase,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
+            "worker snapshot should report the current graph-traversal phase"
+        );
+        assert_eq!(
+            snapshot.runtime.scan_dimensions, 1536,
+            "worker snapshot should mirror the bound scan dimensions"
+        );
+        assert_eq!(
+            snapshot.runtime.bootstrap_frontier_limit, 64,
+            "worker snapshot should mirror the staged bootstrap frontier limit"
+        );
+        assert_eq!(
+            snapshot.runtime.visible_frontier_len, 2,
+            "worker snapshot should report the current visible frontier size"
+        );
+        assert_eq!(
+            snapshot.runtime.scheduler_frontier_len, 2,
+            "worker snapshot should report the scheduler frontier size"
+        );
+        assert_eq!(
+            snapshot.runtime.visited_count, 2,
+            "worker snapshot should report the current visited-element count"
+        );
+        assert_eq!(
+            snapshot.runtime.emitted_count, 1,
+            "worker snapshot should report the current emitted-result count"
+        );
+        assert_eq!(
+            snapshot.runtime.active_result_pending_count, 2,
+            "worker snapshot should report the pending heap-drain count"
+        );
+        assert!(
+            snapshot.runtime.active_result_has_current,
+            "worker snapshot should record whether the active result state still has a current row"
         );
     }
 

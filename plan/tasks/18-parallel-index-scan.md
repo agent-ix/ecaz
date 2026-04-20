@@ -146,6 +146,8 @@ See ADR-040 for the full shape. Summary:
 
 - **Worker-slot staging.** Scan attachment now claims and releases one shared
   worker slot per live `TqScanOpaque`, keyed by the current rescan epoch.
+  The slot also carries a staged runtime snapshot for phase, frontier, visited,
+  emitted, and pending-result state at scan lifecycle boundaries.
   `amcanparallel` still stays `false` until the coordinator heap and
   worker-local traversal contracts are live.
 
