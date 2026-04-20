@@ -14,6 +14,7 @@ pub mod persist;
 pub mod reader;
 mod routine;
 pub mod scan;
+pub mod scan_query;
 pub mod tuple;
 pub mod vacuum;
 pub mod vamana;
