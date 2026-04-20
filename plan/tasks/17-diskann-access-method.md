@@ -1,59 +1,59 @@
 # Task 17: DiskANN (Vamana) as Second Access Method
 
-Status: **in progress — buildout phase unblocked 2026-04-19.** Native-HNSW-build
-lane has landed on main; ADR-046 and ADR-047 are ACCEPTED. Working branch:
-`adr034-diskann-rebased` (rebased onto main after the `ec_hnsw` rename).
+Status: **substantially complete on branch — callback buildout phases 1–9
+landed by 2026-04-20.** The remaining work is review, merge, and
+higher-level signoff/hygiene rather than another missing `ec_diskann`
+AM callback slice. Working branch: `adr034-diskann-rebased`.
 
 Executes ADR-034.
 
-## Current status (2026-04-19)
+## Current status (2026-04-20)
 
 ### Landed on `adr034-diskann-rebased`
 
-- Phase 1 (Quantizer trait seam), Phase 2 (storage move), Phase 4 (AM
-  skeleton) — already absorbed into main via refactor branch.
-- Phase 5A (Vamana algorithm core), 5B (slim tuple), 5C-1 (persist
-  sequencer), 5C-2 (build orchestrator), 5D (persisted-graph reader),
-  6A (scan algorithm shell), 8A (vacuum primitives).
-- Option B: `VisitedState` scratch for allocation-free scan reuse.
-- ADR-045 (page-layout discipline), ADR-046 (insert lock ordering,
-  ACCEPTED), ADR-047 (vacuum lock ordering, ACCEPTED).
-- Module path: `src/am/ec_diskann/` (consistent with `ec_hnsw`).
-  SQL AM name: `ec_diskann`. FFI handler: `ec_diskann_handler`.
+- Phase 1 (Quantizer trait seam), Phase 2 (storage move), and Phase 4
+  (AM skeleton) are already absorbed into main via the refactor lane.
+- The `ec_diskann` branch now has the full pgrx callback surface:
+  - build: Phase 5C-3 (`ambuild`, persisted grouped codebooks)
+  - scan: Phase 6B-1 / 6B-2
+  - insert: Phase 7A through 7I
+  - vacuum: Phase 8B-1 through 8B-3
+  - planner: Phase 9 cost activation
+- Prep items from packets 11004 / 11018 / 11023 / 11027 / 11028 are
+  resolved in-tree.
+- Option B `VisitedState` scratch is live for allocation-free scan
+  reuse.
+- ADR-045, ADR-046, and ADR-047 are all accepted and reflected by the
+  landed code.
+- Module path: `src/am/ec_diskann/`. SQL AM name: `ec_diskann`. FFI
+  handler: `ec_diskann_handler`.
 
-### Code prep required before Phase 5C-3 / 6B
+### Resolved prep from the 2026-04-19 review batch
 
-These came out of the 2026-04-19 review feedback (packets 11004,
-11018, 11023, 11027, 11028). They are NOT blockers for ADR sign-off —
-both ADRs are ACCEPTED — but they are prerequisites for the pgrx
-buildout to land cleanly.
-
-- [ ] **Strengthen the live-tuple predicate** across
-      `ec_diskann::reader::{iter_live_tids, first_live_tid}`,
-      `ec_diskann::scan::resolve_entry_point`, and scan emission.
-      Current predicate is `!deleted`; correct predicate is
-      `!deleted && (primary_heaptid != INVALID || has_overflow_heaptids)`.
-      Add strip-without-tombstone regression tests (packets 11023,
-      11027, 11028 all trip on the same root bug).
-- [ ] **Clear `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` in V0 build.**
-      `BuildParams::payload_flags()` and `VamanaMetadataPage::empty()`
-      currently set it unconditionally. V0 reranks from the heap
-      `ecvector` row (ADR-044 default); the flag must be clear. Update
-      tests (packet 11018).
-- [ ] **Refresh `plan/design/diskann-build-algorithm.md`** for V0
-      hot-only persistence and reconcile the medoid sample cap
-      (`MEDOID_SAMPLE_CAP = 1000` per the Phase 5C-2 decision, not the
-      doc's original `10_000`). Doc-only (packet 11004).
+- [x] **Strengthen the live-tuple predicate** across reader / entry
+      resolution / scan emission. Landed through packets 11023, 11027,
+      and 11028 follow-up code already in this branch.
+- [x] **Clear `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` in V0 build.** Landed
+      in the Phase 5C-2 / Phase 5C-3 prep follow-up that also updated
+      the metadata tests.
+- [x] **Refresh `plan/design/diskann-build-algorithm.md`** for V0
+      hot-only persistence and the `MEDOID_SAMPLE_CAP = 1000`
+      decision.
 
 ### Buildout phases, in order
 
-1. **Prep** — the three items above.
-2. **Phase 5C-3** — pgrx `ambuild` + quantizer wiring, now via
-   `am::common::training` (shipped by native-build lane).
-3. **Phase 6B** — pgrx scan wiring per `plan/design/diskann-scan-pgrx.md`.
-4. **Phase 7** — pgrx `aminsert` per ADR-046 frozen rules.
-5. **Phase 8B** — pgrx vacuum callback per ADR-047 frozen rules.
-6. **Phase 9** — cost model + planner opt-in.
+1. **Prep** — complete.
+2. **Phase 5C-3** — complete.
+3. **Phase 6B** — complete.
+4. **Phase 7** — complete.
+5. **Phase 8B** — complete.
+6. **Phase 9** — complete.
+
+### Historical planning note
+
+The detailed phase sections below are retained as the original buildout
+plan. Current landed state is summarized above and in packets 11029
+through 11045.
 
 ### ADR text edits for ACCEPTED flip
 
@@ -70,16 +70,17 @@ single-layer Vamana graph instead of a multi-layer HNSW graph. TurboQuant is
 explicitly not supported by `ecdiskann` in this task — `tqhnsw` remains the
 only AM that serves TurboQuant-format indexes.
 
-The target outcome is a per-index opt-in Vamana AM:
+The target outcome is a per-index Vamana AM:
 
 ```sql
-CREATE INDEX ... USING ecdiskann (embedding vector_ip_ops)
+CREATE INDEX ... USING ec_diskann (embedding ecvector_diskann_ip_ops)
     WITH (storage_format = 'pq_fastscan');
 ```
 
-End-of-task: planner still opts `ecdiskann` in only when the user asks for
-it explicitly, the same way `tqhnsw` stays gated under ADR-011 today. No
-default-AM flip.
+End-of-task: Postgres may naturally select `ec_diskann` for sufficiently
+large ordered queries once the index exists, but there is still no
+"default AM" flip. Users opt into Vamana by creating an `ec_diskann`
+index explicitly.
 
 ## Out of scope
 
@@ -90,7 +91,9 @@ default-AM flip.
 - OPQ rotation (ADR-036), AQ/RVQ compression (ADR-037), LSQ refinement
   (ADR-038), SPANN (ADR-035). All orthogonal.
 - Parallel index scan (ADR-040) for `ecdiskann`. Serial scan only in v0.
-- Flipping the default AM to `ecdiskann`. Explicit opt-in stays.
+- Flipping the default AM to `ec_diskann`. Natural planner selection for
+  explicitly-created `ec_diskann` indexes is in scope; making it the
+  default index AM is not.
 - Writing an auto-upgrade path from `tqhnsw` indexes to `ecdiskann`.
   Rebuild-only, same posture as ADR-032's `INDEX_FORMAT_V2` migration.
 
@@ -512,18 +515,16 @@ Review packet: 11012 (phase 8 landing).
 
 ### Phase 9 — Cost model and planner opt-in
 
-- [ ] Cost model entries in `src/am/ecdiskann/cost.rs` plugging into
-      the phase-3 `src/am/common/cost.rs` shell. Model inputs: `R`,
-      `L`, `ef_search`, reltuples, `index_pages`, entry-point depth.
-      Unit tests match the shape of the `tqhnsw` cost-model tests.
-- [ ] Strategy translation (FR-023) and custom EXPLAIN (FR-024) opt-in
-      for `ecdiskann`, following the PG18 scaffolding already in
-      `src/am/common/{explain,stats}.rs`.
-- [ ] Planner gate lift: remove ADR-011-style override for
-      `ecdiskann` specifically once phase 6 recall is signed off.
-      The gate on `tqhnsw` is unaffected.
+- [x] Cost model entries in `src/am/ec_diskann/cost.rs` plugging into
+      `src/am/common/cost.rs`. Landed in packet 11045 with empty-index
+      gating plus natural small-table / large-table planner proofs.
+- [x] Planner gate lift: the old `disable_cost` shim is gone for
+      `ec_diskann`; the gate on `ec_hnsw` is unaffected.
+- [ ] Strategy translation (FR-023) and custom EXPLAIN (FR-024) remain
+      PG18 follow-up work rather than a blocker for the v0 DiskANN AM
+      callback surface.
 
-Review packet: 11013 (phase 9 landing).
+Review packet: 11045 (phase 9 landing).
 
 ## Parallelization
 
@@ -539,21 +540,14 @@ their ADRs are accepted, because they share no runtime state.
 Critical path: phases 1–2 + 4–5 (in `src/am/diskann/`) → 6. Phase 3
 gates the final rehome but not the build / scan implementation.
 
-**Native-build conflict surface (as of 2026-04-19).** The native-HNSW-
-build lane is in flight on `src/am/build.rs` and adjacent tqhnsw
-files. Phase 5C-3 (pgrx ambuild + quantizer training wiring) and
-Phase 8B (pgrx vacuum) both share that surface and are deferred
-until that lane merges. Pure-Rust slices that stay inside
-`src/am/diskann/` are isolated and continue to land:
-**5D (graph reader), 8A (vacuum primitives)**, plus future
-**Phase 6A (scan algorithm shell)** all qualify. Files explicitly
-off-limits to this branch until the native-build merge: `src/am/build.rs`,
-`src/am/insert.rs`, `src/am/scan.rs`, `src/am/search.rs`,
-`src/am/graph.rs`, `src/am/page.rs`, `src/am/source.rs`,
-`src/am/shared.rs`, `src/am/vacuum.rs`. Shared modules
-(`src/storage/page`, `src/storage/wal`, `src/quant/*`) may be
-*read* freely; *editing* them requires confirming the native-build
-lane isn't already touching them.
+**Native-build conflict surface (historical, now resolved).** This note
+was accurate on 2026-04-19 while the native-build lane was still
+in-flight. That lane has since merged, the callback buildout landed on
+`adr034-diskann-rebased`, and this branch now owns `src/am/ec_diskann/*`
+end-to-end. The remaining off-limits rule is the narrower one used
+during the landed slices: do not edit foreign-lane code outside
+`src/am/ec_diskann/`, `plan/`, and `review/` without explicit
+coordination.
 
 ## Owns
 
