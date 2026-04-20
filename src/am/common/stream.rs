@@ -1,3 +1,6 @@
+#[cfg(feature = "pg18")]
+use pgrx::pg_sys;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GraphPrefetchState {
     blocks: Vec<u32>,
@@ -314,5 +317,3 @@ mod tests {
         );
     }
 }
-#[cfg(feature = "pg18")]
-use pgrx::pg_sys;

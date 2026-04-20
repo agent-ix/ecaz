@@ -2798,7 +2798,7 @@ unsafe fn prefetch_graph_buffers(
     loop {
         let mut per_buffer_data = ptr::null_mut();
         let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-        if buffer == pg_sys::InvalidBuffer {
+        if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
             break;
         }
         let block_number = if per_buffer_data.is_null() {
@@ -2879,9 +2879,8 @@ where
     let neighbor_tids =
         graph::valid_neighbor_tids_for_layer(&neighbors.tids, element.level, scan_m, layer);
     #[cfg(feature = "pg18")]
-    let prefetched_buffers = Some(unsafe {
-        prefetch_graph_buffers(index_relation, unsafe { &mut *opaque }, &neighbor_tids)
-    });
+    let prefetched_buffers =
+        Some(unsafe { prefetch_graph_buffers(index_relation, &mut *opaque, &neighbor_tids) });
     #[cfg(not(feature = "pg18"))]
     let prefetched_buffers: Option<HashMap<u32, pg_sys::Buffer>> = None;
 
@@ -4470,7 +4469,7 @@ unsafe fn select_next_linear_scan_result(
         loop {
             let mut per_buffer_data = ptr::null_mut();
             let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-            if buffer == pg_sys::InvalidBuffer {
+            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
                 break;
             }
 

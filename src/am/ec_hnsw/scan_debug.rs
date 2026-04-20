@@ -493,6 +493,18 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
     let pushed_registered_snapshot = true;
     let snapshot = registered_snapshot;
 
+    #[cfg(feature = "pg18")]
+    let scan = unsafe {
+        pg_sys::index_beginscan(
+            heap_relation,
+            index_relation,
+            snapshot,
+            std::ptr::null_mut(),
+            0,
+            1,
+        )
+    };
+    #[cfg(not(feature = "pg18"))]
     let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
     if scan.is_null() {
         unsafe {
@@ -1025,6 +1037,18 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_heap_fetch(
         pgrx::error!("debug heap-fetch profile failed to allocate tuple slot");
     }
 
+    #[cfg(feature = "pg18")]
+    let scan = unsafe {
+        pg_sys::index_beginscan(
+            heap_relation,
+            index_relation,
+            snapshot,
+            std::ptr::null_mut(),
+            0,
+            1,
+        )
+    };
+    #[cfg(not(feature = "pg18"))]
     let scan = unsafe { pg_sys::index_beginscan(heap_relation, index_relation, snapshot, 0, 1) };
     if scan.is_null() {
         unsafe {

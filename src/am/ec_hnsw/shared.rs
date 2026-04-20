@@ -189,7 +189,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
         loop {
             let mut per_buffer_data = ptr::null_mut();
             let buffer = unsafe { pg_sys::read_stream_next_buffer(stream, &mut per_buffer_data) };
-            if buffer == pg_sys::InvalidBuffer {
+            if buffer == pg_sys::InvalidBuffer as pg_sys::Buffer {
                 break;
             }
             let block_number = if per_buffer_data.is_null() {
@@ -267,15 +267,13 @@ unsafe fn count_live_elements_on_buffer(
             }
             graph::GraphStorageDescriptor::TurboQuantHotCold(layout) => {
                 if tuple_bytes.first().copied() == Some(page::TQ_TURBO_HOT_TAG) {
-                    let element = page::TqTurboHotTuple::decode(
-                        tuple_bytes,
-                        layout.binary_word_count,
-                    )
-                    .unwrap_or_else(|e| {
-                        pgrx::error!(
+                    let element =
+                        page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
+                            .unwrap_or_else(|e| {
+                                pgrx::error!(
                             "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
                         )
-                    });
+                            });
                     if !element.deleted && !element.heaptids.is_empty() {
                         count += 1;
                     }

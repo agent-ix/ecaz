@@ -3,7 +3,26 @@ use pgrx::ffi::CString;
 use pgrx::prelude::*;
 use pgrx::{pg_sys, Internal};
 
-pgrx::pg_module_magic!(name, version);
+const MODULE_VERSION_CSTR: &core::ffi::CStr = {
+    const RAW: &str = env!("CARGO_PKG_VERSION");
+    const BUFFER: [u8; RAW.len() + 1] = {
+        let mut buffer = [0u8; RAW.len() + 1];
+        let mut i = 0;
+        while i < RAW.len() {
+            buffer[i] = RAW.as_bytes()[i];
+            i += 1;
+        }
+        buffer
+    };
+    if let Ok(value) = core::ffi::CStr::from_bytes_with_nul(&BUFFER) {
+        value
+    } else {
+        panic!("CARGO_PKG_VERSION contains an interior NUL byte")
+    }
+};
+
+// Use explicit fields so PG18 module metadata reports the tqvector name/version correctly.
+pgrx::pg_module_magic!(name = c"tqvector", version = MODULE_VERSION_CSTR);
 
 #[allow(dead_code)]
 mod am;
@@ -2849,7 +2868,7 @@ mod tests {
     #[pg_test]
     fn test_pg18_module_identity_reports_loaded_module_version() {
         let version = Spi::get_one::<String>(
-            "SELECT version FROM pg_get_loaded_modules() WHERE name = 'tqvector'",
+            "SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'tqvector'",
         )
         .expect("module query should succeed")
         .expect("module version should be visible");
@@ -2877,28 +2896,32 @@ mod tests {
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
-                    "EXPLAIN (tqvector, ANALYZE, COSTS OFF)
+                    "EXPLAIN (FORMAT JSON, tqvector, ANALYZE, COSTS OFF)
                      SELECT id FROM pg18_explain_fixture
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      LIMIT 1",
                     None,
                     &[],
                 )
-                .expect("EXPLAIN should succeed")
-                .first();
+                .expect("EXPLAIN should succeed");
             let mut lines = Vec::new();
             for row in rows {
                 lines.push(
-                    row.get::<String>(1)
+                    row.get::<pgrx::datum::JsonString>(1)
                         .expect("plan row should decode")
-                        .expect("plan row should not be NULL"),
+                        .expect("plan row should not be NULL")
+                        .0,
                 );
             }
             lines.join("\n")
         });
 
-        assert!(plan.contains("TQVector Stats"));
-        assert!(plan.contains("Elements Scored"));
+        if !plan.contains("TQVector Stats") {
+            panic!("missing TQVector Stats in plan: {plan:?}");
+        }
+        if !plan.contains("Elements Scored") {
+            panic!("missing Elements Scored in plan: {plan:?}");
+        }
 
         Spi::run("RESET enable_seqscan").expect("reset should succeed");
     }

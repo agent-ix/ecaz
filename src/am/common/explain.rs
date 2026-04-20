@@ -1,3 +1,11 @@
+#[cfg(feature = "pg18")]
+use std::ffi::{c_void, CStr, CString};
+#[cfg(feature = "pg18")]
+use std::ptr;
+
+#[cfg(feature = "pg18")]
+use pgrx::pg_sys;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ExplainOptionSnapshot {
     pub option_name: &'static str,
@@ -528,10 +536,3 @@ mod tests {
         }));
     }
 }
-#[cfg(feature = "pg18")]
-use std::ffi::{c_void, CStr, CString};
-#[cfg(feature = "pg18")]
-use std::ptr;
-
-#[cfg(feature = "pg18")]
-use pgrx::pg_sys;

@@ -26,13 +26,20 @@ fn main() {
         let include_dir = pg_config
             .includedir_server()
             .expect("PG18 shim build requires PostgreSQL server headers");
+        let cppflags = pg_config
+            .cppflags()
+            .expect("PG18 shim build requires PostgreSQL cppflags");
 
-        cc::Build::new()
+        let mut build = cc::Build::new();
+        build
             .file("csrc/pg18_pgstat_shim.c")
             .include(include_dir)
             .cargo_metadata(false)
-            .flag_if_supported("-std=c11")
-            .compile("tqvector_pg18_pgstat_shim");
+            .flag_if_supported("-std=c11");
+        for flag in cppflags.to_string_lossy().split_whitespace() {
+            build.flag(flag);
+        }
+        build.compile("tqvector_pg18_pgstat_shim");
         println!("cargo:rustc-link-search=native={out_dir}");
     }
 }

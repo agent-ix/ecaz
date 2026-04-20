@@ -309,7 +309,7 @@ unsafe fn planner_tree_height_from_index_info(
             };
         }
 
-        return resolved_tree_height_input(max_level);
+        resolved_tree_height_input(max_level)
     }
 
     #[cfg(not(feature = "pg18"))]
