@@ -38,6 +38,7 @@ use super::{
     },
     persist::{stage_grouped_codebook_chain, NodePayload},
     reader::PersistedGraphReader,
+    scan_state,
     tuple::VamanaNodeTuple,
     vamana::{robust_prune, Candidate},
 };
@@ -220,6 +221,34 @@ pub(super) fn select_insert_forward_neighbors(
         .into_iter()
         .map(|idx| candidates[idx as usize].tid)
         .collect())
+}
+
+pub(super) fn insert_backlink_if_free(
+    tuple: &mut VamanaNodeTuple,
+    backlink_tid: ItemPointer,
+) -> bool {
+    if backlink_tid == ItemPointer::INVALID {
+        return false;
+    }
+    if tuple.neighbors.contains(&backlink_tid) {
+        return false;
+    }
+
+    let Some((slot_idx, slot)) = tuple
+        .neighbors
+        .iter_mut()
+        .enumerate()
+        .find(|(_, tid)| **tid == ItemPointer::INVALID)
+    else {
+        return false;
+    };
+    *slot = backlink_tid;
+
+    let neighbor_count = usize::from(tuple.neighbor_count);
+    if slot_idx >= neighbor_count {
+        tuple.neighbor_count = u16::try_from(slot_idx + 1).expect("neighbor count fits in u16");
+    }
+    true
 }
 
 #[derive(Debug, Clone)]
@@ -493,6 +522,167 @@ unsafe fn append_live_node_payload(
         block_number,
         offset_number,
     })
+}
+
+pub(super) unsafe fn add_backlinks_if_free(
+    index_relation: pg_sys::Relation,
+    metadata: &VamanaMetadataPage,
+    backlink_targets: &[ItemPointer],
+    new_tid: ItemPointer,
+) -> Result<usize, String> {
+    if new_tid == ItemPointer::INVALID {
+        return Err("ec_diskann backlink write requires a valid new node tid".into());
+    }
+    if backlink_targets.is_empty() {
+        return Ok(0);
+    }
+
+    let mut targets = backlink_targets.to_vec();
+    sort_and_dedup_backlink_targets(&mut targets);
+    let binary_word_count = scan_state::metadata_binary_word_count(metadata);
+    let search_code_len = scan_state::metadata_search_code_len(metadata);
+    let mut changed = 0usize;
+    let mut start = 0usize;
+
+    while start < targets.len() {
+        let block_number = targets[start].block_number;
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_diskann backlink write could not open target block {block_number}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let writable_page =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let mut page_changed = false;
+        let page_result = (|| -> Result<usize, String> {
+            let mut page_changes = 0usize;
+            while start < targets.len() && targets[start].block_number == block_number {
+                let target_tid = targets[start];
+                start += 1;
+
+                let (tuple_ptr, tuple_len) =
+                    unsafe { page_tuple_location(writable_page, page_size, target_tid)? };
+                let tuple_bytes =
+                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+                let mut tuple = VamanaNodeTuple::decode(
+                    tuple_bytes,
+                    metadata.graph_degree_r,
+                    binary_word_count,
+                    search_code_len,
+                )?;
+                if !tuple.is_live() {
+                    continue;
+                }
+                if !insert_backlink_if_free(&mut tuple, new_tid) {
+                    continue;
+                }
+
+                let encoded =
+                    tuple.encode(metadata.graph_degree_r, binary_word_count, search_code_len)?;
+                if encoded.len() != tuple_len {
+                    return Err(format!(
+                        "ec_diskann backlink target tuple size changed from {} to {} at ({},{})",
+                        tuple_len,
+                        encoded.len(),
+                        target_tid.block_number,
+                        target_tid.offset_number
+                    ));
+                }
+                unsafe { ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len()) };
+                page_changed = true;
+                page_changes += 1;
+            }
+            Ok(page_changes)
+        })();
+
+        match page_result {
+            Ok(page_changes) => {
+                if page_changed {
+                    unsafe { wal_txn.finish() };
+                    changed += page_changes;
+                } else {
+                    std::mem::drop(wal_txn);
+                }
+            }
+            Err(error) => {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(error);
+            }
+        }
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
+
+    Ok(changed)
+}
+
+fn sort_and_dedup_backlink_targets(targets: &mut Vec<ItemPointer>) {
+    targets.sort_unstable_by(|left, right| {
+        left.block_number
+            .cmp(&right.block_number)
+            .then_with(|| left.offset_number.cmp(&right.offset_number))
+    });
+    targets.dedup();
+}
+
+unsafe fn page_tuple_location(
+    page: pg_sys::Page,
+    page_size: usize,
+    tid: ItemPointer,
+) -> Result<(*mut u8, usize), String> {
+    let max_offset = unsafe { pg_sys::PageGetMaxOffsetNumber(page) };
+    if tid.offset_number == pg_sys::InvalidOffsetNumber || tid.offset_number > max_offset {
+        return Err(format!(
+            "ec_diskann backlink target ({},{}) has invalid offset {} (max {})",
+            tid.block_number, tid.offset_number, tid.offset_number, max_offset
+        ));
+    }
+
+    let item_id = unsafe { pg_sys::PageGetItemId(page, tid.offset_number) };
+    if item_id.is_null() {
+        return Err(format!(
+            "ec_diskann backlink target ({},{}) returned a null item id",
+            tid.block_number, tid.offset_number
+        ));
+    }
+    let item_id_ref = unsafe { &*item_id };
+    if item_id_ref.lp_flags() == 0 {
+        return Err(format!(
+            "ec_diskann backlink target ({},{}) points at an unused slot",
+            tid.block_number, tid.offset_number
+        ));
+    }
+
+    let tuple_offset = item_id_ref.lp_off() as usize;
+    let tuple_len = item_id_ref.lp_len() as usize;
+    if tuple_offset + tuple_len > page_size {
+        return Err(format!(
+            "ec_diskann backlink target ({},{}) has invalid tuple bounds",
+            tid.block_number, tid.offset_number
+        ));
+    }
+
+    let tuple_ptr = unsafe { pg_sys::PageGetItem(page, item_id) }.cast::<u8>();
+    if tuple_ptr.is_null() {
+        return Err(format!(
+            "ec_diskann backlink target ({},{}) returned a null tuple pointer",
+            tid.block_number, tid.offset_number
+        ));
+    }
+    Ok((tuple_ptr, tuple_len))
 }
 
 fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, String> {
@@ -912,6 +1102,63 @@ mod tests {
                     offset_number: 4,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn in_011_insert_backlink_if_free_uses_first_open_slot() {
+        let backlink_tid = ItemPointer {
+            block_number: 9,
+            offset_number: 4,
+        };
+        let mut tuple = VamanaNodeTuple::placeholder(4, 0, 0);
+        tuple.neighbor_count = 1;
+        tuple.neighbors[0] = ItemPointer {
+            block_number: 3,
+            offset_number: 1,
+        };
+
+        let changed = insert_backlink_if_free(&mut tuple, backlink_tid);
+
+        assert!(
+            changed,
+            "a tuple with free neighbor capacity should admit a backlink"
+        );
+        assert_eq!(tuple.neighbor_count, 2);
+        assert_eq!(tuple.neighbors[1], backlink_tid);
+    }
+
+    #[test]
+    fn in_012_insert_backlink_if_free_rejects_duplicate_and_full_tuples() {
+        let backlink_tid = ItemPointer {
+            block_number: 9,
+            offset_number: 4,
+        };
+        let mut duplicate = VamanaNodeTuple::placeholder(2, 0, 0);
+        duplicate.neighbor_count = 2;
+        duplicate.neighbors[0] = backlink_tid;
+        duplicate.neighbors[1] = ItemPointer {
+            block_number: 5,
+            offset_number: 2,
+        };
+        assert!(
+            !insert_backlink_if_free(&mut duplicate, backlink_tid),
+            "duplicate backlinks must not rewrite the tuple"
+        );
+
+        let mut full = VamanaNodeTuple::placeholder(2, 0, 0);
+        full.neighbor_count = 2;
+        full.neighbors[0] = ItemPointer {
+            block_number: 7,
+            offset_number: 1,
+        };
+        full.neighbors[1] = ItemPointer {
+            block_number: 7,
+            offset_number: 2,
+        };
+        assert!(
+            !insert_backlink_if_free(&mut full, backlink_tid),
+            "full tuples must stay unchanged in the free-capacity slice"
         );
     }
 }
