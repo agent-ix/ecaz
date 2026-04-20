@@ -15,25 +15,16 @@ traces:
 On PG18, the extension SHALL register a custom pgstat kind to track aggregate operational metrics across all queries, visible via a SQL function and resettable via standard PostgreSQL statistics reset.
 
 Current staged behavior:
-- Before PostgreSQL 18 support exists in this repository, pure statistics-scaffolding helpers MAY
-  expose the intended SQL function name and report that both pgstat-kind registration and SQL
-  function wiring remain unavailable.
-- The staged implementation MAY also define a reusable cumulative-stats struct in planner-owned
-  code so the runtime lane can increment the intended metrics and the future PG18 pgstat glue can
-  flush them into PostgreSQL's statistics infrastructure without requiring this branch to edit
-  `scan.rs`.
-- Those same helpers MAY also define pure summary logic for the derived SQL-facing rates shown
-  below, including `bootstrap_hit_rate` and `quantizer_cache_rate`, without implying that
-  `tqvector_stats()` exists on PG17.
-- Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
-  state together so productization work can inspect one consolidated PG18 diagnostics boundary.
-- On the current PG18 branch, the shared scan infrastructure MAY expose backend-local counters
-  through `tqvector_stats()` in ordinary sessions while still reporting
-  `pg18_pgstat_kind_ready = false`. When the library is loaded through
-  `shared_preload_libraries`, the same SQL surface MAY read the shared custom pgstat snapshot
-  instead.
-- Those helpers SHALL stay descriptive about the shared pgstat-kind boundary; they do not imply
-  that PostgreSQL's global statistics system is already accumulating tqvector counters.
+- On PG18, `tqvector_stats()` is live.
+- When `tqvector` is loaded through `shared_preload_libraries`, `_PG_init()` registers the custom
+  pgstat kind through the preload-only C shim and the SQL surface reads the shared snapshot.
+- In ordinary non-preloaded PG18 sessions, the same SQL surface falls back to backend-local
+  counters and diagnostics continue to report `pg18_pgstat_kind_ready = false`.
+- Read-only diagnostics snapshot helpers still expose the EXPLAIN-and-pgstat readiness boundary in
+  one place.
+- PG17 still omits both the SQL function and custom pgstat registration.
+- Reset support for custom kinds remains blocked in the local PG18 tree because
+  `pg_stat_reset_shared(text)` does not accept custom kind names.
 
 ### PG18 Custom Statistics API
 
@@ -68,7 +59,9 @@ static TQVECTOR_STATS_KIND: PgStat_KindInfo = PgStat_KindInfo {
     // ... callbacks
 };
 
-pgstat_register_kind(PGSTAT_KIND_EXPERIMENTAL, &TQVECTOR_STATS_KIND);
+const TQVECTOR_PGSTAT_KIND: PgStat_Kind = PGSTAT_KIND_CUSTOM_MIN + 1;
+
+pgstat_register_kind(TQVECTOR_PGSTAT_KIND, &TQVECTOR_STATS_KIND);
 ```
 
 ### SQL Interface
@@ -105,9 +98,9 @@ SELECT * FROM tqvector_stats();
 ### PG Version Compatibility
 
 On PG17, the custom statistics API does not exist. The extension SHALL not register any pgstat
-kind. The `tqvector_stats()` function SHALL NOT be defined. Counter increments SHALL be compiled
-out. During the current staged implementation, PG18 may expose backend-local SQL-visible counters
-before the shared pgstat-kind path lands, but no PostgreSQL global pgstat kind is registered yet.
+kind, `tqvector_stats()` SHALL NOT be defined, and counter increments SHALL be compiled out. On
+PG18, the shared pgstat path requires preload-time activation; without preload, the SQL surface
+falls back to backend-local counters.
 
 ## Acceptance Criteria
 
@@ -117,8 +110,10 @@ On PG18, `SELECT * FROM tqvector_stats()` SHALL return a row with all defined co
 ### FR-025-AC-2: Counters increment
 After running 10 HNSW scan queries, `total_scans_started` SHALL be ≥ 10 and `total_distance_calcs` SHALL be > 0.
 
-### FR-025-AC-3: Reset works
-After `SELECT pg_stat_reset_shared('tqvector')`, all counters SHALL be zero.
+### FR-025-AC-3: Reset blocker documented
+Until PostgreSQL exposes a reset surface for custom pgstat kinds in this environment, tqvector
+SHALL document the limitation rather than claim that `pg_stat_reset_shared(text)` can reset the
+custom kind directly.
 
 ### FR-025-AC-4: Persistence within session
 Counters SHALL accumulate across queries within a session. They SHALL NOT reset between queries.

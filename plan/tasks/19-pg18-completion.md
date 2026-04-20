@@ -1,6 +1,6 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
-Status: in progress — PG18 callback/EXPLAIN/ReadStream wiring is live on `main`; the shared pgstat-kind path now exists via a preload-only C shim over `pgstat_internal.h`, but PG18 validation in this repo still depends on a managed PG18 install and preload-aware test coverage.
+Status: in progress — the shared PG18 infrastructure slice is now wired and validated on `pg18-shared-infra-merge`; PG17 fallback is preserved, and the remaining follow-ons are preload-aware shared-pgstat activation coverage, optional parallel-scan callbacks, and post-merge measurement.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).
 
@@ -11,9 +11,10 @@ once PG18 GA is tagged and pgrx supports it. Activate the PG18 callback and
 diagnostic scaffolding that task 11 already built but left gated under
 `readiness=false` snapshots.
 
-When this task lands: tqvector's default CI matrix runs PG18; PG14–PG16 are
-dropped; single `tqvector` extension identity is preserved across the
-upgrade.
+This shared-infrastructure slice now has:
+- PG18 as the default CI/build target
+- PG17 preserved as the compatibility fallback
+- one stable `tqvector` extension identity across the upgrade
 
 ## Context
 
@@ -56,8 +57,9 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - [x] **`RegisterExtensionExplainOption`.** `_PG_init()` registers the `tqvector` EXPLAIN option on PG18.
 - [x] **`explain_per_node_hook` registration.** The per-node hook is installed and chained through the previous hook.
 - [x] **Counter storage in `TqScanOpaque`.** `TqExplainCounters` is live in the scan opaque and emitted through the PG18 hook.
-- [ ] **Acceptance:** `EXPLAIN (ANALYZE, tqvector)` on a ec_hnsw index
-  scan emits the `TQVector Stats` group with the documented properties.
+- [x] **Acceptance.** `EXPLAIN (FORMAT JSON, tqvector, ANALYZE, COSTS OFF)` on an `ec_hnsw`
+  index scan emits the `TQVector Stats` group with the documented properties. Text output still
+  exposes the same properties even though core PostgreSQL does not render the group wrapper there.
 
 ### pgstat-kind activation
 
@@ -74,10 +76,10 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 ### ADR updates
 
-- [ ] **ADR-016 → DECIDED.** Update status once PG18 CI is green.
-- [ ] **ADR-011 → SUPERSEDED.** Already planned in task 11 D2, but
-  explicitly gated on live costing which in turn depends on PG18
-  readiness. Close out here if task 11 D2 hasn't already.
+- [x] **ADR-016 → DECIDED.** The repo now treats PG18 as the primary target while preserving PG17
+  fallback.
+- [x] **ADR-011 → SUPERSEDED.** Live costing is active; the old `f64::MAX` planner override is no
+  longer the staged blocker.
 
 ## Owns
 
@@ -113,6 +115,9 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 ## Notes
 
-- Most of the work is flipping pre-built switches, not new design. Task 11 did the hard part by making the surface pure and testable without a running PG18.
-- The remaining blocker is narrower now: shared pgstat registration needs a PG18 environment that actually preloads `tqvector`, and the repo still lacks local PG18 validation on this machine.
+- Most of the work was flipping pre-built switches, not inventing new design. Task 11 did the
+  hard part by making the surface pure and testable before the live PG18 binding work landed.
+- Local PG18 validation is now in place on this branch. The remaining blocker is narrower:
+  exercising the shared pgstat path in a preload-aware PG18 environment rather than the existing
+  backend-local fallback lane.
 - Keep the PG17 fallback working until we have at least 3 months of PG18 CI history. Don't rip the `pg17` Cargo feature prematurely.

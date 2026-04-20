@@ -1,80 +1,31 @@
 # Task 11: Planner Integration
 
-Status: in progress
+Status: substantially complete — the shared PG18 planner/diagnostics/read-stream slice is live on
+`pg18-shared-infra-merge`; remaining follow-ons are preload-aware shared-pgstat activation
+coverage, measurement, and optional parallel-scan callbacks.
 
 Progress notes:
-- `planner-integration-lane` and `planner-part2` are now merged into `main`; D1 is substantially
-  complete while D2 remains correctly blocked on Task 05 / A4 (recall gate).
-- The `ef_search` control surface is fully wired for the current scaffolded runtime: reloption plus
-  session GUC precedence now resolves through `resolve_scan_tuning(...)`, including explicit
-  `SET ec_hnsw.ef_search = 40` overrides.
-- ADR-011 still keeps live planner costing disabled in `amcostestimate`.
-- A pure FR-020 cost-model helper now exists in `src/am/cost.rs` with unit coverage for the large-
-  table crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
-  heuristic behavior.
-- A read-only `ec_hnsw_index_cost_snapshot(...)` SQL surface now exposes modeled FR-020 costs and
-  the still-gated live callback contract side by side for planner/admin inspection.
-- The cost snapshot now also reports that its current tree-height input comes from a
-  `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
-  activation boundary explicit without pretending PG18 support already exists.
-- `src/am/cost.rs` now also defines a pure `amgettreeheight_callback_value(...)` helper so the
-  eventual PG18 `amgettreeheight` callback contract is explicit under PG callback-aligned naming
-  without wiring the callback into `IndexAmRoutine` yet.
-- The explain snapshot now also exposes the intended PG18 strategy-translation target
-  (`strategy 1` / `COMPARE_LT`) while keeping callback readiness explicitly false until the repo
-  actually grows PG18 toolchain support.
-- `src/am/cost.rs` now also models the broader `CompareType` domain explicitly so the reverse
-  mapping back to strategy 1 is pure code, unit-tested, and only accepts `COMPARE_LT`.
-- The pure strategy-translation helpers in `src/am/cost.rs` now also use PG callback-aligned names
-  (`amtranslatestrategy_callback(...)`, `amtranslatecmptype_callback(...)`) so the D1 seam already
-  matches the eventual binding vocabulary.
-- The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
-  keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
-  actually exists in the repository.
-- A read-only `ec_hnsw_explain_counter_snapshot()` SQL surface now exposes the intended EXPLAIN
-  counter names, types, and increment conditions while keeping scan-opaque counter storage and
-  runtime counter wiring explicitly false until the execution lane is ready.
-- `src/am/explain.rs` now also defines a reusable `TqExplainCounters` struct with pure
-  record/reset helpers so the scan lane can embed it in `TqScanOpaque` later without planner-lane
-  edits to `scan.rs`.
-- `src/am/explain.rs` now also defines pure ExplainProperty-emission helpers plus a pure emission
-  gate that only allows output when the `tqvector` option, `IndexScan` node kind, and `ec_hnsw`
-  access method are all present, giving the future PG18 hook a concrete D1 contract without adding
-  more SQL surfaces.
-- `src/am/explain.rs` now also defines the pure EXPLAIN group contract for `"TQVector Stats"`,
-  including the expected `ExplainOpenGroup` / `ExplainCloseGroup` bracketing, so the future hook
-  has explicit section-shape metadata as well as per-property emission.
-- A read-only `ec_hnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
-  function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
-  PostgreSQL 18 support actually exists in the repository.
-- `src/am/stats.rs` now also defines a reusable `TqStatsCounters` struct with pure record/reset
-  helpers so the runtime lane can increment the staged FR-025 metrics later without requiring this
-  branch to edit `scan.rs` or wire PostgreSQL pgstat support early.
-- `src/am/stats.rs` now also defines pure summary logic for the staged FR-025 derived rates
-  (`bootstrap_hit_rate`, `quantizer_cache_rate`), so the eventual SQL surface and pgstat glue do
-  not have to invent those computations later.
-- A read-only `ec_hnsw_pg18_upgrade_snapshot()` SQL surface now exposes the intended stable
-  extension identity (`tqvector`, `$libdir/tqvector`) while keeping `pg18` Cargo-feature,
-  default-build, and `PG_MODULE_MAGIC_EXT` readiness explicitly false until the toolchain upgrade
-  actually lands.
-- A read-only `ec_hnsw_pg18_diagnostics_snapshot()` SQL surface now exposes the intended custom
-  EXPLAIN option and statistics function names together while keeping all PG18 diagnostics
-  readiness flags explicitly false until the toolchain and hook/pgstat lanes actually land.
-- A read-only `ec_hnsw_planner_integration_snapshot(...)` SQL surface now exposes the current
-  cross-lane planner blockers in one place: modeled cost scaffolding is ready, but ordered scan
-  credibility, live planner activation, and PG18 callback/diagnostics readiness remain false.
-- A read-only `ec_hnsw_read_stream_snapshot()` SQL surface now exposes the intended graph and
-  linear ReadStream modes plus access patterns while keeping callback, scan, and vacuum readiness
-  explicitly false until PG18 async-I/O support actually lands.
-- `src/am/stream.rs` now also defines pure `GraphPrefetchState` / `LinearPrefetchState` types plus
-  callback-signature helpers for the intended graph and linear ReadStream callbacks, keeping the
-  PG18 binding work separate from runtime scan wiring.
-- `src/am/stream.rs` now also defines pure callback functions for the graph and linear prefetch
-  paths, returning either a block number or an explicit end-of-stream result so the eventual PG18
-  binding only has to translate that result into `InvalidBlockNumber`.
-- The planner-owned ReadStream state carriers in `src/am/stream.rs` now also support pure reset
-  operations, so the staged D1 seam already matches graph-batch reuse after `read_stream_reset()`
-  and linear-range restart after `amrescan` without touching the runtime scan lane.
+- Task 19 has now completed the planned PG18 shared-infrastructure landing on
+  `pg18-shared-infra-merge`: live `amcostestimate`, PG18 callback registration, EXPLAIN hook
+  registration, ReadStream scan/vacuum wiring, preload-aware shared pgstat registration, and
+  PG18 module identity are all in place with PG17 fallback preserved.
+- Local validation now passes on both supported versions:
+  `cargo test`, `cargo pgrx test pg18`, `cargo pgrx test pg17`,
+  `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`,
+  `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`, and
+  `bash scripts/run_pgrx_pg17_test.sh`.
+- The original planner scaffolding from `planner-integration-lane` / `planner-part2` remains
+  merged on `main`, including the pure FR-020 / FR-023 / FR-024 / FR-025 / FR-019 helpers and
+  snapshot surfaces that made the later PG18 binding work narrow.
+- The `ef_search` control surface remains fully wired through `resolve_scan_tuning(...)`, including
+  reloption-versus-session precedence and explicit `SET ec_hnsw.ef_search = 40` overrides.
+- The planner/admin snapshot family now reports live state instead of pure readiness staging:
+  planner cost snapshots show the live callback path, diagnostics snapshots distinguish preload-time
+  shared-pgstat gating from the otherwise-live PG18 surfaces, and ReadStream snapshots report the
+  active PG18 scan/vacuum wiring.
+- The remaining gap in this task is not callback wiring. It is follow-on validation of the
+  preload-only shared pgstat lane plus later measurement/parallel-scan work that was always outside
+  the narrow shared-infrastructure landing.
 
 ## Scope
 
@@ -86,20 +37,30 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 
 - [x] **Cost model function.** Implement cost computation from metadata (m, ef_search, dimensions, max_level, index_pages, reltuples). Pure function, unit-testable without a running index. Place in `am/cost.rs`.
 - [x] **Pure callback scaffolding.** `src/am/cost.rs`, `src/am/explain.rs`, and `src/am/stream.rs` now provide the pure callback/value helpers, signatures, counter structs, and gating contracts for the future PG18 bindings without wiring them into runtime execution yet.
-- [ ] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32. A pure callback-value helper now exists in `am/cost.rs`; the PG18 `IndexAmRoutine` binding is still pending.
-- [ ] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1, `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`. The pure mapping now models non-`LT` compare types explicitly in `am/cost.rs`; the PG18 callback binding is still pending.
-- [ ] **EXPLAIN counter fields.** Add stats fields to `TqScanOpaque` (bootstrap_expansions, pages_read, elements_scored, elements_skipped, heap_tids_returned, quantizer_cache_hit). A reusable `TqExplainCounters` struct now exists in `am/explain.rs`, but storage/wiring in `scan.rs` is still pending.
-- [ ] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` + `explain_per_node_hook` that reads counters and emits `ExplainProperty*` calls. PG18 feature-gated. Place in `am/explain.rs`. The pure output-group, property-emission, and gating helpers now exist; only the actual PG18 hook registration/binding is still pending.
-- [ ] **ReadStream callback signatures.** Graph stream (random, `READ_STREAM_DEFAULT`) and linear stream (sequential, `READ_STREAM_SEQUENTIAL`) callback types. Pure callback-signature helpers, state-carrier types, and pure callback functions now exist in `am/stream.rs`; actual PG18 callback bindings are still pending.
+- [x] **`amgettreeheight` callback.** Read max_level from metadata page, return as i32, and bind it
+  into the PG18 `IndexAmRoutine`.
+- [x] **Strategy translation stubs.** `amtranslatestrategy` returns `COMPARE_LT` for strategy 1,
+  `amtranslatecmptype` returns strategy 1 for `COMPARE_LT`, and both callbacks are now bound on
+  PG18.
+- [x] **EXPLAIN counter fields.** `TqScanOpaque` now stores the reusable `TqExplainCounters`
+  contract and the runtime scan seams increment the live counters.
+- [x] **EXPLAIN hook skeleton.** `RegisterExtensionExplainOption` plus chained
+  `explain_per_node_hook` registration are live on PG18.
+- [x] **ReadStream callback signatures.** The pure callback/state helpers still exist in
+  `am/stream.rs`, and the actual PG18 callback bindings are now live in scan/vacuum execution.
 - [x] **Cost model unit tests.** Verify: index selected at 10K rows, seqscan preferred at 50 rows, empty index returns `f64::MAX`, zero reltuples uses heuristic estimate.
 
 ### D2: Wire Planner (gated on A4 recall gate)
 
-- [ ] **Activate cost model.** Replace `f64::MAX` in `amcostestimate` with real cost model function from D1.
-- [ ] **Wire ReadStream into scan.** Create stream instances in `amrescan`, use in scan loop, destroy in `amendscan`.
-- [ ] **Activate EXPLAIN counters.** Increment counters during scan execution in `am/scan.rs`.
-- [ ] **Mark ADR-011 superseded.** Update ADR status and add superseded-by reference to FR-020.
-- [ ] **Acceptance validation.** FR-020-AC-1 (index scan on 10K table), FR-020-AC-2 (seqscan on 50 table), FR-020-AC-3 (costs use metadata), FR-020-AC-5 (ADR-011 superseded).
+- [x] **Activate cost model.** `amcostestimate` now uses the real cost model instead of the
+  `f64::MAX` override.
+- [x] **Wire ReadStream into scan.** Stream instances are created in `amrescan`, used in the scan
+  loop, and destroyed in `amendscan`; vacuum tuple counting also uses the sequential stream.
+- [x] **Activate EXPLAIN counters.** Scan execution increments the live counters and exposes them
+  through the PG18 EXPLAIN hook.
+- [x] **Mark ADR-011 superseded.** The planner gate ADR is retired in favor of live costing.
+- [x] **Acceptance validation.** FR-020-AC-1, FR-020-AC-2, FR-020-AC-3, FR-020-AC-4, and
+  FR-020-AC-5 are covered by the current PG17/PG18 test matrix on this branch.
 
 ## Owns
 

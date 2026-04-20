@@ -15,9 +15,10 @@ The current packaged surface is a single PostgreSQL extension:
 - module pathname: `$libdir/tqvector`
 - SQL identity: `CREATE EXTENSION tqvector`
 
-Productization planning now includes PostgreSQL 18 support, but the repository has not yet added a
-`pg18` Cargo feature or validation matrix. The project therefore needs an upgrade direction before
-implementation work starts.
+Productization planning now includes PostgreSQL 18 support, and the repository has since added the
+`pg18` Cargo feature, PG17/PG18 validation lanes, and PG18 module-identity coverage. The project
+still needed an explicit upgrade direction before implementation work started so the live landing
+would not fork the packaged extension identity.
 
 ## Decision
 
@@ -30,12 +31,12 @@ PostgreSQL 18 support SHALL preserve the existing extension identity:
 The PG18 effort is an in-place compatibility upgrade, not a forked module identity. There will be
 no separate `tqvector_pg18` library, control file, or SQL extension name.
 
-Near-term upgrade plan:
+Implementation status:
 
-1. add the `pg18` Cargo feature once the pgrx/toolchain lane is ready
-2. extend CI and local validation to include PostgreSQL 18
-3. verify `CREATE EXTENSION tqvector` and upgrade/install flows still work under the unchanged
-   extension identity
+1. the `pg18` Cargo feature is live and is now the default target
+2. CI and local validation now include PostgreSQL 18 alongside the PG17 fallback lane
+3. PG18 module identity is verified through `pg_get_loaded_modules()` while preserving the same
+   `CREATE EXTENSION tqvector` surface and `$libdir/tqvector` library identity
 
 ## Consequences
 
@@ -47,14 +48,14 @@ Near-term upgrade plan:
 
 ### Tradeoffs
 
-- PG18 support remains explicitly pending until the toolchain and test matrix are in place.
-- Compatibility issues in pgrx or PostgreSQL 18 must be resolved without the escape hatch of a
-  second extension identity.
+- Compatibility issues in pgrx or PostgreSQL 18 still need to be resolved without the escape hatch
+  of a second extension identity.
+- The current `pgrx 0.17` PG18 lane requires an explicit-field `pg_module_magic!` workaround until
+  the shorthand behavior is fixed upstream.
 
 ## Follow-Up
 
-1. Add `pg18` feature support in Cargo and validation scripts.
-2. Update US-004 and packaging docs when PG18 is actually supported, not before.
-3. Keep migration and upgrade testing under the same `tqvector` extension name.
-4. Keep read-only upgrade snapshot surfaces aligned with the current staged reality while the
-   toolchain work remains pending.
+1. Keep migration and upgrade testing under the same `tqvector` extension name.
+2. Keep PG17 fallback working while PG18 remains the primary target.
+3. Consider upstreaming the observed `pg_module_magic!(name, version)` PG18 shorthand issue to
+   `pgrx`.

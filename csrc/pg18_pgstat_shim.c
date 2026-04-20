@@ -29,6 +29,13 @@ typedef struct TqVectorPgStatShared
 	TqVectorPgStatCounters reset_offset;
 } TqVectorPgStatShared;
 
+/*
+ * Claim a stable tqvector-specific custom kind instead of the shared
+ * PGSTAT_KIND_EXPERIMENTAL slot so preload-time registration does not collide
+ * with other extensions using the experimental ID.
+ */
+#define TQVECTOR_PGSTAT_KIND	((PgStat_Kind) (PGSTAT_KIND_CUSTOM_MIN + 1))
+
 static void tqvector_pgstat_init_shmem(void *stats);
 static void tqvector_pgstat_reset_all(TimestampTz ts);
 static void tqvector_pgstat_snapshot(void);
@@ -57,7 +64,7 @@ static TqVectorPgStatShared *
 tqvector_pgstat_shared(void)
 {
 	return (TqVectorPgStatShared *)
-		pgstat_get_custom_shmem_data(PGSTAT_KIND_EXPERIMENTAL);
+		pgstat_get_custom_shmem_data(TQVECTOR_PGSTAT_KIND);
 }
 
 static void
@@ -75,6 +82,11 @@ tqvector_pgstat_reset_all(TimestampTz ts)
 	(void) ts;
 
 	LWLockAcquire(&stats_shmem->lock, LW_EXCLUSIVE);
+	/*
+	 * Readers already use the changecount protocol for the live stats snapshot.
+	 * Keep the reset offset behind the same helper while we hold the lock so the
+	 * reset baseline and the live counters advance in a single ordered step.
+	 */
 	pgstat_copy_changecounted_stats(&stats_shmem->reset_offset,
 									&stats_shmem->stats,
 									sizeof(stats_shmem->stats),
@@ -88,7 +100,7 @@ tqvector_pgstat_snapshot(void)
 	TqVectorPgStatShared *stats_shmem = tqvector_pgstat_shared();
 	TqVectorPgStatCounters *stat_snap =
 		(TqVectorPgStatCounters *)
-		pgstat_get_custom_snapshot_data(PGSTAT_KIND_EXPERIMENTAL);
+		pgstat_get_custom_snapshot_data(TQVECTOR_PGSTAT_KIND);
 	TqVectorPgStatCounters reset;
 
 	pgstat_copy_changecounted_stats(stat_snap,
@@ -120,7 +132,7 @@ tqvector_pg18_pgstat_register_kind(void)
 	if (!process_shared_preload_libraries_in_progress)
 		return false;
 
-	pgstat_register_kind(PGSTAT_KIND_EXPERIMENTAL, &tqvector_pgstat_kind);
+	pgstat_register_kind(TQVECTOR_PGSTAT_KIND, &tqvector_pgstat_kind);
 	tqvector_pgstat_loaded = true;
 	return true;
 }
@@ -164,9 +176,9 @@ tqvector_pg18_pgstat_snapshot(TqVectorPgStatCounters *out)
 	if (!tqvector_pgstat_loaded || out == NULL)
 		return false;
 
-	pgstat_snapshot_fixed(PGSTAT_KIND_EXPERIMENTAL);
+	pgstat_snapshot_fixed(TQVECTOR_PGSTAT_KIND);
 	snapshot = (TqVectorPgStatCounters *)
-		pgstat_get_custom_snapshot_data(PGSTAT_KIND_EXPERIMENTAL);
+		pgstat_get_custom_snapshot_data(TQVECTOR_PGSTAT_KIND);
 	memcpy(out, snapshot, sizeof(*out));
 
 	return true;

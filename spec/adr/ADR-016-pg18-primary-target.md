@@ -1,7 +1,7 @@
 ---
 id: ADR-016
 title: PostgreSQL 18 as Primary Target
-status: PROPOSED
+status: DECIDED
 date: 2026-04-06
 ---
 # ADR-016: PostgreSQL 18 as Primary Target
@@ -45,10 +45,10 @@ Adopt PostgreSQL 18 as the primary build target and default feature. PG17 remain
 - Extension version visible via `pg_get_loaded_modules()`
 
 ### Negative
-- Requires pgrx 0.18+ (or equivalent) with PG18 bindings
-- Conditional compilation (`#[cfg(feature = "pg18")]`) adds ~65 lines of complexity
-- PG17 users do not get async I/O, EXPLAIN, or pgstat features
-- `read_stream` API may evolve in PG19 — early adoption carries API stability risk
+- Shared pgstat activation on PG18 still requires `shared_preload_libraries = 'tqvector'` plus a restart
+- Conditional compilation (`#[cfg(feature = "pg18")]`) still adds maintenance complexity
+- PG17 users do not get async I/O, EXPLAIN hooks, or shared pgstat integration
+- Current `pgrx 0.17` PG18 support still needs a repo-local explicit `pg_module_magic!` field assignment and a small C shim over `pgstat_internal.h`
 
 ### Neutral
 - Graph construction in parallel build remains serial (limited by `hnsw_rs` thread safety)

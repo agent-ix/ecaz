@@ -1,7 +1,7 @@
 # Project Status
 
-Last updated: 2026-04-12
-Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, and C1 now has durable real-corpus NFR-001 latency artifacts plus a verified warm-cache seam on `main`, even though both the honest warm `10K` surface and the colder artifact surface still miss the spec target
+Last updated: 2026-04-19
+Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus evidence, B1 SIMD is merged and validated on x86_64, A5 graph-aware insert is merged end-to-end on `main`, A6 vacuum repair is complete on `main`, C1 now has durable real-corpus NFR-001 latency artifacts plus a verified warm-cache seam on `main`, and the PG18 shared-infrastructure merge branch now has live callback/EXPLAIN/ReadStream/shared-stats wiring with PG17 fallback preserved
 
 ## Reading Guide
 
@@ -35,8 +35,8 @@ Basis: A4 is closed on `main` using canonical DBpedia-derived real-corpus eviden
 | `B2` | CI / safety / quality | CI wiring, fuzz, miri, deny, layout checks, broader NFR-005 hardening | In progress | 80% | Cleanup sprint landed (sentinel fix, snapshot consolidation, dead code gating) |
 | `C1` | Full benchmark suite | NFR-001/002/003 scripts, harnesses, reporting, end-to-end result artifacts | In progress | 66% | Durable real-corpus NFR-001 artifacts now exist on `main`, and the launcher now supports verified warm per-cell runs, but the honest warm `10K` surface is still about `p50=14.3ms` at `m=8, ef_search=40` and NFR-002 remains open |
 | `C2` | Real-corpus recall lane | External/real embedding corpus loader plus relation-backed A4 rerun on a spec-credible dataset | **Done for A4** | 100% | Loader, canonical subset contract, manifest verification, cheaper detached gate reruns, and the A4 signoff evidence on real `10K` / real `50K` are all landed on `main` |
-| `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 90% | Merged to `main`; only PG18 callback bindings remain (need PG18 toolchain) |
-| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 80% | FR-020 cost model now active in `amcostestimate`; ADR-011 marked SUPERSEDED; ReadStream prefetch state + EXPLAIN counters embedded in `TqScanOpaque`; PG18 callback bindings (FR-020-AC-4, FR-024 hook registration) remain follow-ups |
+| `D1` | Planner scaffold | Cost-model scaffolding, explain/stat surfaces, PG18 read-stream scaffolding | **Done** | 100% | The scaffolded seams are complete, and their planned PG18 bindings are now live on `pg18-shared-infra-merge` |
+| `D2` | Planner activation | Real planner enablement, credible cost model, ADR-011 retirement, PG18 scan integration | **In review** | 95% | Cost model, ADR-011 retirement, PG18 callbacks, EXPLAIN hooks, ReadStream wiring, and module identity are live on `pg18-shared-infra-merge`; the remaining gate is preload-time shared pgstat activation coverage plus post-merge follow-through |
 
 ## 1. Foundation / Build
 
@@ -86,12 +86,12 @@ Vacuum / repair rollup: 72%
 
 | Area | Includes | Status | % Done | Notes |
 | --- | --- | --- | ---: | --- |
-| Planner scaffold | Cost/explain/stat/read-stream scaffolding | Done | 90% | Merged to `main`; only PG18 callback bindings remain |
-| Planner activation | Real index selection and credible cost model | **In review** | 80% | D2 wired the FR-020 cost model into `amcostestimate`, retired ADR-011, and surfaced live planner cost via the snapshot APIs; PG18 `amgettreeheight` (FR-020-AC-4) is the remaining gated follow-up |
-| PG18 async/read_stream integration | Runtime scan integration with PG18 path | Partial | 35% | `GraphPrefetchState` / `LinearPrefetchState` are now embedded in `TqScanOpaque` and reset across the rescan/endscan lifecycle; live PG18 ReadStream callback registration still requires the PG18 toolchain |
-| Strategy / EXPLAIN surfaces | FR-023 / FR-024 surfaces | Partial | 45% | Descriptive surfaces exist; activation still gated |
+| Planner scaffold | Cost/explain/stat/read-stream scaffolding | Done | 100% | The original scaffold is complete and the shared PG18 bindings are now live on `pg18-shared-infra-merge` |
+| Planner activation | Real index selection and credible cost model | **In review** | 95% | D2 now has live costing, `amgettreeheight`, strategy translation, and planner/diagnostics snapshots; the remaining PG18 blocker is preload-time shared pgstat activation rather than callback/toolchain bring-up |
+| PG18 async/read_stream integration | Runtime scan integration with PG18 path | Strong | 90% | Graph-neighbor prefetch, linear fallback reads, and vacuum tuple counting now use PG18 ReadStream wiring on `pg18-shared-infra-merge`; follow-on work is measurement, not callback registration |
+| Strategy / EXPLAIN surfaces | FR-023 / FR-024 surfaces | Strong | 90% | Strategy translation and EXPLAIN option/per-node hook wiring are live on `pg18-shared-infra-merge`; shared pgstat still depends on preload-time activation |
 
-Planner / PG18 rollup: 42%
+Planner / PG18 rollup: 78%
 
 ## 6. Testing / Validation
 
@@ -157,7 +157,10 @@ Release / quality-gate rollup: 62%
 1. **Coder-1:** A4 is closed — graph-first scan recall now has real-corpus signoff evidence on `main`.
 2. **Next runtime lane:** A6 is closed and C1 now has durable latency artifacts plus a verified warm per-cell seam on `main`; the next C1 work is optimization and normative `50K`/storage-result follow-through, not basic benchmark-integrity bring-up.
 3. **Coder-2 follow-up:** B1 SIMD is merged on `main`; only aarch64 runtime validation remains, and it is no longer on the critical path.
-4. **Planner:** D2 cost-model activation has landed on its review branch. ADR-011 is SUPERSEDED. PG18 callback bindings (`amgettreeheight`, `amexplain` hook, ReadStream registration) remain follow-ups gated on the PG18 toolchain.
+4. **Planner:** `pg18-shared-infra-merge` now has live PG18 callback bindings, EXPLAIN hooks,
+   ReadStream scan/vacuum wiring, shared pgstat registration via the preload-aware shim, and
+   module identity with PG17 fallback preserved. The remaining follow-ons are review, preload-aware
+   activation coverage, and measurement rather than PG18 toolchain bring-up.
 5. Full SQL benchmark result generation after A6, with insert decontention tracked separately in Task 13.
 
 ## Current Major Blockers

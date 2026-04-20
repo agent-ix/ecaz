@@ -89,6 +89,9 @@ fn record_shared_delta(delta: TqStatsCounters) {
     }
 }
 
+#[cfg(not(feature = "pg18"))]
+fn record_shared_delta(_delta: TqStatsCounters) {}
+
 #[cfg(feature = "pg18")]
 fn pgstat_kind_ready() -> bool {
     unsafe { pg18_pgstat_shim::is_registered() }
@@ -130,10 +133,6 @@ pub(crate) fn current_stats_counters() -> TqStatsCounters {
 #[cfg(feature = "pg18")]
 pub(crate) fn record_distance_calc() {
     increment(&TOTAL_DISTANCE_CALCS);
-    record_shared_delta(TqStatsCounters {
-        total_distance_calcs: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -142,10 +141,6 @@ pub(crate) fn record_distance_calc() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_graph_hop() {
     increment(&TOTAL_GRAPH_HOPS);
-    record_shared_delta(TqStatsCounters {
-        total_graph_hops: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -154,10 +149,6 @@ pub(crate) fn record_graph_hop() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_linear_page() {
     increment(&TOTAL_LINEAR_PAGES);
-    record_shared_delta(TqStatsCounters {
-        total_linear_pages: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -166,10 +157,6 @@ pub(crate) fn record_linear_page() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_scan_started() {
     increment(&TOTAL_SCANS_STARTED);
-    record_shared_delta(TqStatsCounters {
-        total_scans_started: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -178,10 +165,6 @@ pub(crate) fn record_scan_started() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_bootstrap_only_scan() {
     increment(&TOTAL_SCANS_BOOTSTRAP_ONLY);
-    record_shared_delta(TqStatsCounters {
-        total_scans_bootstrap_only: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -190,10 +173,6 @@ pub(crate) fn record_bootstrap_only_scan() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_quantizer_cache_hit() {
     increment(&QUANTIZER_CACHE_HITS);
-    record_shared_delta(TqStatsCounters {
-        quantizer_cache_hits: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -202,10 +181,6 @@ pub(crate) fn record_quantizer_cache_hit() {}
 #[cfg(feature = "pg18")]
 pub(crate) fn record_quantizer_cache_miss() {
     increment(&QUANTIZER_CACHE_MISSES);
-    record_shared_delta(TqStatsCounters {
-        quantizer_cache_misses: 1,
-        ..TqStatsCounters::default()
-    });
 }
 
 #[cfg(not(feature = "pg18"))]
@@ -215,6 +190,12 @@ pub(crate) fn record_quantizer_cache_miss() {}
 pub(crate) unsafe fn register_pg18_stats() {
     unsafe {
         let _ = pg18_pgstat_shim::register_kind();
+    }
+}
+
+pub(crate) fn flush_shared_delta(delta: TqStatsCounters) {
+    if !delta.is_zero() {
+        record_shared_delta(delta);
     }
 }
 
@@ -249,6 +230,10 @@ impl TqStatsCounters {
 
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    pub(crate) fn is_zero(self) -> bool {
+        self == Self::default()
     }
 
     pub(crate) fn summary(self) -> TqStatsSummary {

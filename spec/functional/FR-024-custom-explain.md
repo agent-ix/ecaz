@@ -16,25 +16,16 @@ traces:
 On PG18, the extension SHALL register a custom EXPLAIN option `tqvector` that, when enabled, causes EXPLAIN output to include tqvector-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
 
 Current staged behavior:
-- Before PostgreSQL 18 support exists in this repository, pure explain-scaffolding helpers MAY
-  expose the intended EXPLAIN option name and report that both option registration and
-  `explain_per_node_hook` wiring remain unavailable.
-- Those same helpers MAY also expose the intended counter names, types, and increment conditions
-  while keeping both scan-opaque counter storage and runtime counter wiring explicitly unavailable.
-- The staged implementation MAY also define a reusable counter struct in planner-owned code so the
-  scan lane can embed it in `TqScanOpaque` later without requiring the planner lane to edit
-  `scan.rs` directly.
-- The staged implementation MAY also define pure ExplainProperty-emission helpers that map the
-  reusable counter struct into the eventual `ExplainPropertyInteger` / `ExplainPropertyBool`
-  payloads and a pure gating helper that requires the `tqvector` option, an `IndexScan` node kind,
-  and the `ec_hnsw` access method before any emission occurs.
-- Those same helpers MAY also define the intended EXPLAIN group contract, including the
-  `"TQVector Stats"` label plus the expectation that the eventual hook will bracket emission with
-  `ExplainOpenGroup` and `ExplainCloseGroup`.
-- Read-only diagnostics snapshot helpers MAY also expose the current EXPLAIN-and-pgstat readiness
-  state together so productization work can inspect one consolidated PG18 diagnostics boundary.
-- Those helpers SHALL stay descriptive only; they do not imply that `EXPLAIN (tqvector)` parses or
-  that any PostgreSQL EXPLAIN hook is registered on PG17.
+- On PG18, `_PG_init()` now registers the `tqvector` EXPLAIN option and chains
+  `explain_per_node_hook`.
+- `TqExplainCounters` are now embedded in scan state and incremented at live scan seams; `ec_hnsw`
+  index scans emit them when the option is enabled.
+- Structured EXPLAIN formats preserve the `TQVector Stats` group label. Text output still exposes
+  the same properties even though core PostgreSQL does not render the open/close group wrapper
+  there.
+- Read-only diagnostics snapshot helpers still expose the EXPLAIN-and-pgstat readiness boundary in
+  one place.
+- PG17 still has no EXPLAIN hook registration.
 
 ### Registration
 
@@ -140,12 +131,9 @@ When `tqvector` is not specified in the EXPLAIN options, the hook SHALL return i
 
 ### PG Version Compatibility
 
-On PG17, the custom EXPLAIN API does not exist. During the current staged implementation, the
-counter contract may be exposed through read-only scaffolding helpers, but the actual counter
-fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
-embedding by the scan lane, pure ExplainProperty-emission helpers may exist in `am/explain.rs`,
-the output group contract may also exist in pure form there, a pure hook-context gate may require
-the option plus `IndexScan` plus `ec_hnsw`, and no EXPLAIN hook is registered.
+On PG17, the custom EXPLAIN API does not exist, so no EXPLAIN hook is registered. The reusable
+counter contract and pure emission helpers still exist for shared testing, but the live option and
+per-node hook remain PG18-only.
 
 ## Acceptance Criteria
 
@@ -153,7 +141,9 @@ the option plus `IndexScan` plus `ec_hnsw`, and no EXPLAIN hook is registered.
 `EXPLAIN (tqvector) SELECT ...` SHALL parse without error when the extension is loaded.
 
 ### FR-024-AC-2: Stats emitted
-`EXPLAIN (tqvector) SELECT ... ORDER BY col <#> $q LIMIT 10` on a table with a ec_hnsw index SHALL include "TQVector Stats" section with all defined counters.
+`EXPLAIN (FORMAT JSON, tqvector) SELECT ... ORDER BY col <#> $q LIMIT 10` on a table with an
+`ec_hnsw` index SHALL include a `"TQVector Stats"` group with all defined counters. Text output
+SHALL still expose the same counter properties even though the group label is not guaranteed there.
 
 ### FR-024-AC-3: No output when disabled
 `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` (without `tqvector` option) SHALL NOT include any tqvector-specific output.

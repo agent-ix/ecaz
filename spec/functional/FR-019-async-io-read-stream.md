@@ -17,20 +17,16 @@ traces:
 On PostgreSQL 18, the extension SHALL replace synchronous `ReadBufferExtended` calls in scan and vacuum hot paths with the PG18 `read_stream` API, enabling transparent async I/O via the configured `io_method` (sync, worker, or io_uring). On PostgreSQL 17 and earlier, the extension SHALL fall back to the existing synchronous path.
 
 Current staged behavior:
-- Before PostgreSQL 18 support exists in this repository, pure ReadStream-scaffolding helpers MAY
-  expose the intended graph-stream mode (`READ_STREAM_DEFAULT`), linear-stream mode
-  (`READ_STREAM_SEQUENTIAL`), their random-versus-sequential access patterns, the intended
-  callback names and state types, and the `InvalidBlockNumber` end-of-stream sentinel.
-- Those helpers MAY also define pure callback functions that consume planner-owned callback state
-  and return either the next block number or an explicit end-of-stream result, leaving the actual
-  PostgreSQL `InvalidBlockNumber` conversion to the eventual PG18 binding layer.
-- Those same state carriers MAY also expose pure reset helpers so the staged D1 seam already
-  models graph-batch reuse after `read_stream_reset()` and linear-range restart after `amrescan`
-  without wiring any PostgreSQL 18 APIs on PG17.
-- Read-only snapshot helpers MAY also report that PG18 ReadStream callback surfaces, scan wiring,
-  and vacuum wiring all remain unavailable.
-- Those helpers SHALL stay descriptive only; they do not imply that any scan or vacuum path
-  currently uses `read_stream_next_buffer()` on PG17.
+- On PG18, graph-neighbor prefetch, linear fallback scans, and vacuum tuple counting now use live
+  `ReadStream` wiring at the shared/runtime seams.
+- The pure callback/state helpers still define the contract in `am/stream.rs`, but on PG18 they are
+  no longer descriptive-only: the callback bindings, stream lifecycle, and `InvalidBlockNumber`
+  translation are live.
+- Read-only snapshot helpers now report PG18 callback, scan, and vacuum readiness as true on PG18
+  builds and false on PG17 builds.
+- PG17 preserves the synchronous `ReadBufferExtended` fallback path.
+- This shared-infrastructure slice does not claim the cold-cache measurement target yet; it lands
+  the wiring and version gating only.
 
 ### Architecture
 

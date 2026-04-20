@@ -306,11 +306,19 @@ unsafe extern "C-unwind" fn tqvector_explain_per_node_hook(
                 && !es.is_null()
                 && (*planstate).type_ == pg_sys::NodeTag::T_IndexScanState
             {
+                let explain_option_enabled = explain_option_enabled(es);
+                if !explain_option_enabled {
+                    if let Some(previous_hook) = PREVIOUS_EXPLAIN_PER_NODE_HOOK {
+                        previous_hook(planstate, ancestors, relationship, plan_name, es);
+                    }
+                    return;
+                }
+
                 let index_state = planstate.cast::<pg_sys::IndexScanState>();
                 let access_method_name = explain_access_method_name(index_state)
                     .unwrap_or_else(|| "<unknown>".to_owned());
                 let context = ExplainHookContext {
-                    explain_option_enabled: explain_option_enabled(es),
+                    explain_option_enabled,
                     node_kind: explain_node_kind(planstate),
                     access_method_name: access_method_name.as_str(),
                 };

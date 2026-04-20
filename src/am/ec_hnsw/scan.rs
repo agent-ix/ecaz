@@ -17,6 +17,7 @@ use super::graph;
 use super::page;
 use super::search;
 use super::source;
+use super::stats::TqStatsCounters;
 use super::stream::{GraphPrefetchState, LinearPrefetchState};
 
 const MAX_BOOTSTRAP_FRONTIER_CANDIDATES: usize = 3;
@@ -992,7 +993,9 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             let store_query_elapsed_us = 0;
             record_store_query_elapsed(opaque, store_query_elapsed_us);
             opaque.explain_counters.reset();
+            opaque.stats_delta.reset();
             super::stats::record_scan_started();
+            opaque.stats_delta.record_scan_started();
             #[cfg(any(test, feature = "pg_test"))]
             let prepare_started = Instant::now();
             store_scan_prepared_query(opaque, &query, &metadata);
@@ -1816,8 +1819,10 @@ fn store_scan_prepared_query(
     if cache_hit {
         opaque.explain_counters.record_quantizer_cache_hit();
         super::stats::record_quantizer_cache_hit();
+        opaque.stats_delta.record_quantizer_cache_hit();
     } else {
         super::stats::record_quantizer_cache_miss();
+        opaque.stats_delta.record_quantizer_cache_miss();
     }
 }
 
@@ -3428,6 +3433,7 @@ unsafe fn prefetch_next_graph_result_from_frontier(
         mark_expanded_source(opaque, candidate.node);
         opaque.explain_counters.record_bootstrap_expansion();
         super::stats::record_graph_hop();
+        opaque.stats_delta.record_graph_hop();
         #[cfg(any(test, feature = "pg_test"))]
         let materialize_started = Instant::now();
         if unsafe {
@@ -3479,6 +3485,7 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
         mark_expanded_source(opaque, candidate.node);
         opaque.explain_counters.record_bootstrap_expansion();
         super::stats::record_graph_hop();
+        opaque.stats_delta.record_graph_hop();
         #[cfg(any(test, feature = "pg_test"))]
         let materialize_started = Instant::now();
         unsafe { buffer_grouped_graph_result_candidate(index_relation, opaque, candidate) };
@@ -3725,7 +3732,11 @@ fn finish_scan_stats(opaque: &mut TqScanOpaque) {
     }
     if !opaque.stats_used_linear_fallback {
         super::stats::record_bootstrap_only_scan();
+        opaque.stats_delta.record_bootstrap_only_scan();
     }
+    // Keep preload-on shared stats off the hot path by flushing one aggregate per scan.
+    super::stats::flush_shared_delta(opaque.stats_delta);
+    opaque.stats_delta.reset();
     opaque.stats_scan_finalized = true;
 }
 
@@ -4193,7 +4204,7 @@ unsafe fn refill_candidate_frontier_from_source_into(
                 |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
                 |neighbor| {
                     Some(score_scan_element_result(
-                        &*opaque_ptr,
+                        &mut *opaque_ptr,
                         neighbor.gamma,
                         &neighbor.code,
                     ))
@@ -4227,7 +4238,7 @@ unsafe fn top_up_bootstrap_frontier_from_visible_seeds_into(
                     |neighbor_tid| !visited_contains_element(&*opaque_ptr, neighbor_tid),
                     |neighbor| {
                         Some(score_scan_element_result(
-                            &*opaque_ptr,
+                            &mut *opaque_ptr,
                             neighbor.gamma,
                             &neighbor.code,
                         ))
@@ -4527,6 +4538,7 @@ unsafe fn select_linear_scan_result_from_buffer(
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
     opaque.explain_counters.record_linear_page_read();
     super::stats::record_linear_page();
+    opaque.stats_delta.record_linear_page();
     let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
     let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
     let line_pointer_count = super::shared::page_line_pointer_count(page_ptr);
@@ -4626,12 +4638,17 @@ where
     candidates
 }
 
-unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
+unsafe fn score_scan_element_result(
+    opaque: &mut TqScanOpaque,
+    gamma: f32,
+    code_bytes: &[u8],
+) -> f32 {
     if opaque.cached_quantizer.is_null() {
         pgrx::error!("ec_hnsw scan scoring requires a cached quantizer");
     }
 
     super::stats::record_distance_calc();
+    opaque.stats_delta.record_distance_calc();
     let quantizer = unsafe { &*opaque.cached_quantizer };
     match opaque.turboquant_exact_score_mode {
         TurboQuantExactScoreMode::Exact => {}
@@ -5103,6 +5120,7 @@ pub(super) struct TqScanOpaque {
     pub(super) graph_prefetch_state: *mut GraphPrefetchState,
     pub(super) linear_prefetch_state: LinearPrefetchState,
     pub(super) explain_counters: TqExplainCounters,
+    pub(super) stats_delta: TqStatsCounters,
     stats_used_linear_fallback: bool,
     stats_scan_finalized: bool,
     #[cfg(any(test, feature = "pg_test"))]
@@ -5177,6 +5195,7 @@ impl Default for TqScanOpaque {
                 page::FIRST_DATA_BLOCK_NUMBER,
             ),
             explain_counters: TqExplainCounters::default(),
+            stats_delta: TqStatsCounters::default(),
             stats_used_linear_fallback: false,
             stats_scan_finalized: false,
             #[cfg(any(test, feature = "pg_test"))]

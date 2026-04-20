@@ -64,12 +64,12 @@ CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
 EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `ec_hnsw`.
 
 Current staged behavior:
-- Until ADR-011 is retired, planner/explain snapshot helpers MAY report why `ec_hnsw` is still
-  gated off, but EXPLAIN itself is not yet expected to show a `ec_hnsw` index scan.
-- Explain-facing snapshot helpers MAY also report the intended `<#>` ordering semantics
-  (`strategy 1` / `COMPARE_LT`) and that PG18 strategy-translation callbacks are still unavailable.
-- Explain-facing snapshot helpers MAY also report the intended custom EXPLAIN option name
-  (`tqvector`) and that PG18 EXPLAIN option / hook wiring is still unavailable.
+- ADR-011 is retired and the live cost model can now select `ec_hnsw` naturally.
+- On PG18, the `<#>` ordering semantics are now exposed through live
+  `amtranslatestrategy` / `amtranslatecmptype` callbacks plus `amconsistentordering = true`.
+- On PG18, `EXPLAIN (tqvector)` is also live through the registered EXPLAIN option and per-node
+  hook. Shared pgstat remains preload-gated, but EXPLAIN and planner selection are no longer
+  descriptive-only.
 
 ### FR-006-AC-3: Operator commutativity
 `a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.

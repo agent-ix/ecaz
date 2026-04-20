@@ -337,7 +337,9 @@ These items have no dependency on Track A. They depend only on the frozen scalar
 
 ### Track D: Planner Integration (independent agent, partially parallel)
 
-Planner integration spans two phases: scaffolding that can start now, and wiring that is gated on the recall gate (A4).
+Planner integration started as a two-phase effort: scaffolding first, then live wiring once the
+recall gate closed. The scaffold is merged on `main`, and the shared PG18 wiring slice is now live
+and validated on `pg18-shared-infra-merge`.
 
 #### D1: Planner Scaffolding (can start now)
 - **Scope:** Build the cost model, strategy translation, custom EXPLAIN, and async I/O scaffolding behind PG-version feature gates. All code compiles and is testable in isolation but is not activated in `amcostestimate` (ADR-011 gate remains).
@@ -353,7 +355,8 @@ Planner integration spans two phases: scaffolding that can start now, and wiring
   6. ReadStream callback signatures for graph and linear streams (PG18, feature-gated, not yet wired into scan loop)
   7. Unit tests for cost model: planner selects index at 10K rows, prefers seqscan at 50 rows, handles edge cases (empty index, zero reltuples)
 - **File ownership:** `am/cost.rs` (cost model + amgettreeheight), `am/explain.rs` (EXPLAIN hook), `am/stream.rs` (async I/O). These files do not overlap with graph search agent's `am/scan.rs` and `am/search.rs`.
-- **Status:** substantially complete on `main` after merging `planner-integration-lane` and `planner-part2`; only D2 wiring and ADR-011 retirement remain.
+- **Status:** complete on `main` for scaffolding; the planned PG18 callback/EXPLAIN/ReadStream
+  bindings are now live on `pg18-shared-infra-merge`.
 - **Exit criteria:** All scaffolding compiles, tests pass, but `amcostestimate` still returns `f64::MAX`. No functional change to query behavior.
 
 #### D2: Wire Planner (gated on A4 recall gate)
@@ -370,6 +373,11 @@ Planner integration spans two phases: scaffolding that can start now, and wiring
   6. FR-020-AC-2 validated: planner prefers seqscan on 50-row table
 - **Dependencies:** A4 (recall gate must pass), D1 (scaffolding must be complete)
 - **Exit criteria:** `SELECT ... ORDER BY col <#> $query LIMIT 10` uses index scan without `enable_seqscan = off`. EXPLAIN (tqvector) shows scan stats on PG18.
+- **Status:** the shared-infrastructure slice is complete on `pg18-shared-infra-merge`: live
+  costing, `amgettreeheight`, strategy translation, EXPLAIN hooks, ReadStream scan/vacuum wiring,
+  preload-aware shared pgstat registration, and PG18 module identity all validate locally on PG18
+  and PG17. Remaining follow-ons are preload-aware shared-pgstat activation coverage, measurement,
+  and optional parallel-scan callbacks.
 
 ### Track C: Post-Gate Verification (after A4 passes)
 
