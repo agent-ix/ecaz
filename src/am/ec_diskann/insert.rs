@@ -13,7 +13,7 @@
 //! logic here once the page-write / backlink / overflow story is
 //! implemented.
 
-use std::{ptr, slice};
+use std::{cmp::Ordering, ptr, slice};
 
 use pgrx::pg_sys;
 
@@ -22,7 +22,7 @@ use crate::quant::grouped_pq::{encode_grouped_pq, GROUPED_PQ_CENTROIDS};
 use crate::quant::prod::ProdQuantizer;
 use crate::storage::page::{
     element_or_neighbor_tuple_fits, raw_tuple_storage_bytes, DataPageChain, ItemPointer,
-    FIRST_DATA_BLOCK_NUMBER,
+    FIRST_DATA_BLOCK_NUMBER, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
 use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
@@ -46,6 +46,9 @@ use super::{
 const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 pub(super) const MAX_BACKLINK_REPLAN_PASSES: usize = 3;
+const TQ_VAMANA_OVERFLOW_TAG: u8 = 0x08;
+const VAMANA_OVERFLOW_HEADER_BYTES: usize = 1 + 2 + ITEM_POINTER_BYTES + ITEM_POINTER_BYTES;
+const VAMANA_OVERFLOW_HEAPTID_CAPACITY: usize = HEAPTID_INLINE_CAPACITY;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DerivedInsertPayload {
@@ -57,6 +60,173 @@ pub(super) struct DerivedInsertPayload {
 pub(super) struct ForwardNeighborCandidate {
     pub(super) tid: ItemPointer,
     pub(super) source_vector: Vec<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VamanaOverflowTuple {
+    owner_tid: ItemPointer,
+    nexttid: ItemPointer,
+    heap_tids: Vec<ItemPointer>,
+    heap_tid_count: u16,
+}
+
+impl VamanaOverflowTuple {
+    fn encoded_len() -> usize {
+        VAMANA_OVERFLOW_HEADER_BYTES + VAMANA_OVERFLOW_HEAPTID_CAPACITY * ITEM_POINTER_BYTES
+    }
+
+    fn placeholder(owner_tid: ItemPointer) -> Self {
+        Self {
+            owner_tid,
+            nexttid: ItemPointer::INVALID,
+            heap_tids: vec![ItemPointer::INVALID; VAMANA_OVERFLOW_HEAPTID_CAPACITY],
+            heap_tid_count: 0,
+        }
+    }
+
+    fn contains(&self, heap_tid: ItemPointer) -> bool {
+        self.heap_tids
+            .iter()
+            .take(self.heap_tid_count as usize)
+            .any(|tid| *tid == heap_tid)
+    }
+
+    fn push_heap_tid(&mut self, heap_tid: ItemPointer) -> Result<(), String> {
+        if heap_tid == ItemPointer::INVALID {
+            return Err("ec_diskann overflow tuple cannot store INVALID heap tid".into());
+        }
+        if self.contains(heap_tid) {
+            return Ok(());
+        }
+        let next_index = usize::from(self.heap_tid_count);
+        if next_index >= self.heap_tids.len() {
+            return Err(format!(
+                "ec_diskann overflow tuple is full at capacity {}",
+                self.heap_tids.len()
+            ));
+        }
+        self.heap_tids[next_index] = heap_tid;
+        self.heap_tid_count = u16::try_from(next_index + 1).expect("overflow count fits in u16");
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.owner_tid == ItemPointer::INVALID {
+            return Err("ec_diskann overflow tuple requires a valid owner_tid".into());
+        }
+        if self.heap_tids.len() != VAMANA_OVERFLOW_HEAPTID_CAPACITY {
+            return Err(format!(
+                "ec_diskann overflow tuple heap_tids length mismatch: got {}, expected {}",
+                self.heap_tids.len(),
+                VAMANA_OVERFLOW_HEAPTID_CAPACITY
+            ));
+        }
+        if usize::from(self.heap_tid_count) > self.heap_tids.len() {
+            return Err(format!(
+                "ec_diskann overflow tuple heap_tid_count {} exceeds capacity {}",
+                self.heap_tid_count,
+                self.heap_tids.len()
+            ));
+        }
+        Ok(())
+    }
+
+    fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate()?;
+        let mut out = Vec::with_capacity(Self::encoded_len());
+        out.push(TQ_VAMANA_OVERFLOW_TAG);
+        out.extend_from_slice(&self.heap_tid_count.to_le_bytes());
+        self.owner_tid.encode_into(&mut out);
+        self.nexttid.encode_into(&mut out);
+        for heap_tid in &self.heap_tids {
+            heap_tid.encode_into(&mut out);
+        }
+        debug_assert_eq!(out.len(), Self::encoded_len());
+        Ok(out)
+    }
+
+    fn decode(input: &[u8]) -> Result<Self, String> {
+        let expected_len = Self::encoded_len();
+        if input.len() != expected_len {
+            return Err(format!(
+                "ec_diskann overflow tuple length mismatch: got {}, expected {expected_len}",
+                input.len()
+            ));
+        }
+        if input[0] != TQ_VAMANA_OVERFLOW_TAG {
+            return Err(format!(
+                "invalid ec_diskann overflow tuple tag: got 0x{:02x}, expected 0x{:02x}",
+                input[0], TQ_VAMANA_OVERFLOW_TAG
+            ));
+        }
+        let heap_tid_count =
+            u16::from_le_bytes(input[1..3].try_into().expect("heap tid count bytes"));
+        let owner_tid = ItemPointer::decode(&input[3..3 + ITEM_POINTER_BYTES])?;
+        let nexttid = ItemPointer::decode(&input[9..9 + ITEM_POINTER_BYTES])?;
+        let mut cursor = VAMANA_OVERFLOW_HEADER_BYTES;
+        let mut heap_tids = Vec::with_capacity(VAMANA_OVERFLOW_HEAPTID_CAPACITY);
+        for _ in 0..VAMANA_OVERFLOW_HEAPTID_CAPACITY {
+            heap_tids.push(ItemPointer::decode(
+                &input[cursor..cursor + ITEM_POINTER_BYTES],
+            )?);
+            cursor += ITEM_POINTER_BYTES;
+        }
+        let tuple = Self {
+            owner_tid,
+            nexttid,
+            heap_tids,
+            heap_tid_count,
+        };
+        tuple.validate()?;
+        Ok(tuple)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OverflowTupleRef {
+    tid: ItemPointer,
+    tuple: VamanaOverflowTuple,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DuplicateBindPlan {
+    AlreadyBound,
+    Apply {
+        append_tuple: Option<VamanaOverflowTuple>,
+        patches: Vec<DuplicateBindPatch>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DuplicateBindPatch {
+    target_tid: ItemPointer,
+    kind: DuplicateBindPatchKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DuplicateBindPatchKind {
+    SetNodeOverflowFlag,
+    AppendHeapTidToOverflow {
+        expected_nexttid: ItemPointer,
+        expected_heap_tid_count: u16,
+        heap_tid: ItemPointer,
+    },
+    SetOverflowNextTid {
+        expected_nexttid: ItemPointer,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DuplicateBindApplyOutcome {
+    NoChange,
+    Changed,
+    RetryReplan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DuplicateBindResult {
+    AlreadyBound,
+    Bound,
 }
 
 pub(super) fn derive_insert_payload_from_persisted(
@@ -150,6 +320,391 @@ pub(super) fn derive_insert_payload_from_persisted(
         binary_words,
         search_code,
     })
+}
+
+pub(super) fn cmp_item_pointer_physical(left: &ItemPointer, right: &ItemPointer) -> Ordering {
+    left.block_number
+        .cmp(&right.block_number)
+        .then_with(|| left.offset_number.cmp(&right.offset_number))
+}
+
+fn overflow_tuple_refs_for_owner(
+    chain: &DataPageChain,
+    owner_tid: ItemPointer,
+) -> Result<Vec<OverflowTupleRef>, String> {
+    let mut matches = Vec::new();
+    for page in chain.pages() {
+        for offset_number in 1..=page.tuple_count() {
+            let tid = ItemPointer {
+                block_number: page.block_number(),
+                offset_number: offset_number as u16,
+            };
+            let raw = page.raw_tuple(tid)?;
+            if raw.first().copied() != Some(TQ_VAMANA_OVERFLOW_TAG) {
+                continue;
+            }
+            let tuple = VamanaOverflowTuple::decode(raw)?;
+            if tuple.owner_tid == owner_tid {
+                matches.push(OverflowTupleRef { tid, tuple });
+            }
+        }
+    }
+    matches.sort_unstable_by(|left, right| cmp_item_pointer_physical(&left.tid, &right.tid));
+    Ok(matches)
+}
+
+pub(super) fn bound_heap_tids_for_owner(
+    chain: &DataPageChain,
+    owner_tid: ItemPointer,
+    primary_heaptid: ItemPointer,
+) -> Result<Vec<ItemPointer>, String> {
+    if owner_tid == ItemPointer::INVALID {
+        return Err("ec_diskann bound heap tid expansion requires a valid owner tid".into());
+    }
+    if primary_heaptid == ItemPointer::INVALID {
+        return Err("ec_diskann bound heap tid expansion requires a valid primary heap tid".into());
+    }
+
+    let mut heap_tids = vec![primary_heaptid];
+    for overflow in overflow_tuple_refs_for_owner(chain, owner_tid)? {
+        heap_tids.extend(
+            overflow
+                .tuple
+                .heap_tids
+                .iter()
+                .take(overflow.tuple.heap_tid_count as usize)
+                .copied(),
+        );
+    }
+    Ok(heap_tids)
+}
+
+fn plan_duplicate_bind(
+    existing_node_tid: ItemPointer,
+    existing_node: &VamanaNodeTuple,
+    overflow_refs: &[OverflowTupleRef],
+    new_heap_tid: ItemPointer,
+) -> Result<DuplicateBindPlan, String> {
+    if existing_node_tid == ItemPointer::INVALID {
+        return Err("ec_diskann duplicate bind requires a valid node tid".into());
+    }
+    if new_heap_tid == ItemPointer::INVALID {
+        return Err("ec_diskann duplicate bind requires a valid heap tid".into());
+    }
+    if existing_node.primary_heaptid == new_heap_tid
+        || overflow_refs
+            .iter()
+            .any(|overflow| overflow.tuple.contains(new_heap_tid))
+    {
+        return Ok(DuplicateBindPlan::AlreadyBound);
+    }
+
+    let ensure_node_overflow = !existing_node.has_overflow_heaptids;
+    let mut patches = Vec::new();
+    if ensure_node_overflow {
+        patches.push(DuplicateBindPatch {
+            target_tid: existing_node_tid,
+            kind: DuplicateBindPatchKind::SetNodeOverflowFlag,
+        });
+    }
+
+    if let Some(tail) = overflow_refs.last() {
+        if usize::from(tail.tuple.heap_tid_count) < tail.tuple.heap_tids.len() {
+            patches.push(DuplicateBindPatch {
+                target_tid: tail.tid,
+                kind: DuplicateBindPatchKind::AppendHeapTidToOverflow {
+                    expected_nexttid: tail.tuple.nexttid,
+                    expected_heap_tid_count: tail.tuple.heap_tid_count,
+                    heap_tid: new_heap_tid,
+                },
+            });
+            return Ok(DuplicateBindPlan::Apply {
+                append_tuple: None,
+                patches,
+            });
+        }
+
+        let mut append_tuple = VamanaOverflowTuple::placeholder(existing_node_tid);
+        append_tuple.push_heap_tid(new_heap_tid)?;
+        patches.push(DuplicateBindPatch {
+            target_tid: tail.tid,
+            kind: DuplicateBindPatchKind::SetOverflowNextTid {
+                expected_nexttid: tail.tuple.nexttid,
+            },
+        });
+        return Ok(DuplicateBindPlan::Apply {
+            append_tuple: Some(append_tuple),
+            patches,
+        });
+    }
+
+    let mut append_tuple = VamanaOverflowTuple::placeholder(existing_node_tid);
+    append_tuple.push_heap_tid(new_heap_tid)?;
+    Ok(DuplicateBindPlan::Apply {
+        append_tuple: Some(append_tuple),
+        patches,
+    })
+}
+
+unsafe fn apply_duplicate_bind_patches(
+    index_relation: pg_sys::Relation,
+    metadata: &VamanaMetadataPage,
+    patches: &[DuplicateBindPatch],
+    appended_overflow_tid: ItemPointer,
+) -> Result<DuplicateBindApplyOutcome, String> {
+    if patches.is_empty() {
+        return Ok(DuplicateBindApplyOutcome::NoChange);
+    }
+
+    let mut sorted = patches.to_vec();
+    sorted.sort_unstable_by(|left, right| {
+        cmp_item_pointer_physical(&left.target_tid, &right.target_tid)
+    });
+    sorted.dedup_by(|left, right| left.target_tid == right.target_tid && left.kind == right.kind);
+
+    let binary_word_count = scan_state::metadata_binary_word_count(metadata);
+    let search_code_len = scan_state::metadata_search_code_len(metadata);
+    let mut changed_any = false;
+    let mut start = 0usize;
+
+    while start < sorted.len() {
+        let block_number = sorted[start].target_tid.block_number;
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            return Err(format!(
+                "ec_diskann duplicate bind could not open target block {block_number}"
+            ));
+        }
+
+        unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let writable_page =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        let mut page_changed = false;
+        let mut page_retry = false;
+
+        let page_result = (|| -> Result<(), String> {
+            while start < sorted.len() && sorted[start].target_tid.block_number == block_number {
+                let patch = &sorted[start];
+                start += 1;
+
+                let (tuple_ptr, tuple_len) =
+                    unsafe { page_tuple_location(writable_page, page_size, patch.target_tid)? };
+                let tuple_bytes =
+                    unsafe { slice::from_raw_parts(tuple_ptr.cast_const(), tuple_len) };
+
+                match &patch.kind {
+                    DuplicateBindPatchKind::SetNodeOverflowFlag => {
+                        let mut tuple = VamanaNodeTuple::decode(
+                            tuple_bytes,
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if tuple.has_overflow_heaptids {
+                            continue;
+                        }
+                        tuple.has_overflow_heaptids = true;
+                        let encoded = tuple.encode(
+                            metadata.graph_degree_r,
+                            binary_word_count,
+                            search_code_len,
+                        )?;
+                        if encoded.len() != tuple_len {
+                            return Err(format!(
+                                "ec_diskann duplicate bind node tuple size changed from {} to {} at ({},{})",
+                                tuple_len,
+                                encoded.len(),
+                                patch.target_tid.block_number,
+                                patch.target_tid.offset_number
+                            ));
+                        }
+                        unsafe {
+                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
+                        };
+                        page_changed = true;
+                        changed_any = true;
+                    }
+                    DuplicateBindPatchKind::AppendHeapTidToOverflow {
+                        expected_nexttid,
+                        expected_heap_tid_count,
+                        heap_tid,
+                    } => {
+                        let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
+                        if tuple.contains(*heap_tid) {
+                            continue;
+                        }
+                        if tuple.nexttid != *expected_nexttid
+                            || tuple.heap_tid_count != *expected_heap_tid_count
+                        {
+                            page_retry = true;
+                            break;
+                        }
+                        tuple.push_heap_tid(*heap_tid)?;
+                        let encoded = tuple.encode()?;
+                        if encoded.len() != tuple_len {
+                            return Err(format!(
+                                "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
+                                tuple_len,
+                                encoded.len(),
+                                patch.target_tid.block_number,
+                                patch.target_tid.offset_number
+                            ));
+                        }
+                        unsafe {
+                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
+                        };
+                        page_changed = true;
+                        changed_any = true;
+                    }
+                    DuplicateBindPatchKind::SetOverflowNextTid { expected_nexttid } => {
+                        let mut tuple = VamanaOverflowTuple::decode(tuple_bytes)?;
+                        if tuple.nexttid == appended_overflow_tid {
+                            continue;
+                        }
+                        if tuple.nexttid != *expected_nexttid {
+                            page_retry = true;
+                            break;
+                        }
+                        tuple.nexttid = appended_overflow_tid;
+                        let encoded = tuple.encode()?;
+                        if encoded.len() != tuple_len {
+                            return Err(format!(
+                                "ec_diskann duplicate bind overflow tuple size changed from {} to {} at ({},{})",
+                                tuple_len,
+                                encoded.len(),
+                                patch.target_tid.block_number,
+                                patch.target_tid.offset_number
+                            ));
+                        }
+                        unsafe {
+                            ptr::copy_nonoverlapping(encoded.as_ptr(), tuple_ptr, encoded.len())
+                        };
+                        page_changed = true;
+                        changed_any = true;
+                    }
+                }
+            }
+            Ok(())
+        })();
+
+        match page_result {
+            Ok(()) => {
+                if page_changed {
+                    unsafe { wal_txn.finish() };
+                } else {
+                    std::mem::drop(wal_txn);
+                }
+            }
+            Err(error) => {
+                std::mem::drop(wal_txn);
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(error);
+            }
+        }
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+
+        if page_retry {
+            return Ok(DuplicateBindApplyOutcome::RetryReplan);
+        }
+    }
+
+    if changed_any {
+        Ok(DuplicateBindApplyOutcome::Changed)
+    } else {
+        Ok(DuplicateBindApplyOutcome::NoChange)
+    }
+}
+
+pub(super) unsafe fn bind_duplicate_heap_tid(
+    index_relation: pg_sys::Relation,
+    existing_node_tid: ItemPointer,
+    new_heap_tid: ItemPointer,
+) -> Result<DuplicateBindResult, String> {
+    for _ in 0..MAX_BACKLINK_REPLAN_PASSES {
+        let (metadata, chain) =
+            unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let existing_node = reader.read_node(existing_node_tid)?;
+        if !existing_node.is_live() || existing_node.primary_heaptid == ItemPointer::INVALID {
+            return Err(format!(
+                "ec_diskann duplicate bind target ({},{}) is not a live node",
+                existing_node_tid.block_number, existing_node_tid.offset_number
+            ));
+        }
+
+        let overflow_refs = overflow_tuple_refs_for_owner(&chain, existing_node_tid)?;
+        let plan = plan_duplicate_bind(
+            existing_node_tid,
+            &existing_node,
+            &overflow_refs,
+            new_heap_tid,
+        )?;
+        let DuplicateBindPlan::Apply {
+            append_tuple,
+            patches,
+        } = plan
+        else {
+            return Ok(DuplicateBindResult::AlreadyBound);
+        };
+
+        let appended_overflow_tid = if let Some(overflow_tuple) = append_tuple {
+            let encoded = overflow_tuple.encode()?;
+            let existing_blocks = unsafe {
+                pg_sys::RelationGetNumberOfBlocksInFork(
+                    index_relation,
+                    pg_sys::ForkNumber::MAIN_FORKNUM,
+                )
+            };
+            let target_block = if existing_blocks > FIRST_DATA_BLOCK_NUMBER {
+                existing_blocks - 1
+            } else {
+                P_NEW
+            };
+            unsafe {
+                append_raw_tuple_payload(
+                    index_relation,
+                    &encoded,
+                    raw_tuple_storage_bytes(encoded.len()),
+                    target_block,
+                )?
+            }
+        } else {
+            ItemPointer::INVALID
+        };
+
+        match unsafe {
+            apply_duplicate_bind_patches(
+                index_relation,
+                &metadata,
+                &patches,
+                appended_overflow_tid,
+            )?
+        } {
+            DuplicateBindApplyOutcome::RetryReplan => continue,
+            DuplicateBindApplyOutcome::Changed => return Ok(DuplicateBindResult::Bound),
+            DuplicateBindApplyOutcome::NoChange => return Ok(DuplicateBindResult::AlreadyBound),
+        }
+    }
+
+    Err(format!(
+        "ec_diskann duplicate bind exceeded {} replan passes for node ({},{})",
+        MAX_BACKLINK_REPLAN_PASSES, existing_node_tid.block_number, existing_node_tid.offset_number
+    ))
 }
 
 pub(super) fn duplicate_candidate_tids_by_payload(
@@ -570,7 +1125,7 @@ pub(super) unsafe fn append_live_node(
         P_NEW
     };
     unsafe {
-        append_live_node_payload(
+        append_raw_tuple_payload(
             index_relation,
             &encoded,
             raw_tuple_storage_bytes(encoded.len()),
@@ -579,7 +1134,7 @@ pub(super) unsafe fn append_live_node(
     }
 }
 
-unsafe fn append_live_node_payload(
+unsafe fn append_raw_tuple_payload(
     index_relation: pg_sys::Relation,
     encoded: &[u8],
     required_bytes: usize,
@@ -619,7 +1174,7 @@ unsafe fn append_live_node_payload(
             std::mem::drop(wal_txn);
             unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
             return unsafe {
-                append_live_node_payload(index_relation, encoded, required_bytes, P_NEW)
+                append_raw_tuple_payload(index_relation, encoded, required_bytes, P_NEW)
             };
         }
     }
@@ -877,24 +1432,13 @@ pub(super) unsafe fn increment_inserted_since_rebuild(
 }
 
 fn sort_and_dedup_backlink_targets(targets: &mut Vec<ItemPointer>) {
-    targets.sort_unstable_by(|left, right| {
-        left.block_number
-            .cmp(&right.block_number)
-            .then_with(|| left.offset_number.cmp(&right.offset_number))
-    });
+    targets.sort_unstable_by(cmp_item_pointer_physical);
     targets.dedup();
 }
 
 fn sort_and_dedup_backlink_mutations(mutations: &mut Vec<BacklinkMutation>) {
     mutations.sort_unstable_by(|left, right| {
-        left.target_tid
-            .block_number
-            .cmp(&right.target_tid.block_number)
-            .then_with(|| {
-                left.target_tid
-                    .offset_number
-                    .cmp(&right.target_tid.offset_number)
-            })
+        cmp_item_pointer_physical(&left.target_tid, &right.target_tid)
     });
     mutations.dedup_by(|left, right| left.target_tid == right.target_tid);
 }
