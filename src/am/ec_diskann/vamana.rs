@@ -145,7 +145,7 @@ where
         // the tail to drop largest is O(F log L) but for the sizes we
         // care about (L ≤ 200), a sort suffices.
         if frontier.len() > list_size {
-            frontier.sort_by(|a, b| a.cmp(b));
+            frontier.sort();
             // Mark any nodes that fell off the end as no longer in
             // frontier so they cannot be re-added on subsequent
             // expansions.
@@ -156,7 +156,7 @@ where
         }
     }
 
-    frontier.sort_by(|a, b| a.cmp(b));
+    frontier.sort();
     GreedySearchResult {
         frontier,
         visited: visited_order,
@@ -185,7 +185,7 @@ where
     if candidates.is_empty() {
         return Vec::new();
     }
-    candidates.sort_by(|a, b| a.cmp(b));
+    candidates.sort();
 
     let mut result: Vec<u32> = Vec::with_capacity(max_degree);
     while !candidates.is_empty() && result.len() < max_degree {
@@ -305,7 +305,7 @@ where
                             distance: dist(j, n),
                         })
                         .collect();
-                    combined.sort_by(|a, b| a.cmp(b));
+                    combined.sort();
                     let repruned = robust_prune(j, combined, alpha, max_degree, dist);
                     graph.neighbors[j as usize] = repruned;
                 }
