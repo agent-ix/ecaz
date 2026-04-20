@@ -539,6 +539,16 @@ fn load_coordinator_snapshot(
     }
 }
 
+fn coordinator_result_slot_snapshot_is_live(
+    snapshot: &EcParallelCoordinatorResultSlotSnapshot,
+    rescan_epoch: u32,
+) -> bool {
+    snapshot.observed_rescan_epoch == rescan_epoch
+        && snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0
+        && snapshot.flags & EC_PARALLEL_RESULT_SLOT_SCORE_VALID != 0
+        && snapshot.runtime.element_tid.is_valid()
+}
+
 unsafe fn select_best_parallel_scan_coordinator_result_slot_with_attachment(
     attachment: &ParallelScanAttachment,
 ) -> Result<Option<EcParallelCoordinatorResultSlotSnapshot>, &'static str> {
@@ -547,16 +557,7 @@ unsafe fn select_best_parallel_scan_coordinator_result_slot_with_attachment(
     for slot_index in 0..attachment.result_slot_count {
         let slot = unsafe { attachment.result_slot(slot_index) }?;
         let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
-        if snapshot.observed_rescan_epoch != attachment.rescan_epoch {
-            continue;
-        }
-        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
-            continue;
-        }
-        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_SCORE_VALID == 0 {
-            continue;
-        }
-        if !snapshot.runtime.element_tid.is_valid() {
+        if !coordinator_result_slot_snapshot_is_live(&snapshot, attachment.rescan_epoch) {
             continue;
         }
 
@@ -1072,6 +1073,26 @@ pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let slot = unsafe { attachment.result_slot(slot_index) }?;
     Ok(load_coordinator_result_slot_snapshot(unsafe { &*slot }))
+}
+
+pub(crate) unsafe fn read_parallel_scan_selected_result_slot_snapshot(
+    state: *mut EcParallelScanState,
+) -> Result<Option<EcParallelCoordinatorResultSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    let Some(slot_index) = coordinator.selected_result_slot_index else {
+        return Ok(None);
+    };
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    let selected_result_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if !coordinator_result_slot_snapshot_is_live(&selected_result_slot, attachment.rescan_epoch) {
+        return Ok(None);
+    }
+
+    Ok(Some(EcParallelCoordinatorResultSelection {
+        coordinator,
+        selected_result_slot,
+    }))
 }
 
 pub(crate) unsafe fn select_best_parallel_scan_coordinator_result_slot(
@@ -1628,6 +1649,94 @@ mod tests {
     }
 
     #[test]
+    fn read_parallel_scan_selected_result_slot_snapshot_reads_coordinator_fast_path() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second claim should succeed");
+
+        for (slot_index, block_number, score) in [(first_slot, 41, -4.0), (second_slot, 42, -8.0)] {
+            unsafe {
+                publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                    EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                        element_tid: EcParallelItemPointer {
+                            block_number,
+                            offset_number: 1,
+                        },
+                        heap_tid: EcParallelItemPointer::INVALID,
+                        score,
+                        approx_score: None,
+                        comparison_score: None,
+                        approx_rank_base: None,
+                        pending_count: 1,
+                        pending_index: 0,
+                    },
+                )
+            }
+            .expect("publish should succeed");
+        }
+
+        let selection =
+            unsafe { read_parallel_scan_selected_result_slot_snapshot(attachment.state) }
+                .expect("direct read should succeed")
+                .expect("direct read should surface the coordinator-selected slot");
+        assert_eq!(
+            selection.coordinator.selected_result_slot_index,
+            Some(second_slot),
+            "coordinator fast path should point at the lowest-score staged result slot"
+        );
+        assert_eq!(
+            selection.coordinator.selected_result_score,
+            Some(-8.0),
+            "coordinator fast path should carry the staged result score"
+        );
+        assert_eq!(
+            selection.selected_result_slot.slot_index, second_slot,
+            "direct read should return the slot named by the coordinator snapshot"
+        );
+        assert_eq!(
+            selection.selected_result_slot.runtime.score, -8.0,
+            "direct read should return the chosen staged result score"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_selected_result_slot_snapshot_returns_none_without_selection() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_selected_result_slot_snapshot(attachment.state) }
+                .expect("direct read should succeed"),
+            None,
+            "direct read should stay empty until the coordinator snapshot names a live staged result"
+        );
+    }
+
+    #[test]
     fn clear_parallel_scan_coordinator_result_slot_runtime_snapshot_refreshes_selected_result() {
         let mut storage = TestParallelScanStorage::default();
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
@@ -1707,6 +1816,41 @@ mod tests {
                 selected_result_score: Some(-4.0),
             },
             "clearing the selected slot should refresh the coordinator snapshot to the remaining best staged result"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_selected_result_slot_snapshot(attachment.state) }
+                .expect("direct read should succeed after clear")
+                .expect("direct read should still see the remaining staged result"),
+            EcParallelCoordinatorResultSelection {
+                coordinator: EcParallelCoordinatorSnapshot {
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    claimed_worker_slots: 2,
+                    published_result_slots: 1,
+                    result_publish_generation: 3,
+                    selected_result_slot_index: Some(first_slot),
+                    selected_result_score: Some(-4.0),
+                },
+                selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
+                    flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
+                        | EC_PARALLEL_RESULT_SLOT_SCORE_VALID,
+                    slot_index: first_slot,
+                    observed_rescan_epoch: attachment.rescan_epoch,
+                    runtime: EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                        element_tid: EcParallelItemPointer {
+                            block_number: 31,
+                            offset_number: 1,
+                        },
+                        heap_tid: EcParallelItemPointer::INVALID,
+                        score: -4.0,
+                        approx_score: None,
+                        comparison_score: None,
+                        approx_rank_base: None,
+                        pending_count: 1,
+                        pending_index: 0,
+                    },
+                },
+            },
+            "direct read should track the refreshed coordinator snapshot after clearing the selected slot"
         );
     }
 

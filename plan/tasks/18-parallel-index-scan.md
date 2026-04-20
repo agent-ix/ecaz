@@ -168,6 +168,11 @@ See ADR-040 for the full shape. Summary:
   work can read coordinator state directly without rescanning the staged slots
   on every access.
 
+- **Coordinator fast-path staging.** Shared helpers can now read the staged
+  selected result directly from the coordinator snapshot and slot header,
+  without rescanning all staged result slots. The full shared top-K drain
+  path is still deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
