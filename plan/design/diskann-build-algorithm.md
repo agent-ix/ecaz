@@ -192,14 +192,15 @@ A true medoid requires `O(N²)` distance evaluations. For N in the
 millions this is intractable. Use a random-sample approximation
 matching pgvectorscale:
 
-1. Draw `S = min(10 000, N)` sample indices uniformly without
-   replacement.
+1. Draw `S = min(MEDOID_SAMPLE_CAP, N)` sample indices uniformly
+   without replacement, where `MEDOID_SAMPLE_CAP = 1000`
+   (Phase 5C-2 frozen value; mirrors pgvectorscale).
 2. For each sampled index `s`, compute the sum of distances to all
    other samples in `S`.
 3. Take `argmin_s (sum of distances)` as the medoid.
 
-Cost: `O(S²)` distance evaluations — ~100M at the cap, bounded and
-runs in seconds with FastScan scoring.
+Cost: `O(S²)` distance evaluations — ~1M at the cap, bounded and
+runs in well under a second with FastScan scoring.
 
 Record the medoid TID in the Vamana metadata page. Both scan and
 insert use it as the graph entry point (ADR-046 step 1).
@@ -220,24 +221,28 @@ Once both α passes complete, persist in one sweep:
   PqFastScan-on-tqhnsw layout but without the per-layer
   segmentation that HNSW requires.
 
-- **Cold page chain** — `rerank_payload` tuples (higher-fidelity
-  encoding for final-k rerank). Same structure as the existing
-  PqFastScan cold chain.
+- **Cold page chain — DEFERRED in V0.** ADR-045 reserves
+  `rerank_tid` and ADR-044 keeps raw-f32 rerank on the heap
+  `ecvector` row. V0 `ec_diskann` therefore persists only the hot
+  chain; `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` stays clear on V0 builds
+  (ADR-046 frozen rule 1, ADR-047 frozen rule 4). A future ADR-044
+  C1 reopen is the only path that re-introduces an index-side cold
+  chain; that reopen ships its own ADR and flips the flag as part of
+  the format extension.
 
 - **Metadata page** — see `plan/tasks/17-diskann-access-method.md`
   phase-1 subtask for the struct definition.
 
-Persistence order:
+Persistence order (V0):
 
 1. Allocate hot pages and write node tuples in visit order from
    the medoid outward (roughly distance-ordered). This improves
    page-cache locality for scan's greedy walk from the medoid.
-2. Allocate cold pages and write rerank payloads in the same
-   order.
-3. Write the metadata page last, with `entry_point_tid` =
+2. Write the metadata page last, with `entry_point_tid` =
    medoid, `graph_degree_R`, `build_list_size_L`,
    `alpha` (stored as `f32`, pgvectorscale-compatible),
-   `format_version = INDEX_FORMAT_V3_DISKANN`.
+   `format_version = INDEX_FORMAT_V4_DISKANN`, and
+   `payload_flags` with `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` **clear**.
 
 The visit-order-from-medoid rule matters more for Vamana than for
 HNSW. The scan always starts at the medoid and walks outward;

@@ -1,9 +1,10 @@
 ---
 id: ADR-046
-title: "Vamana Live Insert Lock Ordering (ecdiskann)"
-status: PROPOSED
-impact: Affects FR-016 (analog for ecdiskann), ADR-026, ADR-034
+title: "Vamana Live Insert Lock Ordering (ec_diskann)"
+status: ACCEPTED
+impact: Affects FR-016 (analog for ec_diskann), ADR-026, ADR-034, ADR-045
 date: 2026-04-18
+accepted: 2026-04-19
 ---
 # ADR-046: Vamana Live Insert Lock Ordering
 
@@ -118,6 +119,56 @@ In short: traverse read-only, append under one data-page lock,
 release, sort backlink targets by physical page, run α-prune per
 page under one page exclusive lock each, retry stale targets
 through a fresh read-only plan, metadata last.
+
+### Frozen implementation rules (2026-04-19 review)
+
+These six rules freeze the implementation answers so Phase 7 can
+proceed without re-opening the ADR:
+
+1. **V0 insert writes only hot graph pages plus metadata.** There is
+   no index-side cold rerank payload chain. `rerank_tid` remains
+   `INVALID` and `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD` is not set by
+   insert. Exact rerank is served from the heap `ecvector` row per
+   ADR-044. A future ADR-044 C1 reopen is the only path that adds
+   insert-time cold writes.
+
+2. **Overflow heaptid chain growth follows the same ordered rule.**
+   When an incoming row is a duplicate-vector bind to an existing
+   node:
+   - If the node absorbs the new heap TID in place, it is an ordinary
+     step-5 ordered rewrite of that tuple's page.
+   - If the chain must grow, step 2 appends the fresh overflow tuple
+     under one isolated page `EXCLUSIVE` lock and releases it, then
+     step 5 patches the head / predecessor tuple on a later ordered
+     page pass. Append-like allocation first, ordered rewrites second,
+     metadata last.
+
+3. **Write-window scoring is page-local.** `RobustPrune` under the
+   target page's `EXCLUSIVE` lock consumes only inputs materialized
+   during the read-only planning pass or carried inline on the target
+   tuple itself (ADR-045 Decision 3). Fetching remote candidate
+   payloads while holding a data-page `EXCLUSIVE` lock is forbidden.
+
+4. **Stale-target retry cap.** Reuse the HNSW insert-path name:
+   `MAX_BACKLINK_REPLAN_PASSES = 3` total ordered write passes per
+   insert. On exceed, log loudly and abandon remaining targets for
+   a later insert. Do not invent a Vamana-specific cap until
+   measurements demand one.
+
+5. **Insert does not own `needs_medoid_refresh`.** Live insert owns
+   exactly: append or duplicate-bind, backlink repair, and
+   `inserted_since_rebuild += 1` for true new-node inserts. The
+   `needs_medoid_refresh` flag is monotonic and written only by
+   vacuum (ADR-047) or a future explicit medoid-refresh maintenance
+   path. This prevents two independent writers racing on the same
+   metadata decision bit.
+
+6. **Insert and vacuum run concurrently.** `ec_diskann` insert and
+   vacuum do not serialize through a global AM lock. They tolerate
+   each other's page-local drift through bounded stale-target retry
+   between ordered write passes. Stale detection compares the
+   reopened tuple contents against the read-only plan; no generation
+   counter is required.
 
 ## Consequences
 
