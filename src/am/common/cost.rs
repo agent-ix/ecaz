@@ -1,8 +1,8 @@
 use pgrx::pg_sys;
 
-use crate::am::tqhnsw::{options, page, shared};
+use crate::am::ec_hnsw::{options, page, shared};
 
-// Ordered tqhnsw scoring walks LUT-backed quantized codes, not full raw-f32
+// Ordered ec_hnsw scoring walks LUT-backed quantized codes, not full raw-f32
 // arithmetic at every candidate. Charging the planner the full raw dimension
 // count overstates index-side CPU enough to flip the real 10k / 1536-d / ef=200
 // probe to Seq Scan + Sort even though the forced index path is still far
@@ -167,7 +167,7 @@ pub(crate) fn estimate_planner_cost(
         // entry neighborhood) plus ef_search candidate pages at the bottom
         // layer. The earlier `tree_height * m + ef_search * 2 * m` formula
         // wildly overcharged by multiplying ef_search by m, which kept
-        // tqhnsw costlier than a seqscan on every realistic table size.
+        // ec_hnsw costlier than a seqscan on every realistic table size.
         let graph_pages = tree_height + ef_search;
         let graph_cost = graph_pages * constants.random_page_cost;
         let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;
@@ -175,7 +175,7 @@ pub(crate) fn estimate_planner_cost(
         let linear_cost = linear_pages * constants.seq_page_cost;
         // Scale per-tuple CPU work by the fraction of pages the graph phase
         // did NOT cover. Charging the full tuple_estimate sweep here would
-        // double-count the graph traversal and make tqhnsw always look
+        // double-count the graph traversal and make ec_hnsw always look
         // costlier than a seqscan, even when the graph covers the whole
         // index (linear_pages == 0).
         let linear_fraction = if inputs.index_pages > 0.0 {
@@ -198,7 +198,7 @@ pub(crate) fn estimate_planner_cost(
     }
 }
 
-pub(crate) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
+pub(crate) unsafe extern "C-unwind" fn ec_hnsw_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
     _loop_count: f64,
@@ -307,7 +307,7 @@ mod tests {
 
         assert!(
             index_cost.total_cost < seqscan_cost,
-            "large-table planner scaffolding should model tqhnsw as cheaper than seqscan once ADR-011 is retired"
+            "large-table planner scaffolding should model ec_hnsw as cheaper than seqscan once ADR-011 is retired"
         );
     }
 
@@ -400,7 +400,7 @@ mod tests {
 
         // Observed live real-10k planner crossover on 2026-04-11:
         // the seqscan+sort alternative for LIMIT 10 costs ~1526.10. The
-        // tqhnsw startup cost needs to stay below that boundary or the
+        // ec_hnsw startup cost needs to stay below that boundary or the
         // planner abandons the index even though the forced index path is
         // materially faster than the seqscan fallback.
         assert!(

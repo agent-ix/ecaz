@@ -131,6 +131,6 @@ CREATE OPERATOR <#> (
 );
 
 CREATE OPERATOR CLASS ecvector_ip_ops
-DEFAULT FOR TYPE ecvector USING tqhnsw AS
+DEFAULT FOR TYPE ecvector USING ec_hnsw AS
     OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);

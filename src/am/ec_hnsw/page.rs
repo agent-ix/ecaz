@@ -1,5 +1,5 @@
 //! Tqhnsw-specific page layout: metadata page, tuple codecs, and the
-//! tqhnsw-typed convenience methods that extend the cross-AM
+//! ec_hnsw-typed convenience methods that extend the cross-AM
 //! [`crate::storage::page::DataPage`] / [`DataPageChain`].
 
 use std::mem::size_of;
@@ -9,7 +9,7 @@ use crate::storage::page::{
 };
 
 // Re-export the cross-AM page primitives so the crate-level `am::*` surface
-// can stay stable while callers move to the new `am/tqhnsw` + `storage`
+// can stay stable while callers move to the new `am/ec_hnsw` + `storage`
 // layout.
 pub use crate::storage::page::{
     raw_tuple_storage_bytes, DataPage, DataPageChain, ItemPointer, FIRST_DATA_BLOCK_NUMBER,

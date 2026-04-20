@@ -45,7 +45,7 @@ and vacuum for both formats.
 
 ### Insert parity
 
-- [ ] **Implement `tqhnsw_aminsert` for PqFastScan.** Re-encode the new
+- [ ] **Implement `ec_hnsw_aminsert` for PqFastScan.** Re-encode the new
   vector into the existing learned subvector codebooks, emit the hot
   search code, the optional binary sidecar, and the cold rerank payload.
   Follow ADR-026 lock ordering (layer-0 backlink lock before upper-layer
@@ -58,9 +58,9 @@ and vacuum for both formats.
 
 ### Vacuum parity
 
-- [ ] **Implement `tqhnsw_ambulkdelete` for PqFastScan.** Scan hot and
+- [ ] **Implement `ec_hnsw_ambulkdelete` for PqFastScan.** Scan hot and
   cold data pages, mark dead tuples, repair neighbor arrays per ADR-027.
-- [ ] **Implement `tqhnsw_amvacuumcleanup`** to finalize page compaction
+- [ ] **Implement `ec_hnsw_amvacuumcleanup`** to finalize page compaction
   for both hot and cold payload pages.
 - [ ] **Vacuum test.** Build a PqFastScan index, delete 10% of rows,
   VACUUM, confirm recall and validate page counts.

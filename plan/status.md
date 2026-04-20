@@ -67,7 +67,7 @@ Scan runtime rollup: 72%
 | --- | --- | --- | ---: | --- |
 | Current insert correctness | Shape validation, metadata setup, duplicate handling, tail-page append/reuse | Strong | 92% | Live insert shape, duplicate handling, append/reuse, metadata bookkeeping, and retry-aware backlink mutation are stable on `main` |
 | Graph-aware insert | Greedy descent, neighbor selection, backlink repair | Done | 100% | Search, forward links, backlinks, overflow pruning, and bounded stale-snapshot retry hardening are merged |
-| Insert drift accounting | Inserted-since-rebuild tracking and drift-aware measurement | Done | 100% | `tqhnsw_index_admin_snapshot(regclass)` now exposes live-node count, inserted-since-rebuild, and drift fraction |
+| Insert drift accounting | Inserted-since-rebuild tracking and drift-aware measurement | Done | 100% | `ec_hnsw_index_admin_snapshot(regclass)` now exposes live-node count, inserted-since-rebuild, and drift fraction |
 | Insert decontention follow-up | Metadata, tail-page, and backlink hotspot reduction | Planned | 10% | Explicitly tracked in `plan/tasks/13-insert-throughput.md`; ADR-026 ordering remains the safety baseline |
 
 Insert path rollup: 88%

@@ -54,13 +54,13 @@ class SubsetProfile:
 
 
 PROFILES: dict[str, SubsetProfile] = {
-    "tqhnsw_real_50k": SubsetProfile(
-        prefix="tqhnsw_real_50k",
+    "ec_hnsw_real_50k": SubsetProfile(
+        prefix="ec_hnsw_real_50k",
         corpus_rows=50_000,
         query_rows=1_000,
     ),
-    "tqhnsw_real_10k": SubsetProfile(
-        prefix="tqhnsw_real_10k",
+    "ec_hnsw_real_10k": SubsetProfile(
+        prefix="ec_hnsw_real_10k",
         corpus_rows=10_000,
         query_rows=200,
     ),
@@ -69,8 +69,8 @@ PROFILES: dict[str, SubsetProfile] = {
     # separate query split, so the anchor profile carves the last 10k rows out
     # of the canonical sorted-id ordering as the query set and leaves the
     # remaining 990k rows as the corpus.
-    "tqhnsw_real_ann_benchmarks_anchor": SubsetProfile(
-        prefix="tqhnsw_real_ann_benchmarks_anchor",
+    "ec_hnsw_real_ann_benchmarks_anchor": SubsetProfile(
+        prefix="ec_hnsw_real_ann_benchmarks_anchor",
         corpus_rows=990_000,
         query_rows=10_000,
     ),

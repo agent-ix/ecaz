@@ -8,18 +8,18 @@ BEGIN
       JOIN pg_namespace AS n
         ON n.oid = p.pronamespace
      WHERE n.nspname = 'tests'
-       AND p.proname = 'tqhnsw_debug_scan_result_count'
+       AND p.proname = 'ec_hnsw_debug_scan_result_count'
      LIMIT 1;
 
     IF module_path IS NULL THEN
         RAISE EXCEPTION 'could not resolve tqvector module path from existing tests schema wrappers';
     END IF;
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_profile_limited"(oid, real[], integer)';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_scan_profile_limited"(oid, real[], integer)';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_scan_profile_limited"(
+        CREATE FUNCTION tests."ec_hnsw_debug_scan_profile_limited"(
             index_oid oid,
             query real[],
             limit_count integer
@@ -50,16 +50,16 @@ BEGIN
             total_emitted_elements integer
         )
         LANGUAGE c STRICT
-        AS %L, 'tqhnsw_debug_scan_profile_limited_wrapper'
+        AS %L, 'ec_hnsw_debug_scan_profile_limited_wrapper'
         $fmt$,
         module_path
     );
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_hot_path_profile"(oid, real[])';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_scan_hot_path_profile"(oid, real[])';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_scan_hot_path_profile"(
+        CREATE FUNCTION tests."ec_hnsw_debug_scan_hot_path_profile"(
             index_oid oid,
             query real[]
         ) RETURNS TABLE (
@@ -95,16 +95,16 @@ BEGIN
             grouped_traversal_budgeted_exact_candidates integer
         )
         LANGUAGE c STRICT
-        AS %L, 'tqhnsw_debug_scan_hot_path_profile_wrapper'
+        AS %L, 'ec_hnsw_debug_scan_hot_path_profile_wrapper'
         $fmt$,
         module_path
     );
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_scan_heap_fetch_profile"(oid, real[], integer, integer)';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_scan_heap_fetch_profile"(oid, real[], integer, integer)';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_scan_heap_fetch_profile"(
+        CREATE FUNCTION tests."ec_hnsw_debug_scan_heap_fetch_profile"(
             index_oid oid,
             query real[],
             limit_count integer,
@@ -120,17 +120,17 @@ BEGIN
             projected_count integer
         )
         LANGUAGE c STRICT
-        AS %L, 'tqhnsw_debug_scan_heap_fetch_profile_wrapper'
+        AS %L, 'ec_hnsw_debug_scan_heap_fetch_profile_wrapper'
         $fmt$,
         module_path
     );
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_grouped_rerank_profile"(oid, real[])';
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_grouped_rerank_profile"(oid, real[], integer)';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_grouped_rerank_profile"(oid, real[])';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_grouped_rerank_profile"(oid, real[], integer)';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_grouped_rerank_profile"(
+        CREATE FUNCTION tests."ec_hnsw_debug_grouped_rerank_profile"(
             index_oid oid,
             query real[],
             limit_count integer
@@ -150,28 +150,28 @@ BEGIN
             grouped_rerank_heap_dot_elapsed_us bigint
         )
         LANGUAGE c STRICT
-        AS %L, 'tqhnsw_debug_grouped_rerank_profile_wrapper'
+        AS %L, 'ec_hnsw_debug_grouped_rerank_profile_wrapper'
         $fmt$,
         module_path
     );
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_pack_f32_bytea"(real[])';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_pack_f32_bytea"(real[])';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_pack_f32_bytea"(real[])
+        CREATE FUNCTION tests."ec_hnsw_debug_pack_f32_bytea"(real[])
         RETURNS bytea
         LANGUAGE c STRICT
-        AS %L, 'tqhnsw_debug_pack_f32_bytea_wrapper'
+        AS %L, 'ec_hnsw_debug_pack_f32_bytea_wrapper'
         $fmt$,
         module_path
     );
 
-    EXECUTE 'DROP FUNCTION IF EXISTS tests."tqhnsw_debug_adr030_runtime_settings"()';
+    EXECUTE 'DROP FUNCTION IF EXISTS tests."ec_hnsw_debug_adr030_runtime_settings"()';
 
     EXECUTE format(
         $fmt$
-        CREATE FUNCTION tests."tqhnsw_debug_adr030_runtime_settings"()
+        CREATE FUNCTION tests."ec_hnsw_debug_adr030_runtime_settings"()
         RETURNS TABLE (
             grouped_build_enabled boolean,
             grouped_scan_enabled boolean,
@@ -185,7 +185,7 @@ BEGIN
             grouped_exact_traversal_limit text
         )
         LANGUAGE c
-        AS %L, 'tqhnsw_debug_adr030_runtime_settings_wrapper'
+        AS %L, 'ec_hnsw_debug_adr030_runtime_settings_wrapper'
         $fmt$,
         module_path
     );

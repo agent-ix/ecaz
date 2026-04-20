@@ -27,8 +27,8 @@ The extension SHALL be installable via standard PostgreSQL extension management.
 3. **Operators**:
    - `<#>` (tqvector, tqvector) → float4
    - `<#>` (tqvector, float4[]) → float4
-4. **Access Method**: `tqhnsw`
-5. **Operator Class**: `tqvector_ip_ops` DEFAULT FOR TYPE tqvector USING tqhnsw
+4. **Access Method**: `ec_hnsw`
+5. **Operator Class**: `tqvector_ip_ops` DEFAULT FOR TYPE tqvector USING ec_hnsw
 
 ### Implementation
 

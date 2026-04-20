@@ -59,7 +59,7 @@ Replace disconnected-append insert with graph-connected insert using shared trav
 - [x] **Neighbor list shrinking.** Full target slices now use simple score-ordered top-`M` /
   top-`2M` pruning for the selected layer.
 - [x] **Drift statistics.** `inserted_since_rebuild` now persists in metadata and is exposed
-  through `tqhnsw_index_admin_snapshot(regclass)` alongside the derived drift fraction.
+  through `ec_hnsw_index_admin_snapshot(regclass)` alongside the derived drift fraction.
 - [x] **Lock ordering protocol.** Document and use ascending physical data-page order for backlink
   mutation, with metadata updates deferred until after data-page writes.
 - [x] **Concurrency hardening.** Stale full-slice backlink plans now re-enter a bounded read-only

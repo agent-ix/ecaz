@@ -12,7 +12,7 @@ traces:
 # FR-008: HNSW Index Access Method — Build
 ## Requirement
 
-The extension SHALL implement the `ambuild`, `ambuildempty`, and `amoptions` callbacks for the `tqhnsw` access method.
+The extension SHALL implement the `ambuild`, `ambuildempty`, and `amoptions` callbacks for the `ec_hnsw` access method.
 
 All build behavior SHALL be relation-local. On partitioned tables, a partition index build SHALL touch only the heap rows and index pages of that partition.
 
@@ -28,7 +28,7 @@ The `amoptions` callback SHALL parse WITH clause parameters using `pg_sys::build
 
 Example:
 ```sql
-CREATE INDEX ON memories USING tqhnsw (tq_code) WITH (m = 8, ef_construction = 64);
+CREATE INDEX ON memories USING ec_hnsw (tq_code) WITH (m = 8, ef_construction = 64);
 ```
 
 If `build_source_column` is provided, it SHALL name a `float4[]` column in the heap relation. The index AM uses that column during `ambuild` only; the persisted index still stores only `tqvector` codes.
@@ -37,14 +37,14 @@ If `build_source_column` is provided, it SHALL name a `float4[]` column in the h
 
 ### `ambuild` — Bulk Index Build
 
-Called by `CREATE INDEX ... USING tqhnsw`. Uses the `hnsw_rs` crate for graph construction, then serializes the graph to Postgres pages.
+Called by `CREATE INDEX ... USING ec_hnsw`. Uses the `hnsw_rs` crate for graph construction, then serializes the graph to Postgres pages.
 
 #### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     participant PG as PostgreSQL
-    participant AM as tqhnsw ambuild
+    participant AM as ec_hnsw ambuild
     participant HNSW as hnsw_rs::Hnsw
     participant Pages as Index Pages
 
@@ -197,7 +197,7 @@ Called for `CREATE INDEX` before any data exists:
 ## Acceptance Criteria
 
 ### FR-008-AC-1: Bulk build populates graph
-After `CREATE INDEX ... USING tqhnsw` on a table with 1000 rows, the index SHALL contain 1000 element tuples.
+After `CREATE INDEX ... USING ec_hnsw` on a table with 1000 rows, the index SHALL contain 1000 element tuples.
 
 ### FR-008-AC-2: Crash safety
 If the server crashes during ambuild, the partially-built index SHALL be automatically cleaned up on recovery (standard Postgres behavior for unfinished index builds).

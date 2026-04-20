@@ -15,14 +15,14 @@ traces:
 
 ## Requirement
 
-The extension SHALL implement the scan callbacks for the `tqhnsw` access method: `ambeginscan`, `amrescan`, `amgettuple`, `amendscan`. All scan operations work directly on Postgres buffer pages — no `hnsw_rs` involvement.
+The extension SHALL implement the scan callbacks for the `ec_hnsw` access method: `ambeginscan`, `amrescan`, `amgettuple`, `amendscan`. All scan operations work directly on Postgres buffer pages — no `hnsw_rs` involvement.
 
 On partitioned tables, a scan of a partition-local index SHALL traverse only that partition's index relation.
 
 Implementation stages:
 - Bootstrap stage: scan lifecycle, query validation, and a forward linear non-empty scan MAY exist as an intermediate implementation state for validating page decoding and tuple production.
 - Target stage: planner-visible ordered search requires greedy descent, layer-0 traversal, `ef_search`, and distance-ordered result emission.
-- Until the target stage is credible, the planner MAY be deliberately steered away from `tqhnsw` scans via `amcostestimate`.
+- Until the target stage is credible, the planner MAY be deliberately steered away from `ec_hnsw` scans via `amcostestimate`.
 - Current planner groundwork MAY resolve scan tuning (`ef_search`, source-of-truth, planner gate)
   before ordered execution is enabled, as long as the access method still returns prohibitive
   planner costs per ADR-011.
@@ -52,7 +52,7 @@ Execute the HNSW search on Postgres buffer pages:
 sequenceDiagram
     participant Client as SQL Query
     participant PG as PostgreSQL Planner/Executor
-    participant Scan as tqhnsw scan callbacks
+    participant Scan as ec_hnsw scan callbacks
     participant Pages as Index Pages
     participant Quant as ProdQuantizer
 
@@ -169,7 +169,7 @@ Inform the planner of expected costs:
 - This enables the planner to choose between index scan and sequential scan
 
 Current staged behavior:
-- Before ordered traversal is complete, the implementation MAY return deliberately prohibitive costs so the planner does not select `tqhnsw`.
+- Before ordered traversal is complete, the implementation MAY return deliberately prohibitive costs so the planner does not select `ec_hnsw`.
 - This temporary planner gate is documented in `ADR-011`.
 
 ### Search-breadth control surface
@@ -177,13 +177,13 @@ Current staged behavior:
 The extension SHALL expose both:
 
 - an index reloption `ef_search` as the per-index default
-- a session GUC `tqhnsw.ef_search` as the planner/runtime override surface
+- a session GUC `ec_hnsw.ef_search` as the planner/runtime override surface
 
 The GUC is registered as:
 
 | Property | Value |
 |---|---|
-| Name | `tqhnsw.ef_search` |
+| Name | `ec_hnsw.ef_search` |
 | Type | integer |
 | Default | 40 |
 | Range | 1–1000 |
@@ -193,7 +193,7 @@ Registration via pgrx `GucRegistry::define_int_guc()` in `_PG_init`.
 
 Precedence rules:
 
-1. When `tqhnsw.ef_search` is set to a non-default value in the current session, it SHALL override
+1. When `ec_hnsw.ef_search` is set to a non-default value in the current session, it SHALL override
    the index reloption for planner/runtime tuning.
 2. When the session GUC remains at its default value (`40`), the index reloption SHALL remain
    authoritative. This preserves per-index defaults without requiring a separate "unset" sentinel.
@@ -202,7 +202,7 @@ Precedence rules:
 
 Usage:
 ```sql
-SET tqhnsw.ef_search = 200;  -- higher recall, more distance calculations
+SET ec_hnsw.ef_search = 200;  -- higher recall, more distance calculations
 SELECT * FROM memories ORDER BY tq_code <#> $query LIMIT 10;
 ```
 
@@ -226,13 +226,13 @@ All page reads during scan use `ReadBuffer` + `LockBuffer(BUFFER_LOCK_SHARE)`. P
 Results SHALL be ordered by ascending negative inner product (highest similarity first).
 
 ### FR-009-AC-3: Index scan used
-EXPLAIN SHALL confirm an Index Scan using `tqhnsw`, not a sequential scan, when the index exists and the bootstrap-stage planner cost override has been removed.
+EXPLAIN SHALL confirm an Index Scan using `ec_hnsw`, not a sequential scan, when the index exists and the bootstrap-stage planner cost override has been removed.
 
 ### FR-009-AC-4: ef_search affects recall
 Higher ef_search values SHALL produce higher recall at the cost of increased latency.
 
 ### FR-009-AC-5: GUC is session-settable
-`SET tqhnsw.ef_search = 200` SHALL succeed and affect subsequent queries in the same session.
+`SET ec_hnsw.ef_search = 200` SHALL succeed and affect subsequent queries in the same session.
 
 ### FR-009-AC-6: No excessive buffer pins
 During a scan of a 50K-row index, the maximum number of simultaneously pinned buffers SHALL be bounded (< 10).

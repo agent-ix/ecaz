@@ -61,9 +61,9 @@ The following fields are new in PG18's `IndexAmRoutine` struct. pgrx bindings SH
 ```rust
 #[cfg(feature = "pg18")]
 {
-    amroutine.amgettreeheight = Some(tqhnsw_amgettreeheight);
-    amroutine.amtranslatestrategy = Some(tqhnsw_amtranslatestrategy);
-    amroutine.amtranslatecmptype = Some(tqhnsw_amtranslatecmptype);
+    amroutine.amgettreeheight = Some(ec_hnsw_amgettreeheight);
+    amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+    amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
     amroutine.amconsistentequality = false;
     amroutine.amconsistentordering = true;
 }

@@ -9,7 +9,7 @@ date: 2026-04-11
 
 ## Context
 
-A5 extends `tqhnsw` live insert from disconnected append to graph mutation. Once insert starts
+A5 extends `ec_hnsw` live insert from disconnected append to graph mutation. Once insert starts
 rewriting existing neighbor tuples, a single insert can touch multiple data pages in addition to
 the metadata page. Without an explicit lock protocol, concurrent inserts could deadlock by taking
 page locks in different orders or by mixing metadata and data-page write locks.

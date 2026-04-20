@@ -256,7 +256,7 @@ All items are serial because each depends on the previous.
   1. `amgettuple` consumes the graph/search-owned bootstrap traversal path as the primary ordered
      runtime source.
   2. The linear path remains the explicit fallback shell rather than the default execution lane.
-  3. `tqhnsw.ef_search` runtime wiring stays authoritative for bootstrap frontier sizing.
+  3. `ec_hnsw.ef_search` runtime wiring stays authoritative for bootstrap frontier sizing.
   4. Duplicate heap TID handling for coalesced element tuples remains correct under graph-first
      execution.
 - **Exit criteria:** `SET enable_seqscan = off; SELECT ... ORDER BY col <#> $query LIMIT 10` returns distance-ordered results via index scan. ADR-011 cost gate remains active.
@@ -500,7 +500,7 @@ Entrance criteria:
 - D2 wiring: A4 recall gate passed, graph search agent no longer modifying `am/scan.rs`
 
 Exit criteria:
-- Planner naturally selects tqhnsw index on large tables without `enable_seqscan = off`.
+- Planner naturally selects ec_hnsw index on large tables without `enable_seqscan = off`.
 
 ### Module G: Benchmark Infrastructure — COMPLETE
 

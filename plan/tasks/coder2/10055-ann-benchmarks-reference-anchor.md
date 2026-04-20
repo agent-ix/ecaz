@@ -52,14 +52,14 @@ Extend `scripts/qdrant_dbpedia_to_tsv.py` with a third profile that covers
 the anchor's row count:
 
 - If the anchor is against the full 1M Qdrant corpus at 10k queries, add a
-  `tqhnsw_real_ann_benchmarks_anchor` profile with the published row count
+  `ec_hnsw_real_ann_benchmarks_anchor` profile with the published row count
   and query count. If the anchor is against ann-benchmarks' 1000k/10k
   split, match that.
 - Reuse the same canonical selection rule (`_id` ascending lexicographic,
   global sorted row index as the emitted TSV id) so the anchor output is
   reproducible from the same parquet.
 - The profile must be additive — do not change existing
-  `tqhnsw_real_50k` / `tqhnsw_real_10k` behavior.
+  `ec_hnsw_real_50k` / `ec_hnsw_real_10k` behavior.
 
 The loader (`scripts/load_real_corpus.py`) already handles any prefix that
 matches the canonical `<prefix>_{corpus,queries}.tsv` layout. No loader
@@ -67,14 +67,14 @@ changes should be needed.
 
 ### Step 3 — add the ignored probe
 
-Add `tests.tqhnsw_graph_scan_recall_ann_benchmarks_reference(
+Add `tests.ec_hnsw_graph_scan_recall_ann_benchmarks_reference(
     corpus_table text,
     query_table text,
     index_name text,
     m integer,
     ef_search integer
 )` to `src/lib.rs` in the same `#[cfg(any(test, feature = "pg_test"))]`
-block as `tqhnsw_graph_scan_recall_external_summary`.
+block as `ec_hnsw_graph_scan_recall_external_summary`.
 
 Returns one row with columns:
 
@@ -132,8 +132,8 @@ they are measuring against the same staged subset.
   primary build on this branch.
 - Integrating the anchor into any CI workflow.
 - Adding the anchor's row counts as a supported gate profile. It is an
-  oracle fixture; the gate fixtures stay `tqhnsw_real_50k` and
-  `tqhnsw_real_10k`.
+  oracle fixture; the gate fixtures stay `ec_hnsw_real_50k` and
+  `ec_hnsw_real_10k`.
 
 ## Validate
 
@@ -147,7 +147,7 @@ and capture the output in the review packet:
 
 ```bash
 cargo test --features 'pg17 pg_test' --no-default-features \
-    tqhnsw_graph_scan_recall_ann_benchmarks_reference -- --ignored --nocapture
+    ec_hnsw_graph_scan_recall_ann_benchmarks_reference -- --ignored --nocapture
 ```
 
 Branch from current upstream main. Push branch for review.

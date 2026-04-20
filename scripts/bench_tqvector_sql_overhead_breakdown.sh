@@ -23,7 +23,7 @@ Options:
                   - embedding tqvector
   --query-table   Query table to read. Must expose:
                   - source real[]
-  --index-name    Exact tqhnsw index name expected for every measured cell.
+  --index-name    Exact ec_hnsw index name expected for every measured cell.
   --bits          Quantizer bits for encode_to_tqvector timing. Default: 4.
   --seed          Quantizer seed for encode_to_tqvector timing. Default: 42.
   --ef-search     Comma-separated ef_search list. Default: 40,64,128,320.
@@ -52,9 +52,9 @@ Options:
   -h, --help      Show this message and exit.
 
 Notes:
-  - Requires tests.tqhnsw_debug_scan_profile_limited(...) and
-    tests.tqhnsw_debug_scan_hot_path_profile(...) and
-    tests.tqhnsw_debug_scan_heap_fetch_profile(...). On the scratch cluster,
+  - Requires tests.ec_hnsw_debug_scan_profile_limited(...) and
+    tests.ec_hnsw_debug_scan_hot_path_profile(...) and
+    tests.ec_hnsw_debug_scan_heap_fetch_profile(...). On the scratch cluster,
     refresh them with scripts/refresh_adr030_scratch_debug_helpers.sh after
     a new pg_test install.
 USAGE
@@ -159,7 +159,7 @@ verify_expected_index_plan() {
 
   local plan_text
   plan_text="$("$PSQL_BIN" -X -A -t -q <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_literal}'::real[]
@@ -171,7 +171,7 @@ SQL
     echo "planner verification failed for ${expected_index} at ef_search=${ef}" >&2
     echo "expected the measured query to use ${expected_index}, but it did not." >&2
     echo "aborting before timing so this run does not record Seq Scan + Sort" >&2
-    echo "or the wrong tqhnsw index for the requested corpus." >&2
+    echo "or the wrong ec_hnsw index for the requested corpus." >&2
     echo >&2
     echo "Representative EXPLAIN plan:" >&2
     echo "${plan_text}" >&2
@@ -254,13 +254,13 @@ if [[ "$exists" != "t" ]]; then
 fi
 
 require_regprocedure \
-  "tests.tqhnsw_debug_scan_profile_limited(oid,real[],integer)" \
+  "tests.ec_hnsw_debug_scan_profile_limited(oid,real[],integer)" \
   "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
 require_regprocedure \
-  "tests.tqhnsw_debug_scan_hot_path_profile(oid,real[])" \
+  "tests.ec_hnsw_debug_scan_hot_path_profile(oid,real[])" \
   "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
 require_regprocedure \
-  "tests.tqhnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)" \
+  "tests.ec_hnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)" \
   "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
 
 echo "=== tqvector SQL overhead breakdown ==="
@@ -343,7 +343,7 @@ for ef in "${ef_list[@]}"; do
         while IFS= read -r query_line; do
           [[ -z "$query_line" ]] && continue
           cat >> "$sql_cell_file" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${RESULT_LIMIT};
@@ -357,7 +357,7 @@ SQL
       [[ -z "$query_line" ]] && continue
       if [[ "$TIMING_MODE" == "explain" ]]; then
         cat >> "$sql_cell_file" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -365,7 +365,7 @@ LIMIT ${RESULT_LIMIT};
 SQL
       else
         cat >> "$sql_cell_file" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 WITH started AS (
   SELECT clock_timestamp() AS t0
 ),
@@ -390,7 +390,7 @@ SQL
         while IFS= read -r query_line; do
           [[ -z "$query_line" ]] && continue
           "$PSQL_BIN" -X -A -t -q > /dev/null <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${RESULT_LIMIT};
@@ -403,7 +403,7 @@ SQL
       [[ -z "$query_line" ]] && continue
       if [[ "$TIMING_MODE" == "explain" ]]; then
         "$PSQL_BIN" -X -A -t -q <<SQL >> "$sql_results_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${CORPUS_TABLE}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -411,7 +411,7 @@ LIMIT ${RESULT_LIMIT};
 SQL
       else
         "$PSQL_BIN" -X -A -t -q <<SQL >> "$sql_results_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 WITH started AS (
   SELECT clock_timestamp() AS t0
 ),
@@ -448,7 +448,7 @@ SQL
   done < "$queries_tsv"
 
   "$PSQL_BIN" -X -A -F $'\t' -t -q <<SQL > "$profile_rows_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT
   p.rescan_elapsed_us,
   p.emit_elapsed_us,
@@ -459,7 +459,7 @@ FROM (
   SELECT source FROM ${QUERY_TABLE} ORDER BY id
   LIMIT ${query_count}
 ) AS q
-CROSS JOIN LATERAL tests.tqhnsw_debug_scan_profile_limited(
+CROSS JOIN LATERAL tests.ec_hnsw_debug_scan_profile_limited(
   '${INDEX_NAME}'::regclass::oid,
   q.source,
   ${RESULT_LIMIT}
@@ -467,7 +467,7 @@ CROSS JOIN LATERAL tests.tqhnsw_debug_scan_profile_limited(
 SQL
 
   "$PSQL_BIN" -X -A -F $'\t' -t -q <<SQL > "$hot_path_rows_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT
   p.rescan_amrescan_total_elapsed_us,
   p.rescan_query_decode_elapsed_us,
@@ -479,14 +479,14 @@ FROM (
   SELECT source FROM ${QUERY_TABLE} ORDER BY id
   LIMIT ${query_count}
 ) AS q
-CROSS JOIN LATERAL tests.tqhnsw_debug_scan_hot_path_profile(
+CROSS JOIN LATERAL tests.ec_hnsw_debug_scan_hot_path_profile(
   '${INDEX_NAME}'::regclass::oid,
   q.source
 ) AS p;
 SQL
 
   "$PSQL_BIN" -X -A -F $'\t' -t -q <<SQL > "$heap_fetch_rows_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT
   p.rescan_elapsed_us,
   p.emit_elapsed_us,
@@ -500,7 +500,7 @@ FROM (
   SELECT source FROM ${QUERY_TABLE} ORDER BY id
   LIMIT ${query_count}
 ) AS q
-CROSS JOIN LATERAL tests.tqhnsw_debug_scan_heap_fetch_profile(
+CROSS JOIN LATERAL tests.ec_hnsw_debug_scan_heap_fetch_profile(
   '${INDEX_NAME}'::regclass::oid,
   q.source,
   ${RESULT_LIMIT},

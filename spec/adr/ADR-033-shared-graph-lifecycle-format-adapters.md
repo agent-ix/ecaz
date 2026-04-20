@@ -77,9 +77,9 @@ differences without forking the whole insert or vacuum algorithm.
 
 Top-level AM entrypoints stay singular:
 
-- one `tqhnsw_aminsert`
-- one `tqhnsw_ambulkdelete`
-- one `tqhnsw_amvacuumcleanup`
+- one `ec_hnsw_aminsert`
+- one `ec_hnsw_ambulkdelete`
+- one `ec_hnsw_amvacuumcleanup`
 
 Those entrypoints dispatch early on the metadata-advertised storage format into
 format-specific strategy values. The surrounding algorithm remains shared and

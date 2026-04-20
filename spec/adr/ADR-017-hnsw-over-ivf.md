@@ -73,7 +73,7 @@ For deployments where WAL volume becomes a concern:
 1. `wal_compression = zstd` (PG15+) — compresses full-page WAL images
 2. Increase `checkpoint_timeout` — reduces full-page write frequency
 3. More hash partitions (32/64) — keeps per-partition indexes smaller
-4. Bulk load pattern: drop index → COPY → CREATE INDEX USING tqhnsw
+4. Bulk load pattern: drop index → COPY → CREATE INDEX USING ec_hnsw
 
 ## Consequences
 

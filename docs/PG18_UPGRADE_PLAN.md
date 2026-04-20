@@ -129,7 +129,7 @@ development but needs to be fixed for production use.
 
 ### Changes Required
 
-Implement a real cost model in `tqhnsw_amcostestimate`:
+Implement a real cost model in `ec_hnsw_amcostestimate`:
 
 ```rust
 // Estimated I/O for bootstrap phase:
@@ -161,10 +161,10 @@ New callback lets the planner cache the index structure height. For HNSW, return
 
 ```rust
 // routine.rs — add to IndexAmRoutine:
-amroutine.amgettreeheight = Some(tqhnsw_amgettreeheight);
+amroutine.amgettreeheight = Some(ec_hnsw_amgettreeheight);
 
 // Implementation:
-unsafe extern "C-unwind" fn tqhnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
+unsafe extern "C-unwind" fn ec_hnsw_amgettreeheight(rel: pg_sys::Relation) -> i32 {
     let metadata = shared::read_metadata_page(rel);
     metadata.max_level as i32
 }
@@ -193,7 +193,7 @@ GIN uses this architecture, which we can adapt:
 
 ```
 Leader:
-  1. CreateParallelContext("postgres", "_tqhnsw_parallel_build_main", nworkers)
+  1. CreateParallelContext("postgres", "_ec_hnsw_parallel_build_main", nworkers)
   2. Allocate shared memory: TqBuildShared + Sharedsort + WalUsage + BufferUsage
   3. InitializeParallelDSM → LaunchParallelWorkers
   4. Leader participates in parallel heap scan too
@@ -233,7 +233,7 @@ amroutine.amcanbuildparallel = true;
 
 // build.rs — new parallel infrastructure
 // - TqBuildShared struct (shared state)
-// - _tqhnsw_parallel_build_main (worker entry point)
+// - _ec_hnsw_parallel_build_main (worker entry point)
 // - Parallel heap scan via table_beginscan_parallel
 // - Sharedsort for coordinated tuple collection
 ```
@@ -246,7 +246,7 @@ amroutine.amcanbuildparallel = true;
 
 ### Current State
 
-`ambulkdelete` and `amvacuumcleanup` both call `tqhnsw_noop_vacuum_stats` which
+`ambulkdelete` and `amvacuumcleanup` both call `ec_hnsw_noop_vacuum_stats` which
 just counts tuples. Dead tuples are never removed from the index.
 
 ### Changes Required
@@ -290,10 +290,10 @@ This doesn't map to a standard comparison type, so:
 
 ```rust
 // routine.rs
-amroutine.amtranslatestrategy = Some(tqhnsw_amtranslatestrategy);
-amroutine.amtranslatecmptype = Some(tqhnsw_amtranslatecmptype);
+amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
 
-unsafe extern "C-unwind" fn tqhnsw_amtranslatestrategy(
+unsafe extern "C-unwind" fn ec_hnsw_amtranslatestrategy(
     strategy: pg_sys::StrategyNumber,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::CompareType {
@@ -303,7 +303,7 @@ unsafe extern "C-unwind" fn tqhnsw_amtranslatestrategy(
     }
 }
 
-unsafe extern "C-unwind" fn tqhnsw_amtranslatecmptype(
+unsafe extern "C-unwind" fn ec_hnsw_amtranslatecmptype(
     cmptype: pg_sys::CompareType,
     _opfamily: pg_sys::Oid,
 ) -> pg_sys::StrategyNumber {
@@ -330,7 +330,7 @@ amroutine.amconsistentordering = true;  // we do ORDER BY
 
 ```c
 RegisterExtensionExplainOption("tqvector", handler, GUCCheckBooleanExplainOption);
-explain_per_node_hook = tqhnsw_explain_hook;
+explain_per_node_hook = ec_hnsw_explain_hook;
 ```
 
 ### What to expose
@@ -372,7 +372,7 @@ Register a custom pgstat kind to track aggregate metrics across all queries:
 
 ```rust
 // In _PG_init:
-pgstat_register_kind(PGSTAT_KIND_EXPERIMENTAL, &tqhnsw_kind_info);
+pgstat_register_kind(PGSTAT_KIND_EXPERIMENTAL, &ec_hnsw_kind_info);
 ```
 
 ### What to track
@@ -493,7 +493,7 @@ Vary `effective_io_concurrency` from 1 to 32.
 ```sql
 -- Parallel build
 SET max_parallel_maintenance_workers = 4;
-CREATE INDEX CONCURRENTLY ON items USING tqhnsw (embedding);
+CREATE INDEX CONCURRENTLY ON items USING ec_hnsw (embedding);
 ```
 
 ### Key GUCs for tuning

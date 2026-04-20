@@ -144,13 +144,13 @@ pub(crate) fn quantize_embedding_to_code(
     Ok((dim, encoded.gamma, code_bytes))
 }
 
-fn tqhnsw_access_method_oid() -> pg_sys::Oid {
-    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'tqhnsw'")
+fn ec_hnsw_access_method_oid() -> pg_sys::Oid {
+    Spi::get_one::<pg_sys::Oid>("SELECT oid FROM pg_am WHERE amname = 'ec_hnsw'")
         .expect("SPI query should succeed")
-        .expect("tqhnsw access method should exist")
+        .expect("ec_hnsw access method should exist")
 }
 
-unsafe fn open_valid_tqhnsw_index(
+unsafe fn open_valid_ec_hnsw_index(
     index_oid: pg_sys::Oid,
     caller_name: &'static str,
 ) -> pg_sys::Relation {
@@ -162,12 +162,12 @@ unsafe fn open_valid_tqhnsw_index(
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
         pgrx::error!("{caller_name} requires an index relation");
     }
-    if rd_rel.relam != tqhnsw_access_method_oid() {
+    if rd_rel.relam != ec_hnsw_access_method_oid() {
         let relation_name = unsafe { std::ffi::CStr::from_ptr(rd_rel.relname.data.as_ptr()) }
             .to_string_lossy()
             .into_owned();
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-        pgrx::error!("{caller_name} requires a tqhnsw index, got relation \"{relation_name}\"");
+        pgrx::error!("{caller_name} requires a ec_hnsw index, got relation \"{relation_name}\"");
     }
     index_relation
 }
@@ -599,7 +599,7 @@ fn tqvector_recv(input: Internal) -> Vec<u8> {
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
-fn tqhnsw_index_admin_snapshot(
+fn ec_hnsw_index_admin_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
     'static,
@@ -616,7 +616,7 @@ fn tqhnsw_index_admin_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_admin_snapshot") };
+        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_index_admin_snapshot") };
     let snapshot = unsafe { am::index_admin_snapshot(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
@@ -636,7 +636,7 @@ fn tqhnsw_index_admin_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
-fn tqhnsw_index_cost_snapshot(
+fn ec_hnsw_index_cost_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
     'static,
@@ -669,7 +669,7 @@ fn tqhnsw_index_cost_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_index_cost_snapshot") };
+        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_index_cost_snapshot") };
     let snapshot = unsafe { am::index_cost_snapshot(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
@@ -704,7 +704,7 @@ fn tqhnsw_index_cost_snapshot(
 
 #[pg_extern(stable, strict)]
 #[allow(clippy::type_complexity)]
-fn tqhnsw_planner_integration_snapshot(
+fn ec_hnsw_planner_integration_snapshot(
     index_oid: pg_sys::Oid,
 ) -> TableIterator<
     'static,
@@ -725,7 +725,7 @@ fn tqhnsw_planner_integration_snapshot(
     ),
 > {
     let index_relation =
-        unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_planner_integration_snapshot") };
+        unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_planner_integration_snapshot") };
     let snapshot = unsafe { am::planner_integration_snapshot(index_relation) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
@@ -1146,7 +1146,7 @@ mod tests {
         ))
         .expect("seed insert should succeed");
         Spi::run(&format!(
-            "CREATE INDEX {name}_idx ON {name} USING tqhnsw (embedding ecvector_ip_ops)"
+            "CREATE INDEX {name}_idx ON {name} USING ec_hnsw (embedding ecvector_ip_ops)"
         ))
         .expect("index creation should succeed");
 
@@ -1652,7 +1652,7 @@ mod tests {
 
     fn create_recall_index(table_name: &str, index_name: &str, m: i32) -> pg_sys::Oid {
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION})"
         ))
         .expect("recall benchmark index creation should succeed");
@@ -1668,7 +1668,7 @@ mod tests {
         m: i32,
     ) -> pg_sys::Oid {
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (
                  m = {m},
                  ef_construction = {RECALL_EF_CONSTRUCTION},
@@ -1683,7 +1683,7 @@ mod tests {
     }
 
     fn recall_index_block_count(index_oid: pg_sys::Oid, caller_name: &'static str) -> i32 {
-        let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, caller_name) };
+        let index_relation = unsafe { open_valid_ec_hnsw_index(index_oid, caller_name) };
         let index_block_count = unsafe {
             i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
                 index_relation,
@@ -1853,7 +1853,7 @@ mod tests {
         ground_truth: &[Vec<usize>],
         ef_search: i32,
     ) -> f32 {
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let hits = queries
@@ -1948,10 +1948,10 @@ mod tests {
     #[should_panic(expected = "dimension mismatch")]
     fn test_ecvector_assignment_enforces_typmod() {
         Spi::run(
-            "CREATE TABLE tqhnsw_ecvector_typmod_assignment (id bigint, embedding ecvector(2))",
+            "CREATE TABLE ec_hnsw_ecvector_typmod_assignment (id bigint, embedding ecvector(2))",
         )
         .expect("table creation should succeed");
-        Spi::run("INSERT INTO tqhnsw_ecvector_typmod_assignment VALUES (1, '[1,2,3]'::ecvector)")
+        Spi::run("INSERT INTO ec_hnsw_ecvector_typmod_assignment VALUES (1, '[1,2,3]'::ecvector)")
             .expect("insert should fail");
     }
 
@@ -1964,10 +1964,10 @@ mod tests {
     #[pg_test]
     fn test_access_method_is_registered() {
         let amname =
-            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'tqhnsw'")
+            Spi::get_one::<String>("SELECT amname::text FROM pg_am WHERE amname = 'ec_hnsw'")
                 .expect("SPI query should succeed")
                 .expect("access method should exist");
-        assert_eq!(amname, "tqhnsw");
+        assert_eq!(amname, "ec_hnsw");
     }
 
     #[pg_test]
@@ -1982,40 +1982,40 @@ mod tests {
 
     #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
-        Spi::run("CREATE TABLE tqhnsw_empty_cost (id bigint primary key, embedding ecvector)")
+        Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_empty_cost_idx ON tqhnsw_empty_cost USING tqhnsw \
+            "CREATE INDEX ec_hnsw_empty_cost_idx ON ec_hnsw_empty_cost USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("empty-index creation should succeed");
 
         let modeled_startup = Spi::get_one::<f64>(
-            "SELECT modeled_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_empty_cost_idx'::regclass)",
+            "SELECT modeled_startup_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_empty_cost_idx'::regclass)",
         )
         .expect("snapshot query should succeed")
         .expect("modeled startup should be non-null");
         let modeled_total = Spi::get_one::<f64>(
-            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_empty_cost_idx'::regclass)",
+            "SELECT modeled_total_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_empty_cost_idx'::regclass)",
         )
         .expect("snapshot query should succeed")
         .expect("modeled total should be non-null");
         assert_eq!(
             modeled_startup,
             f64::MAX,
-            "empty tqhnsw index must keep the FR-020 gate active even after D2 activation"
+            "empty ec_hnsw index must keep the FR-020 gate active even after D2 activation"
         );
         assert_eq!(
             modeled_total,
             f64::MAX,
-            "empty tqhnsw index must keep the FR-020 gate active even after D2 activation"
+            "empty ec_hnsw index must keep the FR-020 gate active even after D2 activation"
         );
 
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_empty_cost \
+                     SELECT id FROM ec_hnsw_empty_cost \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 1",
                     None,
@@ -2036,32 +2036,32 @@ mod tests {
 
         assert!(
             !plan.contains("Index Scan") && !plan.contains("Index Only Scan"),
-            "planner must not pick an empty tqhnsw index even with D2 activation: {plan}"
+            "planner must not pick an empty ec_hnsw index even with D2 activation: {plan}"
         );
     }
 
     #[pg_test]
     fn test_fr020_ac2_planner_prefers_seqscan_for_small_tables() {
-        Spi::run("CREATE TABLE tqhnsw_small_seqscan (id bigint primary key, embedding ecvector)")
+        Spi::run("CREATE TABLE ec_hnsw_small_seqscan (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_small_seqscan \
+            "INSERT INTO ec_hnsw_small_seqscan \
              SELECT g, encode_to_ecvector(ARRAY[g::real, (g * 0.25)::real, (g * -0.5)::real, 1.0::real], 4, 42) \
              FROM generate_series(1, 50) AS g",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_small_seqscan_idx ON tqhnsw_small_seqscan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_small_seqscan_idx ON ec_hnsw_small_seqscan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("ANALYZE tqhnsw_small_seqscan").expect("analyze should succeed");
+        Spi::run("ANALYZE ec_hnsw_small_seqscan").expect("analyze should succeed");
 
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_small_seqscan \
+                     SELECT id FROM ec_hnsw_small_seqscan \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 1",
                     None,
@@ -2087,18 +2087,18 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_planner_chooses_index_scan_for_ordered_query() {
-        Spi::run("CREATE TABLE tqhnsw_scan_plan (id bigint primary key, embedding ecvector)")
+    fn test_ech_planner_chooses_index_scan_for_ordered_query() {
+        Spi::run("CREATE TABLE ec_hnsw_scan_plan (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_scan_plan VALUES
+            "INSERT INTO ec_hnsw_scan_plan VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_scan_plan_idx ON tqhnsw_scan_plan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scan_plan_idx ON ec_hnsw_scan_plan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -2108,7 +2108,7 @@ mod tests {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_scan_plan \
+                     SELECT id FROM ec_hnsw_scan_plan \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 1",
                     None,
@@ -2129,20 +2129,20 @@ mod tests {
 
         assert!(
             plan.contains("Index Scan") || plan.contains("Index Only Scan"),
-            "planner should select the tqhnsw index scan once FR-020 cost activation is live: {plan}"
+            "planner should select the ec_hnsw index scan once FR-020 cost activation is live: {plan}"
         );
     }
 
     #[pg_test]
     fn test_fr020_ac1_planner_chooses_index_scan_for_large_table() {
-        Spi::run("CREATE TABLE tqhnsw_ac1_large (id bigint primary key, embedding ecvector)")
+        Spi::run("CREATE TABLE ec_hnsw_ac1_large (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         // Build 10K 64-dim vectors from four MD5 digests per row so each row
         // gets 64 distinct byte values without 10K × N hashtext calls. Keeping
         // this at 64 dimensions is deliberate: lowering the dimension count
         // flips the FR-020 crossover back toward seqscan at 10K rows.
         Spi::run(
-            "INSERT INTO tqhnsw_ac1_large \
+            "INSERT INTO ec_hnsw_ac1_large \
              SELECT g, encode_to_ecvector( \
                  ARRAY( \
                      SELECT ((get_byte( \
@@ -2157,11 +2157,11 @@ mod tests {
         )
         .expect("10k-row insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_ac1_large_idx ON tqhnsw_ac1_large USING tqhnsw \
+            "CREATE INDEX ec_hnsw_ac1_large_idx ON ec_hnsw_ac1_large USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("ANALYZE tqhnsw_ac1_large").expect("analyze should succeed");
+        Spi::run("ANALYZE ec_hnsw_ac1_large").expect("analyze should succeed");
 
         let query_array = {
             let mut s = String::from("ARRAY[");
@@ -2175,7 +2175,7 @@ mod tests {
             s
         };
         let explain_sql = format!(
-            "EXPLAIN (COSTS OFF) SELECT id FROM tqhnsw_ac1_large \
+            "EXPLAIN (COSTS OFF) SELECT id FROM ec_hnsw_ac1_large \
              ORDER BY embedding <#> {query_array} LIMIT 10"
         );
 
@@ -2196,32 +2196,32 @@ mod tests {
         });
 
         assert!(
-            plan.contains("Index Scan") && plan.contains("tqhnsw_ac1_large_idx"),
-            "FR-020-AC-1 / TC-206: planner must naturally pick the tqhnsw index on a 10K-row table: {plan}"
+            plan.contains("Index Scan") && plan.contains("ec_hnsw_ac1_large_idx"),
+            "FR-020-AC-1 / TC-206: planner must naturally pick the ec_hnsw index on a 10K-row table: {plan}"
         );
     }
 
     #[pg_test]
-    fn test_tqhnsw_index_admin_snapshot_tracks_insert_drift() {
-        Spi::run("CREATE TABLE tqhnsw_admin_snapshot (id bigint primary key, embedding ecvector)")
+    fn test_ech_index_admin_snapshot_tracks_insert_drift() {
+        Spi::run("CREATE TABLE ec_hnsw_admin_snapshot (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_admin_snapshot VALUES
+            "INSERT INTO ec_hnsw_admin_snapshot VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_admin_snapshot_idx ON tqhnsw_admin_snapshot USING tqhnsw \
+            "CREATE INDEX ec_hnsw_admin_snapshot_idx ON ec_hnsw_admin_snapshot USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 77)",
         )
         .expect("index creation should succeed");
-        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
+        Spi::run("SET ec_hnsw.ef_search = 19").expect("set should succeed");
 
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("live-node count should be non-null"),
@@ -2229,7 +2229,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT inserted_since_rebuild FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("inserted-since-rebuild should be non-null"),
@@ -2237,7 +2237,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT insert_drift_fraction FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("insert drift fraction should be non-null"),
@@ -2245,7 +2245,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT relation_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT relation_ef_search FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("relation ef_search should be non-null"),
@@ -2253,14 +2253,14 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT session_ef_search FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT session_ef_search FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed"),
             Some(19)
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT effective_source FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT effective_source FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("effective source should be non-null"),
@@ -2268,14 +2268,14 @@ mod tests {
         );
 
         Spi::run(
-            "INSERT INTO tqhnsw_admin_snapshot VALUES
+            "INSERT INTO ec_hnsw_admin_snapshot VALUES
              (4, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("live insert should succeed");
 
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("live-node count should be non-null"),
@@ -2283,7 +2283,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT inserted_since_rebuild FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("inserted-since-rebuild should be non-null"),
@@ -2291,7 +2291,7 @@ mod tests {
         );
         assert!(
             (Spi::get_one::<f64>(
-                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT insert_drift_fraction FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("insert drift fraction should be non-null")
@@ -2302,14 +2302,14 @@ mod tests {
         );
 
         Spi::run(
-            "INSERT INTO tqhnsw_admin_snapshot VALUES
+            "INSERT INTO ec_hnsw_admin_snapshot VALUES
              (5, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("duplicate insert should succeed");
 
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("live-node count should be non-null"),
@@ -2318,7 +2318,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_idx'::regclass)",
+                "SELECT inserted_since_rebuild FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("inserted-since-rebuild should be non-null"),
@@ -2326,24 +2326,24 @@ mod tests {
             "duplicate coalescing should not advance the insert-drift counter",
         );
 
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
     }
 
     #[pg_test]
-    fn test_tqhnsw_index_admin_snapshot_counts_empty_first_insert() {
+    fn test_ech_index_admin_snapshot_counts_empty_first_insert() {
         Spi::run(
-            "CREATE TABLE tqhnsw_admin_snapshot_empty (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_admin_snapshot_empty (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_admin_snapshot_empty_idx ON tqhnsw_admin_snapshot_empty USING tqhnsw \
+            "CREATE INDEX ec_hnsw_admin_snapshot_empty_idx ON ec_hnsw_admin_snapshot_empty USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+                "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_empty_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("live-node count should be non-null"),
@@ -2351,7 +2351,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+                "SELECT inserted_since_rebuild FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_empty_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("inserted-since-rebuild should be non-null"),
@@ -2359,14 +2359,14 @@ mod tests {
         );
 
         Spi::run(
-            "INSERT INTO tqhnsw_admin_snapshot_empty VALUES
+            "INSERT INTO ec_hnsw_admin_snapshot_empty VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("first insert should succeed");
 
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+                "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_empty_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("live-node count should be non-null"),
@@ -2374,7 +2374,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i64>(
-                "SELECT inserted_since_rebuild FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+                "SELECT inserted_since_rebuild FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_empty_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("inserted-since-rebuild should be non-null"),
@@ -2383,7 +2383,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT insert_drift_fraction FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_empty_idx'::regclass)",
+                "SELECT insert_drift_fraction FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_empty_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("insert drift fraction should be non-null"),
@@ -2392,44 +2392,44 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw_index_admin_snapshot requires a tqhnsw index")]
-    fn test_tqhnsw_index_admin_snapshot_rejects_non_tqhnsw_index() {
+    #[should_panic(expected = "ec_hnsw_index_admin_snapshot requires a ec_hnsw index")]
+    fn test_ech_index_admin_snapshot_rejects_non_ec_hnsw_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
+            "CREATE TABLE ec_hnsw_admin_snapshot_wrong_am (id bigint primary key, value bigint)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_admin_snapshot_wrong_am_idx ON tqhnsw_admin_snapshot_wrong_am USING btree (value)",
+            "CREATE INDEX ec_hnsw_admin_snapshot_wrong_am_idx ON ec_hnsw_admin_snapshot_wrong_am USING btree (value)",
         )
         .expect("index creation should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('tqhnsw_admin_snapshot_wrong_am_idx'::regclass)",
+            "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('ec_hnsw_admin_snapshot_wrong_am_idx'::regclass)",
         );
     }
 
     #[pg_test]
-    fn test_tqhnsw_index_cost_snapshot_reports_modeled_and_gated_costs() {
-        Spi::run("CREATE TABLE tqhnsw_cost_snapshot (id bigint primary key, embedding ecvector)")
+    fn test_ech_index_cost_snapshot_reports_modeled_and_gated_costs() {
+        Spi::run("CREATE TABLE ec_hnsw_cost_snapshot (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_cost_snapshot VALUES
+            "INSERT INTO ec_hnsw_cost_snapshot VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, -0.5, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_cost_snapshot_idx ON tqhnsw_cost_snapshot USING tqhnsw \
+            "CREATE INDEX ec_hnsw_cost_snapshot_idx ON ec_hnsw_cost_snapshot USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 12, ef_search = 77)",
         )
         .expect("index creation should succeed");
-        Spi::run("SET tqhnsw.ef_search = 19").expect("set should succeed");
-        Spi::run("ANALYZE tqhnsw_cost_snapshot").expect("analyze should succeed");
+        Spi::run("SET ec_hnsw.ef_search = 19").expect("set should succeed");
+        Spi::run("ANALYZE ec_hnsw_cost_snapshot").expect("analyze should succeed");
 
         assert!(
             Spi::get_one::<bool>(
-                "SELECT planner_scan_enabled FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT planner_scan_enabled FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner flag should be non-null"),
@@ -2437,7 +2437,7 @@ mod tests {
         );
         assert!(
             Spi::get_one::<String>(
-                "SELECT planner_gate_reason FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT planner_gate_reason FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("gate reason should be non-null")
@@ -2446,7 +2446,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT relation_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT relation_ef_search FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("relation ef_search should be non-null"),
@@ -2454,14 +2454,14 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT session_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT session_ef_search FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed"),
             Some(19)
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT effective_ef_search FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT effective_ef_search FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("effective ef_search should be non-null"),
@@ -2469,7 +2469,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT effective_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT effective_source FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("effective source should be non-null"),
@@ -2477,7 +2477,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT m FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT m FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("m should be non-null"),
@@ -2485,20 +2485,20 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT dimensions FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT dimensions FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("dimensions should be non-null"),
             4
         );
         let max_level = Spi::get_one::<i32>(
-            "SELECT max_level FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            "SELECT max_level FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
         )
         .expect("snapshot query should succeed")
         .expect("max level should be non-null");
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT resolved_tree_height FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT resolved_tree_height FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("resolved tree height should be non-null"),
@@ -2506,7 +2506,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT tree_height_source FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT tree_height_source FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("tree height source should be non-null"),
@@ -2514,14 +2514,14 @@ mod tests {
         );
         assert!(
             !Spi::get_one::<bool>(
-                "SELECT pg18_tree_height_callback_ready FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT pg18_tree_height_callback_ready FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("pg18 tree-height callback flag should be non-null")
         );
         assert!(
             Spi::get_one::<f64>(
-                "SELECT index_pages FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT index_pages FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("index pages should be non-null")
@@ -2529,19 +2529,19 @@ mod tests {
         );
         assert!(
             Spi::get_one::<f64>(
-                "SELECT reltuples FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT reltuples FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("reltuples should be non-null")
                 >= 3.0
         );
         let modeled_startup = Spi::get_one::<f64>(
-            "SELECT modeled_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            "SELECT modeled_startup_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
         )
         .expect("snapshot query should succeed")
         .expect("modeled startup should be non-null");
         let modeled_total = Spi::get_one::<f64>(
-            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+            "SELECT modeled_total_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
         )
         .expect("snapshot query should succeed")
         .expect("modeled total should be non-null");
@@ -2556,7 +2556,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT modeled_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT modeled_selectivity FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("modeled selectivity should be non-null"),
@@ -2564,7 +2564,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT modeled_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT modeled_correlation FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("modeled correlation should be non-null"),
@@ -2572,7 +2572,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT gated_startup_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT gated_startup_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("gated startup should be non-null"),
@@ -2580,7 +2580,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT gated_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT gated_total_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("gated total should be non-null"),
@@ -2588,7 +2588,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT gated_selectivity FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT gated_selectivity FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("gated selectivity should be non-null"),
@@ -2596,103 +2596,103 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<f64>(
-                "SELECT gated_correlation FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_idx'::regclass)",
+                "SELECT gated_correlation FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("gated correlation should be non-null"),
             0.0
         );
 
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw_index_cost_snapshot requires a tqhnsw index")]
-    fn test_tqhnsw_index_cost_snapshot_rejects_non_tqhnsw_index() {
+    #[should_panic(expected = "ec_hnsw_index_cost_snapshot requires a ec_hnsw index")]
+    fn test_ech_index_cost_snapshot_rejects_non_ec_hnsw_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_cost_snapshot_wrong_am (id bigint primary key, value bigint)",
+            "CREATE TABLE ec_hnsw_cost_snapshot_wrong_am (id bigint primary key, value bigint)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_cost_snapshot_wrong_am_idx ON tqhnsw_cost_snapshot_wrong_am USING btree (value)",
+            "CREATE INDEX ec_hnsw_cost_snapshot_wrong_am_idx ON ec_hnsw_cost_snapshot_wrong_am USING btree (value)",
         )
         .expect("index creation should succeed");
 
         let _ = Spi::get_one::<f64>(
-            "SELECT modeled_total_cost FROM tqhnsw_index_cost_snapshot('tqhnsw_cost_snapshot_wrong_am_idx'::regclass)",
+            "SELECT modeled_total_cost FROM ec_hnsw_index_cost_snapshot('ec_hnsw_cost_snapshot_wrong_am_idx'::regclass)",
         );
     }
 
     #[pg_test]
-    fn test_tqhnsw_planner_integration_snapshot_reports_blockers() {
+    fn test_ech_planner_integration_snapshot_reports_blockers() {
         Spi::run(
-            "CREATE TABLE tqhnsw_planner_integration_snapshot (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_planner_integration_snapshot (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_planner_integration_snapshot_idx ON tqhnsw_planner_integration_snapshot USING tqhnsw (embedding ecvector_ip_ops)",
+            "CREATE INDEX ec_hnsw_planner_integration_snapshot_idx ON ec_hnsw_planner_integration_snapshot USING ec_hnsw (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         assert!(
             Spi::get_one::<bool>(
-                "SELECT planner_scan_enabled FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT planner_scan_enabled FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner scan flag should be non-null")
         );
         assert!(
             Spi::get_one::<bool>(
-                "SELECT ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT ordered_scan_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("ordered scan readiness should be non-null")
         );
         assert!(
             Spi::get_one::<bool>(
-                "SELECT runtime_ordered_scan_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT runtime_ordered_scan_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("runtime ordered scan readiness should be non-null")
         );
         assert!(
             Spi::get_one::<bool>(
-                "SELECT planner_cost_model_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT planner_cost_model_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner cost model readiness should be non-null")
         );
         assert!(
             Spi::get_one::<bool>(
-                "SELECT planner_cost_callback_live FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT planner_cost_callback_live FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner cost callback live flag should be non-null")
         );
         assert!(
             !Spi::get_one::<bool>(
-                "SELECT pg18_callback_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT pg18_callback_surface_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("pg18 callback readiness should be non-null")
         );
         assert!(
             !Spi::get_one::<bool>(
-                "SELECT pg18_diagnostics_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT pg18_diagnostics_surface_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("pg18 diagnostics readiness should be non-null")
         );
         assert!(
             !Spi::get_one::<bool>(
-                "SELECT pg18_read_stream_surface_ready FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT pg18_read_stream_surface_ready FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("pg18 read stream readiness should be non-null")
         );
         assert_eq!(
             Spi::get_one::<i32>(
-                "SELECT effective_ef_search FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT effective_ef_search FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("effective ef_search should be non-null"),
@@ -2700,7 +2700,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT effective_source FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT effective_source FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("effective source should be non-null"),
@@ -2708,7 +2708,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT planner_gate_reason FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT planner_gate_reason FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("planner gate reason should be non-null"),
@@ -2716,7 +2716,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT next_runtime_blocker FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT next_runtime_blocker FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
@@ -2724,7 +2724,7 @@ mod tests {
         );
         assert_eq!(
             Spi::get_one::<String>(
-                "SELECT next_pg18_blocker FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_idx'::regclass)",
+                "SELECT next_pg18_blocker FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_idx'::regclass)",
             )
             .expect("snapshot query should succeed")
             .expect("pg18 blocker should be non-null"),
@@ -2733,41 +2733,41 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw_planner_integration_snapshot requires a tqhnsw index")]
-    fn test_tqhnsw_planner_integration_snapshot_rejects_wrong_am() {
+    #[should_panic(expected = "ec_hnsw_planner_integration_snapshot requires a ec_hnsw index")]
+    fn test_ech_planner_integration_snapshot_rejects_wrong_am() {
         Spi::run(
-            "CREATE TABLE tqhnsw_planner_integration_snapshot_wrong_am (id bigint primary key, value bigint)",
+            "CREATE TABLE ec_hnsw_planner_integration_snapshot_wrong_am (id bigint primary key, value bigint)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_planner_integration_snapshot_wrong_am_idx ON tqhnsw_planner_integration_snapshot_wrong_am USING btree (value)",
+            "CREATE INDEX ec_hnsw_planner_integration_snapshot_wrong_am_idx ON ec_hnsw_planner_integration_snapshot_wrong_am USING btree (value)",
         )
         .expect("index creation should succeed");
 
         let _ = Spi::get_one::<bool>(
-            "SELECT planner_scan_enabled FROM tqhnsw_planner_integration_snapshot('tqhnsw_planner_integration_snapshot_wrong_am_idx'::regclass)",
+            "SELECT planner_scan_enabled FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_wrong_am_idx'::regclass)",
         );
     }
 
     #[pg_test]
     fn test_empty_index_build_initializes_metadata_page() {
-        Spi::run("CREATE TABLE tqhnsw_empty_build (id bigint primary key, embedding ecvector)")
+        Spi::run("CREATE TABLE ec_hnsw_empty_build (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run("CREATE EXTENSION pageinspect").expect("pageinspect should be available");
         Spi::run(
-            "CREATE INDEX tqhnsw_empty_build_idx ON tqhnsw_empty_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_empty_build_idx ON ec_hnsw_empty_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 12, ef_construction = 80)",
         )
         .expect("index creation should succeed");
 
         let reloptions = Spi::get_one::<Vec<String>>(
-            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_empty_build_idx'::regclass",
+            "SELECT reloptions FROM pg_class WHERE oid = 'ec_hnsw_empty_build_idx'::regclass",
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
 
         let first_page =
-            Spi::get_one::<Vec<u8>>("SELECT get_raw_page('tqhnsw_empty_build_idx', 0)::bytea")
+            Spi::get_one::<Vec<u8>>("SELECT get_raw_page('ec_hnsw_empty_build_idx', 0)::bytea")
                 .expect("SPI query should succeed")
                 .expect("raw index page should exist");
 
@@ -2789,23 +2789,23 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_writes_minimal_data_pages() {
-        Spi::run("CREATE TABLE tqhnsw_nonempty_build (id bigint primary key, embedding ecvector)")
+        Spi::run("CREATE TABLE ec_hnsw_nonempty_build (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_nonempty_build VALUES
+            "INSERT INTO ec_hnsw_nonempty_build VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_nonempty_build_idx ON tqhnsw_nonempty_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_nonempty_build_idx ON ec_hnsw_nonempty_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 10, ef_construction = 90)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_nonempty_build_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_nonempty_build_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -2929,7 +2929,7 @@ mod tests {
     #[pg_test]
     fn test_non_empty_index_build_supports_raw_source_column() {
         Spi::run(
-            "CREATE TABLE tqhnsw_source_build (
+            "CREATE TABLE ec_hnsw_source_build (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -2937,7 +2937,7 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_source_build VALUES
+            "INSERT INTO ec_hnsw_source_build VALUES
              (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
              (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
              (3, ARRAY[-1.0, 0.5, 0.0, 1.0], encode_to_ecvector(ARRAY[0.8, -0.4, 0.1, 0.7], 4, 42)),
@@ -2945,20 +2945,20 @@ mod tests {
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_source_build_idx ON tqhnsw_source_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_source_build_idx ON ec_hnsw_source_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source')",
         )
         .expect("index creation should succeed");
 
         let reloptions = Spi::get_one::<Vec<String>>(
-            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_source_build_idx'::regclass",
+            "SELECT reloptions FROM pg_class WHERE oid = 'ec_hnsw_source_build_idx'::regclass",
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
         assert!(reloptions.contains(&"build_source_column=source".to_string()));
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_source_build_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_source_build_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -2984,11 +2984,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_pq_fastscan_source_build_writes_grouped_pages() {
+    fn test_ech_pq_fastscan_source_build_writes_grouped_pages() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_source_build (
+            "CREATE TABLE ec_hnsw_pq_fastscan_source_build (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3006,25 +3006,25 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_source_build VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_source_build VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_source_build_idx ON tqhnsw_pq_fastscan_source_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_source_build_idx ON ec_hnsw_pq_fastscan_source_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_source_build_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_source_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let reloptions = Spi::get_one::<Vec<String>>(
-            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_pq_fastscan_source_build_idx'::regclass",
+            "SELECT reloptions FROM pg_class WHERE oid = 'ec_hnsw_pq_fastscan_source_build_idx'::regclass",
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
@@ -3112,11 +3112,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_pq_fastscan_small_source_build_writes_grouped_pages() {
+    fn test_ech_pq_fastscan_small_source_build_writes_grouped_pages() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_small_source_build (
+            "CREATE TABLE ec_hnsw_pq_fastscan_small_source_build (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3134,20 +3134,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_small_source_build VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_small_source_build VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_small_source_build_idx ON tqhnsw_pq_fastscan_small_source_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_small_source_build_idx ON ec_hnsw_pq_fastscan_small_source_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("small-table index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_small_source_build_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_small_source_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3205,11 +3205,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_pq_fastscan_small_dim_build_derives_group_size() {
+    fn test_ech_pq_fastscan_small_dim_build_derives_group_size() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_small_dim_build (
+            "CREATE TABLE ec_hnsw_pq_fastscan_small_dim_build (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3227,20 +3227,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_small_dim_build VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_small_dim_build VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_small_dim_build_idx ON tqhnsw_pq_fastscan_small_dim_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_small_dim_build_idx ON ec_hnsw_pq_fastscan_small_dim_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("small-dimension index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_small_dim_build_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_small_dim_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3262,11 +3262,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_turboquant_storage_format_build_writes_scalar_pages() {
+    fn test_ech_turboquant_storage_format_build_writes_scalar_pages() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_turboquant_storage_build (
+            "CREATE TABLE ec_hnsw_turboquant_storage_build (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -3279,25 +3279,25 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_turboquant_storage_build VALUES \
+                "INSERT INTO ec_hnsw_turboquant_storage_build VALUES \
                  ({id}, encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_turboquant_storage_build_idx ON tqhnsw_turboquant_storage_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_turboquant_storage_build_idx ON ec_hnsw_turboquant_storage_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'turboquant')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_turboquant_storage_build_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_turboquant_storage_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
         let reloptions = Spi::get_one::<Vec<String>>(
-            "SELECT reloptions FROM pg_class WHERE oid = 'tqhnsw_turboquant_storage_build_idx'::regclass",
+            "SELECT reloptions FROM pg_class WHERE oid = 'ec_hnsw_turboquant_storage_build_idx'::regclass",
         )
         .expect("SPI query should succeed")
         .expect("reloptions should exist");
@@ -3382,7 +3382,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_graph_reads (
+            "CREATE TABLE ec_hnsw_pq_fastscan_graph_reads (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3400,20 +3400,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_graph_reads VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_graph_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_graph_reads_idx ON tqhnsw_pq_fastscan_graph_reads USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_graph_reads_idx ON ec_hnsw_pq_fastscan_graph_reads USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_graph_reads_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_graph_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3428,7 +3428,7 @@ mod tests {
         };
 
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "test_pq_fastscan_graph_reads") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "test_pq_fastscan_graph_reads") };
 
         unsafe {
             am::graph::with_graph_storage_tuple(
@@ -3491,7 +3491,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_rerank_reads (
+            "CREATE TABLE ec_hnsw_pq_fastscan_rerank_reads (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3509,20 +3509,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_rerank_reads VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_rerank_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_rerank_reads_idx ON tqhnsw_pq_fastscan_rerank_reads USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_rerank_reads_idx ON ec_hnsw_pq_fastscan_rerank_reads USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_rerank_reads_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_rerank_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3537,7 +3537,7 @@ mod tests {
         };
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(
+            open_valid_ec_hnsw_index(
                 index_oid,
                 "test_pq_fastscan_graph_reads_load_cold_rerank_payload",
             )
@@ -3565,7 +3565,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_codebook_reads (
+            "CREATE TABLE ec_hnsw_pq_fastscan_codebook_reads (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3583,20 +3583,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_codebook_reads VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_codebook_reads VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_codebook_reads_idx ON tqhnsw_pq_fastscan_codebook_reads USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_codebook_reads_idx ON ec_hnsw_pq_fastscan_codebook_reads USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_codebook_reads_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_codebook_reads_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3608,7 +3608,7 @@ mod tests {
         );
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(
+            open_valid_ec_hnsw_index(
                 index_oid,
                 "test_pq_fastscan_graph_reads_load_persisted_codebooks",
             )
@@ -3661,7 +3661,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_reject (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_reject (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3679,21 +3679,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_reject VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_reject VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_reject_idx ON tqhnsw_pq_fastscan_runtime_reject USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_reject_idx ON ec_hnsw_pq_fastscan_runtime_reject USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let observed = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_pq_fastscan_runtime_reject \
+            "SELECT id FROM ec_hnsw_pq_fastscan_runtime_reject \
              ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                       0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
              LIMIT 1",
@@ -3710,7 +3710,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_enabled (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_enabled (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3728,14 +3728,14 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_enabled VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_enabled VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_enabled_idx ON tqhnsw_pq_fastscan_runtime_enabled USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_enabled_idx ON ec_hnsw_pq_fastscan_runtime_enabled USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
@@ -3745,7 +3745,7 @@ mod tests {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
+                     SELECT id FROM ec_hnsw_pq_fastscan_runtime_enabled \
                      ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                               0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
                      LIMIT 3",
@@ -3766,13 +3766,13 @@ mod tests {
 
         assert!(
             plan.contains("Index Scan") || plan.contains("Index Only Scan"),
-            "PqFastScan runtime smoke test should route through tqhnsw when PqFastScan storage is selected: {plan}"
+            "PqFastScan runtime smoke test should route through ec_hnsw when PqFastScan storage is selected: {plan}"
         );
 
         let ordered_ids = Spi::connect(|client| {
             client
                 .select(
-                    "SELECT id FROM tqhnsw_pq_fastscan_runtime_enabled \
+                    "SELECT id FROM ec_hnsw_pq_fastscan_runtime_enabled \
                      ORDER BY embedding <#> ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, \
                                               0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[] \
                      LIMIT 3",
@@ -3798,14 +3798,14 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan live rerank window must be between 1 and 64, got 0"
+        expected = "ec_hnsw PqFastScan live rerank window must be between 1 and 64, got 0"
     )]
     fn test_pq_fastscan_runtime_rejects_invalid_live_window_env() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "0");
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_window (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_invalid_window (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3823,21 +3823,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_window VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_invalid_window VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_window_idx ON tqhnsw_pq_fastscan_runtime_invalid_window USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_invalid_window_idx ON ec_hnsw_pq_fastscan_runtime_invalid_window USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_window \
+            "SELECT id FROM ec_hnsw_pq_fastscan_runtime_invalid_window \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -3849,7 +3849,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_compare (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_compare (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -3867,20 +3867,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_compare VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_compare VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_compare_idx ON tqhnsw_pq_fastscan_runtime_compare USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_compare_idx ON ec_hnsw_pq_fastscan_runtime_compare USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_compare_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_compare_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -3895,7 +3895,7 @@ mod tests {
                 let source = (0..16)
                     .map(|dim| (((id * 31 + dim) as f32) * 0.03).cos())
                     .collect::<Vec<_>>();
-                let heap_tid = heap_tid_for_row("tqhnsw_pq_fastscan_runtime_compare", id);
+                let heap_tid = heap_tid_for_row("ec_hnsw_pq_fastscan_runtime_compare", id);
                 (
                     (heap_tid.block_number, heap_tid.offset_number),
                     -dot_product(&query, &source),
@@ -3926,7 +3926,7 @@ mod tests {
     type DebugGroupedComparisonRow = ((u32, u16), i32, f32, Option<f32>, Option<i32>, Option<i32>);
 
     #[pg_extern]
-    fn tqhnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
+    fn ec_hnsw_debug_pack_f32_bytea(values: Vec<f32>) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(values.len() * std::mem::size_of::<f32>());
         for value in values {
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -3967,7 +3967,7 @@ mod tests {
             let insert_sql = if include_source_raw {
                 format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, ARRAY[{source}]::real[], tests.tqhnsw_debug_pack_f32_bytea(ARRAY[{source}]::real[]), \
+                     ({id}, ARRAY[{source}]::real[], tests.ec_hnsw_debug_pack_f32_bytea(ARRAY[{source}]::real[]), \
                      encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
                 )
             } else {
@@ -3983,7 +3983,7 @@ mod tests {
             .map(|column| format!(", rerank_source_column = '{column}'"))
             .unwrap_or_default();
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = {m}, ef_construction = 80, build_source_column = 'source'{rerank_source_reloption}, storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
@@ -4050,7 +4050,7 @@ mod tests {
         }
 
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
@@ -4101,7 +4101,7 @@ mod tests {
             ""
         };
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}, storage_format = 'turboquant')"
         ))
         .expect("index creation should succeed");
@@ -4156,7 +4156,7 @@ mod tests {
             let insert_sql = match (source, source_raw) {
                 (Some(source), Some(source_raw)) => format!(
                     "INSERT INTO {table_name} VALUES \
-                     ({id}, {source}, tests.tqhnsw_debug_pack_f32_bytea({source_raw}), encode_to_ecvector({embedding}, 4, 42))"
+                     ({id}, {source}, tests.ec_hnsw_debug_pack_f32_bytea({source_raw}), encode_to_ecvector({embedding}, 4, 42))"
                 ),
                 (Some(source), None) => format!(
                     "INSERT INTO {table_name} VALUES \
@@ -4182,7 +4182,7 @@ mod tests {
             .map(|column| format!(", rerank_source_column = '{column}'"))
             .unwrap_or_default();
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80{build_source_column}{rerank_source_column}, storage_format = 'turboquant')"
         ))
         .expect("index creation should succeed");
@@ -4276,14 +4276,14 @@ mod tests {
         column: &str,
     ) -> Option<String> {
         Spi::get_one::<String>(&format!(
-            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+            "SELECT {column} FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
         ))
         .expect("index runtime settings probe should succeed")
     }
 
     fn fetch_pq_fastscan_index_runtime_i32(index_oid: pg_sys::Oid, column: &str) -> Option<i32> {
         Spi::get_one::<i32>(&format!(
-            "SELECT {column} FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
+            "SELECT {column} FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index({index_oid})"
         ))
         .expect("index runtime settings probe should succeed")
     }
@@ -4414,8 +4414,8 @@ mod tests {
     #[pg_test]
     fn test_pq_fastscan_exact_traversal_emits_exact_scores() {
         let (observed, emitted_scores) = pq_fastscan_exact_traversal_runtime_observed_scores(
-            "tqhnsw_pq_fastscan_runtime_exact_traversal",
-            "tqhnsw_pq_fastscan_runtime_exact_traversal_idx",
+            "ec_hnsw_pq_fastscan_runtime_exact_traversal",
+            "ec_hnsw_pq_fastscan_runtime_exact_traversal_idx",
             None,
         );
 
@@ -4438,7 +4438,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_runtime_settings_reflect_controls() {
+    fn test_ech_debug_runtime_settings_reflect_controls() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
         let _score_mode_guard =
@@ -4455,7 +4455,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT pq_fastscan_build_enabled
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
@@ -4464,7 +4464,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT pq_fastscan_scan_enabled
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
@@ -4473,7 +4473,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_scan_window
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4483,7 +4483,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_traversal_score_mode
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4493,7 +4493,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_rerank_mode
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4503,7 +4503,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_rerank_source_column
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4513,7 +4513,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT pq_fastscan_exact_traversal_enabled
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(true),
@@ -4522,7 +4522,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_exact_traversal_scope
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4532,7 +4532,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_exact_traversal_strategy
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4542,7 +4542,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_exact_traversal_limit
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4552,13 +4552,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_runtime_settings_surface_effective_defaults() {
+    fn test_ech_debug_runtime_settings_surface_effective_defaults() {
         let _lock = env_var_test_lock();
 
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_scan_window
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4568,7 +4568,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_traversal_score_mode
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4578,7 +4578,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_rerank_mode
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4588,7 +4588,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<String>(
                 "SELECT pq_fastscan_rerank_source_column
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed")
             .as_deref(),
@@ -4598,7 +4598,7 @@ mod tests {
         assert_eq!(
             Spi::get_one::<bool>(
                 "SELECT pq_fastscan_exact_traversal_enabled
-                 FROM tests.tqhnsw_debug_pq_fastscan_runtime_settings()"
+                 FROM tests.ec_hnsw_debug_pq_fastscan_runtime_settings()"
             )
             .expect("runtime settings probe should succeed"),
             Some(false),
@@ -4610,8 +4610,8 @@ mod tests {
     fn test_pq_fastscan_index_runtime_settings_report_binary_default() {
         let _lock = env_var_test_lock();
         let index_oid = create_pq_fastscan_binary_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_settings_binary_default",
-            "tqhnsw_pq_fastscan_runtime_settings_binary_default_idx",
+            "ec_hnsw_pq_fastscan_runtime_settings_binary_default",
+            "ec_hnsw_pq_fastscan_runtime_settings_binary_default_idx",
         );
 
         assert_eq!(
@@ -4657,8 +4657,8 @@ mod tests {
     fn test_pq_fastscan_index_runtime_settings_report_binary_fallback() {
         let _lock = env_var_test_lock();
         let index_oid = create_pq_fastscan_binary_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback",
-            "tqhnsw_pq_fastscan_runtime_settings_binary_fallback_idx",
+            "ec_hnsw_pq_fastscan_runtime_settings_binary_fallback",
+            "ec_hnsw_pq_fastscan_runtime_settings_binary_fallback_idx",
         );
 
         let (_block_count, _m, _ef_construction, mut metadata) =
@@ -4695,8 +4695,8 @@ mod tests {
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "pq");
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
         let index_oid = create_pq_fastscan_binary_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_settings_env_override",
-            "tqhnsw_pq_fastscan_runtime_settings_env_override_idx",
+            "ec_hnsw_pq_fastscan_runtime_settings_env_override",
+            "ec_hnsw_pq_fastscan_runtime_settings_env_override_idx",
         );
 
         assert_eq!(
@@ -4745,8 +4745,8 @@ mod tests {
         let _rerank_source_guard =
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_SOURCE_COLUMN", "source_raw");
         let index_oid = create_pq_fastscan_runtime_fixture_with_source_raw(
-            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override",
-            "tqhnsw_pq_fastscan_runtime_settings_heap_source_override_idx",
+            "ec_hnsw_pq_fastscan_runtime_settings_heap_source_override",
+            "ec_hnsw_pq_fastscan_runtime_settings_heap_source_override_idx",
         );
 
         assert_eq!(
@@ -4772,8 +4772,8 @@ mod tests {
     fn test_pq_fastscan_runtime_settings_report_persisted_source() {
         let _lock = env_var_test_lock();
         let index_oid = create_pq_fastscan_runtime_fixture_with_persisted_source_raw(
-            "tqhnsw_pq_fastscan_runtime_settings_persisted_heap_source",
-            "tqhnsw_pq_fastscan_runtime_settings_persisted_heap_source_idx",
+            "ec_hnsw_pq_fastscan_runtime_settings_persisted_heap_source",
+            "ec_hnsw_pq_fastscan_runtime_settings_persisted_heap_source_idx",
         );
 
         assert_eq!(
@@ -4799,8 +4799,8 @@ mod tests {
     fn test_pq_fastscan_indexed_ecvector_ignores_tqvector_sibling() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_pq_fastscan_indexed_ecvector_tqvector_sibling";
-        let index_name = "tqhnsw_pq_fastscan_indexed_ecvector_tqvector_sibling_idx";
+        let table_name = "ec_hnsw_pq_fastscan_indexed_ecvector_tqvector_sibling";
+        let index_name = "ec_hnsw_pq_fastscan_indexed_ecvector_tqvector_sibling_idx";
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
                 id bigint primary key,
@@ -4822,7 +4822,7 @@ mod tests {
         }
 
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
@@ -4897,8 +4897,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_default_source_rerank_emits_heap_scores() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank";
-        let index_name = "tqhnsw_pq_fastscan_runtime_source_backed_default_rerank_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_source_backed_default_rerank";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_source_backed_default_rerank_idx";
         let (observed, emitted_scores) =
             pq_fastscan_rerank_runtime_observed_scores(table_name, index_name, None, None, false);
         let query = pq_fastscan_runtime_query();
@@ -4944,8 +4944,8 @@ mod tests {
     fn test_pq_fastscan_default_rerank_matches_explicit_heap() {
         let _lock = env_var_test_lock();
         let default_index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_default_rerank_parity",
-            "tqhnsw_pq_fastscan_runtime_default_rerank_parity_idx",
+            "ec_hnsw_pq_fastscan_runtime_default_rerank_parity",
+            "ec_hnsw_pq_fastscan_runtime_default_rerank_parity_idx",
         );
         assert_eq!(
             fetch_pq_fastscan_index_runtime_text(default_index_oid, "pq_fastscan_rerank_mode")
@@ -4971,8 +4971,8 @@ mod tests {
 
         let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let explicit_index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity",
-            "tqhnsw_pq_fastscan_runtime_explicit_heap_rerank_parity_idx",
+            "ec_hnsw_pq_fastscan_runtime_explicit_heap_rerank_parity",
+            "ec_hnsw_pq_fastscan_runtime_explicit_heap_rerank_parity_idx",
         );
         assert_eq!(
             fetch_pq_fastscan_index_runtime_text(explicit_index_oid, "pq_fastscan_rerank_mode")
@@ -5031,8 +5031,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_heap_rerank_emits_heap_exact_scores() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank";
-        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_heap_rerank";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_heap_rerank_idx";
         let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
             table_name,
             index_name,
@@ -5080,8 +5080,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_heap_rerank_bytea_source_emits_exact_scores() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea";
-        let index_name = "tqhnsw_pq_fastscan_runtime_heap_rerank_bytea_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_heap_rerank_bytea";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_heap_rerank_bytea_idx";
         let (observed, emitted_scores) = pq_fastscan_rerank_runtime_observed_scores(
             table_name,
             index_name,
@@ -5130,8 +5130,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_persisted_bytea_rerank_emits_scores() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea";
-        let index_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_persisted_heap_rerank_bytea_idx";
         let index_oid =
             create_pq_fastscan_runtime_fixture_with_persisted_source_raw(table_name, index_name);
         let observed = unsafe {
@@ -5188,8 +5188,8 @@ mod tests {
     fn test_pq_fastscan_profile_exact_counters_zero_without_gate() {
         let _lock = env_var_test_lock();
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_profile_approx",
-            "tqhnsw_pq_fastscan_runtime_profile_approx_idx",
+            "ec_hnsw_pq_fastscan_runtime_profile_approx",
+            "ec_hnsw_pq_fastscan_runtime_profile_approx_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -5272,8 +5272,8 @@ mod tests {
         let _score_mode_guard =
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "binary");
         let index_oid = create_pq_fastscan_binary_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode",
-            "tqhnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
+            "ec_hnsw_pq_fastscan_runtime_profile_binary_score_mode",
+            "ec_hnsw_pq_fastscan_runtime_profile_binary_score_mode_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -5359,8 +5359,8 @@ mod tests {
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "quantized");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile",
-            "tqhnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
+            "ec_hnsw_pq_fastscan_runtime_quantized_rerank_profile",
+            "ec_hnsw_pq_fastscan_runtime_quantized_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5407,8 +5407,8 @@ mod tests {
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile",
-            "tqhnsw_pq_fastscan_runtime_heap_rerank_profile_idx",
+            "ec_hnsw_pq_fastscan_runtime_heap_rerank_profile",
+            "ec_hnsw_pq_fastscan_runtime_heap_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5455,8 +5455,8 @@ mod tests {
     fn test_turboquant_quantized_rerank_profile_reports_quantized_only() {
         let _lock = env_var_test_lock();
         let index_oid = create_turboquant_binary_runtime_fixture(
-            "tqhnsw_turboquant_runtime_quantized_rerank_profile",
-            "tqhnsw_turboquant_runtime_quantized_rerank_profile_idx",
+            "ec_hnsw_turboquant_runtime_quantized_rerank_profile",
+            "ec_hnsw_turboquant_runtime_quantized_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5504,8 +5504,8 @@ mod tests {
         let _lock = env_var_test_lock();
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
         let index_oid = create_turboquant_binary_runtime_fixture_with_source(
-            "tqhnsw_turboquant_runtime_heap_rerank_profile",
-            "tqhnsw_turboquant_runtime_heap_rerank_profile_idx",
+            "ec_hnsw_turboquant_runtime_heap_rerank_profile",
+            "ec_hnsw_turboquant_runtime_heap_rerank_profile_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5554,8 +5554,8 @@ mod tests {
     fn test_turboquant_source_backed_default_rerank_stays_quantized() {
         let _lock = env_var_test_lock();
         let index_oid = create_turboquant_binary_runtime_fixture_with_source(
-            "tqhnsw_turboquant_runtime_source_backed_default_quantized",
-            "tqhnsw_turboquant_runtime_source_backed_default_quantized_idx",
+            "ec_hnsw_turboquant_runtime_source_backed_default_quantized",
+            "ec_hnsw_turboquant_runtime_source_backed_default_quantized_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5602,8 +5602,8 @@ mod tests {
     fn test_turboquant_persisted_rerank_source_default_stays_quantized() {
         let _lock = env_var_test_lock();
         let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
-            "tqhnsw_tq_persisted_rerank_default_q",
-            "tqhnsw_tq_persisted_rerank_default_q_idx",
+            "ec_hnsw_tq_persisted_rerank_default_q",
+            "ec_hnsw_tq_persisted_rerank_default_q_idx",
         );
         let (
             _rescan_amrescan_total_elapsed_us,
@@ -5650,8 +5650,8 @@ mod tests {
     fn test_turboquant_persisted_bytea_rerank_emits_scores() {
         let _lock = env_var_test_lock();
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
-        let table_name = "tqhnsw_tq_persisted_heap_rerank_bytea";
-        let index_name = "tqhnsw_tq_persisted_heap_rerank_bytea_idx";
+        let table_name = "ec_hnsw_tq_persisted_heap_rerank_bytea";
+        let index_name = "ec_hnsw_tq_persisted_heap_rerank_bytea_idx";
         let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
             table_name, index_name,
         );
@@ -5729,8 +5729,8 @@ mod tests {
     fn test_turboquant_rerank_source_reloption_reset_round_trip() {
         let _lock = env_var_test_lock();
         let _rerank_mode_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "heap_f32");
-        let table_name = "tqhnsw_tq_rerank_source_reloption_round_trip";
-        let index_name = "tqhnsw_tq_rerank_source_reloption_round_trip_idx";
+        let table_name = "ec_hnsw_tq_rerank_source_reloption_round_trip";
+        let index_name = "ec_hnsw_tq_rerank_source_reloption_round_trip_idx";
         let index_oid = create_turboquant_binary_runtime_fixture_with_persisted_source_raw(
             table_name, index_name,
         );
@@ -5832,12 +5832,12 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_pq_fastscan_rerank_profile_sql_surface() {
+    fn test_ech_debug_pq_fastscan_rerank_profile_sql_surface() {
         let _lock = env_var_test_lock();
         let _window_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", "8");
-        let index_name = "tqhnsw_pq_fastscan_rerank_profile_sql_surface_idx";
+        let index_name = "ec_hnsw_pq_fastscan_rerank_profile_sql_surface_idx";
         let _index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_rerank_profile_sql_surface",
+            "ec_hnsw_pq_fastscan_rerank_profile_sql_surface",
             index_name,
         );
         let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
@@ -5865,7 +5865,7 @@ mod tests {
                             pq_fastscan_rerank_heap_fetch_elapsed_us,
                             pq_fastscan_rerank_heap_decode_elapsed_us,
                             pq_fastscan_rerank_heap_dot_elapsed_us
-                         FROM tests.tqhnsw_debug_pq_fastscan_rerank_profile(
+                         FROM tests.ec_hnsw_debug_pq_fastscan_rerank_profile(
                             '{index_name}'::regclass::oid,
                             {query_literal},
                             10
@@ -5938,10 +5938,10 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_turboquant_scan_stage_profile_sql_surface() {
-        let index_name = "tqhnsw_turboquant_scan_stage_profile_sql_surface_idx";
+    fn test_ech_debug_turboquant_scan_stage_profile_sql_surface() {
+        let index_name = "ec_hnsw_turboquant_scan_stage_profile_sql_surface_idx";
         let _index_oid = create_turboquant_binary_runtime_fixture(
-            "tqhnsw_turboquant_scan_stage_profile_sql_surface",
+            "ec_hnsw_turboquant_scan_stage_profile_sql_surface",
             index_name,
         );
         let query_literal = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_query());
@@ -5975,7 +5975,7 @@ mod tests {
                             turboquant_exact_score_mode,
                             turboquant_exact_score_uses_lut,
                             turboquant_exact_score_uses_qjl
-                         FROM tests.tqhnsw_debug_turboquant_scan_stage_profile(
+                         FROM tests.ec_hnsw_debug_turboquant_scan_stage_profile(
                             '{index_name}'::regclass::oid,
                             {query_literal}
                          )"
@@ -6079,9 +6079,9 @@ mod tests {
         let _lock = env_var_test_lock();
         let _score_mode_guard =
             ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", env_value);
-        let index_name = "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8_idx";
+        let index_name = "ec_hnsw_turboquant_scan_stage_profile_sql_surface_int8_idx";
         let _index_oid = create_turboquant_binary_runtime_fixture(
-            "tqhnsw_turboquant_scan_stage_profile_sql_surface_int8",
+            "ec_hnsw_turboquant_scan_stage_profile_sql_surface_int8",
             index_name,
         );
         let query_literal = format_recall_vector_sql_literal(&pq_fastscan_binary_runtime_query());
@@ -6109,7 +6109,7 @@ mod tests {
                             turboquant_exact_score_mode,
                             turboquant_exact_score_uses_lut,
                             turboquant_exact_score_uses_qjl
-                         FROM tests.tqhnsw_debug_turboquant_scan_stage_profile(
+                         FROM tests.ec_hnsw_debug_turboquant_scan_stage_profile(
                             '{index_name}'::regclass::oid,
                             {query_literal}
                          )"
@@ -6213,14 +6213,14 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got \"bogus\""
+        expected = "ec_hnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got \"bogus\""
     )]
     fn test_turboquant_exact_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
         let _score_mode_guard = ScopedEnvVar::set("TQVECTOR_TURBOQUANT_EXACT_SCORE_MODE", "bogus");
         let index_oid = create_turboquant_binary_runtime_fixture(
-            "tqhnsw_turboquant_invalid_exact_score_mode",
-            "tqhnsw_turboquant_invalid_exact_score_mode_idx",
+            "ec_hnsw_turboquant_invalid_exact_score_mode",
+            "ec_hnsw_turboquant_invalid_exact_score_mode_idx",
         );
 
         let _ = unsafe {
@@ -6234,8 +6234,8 @@ mod tests {
         let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
         let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact",
-            "tqhnsw_pq_fastscan_runtime_profile_budgeted_exact_idx",
+            "ec_hnsw_pq_fastscan_runtime_profile_budgeted_exact",
+            "ec_hnsw_pq_fastscan_runtime_profile_budgeted_exact_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -6325,13 +6325,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_pq_fastscan_scan_hot_path_profile_sql_surface() {
+    fn test_ech_debug_pq_fastscan_scan_hot_path_profile_sql_surface() {
         let _lock = env_var_test_lock();
         let _exact_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL", "1");
         let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "1");
-        let index_name = "tqhnsw_pq_fastscan_hot_path_profile_sql_surface_idx";
+        let index_name = "ec_hnsw_pq_fastscan_hot_path_profile_sql_surface_idx";
         let _index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_hot_path_profile_sql_surface",
+            "ec_hnsw_pq_fastscan_hot_path_profile_sql_surface",
             index_name,
         );
         let query_literal = format_recall_vector_sql_literal(&pq_fastscan_runtime_query());
@@ -6359,7 +6359,7 @@ mod tests {
                             pq_fastscan_traversal_budgeted_expansions,
                             pq_fastscan_traversal_budgeted_candidates,
                             pq_fastscan_traversal_budgeted_exact_candidates
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_hot_path_profile(
                             '{index_name}'::regclass::oid,
                             {query_literal}
                          )"
@@ -6448,8 +6448,8 @@ mod tests {
             "frontier_head",
         );
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact",
-            "tqhnsw_pq_fastscan_runtime_profile_frontier_head_exact_idx",
+            "ec_hnsw_pq_fastscan_runtime_profile_frontier_head_exact",
+            "ec_hnsw_pq_fastscan_runtime_profile_frontier_head_exact_idx",
         );
         let (
             _rescan_elapsed_us,
@@ -6536,15 +6536,15 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got \"bogus\""
+        expected = "ec_hnsw PqFastScan traversal score mode must be one of [pq, binary], got \"bogus\""
     )]
     fn test_pq_fastscan_traversal_score_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
         let _score_mode_guard =
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_TRAVERSAL_SCORE_MODE", "bogus");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_invalid_score_mode",
-            "tqhnsw_pq_fastscan_runtime_invalid_score_mode_idx",
+            "ec_hnsw_pq_fastscan_runtime_invalid_score_mode",
+            "ec_hnsw_pq_fastscan_runtime_invalid_score_mode_idx",
         );
 
         let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
@@ -6552,14 +6552,14 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw grouped rerank mode must be one of [quantized, heap_f32], got \"bogus\""
+        expected = "ec_hnsw grouped rerank mode must be one of [quantized, heap_f32], got \"bogus\""
     )]
     fn test_pq_fastscan_rerank_mode_rejects_invalid_env() {
         let _lock = env_var_test_lock();
         let _rerank_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_RERANK_MODE", "bogus");
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode",
-            "tqhnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
+            "ec_hnsw_pq_fastscan_runtime_invalid_rerank_mode",
+            "ec_hnsw_pq_fastscan_runtime_invalid_rerank_mode_idx",
         );
 
         let _ = unsafe { am::debug_profile_ordered_scan(index_oid, pq_fastscan_runtime_query()) };
@@ -6567,7 +6567,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got \"bogus\""
+        expected = "ec_hnsw PqFastScan exact traversal scope must be one of [all, layer0], got \"bogus\""
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_scope_env() {
         let _lock = env_var_test_lock();
@@ -6575,7 +6575,7 @@ mod tests {
         let _scope_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_SCOPE", "bogus");
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_scope (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_invalid_exact_scope (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -6593,21 +6593,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_scope VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_invalid_exact_scope VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_scope_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_scope USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_invalid_exact_scope_idx ON ec_hnsw_pq_fastscan_runtime_invalid_exact_scope USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_scope \
+            "SELECT id FROM ec_hnsw_pq_fastscan_runtime_invalid_exact_scope \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -6616,7 +6616,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
+        expected = "ec_hnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got \"bogus\""
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_strategy_env() {
         let _lock = env_var_test_lock();
@@ -6627,7 +6627,7 @@ mod tests {
             ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_STRATEGY", "bogus");
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_strategy (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_invalid_exact_strategy (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -6645,21 +6645,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_strategy VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_invalid_exact_strategy VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_strategy_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_strategy USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_invalid_exact_strategy_idx ON ec_hnsw_pq_fastscan_runtime_invalid_exact_strategy USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_strategy \
+            "SELECT id FROM ec_hnsw_pq_fastscan_runtime_invalid_exact_strategy \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -6668,7 +6668,7 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw PqFastScan exact traversal limit must be a positive integer, got bogus"
+        expected = "ec_hnsw PqFastScan exact traversal limit must be a positive integer, got bogus"
     )]
     fn test_pq_fastscan_exact_traversal_rejects_invalid_limit_env() {
         let _lock = env_var_test_lock();
@@ -6676,7 +6676,7 @@ mod tests {
         let _limit_guard = ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_EXACT_TRAVERSAL_LIMIT", "bogus");
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_invalid_exact_limit (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_invalid_exact_limit (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -6694,21 +6694,21 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_invalid_exact_limit VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_invalid_exact_limit VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_invalid_exact_limit_idx ON tqhnsw_pq_fastscan_runtime_invalid_exact_limit USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_invalid_exact_limit_idx ON ec_hnsw_pq_fastscan_runtime_invalid_exact_limit USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let _ = Spi::get_one::<i64>(
-            "SELECT id FROM tqhnsw_pq_fastscan_runtime_invalid_exact_limit \
+            "SELECT id FROM ec_hnsw_pq_fastscan_runtime_invalid_exact_limit \
              ORDER BY embedding <#> ARRAY[0.5, 0.1, 0.4, -0.8, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, -0.1, -0.2, -0.3, -0.4]::real[] \
              LIMIT 1",
         )
@@ -6720,7 +6720,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_summary (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_summary (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -6738,20 +6738,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_summary VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_summary_idx ON tqhnsw_pq_fastscan_runtime_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_summary_idx ON ec_hnsw_pq_fastscan_runtime_summary USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -6822,8 +6822,8 @@ mod tests {
                             mean_abs_score_delta,
                             max_abs_score_delta,
                             mean_signed_score_delta
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
-                            'tqhnsw_pq_fastscan_runtime_summary_idx'::regclass::oid,
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_comparison_summary(
+                            'ec_hnsw_pq_fastscan_runtime_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
                     ),
@@ -6886,7 +6886,7 @@ mod tests {
     #[pg_test]
     fn test_scalar_runtime_summary_reports_no_grouped_comparisons() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scalar_runtime_summary (
+            "CREATE TABLE ec_hnsw_scalar_runtime_summary (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -6894,7 +6894,7 @@ mod tests {
         .expect("table creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_scalar_runtime_summary VALUES
+            "INSERT INTO ec_hnsw_scalar_runtime_summary VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
@@ -6903,7 +6903,7 @@ mod tests {
         .expect("insert should succeed");
 
         Spi::run(
-            "CREATE INDEX tqhnsw_scalar_runtime_summary_idx ON tqhnsw_scalar_runtime_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scalar_runtime_summary_idx ON ec_hnsw_scalar_runtime_summary USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -6927,8 +6927,8 @@ mod tests {
                         mean_abs_score_delta,
                         max_abs_score_delta,
                         mean_signed_score_delta
-                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary(
-                        'tqhnsw_scalar_runtime_summary_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_pq_fastscan_scan_comparison_summary(
+                        'ec_hnsw_scalar_runtime_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )",
                     None,
@@ -6983,7 +6983,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_comparison_rows (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_comparison_rows (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -7001,20 +7001,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_comparison_rows VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_comparison_rows VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_comparison_rows_idx ON tqhnsw_pq_fastscan_runtime_comparison_rows USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_comparison_rows_idx ON ec_hnsw_pq_fastscan_runtime_comparison_rows USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -7119,8 +7119,8 @@ mod tests {
                             comparison_score,
                             exact_rank,
                             exact_rank_shift
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
-                            'tqhnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid,
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_comparison_rows(
+                            'ec_hnsw_pq_fastscan_runtime_comparison_rows_idx'::regclass::oid,
                             {query_literal}
                          )
                          ORDER BY approx_rank"
@@ -7180,7 +7180,7 @@ mod tests {
     #[pg_test]
     fn test_scalar_runtime_comparison_rows_leave_exact_order_null() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scalar_runtime_comparison_rows (
+            "CREATE TABLE ec_hnsw_scalar_runtime_comparison_rows (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -7188,7 +7188,7 @@ mod tests {
         .expect("table creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_scalar_runtime_comparison_rows VALUES
+            "INSERT INTO ec_hnsw_scalar_runtime_comparison_rows VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
@@ -7197,7 +7197,7 @@ mod tests {
         .expect("insert should succeed");
 
         Spi::run(
-            "CREATE INDEX tqhnsw_scalar_runtime_comparison_rows_idx ON tqhnsw_scalar_runtime_comparison_rows USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scalar_runtime_comparison_rows_idx ON ec_hnsw_scalar_runtime_comparison_rows USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -7210,8 +7210,8 @@ mod tests {
                         comparison_score,
                         exact_rank,
                         exact_rank_shift
-                     FROM tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows(
-                        'tqhnsw_scalar_runtime_comparison_rows_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_pq_fastscan_scan_comparison_rows(
+                        'ec_hnsw_scalar_runtime_comparison_rows_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )
                      ORDER BY approx_rank",
@@ -7258,7 +7258,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_order_drift_summary (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_order_drift_summary (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -7276,20 +7276,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_order_drift_summary VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_order_drift_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_order_drift_summary_idx ON tqhnsw_pq_fastscan_runtime_order_drift_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_order_drift_summary_idx ON ec_hnsw_pq_fastscan_runtime_order_drift_summary USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -7390,8 +7390,8 @@ mod tests {
                             window_2_contains_exact_best,
                             window_4_contains_exact_best,
                             window_8_contains_exact_best
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
-                            'tqhnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid,
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_order_drift_summary(
+                            'ec_hnsw_pq_fastscan_runtime_order_drift_summary_idx'::regclass::oid,
                             {query_literal}
                          )"
                     ),
@@ -7489,7 +7489,7 @@ mod tests {
     #[pg_test]
     fn test_scalar_order_drift_summary_is_inert() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scalar_runtime_order_drift_summary (
+            "CREATE TABLE ec_hnsw_scalar_runtime_order_drift_summary (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -7497,7 +7497,7 @@ mod tests {
         .expect("table creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_scalar_runtime_order_drift_summary VALUES
+            "INSERT INTO ec_hnsw_scalar_runtime_order_drift_summary VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
@@ -7506,7 +7506,7 @@ mod tests {
         .expect("insert should succeed");
 
         Spi::run(
-            "CREATE INDEX tqhnsw_scalar_runtime_order_drift_summary_idx ON tqhnsw_scalar_runtime_order_drift_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scalar_runtime_order_drift_summary_idx ON ec_hnsw_scalar_runtime_order_drift_summary USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -7540,8 +7540,8 @@ mod tests {
                         window_2_contains_exact_best,
                         window_4_contains_exact_best,
                         window_8_contains_exact_best
-                     FROM tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
-                        'tqhnsw_scalar_runtime_order_drift_summary_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_pq_fastscan_scan_order_drift_summary(
+                        'ec_hnsw_scalar_runtime_order_drift_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
                      )",
                     None,
@@ -7619,7 +7619,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_rows (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_windowed_rows (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -7637,20 +7637,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_rows VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_windowed_rows VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_rows_idx ON tqhnsw_pq_fastscan_runtime_windowed_rows USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_windowed_rows_idx ON ec_hnsw_pq_fastscan_runtime_windowed_rows USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -7718,8 +7718,8 @@ mod tests {
                             exact_rank,
                             exact_rank_shift,
                             windowed_rank_shift
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
-                            'tqhnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid,
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_windowed_rows(
+                            'ec_hnsw_pq_fastscan_runtime_windowed_rows_idx'::regclass::oid,
                             {query_literal},
                             4
                          )
@@ -7793,7 +7793,7 @@ mod tests {
             .then(|| ScopedEnvVar::set("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", &window_value));
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_live_window (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_live_window (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -7823,20 +7823,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_live_window VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_live_window VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_live_window_idx ON tqhnsw_pq_fastscan_runtime_live_window USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_live_window_idx ON ec_hnsw_pq_fastscan_runtime_live_window USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_live_window_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_live_window_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -7969,7 +7969,7 @@ mod tests {
     #[pg_test]
     fn test_scalar_windowed_rows_are_inert() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scalar_runtime_windowed_rows (
+            "CREATE TABLE ec_hnsw_scalar_runtime_windowed_rows (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -7977,7 +7977,7 @@ mod tests {
         .expect("table creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_scalar_runtime_windowed_rows VALUES
+            "INSERT INTO ec_hnsw_scalar_runtime_windowed_rows VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
@@ -7986,7 +7986,7 @@ mod tests {
         .expect("insert should succeed");
 
         Spi::run(
-            "CREATE INDEX tqhnsw_scalar_runtime_windowed_rows_idx ON tqhnsw_scalar_runtime_windowed_rows USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scalar_runtime_windowed_rows_idx ON ec_hnsw_scalar_runtime_windowed_rows USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -8001,8 +8001,8 @@ mod tests {
                         exact_rank,
                         exact_rank_shift,
                         windowed_rank_shift
-                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows(
-                        'tqhnsw_scalar_runtime_windowed_rows_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_pq_fastscan_scan_windowed_rows(
+                        'ec_hnsw_scalar_runtime_windowed_rows_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                         4
                      )
@@ -8066,7 +8066,7 @@ mod tests {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_pq_fastscan_runtime_windowed_summary (
+            "CREATE TABLE ec_hnsw_pq_fastscan_runtime_windowed_summary (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8084,20 +8084,20 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_pq_fastscan_runtime_windowed_summary VALUES \
+                "INSERT INTO ec_hnsw_pq_fastscan_runtime_windowed_summary VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("insert should succeed");
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_pq_fastscan_runtime_windowed_summary_idx ON tqhnsw_pq_fastscan_runtime_windowed_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_pq_fastscan_runtime_windowed_summary_idx ON ec_hnsw_pq_fastscan_runtime_windowed_summary USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -8246,8 +8246,8 @@ mod tests {
                             max_abs_rank_shift_after,
                             spearman_rank_correlation_before,
                             spearman_rank_correlation_after
-                         FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
-                            'tqhnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid,
+                         FROM tests.ec_hnsw_debug_pq_fastscan_scan_windowed_summary(
+                            'ec_hnsw_pq_fastscan_runtime_windowed_summary_idx'::regclass::oid,
                             {query_literal},
                             4
                          )"
@@ -8362,7 +8362,7 @@ mod tests {
     #[pg_test]
     fn test_scalar_windowed_summary_is_inert() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scalar_runtime_windowed_summary (
+            "CREATE TABLE ec_hnsw_scalar_runtime_windowed_summary (
                 id bigint primary key,
                 embedding ecvector
             )",
@@ -8370,7 +8370,7 @@ mod tests {
         .expect("table creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_scalar_runtime_windowed_summary VALUES
+            "INSERT INTO ec_hnsw_scalar_runtime_windowed_summary VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.5, 0.5, 0.25, -0.75], 4, 42)),
@@ -8379,7 +8379,7 @@ mod tests {
         .expect("insert should succeed");
 
         Spi::run(
-            "CREATE INDEX tqhnsw_scalar_runtime_windowed_summary_idx ON tqhnsw_scalar_runtime_windowed_summary USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scalar_runtime_windowed_summary_idx ON ec_hnsw_scalar_runtime_windowed_summary USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -8417,8 +8417,8 @@ mod tests {
                         max_abs_rank_shift_after,
                         spearman_rank_correlation_before,
                         spearman_rank_correlation_after
-                     FROM tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary(
-                        'tqhnsw_scalar_runtime_windowed_summary_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_pq_fastscan_scan_windowed_summary(
+                        'ec_hnsw_scalar_runtime_windowed_summary_idx'::regclass::oid,
                         ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                         4
                      )",
@@ -8503,7 +8503,7 @@ mod tests {
     #[pg_test]
     fn test_raw_source_build_coalesces_duplicate_vectors() {
         Spi::run(
-            "CREATE TABLE tqhnsw_duplicate_source_build (
+            "CREATE TABLE ec_hnsw_duplicate_source_build (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8511,20 +8511,20 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_duplicate_source_build VALUES
+            "INSERT INTO ec_hnsw_duplicate_source_build VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
              (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.5, 0.2, 0.1, 0.0], 4, 42)),
              (3, ARRAY[-1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[-0.6, -0.1, 0.0, 0.3], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_duplicate_source_build_idx ON tqhnsw_duplicate_source_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_duplicate_source_build_idx ON ec_hnsw_duplicate_source_build USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_duplicate_source_build_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_duplicate_source_build_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -8556,7 +8556,7 @@ mod tests {
     #[should_panic(expected = "does not name a user column")]
     fn test_raw_source_rejects_missing_column() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_source_column (
+            "CREATE TABLE ec_hnsw_bad_source_column (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8564,12 +8564,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_source_column VALUES
+            "INSERT INTO ec_hnsw_bad_source_column VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_source_column_idx ON tqhnsw_bad_source_column USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_source_column_idx ON ec_hnsw_bad_source_column USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'missing')",
         )
         .expect("index creation should fail");
@@ -8579,7 +8579,7 @@ mod tests {
     #[should_panic(expected = "must be real[] or ecvector")]
     fn test_raw_source_rejects_wrong_type() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_source_type (
+            "CREATE TABLE ec_hnsw_bad_source_type (
                 id bigint primary key,
                 source double precision[],
                 embedding ecvector
@@ -8587,12 +8587,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_source_type VALUES
+            "INSERT INTO ec_hnsw_bad_source_type VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0]::double precision[], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_source_type_idx ON tqhnsw_bad_source_type USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_source_type_idx ON ec_hnsw_bad_source_type USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source')",
         )
         .expect("index creation should fail");
@@ -8602,7 +8602,7 @@ mod tests {
     #[should_panic(expected = "must be real[], bytea, or ecvector")]
     fn test_turboquant_rerank_source_rejects_wrong_type() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_rerank_source_type_turboquant (
+            "CREATE TABLE ec_hnsw_bad_rerank_source_type_turboquant (
                 id bigint primary key,
                 source real[],
                 source_raw text,
@@ -8611,12 +8611,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_rerank_source_type_turboquant VALUES
+            "INSERT INTO ec_hnsw_bad_rerank_source_type_turboquant VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_rerank_source_type_turboquant_idx ON tqhnsw_bad_rerank_source_type_turboquant USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_rerank_source_type_turboquant_idx ON ec_hnsw_bad_rerank_source_type_turboquant USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'source_raw')",
         )
         .expect("index creation should fail");
@@ -8626,7 +8626,7 @@ mod tests {
     #[should_panic(expected = "does not name a user column")]
     fn test_pq_fastscan_rerank_source_rejects_missing_column() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_rerank_source_column (
+            "CREATE TABLE ec_hnsw_bad_rerank_source_column (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8634,12 +8634,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_rerank_source_column VALUES
+            "INSERT INTO ec_hnsw_bad_rerank_source_column VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_rerank_source_column_idx ON tqhnsw_bad_rerank_source_column USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_rerank_source_column_idx ON ec_hnsw_bad_rerank_source_column USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'missing', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should fail");
@@ -8649,7 +8649,7 @@ mod tests {
     #[should_panic(expected = "must be real[], bytea, or ecvector")]
     fn test_pq_fastscan_rerank_source_rejects_wrong_type() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_rerank_source_type (
+            "CREATE TABLE ec_hnsw_bad_rerank_source_type (
                 id bigint primary key,
                 source real[],
                 source_raw text,
@@ -8658,12 +8658,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_rerank_source_type VALUES
+            "INSERT INTO ec_hnsw_bad_rerank_source_type VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], 'not-bytea', encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_rerank_source_type_idx ON tqhnsw_bad_rerank_source_type USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_rerank_source_type_idx ON ec_hnsw_bad_rerank_source_type USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', rerank_source_column = 'source_raw', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should fail");
@@ -8671,8 +8671,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_build_source_accepts_ecvector() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_ecvector_source";
-        let index_name = "tqhnsw_pq_fastscan_runtime_ecvector_source_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_ecvector_source";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_ecvector_source_idx";
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
                 id bigint primary key,
@@ -8699,7 +8699,7 @@ mod tests {
         }
 
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
@@ -8748,8 +8748,8 @@ mod tests {
 
     #[pg_test]
     fn test_pq_fastscan_persisted_ecvector_rerank_emits_scores() {
-        let table_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_ecvector";
-        let index_name = "tqhnsw_pq_fastscan_runtime_persisted_heap_rerank_ecvector_idx";
+        let table_name = "ec_hnsw_pq_fastscan_runtime_persisted_heap_rerank_ecvector";
+        let index_name = "ec_hnsw_pq_fastscan_runtime_persisted_heap_rerank_ecvector_idx";
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
                 id bigint primary key,
@@ -8774,7 +8774,7 @@ mod tests {
         }
 
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 80, build_source_column = 'source', rerank_source_column = 'source_raw', storage_format = 'pq_fastscan')"
         ))
         .expect("index creation should succeed");
@@ -8840,7 +8840,7 @@ mod tests {
     #[should_panic(expected = "dimension mismatch")]
     fn test_raw_source_rejects_dimension_mismatch() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bad_source_dim (
+            "CREATE TABLE ec_hnsw_bad_source_dim (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8848,22 +8848,22 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bad_source_dim VALUES
+            "INSERT INTO ec_hnsw_bad_source_dim VALUES
              (1, ARRAY[1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bad_source_dim_idx ON tqhnsw_bad_source_dim USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bad_source_dim_idx ON ec_hnsw_bad_source_dim USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source')",
         )
         .expect("index creation should fail");
     }
 
     #[pg_test]
-    #[should_panic(expected = "does not support NULL tqhnsw build_source_column")]
+    #[should_panic(expected = "does not support NULL ec_hnsw build_source_column")]
     fn test_raw_source_rejects_null_value() {
         Spi::run(
-            "CREATE TABLE tqhnsw_null_source (
+            "CREATE TABLE ec_hnsw_null_source (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8871,12 +8871,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_null_source VALUES
+            "INSERT INTO ec_hnsw_null_source VALUES
              (1, NULL, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_null_source_idx ON tqhnsw_null_source USING tqhnsw \
+            "CREATE INDEX ec_hnsw_null_source_idx ON ec_hnsw_null_source USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source')",
         )
         .expect("index creation should fail");
@@ -8886,7 +8886,7 @@ mod tests {
     #[should_panic(expected = "does not support expression indexes yet")]
     fn test_raw_source_rejects_expression_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_expression_source (
+            "CREATE TABLE ec_hnsw_expression_source (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8894,12 +8894,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_expression_source VALUES
+            "INSERT INTO ec_hnsw_expression_source VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_expression_source_idx ON tqhnsw_expression_source USING tqhnsw \
+            "CREATE INDEX ec_hnsw_expression_source_idx ON ec_hnsw_expression_source USING ec_hnsw \
              (((embedding::text)::ecvector) ecvector_ip_ops) WITH (build_source_column = 'source')",
         )
         .expect("index creation should fail");
@@ -8909,7 +8909,7 @@ mod tests {
     #[should_panic(expected = "does not support partial indexes yet")]
     fn test_raw_source_rejects_partial_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_partial_source (
+            "CREATE TABLE ec_hnsw_partial_source (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -8917,13 +8917,13 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_partial_source VALUES
+            "INSERT INTO ec_hnsw_partial_source VALUES
              (1, ARRAY[1.0, 0.0, 0.0, 0.0], encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
              (2, ARRAY[0.0, 1.0, 0.0, 0.0], encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_partial_source_idx ON tqhnsw_partial_source USING tqhnsw \
+            "CREATE INDEX ec_hnsw_partial_source_idx ON ec_hnsw_partial_source USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source') WHERE id > 1",
         )
         .expect("index creation should fail");
@@ -8931,8 +8931,10 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_spans_multiple_data_pages() {
-        Spi::run("CREATE TABLE tqhnsw_multipage_build (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_multipage_build (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
 
         let dim = 256_usize;
         let bits = 4_u8;
@@ -8942,7 +8944,7 @@ mod tests {
                 .map(|offset| ((id * 17 + offset as i32) & 0xff) as u8)
                 .collect::<Vec<_>>();
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_multipage_build VALUES \
+                "INSERT INTO ec_hnsw_multipage_build VALUES \
                  ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
@@ -8950,13 +8952,13 @@ mod tests {
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_multipage_build_idx ON tqhnsw_multipage_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_multipage_build_idx ON ec_hnsw_multipage_build USING ec_hnsw \
              (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_multipage_build_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_multipage_build_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -9039,7 +9041,7 @@ mod tests {
 
     #[pg_test]
     fn test_build_keeps_element_neighbor_local() {
-        Spi::run("CREATE TABLE tqhnsw_build_locality (id bigint primary key, embedding tqvector)")
+        Spi::run("CREATE TABLE ec_hnsw_build_locality (id bigint primary key, embedding tqvector)")
             .expect("table creation should succeed");
 
         let dim = 256_usize;
@@ -9050,7 +9052,7 @@ mod tests {
                 .map(|offset| ((id * 29 + offset as i32) & 0xff) as u8)
                 .collect::<Vec<_>>();
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_build_locality VALUES \
+                "INSERT INTO ec_hnsw_build_locality VALUES \
                  ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
@@ -9058,13 +9060,13 @@ mod tests {
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_build_locality_idx ON tqhnsw_build_locality USING tqhnsw \
+            "CREATE INDEX ec_hnsw_build_locality_idx ON ec_hnsw_build_locality USING ec_hnsw \
              (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_build_locality_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_build_locality_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -9088,23 +9090,25 @@ mod tests {
 
     #[pg_test]
     fn test_non_empty_index_build_coalesces_duplicate_vectors() {
-        Spi::run("CREATE TABLE tqhnsw_duplicate_build (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_duplicate_build VALUES
+            "CREATE TABLE ec_hnsw_duplicate_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_duplicate_build VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_duplicate_build_idx ON tqhnsw_duplicate_build USING tqhnsw \
+            "CREATE INDEX ec_hnsw_duplicate_build_idx ON ec_hnsw_duplicate_build USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_duplicate_build_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_duplicate_build_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -9135,25 +9139,26 @@ mod tests {
     #[pg_test]
     fn test_non_empty_index_build_keeps_gamma_distinct() {
         Spi::run(
-            "CREATE TABLE tqhnsw_duplicate_build_gamma (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_duplicate_build_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_duplicate_build_gamma VALUES
+            "INSERT INTO ec_hnsw_duplicate_build_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector),
              (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_duplicate_build_gamma_idx ON tqhnsw_duplicate_build_gamma USING tqhnsw \
+            "CREATE INDEX ec_hnsw_duplicate_build_gamma_idx ON ec_hnsw_duplicate_build_gamma USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_duplicate_build_gamma_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_duplicate_build_gamma_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
 
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, 4);
@@ -9185,27 +9190,27 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_appends_new_element_tuple() {
-        Spi::run("CREATE TABLE tqhnsw_insert_append (id bigint primary key, embedding ecvector)")
+    fn test_ech_insert_appends_new_element_tuple() {
+        Spi::run("CREATE TABLE ec_hnsw_insert_append (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_append VALUES
+            "INSERT INTO ec_hnsw_insert_append VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_append_idx ON tqhnsw_insert_append USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_append_idx ON ec_hnsw_insert_append USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_append VALUES
+            "INSERT INTO ec_hnsw_insert_append VALUES
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("insert should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_append_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_append_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (_block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
@@ -9227,26 +9232,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_reuses_tail_page_when_space_remains() {
+    fn test_ech_insert_reuses_tail_page_when_space_remains() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_tail_reuse (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_tail_reuse (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_tail_reuse VALUES
+            "INSERT INTO ec_hnsw_insert_tail_reuse VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_tail_reuse_idx ON tqhnsw_insert_tail_reuse USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_tail_reuse_idx ON ec_hnsw_insert_tail_reuse USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_tail_reuse_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_tail_reuse_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, _metadata, _data_pages) =
@@ -9257,7 +9262,7 @@ mod tests {
         );
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_tail_reuse VALUES
+            "INSERT INTO ec_hnsw_insert_tail_reuse VALUES
              (4, encode_to_ecvector(ARRAY[0.5, -0.5, 0.1, 0.2], 4, 42))",
         )
         .expect("insert should succeed");
@@ -9280,9 +9285,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_allocates_new_page_when_tail_is_full() {
-        Spi::run("CREATE TABLE tqhnsw_insert_new_page (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
+    fn test_ech_insert_allocates_new_page_when_tail_is_full() {
+        Spi::run(
+            "CREATE TABLE ec_hnsw_insert_new_page (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
 
         let default_m = 8_u16;
         let large_dim = (1_u16..=u16::MAX)
@@ -9332,19 +9339,19 @@ mod tests {
         let first_code = vec![0x11_u8; large_code_len];
         let second_code = vec![0x22_u8; large_code_len];
         Spi::run(&format!(
-            "INSERT INTO tqhnsw_insert_new_page VALUES
+            "INSERT INTO ec_hnsw_insert_new_page VALUES
              (1, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             hex::encode(first_code),
         ))
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_new_page_idx ON tqhnsw_insert_new_page USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_new_page_idx ON ec_hnsw_insert_new_page USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_new_page_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_new_page_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, _data_pages) =
@@ -9358,7 +9365,7 @@ mod tests {
         assert_eq!(metadata.seed, 42);
 
         Spi::run(&format!(
-            "INSERT INTO tqhnsw_insert_new_page VALUES
+            "INSERT INTO ec_hnsw_insert_new_page VALUES
              (2, '[dim={large_dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             hex::encode(second_code),
         ))
@@ -9374,9 +9381,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_reuses_new_tail_page_after_rollover() {
+    fn test_ech_insert_reuses_new_tail_page_after_rollover() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_rollover_reuse (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_insert_rollover_reuse (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
 
@@ -9451,24 +9458,25 @@ mod tests {
         let code_len = code_len(dim as usize, 4);
 
         Spi::run(&format!(
-            "CREATE INDEX tqhnsw_insert_rollover_reuse_idx ON tqhnsw_insert_rollover_reuse USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_rollover_reuse_idx ON ec_hnsw_insert_rollover_reuse USING ec_hnsw \
              (embedding tqvector_ip_ops) WITH (m = {m})"
         ))
         .expect("index creation should succeed");
 
         for id in 1..=elements_per_page {
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+                "INSERT INTO ec_hnsw_insert_rollover_reuse VALUES
                  ({id}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
                 hex::encode(vec![id as u8; code_len]),
             ))
             .expect("live insert should succeed");
         }
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_rollover_reuse_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_insert_rollover_reuse_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let (before_block_count, metadata, before_pages) =
             unsafe { am::debug_index_pages(index_oid) };
         assert_eq!(metadata.dimensions, dim);
@@ -9478,7 +9486,7 @@ mod tests {
         );
 
         Spi::run(&format!(
-            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+            "INSERT INTO ec_hnsw_insert_rollover_reuse VALUES
              ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             elements_per_page + 1,
             hex::encode(vec![0xaa_u8; code_len]),
@@ -9494,7 +9502,7 @@ mod tests {
         assert_eq!(after_rollover_pages.len(), 2);
 
         Spi::run(&format!(
-            "INSERT INTO tqhnsw_insert_rollover_reuse VALUES
+            "INSERT INTO ec_hnsw_insert_rollover_reuse VALUES
              ({}, '[dim={dim},bits=4,seed=42,gamma=0.5]:{}'::tqvector)",
             elements_per_page + 2,
             hex::encode(vec![0xbb_u8; code_len]),
@@ -9511,25 +9519,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_coalesces_duplicate_vectors() {
+    fn test_ech_insert_coalesces_duplicate_vectors() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_duplicate (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_duplicate (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[-1.0, -2.0, -3.0, -4.0], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_duplicate_idx ON tqhnsw_insert_duplicate USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_duplicate_idx ON ec_hnsw_insert_duplicate USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_duplicate_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_duplicate_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (before_block_count, metadata, data_pages) =
@@ -9541,7 +9549,7 @@ mod tests {
             .sum::<usize>();
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate VALUES
              (3, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("duplicate insert should succeed");
@@ -9575,24 +9583,24 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_keeps_gamma_distinct() {
+    fn test_ech_insert_keeps_gamma_distinct() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_duplicate_gamma (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_insert_duplicate_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=0.5]:112233'::tqvector)",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_duplicate_gamma_idx ON tqhnsw_insert_duplicate_gamma USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_duplicate_gamma_idx ON ec_hnsw_insert_duplicate_gamma USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_duplicate_gamma_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_duplicate_gamma_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -9604,7 +9612,7 @@ mod tests {
             .sum::<usize>();
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate_gamma VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate_gamma VALUES
              (2, '[dim=4,bits=4,seed=42,gamma=1.5]:112233'::tqvector)",
         )
         .expect("gamma-distinct insert should succeed");
@@ -9650,36 +9658,38 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
+    #[should_panic(expected = "ec_hnsw does not support non-finite gamma values")]
     fn test_non_empty_index_build_rejects_non_finite_gamma() {
-        Spi::run("CREATE TABLE tqhnsw_build_nan_gamma (id bigint primary key, embedding tqvector)")
-            .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_build_nan_gamma VALUES
+            "CREATE TABLE ec_hnsw_build_nan_gamma (id bigint primary key, embedding tqvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_build_nan_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_build_nan_gamma_idx ON tqhnsw_build_nan_gamma USING tqhnsw \
+            "CREATE INDEX ec_hnsw_build_nan_gamma_idx ON ec_hnsw_build_nan_gamma USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should fail");
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw does not support non-finite gamma values")]
-    fn test_tqhnsw_insert_rejects_non_finite_gamma() {
+    #[should_panic(expected = "ec_hnsw does not support non-finite gamma values")]
+    fn test_ech_insert_rejects_non_finite_gamma() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_insert_nan_gamma (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_nan_gamma_idx ON tqhnsw_insert_nan_gamma USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_nan_gamma_idx ON ec_hnsw_insert_nan_gamma USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_nan_gamma VALUES
+            "INSERT INTO ec_hnsw_insert_nan_gamma VALUES
              (1, '[dim=4,bits=4,seed=42,gamma=NaN]:112233'::tqvector)",
         )
         .expect("insert should fail");
@@ -9687,41 +9697,41 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw aminsert supports at most 10 duplicate heap tids per encoded vector"
+        expected = "ec_hnsw aminsert supports at most 10 duplicate heap tids per encoded vector"
     )]
-    fn test_tqhnsw_insert_rejects_duplicate_heaptid_overflow() {
-        Spi::run("CREATE TABLE tqhnsw_insert_duplicate_overflow (id bigint primary key, embedding ecvector)")
+    fn test_ech_insert_rejects_duplicate_heaptid_overflow() {
+        Spi::run("CREATE TABLE ec_hnsw_insert_duplicate_overflow (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate_overflow VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_duplicate_overflow_idx ON tqhnsw_insert_duplicate_overflow USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_duplicate_overflow_idx ON ec_hnsw_insert_duplicate_overflow USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         for id in 2..=10 {
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+                "INSERT INTO ec_hnsw_insert_duplicate_overflow VALUES
                  ({id}, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))"
             ))
             .expect("duplicate insert should succeed until inline heap tid capacity is exhausted");
         }
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate_overflow VALUES
+            "INSERT INTO ec_hnsw_insert_duplicate_overflow VALUES
              (11, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("insert should fail once duplicate heap tid capacity is exhausted");
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_supports_build_source_column_index() {
+    fn test_ech_insert_supports_build_source_column_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_source_live (
+            "CREATE TABLE ec_hnsw_insert_source_live (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -9729,28 +9739,28 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_live VALUES
+            "INSERT INTO ec_hnsw_insert_source_live VALUES
              (1, ARRAY[1.0, 0.0, 0.5, -1.0], encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
              (2, ARRAY[0.9, 0.1, 0.4, -0.8], encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
              (3, ARRAY[0.8, 0.2, 0.3, -0.6], encode_to_ecvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_source_live_idx ON tqhnsw_insert_source_live USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_source_live_idx ON ec_hnsw_insert_source_live USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', m = 2)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_source_live VALUES
+            "INSERT INTO ec_hnsw_insert_source_live VALUES
              (4, ARRAY[0.7, 0.3, 0.2, -0.4], encode_to_ecvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
         .expect("live insert should succeed on build_source_column indexes");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_source_live_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_source_live_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
-        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_source_live", 4);
+        let inserted_heap_tid = heap_tid_for_row("ec_hnsw_insert_source_live", 4);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (_element_tid, inserted_element) =
@@ -9772,9 +9782,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_supports_ecvector_build_source_column_index() {
+    fn test_ech_insert_supports_ecvector_build_source_column_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_ecvector_source_live (
+            "CREATE TABLE ec_hnsw_insert_ecvector_source_live (
                 id bigint primary key,
                 source ecvector,
                 embedding ecvector
@@ -9782,29 +9792,29 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_ecvector_source_live VALUES
+            "INSERT INTO ec_hnsw_insert_ecvector_source_live VALUES
              (1, ('[1.0,0.0,0.5,-1.0]')::ecvector, encode_to_ecvector(ARRAY[0.2, 0.1, 0.0, -0.2], 4, 42)),
              (2, ('[0.9,0.1,0.4,-0.8]')::ecvector, encode_to_ecvector(ARRAY[-0.1, 0.9, 0.2, -0.3], 4, 42)),
              (3, ('[0.8,0.2,0.3,-0.6]')::ecvector, encode_to_ecvector(ARRAY[0.4, 0.1, -0.2, 0.3], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_ecvector_source_live_idx ON tqhnsw_insert_ecvector_source_live USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_ecvector_source_live_idx ON ec_hnsw_insert_ecvector_source_live USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', m = 2)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_ecvector_source_live VALUES
+            "INSERT INTO ec_hnsw_insert_ecvector_source_live VALUES
              (4, ('[0.7,0.3,0.2,-0.4]')::ecvector, encode_to_ecvector(ARRAY[0.1, -0.3, 0.7, 0.2], 4, 42))",
         )
         .expect("live insert should succeed on ecvector build_source_column indexes");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_ecvector_source_live_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_ecvector_source_live_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_ecvector_source_live", 4);
+        let inserted_heap_tid = heap_tid_for_row("ec_hnsw_insert_ecvector_source_live", 4);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (_element_tid, inserted_element) =
@@ -9826,7 +9836,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_bootstraps_empty_pq_fastscan_index() {
+    fn test_ech_insert_bootstraps_empty_pq_fastscan_index() {
         let _lock = env_var_test_lock();
         let inserted_query = vec![
             0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
@@ -9834,7 +9844,7 @@ mod tests {
         ];
 
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_empty_pq_fastscan_bootstrap (
+            "CREATE TABLE ec_hnsw_insert_empty_pq_fastscan_bootstrap (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -9842,12 +9852,12 @@ mod tests {
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_empty_pq_fastscan_bootstrap_idx ON tqhnsw_insert_empty_pq_fastscan_bootstrap USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_empty_pq_fastscan_bootstrap_idx ON ec_hnsw_insert_empty_pq_fastscan_bootstrap USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_empty_pq_fastscan_bootstrap VALUES
+            "INSERT INTO ec_hnsw_insert_empty_pq_fastscan_bootstrap VALUES
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
@@ -9861,7 +9871,7 @@ mod tests {
         .expect("empty-index bootstrap insert should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_empty_pq_fastscan_bootstrap_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_empty_pq_fastscan_bootstrap_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -9876,7 +9886,7 @@ mod tests {
             "empty-index bootstrap should persist a rerank tuple",
         );
 
-        let ctid_to_id = ctid_id_map("tqhnsw_insert_empty_pq_fastscan_bootstrap");
+        let ctid_to_id = ctid_id_map("ec_hnsw_insert_empty_pq_fastscan_bootstrap");
         let observed_ids =
             unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query) }
                 .into_iter()
@@ -9894,7 +9904,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_appends_to_built_pq_fastscan_index() {
+    fn test_ech_insert_appends_to_built_pq_fastscan_index() {
         let _lock = env_var_test_lock();
         let inserted_query = vec![
             0.2_f32, 0.1, 0.0, -0.1, -0.2, -0.3, -0.4, -0.5, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1,
@@ -9902,7 +9912,7 @@ mod tests {
         ];
 
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_pq_fastscan_live (
+            "CREATE TABLE ec_hnsw_insert_pq_fastscan_live (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -9919,19 +9929,19 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES \
+                "INSERT INTO ec_hnsw_insert_pq_fastscan_live VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_pq_fastscan_live_idx ON tqhnsw_insert_pq_fastscan_live USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_pq_fastscan_live_idx ON ec_hnsw_insert_pq_fastscan_live USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_pq_fastscan_live_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_pq_fastscan_live_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -9967,7 +9977,7 @@ mod tests {
             .count();
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_pq_fastscan_live VALUES
+            "INSERT INTO ec_hnsw_insert_pq_fastscan_live VALUES
              (17,
               ARRAY[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8,
                     0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]::real[],
@@ -10042,9 +10052,9 @@ mod tests {
                 }
             };
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(
+            open_valid_ec_hnsw_index(
                 index_oid,
-                "test_tqhnsw_insert_appends_to_built_pq_fastscan_index",
+                "test_ech_insert_appends_to_built_pq_fastscan_index",
             )
         };
         let new_hot =
@@ -10061,7 +10071,7 @@ mod tests {
         assert_eq!(rerank.code.len(), layout.rerank_code_len);
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
-        let ctid_to_id = ctid_id_map("tqhnsw_insert_pq_fastscan_live");
+        let ctid_to_id = ctid_id_map("ec_hnsw_insert_pq_fastscan_live");
         let observed_ids = unsafe {
             am::debug_gettuple_scan_heap_tids_with_scores(index_oid, inserted_query.clone())
         }
@@ -10080,11 +10090,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_coalesces_duplicate_vectors_for_pq_fastscan() {
+    fn test_ech_insert_coalesces_duplicate_vectors_for_pq_fastscan() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_duplicate_pq_fastscan (
+            "CREATE TABLE ec_hnsw_insert_duplicate_pq_fastscan (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -10101,19 +10111,19 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan VALUES \
+                "INSERT INTO ec_hnsw_insert_duplicate_pq_fastscan VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_duplicate_pq_fastscan_idx ON tqhnsw_insert_duplicate_pq_fastscan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_duplicate_pq_fastscan_idx ON ec_hnsw_insert_duplicate_pq_fastscan USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_duplicate_pq_fastscan_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_duplicate_pq_fastscan_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -10125,9 +10135,9 @@ mod tests {
             .sum::<usize>();
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_duplicate_pq_fastscan
+            "INSERT INTO ec_hnsw_insert_duplicate_pq_fastscan
              SELECT 17, source, embedding
-               FROM tqhnsw_insert_duplicate_pq_fastscan
+               FROM ec_hnsw_insert_duplicate_pq_fastscan
               WHERE id = 1",
         )
         .expect("duplicate insert should succeed on a built PqFastScan index");
@@ -10177,12 +10187,12 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_stats_accepts_pq_fastscan_index() {
+    fn test_ech_vacuum_stats_accepts_pq_fastscan_index() {
         let _lock = env_var_test_lock();
 
         let index_oid = create_pq_fastscan_runtime_fixture(
-            "tqhnsw_vacuum_grouped_stats",
-            "tqhnsw_vacuum_grouped_stats_idx",
+            "ec_hnsw_vacuum_grouped_stats",
+            "ec_hnsw_vacuum_grouped_stats_idx",
         );
 
         let stats = unsafe { am::debug_vacuum_stats(index_oid) };
@@ -10199,11 +10209,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass1_compacts_pq_fastscan_duplicates() {
+    fn test_ech_vacuum_pass1_compacts_pq_fastscan_duplicates() {
         let _lock = env_var_test_lock();
 
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass1_grouped_duplicates (
+            "CREATE TABLE ec_hnsw_vacuum_pass1_grouped_duplicates (
                 id bigint primary key,
                 source real[],
                 embedding ecvector
@@ -10227,21 +10237,21 @@ mod tests {
                     .join(", ")
             };
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_vacuum_pass1_grouped_duplicates VALUES \
+                "INSERT INTO ec_hnsw_vacuum_pass1_grouped_duplicates VALUES \
                  ({id}, ARRAY[{source}]::real[], encode_to_ecvector(ARRAY[{embedding}]::real[], 4, 42))"
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass1_grouped_duplicates_idx ON tqhnsw_vacuum_pass1_grouped_duplicates USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass1_grouped_duplicates_idx ON ec_hnsw_vacuum_pass1_grouped_duplicates USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (build_source_column = 'source', storage_format = 'pq_fastscan')",
         )
         .expect("index creation should succeed");
 
-        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 1);
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_grouped_duplicates", 2);
+        let survivor_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_grouped_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_grouped_duplicates", 2);
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_vacuum_pass1_grouped_duplicates_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_vacuum_pass1_grouped_duplicates_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -10254,7 +10264,7 @@ mod tests {
             "fixture should build a grouped hot tuple with both duplicate heap tids",
         );
 
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
+        Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_grouped_duplicates WHERE id = 2")
             .expect("delete should succeed");
 
         let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
@@ -10282,11 +10292,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass2_unlinks_pq_fastscan_refs() {
+    fn test_ech_vacuum_pass2_unlinks_pq_fastscan_refs() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_vacuum_grouped_pass2_unlink";
-        let index_name = "tqhnsw_vacuum_grouped_pass2_unlink_idx";
+        let table_name = "ec_hnsw_vacuum_grouped_pass2_unlink";
+        let index_name = "ec_hnsw_vacuum_grouped_pass2_unlink_idx";
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
         let (_metadata_before, _layout_before, elements_before, neighbors_before) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -10381,11 +10391,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass2_replaces_pq_fastscan_layer0_edges() {
+    fn test_ech_vacuum_pass2_replaces_pq_fastscan_layer0_edges() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_vacuum_grouped_pass2_replace";
-        let index_name = "tqhnsw_vacuum_grouped_pass2_replace_idx";
+        let table_name = "ec_hnsw_vacuum_grouped_pass2_replace";
+        let index_name = "ec_hnsw_vacuum_grouped_pass2_replace_idx";
         let index_oid = create_pq_fastscan_runtime_fixture_with_m(table_name, index_name, 2);
         let (metadata_before, _layout_before, elements_before, neighbors_before) =
             decode_grouped_index_elements_and_neighbors(index_oid);
@@ -10483,9 +10493,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_turboquant_reloption_round_trip() {
-        let table_name = "tqhnsw_turboquant_reloption_round_trip";
-        let index_name = "tqhnsw_turboquant_reloption_round_trip_idx";
+    fn test_ech_turboquant_reloption_round_trip() {
+        let table_name = "ec_hnsw_turboquant_reloption_round_trip";
+        let index_name = "ec_hnsw_turboquant_reloption_round_trip_idx";
         let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
 
         let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
@@ -10545,11 +10555,11 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_requires_reindex() {
-        let table_name = "tqhnsw_storage_format_reindex_guard";
-        let index_name = "tqhnsw_storage_format_reindex_guard_idx";
+    fn test_ech_storage_format_switch_requires_reindex() {
+        let table_name = "ec_hnsw_storage_format_reindex_guard";
+        let index_name = "ec_hnsw_storage_format_reindex_guard_idx";
         let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
 
         Spi::run(&format!(
@@ -10569,11 +10579,11 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_rejects_insert_until_reindex() {
-        let table_name = "tqhnsw_storage_format_reindex_insert_guard";
-        let index_name = "tqhnsw_storage_format_reindex_insert_guard_idx";
+    fn test_ech_storage_format_switch_rejects_insert_until_reindex() {
+        let table_name = "ec_hnsw_storage_format_reindex_insert_guard";
+        let index_name = "ec_hnsw_storage_format_reindex_insert_guard_idx";
         let _index_oid = create_turboquant_runtime_fixture(table_name, index_name);
 
         Spi::run(&format!(
@@ -10592,11 +10602,11 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=pq_fastscan does not match on-disk metadata format=turboquant; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_rejects_vacuum_until_reindex() {
-        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard";
-        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_idx";
+    fn test_ech_storage_format_switch_rejects_vacuum_until_reindex() {
+        let table_name = "ec_hnsw_storage_format_reindex_vacuum_guard";
+        let index_name = "ec_hnsw_storage_format_reindex_vacuum_guard_idx";
         let index_oid = create_turboquant_runtime_fixture(table_name, index_name);
 
         let deleted_row_id = 1_i64;
@@ -10615,13 +10625,13 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_reverse_requires_reindex() {
+    fn test_ech_storage_format_switch_reverse_requires_reindex() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_storage_format_reindex_guard_reverse";
-        let index_name = "tqhnsw_storage_format_reindex_guard_reverse_idx";
+        let table_name = "ec_hnsw_storage_format_reindex_guard_reverse";
+        let index_name = "ec_hnsw_storage_format_reindex_guard_reverse_idx";
         let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
 
         Spi::run(&format!(
@@ -10641,13 +10651,13 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_reverse_rejects_insert() {
+    fn test_ech_storage_format_switch_reverse_rejects_insert() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_storage_format_reindex_insert_guard_reverse";
-        let index_name = "tqhnsw_storage_format_reindex_insert_guard_reverse_idx";
+        let table_name = "ec_hnsw_storage_format_reindex_insert_guard_reverse";
+        let index_name = "ec_hnsw_storage_format_reindex_insert_guard_reverse_idx";
         let _index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
 
         Spi::run(&format!(
@@ -10669,13 +10679,13 @@ mod tests {
 
     #[pg_test]
     #[should_panic(
-        expected = "tqhnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
+        expected = "ec_hnsw index reloption storage_format=turboquant does not match on-disk metadata format=pq_fastscan; REINDEX after switching formats"
     )]
-    fn test_tqhnsw_storage_format_switch_reverse_rejects_vacuum() {
+    fn test_ech_storage_format_switch_reverse_rejects_vacuum() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse";
-        let index_name = "tqhnsw_storage_format_reindex_vacuum_guard_reverse_idx";
+        let table_name = "ec_hnsw_storage_format_reindex_vacuum_guard_reverse";
+        let index_name = "ec_hnsw_storage_format_reindex_vacuum_guard_reverse_idx";
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
 
         let deleted_row_id = 1_i64;
@@ -10693,9 +10703,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_storage_format_switch_reindex_restores_runtime() {
-        let table_name = "tqhnsw_storage_format_reindex_restores_runtime_paths";
-        let index_name = "tqhnsw_storage_format_reindex_restores_runtime_paths_idx";
+    fn test_ech_storage_format_switch_reindex_restores_runtime() {
+        let table_name = "ec_hnsw_storage_format_reindex_restores_runtime_paths";
+        let index_name = "ec_hnsw_storage_format_reindex_restores_runtime_paths_idx";
         let index_oid = create_turboquant_runtime_fixture_with_source(table_name, index_name);
 
         Spi::run(&format!(
@@ -10756,11 +10766,11 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_pq_fastscan_reloption_round_trip() {
+    fn test_ech_pq_fastscan_reloption_round_trip() {
         let _lock = env_var_test_lock();
 
-        let table_name = "tqhnsw_pq_fastscan_reloption_round_trip";
-        let index_name = "tqhnsw_pq_fastscan_reloption_round_trip_idx";
+        let table_name = "ec_hnsw_pq_fastscan_reloption_round_trip";
+        let index_name = "ec_hnsw_pq_fastscan_reloption_round_trip_idx";
         let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
 
         let deleted_row_id = first_self_ranked_runtime_fixture_id(index_oid, table_name, 1..=16);
@@ -10823,8 +10833,8 @@ mod tests {
 
     #[pg_test]
     fn test_vacuum_source_backed_repair_prefers_source_candidate() {
-        let table_name = "tqhnsw_vacuum_source_metric";
-        let index_name = "tqhnsw_vacuum_source_metric_idx";
+        let table_name = "ec_hnsw_vacuum_source_metric";
+        let index_name = "ec_hnsw_vacuum_source_metric_idx";
 
         Spi::run(&format!(
             "CREATE TABLE {table_name} (
@@ -10884,7 +10894,7 @@ mod tests {
         }
 
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2, build_source_column = 'source')"
         ))
         .expect("index creation should succeed");
@@ -11024,22 +11034,22 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_empty_index_insert_initializes_shape_metadata() {
-        Spi::run("CREATE TABLE tqhnsw_empty_insert (id bigint primary key, embedding ecvector)")
+    fn test_ech_empty_index_insert_initializes_shape_metadata() {
+        Spi::run("CREATE TABLE ec_hnsw_empty_insert (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_empty_insert_idx ON tqhnsw_empty_insert USING tqhnsw \
+            "CREATE INDEX ec_hnsw_empty_insert_idx ON ec_hnsw_empty_insert USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_empty_insert VALUES
+            "INSERT INTO ec_hnsw_empty_insert VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("insert should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_empty_insert_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (metadata, elements, neighbors) =
@@ -11075,25 +11085,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_empty_index_reuses_initialized_metadata() {
+    fn test_ech_empty_index_reuses_initialized_metadata() {
         Spi::run(
-            "CREATE TABLE tqhnsw_empty_insert_reuse (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_empty_insert_reuse (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_empty_insert_reuse_idx ON tqhnsw_empty_insert_reuse USING tqhnsw \
+            "CREATE INDEX ec_hnsw_empty_insert_reuse_idx ON ec_hnsw_empty_insert_reuse USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_empty_insert_reuse VALUES
+            "INSERT INTO ec_hnsw_empty_insert_reuse VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("sequential inserts should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_empty_insert_reuse_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_empty_insert_reuse_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (metadata, elements, _neighbors) =
@@ -11116,24 +11126,24 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_repairs_invalid_entry_point_after_shape_init() {
+    fn test_ech_insert_repairs_invalid_entry_point_after_shape_init() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_entry_point_repair (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_entry_point_repair (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_entry_point_repair_idx ON tqhnsw_insert_entry_point_repair USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_entry_point_repair_idx ON ec_hnsw_insert_entry_point_repair USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+            "INSERT INTO ec_hnsw_insert_entry_point_repair VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_entry_point_repair_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_entry_point_repair_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11154,7 +11164,7 @@ mod tests {
         assert_eq!(metadata.entry_point, am::page::ItemPointer::INVALID);
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_entry_point_repair VALUES
+            "INSERT INTO ec_hnsw_insert_entry_point_repair VALUES
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42))",
         )
         .expect("repairing insert should succeed");
@@ -11172,19 +11182,19 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_neighbor_tuple_sizing_matches_levels() {
+    fn test_ech_insert_neighbor_tuple_sizing_matches_levels() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_level_shape (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_level_shape (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_level_shape_idx ON tqhnsw_insert_level_shape USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_level_shape_idx ON ec_hnsw_insert_level_shape USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_insert_level_shape_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_insert_level_shape_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -11193,7 +11203,7 @@ mod tests {
         while inserted_rows < 128 && !found_upper_level {
             inserted_rows += 1;
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_level_shape VALUES (
+                "INSERT INTO ec_hnsw_insert_level_shape VALUES (
                     {id},
                     encode_to_ecvector(ARRAY[
                         {id}.0,
@@ -11209,7 +11219,7 @@ mod tests {
             ))
             .expect("insert should succeed");
 
-            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_shape", inserted_rows);
+            let heap_tid = heap_tid_for_row("ec_hnsw_insert_level_shape", inserted_rows);
             let expected_level =
                 am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
             found_upper_level |= expected_level > 0;
@@ -11241,25 +11251,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_promotes_entry_point_on_level_up() {
+    fn test_ech_insert_promotes_entry_point_on_level_up() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_level_promotion (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_level_promotion (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_level_promotion_idx ON tqhnsw_insert_level_promotion USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_level_promotion_idx ON ec_hnsw_insert_level_promotion USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_level_promotion VALUES
+            "INSERT INTO ec_hnsw_insert_level_promotion VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_level_promotion_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_level_promotion_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11267,7 +11277,7 @@ mod tests {
         let mut previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
         for id in 2_i64..=128_i64 {
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_level_promotion VALUES (
+                "INSERT INTO ec_hnsw_insert_level_promotion VALUES (
                     {id},
                     encode_to_ecvector(ARRAY[
                         {id}.0,
@@ -11283,7 +11293,7 @@ mod tests {
             ))
             .expect("insert should succeed");
 
-            let heap_tid = heap_tid_for_row("tqhnsw_insert_level_promotion", id);
+            let heap_tid = heap_tid_for_row("ec_hnsw_insert_level_promotion", id);
             let expected_level =
                 am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
             let (metadata, elements, _neighbors) =
@@ -11305,39 +11315,39 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_populates_forward_links_from_live_entry_seed() {
+    fn test_ech_insert_populates_forward_links_from_live_entry_seed() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_live_forward_links (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_live_forward_links (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_live_forward_links_idx ON tqhnsw_insert_live_forward_links USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_live_forward_links_idx ON ec_hnsw_insert_live_forward_links USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+            "INSERT INTO ec_hnsw_insert_live_forward_links VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_live_forward_links_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_live_forward_links_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let row1_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 1);
+        let row1_heap_tid = heap_tid_for_row("ec_hnsw_insert_live_forward_links", 1);
         let (_metadata, elements, _neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (row1_element_tid, _) = find_element_for_heap_tid(&elements, row1_heap_tid);
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_live_forward_links VALUES
+            "INSERT INTO ec_hnsw_insert_live_forward_links VALUES
              (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.25, -0.9], 4, 42))",
         )
         .expect("second insert should succeed");
 
-        let row2_heap_tid = heap_tid_for_row("tqhnsw_insert_live_forward_links", 2);
+        let row2_heap_tid = heap_tid_for_row("ec_hnsw_insert_live_forward_links", 2);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (row1_element_tid_after, row1_element) =
@@ -11381,13 +11391,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_populates_forward_links_against_built_graph() {
+    fn test_ech_insert_populates_forward_links_against_built_graph() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_built_forward_links (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_built_forward_links (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+            "INSERT INTO ec_hnsw_insert_built_forward_links VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
@@ -11395,13 +11405,13 @@ mod tests {
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_built_forward_links_idx ON tqhnsw_insert_built_forward_links USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_built_forward_links_idx ON ec_hnsw_insert_built_forward_links USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_built_forward_links_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_built_forward_links_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11413,12 +11423,12 @@ mod tests {
             .collect::<HashSet<_>>();
 
         Spi::run(
-            "INSERT INTO tqhnsw_insert_built_forward_links VALUES
+            "INSERT INTO ec_hnsw_insert_built_forward_links VALUES
              (5, encode_to_ecvector(ARRAY[1.0, 0.2, 0.1, 0.0], 4, 42))",
         )
         .expect("live insert should succeed");
 
-        let row5_heap_tid = heap_tid_for_row("tqhnsw_insert_built_forward_links", 5);
+        let row5_heap_tid = heap_tid_for_row("ec_hnsw_insert_built_forward_links", 5);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (row5_element_tid, row5_element) = find_element_for_heap_tid(&elements, row5_heap_tid);
@@ -11459,19 +11469,19 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_populates_upper_layer_links_when_available() {
+    fn test_ech_insert_populates_upper_layer_links_when_available() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_upper_layer_links (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_upper_layer_links (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_upper_layer_links_idx ON tqhnsw_insert_upper_layer_links USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_upper_layer_links_idx ON ec_hnsw_insert_upper_layer_links USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_upper_layer_links_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_upper_layer_links_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11480,7 +11490,7 @@ mod tests {
         for id in 1_i64..=192_i64 {
             let previous_metadata = unsafe { am::debug_index_metadata(index_oid) }.3;
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_upper_layer_links VALUES (
+                "INSERT INTO ec_hnsw_insert_upper_layer_links VALUES (
                     {id},
                     encode_to_ecvector(ARRAY[
                         {id}.0,
@@ -11496,7 +11506,7 @@ mod tests {
             ))
             .expect("live insert should succeed");
 
-            let heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", id);
+            let heap_tid = heap_tid_for_row("ec_hnsw_insert_upper_layer_links", id);
             let level = am::debug_insert_level_for_heap_tid(2, 42, heap_tid, code_len(4, 4));
             if previous_metadata.max_level > 0 && level > 0 {
                 chosen_insert = Some((id, level));
@@ -11506,7 +11516,7 @@ mod tests {
 
         let (inserted_id, expected_level) = chosen_insert
             .expect("deterministic insert levels should produce an upper-layer live insert");
-        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_upper_layer_links", inserted_id);
+        let inserted_heap_tid = heap_tid_for_row("ec_hnsw_insert_upper_layer_links", inserted_id);
         let (metadata, elements, neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (inserted_element_tid, inserted_element) =
@@ -11565,28 +11575,28 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_insert_rewrites_full_layer0_backlink_slice() {
+    fn test_ech_insert_rewrites_full_layer0_backlink_slice() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_full_layer0_backlink (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_full_layer0_backlink (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         for id in 1_i64..=12_i64 {
             let delta = id as f32 * 0.08;
             let z = if id % 2 == 0 { 0.25 } else { -0.25 };
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                "INSERT INTO ec_hnsw_insert_full_layer0_backlink VALUES
                  ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, {z}, 0.0], 4, 42))",
             ))
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_full_layer0_backlink_idx ON tqhnsw_insert_full_layer0_backlink USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_full_layer0_backlink_idx ON ec_hnsw_insert_full_layer0_backlink USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_full_layer0_backlink_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_full_layer0_backlink_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11597,12 +11607,12 @@ mod tests {
             let w = (id - 12) as f32 * 0.02;
             let z = if id % 2 == 0 { 0.25 } else { -0.25 };
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_full_layer0_backlink VALUES
+                "INSERT INTO ec_hnsw_insert_full_layer0_backlink VALUES
                  ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, {z}, {w}], 4, 42))",
             ))
             .expect("live insert should succeed");
 
-            let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_full_layer0_backlink", id);
+            let inserted_heap_tid = heap_tid_for_row("ec_hnsw_insert_full_layer0_backlink", id);
             let (metadata, elements_after, neighbors_after) =
                 decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
             let (inserted_element_tid, inserted_element) =
@@ -11663,13 +11673,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_live_insert_is_graph_reachable_via_backlinks() {
+    fn test_ech_live_insert_is_graph_reachable_via_backlinks() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_graph_reachable (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_insert_graph_reachable (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+            "INSERT INTO ec_hnsw_insert_graph_reachable VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42)),
@@ -11677,13 +11687,13 @@ mod tests {
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_graph_reachable_idx ON tqhnsw_insert_graph_reachable USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_graph_reachable_idx ON ec_hnsw_insert_graph_reachable USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 8, ef_search = 8)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_insert_graph_reachable_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_insert_graph_reachable_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11692,12 +11702,12 @@ mod tests {
         for id in 5_i64..=32_i64 {
             let delta = (id - 4) as f32 * 0.02;
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_insert_graph_reachable VALUES
+                "INSERT INTO ec_hnsw_insert_graph_reachable VALUES
                  ({id}, encode_to_ecvector(ARRAY[1.0, {delta}, 0.1, 0.0], 4, 42))",
             ))
             .expect("live insert should succeed");
 
-            let heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", id);
+            let heap_tid = heap_tid_for_row("ec_hnsw_insert_graph_reachable", id);
             let level = am::debug_insert_level_for_heap_tid(8, 42, heap_tid, code_len(4, 4));
             if level == 0 {
                 chosen_insert = Some((id, vec![1.0, delta, 0.1, 0.0]));
@@ -11707,7 +11717,7 @@ mod tests {
 
         let (inserted_id, query) = chosen_insert
             .expect("deterministic insert levels should produce a level-0 live insert");
-        let inserted_heap_tid = heap_tid_for_row("tqhnsw_insert_graph_reachable", inserted_id);
+        let inserted_heap_tid = heap_tid_for_row("ec_hnsw_insert_graph_reachable", inserted_id);
         let (metadata, elements, _neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (inserted_element_tid, _inserted_element) =
@@ -11735,25 +11745,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_callbacks_are_benign_noops() {
-        Spi::run("CREATE TABLE tqhnsw_vacuum_noop (id bigint primary key, embedding ecvector)")
+    fn test_ech_vacuum_callbacks_are_benign_noops() {
+        Spi::run("CREATE TABLE ec_hnsw_vacuum_noop (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_noop VALUES
+            "INSERT INTO ec_hnsw_vacuum_noop VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_noop_idx ON tqhnsw_vacuum_noop USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_noop_idx ON ec_hnsw_vacuum_noop USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("DELETE FROM tqhnsw_vacuum_noop WHERE id = 2").expect("delete should succeed");
+        Spi::run("DELETE FROM ec_hnsw_vacuum_noop WHERE id = 2").expect("delete should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_noop_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_noop_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (block_count, metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
@@ -11774,17 +11784,17 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_callbacks_handle_empty_index() {
-        Spi::run("CREATE TABLE tqhnsw_vacuum_empty (id bigint primary key, embedding ecvector)")
+    fn test_ech_vacuum_callbacks_handle_empty_index() {
+        Spi::run("CREATE TABLE ec_hnsw_vacuum_empty (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_empty_idx ON tqhnsw_vacuum_empty USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_empty_idx ON ec_hnsw_vacuum_empty USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_empty_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_empty_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
@@ -11804,25 +11814,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_callbacks_are_stable_across_repeated_calls() {
-        Spi::run("CREATE TABLE tqhnsw_vacuum_repeat (id bigint primary key, embedding ecvector)")
+    fn test_ech_vacuum_callbacks_are_stable_across_repeated_calls() {
+        Spi::run("CREATE TABLE ec_hnsw_vacuum_repeat (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_repeat VALUES
+            "INSERT INTO ec_hnsw_vacuum_repeat VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_repeat_idx ON tqhnsw_vacuum_repeat USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_repeat_idx ON ec_hnsw_vacuum_repeat USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("DELETE FROM tqhnsw_vacuum_repeat WHERE id = 2").expect("delete should succeed");
+        Spi::run("DELETE FROM ec_hnsw_vacuum_repeat WHERE id = 2").expect("delete should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_repeat_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let first_stats = unsafe { am::debug_vacuum_stats(index_oid) };
@@ -11841,31 +11851,31 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass1_compacts_duplicate_heaptids() {
+    fn test_ech_vacuum_pass1_compacts_duplicate_heaptids() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass1_duplicates (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass1_duplicates (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_pass1_duplicates VALUES
+            "INSERT INTO ec_hnsw_vacuum_pass1_duplicates VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass1_duplicates_idx ON tqhnsw_vacuum_pass1_duplicates USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass1_duplicates_idx ON ec_hnsw_vacuum_pass1_duplicates USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let survivor_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 1);
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_duplicates", 2);
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_duplicates WHERE id = 2")
+        let survivor_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_duplicates", 1);
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_duplicates", 2);
+        Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_duplicates WHERE id = 2")
             .expect("delete should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_vacuum_pass1_duplicates_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_vacuum_pass1_duplicates_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -11894,30 +11904,30 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass1_makes_deleted_row_unreachable() {
+    fn test_ech_vacuum_pass1_makes_deleted_row_unreachable() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass1_scan (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass1_scan (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_pass1_scan VALUES
+            "INSERT INTO ec_hnsw_vacuum_pass1_scan VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass1_scan_idx ON tqhnsw_vacuum_pass1_scan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass1_scan_idx ON ec_hnsw_vacuum_pass1_scan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_scan", 2);
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_scan WHERE id = 2")
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_scan", 2);
+        Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_scan WHERE id = 2")
             .expect("delete should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_scan_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass1_scan_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let stats = unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
@@ -11956,9 +11966,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_repairs_deleted_entry_point_metadata() {
-        let table_name = "tqhnsw_vacuum_entry_repair";
-        let index_name = "tqhnsw_vacuum_entry_repair_idx";
+    fn test_ech_vacuum_repairs_deleted_entry_point_metadata() {
+        let table_name = "ec_hnsw_vacuum_entry_repair";
+        let index_name = "ec_hnsw_vacuum_entry_repair_idx";
         Spi::run(&format!(
             "CREATE TABLE {table_name} (id bigint primary key, embedding ecvector)"
         ))
@@ -11973,7 +11983,7 @@ mod tests {
         ))
         .expect("seed inserts should succeed");
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops)"
         ))
         .expect("index creation should succeed");
@@ -12034,7 +12044,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_scan_falls_back_from_stale_entry_metadata() {
+    fn test_ech_scan_falls_back_from_stale_entry_metadata() {
         fn fixture_query(id: usize) -> Vec<f32> {
             match id {
                 1 => vec![1.0, 0.0, 0.5, -1.0],
@@ -12046,8 +12056,8 @@ mod tests {
             }
         }
 
-        let table_name = "tqhnsw_scan_stale_entry_fallback";
-        let index_name = "tqhnsw_scan_stale_entry_fallback_idx";
+        let table_name = "ec_hnsw_scan_stale_entry_fallback";
+        let index_name = "ec_hnsw_scan_stale_entry_fallback_idx";
         Spi::run(&format!(
             "CREATE TABLE {table_name} (id bigint primary key, embedding ecvector)"
         ))
@@ -12062,7 +12072,7 @@ mod tests {
         ))
         .expect("seed inserts should succeed");
         Spi::run(&format!(
-            "CREATE INDEX {index_name} ON {table_name} USING tqhnsw \
+            "CREATE INDEX {index_name} ON {table_name} USING ec_hnsw \
              (embedding ecvector_ip_ops)"
         ))
         .expect("index creation should succeed");
@@ -12120,13 +12130,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass2_unlinks_deleted_neighbor_refs() {
+    fn test_ech_vacuum_pass2_unlinks_deleted_neighbor_refs() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass2_unlink (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass2_unlink (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_pass2_unlink VALUES
+            "INSERT INTO ec_hnsw_vacuum_pass2_unlink VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42)),
@@ -12135,14 +12145,14 @@ mod tests {
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass2_unlink_idx ON tqhnsw_vacuum_pass2_unlink USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass2_unlink_idx ON ec_hnsw_vacuum_pass2_unlink USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_unlink", 2);
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass2_unlink", 2);
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_unlink_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass2_unlink_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (_metadata_before, elements_before, neighbors_before) =
@@ -12154,7 +12164,7 @@ mod tests {
             "fixture should start with at least one persisted neighbor ref to the soon-to-be-deleted node",
         );
 
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass2_unlink WHERE id = 2")
+        Spi::run("DELETE FROM ec_hnsw_vacuum_pass2_unlink WHERE id = 2")
             .expect("delete should succeed");
 
         unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
@@ -12178,13 +12188,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass2_layer0_replacement_fills_broken_edges() {
+    fn test_ech_vacuum_pass2_layer0_replacement_fills_broken_edges() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass2_replace (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass2_replace (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_pass2_replace VALUES
+            "INSERT INTO ec_hnsw_vacuum_pass2_replace VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.45, -0.9], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.8, 0.2, 0.4, -0.8], 4, 42)),
@@ -12196,13 +12206,13 @@ mod tests {
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass2_replace_idx ON tqhnsw_vacuum_pass2_replace USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass2_replace_idx ON ec_hnsw_vacuum_pass2_replace USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass2_replace_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass2_replace_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (metadata_before, elements_before, neighbors_before) =
@@ -12210,7 +12220,7 @@ mod tests {
         let (deleted_row_id, deleted_heap_tid, deleted_element_tid, affected_before) =
             (1_i64..=8)
                 .find_map(|id| {
-                    let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass2_replace", id);
+                    let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass2_replace", id);
                     let (deleted_element_tid, _) =
                         find_element_for_heap_tid(&elements_before, deleted_heap_tid);
                     let affected_before = elements_before
@@ -12255,7 +12265,7 @@ mod tests {
                 );
 
         Spi::run(&format!(
-            "DELETE FROM tqhnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
+            "DELETE FROM ec_hnsw_vacuum_pass2_replace WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
         unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
@@ -12301,14 +12311,14 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass2_upper_replacement_fills_broken_edges() {
+    fn test_ech_vacuum_pass2_upper_replacement_fills_broken_edges() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass2_upper_replace (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass2_upper_replace (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         for id in 1_i64..=192_i64 {
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_vacuum_pass2_upper_replace VALUES (
+                "INSERT INTO ec_hnsw_vacuum_pass2_upper_replace VALUES (
                     {id},
                     encode_to_ecvector(ARRAY[
                         {id}.0,
@@ -12325,13 +12335,13 @@ mod tests {
             .expect("seed insert should succeed");
         }
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass2_upper_replace_idx ON tqhnsw_vacuum_pass2_upper_replace USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass2_upper_replace_idx ON ec_hnsw_vacuum_pass2_upper_replace USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 2)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_vacuum_pass2_upper_replace_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_vacuum_pass2_upper_replace_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -12346,7 +12356,7 @@ mod tests {
             (1_i64..=192_i64)
                 .find_map(|id| {
                     let deleted_heap_tid =
-                        heap_tid_for_row("tqhnsw_vacuum_pass2_upper_replace", id);
+                        heap_tid_for_row("ec_hnsw_vacuum_pass2_upper_replace", id);
                     let (deleted_element_tid, _) =
                         find_element_for_heap_tid(&elements_before, deleted_heap_tid);
                     let affected_before = elements_before
@@ -12392,7 +12402,7 @@ mod tests {
                 );
 
         Spi::run(&format!(
-            "DELETE FROM tqhnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
+            "DELETE FROM ec_hnsw_vacuum_pass2_upper_replace WHERE id = {deleted_row_id}"
         ))
         .expect("delete should succeed");
         unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
@@ -12438,27 +12448,27 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_pass1_is_stable_across_repeated_replays() {
+    fn test_ech_vacuum_pass1_is_stable_across_repeated_replays() {
         Spi::run(
-            "CREATE TABLE tqhnsw_vacuum_pass1_repeat (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_vacuum_pass1_repeat (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_pass1_repeat VALUES
+            "INSERT INTO ec_hnsw_vacuum_pass1_repeat VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.25, 0.75], 4, 42))",
         )
         .expect("seed inserts should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_pass1_repeat_idx ON tqhnsw_vacuum_pass1_repeat USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_pass1_repeat_idx ON ec_hnsw_vacuum_pass1_repeat USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_pass1_repeat", 2);
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_pass1_repeat", 2);
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_pass1_repeat_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_pass1_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (_metadata_before, elements_before, neighbors_before) =
@@ -12470,7 +12480,7 @@ mod tests {
             "fixture should start with at least one persisted neighbor ref to the deleted element",
         );
 
-        Spi::run("DELETE FROM tqhnsw_vacuum_pass1_repeat WHERE id = 2")
+        Spi::run("DELETE FROM ec_hnsw_vacuum_pass1_repeat WHERE id = 2")
             .expect("delete should succeed");
 
         let first_stats =
@@ -12499,36 +12509,39 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_vacuum_finalized_nodes_skip_duplicate_coalesce() {
-        Spi::run("CREATE TABLE tqhnsw_vacuum_reinsert (id bigint primary key, embedding ecvector)")
-            .expect("table creation should succeed");
+    fn test_ech_vacuum_finalized_nodes_skip_duplicate_coalesce() {
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+            "CREATE TABLE ec_hnsw_vacuum_reinsert (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_vacuum_reinsert VALUES
              (1, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_vacuum_reinsert_idx ON tqhnsw_vacuum_reinsert USING tqhnsw \
+            "CREATE INDEX ec_hnsw_vacuum_reinsert_idx ON ec_hnsw_vacuum_reinsert USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let deleted_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 1);
+        let deleted_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_reinsert", 1);
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_vacuum_reinsert_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_vacuum_reinsert_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
-        Spi::run("DELETE FROM tqhnsw_vacuum_reinsert WHERE id = 1").expect("delete should succeed");
+        Spi::run("DELETE FROM ec_hnsw_vacuum_reinsert WHERE id = 1")
+            .expect("delete should succeed");
         unsafe { am::debug_vacuum_remove_heap_tids(index_oid, &[deleted_heap_tid]) };
 
         Spi::run(
-            "INSERT INTO tqhnsw_vacuum_reinsert VALUES
+            "INSERT INTO ec_hnsw_vacuum_reinsert VALUES
              (2, encode_to_ecvector(ARRAY[0.5, 1.0, -0.5, 0.25], 4, 42))",
         )
         .expect("replacement insert should succeed");
 
-        let replacement_heap_tid = heap_tid_for_row("tqhnsw_vacuum_reinsert", 2);
+        let replacement_heap_tid = heap_tid_for_row("ec_hnsw_vacuum_reinsert", 2);
         let (_metadata, elements, _neighbors) =
             decode_index_elements_and_neighbors(index_oid, code_len(4, 4));
         let (_replacement_tid, replacement_element) =
@@ -12560,28 +12573,28 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_scan_result_count_matches_scan_helper() {
+    fn test_ech_debug_scan_result_count_matches_scan_helper() {
         Spi::run(
-            "CREATE TABLE tqhnsw_debug_scan_result_count_fixture \
+            "CREATE TABLE ec_hnsw_debug_scan_result_count_fixture \
              (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_debug_scan_result_count_fixture VALUES
+            "INSERT INTO ec_hnsw_debug_scan_result_count_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_debug_scan_result_count_fixture_idx \
-             ON tqhnsw_debug_scan_result_count_fixture USING tqhnsw \
+            "CREATE INDEX ec_hnsw_debug_scan_result_count_fixture_idx \
+             ON ec_hnsw_debug_scan_result_count_fixture USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_debug_scan_result_count_fixture_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -12591,8 +12604,8 @@ mod tests {
         })
         .expect("scan result count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
-            "SELECT tests.tqhnsw_debug_scan_result_count(
-                 'tqhnsw_debug_scan_result_count_fixture_idx'::regclass::oid,
+            "SELECT tests.ec_hnsw_debug_scan_result_count(
+                 'ec_hnsw_debug_scan_result_count_fixture_idx'::regclass::oid,
                  ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
              )",
         )
@@ -12601,33 +12614,33 @@ mod tests {
 
         assert_eq!(
             sql_count, rust_count,
-            "the SQL-visible debug scan wrapper should exercise the same live tqhnsw scan path",
+            "the SQL-visible debug scan wrapper should exercise the same live ec_hnsw scan path",
         );
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_scan_profile_reports_graph_first_counters() {
+    fn test_ech_debug_scan_profile_reports_graph_first_counters() {
         Spi::run(
-            "CREATE TABLE tqhnsw_debug_scan_profile_fixture \
+            "CREATE TABLE ec_hnsw_debug_scan_profile_fixture \
              (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_debug_scan_profile_fixture VALUES
+            "INSERT INTO ec_hnsw_debug_scan_profile_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.0, -0.5, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_debug_scan_profile_fixture_idx \
-             ON tqhnsw_debug_scan_profile_fixture USING tqhnsw \
+            "CREATE INDEX ec_hnsw_debug_scan_profile_fixture_idx \
+             ON ec_hnsw_debug_scan_profile_fixture USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_debug_scan_profile_fixture_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_debug_scan_profile_fixture_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -12776,14 +12789,14 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_scan_profile_limit_stops_early() {
+    fn test_ech_debug_scan_profile_limit_stops_early() {
         Spi::run(
-            "CREATE TABLE tqhnsw_debug_scan_profile_limited_fixture \
+            "CREATE TABLE ec_hnsw_debug_scan_profile_limited_fixture \
              (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_debug_scan_profile_limited_fixture VALUES
+            "INSERT INTO ec_hnsw_debug_scan_profile_limited_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
@@ -12791,15 +12804,15 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_debug_scan_profile_limited_fixture_idx \
-             ON tqhnsw_debug_scan_profile_limited_fixture USING tqhnsw \
+            "CREATE INDEX ec_hnsw_debug_scan_profile_limited_fixture_idx \
+             ON ec_hnsw_debug_scan_profile_limited_fixture USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let full_result_count = Spi::get_one::<i32>(
-            "SELECT tests.tqhnsw_debug_scan_result_count(
-                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+            "SELECT tests.ec_hnsw_debug_scan_result_count(
+                 'ec_hnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
                  ARRAY[1.0, 0.0, 0.5, -1.0]::real[]
              )",
         )
@@ -12807,8 +12820,8 @@ mod tests {
         .expect("full result-count query should return a row");
         let limited_result_count = Spi::get_one::<i32>(
             "SELECT result_count
-             FROM tests.tqhnsw_debug_scan_profile_limited(
-                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+             FROM tests.ec_hnsw_debug_scan_profile_limited(
+                 'ec_hnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
                  ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                  1
              )",
@@ -12817,8 +12830,8 @@ mod tests {
         .expect("limited profile query should return a row");
         let limited_heap_tids_returned = Spi::get_one::<i32>(
             "SELECT total_heap_tids_returned
-             FROM tests.tqhnsw_debug_scan_profile_limited(
-                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+             FROM tests.ec_hnsw_debug_scan_profile_limited(
+                 'ec_hnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
                  ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                  1
              )",
@@ -12827,8 +12840,8 @@ mod tests {
         .expect("limited heap-tid query should return a row");
         let limited_final_phase = Spi::get_one::<String>(
             "SELECT final_phase
-             FROM tests.tqhnsw_debug_scan_profile_limited(
-                 'tqhnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
+             FROM tests.ec_hnsw_debug_scan_profile_limited(
+                 'ec_hnsw_debug_scan_profile_limited_fixture_idx'::regclass::oid,
                  ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                  1
              )",
@@ -12855,14 +12868,14 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_scan_heap_fetch_profile_projects_rows() {
+    fn test_ech_debug_scan_heap_fetch_profile_projects_rows() {
         Spi::run(
-            "CREATE TABLE tqhnsw_debug_scan_heap_fetch_fixture \
+            "CREATE TABLE ec_hnsw_debug_scan_heap_fetch_fixture \
              (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_debug_scan_heap_fetch_fixture VALUES
+            "INSERT INTO ec_hnsw_debug_scan_heap_fetch_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
@@ -12870,8 +12883,8 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_debug_scan_heap_fetch_fixture_idx \
-             ON tqhnsw_debug_scan_heap_fetch_fixture USING tqhnsw \
+            "CREATE INDEX ec_hnsw_debug_scan_heap_fetch_fixture_idx \
+             ON ec_hnsw_debug_scan_heap_fetch_fixture USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
@@ -12880,8 +12893,8 @@ mod tests {
             let row = client
                 .select(
                     "SELECT result_count, slot_fetch_count, projected_count
-                     FROM tests.tqhnsw_debug_scan_heap_fetch_profile(
-                         'tqhnsw_debug_scan_heap_fetch_fixture_idx'::regclass::oid,
+                     FROM tests.ec_hnsw_debug_scan_heap_fetch_profile(
+                         'ec_hnsw_debug_scan_heap_fetch_fixture_idx'::regclass::oid,
                          ARRAY[1.0, 0.0, 0.5, -1.0]::real[],
                          2,
                          1
@@ -12923,14 +12936,14 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_debug_reachable_live_count_matches_admin_snapshot() {
+    fn test_ech_debug_reachable_live_count_matches_admin_snapshot() {
         Spi::run(
-            "CREATE TABLE tqhnsw_debug_reachable_live_fixture \
+            "CREATE TABLE ec_hnsw_debug_reachable_live_fixture \
              (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_debug_reachable_live_fixture VALUES
+            "INSERT INTO ec_hnsw_debug_reachable_live_fixture VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.95, 0.05, 0.45, -0.95], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.9, 0.1, 0.4, -0.9], 4, 42)),
@@ -12938,14 +12951,14 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_debug_reachable_live_fixture_idx \
-             ON tqhnsw_debug_reachable_live_fixture USING tqhnsw \
+            "CREATE INDEX ec_hnsw_debug_reachable_live_fixture_idx \
+             ON ec_hnsw_debug_reachable_live_fixture USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_debug_reachable_live_fixture_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_debug_reachable_live_fixture_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -12953,15 +12966,15 @@ mod tests {
             i32::try_from(unsafe { am::debug_layer0_reachable_live_element_tids(index_oid).len() })
                 .expect("reachable live element count should fit in i32");
         let sql_count = Spi::get_one::<i32>(
-            "SELECT tests.tqhnsw_debug_reachable_live_element_count(
-                 'tqhnsw_debug_reachable_live_fixture_idx'::regclass::oid
+            "SELECT tests.ec_hnsw_debug_reachable_live_element_count(
+                 'ec_hnsw_debug_reachable_live_fixture_idx'::regclass::oid
              )",
         )
         .expect("debug reachability SQL wrapper should succeed")
         .expect("debug reachability SQL wrapper should return a row");
         let live_count = Spi::get_one::<i64>(
             "SELECT total_live_nodes
-             FROM tqhnsw_index_admin_snapshot('tqhnsw_debug_reachable_live_fixture_idx'::regclass)",
+             FROM ec_hnsw_index_admin_snapshot('ec_hnsw_debug_reachable_live_fixture_idx'::regclass)",
         )
         .expect("admin snapshot query should succeed")
         .expect("admin snapshot should return a row");
@@ -12978,22 +12991,22 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_scan_scaffold_allocates_and_frees_state() {
-        Spi::run("CREATE TABLE tqhnsw_scan_scaffold (id bigint primary key, embedding ecvector)")
+    fn test_ech_scan_scaffold_allocates_and_frees_state() {
+        Spi::run("CREATE TABLE ec_hnsw_scan_scaffold (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_scan_scaffold VALUES
+            "INSERT INTO ec_hnsw_scan_scaffold VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_scan_scaffold_idx ON tqhnsw_scan_scaffold USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scan_scaffold_idx ON ec_hnsw_scan_scaffold USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_scan_scaffold_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_scan_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (has_opaque, cleared_opaque) = unsafe { am::debug_begin_end_scan(index_oid) };
@@ -13002,24 +13015,24 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_scan_scaffold_amendscan_is_idempotent() {
+    fn test_ech_scan_scaffold_amendscan_is_idempotent() {
         Spi::run(
-            "CREATE TABLE tqhnsw_scan_scaffold_idempotent (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_scan_scaffold_idempotent (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_scan_scaffold_idempotent VALUES
+            "INSERT INTO ec_hnsw_scan_scaffold_idempotent VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_scan_scaffold_idempotent_idx ON tqhnsw_scan_scaffold_idempotent USING tqhnsw \
+            "CREATE INDEX ec_hnsw_scan_scaffold_idempotent_idx ON ec_hnsw_scan_scaffold_idempotent USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_scan_scaffold_idempotent_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_scan_scaffold_idempotent_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13037,8 +13050,8 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_scaffold_records_query_dimensions() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold");
+    fn test_ech_rescan_scaffold_records_query_dimensions() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold");
         let expected_query = vec![1.0, 0.0, 0.5, -1.0];
         let (
             rescan_called,
@@ -13074,17 +13087,17 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_repeat_overwrites_query_dimensions() {
-        Spi::run("CREATE TABLE tqhnsw_rescan_repeat (id bigint primary key, embedding ecvector)")
+    fn test_ech_rescan_repeat_overwrites_query_dimensions() {
+        Spi::run("CREATE TABLE ec_hnsw_rescan_repeat (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_rescan_repeat_idx ON tqhnsw_rescan_repeat USING tqhnsw \
+            "CREATE INDEX ec_hnsw_rescan_repeat_idx ON ec_hnsw_rescan_repeat USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_rescan_repeat_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_rescan_repeat_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let second_query = vec![1.0, 0.0, 0.5];
@@ -13131,41 +13144,41 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan query dimension mismatch")]
-    fn test_tqhnsw_rescan_scaffold_rejects_wrong_query_dimensions() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_mismatch");
+    #[should_panic(expected = "ec_hnsw scan query dimension mismatch")]
+    fn test_ech_rescan_scaffold_rejects_wrong_query_dimensions() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_mismatch");
         let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![1.0, 0.0, 0.5]) };
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan query must not be NULL")]
-    fn test_tqhnsw_rescan_scaffold_rejects_null_query() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_null");
+    #[should_panic(expected = "ec_hnsw scan query must not be NULL")]
+    fn test_ech_rescan_scaffold_rejects_null_query() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_null");
         unsafe { am::debug_rescan_null_query(index_oid) };
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan query must not be empty")]
-    fn test_tqhnsw_rescan_scaffold_rejects_empty_query() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_empty");
+    #[should_panic(expected = "ec_hnsw scan query must not be empty")]
+    fn test_ech_rescan_scaffold_rejects_empty_query() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_empty");
         let _ = unsafe { am::debug_rescan_query_dimensions(index_oid, vec![]) };
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan query dimension 65536 exceeds maximum 65535")]
-    fn test_tqhnsw_rescan_scaffold_rejects_oversized_query() {
+    #[should_panic(expected = "ec_hnsw scan query dimension 65536 exceeds maximum 65535")]
+    fn test_ech_rescan_scaffold_rejects_oversized_query() {
         Spi::run(
-            "CREATE TABLE tqhnsw_rescan_scaffold_oversized (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_rescan_scaffold_oversized (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_rescan_scaffold_oversized_idx ON tqhnsw_rescan_scaffold_oversized USING tqhnsw \
+            "CREATE INDEX ec_hnsw_rescan_scaffold_oversized_idx ON ec_hnsw_rescan_scaffold_oversized USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_rescan_scaffold_oversized_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_rescan_scaffold_oversized_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13174,9 +13187,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_scaffold_accepts_unused_zero_key_buffer() {
+    fn test_ech_rescan_scaffold_accepts_unused_zero_key_buffer() {
         let query = vec![1.0, 0.0, 0.5, -1.0];
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_zero_qual_buffer");
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_zero_qual_buffer");
         let (
             rescan_called,
             query_dimensions,
@@ -13209,64 +13222,64 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan does not support index quals yet")]
-    fn test_tqhnsw_rescan_scaffold_rejects_index_quals() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_quals");
+    #[should_panic(expected = "ec_hnsw scan does not support index quals yet")]
+    fn test_ech_rescan_scaffold_rejects_index_quals() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_quals");
         unsafe { am::debug_rescan_with_index_qual(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw scan currently requires exactly one ORDER BY query")]
-    fn test_tqhnsw_rescan_scaffold_rejects_multiple_orderbys() {
-        let index_oid = setup_rescan_scaffold_index("tqhnsw_rescan_scaffold_multi_orderby");
+    #[should_panic(expected = "ec_hnsw scan currently requires exactly one ORDER BY query")]
+    fn test_ech_rescan_scaffold_rejects_multiple_orderbys() {
+        let index_oid = setup_rescan_scaffold_index("ec_hnsw_rescan_scaffold_multi_orderby");
         unsafe { am::debug_rescan_with_multiple_orderbys(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw amgettuple requires amrescan before scan execution")]
-    fn test_tqhnsw_gettuple_scaffold_requires_rescan() {
+    #[should_panic(expected = "ec_hnsw amgettuple requires amrescan before scan execution")]
+    fn test_ech_gettuple_scaffold_requires_rescan() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_scaffold (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_scaffold (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_scaffold VALUES
+            "INSERT INTO ec_hnsw_gettuple_scaffold VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_scaffold_idx ON tqhnsw_gettuple_scaffold USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_scaffold_idx ON ec_hnsw_gettuple_scaffold USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_scaffold_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_gettuple_scaffold_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         unsafe { am::debug_gettuple_without_rescan(index_oid) };
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_returns_heap_tids() {
+    fn test_ech_gettuple_returns_heap_tids() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_exec_scaffold (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_exec_scaffold (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_exec_scaffold VALUES
+            "INSERT INTO ec_hnsw_gettuple_exec_scaffold VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_exec_scaffold_idx ON tqhnsw_gettuple_exec_scaffold USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_exec_scaffold_idx ON ec_hnsw_gettuple_exec_scaffold USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_exec_scaffold_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_exec_scaffold_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13279,7 +13292,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_exec_scaffold
+                     FROM ec_hnsw_gettuple_exec_scaffold
                      ORDER BY id",
                     None,
                     &[],
@@ -13329,31 +13342,31 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_sql_ordered_index_scan_executes() {
+    fn test_ech_sql_ordered_index_scan_executes() {
         Spi::run(
-            "CREATE TABLE tqhnsw_sql_ordered_exec (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_sql_ordered_exec (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_sql_ordered_exec VALUES
+            "INSERT INTO ec_hnsw_sql_ordered_exec VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_sql_ordered_exec_idx ON tqhnsw_sql_ordered_exec USING tqhnsw \
+            "CREATE INDEX ec_hnsw_sql_ordered_exec_idx ON ec_hnsw_sql_ordered_exec USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
-        Spi::run("ANALYZE tqhnsw_sql_ordered_exec").expect("analyze should succeed");
+        Spi::run("ANALYZE ec_hnsw_sql_ordered_exec").expect("analyze should succeed");
         Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
 
         let plan = Spi::connect(|client| {
             let rows = client
                 .select(
                     "EXPLAIN (COSTS OFF) \
-                     SELECT id FROM tqhnsw_sql_ordered_exec \
+                     SELECT id FROM ec_hnsw_sql_ordered_exec \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 2",
                     None,
@@ -13374,13 +13387,13 @@ mod tests {
 
         assert!(
             plan.contains("Index Scan") || plan.contains("Index Only Scan"),
-            "ordered execution test should route through tqhnsw at runtime: {plan}"
+            "ordered execution test should route through ec_hnsw at runtime: {plan}"
         );
 
         let ordered_ids = Spi::connect(|client| {
             client
                 .select(
-                    "SELECT id FROM tqhnsw_sql_ordered_exec \
+                    "SELECT id FROM ec_hnsw_sql_ordered_exec \
                      ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
                      LIMIT 2",
                     None,
@@ -13408,13 +13421,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_graph_first_scan_emits_distance_sorted_scores() {
+    fn test_ech_graph_first_scan_emits_distance_sorted_scores() {
         Spi::run(
-            "CREATE TABLE tqhnsw_graph_first_ordered_scores (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_graph_first_ordered_scores (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_graph_first_ordered_scores VALUES
+            "INSERT INTO ec_hnsw_graph_first_ordered_scores VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.92, 0.08, 0.0, 0.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.75, 0.25, 0.0, 0.0], 4, 42)),
@@ -13426,17 +13439,17 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_graph_first_ordered_scores_idx ON tqhnsw_graph_first_ordered_scores USING tqhnsw \
+            "CREATE INDEX ec_hnsw_graph_first_ordered_scores_idx ON ec_hnsw_graph_first_ordered_scores USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_graph_first_ordered_scores_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_graph_first_ordered_scores_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
-        let ctid_to_id = ctid_id_map("tqhnsw_graph_first_ordered_scores");
+        let ctid_to_id = ctid_id_map("ec_hnsw_graph_first_ordered_scores");
         let observed = unsafe {
             am::debug_gettuple_scan_heap_tids_with_scores(index_oid, vec![1.0, 0.05, 0.0, 0.0])
         };
@@ -13469,27 +13482,28 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_tracks_current_result_state() {
+    fn test_ech_gettuple_tracks_current_result_state() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_result_state (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_gettuple_result_state (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_result_state VALUES
+            "INSERT INTO ec_hnsw_gettuple_result_state VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_result_state_idx ON tqhnsw_gettuple_result_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_result_state_idx ON ec_hnsw_gettuple_result_state USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_result_state_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_gettuple_result_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
         let (
             before_found,
@@ -13503,7 +13517,7 @@ mod tests {
         ) = unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
-             FROM tqhnsw_gettuple_result_state WHERE id = 1",
+             FROM ec_hnsw_gettuple_result_state WHERE id = 1",
             query[0], query[1], query[2], query[3],
         ))
         .expect("score query should succeed")
@@ -13556,25 +13570,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_emits_orderby_score() {
+    fn test_ech_gettuple_emits_orderby_score() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_orderby_score (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_gettuple_orderby_score (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_orderby_score VALUES
+            "INSERT INTO ec_hnsw_gettuple_orderby_score VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_orderby_score_idx ON tqhnsw_gettuple_orderby_score USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_orderby_score_idx ON ec_hnsw_gettuple_orderby_score USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_orderby_score_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_orderby_score_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13583,7 +13597,7 @@ mod tests {
             unsafe { am::debug_gettuple_orderby_score(index_oid, query.clone()) };
         let expected_score = Spi::get_one::<f32>(&format!(
             "SELECT embedding <#> ARRAY[{},{},{},{}]::real[] \
-             FROM tqhnsw_gettuple_orderby_score WHERE id = 1",
+             FROM ec_hnsw_gettuple_orderby_score WHERE id = 1",
             query[0], query[1], query[2], query[3],
         ))
         .expect("score query should succeed")
@@ -13604,26 +13618,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_clears_orderby_score_on_rescan() {
+    fn test_ech_gettuple_clears_orderby_score_on_rescan() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_orderby_lifecycle (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_orderby_lifecycle (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_orderby_lifecycle VALUES
+            "INSERT INTO ec_hnsw_gettuple_orderby_lifecycle VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_orderby_lifecycle_idx ON tqhnsw_gettuple_orderby_lifecycle USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_orderby_lifecycle_idx ON ec_hnsw_gettuple_orderby_lifecycle USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_orderby_lifecycle_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_orderby_lifecycle_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13650,26 +13664,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_current_result_lifecycle() {
+    fn test_ech_gettuple_current_result_lifecycle() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_result_lifecycle (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_result_lifecycle (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_result_lifecycle VALUES
+            "INSERT INTO ec_hnsw_gettuple_result_lifecycle VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_result_lifecycle_idx ON tqhnsw_gettuple_result_lifecycle USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_result_lifecycle_idx ON ec_hnsw_gettuple_result_lifecycle USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_result_lifecycle_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_result_lifecycle_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13735,26 +13749,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_current_result_tracks_heap_progress() {
+    fn test_ech_gettuple_current_result_tracks_heap_progress() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_result_heap_progress (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_result_heap_progress (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_result_heap_progress VALUES
+            "INSERT INTO ec_hnsw_gettuple_result_heap_progress VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_result_heap_progress_idx ON tqhnsw_gettuple_result_heap_progress USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_result_heap_progress_idx ON ec_hnsw_gettuple_result_heap_progress USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_result_heap_progress_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_result_heap_progress_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13800,28 +13814,29 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_seeds_entry_candidate_state() {
+    fn test_ech_rescan_seeds_entry_candidate_state() {
         Spi::run(
-            "CREATE TABLE tqhnsw_entry_candidate_state (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_entry_candidate_state (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_entry_candidate_state VALUES
+            "INSERT INTO ec_hnsw_entry_candidate_state VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_entry_candidate_state_idx ON tqhnsw_entry_candidate_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_entry_candidate_state_idx ON ec_hnsw_entry_candidate_state USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_entry_candidate_state_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_entry_candidate_state_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let (before_valid, before_tid, before_score, after_valid, after_tid, after_score) =
             unsafe { am::debug_rescan_entry_candidate_state(index_oid, vec![1.0, 0.0, 0.5, -1.0]) };
 
@@ -13850,26 +13865,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_entry_candidate_persists_until_exhaustion() {
+    fn test_ech_entry_candidate_persists_until_exhaustion() {
         Spi::run(
-            "CREATE TABLE tqhnsw_entry_candidate_lifecycle (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_entry_candidate_lifecycle (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_entry_candidate_lifecycle VALUES
+            "INSERT INTO ec_hnsw_entry_candidate_lifecycle VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_entry_candidate_lifecycle_idx ON tqhnsw_entry_candidate_lifecycle USING tqhnsw \
+            "CREATE INDEX ec_hnsw_entry_candidate_lifecycle_idx ON ec_hnsw_entry_candidate_lifecycle USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_entry_candidate_lifecycle_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_entry_candidate_lifecycle_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -13935,26 +13950,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_successor_candidate_from_entry_adjacency() {
+    fn test_ech_successor_candidate_from_entry_adjacency() {
         Spi::run(
-            "CREATE TABLE tqhnsw_successor_candidate_state (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_successor_candidate_state (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_successor_candidate_state VALUES
+            "INSERT INTO ec_hnsw_successor_candidate_state VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_successor_candidate_state_idx ON tqhnsw_successor_candidate_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_successor_candidate_state_idx ON ec_hnsw_successor_candidate_state USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_successor_candidate_state_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_successor_candidate_state_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14005,29 +14020,29 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_builds_bootstrap_candidate_frontier() {
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
-        Spi::run("RESET tqhnsw.disable_binary_prefilter").expect("reset should succeed");
-        Spi::run("RESET tqhnsw.force_binary_derivation").expect("reset should succeed");
+    fn test_ech_rescan_builds_bootstrap_candidate_frontier() {
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.disable_binary_prefilter").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.force_binary_derivation").expect("reset should succeed");
         Spi::run(
-            "CREATE TABLE tqhnsw_candidate_frontier_state (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_candidate_frontier_state (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_candidate_frontier_state VALUES
+            "INSERT INTO ec_hnsw_candidate_frontier_state VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_candidate_frontier_state_idx ON tqhnsw_candidate_frontier_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_candidate_frontier_state_idx ON ec_hnsw_candidate_frontier_state USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_candidate_frontier_state_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_candidate_frontier_state_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14127,26 +14142,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_rescan_respects_ef_search_frontier_limit() {
+    fn test_ech_rescan_respects_ef_search_frontier_limit() {
         Spi::run(
-            "CREATE TABLE tqhnsw_candidate_frontier_limit (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_candidate_frontier_limit (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_candidate_frontier_limit VALUES
+            "INSERT INTO ec_hnsw_candidate_frontier_limit VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_candidate_frontier_limit_idx ON tqhnsw_candidate_frontier_limit USING tqhnsw \
+            "CREATE INDEX ec_hnsw_candidate_frontier_limit_idx ON ec_hnsw_candidate_frontier_limit USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 1)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_candidate_frontier_limit_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_candidate_frontier_limit_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14171,27 +14186,27 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_session_ef_search_override_limits_runtime_frontier() {
+    fn test_ech_session_ef_search_override_limits_runtime_frontier() {
         Spi::run(
-            "CREATE TABLE tqhnsw_session_runtime_frontier_limit (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_session_runtime_frontier_limit (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_session_runtime_frontier_limit VALUES
+            "INSERT INTO ec_hnsw_session_runtime_frontier_limit VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_session_runtime_frontier_limit_idx ON tqhnsw_session_runtime_frontier_limit USING tqhnsw \
+            "CREATE INDEX ec_hnsw_session_runtime_frontier_limit_idx ON ec_hnsw_session_runtime_frontier_limit USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 3)",
         )
         .expect("index creation should succeed");
-        Spi::run("SET tqhnsw.ef_search = 1").expect("session override should succeed");
+        Spi::run("SET ec_hnsw.ef_search = 1").expect("session override should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_session_runtime_frontier_limit_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_session_runtime_frontier_limit_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14214,29 +14229,29 @@ mod tests {
             "runtime frontier provenance should also honor the resolved session override width"
         );
 
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
     }
 
     #[pg_test]
-    fn test_tqhnsw_session_ef_search_defaults_to_relation_setting() {
+    fn test_ech_session_ef_search_defaults_to_relation_setting() {
         Spi::run(
-            "CREATE TABLE tqhnsw_session_ef_search_reloption (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_session_ef_search_reloption (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_session_ef_search_reloption VALUES
+            "INSERT INTO ec_hnsw_session_ef_search_reloption VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_session_ef_search_reloption_idx ON tqhnsw_session_ef_search_reloption USING tqhnsw \
+            "CREATE INDEX ec_hnsw_session_ef_search_reloption_idx ON ec_hnsw_session_ef_search_reloption USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 111)",
         )
         .expect("index creation should succeed");
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_session_ef_search_reloption_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_session_ef_search_reloption_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14256,25 +14271,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_session_ef_search_overrides_reloption() {
+    fn test_ech_session_ef_search_overrides_reloption() {
         Spi::run(
-            "CREATE TABLE tqhnsw_session_ef_search_override (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_session_ef_search_override (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_session_ef_search_override VALUES
+            "INSERT INTO ec_hnsw_session_ef_search_override VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_session_ef_search_override_idx ON tqhnsw_session_ef_search_override USING tqhnsw \
+            "CREATE INDEX ec_hnsw_session_ef_search_override_idx ON ec_hnsw_session_ef_search_override USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 111)",
         )
         .expect("index creation should succeed");
-        Spi::run("SET tqhnsw.ef_search = 7").expect("session override should succeed");
+        Spi::run("SET ec_hnsw.ef_search = 7").expect("session override should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_session_ef_search_override_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_session_ef_search_override_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14288,30 +14303,30 @@ mod tests {
         );
         assert_eq!(snapshot.effective_source, "session");
 
-        Spi::run("RESET tqhnsw.ef_search").expect("reset should succeed");
+        Spi::run("RESET ec_hnsw.ef_search").expect("reset should succeed");
     }
 
     #[pg_test]
-    fn test_tqhnsw_frontier_head_persists_until_exhaustion() {
+    fn test_ech_frontier_head_persists_until_exhaustion() {
         Spi::run(
-            "CREATE TABLE tqhnsw_frontier_head_lifecycle (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_frontier_head_lifecycle (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_frontier_head_lifecycle VALUES
+            "INSERT INTO ec_hnsw_frontier_head_lifecycle VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_frontier_head_lifecycle_idx ON tqhnsw_frontier_head_lifecycle USING tqhnsw \
+            "CREATE INDEX ec_hnsw_frontier_head_lifecycle_idx ON ec_hnsw_frontier_head_lifecycle USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_frontier_head_lifecycle_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_frontier_head_lifecycle_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14351,27 +14366,28 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_consume_candidate_frontier_head_reselects_or_clears() {
+    fn test_ech_consume_candidate_frontier_head_reselects_or_clears() {
         Spi::run(
-            "CREATE TABLE tqhnsw_frontier_head_consume (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_frontier_head_consume (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_frontier_head_consume VALUES
+            "INSERT INTO ec_hnsw_frontier_head_consume VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_frontier_head_consume_idx ON tqhnsw_frontier_head_consume USING tqhnsw \
+            "CREATE INDEX ec_hnsw_frontier_head_consume_idx ON ec_hnsw_frontier_head_consume USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_consume_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_frontier_head_consume_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let (
             before_head,
             before_frontier,
@@ -14439,13 +14455,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_frontier_head_refills_from_consumed_neighbors() {
+    fn test_ech_frontier_head_refills_from_consumed_neighbors() {
         Spi::run(
-            "CREATE TABLE tqhnsw_frontier_head_refill (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_frontier_head_refill (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_frontier_head_refill VALUES
+            "INSERT INTO ec_hnsw_frontier_head_refill VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
@@ -14454,13 +14470,13 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_frontier_head_refill_idx ON tqhnsw_frontier_head_refill USING tqhnsw \
+            "CREATE INDEX ec_hnsw_frontier_head_refill_idx ON ec_hnsw_frontier_head_refill USING ec_hnsw \
              (embedding ecvector_ip_ops) WITH (ef_search = 3)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_frontier_head_refill_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_frontier_head_refill_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let valid_entry_neighbors = unsafe { am::debug_entry_point_neighbor_tids(index_oid) }
@@ -14538,13 +14554,13 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_consumes_bootstrap_candidate_state() {
+    fn test_ech_gettuple_consumes_bootstrap_candidate_state() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bootstrap_consume_state (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_bootstrap_consume_state (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bootstrap_consume_state VALUES
+            "INSERT INTO ec_hnsw_bootstrap_consume_state VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42)),
@@ -14552,13 +14568,13 @@ mod tests {
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bootstrap_consume_state_idx ON tqhnsw_bootstrap_consume_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bootstrap_consume_state_idx ON ec_hnsw_bootstrap_consume_state USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_bootstrap_consume_state_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_bootstrap_consume_state_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14593,26 +14609,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_bootstrap_candidate_materializes_into_pending_drain() {
+    fn test_ech_bootstrap_candidate_materializes_into_pending_drain() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bootstrap_candidate_materialize (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_bootstrap_candidate_materialize (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bootstrap_candidate_materialize VALUES
+            "INSERT INTO ec_hnsw_bootstrap_candidate_materialize VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bootstrap_candidate_materialize_idx ON tqhnsw_bootstrap_candidate_materialize USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bootstrap_candidate_materialize_idx ON ec_hnsw_bootstrap_candidate_materialize USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_bootstrap_candidate_materialize_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_bootstrap_candidate_materialize_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14640,26 +14656,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_bootstrap_phase_completes_and_resets_on_rescan() {
+    fn test_ech_bootstrap_phase_completes_and_resets_on_rescan() {
         Spi::run(
-            "CREATE TABLE tqhnsw_bootstrap_phase_transition (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_bootstrap_phase_transition (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_bootstrap_phase_transition VALUES
+            "INSERT INTO ec_hnsw_bootstrap_phase_transition VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_bootstrap_phase_transition_idx ON tqhnsw_bootstrap_phase_transition USING tqhnsw \
+            "CREATE INDEX ec_hnsw_bootstrap_phase_transition_idx ON ec_hnsw_bootstrap_phase_transition USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_bootstrap_phase_transition_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_bootstrap_phase_transition_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14690,26 +14706,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_visited_seed_state_tracks_frontier_candidates() {
+    fn test_ech_visited_seed_state_tracks_frontier_candidates() {
         Spi::run(
-            "CREATE TABLE tqhnsw_visited_seed_state (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_visited_seed_state (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_visited_seed_state VALUES
+            "INSERT INTO ec_hnsw_visited_seed_state VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_visited_seed_state_idx ON tqhnsw_visited_seed_state USING tqhnsw \
+            "CREATE INDEX ec_hnsw_visited_seed_state_idx ON ec_hnsw_visited_seed_state USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_visited_seed_state_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_visited_seed_state_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
 
@@ -14743,26 +14759,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_current_result_exposes_neighbor_refs() {
+    fn test_ech_gettuple_current_result_exposes_neighbor_refs() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_current_neighbors (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_current_neighbors (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_current_neighbors VALUES
+            "INSERT INTO ec_hnsw_gettuple_current_neighbors VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_current_neighbors_idx ON tqhnsw_gettuple_current_neighbors USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_current_neighbors_idx ON ec_hnsw_gettuple_current_neighbors USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_current_neighbors_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_current_neighbors_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14783,28 +14799,29 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_entry_point_neighbor_refs_point_to_elements() {
+    fn test_ech_entry_point_neighbor_refs_point_to_elements() {
         Spi::run(
-            "CREATE TABLE tqhnsw_entry_point_neighbors (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_entry_point_neighbors (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_entry_point_neighbors VALUES
+            "INSERT INTO ec_hnsw_entry_point_neighbors VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[-1.0, 0.5, 0.0, 1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_entry_point_neighbors_idx ON tqhnsw_entry_point_neighbors USING tqhnsw \
+            "CREATE INDEX ec_hnsw_entry_point_neighbors_idx ON ec_hnsw_entry_point_neighbors USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_entry_point_neighbors_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_entry_point_neighbors_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let neighbor_tids = unsafe { am::debug_entry_point_neighbor_tids(index_oid) };
         let (_block_count, _metadata, data_pages) = unsafe { am::debug_index_pages(index_oid) };
         let element_tids = data_pages
@@ -14828,26 +14845,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_drains_selected_duplicate_heap_tids() {
+    fn test_ech_gettuple_drains_selected_duplicate_heap_tids() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_duplicate_exec (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_duplicate_exec (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_duplicate_exec VALUES
+            "INSERT INTO ec_hnsw_gettuple_duplicate_exec VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_duplicate_exec_idx ON tqhnsw_gettuple_duplicate_exec USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_duplicate_exec_idx ON ec_hnsw_gettuple_duplicate_exec USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_duplicate_exec_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_duplicate_exec_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -14860,7 +14877,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_duplicate_exec
+                     FROM ec_hnsw_gettuple_duplicate_exec
                      ORDER BY id",
                     None,
                     &[],
@@ -14913,25 +14930,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_exhaustion_stays_false() {
+    fn test_ech_gettuple_exhaustion_stays_false() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_exhaustion (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_exhaustion (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_exhaustion VALUES
+            "INSERT INTO ec_hnsw_gettuple_exhaustion VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_exhaustion_idx ON tqhnsw_gettuple_exhaustion USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_exhaustion_idx ON ec_hnsw_gettuple_exhaustion USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_exhaustion_idx'::regclass::oid")
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_hnsw_gettuple_exhaustion_idx'::regclass::oid")
                 .expect("SPI query should succeed")
                 .expect("index oid should exist");
         let (observed_tids, exhausted_once, exhausted_twice) =
@@ -14943,7 +14960,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_exhaustion
+                     FROM ec_hnsw_gettuple_exhaustion
                      ORDER BY id",
                     None,
                     &[],
@@ -15004,25 +15021,25 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_rescan_after_exhaustion_restarts_scan() {
+    fn test_ech_gettuple_rescan_after_exhaustion_restarts_scan() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_exhaustion_rescan (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_exhaustion_rescan (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_exhaustion_rescan VALUES
+            "INSERT INTO ec_hnsw_gettuple_exhaustion_rescan VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_exhaustion_rescan_idx ON tqhnsw_gettuple_exhaustion_rescan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_exhaustion_rescan_idx ON ec_hnsw_gettuple_exhaustion_rescan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_exhaustion_rescan_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_exhaustion_rescan_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15036,7 +15053,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_exhaustion_rescan
+                     FROM ec_hnsw_gettuple_exhaustion_rescan
                      ORDER BY id",
                     None,
                     &[],
@@ -15089,25 +15106,25 @@ mod tests {
     }
 
     #[pg_test]
-    #[should_panic(expected = "tqhnsw amgettuple only supports forward scan direction")]
-    fn test_tqhnsw_gettuple_rejects_backward_scan_direction() {
+    #[should_panic(expected = "ec_hnsw amgettuple only supports forward scan direction")]
+    fn test_ech_gettuple_rejects_backward_scan_direction() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_backward_scan (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_backward_scan (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_backward_scan VALUES
+            "INSERT INTO ec_hnsw_gettuple_backward_scan VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_backward_scan_idx ON tqhnsw_gettuple_backward_scan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_backward_scan_idx ON ec_hnsw_gettuple_backward_scan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_backward_scan_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_backward_scan_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15115,26 +15132,26 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_rescan_resets_duplicate_progress() {
+    fn test_ech_gettuple_rescan_resets_duplicate_progress() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_duplicate_rescan (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_duplicate_rescan (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_gettuple_duplicate_rescan VALUES
+            "INSERT INTO ec_hnsw_gettuple_duplicate_rescan VALUES
              (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42)),
              (3, encode_to_ecvector(ARRAY[0.0, 1.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_duplicate_rescan_idx ON tqhnsw_gettuple_duplicate_rescan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_duplicate_rescan_idx ON ec_hnsw_gettuple_duplicate_rescan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_duplicate_rescan_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_duplicate_rescan_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15148,7 +15165,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_duplicate_rescan
+                     FROM ec_hnsw_gettuple_duplicate_rescan
                      ORDER BY id",
                     None,
                     &[],
@@ -15197,9 +15214,9 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_duplicate_scan_drains_selected_duplicates() {
+    fn test_ech_gettuple_duplicate_scan_drains_selected_duplicates() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_duplicate_multipage (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_gettuple_duplicate_multipage (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
 
@@ -15209,7 +15226,7 @@ mod tests {
         let duplicate_payload = vec![0x11_u8; payload_len];
         for id in 1..=10 {
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
+                "INSERT INTO ec_hnsw_gettuple_duplicate_multipage VALUES \
                  ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(&duplicate_payload),
             ))
@@ -15221,7 +15238,7 @@ mod tests {
                 .map(|offset| ((id * 17 + offset as i32) & 0xff) as u8)
                 .collect::<Vec<_>>();
             Spi::run(&format!(
-                "INSERT INTO tqhnsw_gettuple_duplicate_multipage VALUES \
+                "INSERT INTO ec_hnsw_gettuple_duplicate_multipage VALUES \
                  ({id}, '[dim={dim},bits={bits},seed=42,gamma=0.5]:{payload}'::tqvector)",
                 payload = hex::encode(code),
             ))
@@ -15229,13 +15246,13 @@ mod tests {
         }
 
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_duplicate_multipage_idx ON tqhnsw_gettuple_duplicate_multipage USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_duplicate_multipage_idx ON ec_hnsw_gettuple_duplicate_multipage USING ec_hnsw \
              (embedding tqvector_ip_ops) WITH (m = 4, ef_construction = 64)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_duplicate_multipage_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_duplicate_multipage_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15257,7 +15274,7 @@ mod tests {
                     "SELECT
                         split_part(trim(both '()' from ctid::text), ',', 1)::int4 AS block_number,
                         split_part(trim(both '()' from ctid::text), ',', 2)::int2 AS offset_number
-                     FROM tqhnsw_gettuple_duplicate_multipage
+                     FROM ec_hnsw_gettuple_duplicate_multipage
                      ORDER BY id",
                     None,
                     &[],
@@ -15311,19 +15328,19 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_gettuple_scaffold_returns_false_for_empty_index() {
+    fn test_ech_gettuple_scaffold_returns_false_for_empty_index() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_empty_scaffold (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_empty_scaffold (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_empty_scaffold_idx ON tqhnsw_gettuple_empty_scaffold USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_empty_scaffold_idx ON ec_hnsw_gettuple_empty_scaffold USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_empty_scaffold_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_empty_scaffold_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15336,19 +15353,19 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_empty_scan_stays_false() {
+    fn test_ech_empty_scan_stays_false() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_empty_repeated (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_empty_repeated (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_empty_repeated_idx ON tqhnsw_gettuple_empty_repeated USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_empty_repeated_idx ON ec_hnsw_gettuple_empty_repeated USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
         let index_oid = Spi::get_one::<pg_sys::Oid>(
-            "SELECT 'tqhnsw_gettuple_empty_repeated_idx'::regclass::oid",
+            "SELECT 'ec_hnsw_gettuple_empty_repeated_idx'::regclass::oid",
         )
         .expect("SPI query should succeed")
         .expect("index oid should exist");
@@ -15370,21 +15387,22 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_empty_scan_rescan_stays_false() {
+    fn test_ech_empty_scan_rescan_stays_false() {
         Spi::run(
-            "CREATE TABLE tqhnsw_gettuple_empty_rescan (id bigint primary key, embedding ecvector)",
+            "CREATE TABLE ec_hnsw_gettuple_empty_rescan (id bigint primary key, embedding ecvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_gettuple_empty_rescan_idx ON tqhnsw_gettuple_empty_rescan USING tqhnsw \
+            "CREATE INDEX ec_hnsw_gettuple_empty_rescan_idx ON ec_hnsw_gettuple_empty_rescan USING ec_hnsw \
              (embedding ecvector_ip_ops)",
         )
         .expect("index creation should succeed");
 
-        let index_oid =
-            Spi::get_one::<pg_sys::Oid>("SELECT 'tqhnsw_gettuple_empty_rescan_idx'::regclass::oid")
-                .expect("SPI query should succeed")
-                .expect("index oid should exist");
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_gettuple_empty_rescan_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
         let (first_pass, rescanned_tids) = unsafe {
             am::debug_gettuple_rescan_after_exhaustion(index_oid, vec![1.0, 0.0, 0.5, -1.0])
         };
@@ -15411,15 +15429,15 @@ mod tests {
             .map(|query| brute_force_top_k(&corpus, query, RECALL_K))
             .collect::<Vec<_>>();
 
-        create_recall_table("tqhnsw_graph_scan_recall_gate");
-        insert_recall_corpus("tqhnsw_graph_scan_recall_gate", &corpus);
-        let ctid_to_id = ctid_id_map("tqhnsw_graph_scan_recall_gate");
+        create_recall_table("ec_hnsw_graph_scan_recall_gate");
+        insert_recall_corpus("ec_hnsw_graph_scan_recall_gate", &corpus);
+        let ctid_to_id = ctid_id_map("ec_hnsw_graph_scan_recall_gate");
 
         let mut results = Vec::new();
 
         for m in [8, 16] {
-            let index_name = format!("tqhnsw_graph_scan_recall_gate_m{m}_idx");
-            let index_oid = create_recall_index("tqhnsw_graph_scan_recall_gate", &index_name, m);
+            let index_name = format!("ec_hnsw_graph_scan_recall_gate_m{m}_idx");
+            let index_oid = create_recall_index("ec_hnsw_graph_scan_recall_gate", &index_name, m);
 
             for (config_m, ef_search, target) in RECALL_GATE_CONFIGS
                 .iter()
@@ -15441,7 +15459,7 @@ mod tests {
                 .expect("recall benchmark index cleanup should succeed");
         }
 
-        Spi::run("DROP TABLE tqhnsw_graph_scan_recall_gate")
+        Spi::run("DROP TABLE ec_hnsw_graph_scan_recall_gate")
             .expect("recall benchmark table cleanup should succeed");
 
         results
@@ -15649,7 +15667,7 @@ mod tests {
         .map(|id| i64::try_from(id).expect("truth id should fit into bigint"))
         .collect::<Vec<_>>();
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
             unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
@@ -15721,7 +15739,7 @@ mod tests {
             .nth(query_index)
             .expect("query index should be within the generated query set");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (frontier_head, _, _, frontier_provenance, expanded_sources) =
             unsafe { am::debug_rescan_candidate_frontier(index_oid, query) };
@@ -15799,7 +15817,7 @@ mod tests {
         .map(|id| i64::try_from(id).expect("truth id should fit into bigint"))
         .collect::<Vec<_>>();
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
             unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
@@ -15900,7 +15918,7 @@ mod tests {
                 .expect("recall fixture index oid query should succeed")
                 .expect("recall fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let predicted_with_scores =
             unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) };
@@ -16028,7 +16046,7 @@ mod tests {
                 .expect("recall fixture index oid query should succeed")
                 .expect("recall fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let mut rows = Vec::with_capacity(query_count);
 
@@ -16243,7 +16261,7 @@ mod tests {
         let exact_quantized_row_indices_top10 = include_exact_quantized_top10.then(|| {
             Spi::connect(|client| {
                 // The "exact quantized" baseline must come from a table-level
-                // sort over persisted embeddings, not whichever tqhnsw index
+                // sort over persisted embeddings, not whichever ec_hnsw index
                 // the planner happens to prefer on a multi-index corpus table.
                 Spi::run("SET LOCAL enable_indexscan = off")
                     .expect("disabling index scans for exact quantized baseline should succeed");
@@ -16363,7 +16381,7 @@ mod tests {
                 .expect("external recall index oid query should succeed")
                 .expect("external recall index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let query_count = context.queries.len();
@@ -16509,7 +16527,7 @@ mod tests {
                 .expect("external recall index oid query should succeed")
                 .expect("external recall index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_top_10_hits = 0_i32;
@@ -16618,7 +16636,7 @@ mod tests {
                 .expect("histogram index oid query should succeed")
                 .expect("histogram index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut buckets = [0_i32; RECALL_K + 1];
@@ -16730,7 +16748,7 @@ mod tests {
             .as_ref()
             .expect("failure breakdown context should include exact quantized top-10 rows");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut rows = Vec::new();
@@ -16832,7 +16850,7 @@ mod tests {
                 .expect("oracle summary fixture index oid query should succeed")
                 .expect("oracle summary fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_hits = 0_i32;
@@ -16972,7 +16990,7 @@ mod tests {
                 .expect("oracle-k summary fixture index oid query should succeed")
                 .expect("oracle-k summary fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_hits = 0_i32;
@@ -17115,7 +17133,7 @@ mod tests {
                 .expect("layer-oracle summary fixture index oid query should succeed")
                 .expect("layer-oracle summary fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_hits = 0_i32;
@@ -17260,7 +17278,7 @@ mod tests {
                 .expect("layer-neighbor summary fixture index oid query should succeed")
                 .expect("layer-neighbor summary fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_hits = 0_i32;
@@ -17559,7 +17577,7 @@ mod tests {
                 .expect("exact-seed fixture index oid query should succeed")
                 .expect("exact-seed fixture index oid should exist");
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
 
         let mut graph_hits = 0_i32;
@@ -17764,16 +17782,16 @@ mod tests {
             .map(|id| i64::try_from(id).expect("truth id should fit into bigint"))
             .collect::<Vec<_>>();
 
-        create_recall_table("tqhnsw_graph_scan_recall_probe");
-        insert_recall_corpus("tqhnsw_graph_scan_recall_probe", &corpus);
-        let ctid_to_id = ctid_id_map("tqhnsw_graph_scan_recall_probe");
+        create_recall_table("ec_hnsw_graph_scan_recall_probe");
+        insert_recall_corpus("ec_hnsw_graph_scan_recall_probe", &corpus);
+        let ctid_to_id = ctid_id_map("ec_hnsw_graph_scan_recall_probe");
         let index_oid = create_recall_index(
-            "tqhnsw_graph_scan_recall_probe",
-            "tqhnsw_graph_scan_recall_probe_idx",
+            "ec_hnsw_graph_scan_recall_probe",
+            "ec_hnsw_graph_scan_recall_probe_idx",
             m,
         );
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_graph_scan_recall_probe") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_graph_scan_recall_probe") };
         let index_block_count = unsafe {
             i32::try_from(pg_sys::RelationGetNumberOfBlocksInFork(
                 index_relation,
@@ -17783,7 +17801,7 @@ mod tests {
         };
         unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
 
-        Spi::run(&format!("SET LOCAL tqhnsw.ef_search = {ef_search}"))
+        Spi::run(&format!("SET LOCAL ec_hnsw.ef_search = {ef_search}"))
             .expect("setting ef_search should succeed");
         let (prefill_found, _, _, _, _, _, _, _) =
             unsafe { am::debug_gettuple_current_result_state(index_oid, query.clone()) };
@@ -17805,7 +17823,7 @@ mod tests {
             client
                 .select(
                     "SELECT id
-                     FROM tqhnsw_graph_scan_recall_probe
+                     FROM ec_hnsw_graph_scan_recall_probe
                      ORDER BY embedding <#> $1
                      LIMIT 10",
                     None,
@@ -17821,9 +17839,9 @@ mod tests {
                 .collect::<Vec<_>>()
         });
 
-        Spi::run("DROP INDEX tqhnsw_graph_scan_recall_probe_idx")
+        Spi::run("DROP INDEX ec_hnsw_graph_scan_recall_probe_idx")
             .expect("probe index cleanup should succeed");
-        Spi::run("DROP TABLE tqhnsw_graph_scan_recall_probe")
+        Spi::run("DROP TABLE ec_hnsw_graph_scan_recall_probe")
             .expect("probe table cleanup should succeed");
 
         (
@@ -17854,7 +17872,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_gate_report() -> TableIterator<
+    fn ec_hnsw_graph_scan_recall_gate_report() -> TableIterator<
         'static,
         (
             name!(m, i32),
@@ -17869,7 +17887,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_gate_reset(
+    fn ec_hnsw_graph_scan_recall_fixture_gate_reset(
         fixture_prefix: String,
         corpus_size: i32,
     ) -> TableIterator<'static, (name!(m, i32), name!(index_block_count, i32))> {
@@ -17881,7 +17899,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_gate_source_build_reset(
+    fn ec_hnsw_graph_scan_recall_fixture_gate_source_build_reset(
         fixture_prefix: String,
         corpus_size: i32,
     ) -> TableIterator<'static, (name!(m, i32), name!(index_block_count, i32))> {
@@ -17893,7 +17911,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_gate_report(
+    fn ec_hnsw_graph_scan_recall_fixture_gate_report(
         fixture_prefix: String,
         query_count: i32,
     ) -> TableIterator<
@@ -17914,7 +17932,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_external_summary(
+    fn ec_hnsw_graph_scan_recall_external_summary(
         corpus_table: String,
         query_table: String,
         index_name: String,
@@ -17948,7 +17966,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_external_gate_report(
+    fn ec_hnsw_graph_scan_recall_external_gate_report(
         corpus_table: String,
         query_table: String,
         fixture_prefix: String,
@@ -17971,7 +17989,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_ann_benchmarks_reference(
+    fn ec_hnsw_graph_scan_recall_ann_benchmarks_reference(
         corpus_table: String,
         query_table: String,
         index_name: String,
@@ -18001,7 +18019,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_histogram(
+    fn ec_hnsw_graph_scan_recall_histogram(
         corpus_table: String,
         query_table: String,
         index_name: String,
@@ -18029,7 +18047,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_ef_sweep(
+    fn ec_hnsw_graph_scan_recall_ef_sweep(
         corpus_table: String,
         query_table: String,
         index_name: String,
@@ -18057,7 +18075,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_failure_breakdown(
+    fn ec_hnsw_graph_scan_recall_failure_breakdown(
         corpus_table: String,
         query_table: String,
         index_name: String,
@@ -18088,7 +18106,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_probe(
+    fn ec_hnsw_graph_scan_recall_probe(
         m: i32,
         ef_search: i32,
         query_index: i32,
@@ -18114,7 +18132,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_probe_sized(
+    fn ec_hnsw_graph_scan_recall_probe_sized(
         m: i32,
         ef_search: i32,
         query_index: i32,
@@ -18143,7 +18161,7 @@ mod tests {
     }
 
     #[pg_extern]
-    fn tqhnsw_graph_scan_recall_fixture_reset(
+    fn ec_hnsw_graph_scan_recall_fixture_reset(
         fixture_name: String,
         m: i32,
         corpus_size: i32,
@@ -18157,7 +18175,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_probe(
+    fn ec_hnsw_graph_scan_recall_fixture_probe(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18187,7 +18205,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_transcript(
+    fn ec_hnsw_graph_scan_recall_fixture_transcript(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18222,7 +18240,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_ranks(
+    fn ec_hnsw_graph_scan_recall_fixture_ranks(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18254,7 +18272,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_score_audit(
+    fn ec_hnsw_graph_scan_recall_fixture_score_audit(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18282,7 +18300,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_summary(
+    fn ec_hnsw_graph_scan_recall_fixture_summary(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18313,7 +18331,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_top_level_oracle_summary_rel(
+    fn ec_hnsw_graph_scan_recall_top_level_oracle_summary_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18346,7 +18364,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_top_level_oracle_k_summary_rel(
+    fn ec_hnsw_graph_scan_recall_top_level_oracle_k_summary_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18382,7 +18400,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_layer_oracle_k_carrydown_summary_rel(
+    fn ec_hnsw_graph_scan_recall_layer_oracle_k_carrydown_summary_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18421,7 +18439,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_layer_neighbor_coverage_summary_rel(
+    fn ec_hnsw_graph_scan_recall_layer_neighbor_coverage_summary_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18460,7 +18478,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_top_level_seed_coverage_rel(
+    fn ec_hnsw_graph_scan_recall_top_level_seed_coverage_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18498,7 +18516,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_exact_seed_summary_rel(
+    fn ec_hnsw_graph_scan_recall_exact_seed_summary_rel(
         table_name: String,
         index_name: String,
         m: i32,
@@ -18530,7 +18548,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_scan_recall_fixture_query_overlaps(
+    fn ec_hnsw_graph_scan_recall_fixture_query_overlaps(
         fixture_name: String,
         m: i32,
         ef_search: i32,
@@ -18557,7 +18575,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_graph_hierarchy_summary(
+    fn ec_hnsw_graph_hierarchy_summary(
         index_oid: pg_sys::Oid,
     ) -> TableIterator<
         'static,
@@ -18571,7 +18589,7 @@ mod tests {
         ),
     > {
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tqhnsw_graph_hierarchy_summary") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "ec_hnsw_graph_hierarchy_summary") };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
@@ -18679,7 +18697,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_profile(
+    fn ec_hnsw_debug_scan_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -18712,7 +18730,7 @@ mod tests {
         ),
     > {
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_profile") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_profile") };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
@@ -18804,7 +18822,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_profile_limited(
+    fn ec_hnsw_debug_scan_profile_limited(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         limit_count: i32,
@@ -18842,7 +18860,7 @@ mod tests {
         }
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_profile_limited")
+            open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_profile_limited")
         };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
@@ -18941,7 +18959,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_heap_fetch_profile(
+    fn ec_hnsw_debug_scan_heap_fetch_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         limit_count: i32,
@@ -18967,7 +18985,7 @@ mod tests {
         }
 
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_heap_fetch_profile")
+            open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_heap_fetch_profile")
         };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
@@ -19086,9 +19104,9 @@ mod tests {
         index_oid: pg_sys::Oid,
     ) -> PqFastScanIndexRuntimeSettings {
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(
+            open_valid_ec_hnsw_index(
                 index_oid,
-                "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index",
+                "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index",
             )
         };
         let (_block_count, _m, _ef_construction, metadata) =
@@ -19105,7 +19123,7 @@ mod tests {
                     pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
                 };
                 pgrx::error!(
-                    "tests.tqhnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"
+                    "tests.ec_hnsw_debug_pq_fastscan_runtime_settings_for_index requires a pq_fastscan index"
                 );
             }
         };
@@ -19131,7 +19149,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_runtime_settings() -> TableIterator<
+    fn ec_hnsw_debug_pq_fastscan_runtime_settings() -> TableIterator<
         'static,
         (
             name!(pq_fastscan_build_enabled, bool),
@@ -19163,7 +19181,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_runtime_settings_for_index(
+    fn ec_hnsw_debug_pq_fastscan_runtime_settings_for_index(
         index_oid: pg_sys::Oid,
     ) -> TableIterator<
         'static,
@@ -19203,7 +19221,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_adr030_runtime_settings() -> TableIterator<
+    fn ec_hnsw_debug_adr030_runtime_settings() -> TableIterator<
         'static,
         (
             name!(grouped_build_enabled, bool),
@@ -19234,7 +19252,7 @@ mod tests {
     }
 
     fn validate_debug_index(index_oid: pg_sys::Oid, helper_name: &'static str) {
-        let index_relation = unsafe { open_valid_tqhnsw_index(index_oid, helper_name) };
+        let index_relation = unsafe { open_valid_ec_hnsw_index(index_oid, helper_name) };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
@@ -19543,7 +19561,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_scan_hot_path_profile(
+    fn ec_hnsw_debug_scan_hot_path_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -19581,7 +19599,7 @@ mod tests {
             name!(grouped_traversal_budgeted_exact_candidates, i32),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_scan_hot_path_profile");
+        validate_debug_index(index_oid, "tests.ec_hnsw_debug_scan_hot_path_profile");
 
         let (
             rescan_amrescan_total_elapsed_us,
@@ -19652,7 +19670,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_hot_path_profile(
+    fn ec_hnsw_debug_pq_fastscan_scan_hot_path_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -19692,7 +19710,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_hot_path_profile",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_hot_path_profile",
         );
 
         let (
@@ -19764,7 +19782,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_rerank_profile(
+    fn ec_hnsw_debug_pq_fastscan_rerank_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         limit_count: i32,
@@ -19786,7 +19804,7 @@ mod tests {
             name!(pq_fastscan_rerank_heap_dot_elapsed_us, i64),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_pq_fastscan_rerank_profile");
+        validate_debug_index(index_oid, "tests.ec_hnsw_debug_pq_fastscan_rerank_profile");
 
         let (
             rescan_amrescan_total_elapsed_us,
@@ -19823,7 +19841,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_turboquant_scan_stage_profile(
+    fn ec_hnsw_debug_turboquant_scan_stage_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -19845,7 +19863,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_turboquant_scan_stage_profile",
+            "tests.ec_hnsw_debug_turboquant_scan_stage_profile",
         );
 
         let (
@@ -19881,7 +19899,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_rerank_profile(
+    fn ec_hnsw_debug_grouped_rerank_profile(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         limit_count: i32,
@@ -19903,7 +19921,7 @@ mod tests {
             name!(grouped_rerank_heap_dot_elapsed_us, i64),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_rerank_profile");
+        validate_debug_index(index_oid, "tests.ec_hnsw_debug_grouped_rerank_profile");
 
         let (
             rescan_amrescan_total_elapsed_us,
@@ -19939,9 +19957,9 @@ mod tests {
     }
 
     #[pg_extern]
-    fn tqhnsw_debug_scan_result_count(index_oid: pg_sys::Oid, query: Vec<f32>) -> i32 {
+    fn ec_hnsw_debug_scan_result_count(index_oid: pg_sys::Oid, query: Vec<f32>) -> i32 {
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_result_count") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_result_count") };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
@@ -19951,12 +19969,12 @@ mod tests {
     }
 
     #[pg_extern]
-    fn tqhnsw_debug_scan_heap_tids(
+    fn ec_hnsw_debug_scan_heap_tids(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<'static, (name!(block_number, i64), name!(offset_number, i32))> {
         let index_relation =
-            unsafe { open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_scan_heap_tids") };
+            unsafe { open_valid_ec_hnsw_index(index_oid, "tests.ec_hnsw_debug_scan_heap_tids") };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
         }
@@ -19972,7 +19990,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_order_drift_summary(
+    fn ec_hnsw_debug_pq_fastscan_scan_order_drift_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -19994,7 +20012,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_order_drift_summary",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_order_drift_summary",
         );
 
         let (
@@ -20030,7 +20048,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_scan_order_drift_summary(
+    fn ec_hnsw_debug_grouped_scan_order_drift_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -20052,7 +20070,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_grouped_scan_order_drift_summary",
+            "tests.ec_hnsw_debug_grouped_scan_order_drift_summary",
         );
 
         let (
@@ -20088,7 +20106,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_windowed_rows(
+    fn ec_hnsw_debug_pq_fastscan_scan_windowed_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         window_size: i32,
@@ -20108,7 +20126,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_rows",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_windowed_rows",
         );
         TableIterator::new(pq_fastscan_scan_windowed_rows_values(
             index_oid,
@@ -20119,7 +20137,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_scan_windowed_rows(
+    fn ec_hnsw_debug_grouped_scan_windowed_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         window_size: i32,
@@ -20137,7 +20155,7 @@ mod tests {
             name!(windowed_rank_shift, Option<i32>),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_windowed_rows");
+        validate_debug_index(index_oid, "tests.ec_hnsw_debug_grouped_scan_windowed_rows");
         TableIterator::new(pq_fastscan_scan_windowed_rows_values(
             index_oid,
             query,
@@ -20147,7 +20165,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_windowed_summary(
+    fn ec_hnsw_debug_pq_fastscan_scan_windowed_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         window_size: i32,
@@ -20172,7 +20190,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_windowed_summary",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_windowed_summary",
         );
 
         let (
@@ -20212,7 +20230,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_scan_windowed_summary(
+    fn ec_hnsw_debug_grouped_scan_windowed_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
         window_size: i32,
@@ -20237,7 +20255,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_grouped_scan_windowed_summary",
+            "tests.ec_hnsw_debug_grouped_scan_windowed_summary",
         );
 
         let (
@@ -20277,7 +20295,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_comparison_rows(
+    fn ec_hnsw_debug_pq_fastscan_scan_comparison_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -20294,14 +20312,14 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_rows",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_comparison_rows",
         );
         TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
     }
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_scan_comparison_rows(
+    fn ec_hnsw_debug_grouped_scan_comparison_rows(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -20316,13 +20334,16 @@ mod tests {
             name!(exact_rank_shift, Option<i32>),
         ),
     > {
-        validate_debug_index(index_oid, "tests.tqhnsw_debug_grouped_scan_comparison_rows");
+        validate_debug_index(
+            index_oid,
+            "tests.ec_hnsw_debug_grouped_scan_comparison_rows",
+        );
         TableIterator::new(pq_fastscan_scan_comparison_rows_values(index_oid, query))
     }
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_pq_fastscan_scan_comparison_summary(
+    fn ec_hnsw_debug_pq_fastscan_scan_comparison_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -20339,7 +20360,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_pq_fastscan_scan_comparison_summary",
+            "tests.ec_hnsw_debug_pq_fastscan_scan_comparison_summary",
         );
 
         let (
@@ -20365,7 +20386,7 @@ mod tests {
 
     #[pg_extern]
     #[allow(clippy::type_complexity)]
-    fn tqhnsw_debug_grouped_scan_comparison_summary(
+    fn ec_hnsw_debug_grouped_scan_comparison_summary(
         index_oid: pg_sys::Oid,
         query: Vec<f32>,
     ) -> TableIterator<
@@ -20382,7 +20403,7 @@ mod tests {
     > {
         validate_debug_index(
             index_oid,
-            "tests.tqhnsw_debug_grouped_scan_comparison_summary",
+            "tests.ec_hnsw_debug_grouped_scan_comparison_summary",
         );
 
         let (
@@ -20407,9 +20428,12 @@ mod tests {
     }
 
     #[pg_extern]
-    fn tqhnsw_debug_reachable_live_element_count(index_oid: pg_sys::Oid) -> i32 {
+    fn ec_hnsw_debug_reachable_live_element_count(index_oid: pg_sys::Oid) -> i32 {
         let index_relation = unsafe {
-            open_valid_tqhnsw_index(index_oid, "tests.tqhnsw_debug_reachable_live_element_count")
+            open_valid_ec_hnsw_index(
+                index_oid,
+                "tests.ec_hnsw_debug_reachable_live_element_count",
+            )
         };
         unsafe {
             pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE);
@@ -20420,7 +20444,7 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_graph_scan_recall_gate() {
+    fn test_ech_graph_scan_recall_gate() {
         if std::env::var_os("TQVECTOR_RUN_RECALL_GATE").is_none() {
             return;
         }
@@ -20441,8 +20465,8 @@ mod tests {
 
     #[pg_test]
     #[ignore]
-    fn test_tqhnsw_graph_scan_recall_fixture_summary_1k_tiled_fwht() {
-        let fixture_name = "tqhnsw_graph_scan_recall_tiled_1k";
+    fn test_ech_graph_scan_recall_fixture_summary_1k_tiled_fwht() {
+        let fixture_name = "ec_hnsw_graph_scan_recall_tiled_1k";
         let index_blocks = reset_graph_scan_recall_fixture(fixture_name, 8, 1_000);
         let (
             _m,
@@ -20478,8 +20502,8 @@ mod tests {
 
     #[pg_test]
     #[ignore]
-    fn test_tqhnsw_graph_scan_recall_fixture_gate_10k_tiled_fwht() {
-        let fixture_prefix = "tqhnsw_graph_scan_recall_gate_tiled_10k";
+    fn test_ech_graph_scan_recall_fixture_gate_10k_tiled_fwht() {
+        let fixture_prefix = "ec_hnsw_graph_scan_recall_gate_tiled_10k";
 
         let reset_started = Instant::now();
         let reset_rows = reset_graph_scan_recall_gate_fixtures(fixture_prefix, 10_000);
@@ -20505,8 +20529,8 @@ mod tests {
 
     #[pg_test]
     #[ignore]
-    fn test_tqhnsw_graph_scan_recall_source_gate_10k() {
-        let fixture_prefix = "tqhnsw_graph_scan_recall_gate_source_10k";
+    fn test_ech_graph_scan_recall_source_gate_10k() {
+        let fixture_prefix = "ec_hnsw_graph_scan_recall_gate_source_10k";
         let query_count = 25;
 
         let reset_started = Instant::now();
@@ -20630,7 +20654,7 @@ mod tests {
             let index_name = external_recall_index_name(prefix, storage_format, m);
             Spi::run(&format!(
                 "CREATE INDEX {index_name} ON {corpus_table} \
-                 USING tqhnsw (embedding ecvector_ip_ops) \
+                 USING ec_hnsw (embedding ecvector_ip_ops) \
                  WITH (m = {m}, ef_construction = {RECALL_EF_CONSTRUCTION}, \
                        build_source_column = 'source'{storage_format_clause})"
             ))
@@ -20724,14 +20748,14 @@ mod tests {
     // batched in `create_external_recall_smoke_tables`; the remaining
     // wall-clock cost lives in the probe / gate phases below.
     #[ignore]
-    fn test_tqhnsw_recall_external_smoke_500_formats() {
+    fn test_ech_recall_external_smoke_500_formats() {
         // Smoke test for the external corpus / query / index probe path. The
         // real DBpedia corpus is staged out-of-band by
         // `scripts/load_real_corpus.py`; here we substitute a tiny synthetic
         // dataset that the loader's schema accepts so we can exercise the
         // Rust probe surface end-to-end, including coexisting explicit
         // storage-format index families on one shared corpus/query table pair.
-        let prefix = "tqhnsw_recall_external_smoke";
+        let prefix = "ec_hnsw_recall_external_smoke";
         create_external_recall_smoke_tables(prefix, 500, 25);
         create_external_recall_smoke_indexes(prefix, None);
         create_external_recall_smoke_indexes(prefix, Some("turboquant"));
@@ -20743,8 +20767,8 @@ mod tests {
     }
 
     #[pg_test]
-    fn test_tqhnsw_external_summary_exact_baseline_multiidx() {
-        let prefix = "tqhnsw_recall_external_summary_multiidx";
+    fn test_ech_external_summary_exact_baseline_multiidx() {
+        let prefix = "ec_hnsw_recall_external_summary_multiidx";
         create_external_recall_smoke_tables(prefix, 64, 8);
         create_external_recall_smoke_indexes(prefix, None);
         create_external_recall_smoke_indexes(prefix, Some("turboquant"));
@@ -20771,23 +20795,23 @@ mod tests {
 
     #[pg_test]
     #[should_panic(expected = "canonical default")]
-    fn test_tqhnsw_insert_rejects_mismatched_seed() {
+    fn test_ech_insert_rejects_mismatched_seed() {
         Spi::run(
-            "CREATE TABLE tqhnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)",
+            "CREATE TABLE ec_hnsw_insert_seed_mismatch (id bigint primary key, embedding tqvector)",
         )
         .expect("table creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
+            "INSERT INTO ec_hnsw_insert_seed_mismatch VALUES
              (1, encode_to_tqvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
         )
         .expect("seed insert should succeed");
         Spi::run(
-            "CREATE INDEX tqhnsw_insert_seed_mismatch_idx ON tqhnsw_insert_seed_mismatch USING tqhnsw \
+            "CREATE INDEX ec_hnsw_insert_seed_mismatch_idx ON ec_hnsw_insert_seed_mismatch USING ec_hnsw \
              (embedding tqvector_ip_ops)",
         )
         .expect("index creation should succeed");
         Spi::run(
-            "INSERT INTO tqhnsw_insert_seed_mismatch VALUES
+            "INSERT INTO ec_hnsw_insert_seed_mismatch VALUES
              (2, encode_to_tqvector(ARRAY[0.0, 1.0, 0.25, -0.5], 4, 43))",
         )
         .expect("insert should fail");

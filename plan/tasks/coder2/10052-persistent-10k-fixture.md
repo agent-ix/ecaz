@@ -15,8 +15,8 @@ Make the 10k A4 fixture persistent across test invocations so the gate report
 can rerun in seconds without rebuilding.
 
 The current fixture helpers are in `src/lib.rs` (search for
-`tqhnsw_graph_scan_recall_fixture_gate_reset` and
-`tqhnsw_graph_scan_recall_fixture_gate_report`). The reset function creates
+`ec_hnsw_graph_scan_recall_fixture_gate_reset` and
+`ec_hnsw_graph_scan_recall_fixture_gate_report`). The reset function creates
 tables and indexes from scratch. The report function reads from them.
 
 Approach: Modify the reset function to check if the fixture tables and indexes

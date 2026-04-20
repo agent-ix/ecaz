@@ -15,7 +15,7 @@
 //! [`QueryScorer`] here to sidestep the collision; the ADR's semantics
 //! are preserved.
 //!
-//! Revisit during ADR-041 stage 2 (`am/tqhnsw/` rename): if the struct
+//! Revisit during ADR-041 stage 2 (`am/ec_hnsw/` rename): if the struct
 //! naturally renames along with its module move, the trait can reclaim
 //! `PreparedQuery`.
 

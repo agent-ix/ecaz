@@ -33,12 +33,12 @@ task is the lane that resolved that ambiguity on `main`.
 
 - [x] **Dataset contract.** Documented in `docs/RECALL_REAL_CORPUS.md`. Primary: Qdrant
   `dbpedia-entities-openai3-text-embedding-3-large-1536-1M`; default working subset
-  `tqhnsw_real_50k` (50k corpus, 1k queries). Local file format: TSV with
+  `ec_hnsw_real_50k` (50k corpus, 1k queries). Local file format: TSV with
   `<id>\t<json_array>` columns, no header.
 - [x] **Canonical subset rule.** `scripts/qdrant_dbpedia_to_tsv.py` pins the default subsets by
   sorting the full parquet release by the source parquet id column ascending (currently `_id`
   lexicographic for the Qdrant/Hugging Face release), then taking rows `[0, 49_999]` / `[50_000,
-  50_999]` for `tqhnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `tqhnsw_real_10k`.
+  50_999]` for `ec_hnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `ec_hnsw_real_10k`.
 - [x] **Manifest contract.** The converter emits `<prefix>_manifest.json` with SHA-256 digests,
   counts, id ranges, dimensionality, and selection metadata. `scripts/load_real_corpus.py`
   auto-discovers and verifies the sibling manifest (or takes `--manifest-file` explicitly) before
@@ -51,18 +51,18 @@ task is the lane that resolved that ambiguity on `main`.
   column with `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is
   already populated and skips index rebuild when reloptions match.
 - [x] **External-corpus relation seam.** Added
-  `probe_graph_scan_recall_external_summary_for_relation` and the `tqhnsw_graph_scan_recall_external_summary`
+  `probe_graph_scan_recall_external_summary_for_relation` and the `ec_hnsw_graph_scan_recall_external_summary`
   pg_extern. Reads `(id, source)` from the loaded tables, builds fp32 truth from the actual loaded
   vectors (not regenerated from a seed), runs the graph scan via `am::debug_gettuple_scan_heap_tids`,
   and compares against `ORDER BY embedding <#> $1`.
 - [x] **Reusable fixture flow.** Loader idempotency and the smoke test both rerun the probe twice
   against the same loaded tables and assert the summary is byte-identical. The flow matches the
   one-time-load / one-time-index-build / repeated-rerun discipline of the synthetic gate.
-- [x] **A4 rerun on real data.** `tqhnsw_graph_scan_recall_external_gate_report` walks the four
+- [x] **A4 rerun on real data.** `ec_hnsw_graph_scan_recall_external_gate_report` walks the four
   `RECALL_GATE_CONFIGS` rows — `(8, 40, None)`, `(8, 128, Some(0.89))`, `(8, 200, None)`,
   `(16, 200, None)` — against the `<prefix>_m{8,16}_idx` indexes built by the loader. The actual
   DBpedia run is staged by the user out-of-band per `docs/RECALL_REAL_CORPUS.md`.
-- [x] **Reporting surface.** `tqhnsw_graph_scan_recall_external_summary` returns
+- [x] **Reporting surface.** `ec_hnsw_graph_scan_recall_external_summary` returns
   `(m, ef_search, corpus_rows, query_count, graph_recall_at_10, graph_recall_at_100, ndcg_at_10,
   mean_abs_score_error, spearman_rho_at_10, exact_quantized_recall_at_10, graph_below_exact_queries,
   worst_exact_gap)` per call. The gate report adds the explicit `passes_gate` column.

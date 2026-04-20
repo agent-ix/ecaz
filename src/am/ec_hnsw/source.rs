@@ -65,12 +65,12 @@ pub(super) unsafe fn resolve_source_attnum(
     source_label: &str,
 ) -> i32 {
     let source_column = std::ffi::CString::new(source_column)
-        .unwrap_or_else(|_| pgrx::error!("tqhnsw {source_label} contains an invalid NUL byte"));
+        .unwrap_or_else(|_| pgrx::error!("ec_hnsw {source_label} contains an invalid NUL byte"));
     let attnum = unsafe { pg_sys::get_attnum((*heap_relation).rd_id, source_column.as_ptr()) };
     let attnum = i32::from(attnum);
     if attnum <= 0 {
         pgrx::error!(
-            "tqhnsw {source_label} \"{}\" does not name a user column on the heap relation",
+            "ec_hnsw {source_label} \"{}\" does not name a user column on the heap relation",
             source_column.to_string_lossy()
         );
     }
@@ -101,7 +101,7 @@ pub(super) unsafe fn resolve_source_attribute_by_attnum(
         .get(source_attnum as usize - 1)
         .expect("resolved source attribute should exist");
     if att.attisdropped {
-        pgrx::error!("tqhnsw {source_label} references a dropped column");
+        pgrx::error!("ec_hnsw {source_label} references a dropped column");
     }
 
     let kind = unsafe { resolve_source_datum_kind(att.atttypid) }.unwrap_or_default();
@@ -120,7 +120,7 @@ pub(super) unsafe fn resolve_source_attribute_by_attnum(
             SourceTypePolicy::RerankSource => "real[], bytea, or ecvector",
         };
         pgrx::error!(
-            "tqhnsw {source_label} at heap attnum {} must be {expected}, got type oid {}",
+            "ec_hnsw {source_label} at heap attnum {} must be {expected}, got type oid {}",
             source_attnum,
             u32::from(att.atttypid),
         );
@@ -137,22 +137,22 @@ pub(super) unsafe fn resolve_single_base_heap_index_attnum(
     label: &str,
 ) -> i32 {
     if index_info.is_null() {
-        pgrx::error!("tqhnsw {label} received a null IndexInfo");
+        pgrx::error!("ec_hnsw {label} received a null IndexInfo");
     }
     let index_info = unsafe { &*index_info };
     if index_info.ii_NumIndexAttrs != 1 || index_info.ii_NumIndexKeyAttrs != 1 {
-        pgrx::error!("tqhnsw {label} currently supports single-column indexes only");
+        pgrx::error!("ec_hnsw {label} currently supports single-column indexes only");
     }
     if !index_info.ii_Expressions.is_null() {
-        pgrx::error!("tqhnsw {label} does not support expression indexes yet");
+        pgrx::error!("ec_hnsw {label} does not support expression indexes yet");
     }
     if !index_info.ii_Predicate.is_null() {
-        pgrx::error!("tqhnsw {label} does not support partial indexes yet");
+        pgrx::error!("ec_hnsw {label} does not support partial indexes yet");
     }
 
     let attnum = i32::from(index_info.ii_IndexAttrNumbers[0]);
     if attnum <= 0 {
-        pgrx::error!("tqhnsw {label} requires a base heap column index key");
+        pgrx::error!("ec_hnsw {label} requires a base heap column index key");
     }
     attnum
 }
@@ -166,7 +166,7 @@ pub(super) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
     };
     if indexed.kind != IndexedVectorKind::Ecvector {
-        pgrx::error!("tqhnsw {label} must be ecvector");
+        pgrx::error!("ec_hnsw {label} must be ecvector");
     }
     SourceAttribute {
         attnum: indexed.attnum,
@@ -181,7 +181,7 @@ pub(super) unsafe fn resolve_indexed_ecvector_attribute(
 ) -> SourceAttribute {
     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
     if index_info.is_null() {
-        pgrx::error!("tqhnsw {label} could not build index metadata");
+        pgrx::error!("ec_hnsw {label} could not build index metadata");
     }
     let attribute = unsafe {
         resolve_indexed_ecvector_attribute_from_index_info(heap_relation, index_info, label)
@@ -201,11 +201,11 @@ pub(super) unsafe fn resolve_indexed_vector_attribute_from_index_info(
         .get(indexed_attnum as usize - 1)
         .expect("resolved indexed attribute should exist");
     if att.attisdropped {
-        pgrx::error!("tqhnsw {label} references a dropped column");
+        pgrx::error!("ec_hnsw {label} references a dropped column");
     }
 
     let kind = unsafe { resolve_indexed_vector_kind(att.atttypid) }
-        .unwrap_or_else(|| pgrx::error!("tqhnsw {label} must be ecvector or tqvector"));
+        .unwrap_or_else(|| pgrx::error!("ec_hnsw {label} must be ecvector or tqvector"));
     IndexedVectorAttribute {
         attnum: indexed_attnum,
         kind,
@@ -219,7 +219,7 @@ pub(super) unsafe fn resolve_indexed_vector_attribute(
 ) -> IndexedVectorAttribute {
     let index_info = unsafe { pg_sys::BuildIndexInfo(index_relation) };
     if index_info.is_null() {
-        pgrx::error!("tqhnsw {label} could not build index metadata");
+        pgrx::error!("ec_hnsw {label} could not build index metadata");
     }
     let attribute = unsafe {
         resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
@@ -300,7 +300,7 @@ pub(super) unsafe fn fetch_heap_row_version(
         unsafe { pg_sys::table_tuple_fetch_row_version(heap_relation, &mut tid, snapshot, slot) };
     if !fetched {
         pgrx::error!(
-            "tqhnsw {label} could not fetch heap tuple at ({},{})",
+            "ec_hnsw {label} could not fetch heap tuple at ({},{})",
             heap_tid.block_number,
             heap_tid.offset_number
         );
@@ -317,7 +317,7 @@ pub(super) unsafe fn required_slot_datum(
     }
     let attr_index = usize::try_from(attnum - 1).expect("attribute number should be positive");
     if unsafe { *(*slot).tts_isnull.add(attr_index) } {
-        pgrx::error!("tqhnsw does not support NULL {label}");
+        pgrx::error!("ec_hnsw does not support NULL {label}");
     }
     unsafe { *(*slot).tts_values.add(attr_index) }
 }
@@ -332,7 +332,7 @@ pub(super) struct FlatFloat4ArrayRef {
 impl FlatFloat4ArrayRef {
     pub(super) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
-            pgrx::error!("tqhnsw does not support NULL {label}");
+            pgrx::error!("ec_hnsw does not support NULL {label}");
         }
 
         let original = datum
@@ -340,23 +340,23 @@ impl FlatFloat4ArrayRef {
             .cast::<pg_sys::varlena>();
         let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
         if varlena.is_null() {
-            pgrx::error!("tqhnsw could not detoast {label}");
+            pgrx::error!("ec_hnsw could not detoast {label}");
         }
         let array_ptr = varlena.cast::<pg_sys::ArrayType>();
         let owned = !ptr::eq(varlena, original);
 
         let ndim = match usize::try_from(unsafe { (*array_ptr).ndim }) {
             Ok(value) => value,
-            Err(_) => pgrx::error!("tqhnsw {label} must be a one-dimensional real[]"),
+            Err(_) => pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]"),
         };
         if ndim != 1 {
-            pgrx::error!("tqhnsw {label} must be a one-dimensional real[]");
+            pgrx::error!("ec_hnsw {label} must be a one-dimensional real[]");
         }
         if unsafe { (*array_ptr).elemtype } != pg_sys::FLOAT4OID {
-            pgrx::error!("tqhnsw {label} must be a real[]");
+            pgrx::error!("ec_hnsw {label} must be a real[]");
         }
         if unsafe { pg_sys::array_contains_nulls(array_ptr) } {
-            pgrx::error!("tqhnsw {label} arrays must not contain NULL elements");
+            pgrx::error!("ec_hnsw {label} arrays must not contain NULL elements");
         }
 
         let dims_ptr = unsafe { flat_array_dims_ptr(array_ptr) };
@@ -369,7 +369,7 @@ impl FlatFloat4ArrayRef {
                 .cast::<f32>()
         };
         if (data_ptr as usize) % std::mem::align_of::<f32>() != 0 {
-            pgrx::error!("tqhnsw {label} data pointer is not aligned for float4 access");
+            pgrx::error!("ec_hnsw {label} data pointer is not aligned for float4 access");
         }
 
         Self {
@@ -403,7 +403,7 @@ pub(super) struct FlatFloat4VarlenaRef {
 impl FlatFloat4VarlenaRef {
     pub(super) unsafe fn from_datum(datum: pg_sys::Datum, label: &str) -> Self {
         if datum.is_null() {
-            pgrx::error!("tqhnsw does not support NULL {label}");
+            pgrx::error!("ec_hnsw does not support NULL {label}");
         }
 
         let original = datum
@@ -411,16 +411,16 @@ impl FlatFloat4VarlenaRef {
             .cast::<pg_sys::varlena>();
         let varlena = unsafe { pg_sys::pg_detoast_datum(original.cast()) };
         if varlena.is_null() {
-            pgrx::error!("tqhnsw could not detoast {label}");
+            pgrx::error!("ec_hnsw could not detoast {label}");
         }
         let owned = !ptr::eq(varlena, original);
         let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(varlena) };
         if bytes.len() % std::mem::size_of::<f32>() != 0 {
-            pgrx::error!("tqhnsw {label} bytea payload length must be a multiple of 4 bytes");
+            pgrx::error!("ec_hnsw {label} bytea payload length must be a multiple of 4 bytes");
         }
         let (prefix, body, suffix) = unsafe { bytes.align_to::<f32>() };
         if !prefix.is_empty() || !suffix.is_empty() {
-            pgrx::error!("tqhnsw {label} bytea payload is not aligned for float4 access");
+            pgrx::error!("ec_hnsw {label} bytea payload is not aligned for float4 access");
         }
 
         Self {
@@ -462,7 +462,7 @@ impl FlatFloat4SourceRef {
             SourceDatumKind::Bytea | SourceDatumKind::Ecvector => {
                 Self::Varlena(unsafe { FlatFloat4VarlenaRef::from_datum(datum, label) })
             }
-            _ => pgrx::error!("tqhnsw {label} must be real[], bytea, or ecvector"),
+            _ => pgrx::error!("ec_hnsw {label} must be real[], bytea, or ecvector"),
         }
     }
 
@@ -490,7 +490,7 @@ pub(super) unsafe fn load_source_from_heap_row(
 pub(super) fn negative_inner_product(query: &[f32], source: &[f32]) -> f32 {
     if query.len() != source.len() {
         pgrx::error!(
-            "tqhnsw source vector dimension mismatch: left dim {}, right dim {}",
+            "ec_hnsw source vector dimension mismatch: left dim {}, right dim {}",
             query.len(),
             source.len()
         );

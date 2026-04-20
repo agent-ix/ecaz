@@ -31,9 +31,9 @@ therefore carries forward to any outer structure we adopt next.
 
 ## Decision
 
-tqvector will add **`tqdiskann`** as a second index access method after
+tqvector will add **`ec_diskann`** as a second index access method after
 tasks 15 and 16 land. The scoring kernel is PqFastScan (identical to
-`tqhnsw`'s PqFastScan path). The graph layer is Vamana, following the
+`ec_hnsw`'s PqFastScan path). The graph layer is Vamana, following the
 pgvectorscale design as reference.
 
 ### Per-node footprint
@@ -51,8 +51,8 @@ This is ~2× smaller than pgvectorscale's SBQ-based nodes (~320 B) and
 
 Per-server estimate on a well-provisioned box (128 GB RAM, multi-TB NVMe):
 
-- `tqhnsw` + PqFastScan: up to ~500M vectors.
-- `tqdiskann` + PqFastScan: ~3–5B vectors.
+- `ec_hnsw` + PqFastScan: up to ~500M vectors.
+- `ec_diskann` + PqFastScan: ~3–5B vectors.
 
 This tier extends tqvector into the scale band currently owned by
 pgvectorscale and VectorChord, with a strictly stronger scoring kernel
@@ -60,10 +60,10 @@ pgvectorscale and VectorChord, with a strictly stronger scoring kernel
 
 ### Access method layout
 
-- New AM: `tqdiskann` (handler + opclass parallel to `tqhnsw`).
+- New AM: `ec_diskann` (handler + opclass parallel to `ec_hnsw`).
 - New wire tag: `INDEX_FORMAT_V3_DISKANN` (or similar) for page-layout
   versioning. TurboQuant and PqFastScan continue to live under
-  `tqhnsw`; `tqdiskann` is a separate format space.
+  `ec_hnsw`; `ec_diskann` is a separate format space.
 - Shared: quantizer training pipeline, SRHT rotation, grouped PQ
   codebooks, binary prefilter sidecar infrastructure.
 
@@ -89,8 +89,8 @@ pgvectorscale and VectorChord, with a strictly stronger scoring kernel
 
 ### Non-goals for this ADR
 
-- Flipping default access method. `tqhnsw` remains default; users opt
-  into `tqdiskann` when their corpus warrants it.
+- Flipping default access method. `ec_hnsw` remains default; users opt
+  into `ec_diskann` when their corpus warrants it.
 - OPQ rotation (ADR-036) or AQ compression (ADR-037). DiskANN lands
   first with the PqFastScan encoding as it stands after task 15.
 - SPANN-style IVF routing (ADR-035). Explicitly deferred; DiskANN and

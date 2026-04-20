@@ -238,7 +238,7 @@ quality gap may be small.
 ### Post-study correction
 
 Packet 280 weakens the compatibility claim above for tqvector's current encoding. On the real
-`tqhnsw_real_10k` corpus, grouped reinterpretation of the existing per-dimension scalar codes
+`ec_hnsw_real_10k` corpus, grouped reinterpretation of the existing per-dimension scalar codes
 lost too much ranking quality at the same time that the expected scorer speedup was not strong
 enough to justify the approximation. The practical conclusion is:
 

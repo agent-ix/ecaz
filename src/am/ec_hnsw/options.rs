@@ -4,18 +4,18 @@ use std::ptr;
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
-    TQHNSW_DEFAULT_EF_CONSTRUCTION, TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_DEFAULT_M,
-    TQHNSW_MAX_EF_CONSTRUCTION, TQHNSW_MAX_EF_SEARCH, TQHNSW_MAX_M, TQHNSW_MIN_EF_CONSTRUCTION,
-    TQHNSW_MIN_EF_SEARCH, TQHNSW_MIN_M,
+    EC_HNSW_DEFAULT_EF_CONSTRUCTION, EC_HNSW_DEFAULT_EF_SEARCH, EC_HNSW_DEFAULT_M,
+    EC_HNSW_MAX_EF_CONSTRUCTION, EC_HNSW_MAX_EF_SEARCH, EC_HNSW_MAX_M, EC_HNSW_MIN_EF_CONSTRUCTION,
+    EC_HNSW_MIN_EF_SEARCH, EC_HNSW_MIN_M,
 };
 pub(crate) use crate::quant::Family as StorageFormat;
 
-const TQHNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
+const EC_HNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
 
-static TQHNSW_EF_SEARCH_GUC: GucSetting<i32> =
-    GucSetting::<i32>::new(TQHNSW_SESSION_EF_SEARCH_UNSET);
-static TQHNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
-static TQHNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_HNSW_EF_SEARCH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(EC_HNSW_SESSION_EF_SEARCH_UNSET);
+static EC_HNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -41,9 +41,9 @@ pub(crate) struct TqHnswOptions {
 
 impl TqHnswOptions {
     const DEFAULT: Self = Self {
-        m: TQHNSW_DEFAULT_M,
-        ef_construction: TQHNSW_DEFAULT_EF_CONSTRUCTION,
-        ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+        m: EC_HNSW_DEFAULT_M,
+        ef_construction: EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+        ef_search: EC_HNSW_DEFAULT_EF_SEARCH,
         build_source_column: None,
         rerank_source_column: None,
         storage_format: StorageFormat::DEFAULT,
@@ -66,35 +66,35 @@ pub(crate) struct ScanTuning {
 
 pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
-        c"tqhnsw.ef_search",
-        c"Session override for tqhnsw search breadth.",
-        c"Overrides tqhnsw index ef_search reloptions when set to 1-1000; -1 uses the relation value.",
-        &TQHNSW_EF_SEARCH_GUC,
-        TQHNSW_SESSION_EF_SEARCH_UNSET,
-        TQHNSW_MAX_EF_SEARCH,
+        c"ec_hnsw.ef_search",
+        c"Session override for ec_hnsw search breadth.",
+        c"Overrides ec_hnsw index ef_search reloptions when set to 1-1000; -1 uses the relation value.",
+        &EC_HNSW_EF_SEARCH_GUC,
+        EC_HNSW_SESSION_EF_SEARCH_UNSET,
+        EC_HNSW_MAX_EF_SEARCH,
         GucContext::Userset,
         GucFlags::default(),
     );
     GucRegistry::define_bool_guc(
-        c"tqhnsw.disable_binary_prefilter",
+        c"ec_hnsw.disable_binary_prefilter",
         c"Disable ADR-031 binary prefilter runtime behavior.",
-        c"Diagnostic override used for A/B comparison; when enabled, tqhnsw skips ADR-031 binary-query preparation so scans fall back to the pre-ADR-031 eager exact-scoring path.",
-        &TQHNSW_DISABLE_BINARY_PREFILTER_GUC,
+        c"Diagnostic override used for A/B comparison; when enabled, ec_hnsw skips ADR-031 binary-query preparation so scans fall back to the pre-ADR-031 eager exact-scoring path.",
+        &EC_HNSW_DISABLE_BINARY_PREFILTER_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
     GucRegistry::define_bool_guc(
-        c"tqhnsw.force_binary_derivation",
+        c"ec_hnsw.force_binary_derivation",
         c"Force ADR-031 scans to ignore persisted binary sidecars.",
-        c"Diagnostic override used for A/B comparison; when enabled, tqhnsw derives binary words from code bytes even if persisted sidecars are present.",
-        &TQHNSW_FORCE_BINARY_DERIVATION_GUC,
+        c"Diagnostic override used for A/B comparison; when enabled, ec_hnsw derives binary words from code bytes even if persisted sidecars are present.",
+        &EC_HNSW_FORCE_BINARY_DERIVATION_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
 }
 
 pub(super) fn current_session_ef_search() -> i32 {
-    TQHNSW_EF_SEARCH_GUC.get()
+    EC_HNSW_EF_SEARCH_GUC.get()
 }
 
 #[cfg(test)]
@@ -104,7 +104,7 @@ pub(super) fn disable_binary_prefilter() -> bool {
 
 #[cfg(not(test))]
 pub(super) fn disable_binary_prefilter() -> bool {
-    TQHNSW_DISABLE_BINARY_PREFILTER_GUC.get()
+    EC_HNSW_DISABLE_BINARY_PREFILTER_GUC.get()
 }
 
 #[cfg(test)]
@@ -114,7 +114,7 @@ pub(super) fn force_binary_derivation() -> bool {
 
 #[cfg(not(test))]
 pub(super) fn force_binary_derivation() -> bool {
-    TQHNSW_FORCE_BINARY_DERIVATION_GUC.get()
+    EC_HNSW_FORCE_BINARY_DERIVATION_GUC.get()
 }
 
 pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
@@ -122,7 +122,7 @@ pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
 }
 
 fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -> ScanTuning {
-    if session_ef_search == TQHNSW_SESSION_EF_SEARCH_UNSET {
+    if session_ef_search == EC_HNSW_SESSION_EF_SEARCH_UNSET {
         ScanTuning {
             relation_ef_search,
             session_ef_search: None,
@@ -139,7 +139,7 @@ fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
 ) -> *mut pg_sys::bytea {
@@ -152,9 +152,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
                 &mut relopts,
                 b"m\0".as_ptr().cast(),
                 b"Maximum graph degree per layer.\0".as_ptr().cast(),
-                TQHNSW_DEFAULT_M,
-                TQHNSW_MIN_M,
-                TQHNSW_MAX_M,
+                EC_HNSW_DEFAULT_M,
+                EC_HNSW_MIN_M,
+                EC_HNSW_MAX_M,
                 offset_of!(TqHnswReloptions, m) as i32,
             );
             pg_sys::add_local_int_reloption(
@@ -163,9 +163,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
                 b"Candidate list width used during graph construction.\0"
                     .as_ptr()
                     .cast(),
-                TQHNSW_DEFAULT_EF_CONSTRUCTION,
-                TQHNSW_MIN_EF_CONSTRUCTION,
-                TQHNSW_MAX_EF_CONSTRUCTION,
+                EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+                EC_HNSW_MIN_EF_CONSTRUCTION,
+                EC_HNSW_MAX_EF_CONSTRUCTION,
                 offset_of!(TqHnswReloptions, ef_construction) as i32,
             );
             pg_sys::add_local_int_reloption(
@@ -174,9 +174,9 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amoptions(
                 b"Candidate list width used during scan search.\0"
                     .as_ptr()
                     .cast(),
-                TQHNSW_DEFAULT_EF_SEARCH,
-                TQHNSW_MIN_EF_SEARCH,
-                TQHNSW_MAX_EF_SEARCH,
+                EC_HNSW_DEFAULT_EF_SEARCH,
+                EC_HNSW_MIN_EF_SEARCH,
+                EC_HNSW_MAX_EF_SEARCH,
                 offset_of!(TqHnswReloptions, ef_search) as i32,
             );
             pg_sys::add_local_string_reloption(
@@ -234,9 +234,9 @@ unsafe fn read_string_reloption(
     };
     let value = unsafe { std::ffi::CStr::from_ptr(value_ptr) }
         .to_str()
-        .unwrap_or_else(|e| pgrx::error!("invalid tqhnsw {name} reloption: {e}"));
+        .unwrap_or_else(|e| pgrx::error!("invalid ec_hnsw {name} reloption: {e}"));
     if value.is_empty() {
-        pgrx::error!("invalid tqhnsw {name} reloption: value must not be empty");
+        pgrx::error!("invalid ec_hnsw {name} reloption: value must not be empty");
     }
     Some(value.to_owned())
 }
@@ -289,14 +289,14 @@ pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
 mod tests {
     use super::{
         disable_binary_prefilter, force_binary_derivation, resolve_scan_tuning_values,
-        EfSearchSource, ScanTuning, StorageFormat, TQHNSW_DEFAULT_EF_SEARCH,
-        TQHNSW_SESSION_EF_SEARCH_UNSET,
+        EfSearchSource, ScanTuning, StorageFormat, EC_HNSW_DEFAULT_EF_SEARCH,
+        EC_HNSW_SESSION_EF_SEARCH_UNSET,
     };
 
     #[test]
     fn resolve_scan_tuning_uses_relation_value_when_session_is_default() {
         assert_eq!(
-            resolve_scan_tuning_values(128, TQHNSW_SESSION_EF_SEARCH_UNSET),
+            resolve_scan_tuning_values(128, EC_HNSW_SESSION_EF_SEARCH_UNSET),
             ScanTuning {
                 relation_ef_search: 128,
                 session_ef_search: None,
@@ -322,11 +322,11 @@ mod tests {
     #[test]
     fn resolve_scan_tuning_keeps_default_relation_when_both_are_default() {
         assert_eq!(
-            resolve_scan_tuning_values(TQHNSW_DEFAULT_EF_SEARCH, TQHNSW_SESSION_EF_SEARCH_UNSET),
+            resolve_scan_tuning_values(EC_HNSW_DEFAULT_EF_SEARCH, EC_HNSW_SESSION_EF_SEARCH_UNSET),
             ScanTuning {
-                relation_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                relation_ef_search: EC_HNSW_DEFAULT_EF_SEARCH,
                 session_ef_search: None,
-                effective_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                effective_ef_search: EC_HNSW_DEFAULT_EF_SEARCH,
                 source: EfSearchSource::Relation,
             }
         );
@@ -335,11 +335,11 @@ mod tests {
     #[test]
     fn resolve_scan_tuning_uses_explicit_default_session_override() {
         assert_eq!(
-            resolve_scan_tuning_values(128, TQHNSW_DEFAULT_EF_SEARCH),
+            resolve_scan_tuning_values(128, EC_HNSW_DEFAULT_EF_SEARCH),
             ScanTuning {
                 relation_ef_search: 128,
-                session_ef_search: Some(TQHNSW_DEFAULT_EF_SEARCH),
-                effective_ef_search: TQHNSW_DEFAULT_EF_SEARCH,
+                session_ef_search: Some(EC_HNSW_DEFAULT_EF_SEARCH),
+                effective_ef_search: EC_HNSW_DEFAULT_EF_SEARCH,
                 source: EfSearchSource::Session,
             }
         );

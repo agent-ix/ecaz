@@ -51,7 +51,7 @@ Split `build_external_recall_context` into two phases:
 Add a new SQL-callable function:
 
 ```
-tqhnsw_graph_scan_recall_external_cache_build(
+ec_hnsw_graph_scan_recall_external_cache_build(
     corpus_table  text,
     query_table   text,
     cache_prefix  text
@@ -91,7 +91,7 @@ O(Q × N) truth computation and the Q sequential exact-quantized scans.
 Add cache-backed variants of the two public probe surfaces:
 
 ```
-tqhnsw_graph_scan_recall_external_summary_cached(
+ec_hnsw_graph_scan_recall_external_summary_cached(
     corpus_table  text,
     query_table   text,
     cache_prefix  text,
@@ -100,7 +100,7 @@ tqhnsw_graph_scan_recall_external_summary_cached(
     ef_search     int4
 ) → GraphScanRecallExternalSummaryRow
 
-tqhnsw_graph_scan_recall_external_gate_report_cached(
+ec_hnsw_graph_scan_recall_external_gate_report_cached(
     corpus_table   text,
     query_table    text,
     cache_prefix   text,
@@ -120,9 +120,9 @@ These call `build_external_recall_context_from_cache` instead of
     cache tables
   - `ExternalRecallContext` — unchanged struct; the cache-backed builder
     populates the same fields
-  - New SQL-callable: `tqhnsw_graph_scan_recall_external_cache_build`
-  - New SQL-callable: `tqhnsw_graph_scan_recall_external_summary_cached`
-  - New SQL-callable: `tqhnsw_graph_scan_recall_external_gate_report_cached`
+  - New SQL-callable: `ec_hnsw_graph_scan_recall_external_cache_build`
+  - New SQL-callable: `ec_hnsw_graph_scan_recall_external_summary_cached`
+  - New SQL-callable: `ec_hnsw_graph_scan_recall_external_gate_report_cached`
 
 ## What Is Not in Scope
 
@@ -133,7 +133,7 @@ These call `build_external_recall_context_from_cache` instead of
 
 ## Expected Outcome
 
-Once `tqhnsw_graph_scan_recall_external_cache_build` has been run for a given
+Once `ec_hnsw_graph_scan_recall_external_cache_build` has been run for a given
 `(corpus_table, query_table)` pair, subsequent gate-report or summary calls
 using the `_cached` variants are cheap: the expensive O(Q × N) truth work does
 not repeat. Widening from a 10-query to a 50-query or 200-query slice then costs

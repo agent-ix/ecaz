@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load a real-corpus recall fixture into Postgres for tqhnsw A4 measurement.
+"""Load a real-corpus recall fixture into Postgres for ec_hnsw A4 measurement.
 
 This script implements the local-file loader path described in
 ``docs/RECALL_REAL_CORPUS.md``. It is the bridge between a staged
@@ -13,7 +13,7 @@ fixture-backed gate.
 Usage:
 
     PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \\
-        --prefix tqhnsw_real_50k \\
+        --prefix ec_hnsw_real_50k \\
         --corpus-file /path/to/dbpedia_50k_corpus.tsv \\
         --queries-file /path/to/dbpedia_1k_queries.tsv \\
         --m 8 16
@@ -148,7 +148,7 @@ def _build_index_sql(
     joined_options = ", ".join(with_options)
     return (
         f"CREATE INDEX {index_name} ON {corpus_table}\n"
-        "        USING tqhnsw (embedding tqvector_ip_ops)\n"
+        "        USING ec_hnsw (embedding tqvector_ip_ops)\n"
         f"        WITH ({joined_options})"
     )
 
@@ -543,7 +543,7 @@ def _ensure_index(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Load a real-corpus recall fixture into Postgres for tqhnsw A4 measurement.",
+        description="Load a real-corpus recall fixture into Postgres for ec_hnsw A4 measurement.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -606,7 +606,7 @@ def main() -> int:
         "--storage-format",
         type=_validate_storage_format,
         help=(
-            "Optional tqhnsw storage format reloption. When set, the loader builds "
+            "Optional ec_hnsw storage format reloption. When set, the loader builds "
             "coexisting format-specific indexes named <prefix>_<storage_format>_m{N}_idx."
         ),
     )

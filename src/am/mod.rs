@@ -1,21 +1,21 @@
 //! Access-method surfaces grouped by AM and shared helpers.
 
 pub(crate) mod common;
-mod tqhnsw;
+mod ec_hnsw;
 
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
 #[allow(unused_imports)]
-pub(crate) use self::tqhnsw::{
+pub(crate) use self::ec_hnsw::{
     graph, page, IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot,
 };
 
 pub(crate) fn register_gucs() {
-    tqhnsw::register_gucs();
+    ec_hnsw::register_gucs();
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::tqhnsw::{
+pub(crate) use self::ec_hnsw::{
     resolve_pq_fastscan_rerank_mode_decision, resolve_pq_fastscan_traversal_score_mode_decision,
     PQ_FASTSCAN_DEFAULT_LIVE_RERANK_WINDOW, PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME,
     PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME,
@@ -24,24 +24,24 @@ pub(crate) use self::tqhnsw::{
 pub(crate) unsafe fn index_cost_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexCostSnapshot {
-    unsafe { tqhnsw::index_cost_snapshot(index_relation) }
+    unsafe { ec_hnsw::index_cost_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn index_admin_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> IndexAdminSnapshot {
-    unsafe { tqhnsw::index_admin_snapshot(index_relation) }
+    unsafe { ec_hnsw::index_admin_snapshot(index_relation) }
 }
 
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pgrx::pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
-    unsafe { tqhnsw::planner_integration_snapshot(index_relation) }
+    unsafe { ec_hnsw::planner_integration_snapshot(index_relation) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 #[allow(unused_imports)]
-pub(crate) use self::tqhnsw::{
+pub(crate) use self::ec_hnsw::{
     debug_all_top_level_heap_tids, debug_begin_end_scan, debug_bootstrap_phase_transition,
     debug_candidate_frontier_head_lifecycle, debug_consume_candidate_frontier_head,
     debug_consume_candidate_frontier_head_slots, debug_end_scan_twice,

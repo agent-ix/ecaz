@@ -3,7 +3,7 @@
 #
 # This script mirrors the real-corpus lane of scripts/bench_sql_latency.sh but
 # targets pgvector's vector type and hnsw.ef_search GUC instead of tqvector's
-# tqhnsw access method.
+# ec_hnsw access method.
 set -euo pipefail
 
 PSQL_BIN="${TQV_PSQL_BIN:-psql}"

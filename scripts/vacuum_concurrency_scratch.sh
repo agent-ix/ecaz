@@ -6,13 +6,13 @@ usage() {
 Usage:
   scripts/vacuum_concurrency_scratch.sh [--duration SECONDS] [--socket-dir DIR] [--port PORT]
 
-Runs a scratch-cluster tqhnsw vacuum harness with concurrent INSERT, graph scan,
+Runs a scratch-cluster ec_hnsw vacuum harness with concurrent INSERT, graph scan,
 and VACUUM workers against the same index.
 
 Prerequisites:
   1. A pg17 scratch cluster is running (`cargo pgrx start pg17`)
   2. The extension is installed with the `pg_test` feature so the harness can
-     call `tests.tqhnsw_debug_scan_result_count(...)`
+     call `tests.ec_hnsw_debug_scan_result_count(...)`
 
 Defaults:
   duration: 60 seconds
@@ -90,7 +90,7 @@ read_worker_iterations() {
     printf '%s\n' "${iterations}"
 }
 
-table_name="tqhnsw_vacuum_concurrency"
+table_name="ec_hnsw_vacuum_concurrency"
 index_name="${table_name}_idx"
 ref_index_name="${table_name}_ref_idx"
 harness_db="${table_name}_db"
@@ -119,11 +119,11 @@ run_sql postgres "CREATE DATABASE ${harness_db}" >/dev/null
 run_sql "${harness_db}" "CREATE EXTENSION tqvector" >/dev/null
 
 probe_exists="$(
-    run_sql "${harness_db}" "SELECT to_regprocedure('tests.tqhnsw_debug_scan_result_count(oid,real[])') IS NOT NULL"
+    run_sql "${harness_db}" "SELECT to_regprocedure('tests.ec_hnsw_debug_scan_result_count(oid,real[])') IS NOT NULL"
 )"
 if [[ "${probe_exists}" != "t" ]]; then
     cat >&2 <<'EOF'
-missing tests.tqhnsw_debug_scan_result_count(oid, real[])
+missing tests.ec_hnsw_debug_scan_result_count(oid, real[])
 install a pg_test build into the scratch cluster first, for example:
   cargo pgrx install --release --features 'pg17 pg_test' --no-default-features
 EOF
@@ -149,7 +149,7 @@ SELECT encode_to_tqvector(
 )
 FROM generate_series(1, 2000) AS gs;
 CREATE INDEX ${index_name}
-ON ${table_name} USING tqhnsw (embedding tqvector_ip_ops)
+ON ${table_name} USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 " >/dev/null
 
@@ -181,10 +181,10 @@ scan_worker() {
     while (( $(date +%s) < end_time )); do
         local result_count
         result_count="$(
-            run_sql "${harness_db}" "SELECT tests.tqhnsw_debug_scan_result_count('${index_name}'::regclass::oid, ${query_sql})"
+            run_sql "${harness_db}" "SELECT tests.ec_hnsw_debug_scan_result_count('${index_name}'::regclass::oid, ${query_sql})"
         )"
         if ! [[ "${result_count}" =~ ^[0-9]+$ ]] || (( result_count <= 0 )); then
-            echo "unexpected tqhnsw scan result count: ${result_count}" >&2
+            echo "unexpected ec_hnsw scan result count: ${result_count}" >&2
             return 1
         fi
         iterations=$((iterations + 1))
@@ -248,25 +248,25 @@ fi
 run_sql "${harness_db}" "VACUUM (ANALYZE) ${table_name}" >/dev/null
 final_live_rows="$(run_sql "${harness_db}" "SELECT count(*) FROM ${table_name}")"
 final_live_elements="$(
-    run_sql "${harness_db}" "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('${index_name}'::regclass)"
+    run_sql "${harness_db}" "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('${index_name}'::regclass)"
 )"
 final_reachable_live_elements="$(
-    run_sql "${harness_db}" "SELECT tests.tqhnsw_debug_reachable_live_element_count('${index_name}'::regclass::oid)"
+    run_sql "${harness_db}" "SELECT tests.ec_hnsw_debug_reachable_live_element_count('${index_name}'::regclass::oid)"
 )"
 final_scan_result_count="$(
-    run_sql "${harness_db}" "SELECT tests.tqhnsw_debug_scan_result_count('${index_name}'::regclass::oid, ARRAY[1.0, 0.0, 0.5, -1.0]::real[])"
+    run_sql "${harness_db}" "SELECT tests.ec_hnsw_debug_scan_result_count('${index_name}'::regclass::oid, ARRAY[1.0, 0.0, 0.5, -1.0]::real[])"
 )"
 run_sql "${harness_db}" "DROP INDEX IF EXISTS ${ref_index_name}" >/dev/null
 run_sql "${harness_db}" "
 CREATE INDEX ${ref_index_name}
-ON ${table_name} USING tqhnsw (embedding tqvector_ip_ops)
+ON ${table_name} USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 " >/dev/null
 reference_live_elements="$(
-    run_sql "${harness_db}" "SELECT total_live_nodes FROM tqhnsw_index_admin_snapshot('${ref_index_name}'::regclass)"
+    run_sql "${harness_db}" "SELECT total_live_nodes FROM ec_hnsw_index_admin_snapshot('${ref_index_name}'::regclass)"
 )"
 reference_reachable_live_elements="$(
-    run_sql "${harness_db}" "SELECT tests.tqhnsw_debug_reachable_live_element_count('${ref_index_name}'::regclass::oid)"
+    run_sql "${harness_db}" "SELECT tests.ec_hnsw_debug_reachable_live_element_count('${ref_index_name}'::regclass::oid)"
 )"
 if ! [[ "${final_live_rows}" =~ ^[0-9]+$ ]]; then
     echo "unexpected final live row count: ${final_live_rows}" >&2

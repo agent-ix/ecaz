@@ -1,7 +1,7 @@
 # Real-Corpus Recall Dataset Contract
 
 This document specifies the local dataset contract used by the
-`tqhnsw_graph_scan_recall_external_*` probes for running the A4 recall gate on a
+`ec_hnsw_graph_scan_recall_external_*` probes for running the A4 recall gate on a
 real `1536`-dimensional embedding corpus consistent with `NFR-003`.
 
 It is the answer to the contradiction recorded in
@@ -33,8 +33,8 @@ subset for the recall gate is:
 
 | Subset | Rows | Queries | Notes |
 | --- | --- | --- | --- |
-| `tqhnsw_real_50k` | 50,000 corpus | 1,000 queries | matches `NFR-003` headline shape |
-| `tqhnsw_real_10k` | 10,000 corpus | 200 queries | optional smaller surface for fast iteration |
+| `ec_hnsw_real_50k` | 50,000 corpus | 1,000 queries | matches `NFR-003` headline shape |
+| `ec_hnsw_real_10k` | 10,000 corpus | 200 queries | optional smaller surface for fast iteration |
 
 Larger subsets (full 1M) are allowed but should be opt-in: A4 needs the 50k
 shape because that is the surface `NFR-003` declares its targets against.
@@ -47,10 +47,10 @@ deterministic rule over the full parquet release:
 - sort the full dataset by the source parquet id column ascending
 - the current Hugging Face parquet uses `_id`, so the canonical sort key is
   `_id` ascending lexicographic
-- `tqhnsw_real_50k` corpus: rows `[0, 49_999]`
-- `tqhnsw_real_50k` queries: rows `[50_000, 50_999]`
-- `tqhnsw_real_10k` corpus: rows `[0, 9_999]`
-- `tqhnsw_real_10k` queries: rows `[10_000, 10_199]`
+- `ec_hnsw_real_50k` corpus: rows `[0, 49_999]`
+- `ec_hnsw_real_50k` queries: rows `[50_000, 50_999]`
+- `ec_hnsw_real_10k` corpus: rows `[0, 9_999]`
+- `ec_hnsw_real_10k` queries: rows `[10_000, 10_199]`
 
 The emitted TSV ids are deterministic global row indices from that sorted
 ordering. The original source ids remain in the manifest as
@@ -131,7 +131,7 @@ hashes differ, the loader aborts unless the operator passes
 The probe path is built around one durable expectation:
 
 1. Load the corpus and query files **once** into Postgres.
-2. Build the tqhnsw index for each `m` **once**.
+2. Build the ec_hnsw index for each `m` **once**.
 3. Rerun the probes any number of times against the existing tables and
    indexes, without rebuilding the corpus.
 
@@ -140,7 +140,7 @@ row count and the index already exists with the expected `(m, ef_construction)`,
 the loader skips the corresponding step and logs `skipped: already present`.
 
 This is the same one-time-load / repeated-rerun discipline used by the synthetic
-fixture-backed gate (`tqhnsw_graph_scan_recall_fixture_gate_*`).
+fixture-backed gate (`ec_hnsw_graph_scan_recall_fixture_gate_*`).
 
 The loader also logs mean/min/max L2 norm statistics for the staged corpus and
 query files. If the vectors are not close to unit norm, it emits a warning so
@@ -166,9 +166,9 @@ CREATE TABLE <prefix>_queries (
 
 The `<prefix>_corpus.embedding` column is populated as
 `encode_to_tqvector(source, 4, 42)` so it lives next to the source for
-`source`-build-mode tqhnsw indexing and exact-quantized comparison probes.
+`source`-build-mode ec_hnsw indexing and exact-quantized comparison probes.
 
-The tqhnsw indexes are created via the existing `build_source_column = 'source'`
+The ec_hnsw indexes are created via the existing `build_source_column = 'source'`
 path so the graph is built on raw `source` vectors rather than re-decoded
 quantized values.
 
@@ -176,11 +176,11 @@ Legacy/default loader runs keep the historical index names:
 
 ```sql
 CREATE INDEX <prefix>_m8_idx ON <prefix>_corpus
-USING tqhnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 8, ef_construction = 128, build_source_column = 'source');
 
 CREATE INDEX <prefix>_m16_idx ON <prefix>_corpus
-USING tqhnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 16, ef_construction = 128, build_source_column = 'source');
 ```
 
@@ -190,7 +190,7 @@ family while reusing the same `<prefix>_corpus` / `<prefix>_queries` tables:
 
 ```sql
 CREATE INDEX <prefix>_turboquant_m8_idx ON <prefix>_corpus
-USING tqhnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (
     m = 8,
     ef_construction = 128,
@@ -199,7 +199,7 @@ WITH (
 );
 
 CREATE INDEX <prefix>_pq_fastscan_m8_idx ON <prefix>_corpus
-USING tqhnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (
     m = 8,
     ef_construction = 128,
@@ -213,19 +213,19 @@ WITH (
 1. Convert the parquet release into canonical TSV + manifest files:
    ```bash
    python3 scripts/qdrant_dbpedia_to_tsv.py \
-       --profile tqhnsw_real_50k \
+       --profile ec_hnsw_real_50k \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
    ```
    This requires `pyarrow` to be installed locally. The converter writes:
-   - `tqhnsw_real_50k_corpus.tsv`
-   - `tqhnsw_real_50k_queries.tsv`
-   - `tqhnsw_real_50k_manifest.json`
+   - `ec_hnsw_real_50k_corpus.tsv`
+   - `ec_hnsw_real_50k_queries.tsv`
+   - `ec_hnsw_real_50k_manifest.json`
    If you are targeting the repo-local scratch `pg17` cluster, the same flow is
    available as a single command:
    ```bash
    scripts/prepare_real_corpus_scratch.sh \
-       --profile tqhnsw_real_50k \
+       --profile ec_hnsw_real_50k \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged \
        --m 8 --m 16
@@ -246,9 +246,9 @@ WITH (
 3. Run the loader:
    ```bash
    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
-       --prefix tqhnsw_real_50k \
-       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
+       --prefix ec_hnsw_real_50k \
+       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
        --m 8 16
    ```
    That preserves the legacy `<prefix>_m{N}_idx` names. To stage both
@@ -256,16 +256,16 @@ WITH (
    the loader with explicit storage formats:
    ```bash
    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
-       --prefix tqhnsw_real_50k \
-       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
+       --prefix ec_hnsw_real_50k \
+       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
        --m 8 16 \
        --storage-format turboquant
 
    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
-       --prefix tqhnsw_real_50k \
-       --corpus-file /path/to/staged/tqhnsw_real_50k_corpus.tsv \
-       --queries-file /path/to/staged/tqhnsw_real_50k_queries.tsv \
+       --prefix ec_hnsw_real_50k \
+       --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
+       --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
        --m 8 16 \
        --storage-format pq_fastscan
    ```
@@ -273,7 +273,7 @@ WITH (
    and create coexisting index families:
    - `<prefix>_turboquant_m8_idx`, `<prefix>_turboquant_m16_idx`
    - `<prefix>_pq_fastscan_m8_idx`, `<prefix>_pq_fastscan_m16_idx`
-   If a sibling `tqhnsw_real_50k_manifest.json` exists, the loader verifies it
+   If a sibling `ec_hnsw_real_50k_manifest.json` exists, the loader verifies it
    automatically before loading. You can also pass `--manifest-file` explicitly.
    For the repo-local scratch `pg17` cluster, use
    `scripts/load_real_corpus_scratch.sh` to pin the expected socket, port,
@@ -282,19 +282,19 @@ WITH (
    `tqvector_bench` database.
 4. Run the A4 gate report:
    ```sql
-   SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report(
-       'tqhnsw_real_50k_corpus',
-       'tqhnsw_real_50k_queries',
-       'tqhnsw_real_50k'
+   SELECT * FROM ec_hnsw_graph_scan_recall_external_gate_report(
+       'ec_hnsw_real_50k_corpus',
+       'ec_hnsw_real_50k_queries',
+       'ec_hnsw_real_50k'
    );
    ```
    The third argument is the fixture/index prefix, not the table prefix. For a
    coexisting explicit format family, pass the suffixed index prefix instead:
    ```sql
-   SELECT * FROM tqhnsw_graph_scan_recall_external_gate_report(
-       'tqhnsw_real_50k_corpus',
-       'tqhnsw_real_50k_queries',
-       'tqhnsw_real_50k_pq_fastscan'
+   SELECT * FROM ec_hnsw_graph_scan_recall_external_gate_report(
+       'ec_hnsw_real_50k_corpus',
+       'ec_hnsw_real_50k_queries',
+       'ec_hnsw_real_50k_pq_fastscan'
    );
    ```
    This emits one row per A4 configuration:
@@ -307,20 +307,20 @@ WITH (
    ```
 5. For per-query detail, use:
    ```sql
-   SELECT * FROM tqhnsw_graph_scan_recall_external_summary(
-       'tqhnsw_real_50k_corpus',
-       'tqhnsw_real_50k_queries',
-       'tqhnsw_real_50k_m8_idx',
+   SELECT * FROM ec_hnsw_graph_scan_recall_external_summary(
+       'ec_hnsw_real_50k_corpus',
+       'ec_hnsw_real_50k_queries',
+       'ec_hnsw_real_50k_m8_idx',
        8,
        128
    );
    ```
    For an explicit format family, swap only the index name:
    ```sql
-   SELECT * FROM tqhnsw_graph_scan_recall_external_summary(
-       'tqhnsw_real_50k_corpus',
-       'tqhnsw_real_50k_queries',
-       'tqhnsw_real_50k_pq_fastscan_m8_idx',
+   SELECT * FROM ec_hnsw_graph_scan_recall_external_summary(
+       'ec_hnsw_real_50k_corpus',
+       'ec_hnsw_real_50k_queries',
+       'ec_hnsw_real_50k_pq_fastscan_m8_idx',
        8,
        128
    );
@@ -333,16 +333,16 @@ turn the yes/no result into a diagnosable result. All three reuse the canonical
 `<prefix>_corpus` / `<prefix>_queries` tables and the same per-`m` indexes built
 in step 1 — they do not load anything new and they build the external recall
 context exactly once per call. Each is gated behind the `pg_test` build of the
-extension, the same as the existing `tqhnsw_graph_scan_recall_external_*`
+extension, the same as the existing `ec_hnsw_graph_scan_recall_external_*`
 surfaces.
 
 ### Per-query recall histogram
 
 ```sql
-SELECT * FROM tqhnsw_graph_scan_recall_histogram(
-    'tqhnsw_real_10k_corpus',
-    'tqhnsw_real_10k_queries',
-    'tqhnsw_real_10k_m8_idx',
+SELECT * FROM ec_hnsw_graph_scan_recall_histogram(
+    'ec_hnsw_real_10k_corpus',
+    'ec_hnsw_real_10k_queries',
+    'ec_hnsw_real_10k_m8_idx',
     8,
     128
 );
@@ -368,10 +368,10 @@ and the rest are fine. The two failure modes have completely different fixes.
 ### `ef_search` sweep on a single fixture
 
 ```sql
-SELECT * FROM tqhnsw_graph_scan_recall_ef_sweep(
-    'tqhnsw_real_10k_corpus',
-    'tqhnsw_real_10k_queries',
-    'tqhnsw_real_10k_m8_idx',
+SELECT * FROM ec_hnsw_graph_scan_recall_ef_sweep(
+    'ec_hnsw_real_10k_corpus',
+    'ec_hnsw_real_10k_queries',
+    'ec_hnsw_real_10k_m8_idx',
     8,
     ARRAY[40, 64, 100, 128, 160, 200, 300, 500]
 );
@@ -396,10 +396,10 @@ NDCG/MAE/Spearman bookkeeping cost but is dominated by the graph traversal.
 ### Exact-vs-approximate diff for failing queries
 
 ```sql
-SELECT * FROM tqhnsw_graph_scan_recall_failure_breakdown(
-    'tqhnsw_real_10k_corpus',
-    'tqhnsw_real_10k_queries',
-    'tqhnsw_real_10k_m8_idx',
+SELECT * FROM ec_hnsw_graph_scan_recall_failure_breakdown(
+    'ec_hnsw_real_10k_corpus',
+    'ec_hnsw_real_10k_queries',
+    'ec_hnsw_real_10k_m8_idx',
     8,
     128,
     8  -- list every query whose top-10 recall is < 8 (i.e. missed >= 3 of 10)
@@ -454,11 +454,11 @@ index. The verified launcher currently accepts one effective `m` per invocation
 so the chosen index is unambiguous. With no extra flag it derives the legacy
 `<prefix>_m{N}_idx` name; with `--storage-format pq_fastscan` it derives
 `<prefix>_pq_fastscan_m{N}_idx`. A worked example against the already-loaded
-`tqhnsw_real_10k` fixture:
+`ec_hnsw_real_10k` fixture:
 
 ```bash
 scripts/bench_sql_latency_verified_scratch.sh \
-    --prefix tqhnsw_real_10k \
+    --prefix ec_hnsw_real_10k \
     --storage-format pq_fastscan \
     --m 8 \
     --ef-search 40,64,100,128,160,200 \
@@ -483,7 +483,7 @@ Example warm-cache run:
 
 ```bash
 scripts/bench_sql_latency_verified_scratch.sh \
-    --prefix tqhnsw_real_10k \
+    --prefix ec_hnsw_real_10k \
     --m 8 \
     --ef-search 40 \
     --cache-state warm-after-prime \
@@ -522,17 +522,17 @@ fresh backend session. Warm-cache artifacts should therefore use
 If the planner surface is not active for the target index, the verified
 launcher aborts before timing and prints the representative plan. That is the
 guard against silently recording a sequential `Sort -> Seq Scan` plan as an
-HNSW artifact. On current `main`, the canonical `tqhnsw_real_10k` `m=8`
+HNSW artifact. On current `main`, the canonical `ec_hnsw_real_10k` `m=8`
 surface is planner-visible and produces durable NFR-001 artifacts through the
 verified launcher. When comparing alternate `m` values on the same loaded
 corpus, the planner may naturally prefer the cheaper sibling index; in that
-case, use an isolated prefix (for example `tqhnsw_real_10k_m16only`) so the
+case, use an isolated prefix (for example `ec_hnsw_real_10k_m16only`) so the
 verified run measures the intended index honestly rather than forcing the
 planner to lie.
 
 ## Troubleshooting
 
-### Scratch DB missing the new `tests.tqhnsw_graph_scan_recall_external_*` functions
+### Scratch DB missing the new `tests.ec_hnsw_graph_scan_recall_external_*` functions
 
 If the scratch cluster already has `tqvector` installed from an older
 same-version `pg_test` build, rerunning `cargo pgrx install` updates the SQL on

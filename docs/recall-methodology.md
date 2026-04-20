@@ -16,16 +16,16 @@
 
 | Subset | Corpus rows | Queries | Purpose |
 | --- | --- | --- | --- |
-| `tqhnsw_real_50k` | 50,000 | 1,000 | NFR-003 headline shape |
-| `tqhnsw_real_10k` | 10,000 | 200 | Fast iteration |
+| `ec_hnsw_real_50k` | 50,000 | 1,000 | NFR-003 headline shape |
+| `ec_hnsw_real_10k` | 10,000 | 200 | Fast iteration |
 
 ### Selection Rule
 
 Subsets are deterministic, not random:
 
 1. Sort the full dataset by `_id` ascending (lexicographic)
-2. `tqhnsw_real_50k` corpus: rows [0, 49,999], queries: rows [50,000, 50,999]
-3. `tqhnsw_real_10k` corpus: rows [0, 9,999], queries: rows [10,000, 10,199]
+2. `ec_hnsw_real_50k` corpus: rows [0, 49,999], queries: rows [50,000, 50,999]
+3. `ec_hnsw_real_10k` corpus: rows [0, 9,999], queries: rows [10,000, 10,199]
 
 The canonical conversion script is `scripts/qdrant_dbpedia_to_tsv.py`.
 

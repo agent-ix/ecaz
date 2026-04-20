@@ -77,12 +77,12 @@ Once ordered traversal produces correct, recall-competitive results:
 2. Remove `next_block_number`, `next_offset_number`, and page-iteration state from `TqScanOpaque`
 3. The `emitted_result_tids` set can be removed if the frontier's visited set is sufficient
    to prevent duplicate results. If rescan-after-partial-progress requires dedup, it stays.
-4. Flip the planner cost gate (ADR-011) to allow the planner to select tqhnsw for ordered scans
+4. Flip the planner cost gate (ADR-011) to allow the planner to select ec_hnsw for ordered scans
 
 ### Stage 4: Planner integration
 
 Update `amcostestimate` to return realistic costs based on `ef_search`, estimated graph
-fan-out, and index size. This enables the planner to choose tqhnsw when it's the most
+fan-out, and index size. This enables the planner to choose ec_hnsw when it's the most
 efficient path for ORDER BY ... LIMIT queries.
 
 ## Resolved questions

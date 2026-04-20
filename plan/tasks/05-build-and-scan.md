@@ -12,11 +12,11 @@ Progress notes:
 - Planner/admin scaffolding may now expose read-only effective tuning and current live-node counts
   without enabling planner-visible scans.
 - Planner/explain scaffolding may also expose explicit gate-state reasoning without promising that
-  PostgreSQL EXPLAIN can yet choose or display a tqhnsw index scan.
+  PostgreSQL EXPLAIN can yet choose or display a ec_hnsw index scan.
 
 ## Scope
 
-Implement bulk build and indexed query execution for `tqhnsw`.
+Implement bulk build and indexed query execution for `ec_hnsw`.
 
 ## Owns
 

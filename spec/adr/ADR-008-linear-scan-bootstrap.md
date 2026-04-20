@@ -1,11 +1,11 @@
 ---
 id: ADR-008
-title: "Bootstrap non-empty tqhnsw scans with forward linear page iteration"
+title: "Bootstrap non-empty ec_hnsw scans with forward linear page iteration"
 status: DECIDED
 impact: HIGH for FR-009, FR-010
 date: 2026-04-04
 ---
-# ADR-008: Bootstrap non-empty tqhnsw scans with forward linear page iteration
+# ADR-008: Bootstrap non-empty ec_hnsw scans with forward linear page iteration
 
 ## Context
 

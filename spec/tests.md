@@ -52,7 +52,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-043 | ReadStream callbacks return blocks then end-of-stream | FR-019 | Unit-test pure graph and linear callback helpers so PG18 bindings only need to translate `EndOfStream` into `InvalidBlockNumber` |
 | TC-047 | ReadStream state carriers reset cleanly for reuse | FR-019 | Unit-test `GraphPrefetchState::reset(...)` and `LinearPrefetchState::reset(...)` so the staged D1 seam already matches `read_stream_reset()` and `amrescan` lifecycle expectations |
 | TC-038 | EXPLAIN counter struct records and resets staged stats | FR-024 | Unit-test `TqExplainCounters` mutation helpers and reset behavior without touching `scan.rs` |
-| TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires the `tqvector` option, `IndexScan` node kind, and `tqhnsw` access method |
+| TC-041 | EXPLAIN property emission stays pure and gated | FR-024 | Unit-test `TqExplainCounters::explain_properties()` plus the pure emission gate that requires the `tqvector` option, `IndexScan` node kind, and `ec_hnsw` access method |
 | TC-045 | EXPLAIN output group contract stays explicit | FR-024 | Unit-test the pure `"TQVector Stats"` group metadata so the eventual hook opens and closes the expected EXPLAIN section |
 | TC-042 | Cumulative statistics counters record and reset staged metrics | FR-025 | Unit-test `TqStatsCounters` mutation helpers and reset behavior without touching runtime pgstat wiring |
 | TC-046 | Cumulative statistics summary computes derived rates | FR-025 | Unit-test pure FR-025 summary logic for `bootstrap_hit_rate` and `quantizer_cache_rate`, including zero-denominator handling |
@@ -75,16 +75,16 @@ Bidirectional traceability between requirements and test cases.
 | TC-109 | code-to-code `<#>` overload is commutative | FR-006-AC-3 | Assert `a <#> b = b <#> a` for `(tqvector, tqvector)` |
 | TC-110 | Dimension mismatch raises ERROR | FR-005-AC-2, FR-017-AC-2 | Compare tqvectors with different dim and compare a tqvector against a mismatched raw query dimension |
 | TC-111 | Code-to-code inner product is symmetric | FR-005-AC-3 | Assert `ip(a,b) = ip(b,a)` |
-| TC-112 | CREATE INDEX USING tqhnsw succeeds | FR-008-AC-1 | Build index on 1000-row table |
+| TC-112 | CREATE INDEX USING ec_hnsw succeeds | FR-008-AC-1 | Build index on 1000-row table |
 | TC-113 | Index scan returns top-k results | FR-009-AC-1 | `ORDER BY <#> LIMIT 10`, assert 10 rows |
-| TC-114 | EXPLAIN shows tqhnsw index scan | FR-009-AC-3, FR-006-AC-2 | Check EXPLAIN output |
+| TC-114 | EXPLAIN shows ec_hnsw index scan | FR-009-AC-3, FR-006-AC-2 | Check EXPLAIN output |
 | TC-115 | DELETE + VACUUM removes from results | FR-010-AC-1 | Delete row, VACUUM, search, assert absent |
 | TC-116 | DROP EXTENSION CASCADE cleans up | FR-012-AC-2 | Check pg_type, pg_operator, pg_am after drop |
 | TC-117 | Metadata page readable after CREATE INDEX | FR-007-AC-1 | Read page 0, validate M and ef_construction |
 | TC-118 | Concurrent INSERT + VACUUM no errors | FR-010-AC-3 | Run VACUUM and INSERT concurrently for 10s |
 | TC-119 | Crash recovery: REINDEX after kill -9 | FR-011-AC-1 | Build index, kill backend, restart, REINDEX |
 | TC-120 | GUC ef_search affects results | FR-009-AC-4 | Compare recall at ef_search=10 vs ef_search=200 |
-| TC-121 | GUC ef_search is session-settable | FR-009-AC-5 | `SET tqhnsw.ef_search = 200` succeeds |
+| TC-121 | GUC ef_search is session-settable | FR-009-AC-5 | `SET ec_hnsw.ef_search = 200` succeeds |
 | TC-122 | amoptions rejects m=0 | FR-008-AC-6 | `CREATE INDEX ... WITH (m=0)` → ERROR |
 | TC-123 | amoptions accepts valid params | FR-008-AC-6 | `CREATE INDEX ... WITH (m=8, ef_construction=64)` succeeds |
 | TC-124 | Bulk build: all neighbor TIDs valid | FR-008-AC-4 | After build, walk all neighbor tuples, assert each TID → valid element |
@@ -97,10 +97,10 @@ Bidirectional traceability between requirements and test cases.
 | TC-130 | Multi-PG-version support | FR-012-AC-3 | `cargo pgrx test pg14`, pg15, pg16, pg17 all pass |
 | TC-131 | Partition-local scan touches only one partition index | FR-009, StR-003 | Run query against one partition, assert only that partition index is scanned |
 | TC-132 | Partition-local vacuum does not touch sibling partitions | FR-010, StR-003 | Vacuum one partition index, assert other partition indexes unchanged |
-| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read `tqhnsw_index_admin_snapshot(regclass)`, assert `total_live_nodes`, `inserted_since_rebuild`, and `insert_drift_fraction` stay consistent after inserts and duplicate coalescing |
-| TC-142 | Planner integration snapshot exposes cross-lane blockers | FR-009, FR-020 | Read `tqhnsw_planner_integration_snapshot(regclass)`, assert modeled planner-cost readiness is true while planner activation, ordered scan readiness, and PG18 readiness remain false with explicit blocker strings |
+| TC-133 | Insert-drift statistics are queryable | FR-016-AC-4 | Read `ec_hnsw_index_admin_snapshot(regclass)`, assert `total_live_nodes`, `inserted_since_rebuild`, and `insert_drift_fraction` stay consistent after inserts and duplicate coalescing |
+| TC-142 | Planner integration snapshot exposes cross-lane blockers | FR-009, FR-020 | Read `ec_hnsw_planner_integration_snapshot(regclass)`, assert modeled planner-cost readiness is true while planner activation, ordered scan readiness, and PG18 readiness remain false with explicit blocker strings |
 | TC-137 | Pure planner cost model stays gated behind ADR-011 | FR-020, FR-009 | Unit-test `estimate_planner_cost(...)` crossover and edge cases while `amcostestimate` still returns prohibitive costs |
-| TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `tqhnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, tuning/metadata inputs are explicit, and tree-height sourcing is reported as metadata fallback until PG18 callback wiring exists |
+| TC-138 | Cost snapshot exposes modeled and gated planner costs | FR-020, FR-009 | Read `ec_hnsw_index_cost_snapshot(...)`, assert modeled costs are finite, gated costs remain prohibitive, tuning/metadata inputs are explicit, and tree-height sourcing is reported as metadata fallback until PG18 callback wiring exists |
 
 ## Property Tests (`proptest`)
 
@@ -210,7 +210,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-203 | PG17 fallback uses ReadBufferExtended | FR-019-AC-2 | Compile with `--features pg17`, verify no read_stream symbols linked |
 | TC-204 | No buffer pin leaks after amendscan | FR-019-AC-4 | After scan completes, verify zero outstanding buffer pins via pg_buffercache |
 | TC-205 | Vacuum tuple count uses streaming reads | FR-019-AC-5 | On PG18, verify count_element_tuples uses ReadStream |
-| TC-206 | Planner selects tqhnsw for ORDER BY LIMIT | FR-020-AC-1 | `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows Index Scan on 10K-row table |
+| TC-206 | Planner selects ec_hnsw for ORDER BY LIMIT | FR-020-AC-1 | `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows Index Scan on 10K-row table |
 | TC-207 | Planner may prefer seqscan on small tables | FR-020-AC-2 | `EXPLAIN` on 50-row table, verify planner considers seqscan |
 | TC-208 | Cost model reads metadata | FR-020-AC-3 | Create indexes with different m values, verify EXPLAIN costs differ |
 | TC-209 | amgettreeheight returns max_level | FR-020-AC-4 | Build index, verify amgettreeheight returns expected level |
@@ -219,7 +219,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-212 | Small table serial fallback | FR-021-AC-5 | 100-row table build does not launch workers |
 | TC-213 | Vacuum removes dead heap TIDs | FR-022-AC-1, FR-022-AC-2 | DELETE + VACUUM + search, verify deleted row absent |
 | TC-214 | Vacuum maintains graph connectivity | FR-022-AC-3 | Delete 10%, VACUUM, measure recall ≥ 80% of pre-vacuum |
-| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + tqhnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final table data |
+| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + ec_hnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data |
 | TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
 | TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
 | TC-218 | EXPLAIN (tqvector) recognized | FR-024-AC-1 | `EXPLAIN (tqvector) SELECT ...` parses without error |
@@ -235,7 +235,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-228 | PG17 build succeeds | FR-027-AC-2 | `cargo pgrx build --features pg17 --release` exits 0 |
 | TC-229 | _PG_init registers hooks | FR-027-AC-4 | After CREATE EXTENSION, verify EXPLAIN option and pgstat kind are registered |
 | TC-230 | ADR-011 f64::MAX override removed | FR-020-AC-5 | Inspect source: no `f64::MAX` in cost.rs; ADR-011 status is SUPERSEDED |
-| TC-231 | CREATE INDEX CONCURRENTLY with parallel workers | FR-021-AC-4 | `SET max_parallel_maintenance_workers = 2; CREATE INDEX CONCURRENTLY ... USING tqhnsw ...` succeeds, index is usable |
+| TC-231 | CREATE INDEX CONCURRENTLY with parallel workers | FR-021-AC-4 | `SET max_parallel_maintenance_workers = 2; CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` succeeds, index is usable |
 | TC-232 | Parallel build uses GenericXLog | FR-021-AC-6 | Inspect source: all page writes in leader graph serialization use GenericXLogStart/Finish |
 | TC-233 | Vacuum page writes use GenericXLog | FR-022-AC-5 | Inspect source: all page writes in ambulkdelete use GenericXLogStart/Finish. REINDEX after kill -9 during vacuum recovers cleanly |
 | TC-234 | Vacuum updates pg_class.reltuples | FR-022-AC-6 | Delete 100 rows from 1000-row table, VACUUM, verify `SELECT reltuples FROM pg_class WHERE relname = 'idx'` reflects ~900 |

@@ -69,7 +69,7 @@ The `ReadStream` calls the callback ahead of time to build a prefetch queue. Con
 
 ```mermaid
 sequenceDiagram
-    participant Scan as tqhnsw scan
+    participant Scan as ec_hnsw scan
     participant GS as Graph ReadStream
     participant CB as graph_prefetch_cb
     participant Buf as Shared Buffers
@@ -134,7 +134,7 @@ With read_stream, the `ReadBufferExtended` + `LockBuffer` calls are replaced by 
 
 ```mermaid
 sequenceDiagram
-    participant Scan as tqhnsw scan
+    participant Scan as ec_hnsw scan
     participant LS as Linear ReadStream
     participant CB as linear_prefetch_cb
     participant AIO as AIO Subsystem

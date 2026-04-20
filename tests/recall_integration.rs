@@ -1697,7 +1697,7 @@ fn recall_harness_clustered_smoke_test() {
 // ---------------------------------------------------------------------------
 
 /// One-shot oracle: drives the canonical converter, the real-corpus loader,
-/// and the `tqhnsw_graph_scan_recall_ann_benchmarks_reference` SQL probe end
+/// and the `ec_hnsw_graph_scan_recall_ann_benchmarks_reference` SQL probe end
 /// to end against the Qdrant DBpedia 1M parquet, then asserts the measured
 /// `recall@10` stays within the published 2% tolerance.
 ///
@@ -1744,7 +1744,7 @@ fn ann_benchmarks_anchor_within_tolerance() {
     // to run without linking the pgrx-built crate.
     const PUBLISHED_RECALL_AT_10: f32 = 0.96082_f32;
     const TOLERANCE: f32 = 0.02_f32;
-    const PROFILE: &str = "tqhnsw_real_ann_benchmarks_anchor";
+    const PROFILE: &str = "ec_hnsw_real_ann_benchmarks_anchor";
 
     let parquet = env::var("TQV_ANCHOR_PARQUET").expect(
         "TQV_ANCHOR_PARQUET must point at the Qdrant DBpedia 1M parquet (file or directory)",
@@ -1795,7 +1795,7 @@ fn ann_benchmarks_anchor_within_tolerance() {
 
     let probe_sql = format!(
         "SELECT recall_at_10::text || '|' || absolute_delta::text || '|' || within_two_percent::text \
-         FROM tqhnsw_graph_scan_recall_ann_benchmarks_reference(\
+         FROM ec_hnsw_graph_scan_recall_ann_benchmarks_reference(\
              '{PROFILE}_corpus', '{PROFILE}_queries', '{PROFILE}_m16_idx', 16, 128);"
     );
     let psql_output = Command::new(&psql_bin)

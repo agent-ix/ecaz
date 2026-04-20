@@ -35,7 +35,7 @@ def load_sql(argv: list[str]) -> str:
 
 
 def extract_ef(sql: str) -> int | None:
-    match = re.search(r"SET\\s+tqhnsw\\.ef_search\\s*=\\s*(\\d+)", sql)
+    match = re.search(r"SET\\s+ec_hnsw\\.ef_search\\s*=\\s*(\\d+)", sql)
     if match:
         return int(match.group(1))
     return None
@@ -68,7 +68,7 @@ def log_event(kind: str, ef: int | None) -> None:
 
 
 def plan_output(expected_index: str, ef: int, fallback_ef: str | None) -> str:
-    corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "tqhnsw_real_test_corpus")
+    corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "ec_hnsw_real_test_corpus")
     if fallback_ef and ef == int(fallback_ef):
         return (
             "Limit\\n"
@@ -86,9 +86,9 @@ def plan_output(expected_index: str, ef: int, fallback_ef: str | None) -> str:
 sql = load_sql(sys.argv[1:])
 normalized = " ".join(sql.split())
 fallback_ef = os.environ.get("TQV_FAKE_PSQL_FALLBACK_EF")
-expected_index = os.environ.get("TQV_FAKE_PSQL_EXPECTED_INDEX", "tqhnsw_real_test_m16_idx")
-corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "tqhnsw_real_test_corpus")
-query_table = os.environ.get("TQV_FAKE_PSQL_QUERY_TABLE", "tqhnsw_real_test_queries")
+expected_index = os.environ.get("TQV_FAKE_PSQL_EXPECTED_INDEX", "ec_hnsw_real_test_m16_idx")
+corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "ec_hnsw_real_test_corpus")
+query_table = os.environ.get("TQV_FAKE_PSQL_QUERY_TABLE", "ec_hnsw_real_test_queries")
 statements = [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
 
 if len(statements) > 1:
@@ -98,7 +98,7 @@ if len(statements) > 1:
         normalized_stmt = strip_output_redirect(stmt)
         if not normalized_stmt:
             continue
-        if normalized_stmt.startswith("SET tqhnsw.ef_search ="):
+        if normalized_stmt.startswith("SET ec_hnsw.ef_search ="):
             current_ef = extract_ef(stmt)
         elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized_stmt:
             ef = current_ef or 0
@@ -120,15 +120,15 @@ if len(statements) > 1:
             ef = current_ef or 0
             log_event("measure_sql_plain", ef)
             outputs.append(str(float(100 + ef)))
-        elif "tests.tqhnsw_debug_scan_profile_limited" in normalized_stmt:
+        elif "tests.ec_hnsw_debug_scan_profile_limited" in normalized_stmt:
             ef = current_ef or 0
             log_event("profile", ef)
             outputs.append("2000\\t500\\t2600\\t10\\t10")
-        elif "tests.tqhnsw_debug_scan_hot_path_profile" in normalized_stmt:
+        elif "tests.ec_hnsw_debug_scan_hot_path_profile" in normalized_stmt:
             ef = current_ef or 0
             log_event("hot_path", ef)
             outputs.append("1800\\t25\\t30\\t900\\t120\\t450")
-        elif "tests.tqhnsw_debug_scan_heap_fetch_profile" in normalized_stmt:
+        elif "tests.ec_hnsw_debug_scan_heap_fetch_profile" in normalized_stmt:
             ef = current_ef or 0
             log_event("heap_fetch", ef)
             outputs.append("2100\\t700\\t3100\\t700\\t200\\t10\\t10\\t10")
@@ -162,11 +162,11 @@ elif f"SELECT to_regclass('{expected_index}') IS NOT NULL;" in normalized:
     print("t")
 elif f"SELECT to_regclass('{expected_index}') IS NOT NULL" in normalized:
     print("t")
-elif "to_regprocedure('tests.tqhnsw_debug_scan_profile_limited(oid,real[],integer)')" in normalized:
+elif "to_regprocedure('tests.ec_hnsw_debug_scan_profile_limited(oid,real[],integer)')" in normalized:
     print("t")
-elif "to_regprocedure('tests.tqhnsw_debug_scan_hot_path_profile(oid,real[])')" in normalized:
+elif "to_regprocedure('tests.ec_hnsw_debug_scan_hot_path_profile(oid,real[])')" in normalized:
     print("t")
-elif "to_regprocedure('tests.tqhnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)')" in normalized:
+elif "to_regprocedure('tests.ec_hnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)')" in normalized:
     print("t")
 elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized:
     ef = extract_ef(sql) or 0
@@ -188,15 +188,15 @@ elif (
     ef = extract_ef(sql) or 0
     log_event("measure_sql_plain", ef)
     print(str(float(100 + ef)))
-elif "tests.tqhnsw_debug_scan_profile_limited" in normalized:
+elif "tests.ec_hnsw_debug_scan_profile_limited" in normalized:
     ef = extract_ef(sql) or 0
     log_event("profile", ef)
     print("2000\\t500\\t2600\\t10\\t10")
-elif "tests.tqhnsw_debug_scan_hot_path_profile" in normalized:
+elif "tests.ec_hnsw_debug_scan_hot_path_profile" in normalized:
     ef = extract_ef(sql) or 0
     log_event("hot_path", ef)
     print("1800\\t25\\t30\\t900\\t120\\t450")
-elif "tests.tqhnsw_debug_scan_heap_fetch_profile" in normalized:
+elif "tests.ec_hnsw_debug_scan_heap_fetch_profile" in normalized:
     ef = extract_ef(sql) or 0
     log_event("heap_fetch", ef)
     print("2100\\t700\\t3100\\t700\\t200\\t10\\t10\\t10")
@@ -234,9 +234,9 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
         summary_file = self.tmp_dir / "summary.txt"
         env = os.environ.copy()
         env["TQV_PSQL_BIN"] = str(self.fake_psql)
-        env["TQV_FAKE_PSQL_CORPUS_TABLE"] = "tqhnsw_real_test_corpus"
-        env["TQV_FAKE_PSQL_QUERY_TABLE"] = "tqhnsw_real_test_queries"
-        env["TQV_FAKE_PSQL_EXPECTED_INDEX"] = "tqhnsw_real_test_m16_idx"
+        env["TQV_FAKE_PSQL_CORPUS_TABLE"] = "ec_hnsw_real_test_corpus"
+        env["TQV_FAKE_PSQL_QUERY_TABLE"] = "ec_hnsw_real_test_queries"
+        env["TQV_FAKE_PSQL_EXPECTED_INDEX"] = "ec_hnsw_real_test_m16_idx"
         if fallback_ef is not None:
             env["TQV_FAKE_PSQL_FALLBACK_EF"] = fallback_ef
         else:
@@ -250,11 +250,11 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
             "bash",
             str(BENCH_SCRIPT),
             "--corpus-table",
-            "tqhnsw_real_test_corpus",
+            "ec_hnsw_real_test_corpus",
             "--query-table",
-            "tqhnsw_real_test_queries",
+            "ec_hnsw_real_test_queries",
             "--index-name",
-            "tqhnsw_real_test_m16_idx",
+            "ec_hnsw_real_test_m16_idx",
             "--bits",
             "4",
             "--seed",
@@ -289,7 +289,7 @@ class BenchTqvectorSqlOverheadBreakdownTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "planner verification failed for tqhnsw_real_test_m16_idx at ef_search=128",
+            "planner verification failed for ec_hnsw_real_test_m16_idx at ef_search=128",
             result.stderr,
         )
         summary_lines = (self.tmp_dir / "summary.txt").read_text(encoding="utf-8").splitlines()

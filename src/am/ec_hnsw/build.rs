@@ -39,7 +39,7 @@ pub(super) struct BuildState {
     pub(super) seed: Option<u64>,
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_build_callback(
     _index: pg_sys::Relation,
     tid: pg_sys::ItemPointer,
     values: *mut pg_sys::Datum,
@@ -57,7 +57,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_build_callback(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
@@ -70,7 +70,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
             shared::initialize_metadata_page(index_relation, state.initial_metadata());
 
             let heap_tuples = if state.options.build_source_column.is_some() {
-                tqhnsw_build_scan_with_source(heap_relation, index_info, &mut state)
+                ec_hnsw_build_scan_with_source(heap_relation, index_info, &mut state)
             } else {
                 pg_sys::table_index_build_scan(
                     heap_relation,
@@ -78,7 +78,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
                     index_info,
                     false,
                     false,
-                    Some(tqhnsw_build_callback),
+                    Some(ec_hnsw_build_callback),
                     (&mut state as *mut BuildState).cast(),
                     ptr::null_mut(),
                 )
@@ -92,7 +92,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
 
             if heap_tuples != state.scanned_tuples as f64 {
                 pgrx::error!(
-                    "tqhnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
+                    "ec_hnsw ambuild scanned {heap_tuples} heap tuples but observed {}",
                     state.scanned_tuples
                 );
             }
@@ -105,7 +105,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuild(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_ambuildempty(index_relation: pg_sys::Relation) {
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambuildempty(index_relation: pg_sys::Relation) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let state = BuildState::new(index_relation);
@@ -220,7 +220,7 @@ impl BuildState {
                 };
                 if !fits_on_page {
                     pgrx::error!(
-                        "tqhnsw tuple payload for dim {} bits {} does not fit on a page",
+                        "ec_hnsw tuple payload for dim {} bits {} does not fit on a page",
                         tuple.dimensions,
                         tuple.bits
                     );
@@ -229,7 +229,7 @@ impl BuildState {
             (Some(dimensions), Some(bits), Some(seed)) => {
                 if tuple.dimensions != dimensions || tuple.bits != bits || tuple.seed != seed {
                     pgrx::error!(
-                        "tqhnsw ambuild requires a single quantized index shape; saw ({},{},{}) after ({},{},{})",
+                        "ec_hnsw ambuild requires a single quantized index shape; saw ({},{},{}) after ({},{},{})",
                         tuple.dimensions,
                         tuple.bits,
                         tuple.seed,
@@ -247,7 +247,7 @@ impl BuildState {
         }) {
             if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
                 pgrx::error!(
-                    "tqhnsw ambuild supports at most {} duplicate heap tids per encoded vector",
+                    "ec_hnsw ambuild supports at most {} duplicate heap tids per encoded vector",
                     page::HEAPTID_INLINE_CAPACITY
                 );
             }
@@ -256,12 +256,12 @@ impl BuildState {
                 (Some(existing_source), Some(tuple_source)) => {
                     if existing.source_count == 0 || tuple.source_count == 0 {
                         pgrx::error!(
-                            "tqhnsw build_source_column representatives must have non-zero counts"
+                            "ec_hnsw build_source_column representatives must have non-zero counts"
                         );
                     }
                     if existing_source.len() != tuple_source.len() {
                         pgrx::error!(
-                            "tqhnsw build_source_column representative length mismatch: {} vs {}",
+                            "ec_hnsw build_source_column representative length mismatch: {} vs {}",
                             existing_source.len(),
                             tuple_source.len()
                         );
@@ -315,7 +315,7 @@ fn validate_grouped_rerank_source_column_for_empty_build(
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("tqhnsw rerank_source_column could not resolve heap relation for validation");
+        pgrx::error!("ec_hnsw rerank_source_column could not resolve heap relation for validation");
     }
     let heap_relation =
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
@@ -334,15 +334,15 @@ pub(super) unsafe fn build_heap_tuple(
     indexed_vector_kind: source::IndexedVectorKind,
 ) -> BuildTuple {
     if values.is_null() || isnull.is_null() {
-        pgrx::error!("tqhnsw ambuild received null tuple value arrays");
+        pgrx::error!("ec_hnsw ambuild received null tuple value arrays");
     }
     if unsafe { *isnull } {
-        pgrx::error!("tqhnsw does not support NULL indexed values");
+        pgrx::error!("ec_hnsw does not support NULL indexed values");
     }
 
     let datum = unsafe { *values };
     if datum.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null indexed datum");
+        pgrx::error!("ec_hnsw ambuild received a null indexed datum");
     }
 
     unsafe { build_heap_tuple_from_indexed_datum(datum, heap_tid, indexed_vector_kind, None) }
@@ -356,16 +356,16 @@ fn build_quantized_build_tuple(
     source_vector: Option<Vec<f32>>,
 ) -> BuildTuple {
     if !gamma.is_finite() {
-        pgrx::error!("tqhnsw does not support non-finite gamma values");
+        pgrx::error!("ec_hnsw does not support non-finite gamma values");
     }
 
     if let Some(source_vector) = source_vector {
         if source_vector.is_empty() {
-            pgrx::error!("tqhnsw build_source_column vectors must not be empty");
+            pgrx::error!("ec_hnsw build_source_column vectors must not be empty");
         }
         if source_vector.len() != dimensions as usize {
             pgrx::error!(
-                "tqhnsw build_source_column dimension mismatch: source dim {} vs indexed ecvector dim {}",
+                "ec_hnsw build_source_column dimension mismatch: source dim {} vs indexed ecvector dim {}",
                 source_vector.len(),
                 dimensions
             );
@@ -417,7 +417,9 @@ unsafe fn build_heap_tuple_from_indexed_datum(
                 crate::DEFAULT_QUANT_BITS,
                 crate::DEFAULT_QUANT_SEED,
             )
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed ecvector: {e}"));
+            .unwrap_or_else(|e| {
+                pgrx::error!("ec_hnsw ambuild found invalid indexed ecvector: {e}")
+            });
             let source_vector = Some(source_vector.unwrap_or(index_vector));
             build_quantized_build_tuple(dimensions, gamma, code, heap_tid, source_vector)
         }
@@ -433,11 +435,11 @@ unsafe fn build_heap_tuple_from_indexed_datum(
             }
 
             let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw ambuild found invalid indexed tqvector: {e}")
+                pgrx::error!("ec_hnsw ambuild found invalid indexed tqvector: {e}")
             });
             if bits != crate::DEFAULT_QUANT_BITS || seed != crate::DEFAULT_QUANT_SEED {
                 pgrx::error!(
-                    "tqhnsw indexed tqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
+                    "ec_hnsw indexed tqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
                     crate::DEFAULT_QUANT_BITS,
                     crate::DEFAULT_QUANT_SEED,
                     bits,
@@ -456,7 +458,7 @@ pub(super) unsafe fn build_heap_tuple_with_source(
     indexed_vector_kind: source::IndexedVectorKind,
 ) -> BuildTuple {
     if vector_datum.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null indexed datum");
+        pgrx::error!("ec_hnsw ambuild received a null indexed datum");
     }
     unsafe {
         build_heap_tuple_from_indexed_datum(
@@ -468,7 +470,7 @@ pub(super) unsafe fn build_heap_tuple_with_source(
     }
 }
 
-pub(super) unsafe fn tqhnsw_build_scan_with_source(
+pub(super) unsafe fn ec_hnsw_build_scan_with_source(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     state: &mut BuildState,
@@ -497,7 +499,7 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
     let slot = unsafe {
         source::allocate_heap_slot(
             heap_relation,
-            "tqhnsw ambuild failed to allocate heap scan slot",
+            "ec_hnsw ambuild failed to allocate heap scan slot",
         )
     };
 
@@ -521,7 +523,7 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
             pg_sys::UnregisterSnapshot(snapshot);
             pg_sys::ExecDropSingleTupleTableSlot(slot);
         }
-        pgrx::error!("tqhnsw ambuild failed to begin heap scan");
+        pgrx::error!("ec_hnsw ambuild failed to begin heap scan");
     }
 
     let mut scanned_tuples = 0.0_f64;
@@ -534,13 +536,17 @@ pub(super) unsafe fn tqhnsw_build_scan_with_source(
             source::required_slot_datum(slot, indexed_attribute.attnum, "indexed column")
         };
         let source_datum = unsafe {
-            source::required_slot_datum(slot, source_attribute.attnum, "tqhnsw build_source_column")
+            source::required_slot_datum(
+                slot,
+                source_attribute.attnum,
+                "ec_hnsw build_source_column",
+            )
         };
         let source_vector = unsafe {
             source::FlatFloat4SourceRef::from_datum(
                 source_datum,
                 source_attribute.kind,
-                "tqhnsw build_source_column",
+                "ec_hnsw build_source_column",
             )
         };
         let source_vector = source_vector.as_slice().to_vec();
@@ -1037,7 +1043,7 @@ pub(super) unsafe fn flush_build_state(index_relation: pg_sys::Relation, state: 
     let output = match state.options.storage_format {
         options::StorageFormat::TurboQuant => current_format_flush_output(state),
         options::StorageFormat::PqFastScan => default_pq_fastscan_flush_output(state)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw pq_fastscan build failed: {e}")),
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw pq_fastscan build failed: {e}")),
     };
     unsafe { flush_build_output(index_relation, &output) };
 }
@@ -1144,14 +1150,14 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
         };
         let neighbor_tid = data_pages
             .insert_neighbor(&placeholder_neighbor)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage neighbor tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to stage neighbor tuple: {e}"));
 
         let rerank_tid = data_pages
             .insert_rerank(&page::TqRerankTuple {
                 gamma: tuple.gamma,
                 code: tuple.code.clone(),
             })
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage rerank tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to stage rerank tuple: {e}"));
         let payload = stage_v3_turbo_hot_build_payload(
             tuple,
             graph_nodes[idx].level,
@@ -1161,7 +1167,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
         );
         let hot_tid = data_pages
             .insert_turbo_hot(&payload.hot)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to stage turbo hot tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to stage turbo hot tuple: {e}"));
 
         hot_tids.push(hot_tid);
         neighbor_tids.push(neighbor_tid);
@@ -1186,7 +1192,7 @@ fn current_format_flush_output(state: &BuildState) -> BuildFlushOutput {
                     tids: neighbor_refs,
                 },
             )
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to update neighbor tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to update neighbor tuple: {e}"));
     }
 
     let entry_point =
@@ -1680,7 +1686,7 @@ pub(super) unsafe fn write_data_pages(
         };
         if !unsafe { pg_sys::BufferIsValid(buffer) } {
             pgrx::error!(
-                "tqhnsw failed to allocate data buffer for block {}",
+                "ec_hnsw failed to allocate data buffer for block {}",
                 staged_page.block_number()
             );
         }
@@ -1703,7 +1709,7 @@ pub(super) unsafe fn write_data_pages(
             };
             if offset == pg_sys::InvalidOffsetNumber {
                 pgrx::error!(
-                    "tqhnsw failed to write tuple to block {}",
+                    "ec_hnsw failed to write tuple to block {}",
                     staged_page.block_number()
                 );
             }

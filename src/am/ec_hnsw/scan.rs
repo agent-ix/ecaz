@@ -55,7 +55,7 @@ const PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW: usize = 64;
 pub(crate) const PQ_FASTSCAN_DEFAULT_TRAVERSAL_SCORE_MODE_NAME: &str = "binary";
 pub(crate) const PQ_FASTSCAN_DEFAULT_RERANK_MODE_NAME: &str = "heap_f32";
 const PQ_FASTSCAN_EXACT_SCORE_UNAVAILABLE: &str =
-    "tqhnsw PqFastScan exact scoring requires the cold rerank payload path";
+    "ec_hnsw PqFastScan exact scoring requires the cold rerank payload path";
 
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -821,7 +821,7 @@ fn record_score_cache_miss(opaque: &mut TqScanOpaque) {
 #[cfg(not(any(test, feature = "pg_test")))]
 fn record_score_cache_miss(_opaque: &mut TqScanOpaque) {}
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
     index_relation: pg_sys::Relation,
     nkeys: std::ffi::c_int,
     norderbys: std::ffi::c_int,
@@ -830,7 +830,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
         pgrx::pgrx_extern_c_guard(|| {
             let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
             if scan.is_null() {
-                pgrx::error!("tqhnsw failed to allocate scan descriptor");
+                pgrx::error!("ec_hnsw failed to allocate scan descriptor");
             }
 
             (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
@@ -839,7 +839,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambeginscan(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
     scan: pg_sys::IndexScanDesc,
     _keys: pg_sys::ScanKey,
     nkeys: std::ffi::c_int,
@@ -849,25 +849,25 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
-                pgrx::error!("tqhnsw amrescan received a null scan descriptor");
+                pgrx::error!("ec_hnsw amrescan received a null scan descriptor");
             }
             // PostgreSQL may still pass an allocated key buffer for pure
             // ORDER BY scans even when the actual qual count is zero.
             if nkeys != 0 {
-                pgrx::error!("tqhnsw scan does not support index quals yet");
+                pgrx::error!("ec_hnsw scan does not support index quals yet");
             }
             if norderbys != 1 {
-                pgrx::error!("tqhnsw scan currently requires exactly one ORDER BY query");
+                pgrx::error!("ec_hnsw scan currently requires exactly one ORDER BY query");
             }
             if orderbys.is_null() {
-                pgrx::error!("tqhnsw amrescan received null order-by scan keys");
+                pgrx::error!("ec_hnsw amrescan received null order-by scan keys");
             }
 
             #[cfg(any(test, feature = "pg_test"))]
             let amrescan_started = Instant::now();
             let orderby = &*orderbys;
             if (orderby.sk_flags as u32) & pg_sys::SK_ISNULL != 0 {
-                pgrx::error!("tqhnsw scan query must not be NULL");
+                pgrx::error!("ec_hnsw scan query must not be NULL");
             }
 
             #[cfg(any(test, feature = "pg_test"))]
@@ -877,18 +877,18 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 false,
                 pg_sys::FLOAT4ARRAYOID,
             )
-            .unwrap_or_else(|| pgrx::error!("tqhnsw scan requires a real[] ORDER BY query"));
+            .unwrap_or_else(|| pgrx::error!("ec_hnsw scan requires a real[] ORDER BY query"));
             #[cfg(any(test, feature = "pg_test"))]
             let query_decode_elapsed_us = u64::try_from(query_decode_started.elapsed().as_micros())
                 .expect("timing should fit in u64");
             #[cfg(not(any(test, feature = "pg_test")))]
             let query_decode_elapsed_us = 0;
             if query.is_empty() {
-                pgrx::error!("tqhnsw scan query must not be empty");
+                pgrx::error!("ec_hnsw scan query must not be empty");
             }
             if query.len() > u16::MAX as usize {
                 pgrx::error!(
-                    "tqhnsw scan query dimension {} exceeds maximum {}",
+                    "ec_hnsw scan query dimension {} exceeds maximum {}",
                     query.len(),
                     u16::MAX
                 );
@@ -901,7 +901,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amrescan(
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
-                    "tqhnsw scan query dimension mismatch: index dim {}, query dim {}",
+                    "ec_hnsw scan query dimension mismatch: index dim {}, query dim {}",
                     metadata.dimensions,
                     query.len()
                 );
@@ -1102,7 +1102,7 @@ pub(crate) fn resolve_pq_fastscan_traversal_score_mode_decision(
         "pq" => GroupedTraversalScoreMode::GroupedPq,
         "binary" => GroupedTraversalScoreMode::Binary,
         other => pgrx::error!(
-            "tqhnsw PqFastScan traversal score mode must be one of [pq, binary], got {:?}",
+            "ec_hnsw PqFastScan traversal score mode must be one of [pq, binary], got {:?}",
             other
         ),
     };
@@ -1145,7 +1145,7 @@ fn resolve_turboquant_exact_score_mode() -> TurboQuantExactScoreMode {
         "tiled_lut" => TurboQuantExactScoreMode::TiledLut,
         "int8_approx" => TurboQuantExactScoreMode::Int8Approx,
         other => pgrx::error!(
-            "tqhnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got {:?}",
+            "ec_hnsw TurboQuant exact score mode must be one of [exact, full_lut, tiled_lut, int8_approx], got {:?}",
             other
         ),
     }
@@ -1275,7 +1275,7 @@ fn resolve_grouped_rerank_mode_decision(
         "quantized" => GroupedRerankMode::Quantized,
         "heap_f32" => GroupedRerankMode::HeapF32,
         other => pgrx::error!(
-            "tqhnsw grouped rerank mode must be one of [quantized, heap_f32], got {:?}",
+            "ec_hnsw grouped rerank mode must be one of [quantized, heap_f32], got {:?}",
             other
         ),
     };
@@ -1338,7 +1338,7 @@ fn resolve_grouped_exact_traversal_mode() -> GroupedExactTraversalMode {
         "all" => GroupedExactTraversalMode::AllLayers,
         "layer0" => GroupedExactTraversalMode::Layer0Only,
         other => pgrx::error!(
-            "tqhnsw PqFastScan exact traversal scope must be one of [all, layer0], got {:?}",
+            "ec_hnsw PqFastScan exact traversal scope must be one of [all, layer0], got {:?}",
             other
         ),
     }
@@ -1367,13 +1367,13 @@ fn resolve_grouped_exact_traversal_strategy(
         "frontier_head" => {
             if mode != GroupedExactTraversalMode::Layer0Only {
                 pgrx::error!(
-                    "tqhnsw PqFastScan exact traversal strategy frontier_head requires scope layer0"
+                    "ec_hnsw PqFastScan exact traversal strategy frontier_head requires scope layer0"
                 );
             }
             GroupedExactTraversalStrategy::FrontierHead
         }
         other => pgrx::error!(
-            "tqhnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
+            "ec_hnsw PqFastScan exact traversal strategy must be one of [expansion, frontier_head], got {:?}",
             other
         ),
     }
@@ -1390,13 +1390,13 @@ fn resolve_grouped_exact_traversal_limit() -> u8 {
     let raw_limit = raw_limit.to_string_lossy();
     let parsed_limit = raw_limit.parse::<u8>().unwrap_or_else(|_| {
         pgrx::error!(
-            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
+            "ec_hnsw PqFastScan exact traversal limit must be a positive integer, got {}",
             raw_limit
         )
     });
     if parsed_limit == 0 {
         pgrx::error!(
-            "tqhnsw PqFastScan exact traversal limit must be a positive integer, got {}",
+            "ec_hnsw PqFastScan exact traversal limit must be a positive integer, got {}",
             raw_limit
         );
     }
@@ -1444,14 +1444,14 @@ fn resolve_grouped_live_rerank_window() -> usize {
     let raw_window = raw_window.to_string_lossy();
     let parsed_window = raw_window.parse::<usize>().unwrap_or_else(|_| {
         pgrx::error!(
-            "tqhnsw PqFastScan live rerank window must be an integer between 1 and {}, got {:?}",
+            "ec_hnsw PqFastScan live rerank window must be an integer between 1 and {}, got {:?}",
             PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
             raw_window
         )
     });
     if !(1..=PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW).contains(&parsed_window) {
         pgrx::error!(
-            "tqhnsw PqFastScan live rerank window must be between 1 and {}, got {}",
+            "ec_hnsw PqFastScan live rerank window must be between 1 and {}, got {}",
             PQ_FASTSCAN_MAX_LIVE_RERANK_WINDOW,
             parsed_window
         );
@@ -1466,7 +1466,7 @@ unsafe fn resolve_scan_heap_relation(scan: pg_sys::IndexScanDesc) -> (pg_sys::Re
 
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*(*scan).indexRelation).rd_id, false) };
     if heap_oid == pg_sys::InvalidOid {
-        pgrx::error!("tqhnsw grouped heap-f32 rerank could not resolve heap relation");
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve heap relation");
     }
     (
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) },
@@ -1486,7 +1486,7 @@ unsafe fn resolve_scan_snapshot(scan: pg_sys::IndexScanDesc) -> (pg_sys::Snapsho
 
     let registered_snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetLatestSnapshot()) };
     if registered_snapshot.is_null() {
-        pgrx::error!("tqhnsw grouped heap-f32 rerank could not resolve an active snapshot");
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank could not resolve an active snapshot");
     }
     (registered_snapshot, true)
 }
@@ -1565,7 +1565,7 @@ unsafe fn configure_grouped_heap_rerank_state(
                 kind: source::SourceDatumKind::Ecvector,
             },
             source::IndexedVectorKind::Tqvector => pgrx::error!(
-                "tqhnsw grouped heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[], bytea, or ecvector heap column",
+                "ec_hnsw grouped heap-f32 rerank requires build_source_column, rerank_source_column, or {} to name a raw real[], bytea, or ecvector heap column",
                 PQ_FASTSCAN_RERANK_SOURCE_COLUMN_ENV
             ),
         }
@@ -1573,7 +1573,7 @@ unsafe fn configure_grouped_heap_rerank_state(
     let slot = unsafe {
         source::allocate_heap_slot(
             heap_relation,
-            "tqhnsw grouped heap-f32 rerank failed to allocate a heap tuple slot",
+            "ec_hnsw grouped heap-f32 rerank failed to allocate a heap tuple slot",
         )
     };
 
@@ -1587,27 +1587,27 @@ unsafe fn configure_grouped_heap_rerank_state(
     opaque.grouped_heap_rerank_source_kind = source_attribute.kind;
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
     scan: pg_sys::IndexScanDesc,
     direction: pg_sys::ScanDirection::Type,
 ) -> bool {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
-                pgrx::error!("tqhnsw amgettuple received a null scan descriptor");
+                pgrx::error!("ec_hnsw amgettuple received a null scan descriptor");
             }
 
             let opaque_ptr = (*scan).opaque.cast::<TqScanOpaque>();
             if opaque_ptr.is_null() {
-                pgrx::error!("tqhnsw amgettuple missing scan opaque state");
+                pgrx::error!("ec_hnsw amgettuple missing scan opaque state");
             }
 
             let opaque = &*opaque_ptr;
             if !opaque.rescan_called {
-                pgrx::error!("tqhnsw amgettuple requires amrescan before scan execution");
+                pgrx::error!("ec_hnsw amgettuple requires amrescan before scan execution");
             }
             if direction != pg_sys::ScanDirection::ForwardScanDirection {
-                pgrx::error!("tqhnsw amgettuple only supports forward scan direction");
+                pgrx::error!("ec_hnsw amgettuple only supports forward scan direction");
             }
 
             if opaque.scan_dimensions == 0 {
@@ -1627,7 +1627,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amgettuple(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amendscan(scan: pg_sys::IndexScanDesc) {
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScanDesc) {
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
@@ -1661,7 +1661,7 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
     let query_bytes = std::mem::size_of_val(query);
     let query_values = unsafe { pg_sys::palloc(query_bytes) }.cast::<f32>();
     if query_values.is_null() {
-        pgrx::error!("tqhnsw failed to allocate scan query state");
+        pgrx::error!("ec_hnsw failed to allocate scan query state");
     }
 
     unsafe {
@@ -1673,7 +1673,7 @@ unsafe fn store_scan_query(opaque: &mut TqScanOpaque, query: &[f32]) {
 
 fn scan_query_values(opaque: &TqScanOpaque) -> &[f32] {
     if opaque.query_values.is_null() || opaque.query_dimensions == 0 {
-        pgrx::error!("tqhnsw scan state is missing raw query values");
+        pgrx::error!("ec_hnsw scan state is missing raw query values");
     }
 
     unsafe { std::slice::from_raw_parts(opaque.query_values, opaque.query_dimensions as usize) }
@@ -1719,7 +1719,7 @@ fn store_scan_prepared_query(
             TurboQuantExactScoreMode::FullLut => {
                 if !quantizer.int8_approx_no_qjl_4bit_supported() {
                     pgrx::error!(
-                        "tqhnsw TurboQuant exact score mode full_lut requires the no-QJL 4-bit lane"
+                        "ec_hnsw TurboQuant exact score mode full_lut requires the no-QJL 4-bit lane"
                     );
                 }
                 (
@@ -1731,7 +1731,7 @@ fn store_scan_prepared_query(
             TurboQuantExactScoreMode::TiledLut => {
                 if !quantizer.int8_approx_no_qjl_4bit_supported() {
                     pgrx::error!(
-                        "tqhnsw TurboQuant exact score mode tiled_lut requires the no-QJL 4-bit lane"
+                        "ec_hnsw TurboQuant exact score mode tiled_lut requires the no-QJL 4-bit lane"
                     );
                 }
                 (
@@ -1746,7 +1746,7 @@ fn store_scan_prepared_query(
             TurboQuantExactScoreMode::Int8Approx => {
                 if !quantizer.int8_approx_no_qjl_4bit_supported() {
                     pgrx::error!(
-                        "tqhnsw TurboQuant exact score mode int8_approx requires the no-QJL 4-bit lane"
+                        "ec_hnsw TurboQuant exact score mode int8_approx requires the no-QJL 4-bit lane"
                     );
                 }
                 (
@@ -1771,7 +1771,7 @@ fn store_scan_prepared_query(
         .unwrap_or(ptr::null_mut());
     if grouped_binary_traversal_score_enabled(opaque) && opaque.binary_sign_query.is_null() {
         pgrx::error!(
-            "tqhnsw PqFastScan binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
+            "ec_hnsw PqFastScan binary traversal scoring requires the no-QJL 4-bit binary-sign lane"
         );
     }
     opaque.turboquant_exact_score_mode = turboquant_exact_score_mode;
@@ -1859,7 +1859,7 @@ unsafe fn store_grouped_scan_query(
     }
     if opaque.prepared_query.is_null() {
         pgrx::error!(
-            "tqhnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
+            "ec_hnsw PqFastScan scan cannot prepare PqFastScan query state without a query"
         );
     }
     let prepared_query = unsafe { &*opaque.prepared_query };
@@ -2121,7 +2121,7 @@ unsafe fn score_cached_graph_element_from_storage(
     };
     if element.deleted || element.heaptids.is_empty() {
         pgrx::error!(
-            "tqhnsw cannot exact-score dead or heapless graph element {}:{}",
+            "ec_hnsw cannot exact-score dead or heapless graph element {}:{}",
             element_tid.block_number,
             element_tid.offset_number
         );
@@ -2265,10 +2265,10 @@ unsafe fn score_grouped_rerank_payload_from_scan_state(
 ) -> f32 {
     let opaque = unsafe { &*opaque };
     if opaque.prepared_query.is_null() {
-        pgrx::error!("tqhnsw scan state is missing prepared query");
+        pgrx::error!("ec_hnsw scan state is missing prepared query");
     }
     if opaque.cached_quantizer.is_null() {
-        pgrx::error!("tqhnsw scan state is missing cached quantizer");
+        pgrx::error!("ec_hnsw scan state is missing cached quantizer");
     }
     let prepared_query = unsafe { &*opaque.prepared_query };
     let quantizer = unsafe { &*opaque.cached_quantizer };
@@ -2284,7 +2284,7 @@ unsafe fn score_grouped_heap_source_from_scan_state(
         || opaque.grouped_heap_rerank_slot.is_null()
         || opaque.grouped_heap_rerank_source_attnum <= 0
     {
-        pgrx::error!("tqhnsw grouped heap-f32 rerank is missing heap fetch state");
+        pgrx::error!("ec_hnsw grouped heap-f32 rerank is missing heap fetch state");
     }
 
     let source_attribute = source::SourceAttribute {
@@ -2380,7 +2380,7 @@ unsafe fn exact_score_grouped_candidate_context(
 
     let payload = unsafe { load_grouped_score_rerank_payload(index_relation, grouped) }
         .unwrap_or_else(|| {
-            pgrx::error!("tqhnsw PqFastScan exact scoring requires metadata-aligned cold payload")
+            pgrx::error!("ec_hnsw PqFastScan exact scoring requires metadata-aligned cold payload")
         });
     unsafe {
         score_and_cache_scan_element(
@@ -2426,7 +2426,7 @@ unsafe fn score_grouped_search_code_from_scan_state(
 ) -> f32 {
     let opaque = unsafe { &*opaque };
     let prepared_query = grouped_scan_query(opaque).unwrap_or_else(|| {
-        pgrx::error!("tqhnsw PqFastScan scan is missing PqFastScan query state")
+        pgrx::error!("ec_hnsw PqFastScan scan is missing PqFastScan query state")
     });
     score_grouped_search_code_result(prepared_query, search_code)
 }
@@ -2539,7 +2539,7 @@ unsafe fn score_grouped_candidate_context_binary(
     );
     let opaque = unsafe { &*opaque };
     let binary_query = binary_sign_query(opaque).unwrap_or_else(|| {
-        pgrx::error!("tqhnsw PqFastScan binary traversal scoring requires a prepared binary query")
+        pgrx::error!("ec_hnsw PqFastScan binary traversal scoring requires a prepared binary query")
     });
     let quantizer = unsafe { &*opaque.cached_quantizer };
     -quantizer.score_binary_sign_words_no_qjl_4bit(binary_query, grouped.call.input.binary_words)
@@ -4238,7 +4238,7 @@ unsafe fn select_next_linear_scan_result(
             let tuple_len = item_id.lp_len() as usize;
             if tuple_offset + tuple_len > page_size {
                 pgrx::error!(
-                    "tqhnsw found invalid tuple bounds while scanning block {block_number}"
+                    "ec_hnsw found invalid tuple bounds while scanning block {block_number}"
                 );
             }
 
@@ -4250,7 +4250,7 @@ unsafe fn select_next_linear_scan_result(
             }
 
             let element = page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw failed to decode scan element tuple: {e}")
+                pgrx::error!("ec_hnsw failed to decode scan element tuple: {e}")
             });
             if element.deleted || element.heaptids.is_empty() {
                 opaque.explain_counters.record_element_skipped();
@@ -4325,7 +4325,7 @@ where
 
 unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_bytes: &[u8]) -> f32 {
     if opaque.cached_quantizer.is_null() {
-        pgrx::error!("tqhnsw scan scoring requires a cached quantizer");
+        pgrx::error!("ec_hnsw scan scoring requires a cached quantizer");
     }
 
     let quantizer = unsafe { &*opaque.cached_quantizer };
@@ -4334,7 +4334,7 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
         TurboQuantExactScoreMode::FullLut => {
             if opaque.turboquant_lut_query.is_null() {
                 pgrx::error!(
-                    "tqhnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
+                    "ec_hnsw TurboQuant full_lut exact-score mode requires a prepared LUT query"
                 );
             }
             let prepared = unsafe { &*opaque.turboquant_lut_query };
@@ -4343,7 +4343,7 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
         TurboQuantExactScoreMode::TiledLut => {
             if opaque.turboquant_tiled_lut_query.is_null() {
                 pgrx::error!(
-                    "tqhnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
+                    "ec_hnsw TurboQuant tiled_lut exact-score mode requires a prepared tiled LUT query"
                 );
             }
             let prepared = unsafe { &*opaque.turboquant_tiled_lut_query };
@@ -4352,7 +4352,7 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
         TurboQuantExactScoreMode::Int8Approx => {
             if opaque.turboquant_int8_query.is_null() {
                 pgrx::error!(
-                    "tqhnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
+                    "ec_hnsw TurboQuant int8 exact-score mode requires a prepared int8 query"
                 );
             }
             let prepared = unsafe { &*opaque.turboquant_int8_query };
@@ -4360,7 +4360,7 @@ unsafe fn score_scan_element_result(opaque: &TqScanOpaque, gamma: f32, code_byte
         }
     }
     if opaque.prepared_query.is_null() {
-        pgrx::error!("tqhnsw scan scoring requires a prepared query");
+        pgrx::error!("ec_hnsw scan scoring requires a prepared query");
     }
     let prepared_query = unsafe { &*opaque.prepared_query };
     -quantizer.score_ip_from_parts(prepared_query, gamma, code_bytes)
@@ -6867,9 +6867,9 @@ mod tests {
     #[test]
     fn source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32() {
         let options = super::super::options::TqHnswOptions {
-            m: super::super::TQHNSW_DEFAULT_M,
-            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
             build_source_column: Some("source".to_owned()),
             rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::PqFastScan,
@@ -6890,9 +6890,9 @@ mod tests {
     #[test]
     fn source_backed_turboquant_default_rerank_resolves_to_quantized() {
         let options = super::super::options::TqHnswOptions {
-            m: super::super::TQHNSW_DEFAULT_M,
-            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
             build_source_column: Some("source".to_owned()),
             rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::TurboQuant,
@@ -6913,9 +6913,9 @@ mod tests {
     #[test]
     fn indexed_tqvector_pq_fastscan_default_rerank_resolves_to_quantized() {
         let options = super::super::options::TqHnswOptions {
-            m: super::super::TQHNSW_DEFAULT_M,
-            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
             build_source_column: None,
             rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::PqFastScan,
@@ -6936,9 +6936,9 @@ mod tests {
     #[test]
     fn indexed_ecvector_pq_fastscan_default_rerank_resolves_to_heap_f32() {
         let options = super::super::options::TqHnswOptions {
-            m: super::super::TQHNSW_DEFAULT_M,
-            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
             build_source_column: None,
             rerank_source_column: None,
             storage_format: super::super::options::StorageFormat::PqFastScan,
@@ -6959,9 +6959,9 @@ mod tests {
     #[test]
     fn rerank_source_backed_pq_fastscan_default_rerank_resolves_to_heap_f32() {
         let options = super::super::options::TqHnswOptions {
-            m: super::super::TQHNSW_DEFAULT_M,
-            ef_construction: super::super::TQHNSW_DEFAULT_EF_CONSTRUCTION,
-            ef_search: super::super::TQHNSW_DEFAULT_EF_SEARCH,
+            m: super::super::EC_HNSW_DEFAULT_M,
+            ef_construction: super::super::EC_HNSW_DEFAULT_EF_CONSTRUCTION,
+            ef_search: super::super::EC_HNSW_DEFAULT_EF_SEARCH,
             build_source_column: Some("source".to_owned()),
             rerank_source_column: Some("source_raw".to_owned()),
             storage_format: super::super::options::StorageFormat::PqFastScan,

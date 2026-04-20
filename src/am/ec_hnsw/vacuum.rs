@@ -48,7 +48,7 @@ impl VacuumHeapSourceScorer {
         let slot = unsafe {
             source::allocate_heap_slot(
                 heap_relation,
-                "tqhnsw vacuum failed to allocate a heap source slot",
+                "ec_hnsw vacuum failed to allocate a heap source slot",
             )
         };
 
@@ -142,7 +142,7 @@ impl VacuumSearchMetric {
         heap_relation: pg_sys::Relation,
     ) -> Self {
         if heap_relation.is_null() {
-            pgrx::error!("tqhnsw vacuum requires a heap relation for source-backed indexes");
+            pgrx::error!("ec_hnsw vacuum requires a heap relation for source-backed indexes");
         }
 
         let index_options = unsafe { options::relation_options(index_relation) };
@@ -218,7 +218,7 @@ impl VacuumFormatAdapter {
         stats: *mut pg_sys::IndexBulkDeleteResult,
     ) -> *mut pg_sys::IndexBulkDeleteResult {
         let _ = self;
-        unsafe { shared::tqhnsw_noop_vacuum_stats(index_relation, stats) }
+        unsafe { shared::ec_hnsw_noop_vacuum_stats(index_relation, stats) }
     }
 
     unsafe fn repair_graph_connections(
@@ -319,7 +319,7 @@ struct PagePass1Plan {
     updates: Vec<ElementVacuumUpdate>,
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
     callback: pg_sys::IndexBulkDeleteCallback,
@@ -331,7 +331,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
             let format = resolve_vacuum_format_adapter((*info).index, &metadata)
                 .unwrap_or_else(|e| pgrx::error!("{e}"));
             let Some(callback) = callback else {
-                return shared::tqhnsw_noop_vacuum_stats((*info).index, stats);
+                return shared::ec_hnsw_noop_vacuum_stats((*info).index, stats);
             };
             run_bulkdelete_with_adapter(
                 format,
@@ -345,7 +345,7 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_ambulkdelete(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amvacuumcleanup(
+pub(super) unsafe extern "C-unwind" fn ec_hnsw_amvacuumcleanup(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
@@ -409,7 +409,7 @@ unsafe fn run_bulkdelete_with_adapter(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(share_buffer) } {
-            pgrx::error!("tqhnsw failed to open vacuum block {block_number}");
+            pgrx::error!("ec_hnsw failed to open vacuum block {block_number}");
         }
 
         unsafe { pg_sys::LockBuffer(share_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
@@ -444,7 +444,7 @@ unsafe fn run_bulkdelete_with_adapter(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(exclusive_buffer) } {
-            pgrx::error!("tqhnsw failed to reopen vacuum block {block_number}");
+            pgrx::error!("ec_hnsw failed to reopen vacuum block {block_number}");
         }
 
         let final_plan = unsafe {
@@ -563,7 +563,7 @@ unsafe fn plan_page_pass1(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid vacuum tuple bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid vacuum tuple bounds on block {block_number}");
         }
 
         let tuple_bytes =
@@ -580,7 +580,7 @@ unsafe fn plan_page_pass1(
                 }
                 let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
                     .unwrap_or_else(|e| {
-                        pgrx::error!("tqhnsw failed to decode vacuum element tuple: {e}")
+                        pgrx::error!("ec_hnsw failed to decode vacuum element tuple: {e}")
                     });
                 let starting_len = element.heaptids.len();
                 element.heaptids.retain(|heap_tid| unsafe {
@@ -611,7 +611,7 @@ unsafe fn plan_page_pass1(
                 let mut element =
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                         .unwrap_or_else(|e| {
-                            pgrx::error!("tqhnsw failed to decode vacuum TurboQuant V3 tuple: {e}")
+                            pgrx::error!("ec_hnsw failed to decode vacuum TurboQuant V3 tuple: {e}")
                         });
                 let starting_len = element.heaptids.len();
                 element.heaptids.retain(|heap_tid| unsafe {
@@ -645,7 +645,7 @@ unsafe fn plan_page_pass1(
                     layout.search_code_len,
                 )
                 .unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to decode vacuum grouped hot tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to decode vacuum grouped hot tuple: {e}")
                 });
                 let starting_len = element.heaptids.len();
                 element.heaptids.retain(|heap_tid| unsafe {
@@ -690,7 +690,7 @@ unsafe fn apply_page_pass1_updates(
         let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
-                "tqhnsw vacuum element tuple slot {}/{} is unused",
+                "ec_hnsw vacuum element tuple slot {}/{} is unused",
                 tid.block_number,
                 tid.offset_number
             );
@@ -699,27 +699,27 @@ unsafe fn apply_page_pass1_updates(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid vacuum rewrite bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid vacuum rewrite bounds on block {block_number}");
         }
 
         let encoded = match update {
             ElementVacuumUpdate::TurboQuant { tuple, .. } => tuple.encode().unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw failed to encode vacuum element tuple: {e}")
+                pgrx::error!("ec_hnsw failed to encode vacuum element tuple: {e}")
             }),
             ElementVacuumUpdate::TurboQuantHot { tuple, .. } => {
                 tuple.encode().unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to encode vacuum TurboQuant V3 tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to encode vacuum TurboQuant V3 tuple: {e}")
                 })
             }
             ElementVacuumUpdate::PqFastScanHot { tuple, .. } => {
                 tuple.encode().unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to encode vacuum grouped hot tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to encode vacuum grouped hot tuple: {e}")
                 })
             }
         };
         if encoded.len() != tuple_len {
             pgrx::error!(
-                "tqhnsw vacuum element tuple size changed from {} to {} on block {}",
+                "ec_hnsw vacuum element tuple size changed from {} to {} on block {}",
                 tuple_len,
                 encoded.len(),
                 block_number
@@ -783,7 +783,7 @@ unsafe fn collect_repair_requests(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            pgrx::error!("tqhnsw failed to open repair-request block {block_number}");
+            pgrx::error!("ec_hnsw failed to open repair-request block {block_number}");
         }
 
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
@@ -835,7 +835,7 @@ unsafe fn collect_repair_requests_on_page(
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
             pgrx::error!(
-                "tqhnsw found invalid repair-request tuple bounds on block {block_number}"
+                "ec_hnsw found invalid repair-request tuple bounds on block {block_number}"
             );
         }
 
@@ -848,7 +848,7 @@ unsafe fn collect_repair_requests_on_page(
                 }
                 let element =
                     page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                        pgrx::error!("tqhnsw failed to decode repair-request element tuple: {e}")
+                        pgrx::error!("ec_hnsw failed to decode repair-request element tuple: {e}")
                     });
                 (
                     element.level,
@@ -864,7 +864,7 @@ unsafe fn collect_repair_requests_on_page(
                 let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                     .unwrap_or_else(|e| {
                         pgrx::error!(
-                            "tqhnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
+                            "ec_hnsw failed to decode repair-request TurboQuant V3 tuple: {e}"
                         )
                     });
                 (
@@ -884,7 +884,7 @@ unsafe fn collect_repair_requests_on_page(
                     layout.search_code_len,
                 )
                 .unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to decode repair-request grouped hot tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to decode repair-request grouped hot tuple: {e}")
                 });
                 (
                     element.level,
@@ -952,7 +952,7 @@ unsafe fn unlink_deleted_graph_connections(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(share_buffer) } {
-            pgrx::error!("tqhnsw failed to open repair block {block_number}");
+            pgrx::error!("ec_hnsw failed to open repair block {block_number}");
         }
 
         unsafe { pg_sys::LockBuffer(share_buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
@@ -976,7 +976,7 @@ unsafe fn unlink_deleted_graph_connections(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(exclusive_buffer) } {
-            pgrx::error!("tqhnsw failed to reopen repair block {block_number}");
+            pgrx::error!("ec_hnsw failed to reopen repair block {block_number}");
         }
 
         unsafe { rewrite_page_pass2(index_relation, exclusive_buffer, block_number, deleted_tids) };
@@ -1242,7 +1242,7 @@ fn repair_ef_construction(metadata: &page::MetadataPage) -> usize {
     let ef = usize::from(metadata.ef_construction);
     debug_assert!(
         ef > 0,
-        "validated tqhnsw indexes should always persist ef_construction >= 1"
+        "validated ec_hnsw indexes should always persist ef_construction >= 1"
     );
     ef.max(1)
 }
@@ -1279,7 +1279,7 @@ unsafe fn top_up_repair_replacements_from_linear_scan(
             )
         };
         if !unsafe { pg_sys::BufferIsValid(buffer) } {
-            pgrx::error!("tqhnsw failed to open linear-repair block {block_number}");
+            pgrx::error!("ec_hnsw failed to open linear-repair block {block_number}");
         }
 
         unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
@@ -1336,7 +1336,9 @@ unsafe fn collect_linear_repair_candidates_on_page(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid linear-repair tuple bounds on block {block_number}");
+            pgrx::error!(
+                "ec_hnsw found invalid linear-repair tuple bounds on block {block_number}"
+            );
         }
 
         let tuple_bytes =
@@ -1360,7 +1362,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                 }
                 let element =
                     page::TqElementTuple::decode(tuple_bytes, code_len).unwrap_or_else(|e| {
-                        pgrx::error!("tqhnsw failed to decode linear-repair element tuple: {e}")
+                        pgrx::error!("ec_hnsw failed to decode linear-repair element tuple: {e}")
                     });
                 graph::GraphElement {
                     tid,
@@ -1379,7 +1381,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                 let element = page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                     .unwrap_or_else(|e| {
                         pgrx::error!(
-                            "tqhnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
+                            "ec_hnsw failed to decode linear-repair TurboQuant V3 tuple: {e}"
                         )
                     });
                 let rerank = unsafe {
@@ -1409,7 +1411,7 @@ unsafe fn collect_linear_repair_candidates_on_page(
                     layout.search_code_len,
                 )
                 .unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to decode linear-repair grouped hot tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to decode linear-repair grouped hot tuple: {e}")
                 });
                 let rerank = unsafe {
                     load_grouped_rerank_payload_for_linear_repair_candidate(
@@ -1453,7 +1455,7 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     layout: graph::PqFastScanLayout,
 ) -> graph::GroupedRerankPayload {
     if rerank_tid == page::ItemPointer::INVALID {
-        pgrx::error!("tqhnsw linear-repair grouped candidate is missing a rerank payload tid");
+        pgrx::error!("ec_hnsw linear-repair grouped candidate is missing a rerank payload tid");
     }
 
     if rerank_tid.block_number != block_number {
@@ -1463,7 +1465,7 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     let item_id = unsafe { &*shared::page_item_id(page_ptr, rerank_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         pgrx::error!(
-            "tqhnsw linear-repair rerank tuple slot {}/{} is unused",
+            "ec_hnsw linear-repair rerank tuple slot {}/{} is unused",
             rerank_tid.block_number,
             rerank_tid.offset_number
         );
@@ -1473,14 +1475,14 @@ unsafe fn load_grouped_rerank_payload_for_linear_repair_candidate(
     let tuple_len = item_id.lp_len() as usize;
     if tuple_offset + tuple_len > page_size {
         pgrx::error!(
-            "tqhnsw found invalid linear-repair rerank tuple bounds on block {block_number}"
+            "ec_hnsw found invalid linear-repair rerank tuple bounds on block {block_number}"
         );
     }
 
     let tuple_bytes = unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
     let rerank =
         page::TqRerankTuple::decode(tuple_bytes, layout.rerank_code_len).unwrap_or_else(|e| {
-            pgrx::error!("tqhnsw failed to decode linear-repair rerank tuple: {e}")
+            pgrx::error!("ec_hnsw failed to decode linear-repair rerank tuple: {e}")
         });
     graph::GroupedRerankPayload {
         tid: rerank_tid,
@@ -1537,7 +1539,7 @@ unsafe fn apply_repair_plans_on_page(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("tqhnsw failed to open layer0-repair block {block_number}");
+        pgrx::error!("ec_hnsw failed to open layer0-repair block {block_number}");
     }
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
@@ -1559,7 +1561,7 @@ unsafe fn apply_repair_plans_on_page(
         let item_id = unsafe { &*shared::page_item_id(page_ptr, neighbor_tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple slot {}/{} is unused",
+                "ec_hnsw repair neighbor tuple slot {}/{} is unused",
                 neighbor_tid.block_number,
                 neighbor_tid.offset_number
             );
@@ -1568,16 +1570,17 @@ unsafe fn apply_repair_plans_on_page(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid repair rewrite bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid repair rewrite bounds on block {block_number}");
         }
 
         let tuple_bytes =
             unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
-        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode repair neighbor tuple: {e}"));
+        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
+        });
         if neighbor.count as usize > neighbor.tids.len() {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
                 neighbor.count,
                 neighbor.tids.len()
             );
@@ -1598,12 +1601,12 @@ unsafe fn apply_repair_plans_on_page(
             continue;
         }
 
-        let encoded = neighbor
-            .encode()
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode repair neighbor tuple: {e}"));
+        let encoded = neighbor.encode().unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+        });
         if encoded.len() != tuple_len {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple size changed from {} to {} on block {}",
+                "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
                 tuple_len,
                 encoded.len(),
                 block_number
@@ -1702,7 +1705,7 @@ unsafe fn plan_page_pass2(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid repair tuple bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid repair tuple bounds on block {block_number}");
         }
 
         let tuple_bytes =
@@ -1711,11 +1714,12 @@ unsafe fn plan_page_pass2(
             continue;
         }
 
-        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes)
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode repair neighbor tuple: {e}"));
+        let mut neighbor = page::TqNeighborTuple::decode(tuple_bytes).unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to decode repair neighbor tuple: {e}")
+        });
         if neighbor.count as usize > neighbor.tids.len() {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple count {} exceeds payload tid count {}",
+                "ec_hnsw repair neighbor tuple count {} exceeds payload tid count {}",
                 neighbor.count,
                 neighbor.tids.len()
             );
@@ -1760,7 +1764,7 @@ unsafe fn apply_page_pass2_updates(
         let item_id = unsafe { &*shared::page_item_id(page_ptr, update.tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple slot {}/{} is unused",
+                "ec_hnsw repair neighbor tuple slot {}/{} is unused",
                 update.tid.block_number,
                 update.tid.offset_number
             );
@@ -1769,16 +1773,15 @@ unsafe fn apply_page_pass2_updates(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid repair rewrite bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid repair rewrite bounds on block {block_number}");
         }
 
-        let encoded = update
-            .tuple
-            .encode()
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to encode repair neighbor tuple: {e}"));
+        let encoded = update.tuple.encode().unwrap_or_else(|e| {
+            pgrx::error!("ec_hnsw failed to encode repair neighbor tuple: {e}")
+        });
         if encoded.len() != tuple_len {
             pgrx::error!(
-                "tqhnsw repair neighbor tuple size changed from {} to {} on block {}",
+                "ec_hnsw repair neighbor tuple size changed from {} to {} on block {}",
                 tuple_len,
                 encoded.len(),
                 block_number
@@ -1840,7 +1843,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("tqhnsw failed to open finalize block {block_number}");
+        pgrx::error!("ec_hnsw failed to open finalize block {block_number}");
     }
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
@@ -1852,7 +1855,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
         let item_id = unsafe { &*shared::page_item_id(page_ptr, tid.offset_number) };
         if item_id.lp_flags() == 0 {
             pgrx::error!(
-                "tqhnsw finalize element tuple slot {}/{} is unused",
+                "ec_hnsw finalize element tuple slot {}/{} is unused",
                 tid.block_number,
                 tid.offset_number
             );
@@ -1861,7 +1864,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw found invalid finalize tuple bounds on block {block_number}");
+            pgrx::error!("ec_hnsw found invalid finalize tuple bounds on block {block_number}");
         }
 
         let tuple_bytes =
@@ -1870,7 +1873,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
             graph::GraphStorageDescriptor::TurboQuant { code_len } => {
                 let mut element = page::TqElementTuple::decode(tuple_bytes, code_len)
                     .unwrap_or_else(|e| {
-                        pgrx::error!("tqhnsw failed to decode finalize element tuple: {e}")
+                        pgrx::error!("ec_hnsw failed to decode finalize element tuple: {e}")
                     });
                 if element.deleted || !element.heaptids.is_empty() {
                     continue;
@@ -1887,7 +1890,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                         .unwrap_or_else(|e| {
                             pgrx::error!(
-                                "tqhnsw failed to decode finalize TurboQuant V3 tuple: {e}"
+                                "ec_hnsw failed to decode finalize TurboQuant V3 tuple: {e}"
                             )
                         });
                 if element.deleted || !element.heaptids.is_empty() {
@@ -1907,7 +1910,7 @@ unsafe fn finalize_fully_dead_elements_on_page_with_storage(
                     layout.search_code_len,
                 )
                 .unwrap_or_else(|e| {
-                    pgrx::error!("tqhnsw failed to decode finalize grouped hot tuple: {e}")
+                    pgrx::error!("ec_hnsw failed to decode finalize grouped hot tuple: {e}")
                 });
                 if element.deleted || !element.heaptids.is_empty() {
                     continue;
@@ -1998,14 +2001,14 @@ pub(crate) unsafe fn debug_vacuum_remove_heap_tids(
     };
 
     let stats = unsafe {
-        tqhnsw_ambulkdelete(
+        ec_hnsw_ambulkdelete(
             info_ptr,
             ptr::null_mut(),
             Some(debug_vacuum_dead_tid_callback),
             (&mut callback_state as *mut DebugVacuumCallbackState).cast(),
         )
     };
-    let stats = unsafe { tqhnsw_amvacuumcleanup(info_ptr, stats) };
+    let stats = unsafe { ec_hnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 
     unsafe {

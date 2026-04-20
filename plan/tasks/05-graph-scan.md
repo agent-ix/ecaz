@@ -53,7 +53,7 @@ Complete the HNSW scan path from module split through validated recall measureme
     - A new ignored live `1k` graph-fixture pg-test now passes with `exact Recall@10 >= 70%` and `graph Recall@10 >= 70%` at `(m=8, ef=128)`.
     - The next required A4 step is still a larger rerun on the real gate path; the tiled quantizer change is strong evidence, but it does not by itself clear the `10K` gate.
   - 2026-04-09 harness practicality follow-up:
-    - New SQL/debug surfaces now split the `10K` gate into a one-time fixture reset and reusable gate reports: `tqhnsw_graph_scan_recall_fixture_gate_reset(...)` and `tqhnsw_graph_scan_recall_fixture_gate_report(...)`.
+    - New SQL/debug surfaces now split the `10K` gate into a one-time fixture reset and reusable gate reports: `ec_hnsw_graph_scan_recall_fixture_gate_reset(...)` and `ec_hnsw_graph_scan_recall_fixture_gate_report(...)`.
     - The first implementation duplicated the `10K` corpus per `m` value; an ignored pg-test stayed in `pg_stat_progress_create_index` phase `building index` for more than `21m` and never reached the reusable report phase.
     - The revised helper now shares one `10K` corpus table across the `m=8` and `m=16` indexes, removing duplicated load work while preserving separate gate reports.
     - Even after the shared-corpus fix, the ignored `10K` timing probe still spent more than `10m` in `building index` and did not yet reach the first reusable report, so the next harness bottleneck is clearly one-time index build cost, not repeated report computation.
@@ -107,7 +107,7 @@ Complete the HNSW scan path from module split through validated recall measureme
 - `am/scan.rs` and `am/insert.rs` extracted modules
 - `hnsw_search` shared traversal helper
 - `amgettuple` returning distance-ordered results
-- `tqhnsw.ef_search` GUC
+- `ec_hnsw.ef_search` GUC
 - Recall@10 measurement harness and initial results
 
 ## Primary Tests

@@ -9,7 +9,7 @@ date: 2026-04-06
 
 ## Context
 
-`tqhnsw` already stores `ef_search` as an index reloption, which is the right place for a
+`ec_hnsw` already stores `ef_search` as an index reloption, which is the right place for a
 per-index default chosen at `CREATE INDEX` time.
 
 Planner/productization work also needs a session-level control surface:
@@ -23,10 +23,10 @@ reloption without enabling planner-visible scans too early.
 
 ## Decision
 
-`tqhnsw` SHALL resolve search breadth through two layers:
+`ec_hnsw` SHALL resolve search breadth through two layers:
 
 1. **Index reloption** `ef_search`: per-index default, stored in the relation descriptor.
-2. **Session GUC** `tqhnsw.ef_search`: per-session override, registered as `PGC_USERSET`.
+2. **Session GUC** `ec_hnsw.ef_search`: per-session override, registered as `PGC_USERSET`.
 
 Precedence:
 
@@ -37,7 +37,7 @@ Precedence:
 This means the default GUC value behaves as "no session override" rather than "force exactly 40."
 
 The resolved setting is planner/runtime scaffolding only until ordered traversal is credible.
-ADR-011 still prevents the planner from selecting `tqhnsw` scans.
+ADR-011 still prevents the planner from selecting `ec_hnsw` scans.
 
 ## Consequences
 

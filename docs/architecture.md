@@ -30,7 +30,7 @@ The quantizer produces unbiased inner product estimates — the expected value o
 
 ## Index Layout
 
-The `tqhnsw` index uses a page layout modeled on pgvector's approach:
+The `ec_hnsw` index uses a page layout modeled on pgvector's approach:
 
 - **Element tuples** — store the compressed vector code and a heap TID pointer
 - **Neighbor tuples** — store the HNSW graph adjacency lists

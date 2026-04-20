@@ -224,7 +224,7 @@ explicitly deferred to post-ADR-042 follow-on work and does **not** block task
   `bytea`/duplicate-column seam with two q200 runs each on inline
   `ecvector`: `turboquant` at `3.427ms` and `3.195ms`, `pq_fastscan` at
   `2.987ms` and `2.954ms`. That is stronger evidence than a third run on the
-  obsolete `tqhnsw_real_50k_tq_mixed_inline_corpus` seam because it lands on
+  obsolete `ec_hnsw_real_50k_tq_mixed_inline_corpus` seam because it lands on
   the actual row type.
 - [x] **Head-to-head vs PqFastScan on the same inline surface.** Task 16's
   stated outcome goal is "narrow the TurboQuant vs PqFastScan latency gap
@@ -277,7 +277,7 @@ canonical-row position.
   surface. This is the ADR-043 §Validation "sibling-type containment"
   contract.
 - [x] **pg_test: canonical vs sibling separation.** Add a regression
-  test that builds a tqhnsw index on an `ecvector` column in a table
+  test that builds a ec_hnsw index on an `ecvector` column in a table
   that *also* has a `tqvector` column, and asserts the scan/rerank
   path reads the `ecvector` column, not the sibling. Packet `445`
   lands `test_pq_fastscan_indexed_ecvector_ignores_tqvector_sibling`

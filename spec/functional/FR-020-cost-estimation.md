@@ -17,7 +17,7 @@ The extension SHALL implement a production-ready `amcostestimate` callback that 
 
 Current staged behavior:
 - A pure cost-model helper MAY exist and be unit-tested behind ADR-011 while the live
-  `amcostestimate` callback still returns prohibitive costs to keep planner-visible `tqhnsw` scans
+  `amcostestimate` callback still returns prohibitive costs to keep planner-visible `ec_hnsw` scans
   disabled.
 - Read-only planner-cost snapshot helpers MAY expose both the modeled FR-020 estimate and the
   still-gated live callback contract for inspection, without changing planner behavior.
@@ -34,7 +34,7 @@ Current staged behavior:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    tqhnsw Cost Model                            │
+│                    ec_hnsw Cost Model                            │
 │                                                                 │
 │  Inputs:                                                        │
 │    index_pages    = RelationGetNumberOfBlocks(index)             │
@@ -44,7 +44,7 @@ Current staged behavior:
 │    tree_height    = amgettreeheight() [PG18] or max_level        │
 │    dimensions     = from metadata page                          │
 │                                                                 │
-│  Phase 1 — Graph Traversal (ordered tqhnsw search):             │
+│  Phase 1 — Graph Traversal (ordered ec_hnsw search):             │
 │    graph_pages = tree_height + ef_search                        │
 │    score_dims  = dimensions * 0.75   [LUT-scored CPU term]      │
 │    graph_cost  = graph_pages * random_page_cost                 │
@@ -71,7 +71,7 @@ Current staged behavior:
 ```mermaid
 sequenceDiagram
     participant Planner as PostgreSQL Planner
-    participant AM as tqhnsw_amcostestimate
+    participant AM as ec_hnsw_amcostestimate
     participant Meta as Metadata Page
     participant Rel as pg_class
 
@@ -80,7 +80,7 @@ sequenceDiagram
     AM->>Rel: Read index_pages, reltuples from pg_class
     AM->>Meta: Read m, ef_search, tree_height, dimensions from metadata page
 
-    Note over AM: Compute ordered tqhnsw traversal cost
+    Note over AM: Compute ordered ec_hnsw traversal cost
     AM->>AM: graph_pages = tree_height + ef_search
     AM->>AM: score_dims = dimensions × 0.75
     AM->>AM: graph_cost = graph_pages × random_page_cost
@@ -103,7 +103,7 @@ sequenceDiagram
 On PG18, the extension SHALL register the `amgettreeheight` callback in `IndexAmRoutine`:
 
 ```rust
-amroutine.amgettreeheight = Some(tqhnsw_amgettreeheight);
+amroutine.amgettreeheight = Some(ec_hnsw_amgettreeheight);
 ```
 
 Implementation:
@@ -121,7 +121,7 @@ When the planner provides a `LIMIT` clause (accessible via `path->indexinfo`), t
 
 ### Comparison with Sequential Scan
 
-The planner compares index scan cost against sequential scan cost. For tqhnsw:
+The planner compares index scan cost against sequential scan cost. For ec_hnsw:
 - Small tables (< 100 rows): sequential scan is cheaper — the planner should prefer it
 - Large tables (> 10K rows): index scan startup cost is amortized — the planner should prefer HNSW
 - The crossover point depends on `m`, `ef_search`, and table size
@@ -139,10 +139,10 @@ The planner compares index scan cost against sequential scan cost. For tqhnsw:
 ## Acceptance Criteria
 
 ### FR-020-AC-1: Planner selects index
-On a 10K-row table with a tqhnsw index, `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` SHALL show "Index Scan using tqhnsw".
+On a 10K-row table with a ec_hnsw index, `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` SHALL show "Index Scan using ec_hnsw".
 
 ### FR-020-AC-2: Planner prefers seqscan for small tables
-On a 50-row table with a tqhnsw index, the planner MAY prefer sequential scan (cost model correctly identifies the crossover).
+On a 50-row table with a ec_hnsw index, the planner MAY prefer sequential scan (cost model correctly identifies the crossover).
 
 ### FR-020-AC-3: Cost model uses metadata
 The cost model SHALL read `m`, `ef_search`, `dimensions`, and `max_level` from the index metadata page — not use hardcoded defaults.

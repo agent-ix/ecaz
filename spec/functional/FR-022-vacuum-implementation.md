@@ -61,7 +61,7 @@ This FR supersedes the no-op behavior and provides the concrete implementation d
 ```mermaid
 sequenceDiagram
     participant PG as PostgreSQL VACUUM
-    participant AM as tqhnsw ambulkdelete
+    participant AM as ec_hnsw ambulkdelete
     participant Pages as Index Pages
     participant Graph as HNSW Graph
 
@@ -142,10 +142,10 @@ Current implementation note:
   layers by reusing the insert-time graph search helpers plus a linear top-up fallback, all with
   the same code-to-code scorer.
 - `main` now also carries `scripts/vacuum_concurrency_scratch.sh`, a 60-second scratch-cluster
-  harness with concurrent INSERT, tqhnsw graph scan, and VACUUM workers that exercises the live
+  harness with concurrent INSERT, ec_hnsw graph scan, and VACUUM workers that exercises the live
   `ambeginscan/amrescan/amgettuple` path through a `pg_test`-only SQL wrapper, then runs one
   final post-quiesce `VACUUM (ANALYZE)` and checks that the live index's reachable live-element
-  count stays within 90% of a freshly rebuilt reference tqhnsw index on the same final table
+  count stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table
   data.
 
 ### Pass 3 — Finalize

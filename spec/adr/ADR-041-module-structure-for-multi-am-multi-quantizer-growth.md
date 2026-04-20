@@ -11,11 +11,11 @@ date: 2026-04-18
 
 Through ADR-032 and ADR-033, tqvector committed to carrying two first-class
 quantizer formats (TurboQuant, PqFastScan) behind a single access method
-(`tqhnsw`). The roadmap queued up by ADR-034–ADR-040 substantially widens
+(`ec_hnsw`). The roadmap queued up by ADR-034–ADR-040 substantially widens
 that surface:
 
-- **Three access methods** on the scale ladder: `tqhnsw` (current, 0–500M),
-  `tqdiskann` (ADR-034, 500M–3B), `tqspann` (ADR-035, 3B+). All three share
+- **Three access methods** on the scale ladder: `ec_hnsw` (current, 0–500M),
+  `ec_diskann` (ADR-034, 500M–3B), `tqspann` (ADR-035, 3B+). All three share
   the same scoring kernel; they differ in graph/IVF structure and on-disk
   layout.
 - **More quantizer families.** OPQ (ADR-036) extends PqFastScan with a
@@ -32,7 +32,7 @@ through that AM's code via `GraphStorageDescriptor` match sites. Concrete
 pressure points:
 
 - `src/am/` is structured for one AM. All names and constants are
-  `TQHNSW_*`. `routine.rs` builds one `IndexAmRoutine`. A second AM has
+  `EC_HNSW_*`. `routine.rs` builds one `IndexAmRoutine`. A second AM has
   no natural home.
 - `src/am/scan.rs` (6,685 lines) multiplexes quantizer format through
   seven `match GraphStorageDescriptor` sites plus a set of
@@ -41,9 +41,9 @@ pressure points:
 - `src/quant/prod.rs` (2,135 lines) is a single `ProdQuantizer` type that
   encodes both families' state. TurboQuant-shaped internals (MSE + QJL)
   with grouped-PQ bolted alongside. AQ/RVQ will not fit this shape.
-- `src/am/options.rs` defines `StorageFormat` inside tqhnsw-scoped
-  options. tqdiskann cannot reach it without duplication.
-- `src/am/page.rs` (2,209 lines) mixes tqhnsw-specific tuple layouts
+- `src/am/options.rs` defines `StorageFormat` inside ec_hnsw-scoped
+  options. ec_diskann cannot reach it without duplication.
+- `src/am/page.rs` (2,209 lines) mixes ec_hnsw-specific tuple layouts
   with genuinely cross-AM primitives (`ItemPointer`, page chaining, WAL
   wrappers).
 - `src/quant/simd.rs` is a single dispatch file. Two more backends put
@@ -91,9 +91,9 @@ src/
 ├── am/
 │   ├── common/                 cross-AM: cost, explain, stats, stream,
 │   │                           parallel, reloption parsing
-│   ├── tqhnsw/                 build, scan, insert, vacuum, graph,
+│   ├── ec_hnsw/                 build, scan, insert, vacuum, graph,
 │   │                           search, page, options, routine
-│   ├── tqdiskann/              sibling of tqhnsw
+│   ├── ec_diskann/              sibling of ec_hnsw
 │   └── tqspann/                deferred
 │
 └── bin/
@@ -130,9 +130,9 @@ calls into it from its scan path; no AM owns a copy.
 
 ### Consequence for `StorageFormat`
 
-The enum moves out of `am/tqhnsw/options.rs` and becomes a crate-level
+The enum moves out of `am/ec_hnsw/options.rs` and becomes a crate-level
 `quant::Family` enum. Any AM can reference it; each AM carries its own
-reloption that resolves to the shared enum. This lets tqdiskann adopt
+reloption that resolves to the shared enum. This lets ec_diskann adopt
 PqFastScan (and future families) without a parallel type.
 
 ## Staged migration
@@ -144,8 +144,8 @@ flag-day rewrite.
 |-------|-------------|------------|------|
 | 0 | before task 17 merges | Extract `Quantizer` and `PreparedQuery` traits. TurboQuant and PqFastScan both implement them. Scan call sites route through the trait. **No file moves.** | small |
 | 1 | start of task 17 (DiskANN) | Move `page.rs`, `wal.rs`, `ItemPointer` into `crate::storage::*`. Keep AM-specific tuple codec logic where it is. | medium (import churn) |
-| 2 | task 17, first PR | Rename `am/*` contents to `am/tqhnsw/*`. Extract `am/common/` (cost, explain, stats, stream, planner, parallel). Float `StorageFormat` into `crate::quant::Family`. | medium, atomic |
-| 3 | task 17, second PR | Add `am/tqdiskann/` as a peer module. Register second `IndexAmRoutine`. | core of task 17 |
+| 2 | task 17, first PR | Rename `am/*` contents to `am/ec_hnsw/*`. Extract `am/common/` (cost, explain, stats, stream, planner, parallel). Float `StorageFormat` into `crate::quant::Family`. | medium, atomic |
+| 3 | task 17, second PR | Add `am/ec_diskann/` as a peer module. Register second `IndexAmRoutine`. | core of task 17 |
 | 4 | start of task 21 (SIMD) | Split `quant/simd.rs` into per-backend files under `quant/simd/`. | small |
 | 5 | task 22, if reached | Split `quant/prod.rs` into per-family modules under `quant/turboquant/` and `quant/pqfastscan/`. AQ/RVQ forces this; OPQ does not. | medium |
 | 6 | opportunistic | Slim `lib.rs` into `sql/` submodules as surfaces accrete. | incremental |
@@ -158,7 +158,7 @@ coexisting access methods. It rolls in:
 - Stage 0 trait extraction as preparation.
 - Stage 1 storage-primitive move as its first PR.
 - Stage 2 `am/` reshape as its second PR.
-- Stage 3 `am/tqdiskann/` as the rest of the task.
+- Stage 3 `am/ec_diskann/` as the rest of the task.
 
 Subsequent tasks (18 parallel scan, 20 OPQ, 21 SIMD, 22 AQ/RVQ) inherit
 the new structure and only pay for their own incremental work.
@@ -177,7 +177,7 @@ the new structure and only pay for their own incremental work.
 
 ### Positive
 
-- Task 17 lands DiskANN as a peer access method, not a fork of tqhnsw.
+- Task 17 lands DiskANN as a peer access method, not a fork of ec_hnsw.
 - Task 18 writes its parallel-scan coordinator once, in `am/common/`,
   and all AMs inherit it.
 - Task 20 adds OPQ as a `Quantizer` impl (or a transform variant inside

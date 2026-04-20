@@ -66,7 +66,7 @@ sequenceDiagram
 
     Note over Leader,DSM: Phase 0 — Setup parallel context
 
-    Leader->>DSM: CreateParallelContext("postgres", "_tqhnsw_parallel_build_main", nworkers)
+    Leader->>DSM: CreateParallelContext("postgres", "_ec_hnsw_parallel_build_main", nworkers)
     Leader->>DSM: Allocate TqBuildShared + Sharedsort + ParallelTableScanDesc
     Leader->>DSM: InitializeParallelDSM()
     Leader->>DSM: LaunchParallelWorkers()
@@ -160,7 +160,7 @@ struct TqBuildShared {
 
 ```rust
 #[no_mangle]
-pub extern "C" fn _tqhnsw_parallel_build_main(
+pub extern "C" fn _ec_hnsw_parallel_build_main(
     seg: *mut pg_sys::dsm_segment,
     toc: *mut pg_sys::shm_toc,
 ) {
@@ -215,7 +215,7 @@ If `max_parallel_maintenance_workers = 0` or the table is too small for parallel
 ## Acceptance Criteria
 
 ### FR-021-AC-1: Parallel workers used
-With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING tqhnsw` SHALL launch parallel workers.
+With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING ec_hnsw` SHALL launch parallel workers.
 
 ### FR-021-AC-2: Correctness
 The index produced by parallel build SHALL be structurally identical (same element count, same graph connectivity, same recall) to a serial build on the same data.
@@ -224,7 +224,7 @@ The index produced by parallel build SHALL be structurally identical (same eleme
 Parallel build with 4 workers SHALL complete in ≤ 60% of serial build time on a 100K-row table (measured on representative hardware).
 
 ### FR-021-AC-4: Concurrent build
-`CREATE INDEX CONCURRENTLY ... USING tqhnsw ...` SHALL work correctly with parallel workers.
+`CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` SHALL work correctly with parallel workers.
 
 ### FR-021-AC-5: Small table fallback
 On a 100-row table, the build SHALL fall back to serial execution without launching workers.

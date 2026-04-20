@@ -147,7 +147,7 @@ Add a regression test alongside the existing
 
 If the gamma value bit-pattern is unstable, the optimization is still
 defensible — but the recall smoke
-(`test_tqhnsw_graph_scan_recall_external_smoke_500`) and any A4 recall
+(`test_ec_hnsw_graph_scan_recall_external_smoke_500`) and any A4 recall
 gate runs **must be re-baselined** on the new gamma values. Document
 this in the review packet with before/after recall numbers, and update
 any pinned recall summary digests.

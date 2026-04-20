@@ -13,7 +13,7 @@ Add a SQL-callable diagnostic surface that reports the persisted HNSW graph's
 hierarchical structure. This should be a `pg_test`-gated function (similar to the
 existing recall probe surfaces in `src/lib.rs`).
 
-Surface: `tests.tqhnsw_graph_hierarchy_summary(index_regclass regclass)`
+Surface: `tests.ec_hnsw_graph_hierarchy_summary(index_regclass regclass)`
 
 Returns a table with columns:
 - `level` (integer): the HNSW level
@@ -80,11 +80,11 @@ Branch from current upstream main. Push branch for review.
 
 **Branch:** `coder2/10053-per-level-graph-diagnostic`
 
-**Implementation:** Added `tqhnsw_graph_hierarchy_summary(index_oid)` as a `#[pg_extern]` function
+**Implementation:** Added `ec_hnsw_graph_hierarchy_summary(index_oid)` as a `#[pg_extern]` function
 inside the `#[cfg(any(test, feature = "pg_test"))]` `tests` module in `src/lib.rs`.
 
 **Approach:**
-- Uses `open_valid_tqhnsw_index` for AM validation (same pattern as cost/planner snapshot functions)
+- Uses `open_valid_ec_hnsw_index` for AM validation (same pattern as cost/planner snapshot functions)
 - Uses `debug_index_pages` to read all data pages (reuses existing test infrastructure)
 - Builds a neighbor TID → decoded `TqNeighborTuple` map
 - Iterates element tuples, for each layer 0..=element.level computes valid neighbor count

@@ -44,7 +44,7 @@ def load_sql(argv: list[str]) -> str:
 
 
 def extract_ef(sql: str) -> int | None:
-    match = re.search(r"SET\\s+tqhnsw\\.ef_search\\s*=\\s*(\\d+)", sql)
+    match = re.search(r"SET\\s+ec_hnsw\\.ef_search\\s*=\\s*(\\d+)", sql)
     if match:
         return int(match.group(1))
     return None
@@ -68,7 +68,7 @@ def log_event(kind: str, ef: int | None) -> None:
 
 
 def plan_output(expected_index: str, ef: int, fallback_ef: str | None) -> str:
-    corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "tqhnsw_real_test_corpus")
+    corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "ec_hnsw_real_test_corpus")
     if fallback_ef and ef == int(fallback_ef):
         return (
             "Limit\\n"
@@ -86,9 +86,9 @@ def plan_output(expected_index: str, ef: int, fallback_ef: str | None) -> str:
 sql = load_sql(sys.argv[1:])
 normalized = " ".join(sql.split())
 fallback_ef = os.environ.get("TQV_FAKE_PSQL_FALLBACK_EF")
-expected_index = os.environ.get("TQV_FAKE_PSQL_EXPECTED_INDEX", "tqhnsw_real_test_m8_idx")
-corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "tqhnsw_real_test_corpus")
-query_table = os.environ.get("TQV_FAKE_PSQL_QUERY_TABLE", "tqhnsw_real_test_queries")
+expected_index = os.environ.get("TQV_FAKE_PSQL_EXPECTED_INDEX", "ec_hnsw_real_test_m8_idx")
+corpus_table = os.environ.get("TQV_FAKE_PSQL_CORPUS_TABLE", "ec_hnsw_real_test_corpus")
+query_table = os.environ.get("TQV_FAKE_PSQL_QUERY_TABLE", "ec_hnsw_real_test_queries")
 statements = [stmt.strip() for stmt in sql.split(";") if stmt.strip()]
 
 if len(statements) > 1:
@@ -99,7 +99,7 @@ if len(statements) > 1:
         if not stmt:
             continue
         normalized_stmt = " ".join(stmt.split())
-        if normalized_stmt.startswith("SET tqhnsw.ef_search ="):
+        if normalized_stmt.startswith("SET ec_hnsw.ef_search ="):
             current_ef = extract_ef(stmt)
         elif "EXPLAIN (ANALYZE, TIMING, FORMAT JSON)" in normalized_stmt:
             ef = current_ef or 0
@@ -184,11 +184,11 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
         summary_file = self.tmp_dir / "summary.txt"
         env = os.environ.copy()
         env["TQV_PSQL_BIN"] = str(self.fake_psql)
-        env["TQV_FAKE_PSQL_CORPUS_TABLE"] = corpus_table or "tqhnsw_real_test_corpus"
-        env["TQV_FAKE_PSQL_QUERY_TABLE"] = query_table or "tqhnsw_real_test_queries"
-        expected_index = index_name or "tqhnsw_real_test_m8_idx"
+        env["TQV_FAKE_PSQL_CORPUS_TABLE"] = corpus_table or "ec_hnsw_real_test_corpus"
+        env["TQV_FAKE_PSQL_QUERY_TABLE"] = query_table or "ec_hnsw_real_test_queries"
+        expected_index = index_name or "ec_hnsw_real_test_m8_idx"
         if storage_format is not None and index_name is None:
-            expected_index = f"tqhnsw_real_test_{storage_format}_m8_idx"
+            expected_index = f"ec_hnsw_real_test_{storage_format}_m8_idx"
         env["TQV_FAKE_PSQL_EXPECTED_INDEX"] = expected_index
         if fallback_ef is not None:
             env["TQV_FAKE_PSQL_FALLBACK_EF"] = fallback_ef
@@ -202,7 +202,7 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
             "bash",
             str(VERIFIED_SCRIPT),
             "--prefix",
-            "tqhnsw_real_test",
+            "ec_hnsw_real_test",
             "--m",
             "8",
             "--ef-search",
@@ -239,7 +239,7 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "planner verification failed for tqhnsw_real_test_m8_idx at ef_search=200",
+            "planner verification failed for ec_hnsw_real_test_m8_idx at ef_search=200",
             result.stderr,
         )
 
@@ -254,11 +254,11 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "[verified] planner uses tqhnsw_real_test_m8_idx at ef_search=40",
+            "[verified] planner uses ec_hnsw_real_test_m8_idx at ef_search=40",
             result.stderr,
         )
         self.assertIn(
-            "[verified] planner uses tqhnsw_real_test_m8_idx at ef_search=128",
+            "[verified] planner uses ec_hnsw_real_test_m8_idx at ef_search=128",
             result.stderr,
         )
 
@@ -289,18 +289,18 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
         result = self._run_verified(
             ef_search="64",
             fallback_ef=None,
-            corpus_table="tqhnsw_real_test_grouped_corpus",
-            query_table="tqhnsw_real_test_queries_50",
-            index_name="tqhnsw_real_test_grouped_m8_idx",
+            corpus_table="ec_hnsw_real_test_grouped_corpus",
+            query_table="ec_hnsw_real_test_queries_50",
+            index_name="ec_hnsw_real_test_grouped_m8_idx",
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "[verified] requiring planner use tqhnsw_real_test_grouped_m8_idx for every measured cell",
+            "[verified] requiring planner use ec_hnsw_real_test_grouped_m8_idx for every measured cell",
             result.stderr,
         )
         self.assertIn(
-            "[verified] planner uses tqhnsw_real_test_grouped_m8_idx at ef_search=64",
+            "[verified] planner uses ec_hnsw_real_test_grouped_m8_idx at ef_search=64",
             result.stderr,
         )
 
@@ -318,11 +318,11 @@ class BenchSqlLatencyVerifiedTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(
-            "[verified] requiring planner use tqhnsw_real_test_pq_fastscan_m8_idx for every measured cell",
+            "[verified] requiring planner use ec_hnsw_real_test_pq_fastscan_m8_idx for every measured cell",
             result.stderr,
         )
         self.assertIn(
-            "[verified] planner uses tqhnsw_real_test_pq_fastscan_m8_idx at ef_search=64",
+            "[verified] planner uses ec_hnsw_real_test_pq_fastscan_m8_idx at ef_search=64",
             result.stderr,
         )
 

@@ -5,27 +5,27 @@ usage() {
     cat <<'EOF'
 Usage:
   scripts/run_real_corpus_recall_scratch.sh [--db DB] [--socket-dir DIR] [--port PORT] gate \
-      --prefix tqhnsw_real_50k \
-      --queries-table tqhnsw_real_50k_queries_50 \
+      --prefix ec_hnsw_real_50k \
+      --queries-table ec_hnsw_real_50k_queries_50 \
       [--storage-format turboquant|pq_fastscan] \
-      [--corpus-table tqhnsw_real_50k_corpus] \
+      [--corpus-table ec_hnsw_real_50k_corpus] \
       [--detach] \
       [--output-dir /path/to/output]
 
   scripts/run_real_corpus_recall_scratch.sh [--db DB] [--socket-dir DIR] [--port PORT] summary \
       --m 8 \
       --ef-search 128 \
-      --queries-table tqhnsw_real_50k_queries_50 \
-      [--prefix tqhnsw_real_50k] \
+      --queries-table ec_hnsw_real_50k_queries_50 \
+      [--prefix ec_hnsw_real_50k] \
       [--storage-format turboquant|pq_fastscan] \
-      [--index tqhnsw_real_50k_m8_idx] \
-      [--corpus-table tqhnsw_real_50k_corpus] \
+      [--index ec_hnsw_real_50k_m8_idx] \
+      [--corpus-table ec_hnsw_real_50k_corpus] \
       [--detach] \
       [--output-dir /path/to/output]
 
 Notes:
-  - `gate` runs `tests.tqhnsw_graph_scan_recall_external_gate_report(...)`.
-  - `summary` runs `tests.tqhnsw_graph_scan_recall_external_summary(...)`.
+  - `gate` runs `tests.ec_hnsw_graph_scan_recall_external_gate_report(...)`.
+  - `summary` runs `tests.ec_hnsw_graph_scan_recall_external_summary(...)`.
   - In detached mode, stdout/stderr are written to files so long-running runs survive
     client-session hiccups.
 
@@ -202,7 +202,7 @@ case "$subcommand" in
             echo "--prefix is required for gate runs" >&2
             exit 2
         fi
-        select_sql="select * from tests.tqhnsw_graph_scan_recall_external_gate_report('${corpus_table}','${queries_table}','${fixture_prefix}')"
+        select_sql="select * from tests.ec_hnsw_graph_scan_recall_external_gate_report('${corpus_table}','${queries_table}','${fixture_prefix}')"
         stem="gate_$(slugify "${fixture_prefix}")_$(slugify "${queries_table}")"
         ;;
     summary)
@@ -217,7 +217,7 @@ case "$subcommand" in
             fi
             index_name="${fixture_prefix}_m${m}_idx"
         fi
-        select_sql="select * from tests.tqhnsw_graph_scan_recall_external_summary('${corpus_table}','${queries_table}','${index_name}',${m},${ef_search})"
+        select_sql="select * from tests.ec_hnsw_graph_scan_recall_external_summary('${corpus_table}','${queries_table}','${index_name}',${m},${ef_search})"
         stem="summary_$(slugify "${index_name}")_m${m}_ef${ef_search}_$(slugify "${queries_table}")"
         ;;
 esac

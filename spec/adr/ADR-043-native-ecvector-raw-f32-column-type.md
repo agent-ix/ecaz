@@ -11,7 +11,7 @@ date: 2026-04-18
 
 The canonical row type is **`ecvector(dim)`** — a raw-f32 column
 with `dim` enforced via typmod. `ecvector` is the column type users
-put in their tables. It is the source for tqhnsw index builds and
+put in their tables. It is the source for ec_hnsw index builds and
 for HeapF32 rerank.
 
 Persisted quantized artifacts, when needed for explicit
@@ -56,7 +56,7 @@ SET STORAGE PLAIN`:
   `mean_abs_score_error = 0`)
 
 That result established that the remaining serious-lane cost on
-tqhnsw is **heap-source layout**, not scorer math. The measurement
+ec_hnsw is **heap-source layout**, not scorer math. The measurement
 used the `bytea`+`STORAGE PLAIN` recipe as a research surface.
 
 Current head lands the **type and row-model plumbing** that makes
@@ -111,7 +111,7 @@ at billion-row scale.
 ## Decision
 
 Ship **`ecvector(dim)`** as the canonical row type. Wire layout is
-`varlena + raw f32 data` with `dim` enforced via typmod. tqhnsw
+`varlena + raw f32 data` with `dim` enforced via typmod. ec_hnsw
 can read f32s directly from an indexed `ecvector` column with zero
 source reloptions on the native path.
 
@@ -153,14 +153,14 @@ authoritative dim; I/O functions validate length against it.
 | Cast from pgvector `vector` | deferred; not implemented on current head |
 | Operators | `<#>` inner product; `<->` L2 and `<=>` cosine deferred per ADR-032 operator posture |
 
-### tqhnsw integration — canonical path vs optional hooks
+### ec_hnsw integration — canonical path vs optional hooks
 
-`CREATE INDEX ON t USING tqhnsw (v)` on an `ecvector` column works
+`CREATE INDEX ON t USING ec_hnsw (v)` on an `ecvector` column works
 with zero reloptions:
 
 - BUILD reads f32s directly from the column.
 - HeapF32 rerank reads the same column.
-- The op class on `tqhnsw` for `ecvector` is `ecvector_ip_ops`.
+- The op class on `ec_hnsw` for `ecvector` is `ecvector_ip_ops`.
 
 Current-head nuance:
 
@@ -217,7 +217,7 @@ packet-`447` write-path tradeoff.
 - casts:
   - `real[] <-> ecvector`
   - `bytea <-> ecvector`
-- `ecvector_ip_ops` on `tqhnsw`
+- `ecvector_ip_ops` on `ec_hnsw`
 - default indexed-column resolution to `ecvector` across build,
   insert, scan, and vacuum
 - `tqvector` retained as the TurboQuant-family sibling artifact
@@ -274,8 +274,8 @@ Rules:
 ## Scope
 
 - `ecvector` type (catalog, I/O, typmod, casts).
-- `<#>` operator and `ecvector_ip_ops` op class on `tqhnsw`.
-- tqhnsw build / insert / scan / rerank reading `ecvector` as
+- `<#>` operator and `ecvector_ip_ops` op class on `ec_hnsw`.
+- ec_hnsw build / insert / scan / rerank reading `ecvector` as
   the native source.
 - Sibling artifact type contract (family-specific names,
   never canonical).
@@ -350,7 +350,7 @@ Out of scope:
   `vector → ecvector → vector` (where available) must be bit-exact.
 - **Typmod enforcement.** Inserts with `length != 4 * N` rejected
   on an `ecvector(N)` column.
-- **Index parity.** A tqhnsw index built on an `ecvector(1536)`
+- **Index parity.** A ec_hnsw index built on an `ecvector(1536)`
   column produces identical recall to an equivalent `real[]`
   source baseline.
 - **pgvector parity.** Deferred. Current head does not yet

@@ -6,7 +6,7 @@ Executes ADR-040.
 
 ## Scope
 
-Enable `amcanparallel=true` for `tqhnsw` so a single `ORDER BY v <#> q LIMIT k`
+Enable `amcanparallel=true` for `ec_hnsw` so a single `ORDER BY v <#> q LIMIT k`
 query can be split across multiple Postgres workers. Workers run independent
 beam searches against a shared top-K coordinator; `ef_search` is budgeted per
 worker with a small overlap term so aggregate recall matches (or exceeds) a
@@ -64,7 +64,7 @@ See ADR-040 for the full shape. Summary:
 
 ### AM callback wiring
 
-- [ ] **`amcanparallel = true`** in the `IndexAmRoutine` for `tqhnsw`.
+- [ ] **`amcanparallel = true`** in the `IndexAmRoutine` for `ec_hnsw`.
 - [ ] **`amestimateparallelscan`.** Returns DSM size = coordinator state +
   `n * per_worker_state`.
 - [ ] **`aminitparallelscan`.** Populate coordinator heap, initialize
@@ -78,7 +78,7 @@ See ADR-040 for the full shape. Summary:
 ### ef_search budget split
 
 - [ ] **Budget math in `resolve_scan_tuning`.** Compute per-worker
-  `ef_search` as documented above. GUC `tqhnsw.parallel_ef_overlap`
+  `ef_search` as documented above. GUC `ec_hnsw.parallel_ef_overlap`
   (default `0.1`, range `[0.0, 0.5]`) controls the overlap term.
 - [ ] **Single-worker equivalence test.** `n=1` parallel scan produces
   byte-identical results to serial scan at the same `ef_search`.

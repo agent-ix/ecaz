@@ -27,9 +27,9 @@ Task 11 deliberately built the PG18 surface pure, unbound, and gated:
 - `TqExplainCounters` and `TqStatsCounters` structs exist.
 - `GraphPrefetchState` / `LinearPrefetchState` exist in `src/am/stream.rs`
   with pure callback functions.
-- Read-only snapshots (`tqhnsw_pg18_upgrade_snapshot()`,
-  `tqhnsw_pg18_diagnostics_snapshot()`,
-  `tqhnsw_read_stream_snapshot()`) expose readiness flags — all currently
+- Read-only snapshots (`ec_hnsw_pg18_upgrade_snapshot()`,
+  `ec_hnsw_pg18_diagnostics_snapshot()`,
+  `ec_hnsw_read_stream_snapshot()`) expose readiness flags — all currently
   `false`.
 
 This task flips those flags to `true` by wiring the pure helpers into the
@@ -49,7 +49,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 ### IndexAmRoutine callback wiring
 
 - [ ] **`amgettreeheight`.** Bind the pure helper in `src/am/cost.rs` to
-  the `IndexAmRoutine` slot. Flip `tqhnsw_pg18_upgrade_snapshot` readiness
+  the `IndexAmRoutine` slot. Flip `ec_hnsw_pg18_upgrade_snapshot` readiness
   for this callback to true.
 - [ ] **`amtranslatestrategy` / `amtranslatecmptype`.** Same — bind pure
   helpers to routine slots. Flip readiness.
@@ -63,17 +63,17 @@ actual `IndexAmRoutine` / hook / pgstat surface.
   EXPLAIN option at module init.
 - [ ] **`explain_per_node_hook` registration.** Install the per-node hook
   using the emission gate from `src/am/explain.rs` (option present +
-  `IndexScan` node + `tqhnsw` access method).
+  `IndexScan` node + `ec_hnsw` access method).
 - [ ] **Counter storage in `TqScanOpaque`.** Embed `TqExplainCounters` in
   the scan opaque struct; increment at the existing scan seam points.
   This is the first `src/am/scan.rs` edit this task requires.
-- [ ] **Acceptance:** `EXPLAIN (ANALYZE, tqvector)` on a tqhnsw index
+- [ ] **Acceptance:** `EXPLAIN (ANALYZE, tqvector)` on a ec_hnsw index
   scan emits the `TQVector Stats` group with the documented properties.
 
 ### pgstat-kind activation
 
 - [ ] **Register custom pgstat-kind.** Use the name surface already in
-  `tqhnsw_stats_snapshot()` / `src/am/stats.rs`.
+  `ec_hnsw_stats_snapshot()` / `src/am/stats.rs`.
 - [ ] **Increment sites.** Wire `TqStatsCounters` into scan and build
   paths at the same seams as the EXPLAIN counters.
 - [ ] **`tqvector_stats()` SQL function.** Bind to the pure summary
@@ -116,7 +116,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 
 ## Unblocks
 
-- Natural planner selection of tqhnsw on PG18.
+- Natural planner selection of ec_hnsw on PG18.
 - `EXPLAIN (ANALYZE, tqvector)` visibility for operators.
 - Async I/O cold-cache performance.
 - Dropping the PG14–PG16 compatibility burden from the build matrix.

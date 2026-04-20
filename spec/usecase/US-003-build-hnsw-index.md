@@ -15,7 +15,7 @@ traces:
 
 ## Acceptance Criteria
 
-1. `CREATE INDEX USING tqhnsw (tq_code) WITH (m=8, ef_construction=64)` builds a valid index
+1. `CREATE INDEX USING ec_hnsw (tq_code) WITH (m=8, ef_construction=64)` builds a valid index
 2. The build scans all existing heap rows, encodes their tqvector codes, and constructs the HNSW graph
 3. After build, queries immediately use the new index
 4. The build is crash-safe — a crash mid-build does not corrupt the table or leave a partial index

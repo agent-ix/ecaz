@@ -1,12 +1,12 @@
 ---
 id: ADR-011
-title: "Hold planner selection off until ordered tqhnsw scan semantics are credible"
+title: "Hold planner selection off until ordered ec_hnsw scan semantics are credible"
 status: SUPERSEDED
 supersedes_notes: "Retired by D2 planner activation (2026-04-11); FR-020 cost model now wired into amcostestimate. See FR-020-cost-estimation.md for the active costing contract."
 impact: HIGH for FR-009, FR-006
 date: 2026-04-05
 ---
-# ADR-011: Hold planner selection off until ordered tqhnsw scan semantics are credible
+# ADR-011: Hold planner selection off until ordered ec_hnsw scan semantics are credible
 
 > **SUPERSEDED (2026-04-11):** The `f64::MAX` planner override has been removed.
 > `amcostestimate` now delegates to the FR-020 two-phase cost model
@@ -31,7 +31,7 @@ It does not yet have:
 - distance-ordered result production
 - planner-visible ordered scan semantics that match the operator class contract
 
-Allowing the planner to pick `tqhnsw` before those semantics exist would expose incomplete query
+Allowing the planner to pick `ec_hnsw` before those semantics exist would expose incomplete query
 behavior as if it were a finished ANN index.
 
 ## Decision
@@ -43,14 +43,14 @@ Specifically:
 
 - `startup_cost` and `total_cost` are set to effectively maximum values
 - selectivity and correlation remain non-competitive
-- the planner therefore avoids choosing `tqhnsw` scans in normal execution
+- the planner therefore avoids choosing `ec_hnsw` scans in normal execution
 
 This is an intentional temporary gate, not the final costing model.
 
 Planner/integration groundwork may still land behind this gate, including:
 
 - pure cost-model helpers and unit tests that are not yet wired into `amcostestimate`
-- session-level `tqhnsw.ef_search` override registration
+- session-level `ec_hnsw.ef_search` override registration
 - relation-versus-session precedence resolution
 - planner/explain/statistics-facing snapshot helpers
 - planner-facing cost snapshot helpers that show modeled FR-020 outputs alongside the still-gated
@@ -58,7 +58,7 @@ Planner/integration groundwork may still land behind this gate, including:
 - planner-facing cost snapshot helpers that make current tree-height sourcing explicit, including a
   metadata-fallback seam until PG18 `amgettreeheight` wiring actually exists
 - planner-facing explain snapshot helpers that report the gate state explicitly without claiming
-  that EXPLAIN can yet show a tqhnsw index scan
+  that EXPLAIN can yet show a ec_hnsw index scan
 - planner-facing integration snapshot helpers that make the remaining runtime ordered-scan blocker
   and PG18 callback/toolchain blocker explicit without enabling planner selection
 

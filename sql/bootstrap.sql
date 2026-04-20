@@ -181,10 +181,10 @@ IMMUTABLE STRICT PARALLEL SAFE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'ecvector_negative_query_inner_product_wrapper';
 
-CREATE FUNCTION tqhnsw_handler(internal)
+CREATE FUNCTION ec_hnsw_handler(internal)
 RETURNS index_am_handler
 LANGUAGE c
-AS 'MODULE_PATHNAME', 'tqhnsw_handler';
+AS 'MODULE_PATHNAME', 'ec_hnsw_handler';
 
 CREATE OPERATOR <#> (
     PROCEDURE = tqvector_negative_inner_product,
@@ -212,14 +212,14 @@ CREATE OPERATOR <#> (
     RIGHTARG = real[]
 );
 
-CREATE ACCESS METHOD tqhnsw TYPE INDEX HANDLER tqhnsw_handler;
+CREATE ACCESS METHOD ec_hnsw TYPE INDEX HANDLER ec_hnsw_handler;
 
 CREATE OPERATOR CLASS tqvector_ip_ops
-DEFAULT FOR TYPE tqvector USING tqhnsw AS
+DEFAULT FOR TYPE tqvector USING ec_hnsw AS
     OPERATOR 1 <#>(tqvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 tqvector_query_inner_product(tqvector, real[]);
 
 CREATE OPERATOR CLASS ecvector_ip_ops
-DEFAULT FOR TYPE ecvector USING tqhnsw AS
+DEFAULT FOR TYPE ecvector USING ec_hnsw AS
     OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
     FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);

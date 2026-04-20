@@ -48,7 +48,7 @@ pub fn GenericXLogAbort(state: *mut GenericXLogState);
 
 ```rust
 #[pg_extern]
-fn tqhnsw_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pgrx::PgBox<pg_sys::IndexAmRoutine> {
+fn ec_hnsw_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pgrx::PgBox<pg_sys::IndexAmRoutine> {
     let mut amroutine = unsafe { pgrx::PgBox::<pg_sys::IndexAmRoutine>::alloc_node(pg_sys::NodeTag::T_IndexAmRoutine) };
     
     amroutine.amcanorderbyop = true;  // ORDER BY <#>
@@ -57,9 +57,9 @@ fn tqhnsw_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pgrx::PgBox<pg_sys::Inde
     amroutine.amcanmulticol = false;
     amroutine.amsearchnulls = false;
     
-    amroutine.ambuild = Some(tqhnsw_ambuild);
-    amroutine.ambuildempty = Some(tqhnsw_ambuildempty);
-    amroutine.aminsert = Some(tqhnsw_aminsert);
+    amroutine.ambuild = Some(ec_hnsw_ambuild);
+    amroutine.ambuildempty = Some(ec_hnsw_ambuildempty);
+    amroutine.aminsert = Some(ec_hnsw_aminsert);
     // ... etc
     
     amroutine
@@ -68,12 +68,12 @@ fn tqhnsw_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pgrx::PgBox<pg_sys::Inde
 
 SQL:
 ```sql
-CREATE ACCESS METHOD tqhnsw TYPE INDEX HANDLER tqhnsw_handler;
+CREATE ACCESS METHOD ec_hnsw TYPE INDEX HANDLER ec_hnsw_handler;
 ```
 
 ## Decision
 
-**Option A: Raw pg_sys FFI** with a local `src/am/` module for tqhnsw-specific helpers.
+**Option A: Raw pg_sys FFI** with a local `src/am/` module for ec_hnsw-specific helpers.
 
 ### Module structure
 
@@ -81,7 +81,7 @@ CREATE ACCESS METHOD tqhnsw TYPE INDEX HANDLER tqhnsw_handler;
 src/
 ├── lib.rs              # pgrx entry, type registration, encode/distance functions
 ├── am/
-│   ├── mod.rs          # tqhnsw_handler, capability flags
+│   ├── mod.rs          # ec_hnsw_handler, capability flags
 │   ├── build.rs        # ambuild, ambuildempty (uses hnsw_rs for construction)
 │   ├── insert.rs       # aminsert (page-level graph update)
 │   ├── scan.rs         # ambeginscan, amrescan, amgettuple, amendscan
@@ -92,4 +92,4 @@ src/
 └── distance.rs         # TurboQuantizer wrapper, Distance impl for hnsw_rs
 ```
 
-Not building a general AM framework — keeping it specific to tqhnsw. Every callback is an `unsafe extern "C" fn` that delegates to safe Rust internals where possible.
+Not building a general AM framework — keeping it specific to ec_hnsw. Every callback is an `unsafe extern "C" fn` that delegates to safe Rust internals where possible.

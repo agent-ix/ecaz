@@ -9,7 +9,7 @@ date: 2026-04-11
 
 ## Context
 
-A6 extends `tqhnsw` vacuum from heap-TID stripping and tombstone finalization into graph repair.
+A6 extends `ec_hnsw` vacuum from heap-TID stripping and tombstone finalization into graph repair.
 Once pass 2 starts rewriting persisted neighbor tuples, one vacuum run may mutate many data pages
 that are unrelated to the deleted element's home page.
 

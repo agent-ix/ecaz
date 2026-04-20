@@ -75,7 +75,7 @@ def query_tqvector(query_vec: np.ndarray, m: int, ef_search: int, k: int) -> lis
     """Run a single k-NN query via SQL and return ordered result IDs."""
     arr_str = ",".join(f"{v:.6f}" for v in query_vec)
     result = psql(f"""
-        SET tqhnsw.ef_search = {ef_search};
+        SET ec_hnsw.ef_search = {ef_search};
         SELECT id FROM bench_encoded
         ORDER BY vec <#> ARRAY[{arr_str}]::real[]
         LIMIT {k};

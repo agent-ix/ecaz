@@ -9,7 +9,7 @@ date: 2026-04-05
 
 ## Context
 
-ADR-008 introduced a temporary forward linear scan for non-empty `tqhnsw` indexes. That first
+ADR-008 introduced a temporary forward linear scan for non-empty `ec_hnsw` indexes. That first
 slice returned only the first heap TID from each live element tuple.
 
 That shortcut is not just unordered relative to the eventual HNSW search. It also drops visible

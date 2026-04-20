@@ -108,7 +108,7 @@ pub(crate) fn explain_counter_definitions() -> &'static [ExplainCounterDefinitio
 pub(crate) fn should_emit_explain_properties(context: ExplainHookContext<'_>) -> bool {
     context.explain_option_enabled
         && context.node_kind == ExplainNodeKind::IndexScan
-        && context.access_method_name == "tqhnsw"
+        && context.access_method_name == "ec_hnsw"
 }
 
 pub(crate) fn explain_output_group() -> ExplainOutputGroup {
@@ -354,21 +354,21 @@ mod tests {
     }
 
     #[test]
-    fn explain_property_emission_requires_option_index_scan_and_tqhnsw_access_method() {
+    fn explain_property_emission_requires_option_index_scan_and_ec_hnsw_access_method() {
         assert!(should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: true,
             node_kind: ExplainNodeKind::IndexScan,
-            access_method_name: "tqhnsw",
+            access_method_name: "ec_hnsw",
         }));
         assert!(!should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: false,
             node_kind: ExplainNodeKind::IndexScan,
-            access_method_name: "tqhnsw",
+            access_method_name: "ec_hnsw",
         }));
         assert!(!should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: true,
             node_kind: ExplainNodeKind::Other,
-            access_method_name: "tqhnsw",
+            access_method_name: "ec_hnsw",
         }));
         assert!(!should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: true,

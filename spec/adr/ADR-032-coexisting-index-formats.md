@@ -57,7 +57,7 @@ pub(crate) enum GraphStorageDescriptor {
 Format selection moves from a process-wide env var to a per-index reloption:
 
 ```sql
-CREATE INDEX ... USING tqhnsw (embedding vector_ip_ops)
+CREATE INDEX ... USING ec_hnsw (embedding vector_ip_ops)
     WITH (storage_format = 'pq_fastscan');
 ```
 
@@ -117,8 +117,8 @@ Enumerated in task 15. Summary:
 - Rust enum and function rename across the am/quant modules.
 - New `storage_format` reloption in `src/am/options.rs`.
 - Remove the `TQVECTOR_EXPERIMENTAL_ADR030_V2_BUILD` env var.
-- `tqhnsw_aminsert` parity for PqFastScan.
-- `tqhnsw_ambulkdelete` / `tqhnsw_amvacuumcleanup` parity.
+- `ec_hnsw_aminsert` parity for PqFastScan.
+- `ec_hnsw_ambulkdelete` / `ec_hnsw_amvacuumcleanup` parity.
 - Parameterize `group_size` / `bits` through the layout rather than
   module-level constants.
 

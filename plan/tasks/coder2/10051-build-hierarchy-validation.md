@@ -34,7 +34,7 @@ test runs:
     if node_count > 2 * state.options.m {
         debug_assert!(
             max_level > 0,
-            "tqhnsw build produced a flat hierarchy (max_level=0) with {} nodes and m={}; \
+            "ec_hnsw build produced a flat hierarchy (max_level=0) with {} nodes and m={}; \
              this likely means the build is not reading upper-layer assignments from hnsw_rs",
             node_count,
             state.options.m
@@ -48,7 +48,7 @@ build, gated behind `#[cfg(any(test, feature = "pg_test"))]`. Use `pgrx::debug1!
 or `pgrx::info!`. Format like:
 
 ```
-tqhnsw build: 10000 nodes, max_level=4, level distribution: [9600, 350, 40, 8, 2]
+ec_hnsw build: 10000 nodes, max_level=4, level distribution: [9600, 350, 40, 8, 2]
 ```
 
 This helps diagnose hierarchy issues without needing a separate SQL probe.

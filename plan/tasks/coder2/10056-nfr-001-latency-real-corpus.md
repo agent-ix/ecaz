@@ -4,7 +4,7 @@ Motivation: `docs/RECALL_REAL_CORPUS.md:260-264` already notes that `NFR-001`
 latency benchmarking reuses the same loader path as the A4 recall lane but
 targets a different reporting surface (`scripts/bench_sql_latency.sh`). Now
 that the real DBpedia fixture is staged and the canonical
-`tqhnsw_real_10k` / `tqhnsw_real_50k` tables have been proven to load and
+`ec_hnsw_real_10k` / `ec_hnsw_real_50k` tables have been proven to load and
 index, we can get a second axis of NFR coverage on the real corpus almost
 for free — latency — without re-loading anything. This closes the gap
 between "A4 is anchored on real embeddings" and "A1 is anchored on real
@@ -16,7 +16,7 @@ Status: ready
 
 Wire the existing `scripts/bench_sql_latency.sh` benchmark path to the
 canonical real-corpus prefixes and record a first latency sweep against the
-already-loaded `tqhnsw_real_10k` subset.
+already-loaded `ec_hnsw_real_10k` subset.
 
 ### Step 1 — read the current state
 
@@ -39,7 +39,7 @@ than a refactor.
 ### Step 2 — accept canonical prefixes directly
 
 Modify `scripts/bench_sql_latency.sh` so it accepts a canonical real-corpus
-prefix (e.g. `tqhnsw_real_10k` or `tqhnsw_real_50k`) as a first-class
+prefix (e.g. `ec_hnsw_real_10k` or `ec_hnsw_real_50k`) as a first-class
 argument and derives:
 
 - `<prefix>_corpus` as the corpus table
@@ -66,7 +66,7 @@ cluster" story consistent with the A4 lane.
 
 ### Step 4 — record the first latency sweep
 
-Run the new path against the already-loaded `tqhnsw_real_10k` fixture and
+Run the new path against the already-loaded `ec_hnsw_real_10k` fixture and
 record the result in the review packet. Capture at minimum:
 
 - `m` values: `8` and `16`
@@ -86,7 +86,7 @@ is worth recording even if it is below target.
 
 Add a new section to `docs/RECALL_REAL_CORPUS.md` titled `Reusing the
 Loaded Tables for NFR-001 Latency` that points at the new script and gives
-a single worked example of running it against `tqhnsw_real_10k`. Keep the
+a single worked example of running it against `ec_hnsw_real_10k`. Keep the
 A4 recall content unchanged. The section's job is exactly one paragraph:
 "the same loaded tables serve both NFR-003 (recall) and NFR-001 (latency);
 here is the latency invocation."
@@ -126,10 +126,10 @@ bash -n scripts/bench_sql_latency_scratch.sh
 ```
 
 Then actually run the bench against the scratch cluster with the already-
-loaded `tqhnsw_real_10k` fixture and record the output:
+loaded `ec_hnsw_real_10k` fixture and record the output:
 
 ```bash
-scripts/bench_sql_latency_scratch.sh --prefix tqhnsw_real_10k --m 8 --m 16 \
+scripts/bench_sql_latency_scratch.sh --prefix ec_hnsw_real_10k --m 8 --m 16 \
     --ef-search 40,64,100,128,160,200 > /tmp/nfr1_real_10k.txt
 ```
 

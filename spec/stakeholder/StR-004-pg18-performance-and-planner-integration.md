@@ -41,7 +41,7 @@ The extension SHALL:
 ## Success Criteria
 
 - Cold-cache HNSW top-10 query (50K × 1536-dim, 4-bit, m=8) latency improves by ≥ 2x when `io_method=worker` compared to synchronous I/O baseline
-- Planner selects `tqhnsw` index scan for `ORDER BY <#> LIMIT k` without manual hints
+- Planner selects `ec_hnsw` index scan for `ORDER BY <#> LIMIT k` without manual hints
 - `EXPLAIN (tqvector)` shows scan statistics (pages read, elements scored, graph expansions)
 - Parallel build with 4 workers completes in ≤ 60% of serial build time for a 100K-row table
 - After DELETE + VACUUM, deleted rows are not returned by subsequent scans

@@ -12,7 +12,7 @@ traces:
 
 ## Requirement
 
-All page modifications within the `tqhnsw` index access method SHALL use PostgreSQL's GenericXLog facility for crash-safe durability.
+All page modifications within the `ec_hnsw` index access method SHALL use PostgreSQL's GenericXLog facility for crash-safe durability.
 
 ### Pattern (from pgvector)
 

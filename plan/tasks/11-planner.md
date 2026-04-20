@@ -7,12 +7,12 @@ Progress notes:
   complete while D2 remains correctly blocked on Task 05 / A4 (recall gate).
 - The `ef_search` control surface is fully wired for the current scaffolded runtime: reloption plus
   session GUC precedence now resolves through `resolve_scan_tuning(...)`, including explicit
-  `SET tqhnsw.ef_search = 40` overrides.
+  `SET ec_hnsw.ef_search = 40` overrides.
 - ADR-011 still keeps live planner costing disabled in `amcostestimate`.
 - A pure FR-020 cost-model helper now exists in `src/am/cost.rs` with unit coverage for the large-
   table crossover, small-table seqscan preference, empty-index `f64::MAX`, and missing-`reltuples`
   heuristic behavior.
-- A read-only `tqhnsw_index_cost_snapshot(...)` SQL surface now exposes modeled FR-020 costs and
+- A read-only `ec_hnsw_index_cost_snapshot(...)` SQL surface now exposes modeled FR-020 costs and
   the still-gated live callback contract side by side for planner/admin inspection.
 - The cost snapshot now also reports that its current tree-height input comes from a
   `metadata_fallback` seam rather than a live PG18 `amgettreeheight` callback, making the future
@@ -31,20 +31,20 @@ Progress notes:
 - The explain snapshot now also exposes the intended custom EXPLAIN option name (`tqvector`) while
   keeping PG18 option registration and per-node hook readiness explicitly false until PG18 support
   actually exists in the repository.
-- A read-only `tqhnsw_explain_counter_snapshot()` SQL surface now exposes the intended EXPLAIN
+- A read-only `ec_hnsw_explain_counter_snapshot()` SQL surface now exposes the intended EXPLAIN
   counter names, types, and increment conditions while keeping scan-opaque counter storage and
   runtime counter wiring explicitly false until the execution lane is ready.
 - `src/am/explain.rs` now also defines a reusable `TqExplainCounters` struct with pure
   record/reset helpers so the scan lane can embed it in `TqScanOpaque` later without planner-lane
   edits to `scan.rs`.
 - `src/am/explain.rs` now also defines pure ExplainProperty-emission helpers plus a pure emission
-  gate that only allows output when the `tqvector` option, `IndexScan` node kind, and `tqhnsw`
+  gate that only allows output when the `tqvector` option, `IndexScan` node kind, and `ec_hnsw`
   access method are all present, giving the future PG18 hook a concrete D1 contract without adding
   more SQL surfaces.
 - `src/am/explain.rs` now also defines the pure EXPLAIN group contract for `"TQVector Stats"`,
   including the expected `ExplainOpenGroup` / `ExplainCloseGroup` bracketing, so the future hook
   has explicit section-shape metadata as well as per-property emission.
-- A read-only `tqhnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
+- A read-only `ec_hnsw_stats_snapshot()` SQL surface now exposes the intended `tqvector_stats`
   function name while keeping PG18 pgstat-kind and SQL-surface readiness explicitly false until
   PostgreSQL 18 support actually exists in the repository.
 - `src/am/stats.rs` now also defines a reusable `TqStatsCounters` struct with pure record/reset
@@ -53,17 +53,17 @@ Progress notes:
 - `src/am/stats.rs` now also defines pure summary logic for the staged FR-025 derived rates
   (`bootstrap_hit_rate`, `quantizer_cache_rate`), so the eventual SQL surface and pgstat glue do
   not have to invent those computations later.
-- A read-only `tqhnsw_pg18_upgrade_snapshot()` SQL surface now exposes the intended stable
+- A read-only `ec_hnsw_pg18_upgrade_snapshot()` SQL surface now exposes the intended stable
   extension identity (`tqvector`, `$libdir/tqvector`) while keeping `pg18` Cargo-feature,
   default-build, and `PG_MODULE_MAGIC_EXT` readiness explicitly false until the toolchain upgrade
   actually lands.
-- A read-only `tqhnsw_pg18_diagnostics_snapshot()` SQL surface now exposes the intended custom
+- A read-only `ec_hnsw_pg18_diagnostics_snapshot()` SQL surface now exposes the intended custom
   EXPLAIN option and statistics function names together while keeping all PG18 diagnostics
   readiness flags explicitly false until the toolchain and hook/pgstat lanes actually land.
-- A read-only `tqhnsw_planner_integration_snapshot(...)` SQL surface now exposes the current
+- A read-only `ec_hnsw_planner_integration_snapshot(...)` SQL surface now exposes the current
   cross-lane planner blockers in one place: modeled cost scaffolding is ready, but ordered scan
   credibility, live planner activation, and PG18 callback/diagnostics readiness remain false.
-- A read-only `tqhnsw_read_stream_snapshot()` SQL surface now exposes the intended graph and
+- A read-only `ec_hnsw_read_stream_snapshot()` SQL surface now exposes the intended graph and
   linear ReadStream modes plus access patterns while keeping callback, scan, and vacuum readiness
   explicitly false until PG18 async-I/O support actually lands.
 - `src/am/stream.rs` now also defines pure `GraphPrefetchState` / `LinearPrefetchState` types plus
@@ -78,7 +78,7 @@ Progress notes:
 
 ## Scope
 
-Implement planner cost estimation, strategy translation, custom EXPLAIN, and async I/O for the tqhnsw access method. Split into two phases: scaffolding (D1, can start now) and wiring (D2, gated on Task 05 A4 recall gate).
+Implement planner cost estimation, strategy translation, custom EXPLAIN, and async I/O for the ec_hnsw access method. Split into two phases: scaffolding (D1, can start now) and wiring (D2, gated on Task 05 A4 recall gate).
 
 ## Subtasks
 
@@ -116,7 +116,7 @@ Implement planner cost estimation, strategy translation, custom EXPLAIN, and asy
 
 ## Unblocks
 
-- Natural planner selection of tqhnsw index (no more `enable_seqscan = off`)
+- Natural planner selection of ec_hnsw index (no more `enable_seqscan = off`)
 - PG18 observability (EXPLAIN scan stats)
 - PG18 performance (async I/O prefetch)
 

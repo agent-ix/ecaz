@@ -1,13 +1,13 @@
 # tqvector
 
 A PostgreSQL extension written in Rust (pgrx) that provides the canonical
-`ecvector(dim)` row type plus the `tqhnsw` index access method for approximate
+`ecvector(dim)` row type plus the `ec_hnsw` index access method for approximate
 nearest neighbor search.
 
 - **`ecvector(dim)`** — canonical exact/raw row type
 - **`tqvector`** — explicit TurboQuant artifact/debugging type
 - **`<#>` operator** — negative inner product distance for ORDER BY ASC
-- **`tqhnsw` index** — HNSW graph index with per-index storage formats
+- **`ec_hnsw` index** — HNSW graph index with per-index storage formats
 - **`encode_to_ecvector()`** — encode fp32 arrays into the canonical row type
 
 ## Quick Start
@@ -33,7 +33,7 @@ VALUES (encode_to_ecvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42));
 
 -- Create HNSW index over the canonical row type
 CREATE INDEX ON memories
-USING tqhnsw (embedding ecvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 
 -- Query nearest neighbors
@@ -49,7 +49,7 @@ than overloading `ecvector`.
 
 ## Choosing A Format
 
-`tqhnsw` supports two storage formats selected per index with the
+`ec_hnsw` supports two storage formats selected per index with the
 `storage_format` reloption:
 
 - `turboquant` is the default. Use it for small or medium indexes and for the
@@ -60,12 +60,12 @@ than overloading `ecvector`.
 ```sql
 -- Default / explicit TurboQuant index
 CREATE INDEX ON memories
-USING tqhnsw (embedding ecvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (storage_format = 'turboquant', m = 8, ef_construction = 64);
 
 -- PqFastScan index on the same canonical row column
 CREATE INDEX ON memories
-USING tqhnsw (embedding ecvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (
     storage_format = 'pq_fastscan',
     m = 8,

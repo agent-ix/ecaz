@@ -38,7 +38,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 import load_real_corpus  # noqa: E402 — sys.path tweak above
 
 
-_PREFIX = "tqhnsw_real_test"
+_PREFIX = "ec_hnsw_real_test"
 _DIM = 4
 
 
@@ -229,7 +229,7 @@ class ManifestPortabilityTests(unittest.TestCase):
         shard_a.write_bytes(b"")
         shard_b.write_bytes(b"")
 
-        profile = writer.PROFILES["tqhnsw_real_10k"]
+        profile = writer.PROFILES["ec_hnsw_real_10k"]
         corpus_fm = writer.FileManifest(
             file="x_corpus.tsv", rows=0, sha256="", first_id=None, last_id=None
         )

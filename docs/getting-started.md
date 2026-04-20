@@ -42,7 +42,7 @@ INSERT INTO items (embedding)
 VALUES (encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, ...]::float4[], 4, 42));
 
 -- Create an HNSW index
-CREATE INDEX ON items USING tqhnsw (embedding) WITH (m=8, ef_construction=64);
+CREATE INDEX ON items USING ec_hnsw (embedding) WITH (m=8, ef_construction=64);
 
 -- Find nearest neighbors
 SELECT id FROM items

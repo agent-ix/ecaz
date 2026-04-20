@@ -21,10 +21,10 @@ Progress notes:
 - Duplicate discovery now skips deleted / empty-heaptid elements, so a post-vacuum duplicate
   insert cannot reattach to a finalized dead node.
 - Concurrency validation is now landed: `scripts/vacuum_concurrency_scratch.sh` runs a 60-second
-  scratch-cluster race with concurrent INSERT, tqhnsw graph scan, and VACUUM workers, using a
+  scratch-cluster race with concurrent INSERT, ec_hnsw graph scan, and VACUUM workers, using a
   `pg_test`-only SQL wrapper around the live `ambeginscan/amrescan/amgettuple` path plus a final
   post-quiesce `VACUUM (ANALYZE)` check that the live index's reachable live-element count stays
-  within 90% of a freshly rebuilt reference tqhnsw index on the same final table data.
+  within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data.
 
 ## Scope
 
@@ -63,7 +63,7 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 
 - Three-pass `ambulkdelete`
 - `amvacuumcleanup` with live-element statistics
-- Concurrent safety under INSERT + tqhnsw scan + VACUUM
+- Concurrent safety under INSERT + ec_hnsw scan + VACUUM
 
 ## Primary Tests
 

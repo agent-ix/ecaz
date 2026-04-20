@@ -42,7 +42,7 @@ The `<#>` operator returns negative inner product (lower = more similar). `ORDER
 
 ```rust
 // amtranslatestrategy: AM strategy → generic CompareType
-fn tqhnsw_amtranslatestrategy(strategy: StrategyNumber, _opfamily: Oid) -> CompareType {
+fn ec_hnsw_amtranslatestrategy(strategy: StrategyNumber, _opfamily: Oid) -> CompareType {
     match strategy {
         1 => CompareType::COMPARE_LT,
         _ => CompareType::COMPARE_INVALID,
@@ -50,7 +50,7 @@ fn tqhnsw_amtranslatestrategy(strategy: StrategyNumber, _opfamily: Oid) -> Compa
 }
 
 // amtranslatecmptype: generic CompareType → AM strategy
-fn tqhnsw_amtranslatecmptype(cmptype: CompareType, _opfamily: Oid) -> StrategyNumber {
+fn ec_hnsw_amtranslatecmptype(cmptype: CompareType, _opfamily: Oid) -> StrategyNumber {
     match cmptype {
         CompareType::COMPARE_LT => 1,
         _ => InvalidStrategy,
@@ -63,8 +63,8 @@ fn tqhnsw_amtranslatecmptype(cmptype: CompareType, _opfamily: Oid) -> StrategyNu
 ```rust
 amroutine.amconsistentequality = false;   // no equality operator
 amroutine.amconsistentordering = true;    // ORDER BY semantics
-amroutine.amtranslatestrategy = Some(tqhnsw_amtranslatestrategy);
-amroutine.amtranslatecmptype = Some(tqhnsw_amtranslatecmptype);
+amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
 ```
 
 ### PG Version Compatibility
@@ -75,15 +75,15 @@ On PG17, these fields do not exist in `IndexAmRoutine`. The implementation SHALL
 #[cfg(feature = "pg18")]
 {
     amroutine.amconsistentordering = true;
-    amroutine.amtranslatestrategy = Some(tqhnsw_amtranslatestrategy);
-    amroutine.amtranslatecmptype = Some(tqhnsw_amtranslatecmptype);
+    amroutine.amtranslatestrategy = Some(ec_hnsw_amtranslatestrategy);
+    amroutine.amtranslatecmptype = Some(ec_hnsw_amtranslatecmptype);
 }
 ```
 
 ## Acceptance Criteria
 
 ### FR-023-AC-1: Strategy translation registered
-On PG18, the `IndexAmRoutine` returned by `tqhnsw_handler` SHALL have non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
+On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` SHALL have non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
 
 ### FR-023-AC-2: COMPARE_LT mapping
 `amtranslatestrategy(1, opfamily)` SHALL return `COMPARE_LT`.

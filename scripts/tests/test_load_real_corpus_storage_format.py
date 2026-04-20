@@ -25,20 +25,20 @@ import load_real_corpus  # noqa: E402 — sys.path tweak above
 
 class LoadRealCorpusStorageFormatTests(unittest.TestCase):
     def test_default_index_prefix_preserves_legacy_names(self) -> None:
-        prefix = load_real_corpus._index_prefix("tqhnsw_real_50k", None)
-        self.assertEqual(prefix, "tqhnsw_real_50k")
-        self.assertEqual(load_real_corpus._index_name(prefix, 8), "tqhnsw_real_50k_m8_idx")
+        prefix = load_real_corpus._index_prefix("ec_hnsw_real_50k", None)
+        self.assertEqual(prefix, "ec_hnsw_real_50k")
+        self.assertEqual(load_real_corpus._index_name(prefix, 8), "ec_hnsw_real_50k_m8_idx")
 
     def test_explicit_storage_format_gets_coexisting_index_prefix(self) -> None:
-        turboquant_prefix = load_real_corpus._index_prefix("tqhnsw_real_50k", "turboquant")
+        turboquant_prefix = load_real_corpus._index_prefix("ec_hnsw_real_50k", "turboquant")
         pq_fastscan_prefix = load_real_corpus._index_prefix(
-            "tqhnsw_real_50k", "pq_fastscan"
+            "ec_hnsw_real_50k", "pq_fastscan"
         )
-        self.assertEqual(turboquant_prefix, "tqhnsw_real_50k_turboquant")
-        self.assertEqual(pq_fastscan_prefix, "tqhnsw_real_50k_pq_fastscan")
+        self.assertEqual(turboquant_prefix, "ec_hnsw_real_50k_turboquant")
+        self.assertEqual(pq_fastscan_prefix, "ec_hnsw_real_50k_pq_fastscan")
         self.assertEqual(
             load_real_corpus._index_name(pq_fastscan_prefix, 16),
-            "tqhnsw_real_50k_pq_fastscan_m16_idx",
+            "ec_hnsw_real_50k_pq_fastscan_m16_idx",
         )
 
     def test_expected_reloptions_include_storage_format_when_requested(self) -> None:
@@ -58,8 +58,8 @@ class LoadRealCorpusStorageFormatTests(unittest.TestCase):
 
     def test_build_index_sql_only_emits_storage_format_reloption_when_requested(self) -> None:
         default_sql = load_real_corpus._build_index_sql(
-            "tqhnsw_real_50k_corpus",
-            "tqhnsw_real_50k_m8_idx",
+            "ec_hnsw_real_50k_corpus",
+            "ec_hnsw_real_50k_m8_idx",
             8,
             128,
             None,
@@ -68,8 +68,8 @@ class LoadRealCorpusStorageFormatTests(unittest.TestCase):
         self.assertNotIn("storage_format =", default_sql)
 
         pq_fastscan_sql = load_real_corpus._build_index_sql(
-            "tqhnsw_real_50k_corpus",
-            "tqhnsw_real_50k_pq_fastscan_m8_idx",
+            "ec_hnsw_real_50k_corpus",
+            "ec_hnsw_real_50k_pq_fastscan_m8_idx",
             8,
             128,
             "pq_fastscan",

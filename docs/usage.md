@@ -24,7 +24,7 @@ LIMIT 10;
 
 ## Index Tuning
 
-The `tqhnsw` index accepts these parameters:
+The `ec_hnsw` index accepts these parameters:
 
 | Parameter | Default | Description |
 | --- | --- | --- |
@@ -35,10 +35,10 @@ At query time, `ef_search` controls the search width (trade-off between recall a
 
 ```sql
 -- Higher m for better recall
-CREATE INDEX ON items USING tqhnsw (embedding) WITH (m=16, ef_construction=200);
+CREATE INDEX ON items USING ec_hnsw (embedding) WITH (m=16, ef_construction=200);
 
 -- Set ef_search for a session
-SET tqhnsw.ef_search = 200;
+SET ec_hnsw.ef_search = 200;
 ```
 
 ## Compression Characteristics

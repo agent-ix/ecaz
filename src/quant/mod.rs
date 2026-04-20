@@ -58,7 +58,7 @@ impl Family {
             "turboquant" => Ok(Self::TurboQuant),
             "pq_fastscan" => Ok(Self::PqFastScan),
             other => Err(format!(
-                "invalid tqhnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
+                "invalid ec_hnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
                 other
             )),
         }

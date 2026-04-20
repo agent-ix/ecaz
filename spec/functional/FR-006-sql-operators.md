@@ -46,12 +46,12 @@ CREATE OPERATOR <#> (
 
 ```sql
 CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
-    USING tqhnsw AS
+    USING ec_hnsw AS
     OPERATOR 1 <#>(tqvector, float4[]) FOR ORDER BY float_ops,
     FUNCTION 1 tqvector_query_inner_product(tqvector, float4[]);
 ```
 
-- Default operator class for `tqvector` under the `tqhnsw` access method
+- Default operator class for `tqvector` under the `ec_hnsw` access method
 - OPERATOR 1 is the ordering operator for raw query vectors
 - FUNCTION 1 is the prepared-query distance function used by the index AM
 
@@ -61,11 +61,11 @@ CREATE OPERATOR CLASS tqvector_ip_ops DEFAULT FOR TYPE tqvector
 `SELECT * FROM t ORDER BY col <#> $query LIMIT 10` SHALL parse and execute when `$query` is `float4[]`.
 
 ### FR-006-AC-2: Index scan chosen
-EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `tqhnsw`.
+EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `ec_hnsw`.
 
 Current staged behavior:
-- Until ADR-011 is retired, planner/explain snapshot helpers MAY report why `tqhnsw` is still
-  gated off, but EXPLAIN itself is not yet expected to show a `tqhnsw` index scan.
+- Until ADR-011 is retired, planner/explain snapshot helpers MAY report why `ec_hnsw` is still
+  gated off, but EXPLAIN itself is not yet expected to show a `ec_hnsw` index scan.
 - Explain-facing snapshot helpers MAY also report the intended `<#>` ordering semantics
   (`strategy 1` / `COMPARE_LT`) and that PG18 strategy-translation callbacks are still unavailable.
 - Explain-facing snapshot helpers MAY also report the intended custom EXPLAIN option name

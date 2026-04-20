@@ -40,7 +40,7 @@ impl GraphStorageDescriptor {
         }
 
         Err(format!(
-            "tqhnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
+            "ec_hnsw index reloption storage_format={} does not match on-disk metadata format={}; REINDEX after switching formats",
             expected.as_str(),
             descriptor.storage_format_name(),
         ))
@@ -341,7 +341,7 @@ pub(crate) unsafe fn load_graph_element(
             page::TqElementTuple::decode(tuple_bytes, code_len)
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"));
     GraphElement {
         tid: element_tid,
         level: element.level,
@@ -368,7 +368,7 @@ pub(crate) unsafe fn load_exact_graph_element(
                     page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                 })
             }
-            .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode turbo hot tuple: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"));
             let rerank = unsafe {
                 load_rerank_payload(index_relation, hot.reranktid, layout.rerank_code_len)
             };
@@ -414,7 +414,7 @@ pub(crate) unsafe fn load_grouped_graph_element(
             )
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"));
     GroupedGraphElement {
         tid: element_tid,
         level: element.level,
@@ -441,7 +441,7 @@ where
             Ok(f(page::TqElementTupleRef::decode(tuple_bytes, code_len)?))
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph element tuple: {e}"))
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph element tuple: {e}"))
 }
 
 pub(crate) unsafe fn with_turbo_hot_graph_tuple<R, F>(
@@ -461,7 +461,7 @@ where
             )?))
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode turbo hot tuple: {e}"))
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode turbo hot tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -483,7 +483,7 @@ where
             )?))
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped graph tuple: {e}"))
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped graph tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -533,7 +533,7 @@ where
             )?))
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped rerank tuple: {e}"))
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped rerank tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -547,7 +547,7 @@ pub(crate) unsafe fn load_rerank_payload(
             page::TqRerankTuple::decode(tuple_bytes, rerank_code_len)
         })
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode rerank tuple: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode rerank tuple: {e}"));
     GroupedRerankPayload {
         tid: rerank_tid,
         gamma: rerank.gamma,
@@ -587,7 +587,7 @@ where
             },
         )
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode grouped codebook tuple: {e}"))
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode grouped codebook tuple: {e}"))
 }
 
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
@@ -598,10 +598,10 @@ pub(crate) unsafe fn load_grouped_codebook_model(
     let group_count = usize::from(metadata.search_subvector_count);
     let group_size = usize::from(metadata.search_subvector_dim);
     if group_count == 0 || group_size == 0 {
-        pgrx::error!("tqhnsw grouped codebook load requires non-zero grouped search shape");
+        pgrx::error!("ec_hnsw grouped codebook load requires non-zero grouped search shape");
     }
     if metadata.grouped_codebook_head == page::ItemPointer::INVALID {
-        pgrx::error!("tqhnsw PqFastScan metadata is missing a grouped codebook head pointer");
+        pgrx::error!("ec_hnsw PqFastScan metadata is missing a grouped codebook head pointer");
     }
 
     let centroid_count = group_size * GROUPED_PQ_CENTROIDS;
@@ -611,7 +611,7 @@ pub(crate) unsafe fn load_grouped_codebook_model(
     for expected_group_index in 0..group_count {
         if next_tid == page::ItemPointer::INVALID {
             pgrx::error!(
-                "tqhnsw grouped codebook chain ended early at group {} of {}",
+                "ec_hnsw grouped codebook chain ended early at group {} of {}",
                 expected_group_index,
                 group_count
             );
@@ -627,7 +627,7 @@ pub(crate) unsafe fn load_grouped_codebook_model(
         };
         if usize::from(codebook.group_index) != expected_group_index {
             pgrx::error!(
-                "tqhnsw grouped codebook order mismatch: got group {}, expected {}",
+                "ec_hnsw grouped codebook order mismatch: got group {}, expected {}",
                 codebook.group_index,
                 expected_group_index
             );
@@ -638,7 +638,7 @@ pub(crate) unsafe fn load_grouped_codebook_model(
 
     if next_tid != page::ItemPointer::INVALID {
         pgrx::error!(
-            "tqhnsw grouped codebook chain contains trailing tuples beyond metadata shape"
+            "ec_hnsw grouped codebook chain contains trailing tuples beyond metadata shape"
         );
     }
 
@@ -696,11 +696,11 @@ pub(crate) unsafe fn load_graph_neighbors(
             page::TqNeighborTuple::decode,
         )
     }
-    .unwrap_or_else(|e| pgrx::error!("tqhnsw failed to decode graph neighbor tuple: {e}"));
+    .unwrap_or_else(|e| pgrx::error!("ec_hnsw failed to decode graph neighbor tuple: {e}"));
     let count = neighbor.count as usize;
     if count > neighbor.tids.len() {
         pgrx::error!(
-            "tqhnsw neighbor tuple count {} exceeds payload tid count {}",
+            "ec_hnsw neighbor tuple count {} exceeds payload tid count {}",
             neighbor.count,
             neighbor.tids.len()
         );
@@ -1579,7 +1579,7 @@ where
     if tuple_tid.offset_number == 0 || tuple_tid.offset_number > line_pointer_count {
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!(
-            "tqhnsw graph read found {tuple_kind} tuple offset {} out of range on block {}",
+            "ec_hnsw graph read found {tuple_kind} tuple offset {} out of range on block {}",
             tuple_tid.offset_number,
             tuple_tid.block_number
         );
@@ -1588,7 +1588,7 @@ where
     let item_id = unsafe { &*super::shared::page_item_id(page_ptr, tuple_tid.offset_number) };
     if item_id.lp_flags() == 0 {
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
-        pgrx::error!("tqhnsw graph read found unused {tuple_kind} tuple slot");
+        pgrx::error!("ec_hnsw graph read found unused {tuple_kind} tuple slot");
     }
 
     let tuple_offset = item_id.lp_off() as usize;
@@ -1596,7 +1596,7 @@ where
     if tuple_offset + tuple_len > page_size {
         unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
         pgrx::error!(
-            "tqhnsw found invalid {tuple_kind} tuple bounds on block {}",
+            "ec_hnsw found invalid {tuple_kind} tuple bounds on block {}",
             tuple_tid.block_number
         );
     }

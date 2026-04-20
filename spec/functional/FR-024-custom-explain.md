@@ -13,7 +13,7 @@ traces:
 
 ## Requirement
 
-On PG18, the extension SHALL register a custom EXPLAIN option `tqvector` that, when enabled, causes EXPLAIN output to include tqvector-specific scan statistics for each Index Scan node using the `tqhnsw` access method.
+On PG18, the extension SHALL register a custom EXPLAIN option `tqvector` that, when enabled, causes EXPLAIN output to include tqvector-specific scan statistics for each Index Scan node using the `ec_hnsw` access method.
 
 Current staged behavior:
 - Before PostgreSQL 18 support exists in this repository, pure explain-scaffolding helpers MAY
@@ -27,7 +27,7 @@ Current staged behavior:
 - The staged implementation MAY also define pure ExplainProperty-emission helpers that map the
   reusable counter struct into the eventual `ExplainPropertyInteger` / `ExplainPropertyBool`
   payloads and a pure gating helper that requires the `tqvector` option, an `IndexScan` node kind,
-  and the `tqhnsw` access method before any emission occurs.
+  and the `ec_hnsw` access method before any emission occurs.
 - Those same helpers MAY also define the intended EXPLAIN group contract, including the
   `"TQVector Stats"` label plus the expectation that the eventual hook will bracket emission with
   `ExplainOpenGroup` and `ExplainCloseGroup`.
@@ -43,10 +43,10 @@ In `_PG_init()`:
 ```rust
 RegisterExtensionExplainOption(
     "tqvector",
-    tqhnsw_explain_option_handler,
+    ec_hnsw_explain_option_handler,
     GUCCheckBooleanExplainOption,
 );
-explain_per_node_hook = tqhnsw_explain_per_node_hook;
+explain_per_node_hook = ec_hnsw_explain_per_node_hook;
 ```
 
 ### Scan Counters
@@ -98,10 +98,10 @@ Shows actual runtime values (same counters, real measurements).
 sequenceDiagram
     participant User as SQL Client
     participant Parser as EXPLAIN Parser
-    participant Hook as tqhnsw_explain_option_handler
+    participant Hook as ec_hnsw_explain_option_handler
     participant Exec as Query Executor
-    participant Scan as tqhnsw scan
-    participant Node as tqhnsw_explain_per_node_hook
+    participant Scan as ec_hnsw scan
+    participant Node as ec_hnsw_explain_per_node_hook
 
     User->>Parser: EXPLAIN (tqvector) SELECT ...
     Parser->>Hook: ApplyExtensionExplainOption("tqvector", true)
@@ -114,7 +114,7 @@ sequenceDiagram
 
     Exec->>Node: explain_per_node_hook(planstate, es)
     Node->>Node: GetExplainExtensionState(es, ext_id)
-    alt tqvector option enabled AND node is Index Scan on tqhnsw
+    alt tqvector option enabled AND node is Index Scan on ec_hnsw
         Node->>Scan: Read counters from TqScanOpaque
         Node->>Node: ExplainPropertyInteger("Bootstrap Expansions", ...)
         Node->>Node: ExplainPropertyInteger("Bootstrap Pages Read", ...)
@@ -130,7 +130,7 @@ sequenceDiagram
 
 The `explain_per_node_hook` SHALL:
 1. Check if the `tqvector` EXPLAIN option is enabled via `GetExplainExtensionState`
-2. Check if the current plan node is an `IndexScan` using the `tqhnsw` access method
+2. Check if the current plan node is an `IndexScan` using the `ec_hnsw` access method
 3. If both conditions are met, read counters from the scan's `TqScanOpaque` and emit them via `ExplainPropertyInteger` / `ExplainPropertyBool`
 4. Chain to the previous hook if one was installed (save and restore the hook pointer)
 
@@ -145,7 +145,7 @@ counter contract may be exposed through read-only scaffolding helpers, but the a
 fields are not yet wired into `TqScanOpaque`, a planner-owned counter struct may exist for later
 embedding by the scan lane, pure ExplainProperty-emission helpers may exist in `am/explain.rs`,
 the output group contract may also exist in pure form there, a pure hook-context gate may require
-the option plus `IndexScan` plus `tqhnsw`, and no EXPLAIN hook is registered.
+the option plus `IndexScan` plus `ec_hnsw`, and no EXPLAIN hook is registered.
 
 ## Acceptance Criteria
 
@@ -153,7 +153,7 @@ the option plus `IndexScan` plus `tqhnsw`, and no EXPLAIN hook is registered.
 `EXPLAIN (tqvector) SELECT ...` SHALL parse without error when the extension is loaded.
 
 ### FR-024-AC-2: Stats emitted
-`EXPLAIN (tqvector) SELECT ... ORDER BY col <#> $q LIMIT 10` on a table with a tqhnsw index SHALL include "TQVector Stats" section with all defined counters.
+`EXPLAIN (tqvector) SELECT ... ORDER BY col <#> $q LIMIT 10` on a table with a ec_hnsw index SHALL include "TQVector Stats" section with all defined counters.
 
 ### FR-024-AC-3: No output when disabled
 `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` (without `tqvector` option) SHALL NOT include any tqvector-specific output.

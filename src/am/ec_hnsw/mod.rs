@@ -1,4 +1,4 @@
-//! tqhnsw-specific access-method implementation and tuple codecs.
+//! ec_hnsw-specific access-method implementation and tuple codecs.
 
 mod build;
 pub(crate) use crate::am::common::{cost, explain, stats, stream};
@@ -14,16 +14,16 @@ pub(crate) mod shared;
 mod source;
 mod vacuum;
 
-pub(super) const TQHNSW_DEFAULT_M: i32 = 8;
-pub(super) const TQHNSW_MIN_M: i32 = 2;
-pub(super) const TQHNSW_MAX_M: i32 = 100;
-pub(super) const TQHNSW_DEFAULT_EF_CONSTRUCTION: i32 = 64;
-pub(super) const TQHNSW_MIN_EF_CONSTRUCTION: i32 = 10;
-pub(super) const TQHNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
-pub(super) const TQHNSW_DEFAULT_EF_SEARCH: i32 = 40;
-pub(super) const TQHNSW_MIN_EF_SEARCH: i32 = 1;
-pub(super) const TQHNSW_MAX_EF_SEARCH: i32 = 1000;
-pub(super) const TQHNSW_PLANNER_SCAN_ENABLED: bool = true;
+pub(super) const EC_HNSW_DEFAULT_M: i32 = 8;
+pub(super) const EC_HNSW_MIN_M: i32 = 2;
+pub(super) const EC_HNSW_MAX_M: i32 = 100;
+pub(super) const EC_HNSW_DEFAULT_EF_CONSTRUCTION: i32 = 64;
+pub(super) const EC_HNSW_MIN_EF_CONSTRUCTION: i32 = 10;
+pub(super) const EC_HNSW_MAX_EF_CONSTRUCTION: i32 = 1000;
+pub(super) const EC_HNSW_DEFAULT_EF_SEARCH: i32 = 40;
+pub(super) const EC_HNSW_MIN_EF_SEARCH: i32 = 1;
+pub(super) const EC_HNSW_MAX_EF_SEARCH: i32 = 1000;
+pub(super) const EC_HNSW_PLANNER_SCAN_ENABLED: bool = true;
 pub(super) const P_NEW: pgrx::pg_sys::BlockNumber = u32::MAX;
 
 pub(crate) use self::shared::{IndexAdminSnapshot, IndexCostSnapshot, PlannerIntegrationSnapshot};

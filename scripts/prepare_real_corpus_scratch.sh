@@ -5,7 +5,7 @@ usage() {
     cat <<'EOF'
 Usage:
   scripts/prepare_real_corpus_scratch.sh \
-    --profile tqhnsw_real_50k \
+    --profile ec_hnsw_real_50k \
     --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
     --output-dir /path/to/staged \
     [--storage-format turboquant|pq_fastscan] \

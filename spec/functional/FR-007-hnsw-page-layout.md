@@ -12,7 +12,7 @@ traces:
 
 ## Requirement
 
-The extension SHALL implement a custom PostgreSQL index access method named `tqhnsw` with a page layout modeled on pgvector's HNSW implementation.
+The extension SHALL implement a custom PostgreSQL index access method named `ec_hnsw` with a page layout modeled on pgvector's HNSW implementation.
 
 ### Page 0 — Metadata
 

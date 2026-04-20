@@ -81,7 +81,7 @@ A 2024 study on HNSW recall factors (Dolatshah et al., arXiv:2405.17813) found:
 tqvector already supports building from raw fp32 vectors via the `build_source_column` reloption (FR-008-AC-5). This provides Pattern 1 (best graph quality) when needed:
 
 ```sql
-CREATE INDEX ON memories USING tqhnsw (embedding)
+CREATE INDEX ON memories USING ec_hnsw (embedding)
     WITH (build_source_column = 'raw_embedding');
 ```
 

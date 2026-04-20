@@ -2,10 +2,10 @@
 # Verified real-corpus latency launcher for tqvector HNSW scans.
 #
 # This is a guarded wrapper around scripts/bench_sql_latency.sh. It exports the
-# exact tqhnsw index implied by --prefix/--m and the delegate script verifies,
+# exact ec_hnsw index implied by --prefix/--m and the delegate script verifies,
 # for every (m, ef_search) cell, that the measured query still plans on that
 # index. This prevents silent Seq Scan + Sort measurements and also catches
-# cases where the planner picks a different tqhnsw index than the one the
+# cases where the planner picks a different ec_hnsw index than the one the
 # operator intended to benchmark.
 #
 # The verified launcher is intentionally real-corpus-only and intentionally
@@ -36,7 +36,7 @@ Behavior:
 
 Example:
   bash scripts/bench_sql_latency_verified.sh \
-      --prefix tqhnsw_real_10k \
+      --prefix ec_hnsw_real_10k \
       --m 8 \
       --ef-search 40,64,100,128,160,200 \
       --cache-state cold \

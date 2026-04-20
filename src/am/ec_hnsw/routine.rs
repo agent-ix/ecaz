@@ -2,7 +2,7 @@ use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
 use super::{build, cost, insert, options, scan, vacuum};
 
-fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
+fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     // SAFETY: `IndexAmRoutine` is a PostgreSQL Node type and must be allocated
     // with the corresponding node tag.
     let mut amroutine =
@@ -31,24 +31,24 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amparallelvacuumoptions = 0;
     amroutine.amkeytype = pg_sys::InvalidOid;
 
-    amroutine.ambuild = Some(build::tqhnsw_ambuild);
-    amroutine.ambuildempty = Some(build::tqhnsw_ambuildempty);
-    amroutine.aminsert = Some(insert::tqhnsw_aminsert);
+    amroutine.ambuild = Some(build::ec_hnsw_ambuild);
+    amroutine.ambuildempty = Some(build::ec_hnsw_ambuildempty);
+    amroutine.aminsert = Some(insert::ec_hnsw_aminsert);
     amroutine.aminsertcleanup = None;
-    amroutine.ambulkdelete = Some(vacuum::tqhnsw_ambulkdelete);
-    amroutine.amvacuumcleanup = Some(vacuum::tqhnsw_amvacuumcleanup);
+    amroutine.ambulkdelete = Some(vacuum::ec_hnsw_ambulkdelete);
+    amroutine.amvacuumcleanup = Some(vacuum::ec_hnsw_amvacuumcleanup);
     amroutine.amcanreturn = None;
-    amroutine.amcostestimate = Some(cost::tqhnsw_amcostestimate);
-    amroutine.amoptions = Some(options::tqhnsw_amoptions);
+    amroutine.amcostestimate = Some(cost::ec_hnsw_amcostestimate);
+    amroutine.amoptions = Some(options::ec_hnsw_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
-    amroutine.amvalidate = Some(tqhnsw_amvalidate);
+    amroutine.amvalidate = Some(ec_hnsw_amvalidate);
     amroutine.amadjustmembers = None;
-    amroutine.ambeginscan = Some(scan::tqhnsw_ambeginscan);
-    amroutine.amrescan = Some(scan::tqhnsw_amrescan);
-    amroutine.amgettuple = Some(scan::tqhnsw_amgettuple);
+    amroutine.ambeginscan = Some(scan::ec_hnsw_ambeginscan);
+    amroutine.amrescan = Some(scan::ec_hnsw_amrescan);
+    amroutine.amgettuple = Some(scan::ec_hnsw_amgettuple);
     amroutine.amgetbitmap = None;
-    amroutine.amendscan = Some(scan::tqhnsw_amendscan);
+    amroutine.amendscan = Some(scan::ec_hnsw_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
     amroutine.amestimateparallelscan = None;
@@ -58,18 +58,20 @@ fn build_tqhnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine
 }
 
-unsafe extern "C-unwind" fn tqhnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
+unsafe extern "C-unwind" fn ec_hnsw_amvalidate(_opclassoid: pg_sys::Oid) -> bool {
     unsafe { pgrx::pgrx_extern_c_guard(|| true) }
 }
 
 #[pg_guard]
 #[no_mangle]
-pub unsafe extern "C-unwind" fn tqhnsw_handler(_fcinfo: pg_sys::FunctionCallInfo) -> pg_sys::Datum {
-    unsafe { pgrx::pgrx_extern_c_guard(|| pg_sys::Datum::from(build_tqhnsw_routine().into_pg())) }
+pub unsafe extern "C-unwind" fn ec_hnsw_handler(
+    _fcinfo: pg_sys::FunctionCallInfo,
+) -> pg_sys::Datum {
+    unsafe { pgrx::pgrx_extern_c_guard(|| pg_sys::Datum::from(build_ec_hnsw_routine().into_pg())) }
 }
 
 #[no_mangle]
-pub extern "C-unwind" fn pg_finfo_tqhnsw_handler() -> *const pg_sys::Pg_finfo_record {
+pub extern "C-unwind" fn pg_finfo_ec_hnsw_handler() -> *const pg_sys::Pg_finfo_record {
     static API_V1: pg_sys::Pg_finfo_record = pg_sys::Pg_finfo_record { api_version: 1 };
     &API_V1
 }

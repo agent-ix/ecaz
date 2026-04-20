@@ -34,7 +34,7 @@ The real-corpus latency lane reuses the canonical loader path documented in
 Latency"). Durable HNSW artifacts should use
 `scripts/bench_sql_latency_verified.sh --prefix <canonical-prefix> --m <m>`,
 which aborts unless a representative `EXPLAIN` plan selects the expected
-tqhnsw index for that run. The delegated reporting surface remains
+ec_hnsw index for that run. The delegated reporting surface remains
 `scripts/bench_sql_latency.sh`, which emits per-cell `p50` / `p95` / `p99`
 summaries, `server_qps` derived from the summed per-query timing surface for
 the selected mode (`EXPLAIN (ANALYZE)` by default, or plain server-side

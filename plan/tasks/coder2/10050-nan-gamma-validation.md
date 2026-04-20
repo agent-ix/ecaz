@@ -21,21 +21,21 @@ Fix locations:
 
    ```rust
    let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
-       .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid tqvector: {e}"));
+       .unwrap_or_else(|e| pgrx::error!("ec_hnsw ambuild found invalid tqvector: {e}"));
    ```
 
    Add immediately after:
 
    ```rust
    if !gamma.is_finite() {
-       pgrx::error!("tqhnsw does not support non-finite gamma values");
+       pgrx::error!("ec_hnsw does not support non-finite gamma values");
    }
    ```
 
    There is also a second unpack path in `build_heap_tuple_with_source` (line 273)
    that extracts gamma at line 292. Add the same check there.
 
-2. `src/am/insert.rs` — function `tqhnsw_aminsert` (line 9). The gamma value comes
+2. `src/am/insert.rs` — function `ec_hnsw_aminsert` (line 9). The gamma value comes
    from the tuple returned by `build::build_heap_tuple` at line 22. If you add the
    check in `build_heap_tuple` itself, the insert path is already covered. But
    verify this by tracing the call — if there's any path where gamma could bypass

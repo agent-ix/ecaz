@@ -13,13 +13,13 @@ traces:
 
 ## Requirement
 
-The extension SHALL implement the `aminsert` callback for the `tqhnsw` access method.
+The extension SHALL implement the `aminsert` callback for the `ec_hnsw` access method.
 
 All insert behavior SHALL be relation-local. On partitioned tables, a partition index insert SHALL touch only the heap rows and index pages of that partition.
 
 ### `aminsert` — Single Row Insert (Page-Level)
 
-Called when a row is INSERTed into a table with an existing tqhnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only for graph construction. Bulk build and live insert both use the symmetric MSE-only code scorer, while ordered scan still uses the gamma-aware raw-query scorer defined by ADR-007.
+Called when a row is INSERTed into a table with an existing ec_hnsw index. This does NOT use `hnsw_rs` — it operates directly on Postgres buffer pages and, in v0.1, uses compressed-domain scoring only for graph construction. Bulk build and live insert both use the symmetric MSE-only code scorer, while ordered scan still uses the gamma-aware raw-query scorer defined by ADR-007.
 
 `build_source_column` note:
 - `build_source_column` is a bulk-build-only reloption in v0.1.
@@ -31,7 +31,7 @@ Called when a row is INSERTed into a table with an existing tqhnsw index. This d
 ```mermaid
 sequenceDiagram
     participant PG as PostgreSQL
-    participant Insert as tqhnsw aminsert
+    participant Insert as ec_hnsw aminsert
     participant Pages as Index Pages
     participant Quant as ProdQuantizer
 
@@ -134,9 +134,9 @@ sequenceDiagram
 - Recall targets in NFR-003 apply to freshly bulk-built indexes. A separate benchmark profile SHALL measure recall drift after incremental inserts.
 
 Current staged behavior:
-- `tqhnsw_index_admin_snapshot(regclass)` now exposes total live node count,
+- `ec_hnsw_index_admin_snapshot(regclass)` now exposes total live node count,
   `inserted_since_rebuild`, derived `insert_drift_fraction`, effective `ef_search`, and the
-  current planner-gate state for a `tqhnsw` index.
+  current planner-gate state for a `ec_hnsw` index.
 - That snapshot now satisfies the observability portion of FR-016-AC-4.
 - Bulk build and live insert now explicitly share the same construction metric:
   `score_code_inner_product` over compressed codes only. This keeps graph construction

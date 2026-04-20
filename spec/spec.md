@@ -143,7 +143,7 @@ graph TD
         GINPAR["Parallel Build Infrastructure<br/>(ParallelContext, Sharedsort)"]
     end
 
-    subgraph "tqhnsw Integration"
+    subgraph "ec_hnsw Integration"
         GS["Graph Stream<br/>(neighbor prefetch)"]
         LS["Linear Stream<br/>(sequential scan)"]
         VS["Vacuum Stream<br/>(tuple counting)"]
@@ -431,7 +431,7 @@ src/
 │   ├── hadamard.rs     # Fast Walsh-Hadamard Transform (AVX2 + NEON + scalar)
 │   └── rotation.rs     # SRHT rotation (diagonal signs + FWHT)
 ├── am/                 # HNSW index access method (raw pg_sys FFI)
-│   ├── mod.rs          # tqhnsw_handler, capability flags
+│   ├── mod.rs          # ec_hnsw_handler, capability flags
 │   ├── build.rs        # ambuild, ambuildempty
 │   ├── insert.rs       # aminsert
 │   ├── scan.rs         # ambeginscan, amrescan, amgettuple, amendscan

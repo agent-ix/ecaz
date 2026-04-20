@@ -41,8 +41,8 @@ scored candidates).
 
 ## Decision
 
-tqvector will enable **`amcanparallel = true`** for `tqhnsw` and
-future `tqdiskann` / `tqspann` access methods. The parallel scan
+tqvector will enable **`amcanparallel = true`** for `ec_hnsw` and
+future `ec_diskann` / `tqspann` access methods. The parallel scan
 model is:
 
 ### Shared coordinator, independent beams
@@ -173,7 +173,7 @@ more readers.
 
 ### What ships in the first parallel-scan release
 
-- `amcanparallel = true` for `tqhnsw`.
+- `amcanparallel = true` for `ec_hnsw`.
 - Shared scan descriptor with query, rotation, LUT, result heap.
 - Per-worker independent beams with overlap term.
 - Result heap merge via shared-memory spinlock.

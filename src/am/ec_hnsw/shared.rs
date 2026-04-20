@@ -2,7 +2,7 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
 
-use super::{graph, options, page, P_NEW, TQHNSW_PLANNER_SCAN_ENABLED};
+use super::{graph, options, page, EC_HNSW_PLANNER_SCAN_ENABLED, P_NEW};
 use crate::storage::wal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +38,7 @@ pub(super) unsafe fn initialize_metadata_page(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("tqhnsw failed to allocate metadata buffer");
+        pgrx::error!("ec_hnsw failed to allocate metadata buffer");
     }
 
     if target_block != P_NEW {
@@ -78,7 +78,7 @@ pub(super) unsafe fn update_metadata_page(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("tqhnsw failed to open metadata buffer");
+        pgrx::error!("ec_hnsw failed to open metadata buffer");
     }
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
@@ -107,7 +107,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
         )
     };
     if !unsafe { pg_sys::BufferIsValid(buffer) } {
-        pgrx::error!("tqhnsw failed to open metadata buffer");
+        pgrx::error!("ec_hnsw failed to open metadata buffer");
     }
 
     unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_EXCLUSIVE as i32) };
@@ -129,7 +129,7 @@ pub(super) unsafe fn with_locked_metadata_page<T>(
     result
 }
 
-pub(super) unsafe fn tqhnsw_noop_vacuum_stats(
+pub(super) unsafe fn ec_hnsw_noop_vacuum_stats(
     index_relation: pg_sys::Relation,
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
@@ -186,7 +186,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
             let tuple_len = item_id.lp_len() as usize;
             if tuple_offset + tuple_len > page_size {
                 pgrx::error!(
-                    "tqhnsw found invalid tuple bounds while counting vacuum tuples on block {block_number}"
+                    "ec_hnsw found invalid tuple bounds while counting vacuum tuples on block {block_number}"
                 );
             }
 
@@ -198,7 +198,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                         let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                             .unwrap_or_else(|e| {
                                 pgrx::error!(
-                                    "tqhnsw failed to decode element tuple while counting: {e}"
+                                    "ec_hnsw failed to decode element tuple while counting: {e}"
                                 )
                             });
                         if !element.deleted && !element.heaptids.is_empty() {
@@ -212,7 +212,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                             page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                                 .unwrap_or_else(|e| {
                                     pgrx::error!(
-                                "tqhnsw failed to decode TurboQuant V3 tuple while counting: {e}"
+                                "ec_hnsw failed to decode TurboQuant V3 tuple while counting: {e}"
                             )
                                 });
                         if !element.deleted && !element.heaptids.is_empty() {
@@ -229,7 +229,7 @@ pub(super) unsafe fn count_element_tuples(index_relation: pg_sys::Relation) -> u
                         )
                         .unwrap_or_else(|e| {
                             pgrx::error!(
-                                "tqhnsw failed to decode grouped hot tuple while counting: {e}"
+                                "ec_hnsw failed to decode grouped hot tuple while counting: {e}"
                             )
                         });
                         if !element.deleted && !element.heaptids.is_empty() {
@@ -281,7 +281,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
             let tuple_len = item_id.lp_len() as usize;
             if tuple_offset + tuple_len > page_size {
                 pgrx::error!(
-                    "tqhnsw found invalid tuple bounds while selecting a live entry candidate on block {block_number}"
+                    "ec_hnsw found invalid tuple bounds while selecting a live entry candidate on block {block_number}"
                 );
             }
 
@@ -299,7 +299,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                         let element = page::TqElementTuple::decode(tuple_bytes, code_len)
                             .unwrap_or_else(|e| {
                                 pgrx::error!(
-                                    "tqhnsw failed to decode element tuple while selecting a live entry candidate: {e}"
+                                    "ec_hnsw failed to decode element tuple while selecting a live entry candidate: {e}"
                                 )
                             });
                         (!element.deleted && !element.heaptids.is_empty()).then_some(
@@ -318,7 +318,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                             page::TqTurboHotTuple::decode(tuple_bytes, layout.binary_word_count)
                                 .unwrap_or_else(|e| {
                                     pgrx::error!(
-                                        "tqhnsw failed to decode TurboQuant V3 tuple while selecting a live entry candidate: {e}"
+                                        "ec_hnsw failed to decode TurboQuant V3 tuple while selecting a live entry candidate: {e}"
                                     )
                                 });
                         (!element.deleted && !element.heaptids.is_empty()).then_some(
@@ -340,7 +340,7 @@ pub(super) unsafe fn highest_level_live_entry_candidate(
                         )
                         .unwrap_or_else(|e| {
                             pgrx::error!(
-                                "tqhnsw failed to decode grouped hot tuple while selecting a live entry candidate: {e}"
+                                "ec_hnsw failed to decode grouped hot tuple while selecting a live entry candidate: {e}"
                             )
                         });
                         (!element.deleted && !element.heaptids.is_empty()).then_some(
@@ -403,7 +403,7 @@ pub(super) fn page_line_pointer_count(page_ptr: *mut u8) -> u16 {
 
 pub(super) unsafe fn decode_heap_tid(tid: pg_sys::ItemPointer) -> page::ItemPointer {
     if tid.is_null() {
-        pgrx::error!("tqhnsw ambuild received a null heap tid");
+        pgrx::error!("ec_hnsw ambuild received a null heap tid");
     }
     let (block_number, offset_number) = item_pointer_get_both(unsafe { *tid });
     page::ItemPointer {
@@ -563,7 +563,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
     let inserted_since_rebuild =
         usize::try_from(metadata.inserted_since_rebuild).unwrap_or_else(|_| {
             pgrx::error!(
-                "tqhnsw metadata inserted_since_rebuild {} exceeds usize",
+                "ec_hnsw metadata inserted_since_rebuild {} exceeds usize",
                 metadata.inserted_since_rebuild
             )
         });
@@ -584,7 +584,7 @@ pub(crate) unsafe fn index_admin_snapshot(index_relation: pg_sys::Relation) -> I
             options::EfSearchSource::Relation => "relation",
             options::EfSearchSource::Session => "session",
         },
-        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+        planner_scan_enabled: EC_HNSW_PLANNER_SCAN_ENABLED,
     }
 }
 
@@ -650,7 +650,7 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let gated = super::cost::gated_planner_cost_estimate(index_pages);
 
     IndexCostSnapshot {
-        planner_scan_enabled: TQHNSW_PLANNER_SCAN_ENABLED,
+        planner_scan_enabled: EC_HNSW_PLANNER_SCAN_ENABLED,
         planner_gate_reason:
             "planner cost activation is live: FR-020 cost model replaces ADR-011 override",
         relation_ef_search: tuning.relation_ef_search,
@@ -814,7 +814,7 @@ unsafe fn read_data_page(
         let tuple_offset = item_id.lp_off() as usize;
         let tuple_len = item_id.lp_len() as usize;
         if tuple_offset + tuple_len > page_size {
-            pgrx::error!("tqhnsw debug read found invalid tuple bounds on block {block_number}");
+            pgrx::error!("ec_hnsw debug read found invalid tuple bounds on block {block_number}");
         }
         tuples.push(
             unsafe { std::slice::from_raw_parts(raw_page.add(tuple_offset), tuple_len) }.to_vec(),
@@ -864,9 +864,9 @@ pub(crate) unsafe fn debug_vacuum_stats(index_oid: pg_sys::Oid) -> pg_sys::Index
     let info_ptr = (&mut *info) as *mut pg_sys::IndexVacuumInfo;
 
     let stats = unsafe {
-        super::vacuum::tqhnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
+        super::vacuum::ec_hnsw_ambulkdelete(info_ptr, ptr::null_mut(), None, ptr::null_mut())
     };
-    let stats = unsafe { super::vacuum::tqhnsw_amvacuumcleanup(info_ptr, stats) };
+    let stats = unsafe { super::vacuum::ec_hnsw_amvacuumcleanup(info_ptr, stats) };
     let result = unsafe { *stats };
 
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };

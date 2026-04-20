@@ -15,7 +15,7 @@
 #    and sweeps (m, ef_search) over an explicit list. Does NOT load any
 #    data — load and bench are decoupled, see docs/RECALL_REAL_CORPUS.md.
 #
-#       scripts/bench_sql_latency.sh --prefix tqhnsw_real_10k \
+#       scripts/bench_sql_latency.sh --prefix ec_hnsw_real_10k \
 #           --m 8 --m 16 --ef-search 40,64,100,128,160,200 \
 #           --cache-state cold --output /tmp/nfr1_real_10k.summary
 set -euo pipefail
@@ -36,7 +36,7 @@ Usage:
 
 Options (real-corpus mode):
   --prefix       Canonical real-corpus prefix produced by load_real_corpus.py
-                 (e.g. tqhnsw_real_10k, tqhnsw_real_50k). The script reads
+                 (e.g. ec_hnsw_real_10k, ec_hnsw_real_50k). The script reads
                  <prefix>_corpus, <prefix>_queries, and <prefix>_m{N}_idx
                  unless explicit overrides are provided below.
   --corpus-table Explicit corpus table/view to scan instead of <prefix>_corpus.
@@ -172,7 +172,7 @@ verify_expected_index_plan() {
 
   local plan_text
   plan_text="$("$PSQL_BIN" -X -A -t -q <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_literal}'::real[]
@@ -184,7 +184,7 @@ SQL
     echo "planner verification failed for ${expected_index} at ef_search=${ef}" >&2
     echo "expected the measured query to use ${expected_index}, but it did not." >&2
     echo "aborting before timing so this run does not record Seq Scan + Sort" >&2
-    echo "or the wrong tqhnsw index for the requested m value." >&2
+    echo "or the wrong ec_hnsw index for the requested m value." >&2
     echo >&2
     echo "Representative EXPLAIN plan:" >&2
     echo "${plan_text}" >&2
@@ -351,7 +351,7 @@ run_real_corpus_bench() {
         : > "$cell_sql"
         if [[ "$TIMING_MODE" == "cached-plan" ]]; then
           cat >> "$cell_sql" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 CREATE OR REPLACE FUNCTION pg_temp.tqv_latency_cached_plan(input_query real[])
 RETURNS double precision
 LANGUAGE plpgsql
@@ -385,7 +385,7 @@ SELECT pg_temp.tqv_latency_cached_plan('${query_line}'::real[]);
 SQL
               else
                 cat >> "$cell_sql" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
@@ -399,7 +399,7 @@ SQL
           [[ -z "$query_line" ]] && continue
           if [[ "$TIMING_MODE" == "explain" ]]; then
             cat >> "$cell_sql" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -407,7 +407,7 @@ LIMIT ${k};
 SQL
           elif [[ "$TIMING_MODE" == "plain-server" ]]; then
             cat >> "$cell_sql" <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 WITH started AS (
   SELECT clock_timestamp() AS t0
 ),
@@ -436,7 +436,7 @@ SQL
             while IFS= read -r query_line; do
               [[ -z "$query_line" ]] && continue
               "$PSQL_BIN" -X -A -t -q > /dev/null <<SQL
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
 LIMIT ${k};
@@ -448,7 +448,7 @@ SQL
           [[ -z "$query_line" ]] && continue
           if [[ "$TIMING_MODE" == "explain" ]]; then
             "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM ${corpus_table}
 ORDER BY embedding <#> '${query_line}'::real[]
@@ -456,7 +456,7 @@ LIMIT ${k};
 SQL
           else
             "$PSQL_BIN" -X -A -t -q <<SQL >> "$results_file"
-SET tqhnsw.ef_search = ${ef};
+SET ec_hnsw.ef_search = ${ef};
 WITH started AS (
   SELECT clock_timestamp() AS t0
 ),
@@ -632,7 +632,7 @@ SQL
 echo "[3/5] Building HNSW index..."
 psql "$PGDATABASE" -q <<SQL
 CREATE INDEX bench_idx ON bench_encoded
-USING tqhnsw (vec tqvector_ip_ops)
+USING ec_hnsw (vec tqvector_ip_ops)
 WITH (m = $M, ef_construction = $EF_CONSTRUCTION);
 SQL
 
@@ -640,14 +640,14 @@ SQL
 echo "[4/5] Running $RUNS queries..."
 python3 scripts/gen_synthetic_data.py --n "$RUNS" --dim "$DIM" --seed 999 --format query > /tmp/tq_queries.csv
 
-psql "$PGDATABASE" -q -c "SET tqhnsw.ef_search = $EF_SEARCH;"
+psql "$PGDATABASE" -q -c "SET ec_hnsw.ef_search = $EF_SEARCH;"
 
 RESULTS_FILE="/tmp/tq_latency_results.txt"
 > "$RESULTS_FILE"
 
 while IFS= read -r query_line; do
   psql "$PGDATABASE" -t -A <<SQL >> "$RESULTS_FILE"
-SET tqhnsw.ef_search = $EF_SEARCH;
+SET ec_hnsw.ef_search = $EF_SEARCH;
 EXPLAIN (ANALYZE, TIMING, FORMAT JSON)
 SELECT id FROM bench_encoded
 ORDER BY vec <#> ARRAY[$query_line]::real[]

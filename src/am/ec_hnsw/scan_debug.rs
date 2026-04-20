@@ -85,7 +85,7 @@ unsafe fn debug_graph_storage(
     metadata: &page::MetadataPage,
 ) -> graph::GraphStorageDescriptor {
     graph::GraphStorageDescriptor::from_index_relation(index_relation, metadata)
-        .unwrap_or_else(|e| pgrx::error!("tqhnsw debug failed to resolve graph storage: {e}"))
+        .unwrap_or_else(|e| pgrx::error!("ec_hnsw debug failed to resolve graph storage: {e}"))
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -538,10 +538,10 @@ unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
 pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let has_opaque = unsafe { !(*scan).opaque.is_null() };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     let cleared_opaque = unsafe { (*scan).opaque.is_null() };
 
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -553,13 +553,13 @@ pub(crate) unsafe fn debug_begin_end_scan(index_oid: pg_sys::Oid) -> (bool, bool
 pub(crate) unsafe fn debug_end_scan_twice(index_oid: pg_sys::Oid) -> (bool, bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let has_opaque = unsafe { !(*scan).opaque.is_null() };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     let cleared_after_first = unsafe { (*scan).opaque.is_null() };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     let cleared_after_second = unsafe { (*scan).opaque.is_null() };
 
     unsafe { pg_sys::IndexScanEnd(scan) };
@@ -574,13 +574,13 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let result = (
@@ -604,7 +604,7 @@ pub(crate) unsafe fn debug_rescan_query_dimensions(
             .unwrap_or(0),
     );
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
@@ -618,21 +618,21 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut first_orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(first_query)
             .expect("first query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut first_orderby, 1) };
 
     let mut second_orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(second_query)
             .expect("second query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut second_orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let result = (
@@ -656,7 +656,7 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
             .unwrap_or(0),
     );
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
@@ -666,27 +666,27 @@ pub(crate) unsafe fn debug_rescan_overwrites_query_dimensions(
 pub(crate) unsafe fn debug_rescan_null_query(index_oid: pg_sys::Oid) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_flags: pg_sys::SK_ISNULL as i32,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_rescan_with_index_qual(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 1, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 1, 1) };
 
     let mut key = pg_sys::ScanKeyData::default();
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, &mut key, 1, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, &mut key, 1, &mut orderby, 1) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -696,7 +696,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
 ) -> (bool, u16, Vec<f32>, u16, u8, usize, u32, bool, usize, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let unused_keys = unsafe { pg_sys::palloc0(std::mem::size_of::<pg_sys::ScanKeyData>()) }
         .cast::<pg_sys::ScanKeyData>();
@@ -704,7 +704,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, unused_keys, 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, unused_keys, 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let result = (
@@ -729,7 +729,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
     );
 
     unsafe { pg_sys::pfree(unused_keys.cast()) };
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
@@ -739,7 +739,7 @@ pub(crate) unsafe fn debug_rescan_with_unused_key_buffer(
 pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 2) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 2) };
 
     let datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderbys = [
@@ -752,30 +752,30 @@ pub(crate) unsafe fn debug_rescan_with_multiple_orderbys(index_oid: pg_sys::Oid,
             ..Default::default()
         },
     ];
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, orderbys.as_mut_ptr(), 2) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, orderbys.as_mut_ptr(), 2) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_without_rescan(index_oid: pg_sys::Oid) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
-    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
-    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -785,16 +785,16 @@ pub(crate) unsafe fn debug_gettuple_after_rescan_result(
 ) -> bool {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
-    let result = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    let result = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     result
@@ -812,10 +812,10 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let (block_number, offset_number) =
             pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
         tids.push((block_number, offset_number));
@@ -848,7 +848,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     let rescan_elapsed_us = i64::try_from(rescan_started.elapsed().as_micros())
         .expect("rescan timing should fit in i64");
 
@@ -871,7 +871,7 @@ pub(crate) unsafe fn debug_profile_ordered_scan_with_limit(
     let mut result_count = 0_i32;
     let result_limit = result_limit.unwrap_or(usize::MAX);
     while usize::try_from(result_count).expect("result count should fit in usize") < result_limit
-        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+        && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
     {
         result_count += 1;
     }
@@ -1124,11 +1124,11 @@ pub(crate) unsafe fn debug_grouped_rerank_profile(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     let emit_started = Instant::now();
     let mut emitted = 0_i32;
     while usize::try_from(emitted).expect("emitted count should fit in usize") < result_limit
-        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+        && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
     {
         emitted += 1;
     }
@@ -1181,7 +1181,7 @@ pub(crate) unsafe fn debug_turboquant_scan_stage_profile(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     if !matches!(
@@ -1612,12 +1612,12 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         return Vec::new();
     }
 
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
@@ -1650,7 +1650,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_heap_tids(
         .map(|(_, heap_tid)| heap_tid)
         .collect();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
@@ -1674,12 +1674,12 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
@@ -1743,7 +1743,7 @@ pub(crate) unsafe fn debug_top_level_oracle_k_seed_scan_heap_tids(
         heap_tids
     };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
@@ -1770,12 +1770,12 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         return Vec::new();
     }
 
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
@@ -1864,7 +1864,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_carrydown_scan_heap_tids(
         heap_tids
     };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
@@ -1890,12 +1890,12 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         return Vec::new();
     }
 
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
@@ -1971,7 +1971,7 @@ pub(crate) unsafe fn debug_layer_oracle_k_seed_layer0_neighbor_heap_tids(
         }
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     heap_tids
@@ -1995,12 +1995,12 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         return Vec::new();
     }
 
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let storage = opaque.scan_graph_storage;
@@ -2065,7 +2065,7 @@ pub(crate) unsafe fn debug_exact_seed_scan_heap_tids(
         heap_tids
     };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     tids
@@ -2083,10 +2083,10 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
         let score = debug_scan_orderby_score(scan)
             .expect("graph-first scan should publish an order-by score for emitted tuples");
@@ -2109,10 +2109,10 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
         let approx_score = debug_current_result_approx_score(scan)
             .or_else(|| debug_scan_orderby_score(scan))
@@ -2134,7 +2134,7 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
     let grouped_results = matches!(
         unsafe { graph::GraphStorageDescriptor::from_index_relation(index_relation, &metadata) }
             .unwrap_or_else(|e| {
-                pgrx::error!("tqhnsw debug grouped scan comparison requires valid metadata: {e}")
+                pgrx::error!("ec_hnsw debug grouped scan comparison requires valid metadata: {e}")
             }),
         graph::GraphStorageDescriptor::PqFastScan(_)
     );
@@ -2145,7 +2145,7 @@ unsafe fn debug_scan_uses_grouped_storage(index_oid: pg_sys::Oid) -> bool {
 #[cfg(any(test, feature = "pg_test"))]
 fn debug_grouped_window_size(window_size: i32) -> usize {
     if window_size <= 0 {
-        pgrx::error!("tqhnsw debug grouped scan window size must be positive");
+        pgrx::error!("ec_hnsw debug grouped scan window size must be positive");
     }
     usize::try_from(window_size).expect("grouped debug window size should fit in usize")
 }
@@ -2563,27 +2563,27 @@ pub(crate) unsafe fn debug_gettuple_exhaustion_state(
 ) -> (Vec<HeapTidCoords>, bool, bool) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut tids = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
             (*scan).xs_heaptid
         }));
     }
 
     let exhausted_once =
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let exhausted_twice =
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (tids, exhausted_once, exhausted_twice)
@@ -2605,13 +2605,13 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before_found = active_result_state_ref(opaque).current().has_element();
@@ -2620,14 +2620,14 @@ pub(crate) unsafe fn debug_gettuple_current_result_state(
     let before_score = active_result_state_ref(opaque).current().score_valid();
     let before_score_value = active_result_state_ref(opaque).current().score();
 
-    let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let found = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let after_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let after_score = active_result_state_ref(opaque).current().score_valid();
     let after_score_value = active_result_state_ref(opaque).current().score();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2649,15 +2649,15 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
 ) -> (bool, bool, f32) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
-    let found = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    let found = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let is_null = if unsafe { (*scan).xs_orderbynulls.is_null() } {
         true
     } else {
@@ -2670,7 +2670,7 @@ pub(crate) unsafe fn debug_gettuple_orderby_score(
             .expect("orderby score should decode")
     };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (found, is_null, score)
@@ -2721,31 +2721,31 @@ pub(crate) unsafe fn debug_gettuple_orderby_score_lifecycle(
 ) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let before = debug_scan_orderby_score(scan);
 
-    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+    unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     let after_first = debug_scan_orderby_score(scan);
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
     let exhausted = debug_scan_orderby_score(scan);
 
     let mut rescan_orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
     let rescanned = debug_scan_orderby_score(scan);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (before, after_first, exhausted, rescanned)
@@ -2758,13 +2758,13 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
 ) -> (bool, HeapTidCoords, f32, bool, HeapTidCoords, f32) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let current = active_result_state_ref(opaque).current();
@@ -2778,13 +2778,13 @@ pub(crate) unsafe fn debug_rescan_entry_candidate_state(
         debug_candidate_slot(visible_frontier_slot(opaque, 0))
     };
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let (after_valid, after_tid, after_score) =
         debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2811,13 +2811,13 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
     let entry_tid = (
@@ -2832,7 +2832,7 @@ pub(crate) unsafe fn debug_rescan_successor_candidate_state(
         .copied()
         .unwrap_or((false, (u32::MAX, u16::MAX), (u32::MAX, u16::MAX), 0.0));
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2852,13 +2852,13 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
 ) -> DebugBootstrapSeedState {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let frontier_slots = debug_runtime_ordered_slots(opaque);
@@ -2867,7 +2867,7 @@ pub(crate) unsafe fn debug_rescan_candidate_frontier(
     let expanded_sources = debug_sorted_expanded_source_tids(opaque);
     let head = debug_runtime_ordered_head(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2886,13 +2886,13 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
 ) -> DebugBootstrapConsumeState {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = debug_runtime_ordered_head(opaque);
@@ -2901,7 +2901,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "bootstrap-consume helper requires a first tuple"
     );
 
@@ -2909,7 +2909,7 @@ pub(crate) unsafe fn debug_gettuple_consumes_bootstrap_candidate(
     let after_head = debug_runtime_ordered_head(opaque);
     let after_slots = debug_runtime_ordered_slots(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2928,13 +2928,13 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
 ) -> DebugBootstrapCandidateMaterializationState {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let current = active_result_state_ref(opaque).current();
@@ -2964,7 +2964,7 @@ pub(crate) unsafe fn debug_materialize_bootstrap_candidate_result(
         .map(|tid| (tid.block_number, tid.offset_number))
         .collect::<Vec<_>>();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -2982,24 +2982,24 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
 ) -> DebugBootstrapPhaseTransition {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_complete = !opaque.execution_phase.is_graph_traversal();
 
     while opaque.execution_phase.is_graph_traversal()
-        && unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
+        && unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) }
     {}
 
     if opaque.execution_phase.is_graph_traversal() {
-        let _ = unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+        let _ = unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     }
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3012,12 +3012,12 @@ pub(crate) unsafe fn debug_bootstrap_phase_transition(
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let rescanned_complete = !opaque.execution_phase.is_graph_traversal();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3036,35 +3036,35 @@ pub(crate) unsafe fn debug_candidate_frontier_head_lifecycle(
 ) -> DebugCandidateFrontierLifecycle {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = debug_runtime_ordered_head(opaque);
     let before_frontier = debug_runtime_ordered_slots(opaque);
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "frontier-head lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let partial_head = debug_runtime_ordered_head(opaque);
     let partial_frontier = debug_runtime_ordered_slots(opaque);
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted_head = current_candidate_frontier_head(opaque)
         .map(|candidate| debug_item_pointer_coords(candidate.node));
     let exhausted_frontier = debug_candidate_frontier_slots(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3084,14 +3084,14 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
 ) -> DebugCandidateFrontierConsume {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = current_candidate_frontier_head(opaque)
@@ -3109,7 +3109,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head(
         .map(|candidate| debug_item_pointer_coords(candidate.node));
     let after_second_frontier = debug_candidate_frontier_slots(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3129,14 +3129,14 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
 ) -> DebugCandidateFrontierSlotConsume {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &mut *(*scan).opaque.cast::<TqScanOpaque>() };
     let before_head = current_candidate_frontier_head(opaque)
@@ -3169,7 +3169,7 @@ pub(crate) unsafe fn debug_consume_candidate_frontier_head_slots(
     let after_slots = debug_candidate_frontier_slots(opaque);
     let after_provenance_slots = debug_candidate_frontier_provenance_slots(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3190,30 +3190,30 @@ pub(crate) unsafe fn debug_visited_seed_lifecycle(
 ) -> DebugVisitedSeedsLifecycle {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let before = debug_sorted_visited_tids(opaque);
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "visited-seed lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let partial = debug_sorted_visited_tids(opaque);
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted = debug_sorted_visited_tids(opaque);
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (before, partial, exhausted)
@@ -3238,14 +3238,14 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let current = active_result_state_ref(opaque).current();
@@ -3260,7 +3260,7 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
     };
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "entry-candidate lifecycle helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3270,13 +3270,13 @@ pub(crate) unsafe fn debug_entry_candidate_lifecycle(
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let partial_exhausted = opaque.execution_phase.is_exhausted();
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let (exhausted_valid, exhausted_tid, exhausted_score) =
         debug_candidate_slot(visible_frontier_slot(opaque, 0));
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3311,17 +3311,17 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "first tuple production should succeed for lifecycle debug helper"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3329,7 +3329,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "second tuple production should succeed for duplicate-drain lifecycle debug helper"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3338,7 +3338,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
     let second_score = active_result_state_ref(opaque).current().score_valid();
     let second_score_value = active_result_state_ref(opaque).current().score();
 
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {}
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let exhausted_tid =
@@ -3350,14 +3350,14 @@ pub(crate) unsafe fn debug_gettuple_current_result_lifecycle(
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let rescanned_tid =
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let rescanned_score = active_result_state_ref(opaque).current().score_valid();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3380,17 +3380,17 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
 ) -> (HeapTidCoords, usize) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
     let prefetched_tid = active_result_state_ref(opaque).current().element_tid();
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "neighbor debug helper requires a non-empty scan result"
     );
 
@@ -3408,7 +3408,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_neighbors(
         )
     };
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3431,16 +3431,16 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 ) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "heap-progress debug helper requires a first tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3451,7 +3451,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
     let first_score = active_result_state_ref(opaque).current().score();
 
     assert!(
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) },
         "heap-progress debug helper requires a duplicate tuple"
     );
     let opaque = unsafe { &*(*scan).opaque.cast::<TqScanOpaque>() };
@@ -3461,7 +3461,7 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
         debug_item_pointer_coords(active_result_state_ref(opaque).current().element_tid());
     let second_score = active_result_state_ref(opaque).current().score();
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (
@@ -3478,14 +3478,14 @@ pub(crate) unsafe fn debug_gettuple_current_result_heap_progress(
 pub(crate) unsafe fn debug_gettuple_backward_after_rescan(index_oid: pg_sys::Oid, query: Vec<f32>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
-    unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::BackwardScanDirection) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::BackwardScanDirection) };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -3495,17 +3495,17 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
 ) -> (Vec<HeapTidCoords>, Vec<HeapTidCoords>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let mut first_pass = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         first_pass.push(pgrx::itemptr::item_pointer_get_both(unsafe {
             (*scan).xs_heaptid
         }));
@@ -3515,16 +3515,16 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_exhaustion(
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let mut rescanned = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         rescanned.push(pgrx::itemptr::item_pointer_get_both(unsafe {
             (*scan).xs_heaptid
         }));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (first_pass, rescanned)
@@ -3537,17 +3537,17 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
 ) -> (HeapTidCoords, Vec<HeapTidCoords>) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let scan = unsafe { tqhnsw_ambeginscan(index_relation, 0, 1) };
+    let scan = unsafe { ec_hnsw_ambeginscan(index_relation, 0, 1) };
 
     let query_datum = pgrx::IntoDatum::into_datum(query).expect("query should convert to datum");
     let mut orderby = pg_sys::ScanKeyData {
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
 
     let found_first =
-        unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
+        unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) };
     assert!(
         found_first,
         "partial scan should yield at least one heap tid"
@@ -3558,16 +3558,16 @@ pub(crate) unsafe fn debug_gettuple_rescan_after_partial(
         sk_argument: query_datum,
         ..Default::default()
     };
-    unsafe { tqhnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut rescan_orderby, 1) };
 
     let mut tids = Vec::new();
-    while unsafe { tqhnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
         tids.push(pgrx::itemptr::item_pointer_get_both(unsafe {
             (*scan).xs_heaptid
         }));
     }
 
-    unsafe { tqhnsw_amendscan(scan) };
+    unsafe { ec_hnsw_amendscan(scan) };
     unsafe { pg_sys::IndexScanEnd(scan) };
     unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     (first_tid, tids)
