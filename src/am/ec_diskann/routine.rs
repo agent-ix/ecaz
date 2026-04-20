@@ -9,6 +9,7 @@ use crate::{
 
 use super::{
     ambuild, insert, options,
+    page::VamanaMetadataPage,
     reader::{PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
     scan_query::{
@@ -318,11 +319,13 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                 &forward_neighbors,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann unique insert append failed: {e}"));
-            insert::add_backlinks_if_free(
+            install_backlinks_with_replan(
                 index_relation,
-                &materialized_metadata,
+                heap_relation,
+                source_attnum,
                 &forward_neighbors,
                 new_tid,
+                &source_vector,
             )
             .unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann unique insert backlink update failed: {e}")
@@ -662,6 +665,153 @@ unsafe fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i3
     };
     unsafe { pg_sys::pfree(index_info.cast()) };
     result
+}
+
+unsafe fn install_backlinks_with_replan(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    source_attnum: i32,
+    backlink_targets: &[ItemPointer],
+    new_tid: ItemPointer,
+    new_source_vector: &[f32],
+) -> Result<(), String> {
+    let mut pending = backlink_targets.to_vec();
+    sort_and_dedup_item_pointers(&mut pending);
+
+    for _ in 0..insert::MAX_BACKLINK_REPLAN_PASSES {
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        let (metadata, mutations) = unsafe {
+            plan_backlink_mutations(
+                index_relation,
+                heap_relation,
+                source_attnum,
+                &pending,
+                new_tid,
+                new_source_vector,
+            )?
+        };
+        if mutations.is_empty() {
+            return Ok(());
+        }
+
+        pending = unsafe {
+            insert::apply_backlink_mutations(index_relation, &metadata, &mutations, new_tid)?
+        };
+    }
+
+    if pending.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "ec_diskann backlink rewrite exceeded {} replan passes for {} target(s)",
+            insert::MAX_BACKLINK_REPLAN_PASSES,
+            pending.len()
+        ))
+    }
+}
+
+unsafe fn plan_backlink_mutations(
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    source_attnum: i32,
+    target_tids: &[ItemPointer],
+    new_tid: ItemPointer,
+    new_source_vector: &[f32],
+) -> Result<(VamanaMetadataPage, Vec<insert::BacklinkMutation>), String> {
+    let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation)? };
+    let reader = PersistedGraphReader::new(
+        &chain,
+        metadata.graph_degree_r,
+        scan_state::metadata_binary_word_count(&metadata),
+        scan_state::metadata_search_code_len(&metadata),
+    );
+    let slot = unsafe { scan_state::allocate_heap_slot(heap_relation)? };
+    let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+    let planned = (|| -> Result<Vec<insert::BacklinkMutation>, String> {
+        let mut mutations = Vec::new();
+        for &target_tid in target_tids {
+            let target_tuple = match reader.read_node(target_tid) {
+                Ok(tuple) => tuple,
+                Err(_) => continue,
+            };
+            if !target_tuple.is_live() || target_tuple.primary_heaptid == ItemPointer::INVALID {
+                continue;
+            }
+
+            let target_source_vector = unsafe {
+                fetch_heap_source_vector(
+                    heap_relation,
+                    snapshot,
+                    slot,
+                    source_attnum,
+                    target_tuple.primary_heaptid,
+                    "backlink planning target source vector",
+                )?
+            };
+            let mut existing_candidates = Vec::new();
+            for neighbor_tid in target_tuple
+                .neighbors
+                .iter()
+                .take(target_tuple.neighbor_count as usize)
+                .copied()
+            {
+                if neighbor_tid == ItemPointer::INVALID {
+                    continue;
+                }
+                let neighbor_tuple = match reader.read_node(neighbor_tid) {
+                    Ok(tuple) => tuple,
+                    Err(_) => continue,
+                };
+                if !neighbor_tuple.is_live()
+                    || neighbor_tuple.primary_heaptid == ItemPointer::INVALID
+                {
+                    continue;
+                }
+                let neighbor_source_vector = unsafe {
+                    fetch_heap_source_vector(
+                        heap_relation,
+                        snapshot,
+                        slot,
+                        source_attnum,
+                        neighbor_tuple.primary_heaptid,
+                        "backlink planning neighbor source vector",
+                    )?
+                };
+                existing_candidates.push(insert::ForwardNeighborCandidate {
+                    tid: neighbor_tid,
+                    source_vector: neighbor_source_vector,
+                });
+            }
+
+            if let Some(mutation) = insert::plan_backlink_mutation(
+                target_tid,
+                &target_tuple,
+                &target_source_vector,
+                &existing_candidates,
+                new_tid,
+                new_source_vector,
+                metadata.alpha,
+                metadata.graph_degree_r as usize,
+            )? {
+                mutations.push(mutation);
+            }
+        }
+        Ok(mutations)
+    })();
+    unsafe { pg_sys::ExecDropSingleTupleTableSlot(slot) };
+    Ok((metadata, planned?))
+}
+
+fn sort_and_dedup_item_pointers(tids: &mut Vec<ItemPointer>) {
+    tids.sort_unstable_by(|left, right| {
+        left.block_number
+            .cmp(&right.block_number)
+            .then_with(|| left.offset_number.cmp(&right.offset_number))
+    });
+    tids.dedup();
 }
 
 unsafe fn exact_heap_rerank_distance(
@@ -1067,6 +1217,218 @@ mod tests {
             ordered_ids,
             vec![2],
             "the inserted row should become reachable through the runtime ec_diskann graph scan",
+        );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_full_backlink_rewrite_keeps_insert_reachable() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_full_backlink_rewrite (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_full_backlink_rewrite_idx ON ec_diskann_full_backlink_rewrite USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 4, build_list_size = 10)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("first insert should bootstrap");
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (2, encode_to_ecvector(ARRAY[0.1, -1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("second insert should backlink to the seed node");
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (3, encode_to_ecvector(ARRAY[0.1, 0.0, -1.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("third insert should backlink to the seed node");
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (4, encode_to_ecvector(ARRAY[0.1, 0.0, 0.0, -1.0, 0.0], 4, 42))",
+        )
+        .expect("fourth insert should backlink to the seed node");
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (5, encode_to_ecvector(ARRAY[0.1, 0.0, 0.0, 0.0, -1.0], 4, 42))",
+        )
+        .expect("fifth insert should fill the seed node's backlink slice");
+
+        let row1_heap_tid = heap_tid_for_row("ec_diskann_full_backlink_rewrite", 1);
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_diskann_full_backlink_rewrite_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (prefill_metadata, prefill_chain) =
+            unsafe { scan_state::materialize_chain_from_index(index_relation) }
+                .expect("prefill materialize_chain_from_index should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let prefill_reader = PersistedGraphReader::new(
+            &prefill_chain,
+            prefill_metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&prefill_metadata),
+            scan_state::metadata_search_code_len(&prefill_metadata),
+        );
+        let row1_tid = prefill_reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("prefill node tid iteration should succeed")
+            .into_iter()
+            .find(|&tid| {
+                prefill_reader
+                    .read_node(tid)
+                    .map(|tuple| tuple.primary_heaptid == row1_heap_tid)
+                    .unwrap_or(false)
+            })
+            .expect("seed row should have a node tid before rewrite");
+        let row1_neighbors_before = prefill_reader
+            .read_node(row1_tid)
+            .expect("seed node should decode before rewrite")
+            .neighbors
+            .iter()
+            .take(prefill_metadata.graph_degree_r as usize)
+            .copied()
+            .filter(|tid| *tid != ItemPointer::INVALID)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            row1_neighbors_before.len(),
+            prefill_metadata.graph_degree_r as usize,
+            "the rewrite test must start from a full backlink slice",
+        );
+
+        Spi::run(
+            "INSERT INTO ec_diskann_full_backlink_rewrite VALUES
+             (6, encode_to_ecvector(ARRAY[1.0, 1.0, 1.0, 1.0, 1.0], 4, 42))",
+        )
+        .expect("sixth insert should rewrite the full backlink slice");
+
+        let metadata = index_metadata("ec_diskann_full_backlink_rewrite_idx");
+        assert_eq!(
+            metadata.inserted_since_rebuild, 6,
+            "six true inserts should advance inserted_since_rebuild six times",
+        );
+        assert!(
+            !metadata.needs_medoid_refresh,
+            "insert-side full-slice rewrite should not set needs_medoid_refresh",
+        );
+
+        let index_relation =
+            unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+
+        let row6_heap_tid = heap_tid_for_row("ec_diskann_full_backlink_rewrite", 6);
+        let mut row6_tid = ItemPointer::INVALID;
+        for tid in reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed")
+        {
+            let tuple = reader.read_node(tid).expect("node decode should succeed");
+            if tuple.primary_heaptid == row6_heap_tid {
+                row6_tid = tid;
+            }
+        }
+        assert_ne!(
+            row6_tid,
+            ItemPointer::INVALID,
+            "rewritten row should have a node tid"
+        );
+
+        let row1_tuple = reader.read_node(row1_tid).expect("seed node should decode");
+        let row1_neighbors = row1_tuple
+            .neighbors
+            .iter()
+            .take(row1_tuple.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            row1_neighbors.contains(&row6_tid),
+            "full-slice rewrite should install the new node into the target's backlink slice; before={row1_neighbors_before:?} after={row1_neighbors:?} row6_tid={row6_tid:?}",
+        );
+        assert_ne!(
+            row1_neighbors, row1_neighbors_before,
+            "rewriting a full backlink slice should change at least one neighbor slot",
+        );
+
+        let row6_tuple = reader
+            .read_node(row6_tid)
+            .expect("rewritten node should decode");
+        let row6_neighbors = row6_tuple
+            .neighbors
+            .iter()
+            .take(row6_tuple.neighbor_count as usize)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            row6_neighbors.contains(&row1_tid),
+            "the inserted node should still keep the seed node as its forward neighbor",
+        );
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+
+        let plan = Spi::connect(|client| {
+            client
+                .select(
+                    "EXPLAIN (COSTS OFF) \
+                     SELECT id FROM ec_diskann_full_backlink_rewrite \
+                     ORDER BY embedding <#> ARRAY[1.0, 1.0, 1.0, 1.0, 1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed")
+                .map(|row| {
+                    row["QUERY PLAN"]
+                        .value::<String>()
+                        .expect("plan row should decode")
+                        .expect("plan row should be non-null")
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
+        assert!(
+            plan.contains("Index Scan using ec_diskann_full_backlink_rewrite_idx"),
+            "rewrite reachability test should route through ec_diskann at runtime: {plan}"
+        );
+
+        let ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_full_backlink_rewrite \
+                     ORDER BY embedding <#> ARRAY[1.0, 1.0, 1.0, 1.0, 1.0]::real[] \
+                     LIMIT 1",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            ordered_ids,
+            vec![6],
+            "rewritten backlinks should keep the newest node reachable to runtime scan",
         );
     }
 
