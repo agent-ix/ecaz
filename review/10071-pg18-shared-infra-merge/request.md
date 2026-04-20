@@ -1,6 +1,6 @@
 # Review Request: PG18 Shared-Infra Merge And Wiring
 
-Current head: `501f422`
+Current head: `6d383a4`
 
 Scope:
 - `Cargo.toml`
@@ -81,13 +81,22 @@ What changed:
 - Updated docs/spec/task text so the staged PG18 boundary is accurate after the merge.
 - Addressed the merge-blocking reviewer feedback on the shared pgstat path:
   - scan execution now accumulates a per-scan `TqStatsCounters` delta and flushes one aggregate
-    shared update at scan finalization instead of taking the preload-on shared pgstat lock on every
-    distance calculation / graph hop / page read
+    shared update at scan teardown / rescan boundaries instead of taking the preload-on shared
+    pgstat lock on every distance calculation / graph hop / page read
   - the PG18 shim now registers a tqvector-owned custom pgstat kind
     (`PGSTAT_KIND_CUSTOM_MIN + 1`) instead of the shared experimental slot
   - the EXPLAIN per-node hook now returns before access-method lookup/allocation when the
     `tqvector` option is disabled
   - the pgstat reset path now documents why it combines the lock with the changecount copy helper
+- Addressed the seq-02 reviewer follow-up on scan teardown, shared-snapshot semantics, and the
+  EXPLAIN hook globals:
+  - `amrescan` / `amendscan` now finalize and flush the per-scan shared-stats delta, so the shared
+    snapshot update runs from the scan teardown seam instead of the exhausted-results seam
+  - `docs/pg18.md` now states that the preloaded shared snapshot reflects completed/torn-down scans
+    and can lag backend-local counters while a scan is in flight
+  - the PG18 EXPLAIN hook state now uses `OnceLock` plus `AtomicBool` instead of `static mut`
+  - `src/am/ec_hnsw/scan.rs` now carries a focused Miri regression test for the raw-pointer
+    scan-scoring path that mutates the staged per-scan delta
 
 Live now:
 - PG18 AM callback surface for tree height and strategy/compare translation
@@ -116,6 +125,7 @@ Validation:
   - `cargo test --no-default-features --features pg17`
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
   - `bash scripts/run_pgrx_pg17_test.sh`
+  - `cargo +nightly miri test --lib -- miri_score_scan_element_result_via_raw_opaque_ptr_updates_stats_delta`
 
 Review focus:
 - Whether the PG18 callback wiring is attached at the right shared-AM seams without leaking
@@ -128,8 +138,8 @@ Review focus:
 - Whether the explicit `pg_module_magic!` name/version assignment is the right repo-local
   workaround for current `pgrx 0.17` PG18 shorthand behavior
 - Whether the docs/spec/task updates accurately describe what is live versus still blocked
-- Whether the per-scan shared-stats flush is the right compromise for preload-on PG18 until/unless
-  we later want a lower-level atomic shared-counter design
+- Whether the teardown/rescan-boundary shared-stats flush is the right compromise for preload-on
+  PG18 until/unless we later want a lower-level atomic shared-counter design
 
 Questions to answer:
 - Are any of the PG18 callback / EXPLAIN / ReadStream hooks attached too deep in `ec_hnsw` runtime
@@ -140,5 +150,5 @@ Questions to answer:
   `tqvector_stats()` until preload-aware PG18 validation is available in this repo?
 - Should the `pg_module_magic!(name, version)` shorthand issue be upstreamed as a `pgrx` bug now
   that this branch carries an explicit-field workaround?
-- Are the remaining low-severity follow-ups from review correctly deferred for a later slice:
-  replacing `static mut` EXPLAIN hook state and filing the upstream `pgrx` shorthand issue?
+- Are the remaining low-severity follow-ups from review correctly deferred for a later slice,
+  especially filing the upstream `pgrx` shorthand issue?
