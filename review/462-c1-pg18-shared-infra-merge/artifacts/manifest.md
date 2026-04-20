@@ -1,6 +1,6 @@
 # Artifact Manifest
 
-Packet: `10071-pg18-shared-infra-merge`
+Packet: `462-c1-pg18-shared-infra-merge`
 Head: `6d383a4`
 
 This packet makes no measurement claims.
