@@ -8,7 +8,7 @@ Scope:
 - `spec/functional/FR-009-hnsw-scan.md`
 - `spec/adr/ADR-011-planner-cost-override-until-ordered-scan.md`
 - `spec/tests.md`
-- `plan/tasks/05-build-and-scan.md`
+- `plan/tasks/archive/05-build-and-scan.md`
 
 What changed:
 - Added a read-only SQL/explain scaffolding surface, `tqhnsw_index_explain_snapshot(regclass)`,

@@ -14,7 +14,7 @@ Scope:
 - `spec/adr/ADR-017-pg18-module-identity-and-upgrade-direction.md`
 - `spec/usecase/US-004-install-manage-extension.md`
 - `plan/plan.md`
-- `plan/tasks/05-build-and-scan.md`
+- `plan/tasks/archive/05-build-and-scan.md`
 - `plan/tasks/05-graph-scan.md`
 
 What changed:

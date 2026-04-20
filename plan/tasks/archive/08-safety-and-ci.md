@@ -1,6 +1,9 @@
-# Task 08: Safety and CI
+# Legacy Task 08: Safety and CI
 
-Status: partially started
+Status: archived legacy snapshot
+
+Superseded by:
+- `plan/tasks/09-ci-and-safety.md`
 
 Progress notes:
 - Build/test/lint targets exist in the repo.

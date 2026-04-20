@@ -1,6 +1,9 @@
-# Task 05: Build and Scan
+# Legacy Task 05: Build and Scan
 
-Status: in progress
+Status: archived legacy snapshot
+
+Superseded by:
+- `plan/tasks/05-graph-scan.md`
 
 Progress notes:
 - Build path is implemented and validated.

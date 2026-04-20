@@ -6,10 +6,10 @@ Scope:
 - `plan/tasks/02-datum-and-io.md`
 - `plan/tasks/03-sql-surface.md`
 - `plan/tasks/04-page-layout-and-wal.md`
-- `plan/tasks/05-build-and-scan.md`
-- `plan/tasks/06-vacuum-and-insert.md`
-- `plan/tasks/07-simd-and-benchmarks.md`
-- `plan/tasks/08-safety-and-ci.md`
+- `plan/tasks/archive/05-build-and-scan.md`
+- `plan/tasks/archive/06-vacuum-and-insert.md`
+- `plan/tasks/archive/07-simd-and-benchmarks.md`
+- `plan/tasks/archive/08-safety-and-ci.md`
 - `spec/functional/FR-007-hnsw-page-layout.md`
 - `spec/functional/FR-009-hnsw-scan.md`
 - `spec/functional/FR-016-hnsw-insert.md`

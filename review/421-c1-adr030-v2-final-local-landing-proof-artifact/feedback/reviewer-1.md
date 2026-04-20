@@ -6,7 +6,7 @@ Verified against:
   (576 lines) and `tmp/landing-proof-ea9ec05-pgrx-wrapper.log`
   (577 lines) on disk
 - commit `802970c` adding follow-up owners to
-  `plan/tasks/08-safety-and-ci.md` and `plan/tasks/11-planner.md`
+  `plan/tasks/archive/08-safety-and-ci.md` and `plan/tasks/11-planner.md`
 - git log confirming `416`/`417`/`418` landed as `4f94ad3`
   (`Restore cargo-test lane and repair source-backed pq_fastscan
   tests`) and `5036862` (`Close storage-format coverage gaps and
@@ -45,7 +45,7 @@ Verified against:
   preempts "why does cargo test fail in your sandbox" as a merge
   question.
 - **Follow-up owners are specific, not gestures.**
-  `plan/tasks/08-safety-and-ci.md` names Agent 3, target April
+  `plan/tasks/archive/08-safety-and-ci.md` names Agent 3, target April
   24, 2026 for the Linux/x86_64 `cargo test` PR gate plus May 1,
   2026 for the pg17-wrapper decision. `plan/tasks/11-planner.md`
   names Agent 2, target April 24, 2026 for the shared-table

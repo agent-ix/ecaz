@@ -7,7 +7,7 @@ Scope:
 - `spec/functional/FR-009-hnsw-scan.md`
 - `spec/functional/FR-016-hnsw-insert.md`
 - `spec/tests.md`
-- `plan/tasks/05-build-and-scan.md`
+- `plan/tasks/archive/05-build-and-scan.md`
 
 What changed:
 - Added a read-only SQL/admin surface, `tqhnsw_index_admin_snapshot(regclass)`, that reports

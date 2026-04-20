@@ -1,6 +1,10 @@
-# Task 07: SIMD and Benchmarks
+# Legacy Task 07: SIMD and Benchmarks
 
-Status: not started
+Status: archived legacy snapshot
+
+Superseded by:
+- `plan/tasks/08-simd.md`
+- `plan/tasks/10-benchmarks.md`
 
 ## Scope
 

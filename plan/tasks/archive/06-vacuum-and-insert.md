@@ -1,6 +1,10 @@
-# Task 06: Vacuum and Online Insert
+# Legacy Task 06: Vacuum and Online Insert
 
-Status: in progress
+Status: archived legacy snapshot
+
+Superseded by:
+- `plan/tasks/06-graph-insert.md`
+- `plan/tasks/07-vacuum.md`
 
 Progress notes:
 - Live insert now supports shape validation, first-insert metadata initialization, duplicate
