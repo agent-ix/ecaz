@@ -1,5 +1,7 @@
 use pgrx::pg_sys;
 
+use crate::am::tqhnsw::{options, page, shared};
+
 // Ordered tqhnsw scoring walks LUT-backed quantized codes, not full raw-f32
 // arithmetic at every candidate. Charging the planner the full raw dimension
 // count overstates index-side CPU enough to flip the real 10k / 1536-d / ef=200
@@ -196,7 +198,7 @@ pub(crate) fn estimate_planner_cost(
     }
 }
 
-pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
+pub(crate) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
     _root: *mut pg_sys::PlannerInfo,
     path: *mut pg_sys::IndexPath,
     _loop_count: f64,
@@ -224,8 +226,8 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_amcostestimate(
 }
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
-    let relation_options = unsafe { super::options::relation_options(index_relation) };
-    let tuning = super::options::resolve_scan_tuning(&relation_options);
+    let relation_options = unsafe { options::relation_options(index_relation) };
+    let tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -234,11 +236,11 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
     // reports block_count == 1. FR-020's "Empty index (0 data pages)" gate
     // must trip on `block_count <= FIRST_DATA_BLOCK_NUMBER`, not on the raw
     // page count.
-    if block_count <= super::page::FIRST_DATA_BLOCK_NUMBER {
+    if block_count <= page::FIRST_DATA_BLOCK_NUMBER {
         return gated_planner_cost_estimate(index_pages);
     }
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
-    let metadata = unsafe { super::shared::read_metadata_page(index_relation) };
+    let metadata = unsafe { shared::read_metadata_page(index_relation) };
     let tree_height = metadata_fallback_tree_height(metadata.max_level);
     let constants = unsafe { current_planner_cost_constants() };
 

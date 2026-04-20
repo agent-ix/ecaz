@@ -8,6 +8,7 @@ use super::{
     TQHNSW_MAX_EF_CONSTRUCTION, TQHNSW_MAX_EF_SEARCH, TQHNSW_MAX_M, TQHNSW_MIN_EF_CONSTRUCTION,
     TQHNSW_MIN_EF_SEARCH, TQHNSW_MIN_M,
 };
+pub(crate) use crate::quant::Family as StorageFormat;
 
 const TQHNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
 
@@ -28,42 +29,14 @@ struct TqHnswReloptions {
     storage_format_offset: i32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum StorageFormat {
-    TurboQuant,
-    PqFastScan,
-}
-
-impl StorageFormat {
-    pub(super) const DEFAULT: Self = Self::TurboQuant;
-
-    pub(super) fn as_str(self) -> &'static str {
-        match self {
-            Self::TurboQuant => "turboquant",
-            Self::PqFastScan => "pq_fastscan",
-        }
-    }
-
-    fn parse_reloption(raw: &str) -> Result<Self, String> {
-        match raw {
-            "turboquant" => Ok(Self::TurboQuant),
-            "pq_fastscan" => Ok(Self::PqFastScan),
-            other => Err(format!(
-                "invalid tqhnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
-                other
-            )),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
-pub(super) struct TqHnswOptions {
-    pub(super) m: i32,
-    pub(super) ef_construction: i32,
-    pub(super) ef_search: i32,
-    pub(super) build_source_column: Option<String>,
-    pub(super) rerank_source_column: Option<String>,
-    pub(super) storage_format: StorageFormat,
+pub(crate) struct TqHnswOptions {
+    pub(crate) m: i32,
+    pub(crate) ef_construction: i32,
+    pub(crate) ef_search: i32,
+    pub(crate) build_source_column: Option<String>,
+    pub(crate) rerank_source_column: Option<String>,
+    pub(crate) storage_format: StorageFormat,
 }
 
 impl TqHnswOptions {
@@ -78,17 +51,17 @@ impl TqHnswOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum EfSearchSource {
+pub(crate) enum EfSearchSource {
     Relation,
     Session,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ScanTuning {
-    pub(super) relation_ef_search: i32,
-    pub(super) session_ef_search: Option<i32>,
-    pub(super) effective_ef_search: i32,
-    pub(super) source: EfSearchSource,
+pub(crate) struct ScanTuning {
+    pub(crate) relation_ef_search: i32,
+    pub(crate) session_ef_search: Option<i32>,
+    pub(crate) effective_ef_search: i32,
+    pub(crate) source: EfSearchSource,
 }
 
 pub(super) fn register_gucs() {
@@ -144,7 +117,7 @@ pub(super) fn force_binary_derivation() -> bool {
     TQHNSW_FORCE_BINARY_DERIVATION_GUC.get()
 }
 
-pub(super) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
+pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
     resolve_scan_tuning_values(options.ef_search, current_session_ef_search())
 }
 
@@ -268,7 +241,7 @@ unsafe fn read_string_reloption(
     Some(value.to_owned())
 }
 
-pub(super) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
+pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHnswOptions {
     let rd_options = unsafe { (*index_relation).rd_options };
     if rd_options.is_null() {
         return TqHnswOptions::DEFAULT;

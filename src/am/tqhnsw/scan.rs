@@ -427,6 +427,19 @@ pub(super) struct PreparedGroupedScanQuery {
     lut_f32: Vec<f32>,
 }
 
+impl crate::quant::QueryScorer for PreparedGroupedScanQuery {
+    fn score(&self, search_code: &[u8]) -> f32 {
+        debug_assert_eq!(
+            search_code.len(),
+            self.search_code_len,
+            "grouped search-code length {} should match prepared grouped query width {}",
+            search_code.len(),
+            self.search_code_len,
+        );
+        grouped_pq_score_f32(&self.lut_f32, self.group_count, search_code)
+    }
+}
+
 #[cfg_attr(not(any(test, feature = "pg_test")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct GroupedScorePayloadView<'a> {
@@ -579,9 +592,7 @@ impl PqFastScanRerankModeResolution {
             Self::DefaultHeapF32WithBuildSourceColumn => {
                 "default_heap_f32_with_build_source_column"
             }
-            Self::DefaultQuantizedWithIndexedTqvector => {
-                "default_quantized_with_indexed_tqvector"
-            }
+            Self::DefaultQuantizedWithIndexedTqvector => "default_quantized_with_indexed_tqvector",
             Self::DefaultQuantizedTurboQuantStorage => "default_quantized_turboquant_storage",
             Self::NonPqFastScanStorage => "non_pq_fastscan_storage",
         }
@@ -1177,8 +1188,9 @@ unsafe fn index_has_default_heap_f32_source(index_relation: pg_sys::Relation) ->
     }
     let heap_relation =
         unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
-    let indexed_attribute =
-        unsafe { source::resolve_indexed_vector_attribute(heap_relation, index_relation, "indexed column") };
+    let indexed_attribute = unsafe {
+        source::resolve_indexed_vector_attribute(heap_relation, index_relation, "indexed column")
+    };
     unsafe { pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     matches!(indexed_attribute.kind, source::IndexedVectorKind::Ecvector)
 }
@@ -1187,10 +1199,12 @@ fn default_grouped_rerank_mode(
     index_options: &super::options::TqHnswOptions,
     has_default_heap_f32_source: bool,
 ) -> GroupedRerankMode {
-    if matches!(index_options.storage_format, super::options::StorageFormat::PqFastScan)
-        && (has_default_heap_f32_source
-            || index_options.rerank_source_column.is_some()
-            || index_options.build_source_column.is_some())
+    if matches!(
+        index_options.storage_format,
+        super::options::StorageFormat::PqFastScan
+    ) && (has_default_heap_f32_source
+        || index_options.rerank_source_column.is_some()
+        || index_options.build_source_column.is_some())
     {
         GroupedRerankMode::HeapF32
     } else {
@@ -2399,18 +2413,11 @@ fn score_grouped_search_code_result(
     prepared_query: &PreparedGroupedScanQuery,
     search_code: &[u8],
 ) -> f32 {
-    debug_assert_eq!(
-        search_code.len(),
-        prepared_query.search_code_len,
-        "grouped search-code length {} should match prepared grouped query width {}",
-        search_code.len(),
-        prepared_query.search_code_len
-    );
-    -grouped_pq_score_f32(
-        &prepared_query.lut_f32,
-        prepared_query.group_count,
-        search_code,
-    )
+    // ADR-041 stage 0: grouped-PQ LUT scoring routes through the
+    // `QueryScorer` trait. The inherent debug_assert on search-code
+    // length lives in the trait impl on `PreparedGroupedScanQuery`.
+    use crate::quant::QueryScorer;
+    -prepared_query.score(search_code)
 }
 
 unsafe fn score_grouped_search_code_from_scan_state(

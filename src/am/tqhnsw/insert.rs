@@ -2,7 +2,8 @@ use std::{cmp::Ordering, ptr};
 
 use pgrx::pg_sys;
 
-use super::{build, graph, options, page, search, shared, source, wal};
+use super::{build, graph, options, page, search, shared, source};
+use crate::storage::wal;
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
 // One initial write pass plus up to two read-only replan retries for drifted full slices.
@@ -437,15 +438,15 @@ pub(super) unsafe extern "C-unwind" fn tqhnsw_aminsert(
             } else {
                 tuple = build::build_heap_tuple(values, isnull, heap_tid, indexed_attribute.kind);
                 metric = match indexed_attribute.kind {
-                    source::IndexedVectorKind::Ecvector => InsertSearchMetric::Source(
-                        InsertHeapSourceScorer::new_with_attribute(
+                    source::IndexedVectorKind::Ecvector => {
+                        InsertSearchMetric::Source(InsertHeapSourceScorer::new_with_attribute(
                             heap_relation,
                             source::SourceAttribute {
                                 attnum: indexed_attribute.attnum,
                                 kind: source::SourceDatumKind::Ecvector,
                             },
-                        ),
-                    ),
+                        ))
+                    }
                     source::IndexedVectorKind::Tqvector => InsertSearchMetric::Code,
                 };
             }
@@ -1910,9 +1911,10 @@ unsafe fn derive_pq_fastscan_search_code_for_insert(
     {
         pgrx::error!("{PQ_FASTSCAN_CODEBOOK_METADATA_UNAVAILABLE}");
     }
-    let source_vector = tuple.source_vector.as_deref().unwrap_or_else(|| {
-        pgrx::error!("tqhnsw PqFastScan live insert requires raw source data")
-    });
+    let source_vector = tuple
+        .source_vector
+        .as_deref()
+        .unwrap_or_else(|| pgrx::error!("tqhnsw PqFastScan live insert requires raw source data"));
     let model = unsafe { graph::load_grouped_codebook_model(index_relation, metadata) };
     let search_code =
         graph::derive_grouped_search_code_from_source(metadata, &model, source_vector)
@@ -2836,13 +2838,8 @@ mod tests {
             crate::code_len(1536, 4),
             pg_sys::BLCKSZ as usize,
         );
-        let tighter_page_level = choose_insert_level_for_page_size(
-            8,
-            42,
-            heap_tid,
-            crate::code_len(1536, 4),
-            1024,
-        );
+        let tighter_page_level =
+            choose_insert_level_for_page_size(8, 42, heap_tid, crate::code_len(1536, 4), 1024);
 
         assert!(
             tighter_page_level <= full_page_level,

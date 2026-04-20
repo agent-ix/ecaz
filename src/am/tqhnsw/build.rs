@@ -4,16 +4,12 @@ use std::ffi::c_void;
 use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox};
-use rand::Rng;
-use rand::SeedableRng;
-use rand_chacha::ChaCha8Rng;
 
-use crate::quant::{
-    grouped_pq::{encode_grouped_pq, nearest_centroid_l2, GROUPED_PQ_CENTROIDS},
-    prod::ProdQuantizer,
-};
+use crate::quant::{grouped_pq::GROUPED_PQ_CENTROIDS, prod::ProdQuantizer};
 
-use super::{graph, insert, options, page, search, shared, source, wal, P_NEW};
+use super::{graph, insert, options, page, search, shared, source, P_NEW};
+use crate::am::common::training::{self, GroupedPq4Model};
+use crate::storage::wal;
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -126,10 +122,15 @@ impl BuildState {
         let indexed_vector_kind = if heap_oid == pg_sys::InvalidOid {
             source::IndexedVectorKind::Ecvector
         } else {
-            let heap_relation =
-                unsafe { pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+            let heap_relation = unsafe {
+                pg_sys::table_open(heap_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+            };
             let indexed_attribute = unsafe {
-                source::resolve_indexed_vector_attribute(heap_relation, index_relation, "indexed column")
+                source::resolve_indexed_vector_attribute(
+                    heap_relation,
+                    index_relation,
+                    "indexed column",
+                )
             };
             unsafe {
                 pg_sys::table_close(heap_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
@@ -323,12 +324,7 @@ fn validate_grouped_rerank_source_column_for_empty_build(
 }
 
 fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
-    let quantizer = ProdQuantizer::cached(dimensions as usize, bits, seed);
-    if quantizer.binary_sign_no_qjl_4bit_supported() {
-        (dimensions as usize).div_ceil(64)
-    } else {
-        0
-    }
+    training::persisted_binary_sidecar_word_count(dimensions, bits, seed)
 }
 
 pub(super) unsafe fn build_heap_tuple(
@@ -436,8 +432,9 @@ unsafe fn build_heap_tuple_from_indexed_datum(
                 unsafe { pg_sys::pfree(varlena.cast()) };
             }
 
-            let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes)
-                .unwrap_or_else(|e| pgrx::error!("tqhnsw ambuild found invalid indexed tqvector: {e}"));
+            let (dimensions, bits, seed, gamma, code) = crate::unpack(&bytes).unwrap_or_else(|e| {
+                pgrx::error!("tqhnsw ambuild found invalid indexed tqvector: {e}")
+            });
             if bits != crate::DEFAULT_QUANT_BITS || seed != crate::DEFAULT_QUANT_SEED {
                 pgrx::error!(
                     "tqhnsw indexed tqvector must use the canonical quantizer defaults ({},{}), got ({},{})",
@@ -608,11 +605,8 @@ pub(super) fn stage_v2_grouped_build_payload(
     search_code: Vec<u8>,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V2GroupedBuildPayload {
-    let binary_words = if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
-        persisted_binary_quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
-    } else {
-        Vec::new()
-    };
+    let binary_words =
+        training::derive_persisted_binary_words(persisted_binary_quantizer, &tuple.code);
 
     V2GroupedBuildPayload {
         hot: page::TqGroupedHotTuple {
@@ -638,11 +632,8 @@ pub(super) fn stage_v3_turbo_hot_build_payload(
     reranktid: page::ItemPointer,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V3TurboHotBuildPayload {
-    let binary_words = if persisted_binary_quantizer.binary_sign_no_qjl_4bit_supported() {
-        persisted_binary_quantizer.binary_sign_words_from_packed_no_qjl_4bit(&tuple.code)
-    } else {
-        Vec::new()
-    };
+    let binary_words =
+        training::derive_persisted_binary_words(persisted_binary_quantizer, &tuple.code);
 
     V3TurboHotBuildPayload {
         hot: page::TqTurboHotTuple {
@@ -682,14 +673,7 @@ pub(super) struct BuildFlushOutput {
     pub(super) metadata: page::MetadataPage,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct BuildGroupedPqModel {
-    pub(super) codebooks: Vec<Vec<f32>>,
-    pub(super) group_count: usize,
-    pub(super) group_size: usize,
-    pub(super) transform_dim: usize,
-    pub(super) signs: Vec<f32>,
-}
+pub(super) type BuildGroupedPqModel = GroupedPq4Model;
 
 pub(super) fn stage_v2_grouped_page_chain(
     state: &BuildState,
@@ -885,14 +869,6 @@ pub(super) fn train_build_grouped_pq_model(
             .expect("non-empty build should record dimensions"),
     );
     let seed = state.seed.expect("non-empty build should record seed");
-    let transform_dim = crate::quant::rotation::effective_transform_dim(dimensions);
-    if transform_dim % group_size != 0 {
-        return Err(format!(
-            "transform dim {transform_dim} is not divisible by group_size {group_size}"
-        ));
-    }
-
-    let signs = crate::quant::rotation::sign_vector(transform_dim, seed);
     let source_vectors = state
         .heap_tuples
         .iter()
@@ -902,43 +878,19 @@ pub(super) fn train_build_grouped_pq_model(
                 .as_ref()
                 .ok_or_else(|| "grouped build model requires source vectors".to_owned())
         })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let transformed = source_vectors
-        .iter()
-        .map(|vector| crate::quant::rotation::srht_padded(vector, &signs))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(Vec::as_slice)
         .collect::<Vec<_>>();
-    let group_count = transform_dim / group_size;
-    let sample_count = train_size.min(transformed.len());
-    let sample_indices = sample_indices(
-        transformed.len(),
-        sample_count,
-        seed ^ 0xA5A5_5A5A_DEAD_BEEF,
-    );
-    let mut codebooks = Vec::with_capacity(group_count);
 
-    for group_index in 0..group_count {
-        let mut samples = Vec::with_capacity(sample_count * group_size);
-        for &sample_index in &sample_indices {
-            let start = group_index * group_size;
-            let end = start + group_size;
-            samples.extend_from_slice(&transformed[sample_index][start..end]);
-        }
-        codebooks.push(train_group_codebook(
-            &samples,
-            group_size,
-            kmeans_iters,
-            seed ^ (group_index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15),
-        )?);
-    }
-
-    Ok(BuildGroupedPqModel {
-        codebooks,
-        group_count,
+    training::train_grouped_pq4_model(
+        &source_vectors,
+        dimensions,
+        seed,
         group_size,
-        transform_dim,
-        signs,
-    })
+        train_size,
+        kmeans_iters,
+    )
 }
 
 pub(super) fn derive_grouped_search_code_from_source(
@@ -949,144 +901,7 @@ pub(super) fn derive_grouped_search_code_from_source(
         .source_vector
         .as_ref()
         .ok_or_else(|| "grouped search code derivation requires source vector".to_owned())?;
-    let rotated = crate::quant::rotation::srht_padded(source, &model.signs);
-    Ok(encode_grouped_pq(
-        &rotated,
-        model.codebooks.iter().map(Vec::as_slice),
-        model.group_size,
-    ))
-}
-
-fn sample_indices(len: usize, sample_count: usize, seed: u64) -> Vec<usize> {
-    if sample_count >= len {
-        return (0..len).collect();
-    }
-
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut indices = (0..len).collect::<Vec<_>>();
-    for i in 0..sample_count {
-        let swap_index = rng.gen_range(i..len);
-        indices.swap(i, swap_index);
-    }
-    indices.truncate(sample_count);
-    indices
-}
-
-fn train_group_codebook(
-    samples: &[f32],
-    group_size: usize,
-    kmeans_iters: usize,
-    seed: u64,
-) -> Result<Vec<f32>, String> {
-    const CENTROIDS: usize = 16;
-
-    let sample_count = samples.len() / group_size;
-    if sample_count == 0 {
-        return Err("grouped codebook training requires at least one sample".to_owned());
-    }
-    if sample_count < CENTROIDS {
-        return Ok(seed_group_codebook_from_small_samples(
-            samples,
-            group_size,
-            sample_count,
-            seed,
-        ));
-    }
-
-    let init_indices = sample_indices(sample_count, CENTROIDS, seed);
-    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
-    for (centroid_index, sample_index) in init_indices.into_iter().enumerate() {
-        let sample = sample_slice(samples, sample_index, group_size);
-        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
-    }
-
-    let mut assignments = vec![0usize; sample_count];
-    let mut sums = vec![0.0_f32; CENTROIDS * group_size];
-    let mut counts = [0usize; CENTROIDS];
-
-    for _ in 0..kmeans_iters {
-        sums.fill(0.0);
-        counts.fill(0);
-
-        for (sample_index, assignment) in assignments.iter_mut().enumerate() {
-            let sample = sample_slice(samples, sample_index, group_size);
-            let centroid_index = nearest_centroid_l2(sample, &centroids, group_size);
-            *assignment = centroid_index;
-            counts[centroid_index] += 1;
-            let centroid_sum = centroid_slice_mut(&mut sums, centroid_index, group_size);
-            for (dst, value) in centroid_sum.iter_mut().zip(sample.iter()) {
-                *dst += *value;
-            }
-        }
-
-        for (centroid_index, &count) in counts.iter().enumerate() {
-            if count == 0 {
-                let fallback_sample = sample_slice(
-                    samples,
-                    (seed as usize + centroid_index) % sample_count,
-                    group_size,
-                );
-                centroid_slice_mut(&mut centroids, centroid_index, group_size)
-                    .copy_from_slice(fallback_sample);
-                continue;
-            }
-
-            let inv_count = (count as f32).recip();
-            let centroid_sum = centroid_slice(&sums, centroid_index, group_size);
-            let centroid = centroid_slice_mut(&mut centroids, centroid_index, group_size);
-            for (dst, value) in centroid.iter_mut().zip(centroid_sum.iter()) {
-                *dst = *value * inv_count;
-            }
-        }
-    }
-
-    Ok(centroids)
-}
-
-fn seed_group_codebook_from_small_samples(
-    samples: &[f32],
-    group_size: usize,
-    sample_count: usize,
-    seed: u64,
-) -> Vec<f32> {
-    const CENTROIDS: usize = 16;
-
-    let mut centroids = vec![0.0_f32; CENTROIDS * group_size];
-    for centroid_index in 0..CENTROIDS {
-        let sample_index = (seed as usize + centroid_index) % sample_count;
-        let sample = sample_slice(samples, sample_index, group_size);
-        centroid_slice_mut(&mut centroids, centroid_index, group_size).copy_from_slice(sample);
-    }
-    centroids
-}
-
-fn squared_l2(lhs: &[f32], rhs: &[f32]) -> f32 {
-    lhs.iter()
-        .zip(rhs.iter())
-        .map(|(left, right)| {
-            let delta = left - right;
-            delta * delta
-        })
-        .sum()
-}
-
-fn sample_slice(samples: &[f32], sample_index: usize, group_size: usize) -> &[f32] {
-    let start = sample_index * group_size;
-    &samples[start..start + group_size]
-}
-
-fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -> &[f32] {
-    let start = centroid_index * group_size;
-    &centroids[start..start + group_size]
-}
-
-fn centroid_slice_mut(
-    centroids: &mut [f32],
-    centroid_index: usize,
-    group_size: usize,
-) -> &mut [f32] {
-    let start = centroid_index * group_size;
-    &mut centroids[start..start + group_size]
+    Ok(training::derive_grouped_pq4_code(source, model))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1502,8 +1317,10 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
 
         if let Some(current_entry_idx) = entry_idx {
             let mut query_scorer = NativeBuildQueryScorer::new(state, metric, node_idx);
-            let entry_candidate =
-                search::BeamCandidate::new(current_entry_idx, query_scorer.score(current_entry_idx));
+            let entry_candidate = search::BeamCandidate::new(
+                current_entry_idx,
+                query_scorer.score(current_entry_idx),
+            );
             let (mut selections, layer0_seeds) = populate_native_upper_layer_forward_slots(
                 &mut node.neighbor_slots,
                 &nodes,
@@ -1518,13 +1335,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
                 ef_construction,
                 layer0_seeds,
                 |source_idx| {
-                    load_native_successor_candidates(
-                        &nodes,
-                        &mut query_scorer,
-                        source_idx,
-                        0,
-                        m,
-                    )
+                    load_native_successor_candidates(&nodes, &mut query_scorer, source_idx, 0, m)
                 },
             );
             write_native_layer_forward_candidates(
@@ -1549,7 +1360,12 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
         .enumerate()
         .map(|(node_idx, node)| HnswBuildNode {
             level: node.level,
-            score_neighbors: flatten_native_neighbor_slots(node_idx, node.level, m, &node.neighbor_slots),
+            score_neighbors: flatten_native_neighbor_slots(
+                node_idx,
+                node.level,
+                m,
+                &node.neighbor_slots,
+            ),
             neighbor_slots: node.neighbor_slots,
         })
         .collect()
@@ -1565,7 +1381,10 @@ fn populate_native_upper_layer_forward_slots(
     entry_level: u8,
     m: usize,
     ef_construction: usize,
-) -> (Vec<NativeForwardSelection>, Vec<search::BeamCandidate<usize>>) {
+) -> (
+    Vec<NativeForwardSelection>,
+    Vec<search::BeamCandidate<usize>>,
+) {
     let mut selections = Vec::new();
     if entry_level == 0 {
         return (selections, vec![entry_candidate]);
@@ -1582,13 +1401,7 @@ fn populate_native_upper_layer_forward_slots(
             ef_construction,
             seeds,
             |source_idx| {
-                load_native_successor_candidates(
-                    nodes,
-                    query_scorer,
-                    source_idx,
-                    current_layer,
-                    m,
-                )
+                load_native_successor_candidates(nodes, query_scorer, source_idx, current_layer, m)
             },
         );
         if current_layer <= insert_level {
@@ -1627,7 +1440,10 @@ fn load_native_successor_candidates(
         .iter()
         .filter_map(|neighbor_idx| {
             let neighbor_idx = (*neighbor_idx)?;
-            Some(search::BeamCandidate::new(neighbor_idx, query_scorer.score(neighbor_idx)))
+            Some(search::BeamCandidate::new(
+                neighbor_idx,
+                query_scorer.score(neighbor_idx),
+            ))
         })
         .collect()
 }
@@ -1687,9 +1503,11 @@ fn add_native_backlinks(
         let target_scorer = target_scorer
             .as_mut()
             .expect("target scorer should exist for backlink planning");
-        let Some((start, end)) =
-            insert::backlink_slot_bounds(m, nodes[selection.node_idx].neighbor_slots.len(), selection.layer)
-        else {
+        let Some((start, end)) = insert::backlink_slot_bounds(
+            m,
+            nodes[selection.node_idx].neighbor_slots.len(),
+            selection.layer,
+        ) else {
             continue;
         };
         let layer_slice = &mut nodes[selection.node_idx].neighbor_slots[start..end];
@@ -1717,11 +1535,8 @@ fn add_native_backlinks(
             score: target_scorer.score(new_node_idx),
             is_new: true,
         });
-        let replacement = insert::select_best_backlink_candidates(
-            candidates,
-            layer_slice.len(),
-            usize::cmp,
-        );
+        let replacement =
+            insert::select_best_backlink_candidates(candidates, layer_slice.len(), usize::cmp);
         if !replacement.contains(&new_node_idx) {
             continue;
         }

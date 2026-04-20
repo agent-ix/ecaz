@@ -1,4 +1,116 @@
+use std::sync::Arc;
+
+use crate::quant::prod::ProdQuantizer;
+use crate::quant::rotation;
+
 pub const GROUPED_PQ_CENTROIDS: usize = 16;
+
+/// PqFastScan wrapped as one `Quantizer` impl (ADR-041 stage 0 seam).
+///
+/// A PqFastScan index scores a code in two conceptual steps: SRHT
+/// rotation of the query (state: the index's `ProdQuantizer` signs)
+/// plus a grouped-PQ LUT lookup (state: the metadata page's
+/// codebooks). `PqFastScanQuantizer` bundles both so scan.rs can hold
+/// a single `&dyn Quantizer` per scan without reaching into two
+/// sources.
+///
+/// `encode_code`/`prepare_scorer` reuse the existing SRHT helpers and
+/// `build_grouped_pq_lut_f32`; `QueryScorer::score` calls
+/// `grouped_pq_score_f32`. Batched (32-wide) FastScan scoring still
+/// lives behind family-specific APIs — this trait is for the scalar
+/// rerank seam.
+#[allow(dead_code)]
+pub struct PqFastScanQuantizer {
+    rotation: Arc<ProdQuantizer>,
+    group_count: usize,
+    group_size: usize,
+    flat_codebooks: Vec<f32>,
+}
+
+#[allow(dead_code)]
+impl PqFastScanQuantizer {
+    pub fn new(
+        rotation: Arc<ProdQuantizer>,
+        group_count: usize,
+        group_size: usize,
+        flat_codebooks: Vec<f32>,
+    ) -> Self {
+        assert!(group_size > 0, "grouped PQ group size must be positive");
+        assert_eq!(
+            flat_codebooks.len(),
+            group_count * GROUPED_PQ_CENTROIDS * group_size,
+            "grouped PQ codebook length {} must equal {} (group_count * centroids * group_size)",
+            flat_codebooks.len(),
+            group_count * GROUPED_PQ_CENTROIDS * group_size,
+        );
+        Self {
+            rotation,
+            group_count,
+            group_size,
+            flat_codebooks,
+        }
+    }
+}
+
+impl crate::quant::Quantizer for PqFastScanQuantizer {
+    fn encode_code(&self, v: &[f32]) -> Box<[u8]> {
+        assert_eq!(
+            v.len(),
+            self.group_count * self.group_size,
+            "PqFastScan encode input length {} must equal {} (group_count * group_size)",
+            v.len(),
+            self.group_count * self.group_size,
+        );
+        let rotated = rotation::srht_padded(v, &self.rotation.signs);
+        let rotated_domain = &rotated[..v.len()];
+        let codebook_iter = (0..self.group_count).map(|group_index| {
+            let start = group_index * GROUPED_PQ_CENTROIDS * self.group_size;
+            let end = start + GROUPED_PQ_CENTROIDS * self.group_size;
+            &self.flat_codebooks[start..end]
+        });
+        encode_grouped_pq(rotated_domain, codebook_iter, self.group_size).into_boxed_slice()
+    }
+
+    fn prepare_scorer(
+        &self,
+        query: &[f32],
+    ) -> Box<dyn crate::quant::QueryScorer + Send + Sync + '_> {
+        assert_eq!(
+            query.len(),
+            self.group_count * self.group_size,
+            "PqFastScan query length {} must equal {} (group_count * group_size)",
+            query.len(),
+            self.group_count * self.group_size,
+        );
+        let rotated = rotation::srht_padded(query, &self.rotation.signs);
+        let rotated_domain = &rotated[..query.len()];
+        let lut = build_grouped_pq_lut_f32(rotated_domain, &self.flat_codebooks, self.group_size);
+        Box::new(PqFastScanScorer {
+            lut,
+            group_count: self.group_count,
+        })
+    }
+
+    fn code_len(&self) -> usize {
+        self.group_count.div_ceil(2)
+    }
+
+    fn wire_format_version(&self) -> u32 {
+        crate::am::page::INDEX_FORMAT_V2_GROUPED as u32
+    }
+}
+
+#[allow(dead_code)]
+struct PqFastScanScorer {
+    lut: Vec<f32>,
+    group_count: usize,
+}
+
+impl crate::quant::QueryScorer for PqFastScanScorer {
+    fn score(&self, code: &[u8]) -> f32 {
+        grouped_pq_score_f32(&self.lut, self.group_count, code)
+    }
+}
 
 pub fn pack_grouped_pq_nibbles(indices: &[u8]) -> Vec<u8> {
     let mut packed_nibbles = vec![0_u8; indices.len().div_ceil(2)];
@@ -171,8 +283,65 @@ fn centroid_slice(centroids: &[f32], centroid_index: usize, group_size: usize) -
 mod tests {
     use super::{
         build_grouped_pq_lut_f32, encode_grouped_pq, grouped_pq_nibble, grouped_pq_score_f32,
-        nearest_centroid_l2, pack_grouped_pq_nibbles, GROUPED_PQ_CENTROIDS,
+        nearest_centroid_l2, pack_grouped_pq_nibbles, PqFastScanQuantizer, GROUPED_PQ_CENTROIDS,
     };
+    use crate::quant::prod::ProdQuantizer;
+    use crate::quant::Quantizer;
+    use std::sync::Arc;
+
+    fn random_codebooks(group_count: usize, group_size: usize, seed: u64) -> Vec<f32> {
+        use rand::Rng;
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        (0..group_count * GROUPED_PQ_CENTROIDS * group_size)
+            .map(|_| rng.gen_range(-1.0_f32..1.0))
+            .collect()
+    }
+
+    fn random_vector(len: usize, seed: u64) -> Vec<f32> {
+        use rand::Rng;
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        (0..len).map(|_| rng.gen_range(-1.0_f32..1.0)).collect()
+    }
+
+    #[test]
+    fn pq_fastscan_quantizer_trait_score_matches_direct_helpers() {
+        // ADR-041 stage 0: PqFastScan trait path must produce
+        // bit-identical scores to the existing
+        // `build_grouped_pq_lut_f32` + `grouped_pq_score_f32` pair on
+        // the same rotated query + codebooks.
+        let dim = 1536_usize;
+        let group_size = 4_usize;
+        let group_count = dim / group_size;
+        let prod = Arc::new(ProdQuantizer::new(dim, 4, 42));
+        let flat_codebooks = random_codebooks(group_count, group_size, 7);
+        let quantizer = PqFastScanQuantizer::new(
+            prod.clone(),
+            group_count,
+            group_size,
+            flat_codebooks.clone(),
+        );
+
+        let query = random_vector(dim, 11);
+        let candidate = random_vector(dim, 13);
+        let code = quantizer.encode_code(&candidate);
+        let scorer = quantizer.prepare_scorer(&query);
+        let via_trait = scorer.score(&code);
+
+        let rotated = crate::quant::rotation::srht_padded(&query, &prod.signs);
+        let rotated_domain = &rotated[..dim];
+        let lut_direct = build_grouped_pq_lut_f32(rotated_domain, &flat_codebooks, group_size);
+        let via_direct = grouped_pq_score_f32(&lut_direct, group_count, &code);
+
+        assert_eq!(via_trait.to_bits(), via_direct.to_bits());
+        assert_eq!(quantizer.code_len(), group_count.div_ceil(2));
+        assert_eq!(code.len(), quantizer.code_len());
+        assert_eq!(
+            quantizer.wire_format_version(),
+            crate::am::page::INDEX_FORMAT_V2_GROUPED as u32
+        );
+    }
 
     #[test]
     fn pack_grouped_pq_nibbles_packs_even_count() {

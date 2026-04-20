@@ -10,6 +10,7 @@ mod am;
 mod quant;
 #[cfg(all(test, target_arch = "x86_64", target_os = "linux"))]
 mod standalone_pg_backend_stubs;
+pub(crate) mod storage;
 
 use quant::prod::{payload_len, ProdQuantizer};
 
@@ -53,9 +54,12 @@ pub mod bench_api {
 
     // Page codec
     pub use crate::am::page::{
-        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, DataPage, DataPageChain,
-        ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple, HEAPTID_INLINE_CAPACITY,
-        ITEM_POINTER_BYTES, PAGE_HEADER_BYTES,
+        neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, MetadataPage,
+        TqElementTuple, TqNeighborTuple,
+    };
+    pub use crate::storage::page::{
+        DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
+        PAGE_HEADER_BYTES,
     };
 
     // Text I/O
@@ -757,8 +761,7 @@ fn encode_embedding_to_tqvector(
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
 fn encode_to_tqvector(embedding: Vec<f32>, bits: i32, seed: i64) -> Vec<u8> {
-    encode_embedding_to_tqvector(embedding, bits, seed)
-        .unwrap_or_else(|e| pgrx::error!("{e}"))
+    encode_embedding_to_tqvector(embedding, bits, seed).unwrap_or_else(|e| pgrx::error!("{e}"))
 }
 
 #[pg_extern(immutable, strict, parallel_safe, sql = false)]
@@ -4848,8 +4851,9 @@ mod tests {
         );
 
         let query = pq_fastscan_runtime_query();
-        let observed =
-            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) };
+        let observed = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
         let emitted_scores =
             unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) }
                 .into_iter()
@@ -4872,10 +4876,9 @@ mod tests {
             let comparison_score = comparison_score.expect(
                 "indexed ecvector pq_fastscan scans should attach exact comparison scores by default",
             );
-            let expected = exact_scores
-                .get(&heap_tid)
-                .copied()
-                .expect("every emitted heap tid should map back to an exact indexed-ecvector score");
+            let expected = exact_scores.get(&heap_tid).copied().expect(
+                "every emitted heap tid should map back to an exact indexed-ecvector score",
+            );
             assert_f32_close(
                 comparison_score,
                 expected,
@@ -5790,7 +5793,9 @@ mod tests {
 
         assert!(reloptions_for_index().contains(&"rerank_source_column=source_raw".to_string()));
         assert_matches_expected(
-            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) },
+            unsafe {
+                am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+            },
             &rerank_scores,
             &build_source_scores,
             "persisted TurboQuant rerank_source_column",
@@ -5805,7 +5810,9 @@ mod tests {
             "RESET should remove rerank_source_column from reloptions",
         );
         assert_matches_expected(
-            unsafe { am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone()) },
+            unsafe {
+                am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+            },
             &build_source_scores,
             &rerank_scores,
             "reset TurboQuant rerank_source_column",

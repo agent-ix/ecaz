@@ -83,8 +83,11 @@ pub(super) unsafe fn resolve_source_attribute(
     source_label: &str,
     type_policy: SourceTypePolicy,
 ) -> SourceAttribute {
-    let source_attnum = unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
-    unsafe { resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy) }
+    let source_attnum =
+        unsafe { resolve_source_attnum(heap_relation, source_column, source_label) };
+    unsafe {
+        resolve_source_attribute_by_attnum(heap_relation, source_attnum, source_label, type_policy)
+    }
 }
 
 pub(super) unsafe fn resolve_source_attribute_by_attnum(
@@ -159,7 +162,9 @@ pub(super) unsafe fn resolve_indexed_ecvector_attribute_from_index_info(
     index_info: *mut pg_sys::IndexInfo,
     label: &str,
 ) -> SourceAttribute {
-    let indexed = unsafe { resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label) };
+    let indexed = unsafe {
+        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
+    };
     if indexed.kind != IndexedVectorKind::Ecvector {
         pgrx::error!("tqhnsw {label} must be ecvector");
     }
@@ -216,8 +221,9 @@ pub(super) unsafe fn resolve_indexed_vector_attribute(
     if index_info.is_null() {
         pgrx::error!("tqhnsw {label} could not build index metadata");
     }
-    let attribute =
-        unsafe { resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label) };
+    let attribute = unsafe {
+        resolve_indexed_vector_attribute_from_index_info(heap_relation, index_info, label)
+    };
     unsafe { pg_sys::pfree(index_info.cast()) };
     attribute
 }

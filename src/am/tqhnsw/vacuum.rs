@@ -2,7 +2,8 @@ use std::{collections::HashSet, ffi::c_void, ptr};
 
 use pgrx::{itemptr::item_pointer_set_all, pg_sys, PgBox};
 
-use super::{graph, options, page, search, shared, source, wal};
+use super::{graph, options, page, search, shared, source};
+use crate::storage::wal;
 type BulkDeleteCallback =
     unsafe extern "C-unwind" fn(itemptr: pg_sys::ItemPointer, state: *mut c_void) -> bool;
 

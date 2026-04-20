@@ -1,4 +1,4 @@
-//! GenericXLog helpers for tqhnsw page writes.
+//! GenericXLog helpers shared across access methods.
 
 use pgrx::pg_sys;
 

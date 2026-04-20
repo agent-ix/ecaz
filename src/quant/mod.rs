@@ -33,6 +33,37 @@ pub mod prod;
 pub mod qjl;
 pub mod rotation;
 mod simd;
+pub mod traits;
+
+pub use traits::{Quantizer, QueryScorer};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    TurboQuant,
+    PqFastScan,
+}
+
+impl Family {
+    pub const DEFAULT: Self = Self::TurboQuant;
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TurboQuant => "turboquant",
+            Self::PqFastScan => "pq_fastscan",
+        }
+    }
+
+    pub fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "turboquant" => Ok(Self::TurboQuant),
+            "pq_fastscan" => Ok(Self::PqFastScan),
+            other => Err(format!(
+                "invalid tqhnsw storage_format reloption: expected one of [turboquant, pq_fastscan], got {:?}",
+                other
+            )),
+        }
+    }
+}
 
 pub(crate) fn simd_backend_name() -> &'static str {
     simd::backend_name()
