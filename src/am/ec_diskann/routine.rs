@@ -76,7 +76,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: pg_sys::ItemPointer,
-    _heap_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
@@ -124,6 +124,67 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
                     source_vector.len(),
                     refreshed.dimensions
                 );
+            }
+
+            let (materialized_metadata, chain) = scan_state::materialize_chain_from_index(index_relation)
+                .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to materialize persisted chain: {e}"));
+            let payload =
+                insert::derive_insert_payload_from_persisted(&materialized_metadata, &chain, &source_vector)
+                    .unwrap_or_else(|e| pgrx::error!("ec_diskann aminsert failed to derive insert payload: {e}"));
+            let reader = PersistedGraphReader::new(
+                &chain,
+                materialized_metadata.graph_degree_r,
+                scan_state::metadata_binary_word_count(&materialized_metadata),
+                scan_state::metadata_search_code_len(&materialized_metadata),
+            );
+            let duplicate_candidates =
+                insert::duplicate_candidate_tids_by_payload(&reader, &materialized_metadata, &payload)
+                    .unwrap_or_else(|e| {
+                        pgrx::error!("ec_diskann aminsert failed to probe duplicate payloads: {e}")
+                    });
+            if !duplicate_candidates.is_empty() {
+                let source_attnum = indexed_ecvector_attnum(index_relation).unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann aminsert could not resolve indexed ecvector column: {e}")
+                });
+                let slot = scan_state::allocate_heap_slot(heap_relation).unwrap_or_else(|e| {
+                    pgrx::error!("ec_diskann aminsert could not allocate duplicate-probe slot: {e}")
+                });
+                let snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
+                let duplicate_tid = duplicate_candidates.into_iter().find(|candidate_tid| {
+                    let Ok(candidate_tuple) = reader.read_node(*candidate_tid) else {
+                        return false;
+                    };
+                    if candidate_tuple.primary_heaptid == ItemPointer::INVALID {
+                        return false;
+                    }
+                    if scan_state::fetch_heap_row_version(
+                        heap_relation,
+                        candidate_tuple.primary_heaptid,
+                        snapshot,
+                        slot,
+                    )
+                    .is_err()
+                    {
+                        return false;
+                    }
+                    let Ok(datum) = scan_state::required_slot_datum(
+                        slot,
+                        source_attnum,
+                        "duplicate probe source vector",
+                    ) else {
+                        return false;
+                    };
+                    let existing_vector = ambuild::ecvector_datum_to_vec(datum);
+                    existing_vector == source_vector
+                });
+                pg_sys::ExecDropSingleTupleTableSlot(slot);
+                if let Some(existing_tid) = duplicate_tid {
+                    pgrx::error!(
+                        "ec_diskann duplicate bind is not yet implemented (task 17 phase 7): existing node at ({},{})",
+                        existing_tid.block_number,
+                        existing_tid.offset_number
+                    );
+                }
             }
 
             pgrx::error!("ec_diskann non-empty aminsert is not yet implemented (task 17 phase 7)");
@@ -656,5 +717,41 @@ mod tests {
              $$",
         )
         .expect("boundary insert should fail with the expected message");
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_duplicate_insert_hits_duplicate_boundary() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_duplicate_insert_boundary (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_duplicate_insert_boundary_idx ON ec_diskann_duplicate_insert_boundary USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_duplicate_insert_boundary VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))",
+        )
+        .expect("first insert should bootstrap");
+
+        Spi::run(
+            "DO $$
+             BEGIN
+               BEGIN
+                 INSERT INTO ec_diskann_duplicate_insert_boundary VALUES
+                   (2, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42));
+                 RAISE EXCEPTION 'expected duplicate ec_diskann insert to fail in this slice';
+               EXCEPTION
+                 WHEN OTHERS THEN
+                   IF SQLERRM NOT LIKE '%ec_diskann duplicate bind is not yet implemented%' THEN
+                     RAISE;
+                   END IF;
+               END;
+             END
+             $$",
+        )
+        .expect("duplicate insert should fail with the duplicate-boundary message");
     }
 }

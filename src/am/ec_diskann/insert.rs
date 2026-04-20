@@ -33,6 +33,7 @@ use super::{
         VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_TRANSFORM_KIND_SRHT,
     },
     persist::{stage_grouped_codebook_chain, NodePayload},
+    reader::PersistedGraphReader,
 };
 use super::scan_query::{encode_query_srht, read_grouped_codebook_chain};
 
@@ -133,6 +134,31 @@ pub(super) fn derive_insert_payload_from_persisted(
         binary_words,
         search_code,
     })
+}
+
+pub(super) fn duplicate_candidate_tids_by_payload(
+    reader: &PersistedGraphReader<'_>,
+    metadata: &VamanaMetadataPage,
+    payload: &DerivedInsertPayload,
+) -> Result<Vec<ItemPointer>, String> {
+    let mut matches = Vec::new();
+    for tid in reader.iter_tids() {
+        if metadata.grouped_codebook_head != ItemPointer::INVALID
+            && (tid.block_number > metadata.grouped_codebook_head.block_number
+                || (tid.block_number == metadata.grouped_codebook_head.block_number
+                    && tid.offset_number >= metadata.grouped_codebook_head.offset_number))
+        {
+            break;
+        }
+        let tuple = reader.read_node(tid)?;
+        if tuple.deleted || tuple.primary_heaptid == ItemPointer::INVALID {
+            continue;
+        }
+        if tuple.binary_words == payload.binary_words && tuple.search_code == payload.search_code {
+            matches.push(tid);
+        }
+    }
+    Ok(matches)
 }
 
 #[derive(Debug, Clone)]
@@ -278,6 +304,7 @@ mod tests {
     use crate::am::common::training::{self, train_grouped_pq4_model};
     use crate::am::ec_diskann::page::PAYLOAD_FLAG_GROUPED_SEARCH_CODE;
     use crate::am::ec_diskann::persist::stage_grouped_codebook_chain;
+    use crate::am::ec_diskann::tuple::VamanaNodeTuple;
     use crate::storage::page::DEFAULT_PAGE_SIZE;
 
     fn training_vectors() -> Vec<Vec<f32>> {
@@ -388,5 +415,146 @@ mod tests {
         let err = derive_insert_payload_from_persisted(&metadata, &chain, &vectors[0])
             .expect_err("bad codec should fail");
         assert!(err.contains("codec kind"), "got: {err}");
+    }
+
+    #[test]
+    fn in_006_duplicate_lookup_finds_first_live_match() {
+        let (mut metadata, chain, vectors, model) = staged_metadata(true);
+        let source = &vectors[0];
+        let payload =
+            derive_insert_payload_from_persisted(&metadata, &chain, source).expect("derive");
+        let mut node_chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+
+        let mut first = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        first.binary_words = payload.binary_words.clone();
+        first.search_code = payload.search_code.clone();
+        first.primary_heaptid = ItemPointer {
+            block_number: 500,
+            offset_number: 1,
+        };
+        node_chain
+            .insert_raw_tuple(
+                first
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("first tuple should encode"),
+            )
+            .expect("first tuple");
+
+        let mut other = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        other.binary_words = payload.binary_words.clone();
+        other.search_code = payload.search_code.clone();
+        other.primary_heaptid = ItemPointer {
+            block_number: 501,
+            offset_number: 1,
+        };
+        node_chain
+            .insert_raw_tuple(
+                other
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("second tuple should encode"),
+            )
+            .expect("second tuple");
+        metadata.grouped_codebook_head =
+            stage_grouped_codebook_chain(&mut node_chain, &model).expect("stage codebooks");
+
+        let reader = PersistedGraphReader::new(
+            &node_chain,
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+
+        let matches =
+            duplicate_candidate_tids_by_payload(&reader, &metadata, &payload).expect("lookup");
+
+        assert_eq!(matches.len(), 2, "both live payload matches should be returned");
+        assert_eq!(matches[0].block_number, 1);
+        assert_eq!(matches[0].offset_number, 1);
+    }
+
+    #[test]
+    fn in_007_duplicate_lookup_skips_deleted_and_stripped_tuples() {
+        let (mut metadata, chain, vectors, model) = staged_metadata(true);
+        let source = &vectors[0];
+        let payload =
+            derive_insert_payload_from_persisted(&metadata, &chain, source).expect("derive");
+        let mut node_chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+
+        let mut deleted = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        deleted.binary_words = payload.binary_words.clone();
+        deleted.search_code = payload.search_code.clone();
+        deleted.primary_heaptid = ItemPointer {
+            block_number: 500,
+            offset_number: 1,
+        };
+        deleted.deleted = true;
+        node_chain
+            .insert_raw_tuple(
+                deleted
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("deleted tuple should encode"),
+            )
+            .expect("deleted tuple");
+
+        let mut stripped = VamanaNodeTuple::placeholder(
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+        stripped.binary_words = payload.binary_words.clone();
+        stripped.search_code = payload.search_code.clone();
+        stripped.primary_heaptid = ItemPointer::INVALID;
+        stripped.has_overflow_heaptids = true;
+        node_chain
+            .insert_raw_tuple(
+                stripped
+                    .encode(
+                        metadata.graph_degree_r,
+                        payload.binary_words.len(),
+                        payload.search_code.len(),
+                    )
+                    .expect("stripped tuple should encode"),
+            )
+            .expect("stripped tuple");
+        metadata.grouped_codebook_head =
+            stage_grouped_codebook_chain(&mut node_chain, &model).expect("stage codebooks");
+
+        let reader = PersistedGraphReader::new(
+            &node_chain,
+            metadata.graph_degree_r,
+            payload.binary_words.len(),
+            payload.search_code.len(),
+        );
+
+        let tid =
+            duplicate_candidate_tids_by_payload(&reader, &metadata, &payload).expect("lookup");
+        assert!(
+            tid.is_empty(),
+            "deleted or stripped tuples must not be eligible duplicate targets"
+        );
     }
 }
