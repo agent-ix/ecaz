@@ -6,7 +6,7 @@
 //!    ndarray `Array2<f32>`.
 //! 2. Compute ground truth with a parallel `queries · corpusᵀ` matmul
 //!    (ndarray+rayon), then argsort the top-k per row.
-//! 3. For each sweep value, set the profile's `ef_search` GUC and run one
+//! 3. For each sweep value, set the profile's tuning GUC and run one
 //!    `ORDER BY embedding <#> encode_to_<embedding>(...) LIMIT k` per query.
 //! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
 //!
@@ -40,7 +40,7 @@ pub struct RecallArgs {
     /// k for recall@k / NDCG@k.
     #[arg(long, default_value_t = 10)]
     pub k: usize,
-    /// Sweep values for the profile's tuning GUC. Accepts `--sweep 100,200,400`
+    /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200,400`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
@@ -71,7 +71,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     })?;
     let guc = profile
         .ef_search_guc
-        .ok_or_else(|| eyre!("profile {:?} has no ef_search GUC to sweep", profile.name))?;
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
     let sweep_values: Vec<i32> = if args.sweep.is_empty() {
         if profile.default_sweep.is_empty() {
             return Err(eyre!(
@@ -80,7 +80,8 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             ));
         }
         eprintln!(
-            "[recall] no --sweep provided; using profile default {:?}",
+            "[recall] no --sweep provided; using profile default {} values {:?}",
+            profile.sweep_axis_label(),
             profile.default_sweep
         );
         profile.default_sweep.to_vec()
@@ -149,7 +150,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             ProgressStyle::with_template("[recall {msg}] {wide_bar} {pos}/{len} ({per_sec})")
                 .unwrap(),
         );
-        bar.set_message(format!("{guc}={value}"));
+        bar.set_message(super::sweep_value_label(profile, *value));
         bar.enable_steady_tick(Duration::from_millis(250));
 
         let mut pred: Vec<Vec<i64>> = Vec::with_capacity(queries.nrows());

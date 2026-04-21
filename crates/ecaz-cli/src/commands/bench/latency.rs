@@ -49,7 +49,7 @@ pub struct LatencyArgs {
     /// Total number of queries to run per sweep value.
     #[arg(long, default_value_t = 1000)]
     pub iterations: usize,
-    /// Sweep values for the profile's tuning GUC. Accepts `--sweep 100,200`
+    /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
@@ -85,7 +85,8 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             ));
         }
         eprintln!(
-            "[latency] no --sweep provided; using profile default {:?}",
+            "[latency] no --sweep provided; using profile default {} values {:?}",
+            profile.sweep_axis_label(),
             profile.default_sweep
         );
         profile.default_sweep.to_vec()
@@ -138,6 +139,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
         let durations = run_sweep_point(
             database,
             guc,
+            super::sweep_value_label(profile, *value),
             *value,
             &sql,
             Arc::clone(&queries),
@@ -169,6 +171,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
 async fn run_sweep_point(
     database: &str,
     guc: &str,
+    sweep_label: String,
     value: i32,
     sql: &str,
     queries: Arc<Vec<Vec<f32>>>,
@@ -182,7 +185,7 @@ async fn run_sweep_point(
     bar.set_style(
         ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
-    bar.set_message(format!("{guc}={value}"));
+    bar.set_message(sweep_label);
     bar.enable_steady_tick(Duration::from_millis(250));
     let bar = Arc::new(bar);
 

@@ -52,7 +52,7 @@ pub struct OverheadArgs {
     /// Number of queries sampled per sweep value.
     #[arg(long, default_value_t = 100)]
     pub iterations: usize,
-    /// Sweep values for the profile's tuning GUC.
+    /// Sweep values for the profile's tuning axis.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
     /// Quantization bits used when encoding (must match loader).
@@ -82,7 +82,8 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
             ));
         }
         eprintln!(
-            "[overhead] no --sweep provided; using profile default {:?}",
+            "[overhead] no --sweep provided; using profile default {} values {:?}",
+            profile.sweep_axis_label(),
             profile.default_sweep
         );
         profile.default_sweep.to_vec()
@@ -168,7 +169,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
         bar.set_style(
             ProgressStyle::with_template("[overhead {msg}] {wide_bar} {pos}/{len}").unwrap(),
         );
-        bar.set_message(format!("{guc}={value}"));
+        bar.set_message(super::sweep_value_label(profile, *value));
         bar.enable_steady_tick(Duration::from_millis(250));
 
         let mut full_durs = Vec::with_capacity(args.iterations);
