@@ -13,10 +13,12 @@ mod generate;
 mod inspect;
 mod list;
 mod load;
+mod prepare;
 
 pub use generate::GenerateArgs;
 pub use inspect::InspectArgs;
 pub use load::LoadArgs;
+pub use prepare::PrepareArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum CorpusCommand {
@@ -30,6 +32,9 @@ pub enum CorpusCommand {
     /// Generate a synthetic unit-sphere TSV dataset (no DB access) suitable
     /// for feeding into `ecaz corpus load`.
     Generate(GenerateArgs),
+    /// Convert a Qdrant-DBpedia-style parquet release into canonical
+    /// `<prefix>_corpus.tsv` + `<prefix>_queries.tsv` + manifest.
+    Prepare(PrepareArgs),
 }
 
 impl CorpusCommand {
@@ -39,6 +44,7 @@ impl CorpusCommand {
             CorpusCommand::Inspect(args) => inspect::run(database, args).await,
             CorpusCommand::List => list::run(database).await,
             CorpusCommand::Generate(args) => generate::run(database, args).await,
+            CorpusCommand::Prepare(args) => prepare::run(database, args).await,
         }
     }
 }

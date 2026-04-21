@@ -27,6 +27,10 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 rand_distr = "0.4"
+parquet = { version = "55", default-features = false, features = ["arrow", "snap", "zstd", "flate2", "lz4"] }
+arrow-array = "55"
+arrow-schema = "55"
+chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
