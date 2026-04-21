@@ -170,8 +170,9 @@ See ADR-040 for the full shape. Summary:
 
 - **Claim-aware coordinator drain.** The staged coordinator selection/read/take
   path now treats a result slot as dead when its owning worker slot is no
-  longer claimed for the active rescan epoch, and refreshes past that stale
-  fast-path entry before exposing the next live staged result.
+  longer claimed for the active rescan epoch, refreshes past that stale
+  fast-path entry before exposing the next live staged result, and reaps the
+  dead staged slot from the shared published-result counts.
 
 - **Coordinator fast-path staging.** Shared helpers can now read the staged
   selected result directly from the coordinator snapshot and slot header,

@@ -603,9 +603,46 @@ unsafe fn select_best_parallel_scan_coordinator_result_slot_with_attachment(
     Ok(selected)
 }
 
+unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
+    attachment: &ParallelScanAttachment,
+) -> Result<u32, &'static str> {
+    let mut reaped = 0;
+
+    for slot_index in 0..attachment.result_slot_count {
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let slot_ref = unsafe { &*slot };
+        let snapshot = load_coordinator_result_slot_snapshot(slot_ref);
+        if snapshot.observed_rescan_epoch != attachment.rescan_epoch
+            || snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0
+        {
+            continue;
+        }
+        if unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) } {
+            continue;
+        }
+
+        reset_result_slot_runtime(slot_ref);
+        slot_ref.flags.store(0, Ordering::Release);
+        reaped += 1;
+    }
+
+    if reaped != 0 {
+        let coordinator = unsafe { &*attachment.coordinator };
+        coordinator
+            .published_result_slots
+            .fetch_sub(reaped, Ordering::AcqRel);
+        coordinator
+            .result_publish_generation
+            .fetch_add(reaped, Ordering::AcqRel);
+    }
+
+    Ok(reaped)
+}
+
 fn refresh_coordinator_selection_snapshot(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
+    unsafe { reap_dead_parallel_scan_result_slots_with_attachment(attachment) }?;
     let coordinator = unsafe { &*attachment.coordinator };
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
@@ -1867,8 +1904,8 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
                     claimed_worker_slots: 1,
-                    published_result_slots: 2,
-                    result_publish_generation: 2,
+                    published_result_slots: 1,
+                    result_publish_generation: 3,
                     selected_result_slot_index: Some(first_slot),
                     selected_result_score: Some(-4.0),
                 },
@@ -1892,6 +1929,19 @@ mod tests {
                 },
             }),
             "direct read should refresh past a staged result whose worker claim is no longer live"
+        );
+        assert_eq!(
+            unsafe {
+                read_parallel_scan_coordinator_result_slot_snapshot(attachment.state, second_slot)
+            }
+            .expect("stale result slot should stay readable after refresh"),
+            EcParallelCoordinatorResultSlotSnapshot {
+                flags: 0,
+                slot_index: second_slot,
+                observed_rescan_epoch: attachment.rescan_epoch,
+                runtime: EcParallelCoordinatorResultSlotRuntimeSnapshot::idle(),
+            },
+            "refresh should reap the unclaimed staged result slot from the shared descriptor"
         );
     }
 
@@ -1976,12 +2026,25 @@ mod tests {
             EcParallelCoordinatorSnapshot {
                 flags: 0,
                 claimed_worker_slots: 0,
-                published_result_slots: 1,
-                result_publish_generation: 1,
+                published_result_slots: 0,
+                result_publish_generation: 2,
                 selected_result_slot_index: None,
                 selected_result_score: None,
             },
             "refreshing past an unclaimed staged result should clear the coordinator fast path"
+        );
+        assert_eq!(
+            unsafe {
+                read_parallel_scan_coordinator_result_slot_snapshot(attachment.state, slot_index)
+            }
+            .expect("stale result slot should stay readable after take-side reap"),
+            EcParallelCoordinatorResultSlotSnapshot {
+                flags: 0,
+                slot_index,
+                observed_rescan_epoch: attachment.rescan_epoch,
+                runtime: EcParallelCoordinatorResultSlotRuntimeSnapshot::idle(),
+            },
+            "take should reap an unclaimed staged result slot instead of leaving it published"
         );
     }
 
