@@ -3,11 +3,14 @@
 //!
 //! Thin read-only helper on top of `pg_class` + `information_schema`.
 //! Unlike `load`, this command never issues DDL/DML; safe to run against
-//! a live benchmark database.
+//! a live benchmark database. Complements `corpus list`: this is the
+//! detailed per-index view and maps raw access methods back to CLI
+//! profile names so operators know which `--profile` values are ready.
 
 use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
+use std::collections::BTreeSet;
 
 use crate::profiles;
 use crate::psql;
@@ -66,7 +69,6 @@ pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
         }),
     ]);
     header.add_row(vec!["embedding type".into(), Cell::new(embedding_type)]);
-    println!("{header}");
 
     // Indexes on <prefix>_corpus. Pull AM + reloptions in one shot so the
     // output matches what `corpus load` thinks is present.
@@ -85,13 +87,29 @@ pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
         )
         .await
         .wrap_err("listing indexes")?;
+    let access_methods: Vec<String> = rows.iter().map(|r| r.get::<_, String>(1)).collect();
+    header.add_row(vec![
+        "bench profiles".into(),
+        Cell::new(bench_ready_profiles_label(
+            queries_rows >= 0,
+            &access_methods,
+        )),
+    ]);
+    println!("{header}");
 
     let mut idx = Table::new();
     idx.load_preset(UTF8_FULL);
-    idx.set_header(vec!["index", "access method", "reloptions", "size"]);
+    idx.set_header(vec![
+        "index",
+        "access method",
+        "profile",
+        "reloptions",
+        "size",
+    ]);
     if rows.is_empty() {
         idx.add_row(vec![
             Cell::new("<none>"),
+            Cell::new(""),
             Cell::new(""),
             Cell::new(""),
             Cell::new(""),
@@ -104,7 +122,8 @@ pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
             let size: i64 = r.get(3);
             idx.add_row(vec![
                 Cell::new(name),
-                Cell::new(am),
+                Cell::new(&am),
+                Cell::new(profile_label_for_access_method(&am)),
                 Cell::new(opts),
                 Cell::new(format_bytes(size)),
             ]);
@@ -112,6 +131,27 @@ pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
     }
     println!("{idx}");
     Ok(())
+}
+
+fn profile_label_for_access_method(access_method: &str) -> &'static str {
+    profiles::resolve_by_access_method(access_method)
+        .map(|p| p.name)
+        .unwrap_or("<unknown>")
+}
+
+fn bench_ready_profiles_label(has_queries: bool, access_methods: &[String]) -> String {
+    if !has_queries {
+        return "<queries missing>".to_owned();
+    }
+    let names: BTreeSet<&'static str> = access_methods
+        .iter()
+        .filter_map(|am| profiles::resolve_by_access_method(am).map(|p| p.name))
+        .collect();
+    if names.is_empty() {
+        "<none>".to_owned()
+    } else {
+        names.into_iter().collect::<Vec<_>>().join(", ")
+    }
 }
 
 fn format_bytes(n: i64) -> String {
@@ -134,7 +174,7 @@ fn format_bytes(n: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_bytes;
+    use super::{bench_ready_profiles_label, format_bytes, profile_label_for_access_method};
 
     #[test]
     fn format_bytes_scales_through_units() {
@@ -166,5 +206,44 @@ mod tests {
         // array; 2 PiB shows as "2048.0 TiB".
         let two_pib = 2_i64 * 1024 * 1024 * 1024 * 1024 * 1024;
         assert_eq!(format_bytes(two_pib), "2048.0 TiB");
+    }
+
+    #[test]
+    fn profile_label_for_access_method_maps_known_profiles() {
+        assert_eq!(profile_label_for_access_method("ec_hnsw"), "ec_hnsw");
+        assert_eq!(profile_label_for_access_method("ec_diskann"), "ec_diskann");
+    }
+
+    #[test]
+    fn profile_label_for_access_method_marks_unknown_access_methods() {
+        assert_eq!(profile_label_for_access_method("btree"), "<unknown>");
+    }
+
+    #[test]
+    fn bench_ready_profiles_label_requires_queries_table() {
+        let access_methods = vec!["ec_diskann".to_owned(), "ec_hnsw".to_owned()];
+        assert_eq!(
+            bench_ready_profiles_label(false, &access_methods),
+            "<queries missing>"
+        );
+    }
+
+    #[test]
+    fn bench_ready_profiles_label_sorts_and_dedups_known_profiles() {
+        let access_methods = vec![
+            "ec_hnsw".to_owned(),
+            "ec_diskann".to_owned(),
+            "ec_hnsw".to_owned(),
+        ];
+        assert_eq!(
+            bench_ready_profiles_label(true, &access_methods),
+            "ec_diskann, ec_hnsw"
+        );
+    }
+
+    #[test]
+    fn bench_ready_profiles_label_ignores_unknown_access_methods() {
+        let access_methods = vec!["btree".to_owned()];
+        assert_eq!(bench_ready_profiles_label(true, &access_methods), "<none>");
     }
 }
