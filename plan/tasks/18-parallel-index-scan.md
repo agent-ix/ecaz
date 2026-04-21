@@ -245,6 +245,13 @@ See ADR-040 for the full shape. Summary:
   output first when it beats the admitted head and otherwise draining the
   admitted head in score order.
 
+- **Admitted-result provenance staging.** The admitted window now retains the
+  source worker-slot index and element TID alongside each pending-output
+  snapshot, and scan-side helpers can project an admitted row back into the
+  normal `PendingScanOutput` shape while advancing the local duplicate-drain
+  cursor when that admitted row came from this worker slot. The actual
+  parallel scan execution loop still remains deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

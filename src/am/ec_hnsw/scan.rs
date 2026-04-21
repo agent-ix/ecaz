@@ -3478,12 +3478,70 @@ fn linear_fallback_cursor(opaque: &mut TqScanOpaque) -> LinearFallbackCursor<'_>
     LinearFallbackCursor::new(&mut opaque.fallback_result_state)
 }
 
+fn item_pointer_from_parallel_item_pointer(
+    tid: super::parallel::EcParallelItemPointer,
+) -> page::ItemPointer {
+    if !tid.is_valid() {
+        return page::ItemPointer::INVALID;
+    }
+
+    page::ItemPointer {
+        block_number: tid.block_number,
+        offset_number: tid.offset_number,
+    }
+}
+
+fn pending_scan_output_from_parallel_pending_output(
+    output: super::parallel::EcParallelPendingOutputSnapshot,
+) -> PendingScanOutput {
+    PendingScanOutput {
+        heap_tid: item_pointer_from_parallel_item_pointer(output.heap_tid),
+        score: output.score,
+        approx_score: output.approx_score,
+        approx_rank: output.approx_rank,
+        comparison_score: output.comparison_score,
+    }
+}
+
 pub(super) fn active_result_state_ref(opaque: &TqScanOpaque) -> &ScanResultState {
     if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
         &opaque.fallback_result_state
     } else {
         &opaque.result_state
     }
+}
+
+fn active_result_state_mut(opaque: &mut TqScanOpaque) -> &mut ScanResultState {
+    if opaque.execution_phase == ScanExecutionPhase::LinearFallback {
+        &mut opaque.fallback_result_state
+    } else {
+        &mut opaque.result_state
+    }
+}
+
+fn consume_parallel_scan_admitted_result(
+    opaque: &mut TqScanOpaque,
+    admitted_result: super::parallel::EcParallelCoordinatorAdmittedResultSnapshot,
+) -> PendingScanOutput {
+    if admitted_result.source_slot_index == Some(opaque.parallel_scan_worker_slot_index) {
+        let element_tid = item_pointer_from_parallel_item_pointer(admitted_result.element_tid);
+        let expected_heap_tid =
+            item_pointer_from_parallel_item_pointer(admitted_result.pending_output.heap_tid);
+        let result_state = active_result_state_mut(opaque);
+        if result_state.current().element_tid() == element_tid {
+            if let Some(local_output) = result_state.take_pending_output() {
+                debug_assert_eq!(
+                    local_output.heap_tid, expected_heap_tid,
+                    "local scan result state should stay aligned with the admitted heap-tid drain for this worker slot"
+                );
+            }
+            if result_state.pending_count() == 0 {
+                result_state.clear_current();
+            }
+        }
+    }
+
+    pending_scan_output_from_parallel_pending_output(admitted_result.pending_output)
 }
 
 unsafe fn produce_next_scan_heap_tid(
@@ -6192,6 +6250,147 @@ mod tests {
             opaque.fallback_result_state.pending_count(),
             0,
             "linear fallback teardown should only happen once duplicate drain is exhausted"
+        );
+    }
+
+    #[test]
+    fn consume_parallel_scan_admitted_result_syncs_local_graph_result_state() {
+        let mut opaque = TqScanOpaque {
+            parallel_scan_worker_slot_index: 1,
+            ..TqScanOpaque::default()
+        };
+        opaque.result_state.set_current_with_details(
+            tid(26, 1),
+            -4.0,
+            Some(-3.5),
+            Some(7),
+            Some(-4.5),
+        );
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let output = consume_parallel_scan_admitted_result(
+            &mut opaque,
+            crate::am::ec_hnsw::parallel::EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: 0,
+                source_slot_index: Some(1),
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                    block_number: 26,
+                    offset_number: 1,
+                },
+                pending_output: crate::am::ec_hnsw::parallel::EcParallelPendingOutputSnapshot {
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 31,
+                        offset_number: 1,
+                    },
+                    score: -4.0,
+                    approx_score: Some(-3.5),
+                    approx_rank: Some(7),
+                    comparison_score: Some(-4.5),
+                },
+            },
+        );
+
+        assert_eq!(
+            output,
+            PendingScanOutput {
+                heap_tid: tid(31, 1),
+                score: -4.0,
+                approx_score: Some(-3.5),
+                approx_rank: Some(7),
+                comparison_score: Some(-4.5),
+            },
+            "parallel admitted-result consume should project the shared snapshot back into the normal scan output shape"
+        );
+        assert!(
+            opaque.result_state.current().has_element(),
+            "consuming one duplicate from this worker slot should keep the local current result live while more heap tids remain"
+        );
+        assert_eq!(
+            opaque.result_state.current().heap_tid(),
+            tid(31, 1),
+            "local graph result state should advance to the emitted duplicate when the admitted row came from this worker slot"
+        );
+        assert_eq!(
+            opaque.result_state.pending_index(),
+            1,
+            "local graph result state should advance its pending cursor too"
+        );
+    }
+
+    #[test]
+    fn consume_parallel_scan_admitted_result_syncs_linear_fallback_state_only_for_owned_slot() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            parallel_scan_worker_slot_index: 3,
+            ..TqScanOpaque::default()
+        };
+        opaque.fallback_result_state.set_current(tid(27, 1), -5.0);
+        opaque
+            .fallback_result_state
+            .store_pending(&[tid(32, 1), tid(32, 2)]);
+
+        let foreign = consume_parallel_scan_admitted_result(
+            &mut opaque,
+            crate::am::ec_hnsw::parallel::EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: 0,
+                source_slot_index: Some(2),
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                    block_number: 27,
+                    offset_number: 1,
+                },
+                pending_output: crate::am::ec_hnsw::parallel::EcParallelPendingOutputSnapshot {
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 32,
+                        offset_number: 1,
+                    },
+                    score: -5.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                },
+            },
+        );
+        assert_eq!(
+            foreign.heap_tid,
+            tid(32, 1),
+            "foreign-slot admitted rows should still project into a normal scan output"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.pending_index(),
+            0,
+            "foreign-slot admitted rows should not advance the local fallback cursor"
+        );
+
+        let owned = consume_parallel_scan_admitted_result(
+            &mut opaque,
+            crate::am::ec_hnsw::parallel::EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: 0,
+                source_slot_index: Some(3),
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                    block_number: 27,
+                    offset_number: 1,
+                },
+                pending_output: crate::am::ec_hnsw::parallel::EcParallelPendingOutputSnapshot {
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 32,
+                        offset_number: 1,
+                    },
+                    score: -5.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                },
+            },
+        );
+        assert_eq!(
+            owned.heap_tid,
+            tid(32, 1),
+            "owned-slot admitted rows should keep the same output projection"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.pending_index(),
+            1,
+            "owned-slot admitted rows should advance the local fallback cursor"
         );
     }
 
