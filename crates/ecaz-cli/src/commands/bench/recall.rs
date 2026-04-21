@@ -99,16 +99,26 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     let guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no ef_search GUC to sweep", profile.name))?;
-    if args.sweep.is_empty() {
-        return Err(eyre!(
-            "--sweep requires at least one value (e.g. --sweep 100,200,400)"
-        ));
-    }
     if args.truth_cache_dir.is_some() && args.truth_cache_file.is_some() {
         return Err(eyre!(
             "--truth-cache-dir and --truth-cache-file are mutually exclusive"
         ));
     }
+    let sweep_values: Vec<i32> = if args.sweep.is_empty() {
+        if profile.default_sweep.is_empty() {
+            return Err(eyre!(
+                "--sweep is required for profile {:?} (no default sweep registered)",
+                profile.name
+            ));
+        }
+        eprintln!(
+            "[recall] no --sweep provided; using profile default {:?}",
+            profile.default_sweep
+        );
+        profile.default_sweep.to_vec()
+    } else {
+        args.sweep.clone()
+    };
     validate_rerank_width_arg(profile, args.rerank_width)?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
@@ -171,7 +181,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     t.load_preset(UTF8_FULL);
     t.set_header(vec!["sweep", "recall@k", "ndcg@k", "mean q-time"]);
 
-    for value in &args.sweep {
+    for value in &sweep_values {
         if args.force_index {
             client
                 .batch_execute("SET enable_seqscan = off")
