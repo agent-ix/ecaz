@@ -54,6 +54,17 @@ struct VacuumBulkDeletePassResult {
     entry_point_needs_medoid_refresh: bool,
 }
 
+#[inline]
+fn maybe_check_for_interrupts() {
+    #[cfg(all(test, not(feature = "pg_test")))]
+    {}
+
+    #[cfg(not(all(test, not(feature = "pg_test"))))]
+    {
+        pgrx::check_for_interrupts!();
+    }
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 #[derive(Debug, Clone)]
 struct VacuumRewriteTestInjection {
@@ -1011,6 +1022,8 @@ unsafe fn run_diskann_bulkdelete_pass(
     let mut finalize_tids = Vec::new();
     let mut repair_target_tids = Vec::new();
     for &tid in &node_tids {
+        maybe_check_for_interrupts();
+
         let mut tuple = read_chain_node(
             &mutated_chain,
             graph_degree_r,
@@ -1043,6 +1056,8 @@ unsafe fn run_diskann_bulkdelete_pass(
     let dead_set: HashSet<_> = finalize_tids.iter().copied().collect();
     if !dead_set.is_empty() {
         for &tid in &node_tids {
+            maybe_check_for_interrupts();
+
             let mut tuple = read_chain_node(
                 &mutated_chain,
                 graph_degree_r,
@@ -1167,6 +1182,8 @@ unsafe fn fill_vacuum_neighbor_slots(
 
     let repair_result = (|| -> Result<(), String> {
         for &target_tid in repair_target_tids {
+            maybe_check_for_interrupts();
+
             let planner = VacuumFillPlanner {
                 heap_relation,
                 snapshot,
@@ -1307,6 +1324,8 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
     if build_list_size == 0 {
         return Err("ec_diskann vacuum repair requires build_list_size_l > 0".into());
     }
+    let repair_scan_budget =
+        vacuum_repair_scan_budget(build_list_size, planner.metadata.graph_degree_r as usize);
     let (query_lut, helper_group_count) = build_grouped_pq_lut_from_persisted(
         planner.chain,
         planner.metadata.grouped_codebook_head,
@@ -1340,9 +1359,9 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
             visited,
             ScanParams {
                 entry_point,
-                list_size: build_list_size,
-                rerank_budget: build_list_size,
-                top_k: build_list_size,
+                list_size: repair_scan_budget,
+                rerank_budget: repair_scan_budget,
+                top_k: repair_scan_budget,
             },
             |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
             |heap_tid| match exact_heap_rerank_distance(
@@ -1372,6 +1391,8 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
 
     existing_neighbor_set.insert(target_tid);
     for result in node_results {
+        maybe_check_for_interrupts();
+
         if planner.dead_set.contains(&result.tid) || !existing_neighbor_set.insert(result.tid) {
             continue;
         }
@@ -1421,6 +1442,10 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         .filter(|tid| !existing_neighbor_set.contains(tid))
         .take(free_slots)
         .collect())
+}
+
+fn vacuum_repair_scan_budget(build_list_size: usize, graph_degree_r: usize) -> usize {
+    build_list_size.min(graph_degree_r.max(1))
 }
 
 fn count_live_node_tuples(index_relation: pg_sys::Relation) -> Result<usize, String> {
@@ -2020,6 +2045,13 @@ mod tests {
             64,
             "reloption top_k must not exceed the rerank window in the SQL scan path",
         );
+    }
+
+    #[test]
+    fn vacuum_repair_scan_budget_caps_at_graph_degree() {
+        assert_eq!(super::vacuum_repair_scan_budget(100, 32), 32);
+        assert_eq!(super::vacuum_repair_scan_budget(24, 32), 24);
+        assert_eq!(super::vacuum_repair_scan_budget(100, 0), 1);
     }
 
     fn diskann_large_query_array() -> String {
