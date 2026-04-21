@@ -2476,6 +2476,88 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_diskann_build_coalesces_duplicate_vectors() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_duplicate_build (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        for id in 1..=12_i64 {
+            Spi::run(&format!(
+                "INSERT INTO ec_diskann_duplicate_build VALUES \
+                 ({id}, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
+            ))
+            .expect("duplicate insert should succeed");
+        }
+        Spi::run(
+            "CREATE INDEX ec_diskann_duplicate_build_idx ON ec_diskann_duplicate_build USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        let (metadata, chain) = index_materialized_chain("ec_diskann_duplicate_build_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let node_tids = reader
+            .iter_node_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("node tid iteration should succeed");
+        assert_eq!(
+            node_tids.len(),
+            1,
+            "duplicate build rows should share one DiskANN graph node",
+        );
+
+        let node_tid = node_tids[0];
+        let node_tuple = reader
+            .read_node(node_tid)
+            .expect("node tuple should decode");
+        assert!(node_tuple.has_overflow_heaptids);
+        let bound_heap_tids =
+            insert::bound_heap_tids_for_owner(&chain, node_tid, node_tuple.primary_heaptid)
+                .expect("bound heap tids should decode");
+        assert_eq!(bound_heap_tids.len(), 12);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+
+        let plan = explain_ordered_diskann_ids(
+            "ec_diskann_duplicate_build",
+            "ARRAY[1.0, 0.0, 0.5, -1.0]::real[]",
+            12,
+        );
+        assert!(
+            explain_plan_uses_index(&plan),
+            "duplicate-build test should route through ec_diskann at runtime: {plan}"
+        );
+
+        let mut ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_duplicate_build \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 12",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        ordered_ids.sort_unstable();
+        assert_eq!(ordered_ids, (1..=12_i64).collect::<Vec<_>>());
+    }
+
+    #[pg_test]
     fn test_ec_diskann_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_diskann_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
