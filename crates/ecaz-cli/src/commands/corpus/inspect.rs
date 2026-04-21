@@ -13,7 +13,7 @@ use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use std::collections::BTreeSet;
 
 use crate::profiles;
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
@@ -22,13 +22,13 @@ pub struct InspectArgs {
     pub prefix: String,
 }
 
-pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: InspectArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
         return Err(eyre!("no corpus table {:?} in this database", corpus_table));
     }

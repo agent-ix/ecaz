@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
 use crate::profiles::{self, IndexProfile};
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
 pub struct RecallArgs {
@@ -56,7 +56,7 @@ pub struct RecallArgs {
     pub seed: i64,
 }
 
-pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 {
@@ -92,7 +92,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
     if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
         return Err(eyre!(
             "{} on {:?}",

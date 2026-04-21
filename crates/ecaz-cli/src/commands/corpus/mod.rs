@@ -9,6 +9,8 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::psql::ConnectionOptions;
+
 mod generate;
 mod inspect;
 mod list;
@@ -38,13 +40,13 @@ pub enum CorpusCommand {
 }
 
 impl CorpusCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            CorpusCommand::Load(args) => load::run(database, args).await,
-            CorpusCommand::Inspect(args) => inspect::run(database, args).await,
-            CorpusCommand::List => list::run(database).await,
-            CorpusCommand::Generate(args) => generate::run(database, args).await,
-            CorpusCommand::Prepare(args) => prepare::run(database, args).await,
+            CorpusCommand::Load(args) => load::run(conn, args).await,
+            CorpusCommand::Inspect(args) => inspect::run(conn, args).await,
+            CorpusCommand::List => list::run(conn).await,
+            CorpusCommand::Generate(args) => generate::run(conn, args).await,
+            CorpusCommand::Prepare(args) => prepare::run(conn, args).await,
         }
     }
 }

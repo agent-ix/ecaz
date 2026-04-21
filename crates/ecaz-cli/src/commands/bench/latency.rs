@@ -25,10 +25,9 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, Instant};
-use tokio_postgres::NoTls;
 
 use crate::profiles;
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 use super::recall::build_knn_sql;
 
@@ -61,7 +60,7 @@ pub struct LatencyArgs {
     pub seed: i64,
 }
 
-pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 || args.iterations == 0 || args.concurrency == 0 {
@@ -99,7 +98,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
     let sql = build_knn_sql(profile, &corpus_table);
 
     // Pull query vectors once into memory. Iterations > n_queries wraps.
-    let bootstrap = psql::connect(database).await?;
+    let bootstrap = psql::connect(conn).await?;
     if psql::index_count_with_am(&bootstrap, &corpus_table, profile.access_method).await? == 0 {
         return Err(eyre!(
             "{} on {:?}",
@@ -137,7 +136,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
 
     for value in &sweep_values {
         let durations = run_sweep_point(
-            database,
+            conn,
             guc,
             super::sweep_value_label(profile, *value),
             *value,
@@ -169,7 +168,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 async fn run_sweep_point(
-    database: &str,
+    conn: &ConnectionOptions,
     guc: &str,
     sweep_label: String,
     value: i32,
@@ -192,7 +191,7 @@ async fn run_sweep_point(
     let counter = Arc::new(AtomicUsize::new(0));
     let mut handles = Vec::with_capacity(concurrency);
     for _ in 0..concurrency {
-        let database = database.to_owned();
+        let conn = conn.clone();
         let guc = guc.to_owned();
         let sql = sql.to_owned();
         let queries = Arc::clone(&queries);
@@ -200,7 +199,7 @@ async fn run_sweep_point(
         let bar = Arc::clone(&bar);
         handles.push(tokio::spawn(async move {
             worker(
-                database, guc, value, sql, queries, counter, iterations, bits, seed, k, bar,
+                conn, guc, value, sql, queries, counter, iterations, bits, seed, k, bar,
             )
             .await
         }));
@@ -217,7 +216,7 @@ async fn run_sweep_point(
 
 #[allow(clippy::too_many_arguments)]
 async fn worker(
-    database: String,
+    conn: ConnectionOptions,
     guc: String,
     value: i32,
     sql: String,
@@ -230,28 +229,7 @@ async fn worker(
     bar: Arc<ProgressBar>,
 ) -> Result<Vec<Duration>> {
     // Each worker needs its own connection so the session-local GUC sticks.
-    let mut config = tokio_postgres::Config::new();
-    config.dbname(&database);
-    if let Ok(v) = std::env::var("PGHOST") {
-        config.host(&v);
-    }
-    if let Ok(v) = std::env::var("PGPORT") {
-        if let Ok(p) = v.parse() {
-            config.port(p);
-        }
-    }
-    if let Ok(v) = std::env::var("PGUSER") {
-        config.user(&v);
-    }
-    if let Ok(v) = std::env::var("PGPASSWORD") {
-        config.password(&v);
-    }
-    let (client, connection) = config.connect(NoTls).await?;
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!(error = %e, "latency worker connection failed");
-        }
-    });
+    let client = psql::connect(&conn).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;

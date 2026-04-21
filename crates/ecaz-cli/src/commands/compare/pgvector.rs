@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
 use crate::profiles;
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 use super::super::bench::latency::{summarize, LatencyStats};
 use super::super::bench::recall::{
@@ -73,7 +73,7 @@ pub struct PgvectorArgs {
     pub rebuild: bool,
 }
 
-pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 {
@@ -95,7 +95,7 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     let sidecar_table = pgvector_sidecar_name(&args.prefix);
     let sidecar_index = pgvector_index_name(&args.prefix);
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
 
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
         return Err(eyre!(

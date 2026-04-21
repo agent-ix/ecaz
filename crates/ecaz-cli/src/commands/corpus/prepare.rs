@@ -34,6 +34,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use crate::psql::ConnectionOptions;
+
 pub const DEFAULT_SOURCE_DATASET: &str =
     "Qdrant dbpedia-entities-openai3-text-embedding-3-large-1536-1M";
 pub const DEFAULT_DIM: usize = 1536;
@@ -112,7 +114,7 @@ pub struct PrepareArgs {
     pub source_dataset: String,
 }
 
-pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
+pub async fn run(_conn: &ConnectionOptions, args: PrepareArgs) -> Result<()> {
     let profile = resolve_profile(&args.profile).ok_or_else(|| {
         let names: Vec<&str> = PROFILES.iter().map(|p| p.prefix).collect();
         eyre!(

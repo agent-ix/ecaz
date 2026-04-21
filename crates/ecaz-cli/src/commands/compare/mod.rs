@@ -6,6 +6,8 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::psql::ConnectionOptions;
+
 mod pgvector;
 
 pub use pgvector::PgvectorArgs;
@@ -17,9 +19,9 @@ pub enum CompareCommand {
 }
 
 impl CompareCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            CompareCommand::Pgvector(a) => pgvector::run(database, a).await,
+            CompareCommand::Pgvector(a) => pgvector::run(conn, a).await,
         }
     }
 }

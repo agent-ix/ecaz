@@ -7,6 +7,7 @@ use clap::Subcommand;
 use color_eyre::eyre::Result;
 
 use crate::profiles::IndexProfile;
+use crate::psql::ConnectionOptions;
 
 pub mod latency;
 mod overhead;
@@ -42,12 +43,12 @@ pub enum BenchCommand {
 }
 
 impl BenchCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            BenchCommand::Recall(a) => recall::run(database, a).await,
-            BenchCommand::Latency(a) => latency::run(database, a).await,
-            BenchCommand::Storage(a) => storage::run(database, a).await,
-            BenchCommand::Overhead(a) => overhead::run(database, a).await,
+            BenchCommand::Recall(a) => recall::run(conn, a).await,
+            BenchCommand::Latency(a) => latency::run(conn, a).await,
+            BenchCommand::Storage(a) => storage::run(conn, a).await,
+            BenchCommand::Overhead(a) => overhead::run(conn, a).await,
         }
     }
 }

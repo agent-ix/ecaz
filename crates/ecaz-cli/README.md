@@ -36,9 +36,11 @@ From the repository root:
 cargo install --path crates/ecaz-cli
 ```
 
-That puts `ecaz` on `$PATH`. All commands accept `--database` (or read
-`PGDATABASE`) and inherit libpq environment variables (`PGHOST`, `PGPORT`,
-`PGUSER`, `PGPASSWORD`) for connection setup.
+That puts `ecaz` on `$PATH`. All commands accept `--database`, `--host`,
+`--port`, `--user`, and `--password`; each also falls back to the matching
+libpq environment variable (`PGDATABASE`, `PGHOST`, `PGPORT`, `PGUSER`,
+`PGPASSWORD`) when the flag is omitted. `--host` may be either a TCP host
+name or a Unix socket directory such as `/home/peter/.pgrx`.
 
 ## Command tree
 

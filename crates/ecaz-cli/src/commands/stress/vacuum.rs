@@ -37,7 +37,8 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, Instant};
-use tokio_postgres::NoTls;
+
+use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
 pub struct VacuumArgs {
@@ -56,7 +57,7 @@ pub struct VacuumArgs {
     pub reachability_floor_pct: u32,
 }
 
-pub async fn run(database: &str, args: VacuumArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: VacuumArgs) -> Result<()> {
     if args.duration_seconds == 0 {
         return Err(eyre!("--duration-seconds must be >= 1"));
     }
@@ -72,7 +73,7 @@ pub async fn run(database: &str, args: VacuumArgs) -> Result<()> {
     let index_name = format!("{table}_idx");
     let ref_index_name = format!("{table}_ref_idx");
 
-    let client = crate::psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
     ensure_debug_functions(&client).await?;
 
     eprintln!("[stress] seeding {} rows into {table}", args.seed_rows);
@@ -85,26 +86,26 @@ pub async fn run(database: &str, args: VacuumArgs) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(args.duration_seconds);
 
     let insert = tokio::spawn(insert_worker(
-        database.to_owned(),
+        conn.clone(),
         table.clone(),
         Arc::clone(&stop),
         deadline,
     ));
     let vacuum = tokio::spawn(vacuum_worker(
-        database.to_owned(),
+        conn.clone(),
         table.clone(),
         Arc::clone(&stop),
         deadline,
     ));
     let scan_a = tokio::spawn(scan_worker(
-        database.to_owned(),
+        conn.clone(),
         index_name.clone(),
         vec![1.0, 0.0, 0.5, -1.0],
         Arc::clone(&stop),
         deadline,
     ));
     let scan_b = tokio::spawn(scan_worker(
-        database.to_owned(),
+        conn.clone(),
         index_name.clone(),
         vec![0.0, 1.0, -0.5, 0.25],
         Arc::clone(&stop),
@@ -269,45 +270,17 @@ pub fn build_vacuum_iteration_sql(table: &str) -> String {
     )
 }
 
-async fn connect_worker(database: &str) -> Result<tokio_postgres::Client> {
-    let mut config = tokio_postgres::Config::new();
-    config.dbname(database);
-    for (var, setter) in [("PGHOST", 0_u8), ("PGUSER", 1), ("PGPASSWORD", 2)] {
-        if let Ok(v) = std::env::var(var) {
-            match setter {
-                0 => {
-                    config.host(&v);
-                }
-                1 => {
-                    config.user(&v);
-                }
-                _ => {
-                    config.password(&v);
-                }
-            }
-        }
-    }
-    if let Ok(v) = std::env::var("PGPORT") {
-        if let Ok(p) = v.parse() {
-            config.port(p);
-        }
-    }
-    let (client, connection) = config.connect(NoTls).await?;
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            tracing::error!(error = %e, "stress vacuum worker connection failed");
-        }
-    });
-    Ok(client)
+async fn connect_worker(conn: &ConnectionOptions) -> Result<tokio_postgres::Client> {
+    psql::connect(conn).await
 }
 
 async fn insert_worker(
-    database: String,
+    conn: ConnectionOptions,
     table: String,
     stop: Arc<AtomicBool>,
     deadline: Instant,
 ) -> Result<u64> {
-    let client = connect_worker(&database).await?;
+    let client = connect_worker(&conn).await?;
     let sql = build_insert_iteration_sql(&table);
     let mut iterations = 0_u64;
     while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {
@@ -321,12 +294,12 @@ async fn insert_worker(
 }
 
 async fn vacuum_worker(
-    database: String,
+    conn: ConnectionOptions,
     table: String,
     stop: Arc<AtomicBool>,
     deadline: Instant,
 ) -> Result<u64> {
-    let client = connect_worker(&database).await?;
+    let client = connect_worker(&conn).await?;
     let sql = build_vacuum_iteration_sql(&table);
     let count_sql = format!("SELECT count(*) FROM {table}");
     let mut iterations = 0_u64;
@@ -342,13 +315,13 @@ async fn vacuum_worker(
 }
 
 async fn scan_worker(
-    database: String,
+    conn: ConnectionOptions,
     index_name: String,
     query: Vec<f32>,
     stop: Arc<AtomicBool>,
     deadline: Instant,
 ) -> Result<u64> {
-    let client = connect_worker(&database).await?;
+    let client = connect_worker(&conn).await?;
     let stmt = client
         .prepare("SELECT tests.ec_hnsw_debug_scan_result_count($1::regclass::oid, $2::real[])")
         .await?;

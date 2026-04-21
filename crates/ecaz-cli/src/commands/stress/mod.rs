@@ -3,6 +3,8 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::psql::ConnectionOptions;
+
 mod vacuum;
 
 pub use vacuum::VacuumArgs;
@@ -15,9 +17,9 @@ pub enum StressCommand {
 }
 
 impl StressCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            StressCommand::Vacuum(a) => vacuum::run(database, a).await,
+            StressCommand::Vacuum(a) => vacuum::run(conn, a).await,
         }
     }
 }
