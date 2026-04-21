@@ -208,6 +208,12 @@ See ADR-040 for the full shape. Summary:
   real parallel execution starts wiring in. Planner-visible parallel scans and
   the eventual shared top-K admission path still remain deferred.
 
+- **Pending-output staging.** Each worker-frontier result slot now carries the
+  full inline heap-TID buffer plus pending-index state, and the coordinator
+  can drain one pending heap TID at a time without clearing the slot until that
+  worker result is fully emitted. This is still the staged worker-frontier
+  merge seam, not the final shared top-K admission heap described by ADR-040.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

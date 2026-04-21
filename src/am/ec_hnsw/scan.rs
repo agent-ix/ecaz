@@ -1149,13 +1149,28 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
 
     let current_result = active_result_state.current();
     if current_result.has_element() {
+        let pending_heap_tids = std::array::from_fn(|index| {
+            active_result_state
+                .pending_heap_tids()
+                .get(index)
+                .copied()
+                .map(parallel_item_pointer)
+                .unwrap_or(super::parallel::EcParallelItemPointer::INVALID)
+        });
+        let next_pending_heap_tid = pending_heap_tids
+            .get(usize::from(active_result_state.pending_index()))
+            .copied()
+            .filter(|tid| tid.is_valid())
+            .unwrap_or_else(|| {
+                if current_result.heap_tid() == page::ItemPointer::INVALID {
+                    super::parallel::EcParallelItemPointer::INVALID
+                } else {
+                    parallel_item_pointer(current_result.heap_tid())
+                }
+            });
         let result_snapshot = super::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
             element_tid: parallel_item_pointer(current_result.element_tid()),
-            heap_tid: if current_result.heap_tid() == page::ItemPointer::INVALID {
-                super::parallel::EcParallelItemPointer::INVALID
-            } else {
-                parallel_item_pointer(current_result.heap_tid())
-            },
+            heap_tid: next_pending_heap_tid,
             score: current_result.score(),
             approx_score: current_result
                 .approx_score_valid()
@@ -1168,6 +1183,7 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
                 .then_some(current_result.approx_rank_base()),
             pending_count: u32::from(active_result_state.pending_count()),
             pending_index: u32::from(active_result_state.pending_index()),
+            pending_heap_tids,
         };
 
         match unsafe {
@@ -5783,8 +5799,8 @@ mod tests {
         }
         .expect("parallel coordinator result-slot snapshot should read back");
         assert_eq!(
-            result_snapshot.flags, 0x03,
-            "plain staged current results should carry only the published and score-valid flags"
+            result_snapshot.flags, 0x23,
+            "plain staged current results should carry the published, score-valid, and staged-heap-tid flags"
         );
         assert_eq!(
             result_snapshot.runtime.element_tid,
@@ -5796,8 +5812,11 @@ mod tests {
         );
         assert_eq!(
             result_snapshot.runtime.heap_tid,
-            crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
-            "coordinator result snapshot should stay heap-tid invalid until pending drain materializes a heap row"
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 29,
+                offset_number: 1,
+            },
+            "coordinator result snapshot should stage the next heap tid ready for coordinator-side drain"
         );
         assert_eq!(
             result_snapshot.runtime.score, -6.0,
@@ -5822,6 +5841,22 @@ mod tests {
         assert_eq!(
             result_snapshot.runtime.pending_index, 0,
             "coordinator result snapshot should mirror the pending heap-drain cursor"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_heap_tids[0],
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 29,
+                offset_number: 1,
+            },
+            "coordinator result snapshot should stage the first pending heap tid inline"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_heap_tids[1],
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 29,
+                offset_number: 2,
+            },
+            "coordinator result snapshot should stage the second pending heap tid inline"
         );
     }
 
