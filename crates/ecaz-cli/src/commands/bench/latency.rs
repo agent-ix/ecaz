@@ -138,7 +138,15 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
     let mut header = vec![
-        "sweep", "count", "mean", "stddev", "min", "p50", "p95", "p99", "max",
+        profile.sweep_axis_label(),
+        "count",
+        "mean",
+        "stddev",
+        "min",
+        "p50",
+        "p95",
+        "p99",
+        "max",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
