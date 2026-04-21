@@ -139,10 +139,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     })?;
 
     if !profile.sweep_axis_is_m() && !args.m.is_empty() {
-        return Err(eyre!(
-            "--m is not supported by profile {:?}; use --reloption for AM-specific tunables",
-            profile.name
-        ));
+        return Err(eyre!(unsupported_m_error(profile)));
     }
 
     let unknown = profile.unknown_reloption_keys(&args.reloptions);
@@ -410,6 +407,16 @@ fn verify_manifest_if_present(
 struct FlagCollision {
     key: &'static str,
     flag: &'static str,
+}
+
+fn unsupported_m_error(profile: &IndexProfile) -> String {
+    format!(
+        "--m is not supported by profile {:?}; use --reloption for {} tuning instead (known keys: {}). Example: `ecaz corpus load --profile {} --reloption graph_degree=48 --reloption alpha=1.2 ...`",
+        profile.name,
+        profile.name,
+        profile.known_reloptions.join(", "),
+        profile.name
+    )
 }
 
 /// Reject `--reloption` keys that a native CLI flag already sets. Postgres
@@ -1275,6 +1282,14 @@ mod tests {
         let opts = vec![opt("graph_degree", "48"), opt("alpha", "1.2")];
         assert!(reloption_flag_collisions(&EC_DISKANN, &opts, None).is_empty());
         assert!(reloption_flag_collisions(&EC_HNSW, &[], None).is_empty());
+    }
+
+    #[test]
+    fn unsupported_m_error_points_diskann_operators_at_reloptions() {
+        let err = unsupported_m_error(&EC_DISKANN);
+        assert!(err.contains("--m is not supported by profile \"ec_diskann\""));
+        assert!(err.contains("known keys: graph_degree, build_list_size, list_size"));
+        assert!(err.contains("--profile ec_diskann --reloption graph_degree=48"));
     }
 
     // --- manifest orchestration ---
