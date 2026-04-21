@@ -3,17 +3,19 @@
 //! All subcommands here accept `--profile` and `--prefix` so a single corpus
 //! can be measured against multiple access methods without re-loading data.
 //!
-//! v1 status: `recall` and `latency` are implemented. `storage` and
-//! `overhead` remain stubs and land in follow-up commits.
+//! v1 status: `recall`, `latency`, and `storage` are implemented.
+//! `overhead` remains a stub and lands in a follow-up commit.
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{eyre, Result};
 
 mod latency;
 mod recall;
+mod storage;
 
 pub use latency::LatencyArgs;
 pub use recall::RecallArgs;
+pub use storage::StorageArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum BenchCommand {
@@ -25,12 +27,6 @@ pub enum BenchCommand {
     Storage(StorageArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual SQL time.
     Overhead(OverheadArgs),
-}
-
-#[derive(Args, Debug)]
-pub struct StorageArgs {
-    #[arg(long)]
-    pub prefix: String,
 }
 
 #[derive(Args, Debug)]
@@ -46,13 +42,9 @@ impl BenchCommand {
         match self {
             BenchCommand::Recall(args) => recall::run(database, args).await,
             BenchCommand::Latency(args) => latency::run(database, args).await,
-            BenchCommand::Storage(_) | BenchCommand::Overhead(_) => Err(eyre!(
-                "ecaz bench {}: not yet implemented (ported in a follow-up commit)",
-                match self {
-                    BenchCommand::Storage(_) => "storage",
-                    BenchCommand::Overhead(_) => "overhead",
-                    _ => unreachable!(),
-                }
+            BenchCommand::Storage(args) => storage::run(database, args).await,
+            BenchCommand::Overhead(_) => Err(eyre!(
+                "ecaz bench overhead: not yet implemented (ported in a follow-up commit)"
             )),
         }
     }
