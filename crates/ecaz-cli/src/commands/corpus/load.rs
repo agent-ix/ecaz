@@ -26,6 +26,7 @@ use crate::reloptions;
 use crate::tsv;
 
 const DEFAULT_HNSW_BUILD_SOURCE_COLUMN: &str = "source";
+const DEFAULT_HNSW_EF_CONSTRUCTION: i32 = 128;
 const DEFAULT_HNSW_M_SWEEP: &[i32] = &[8, 16];
 /// Flush the COPY sink at roughly this size. Large enough to amortise the
 /// async send overhead, small enough that a 10M-row corpus still surfaces
@@ -68,8 +69,8 @@ pub struct LoadArgs {
     pub m: Vec<i32>,
 
     /// HNSW-only: ef_construction passed to CREATE INDEX.
-    #[arg(long, default_value_t = 128)]
-    pub ef_construction: i32,
+    #[arg(long)]
+    pub ef_construction: Option<i32>,
 
     /// Optional storage format (turboquant / pq_fastscan).
     #[arg(long)]
@@ -109,6 +110,9 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     if !profile.sweep_axis_is_m() && !args.m.is_empty() {
         return Err(eyre!(unsupported_m_error(profile)));
     }
+    if !profile.sweep_axis_is_m() && args.ef_construction.is_some() {
+        return Err(eyre!(unsupported_ef_construction_error(profile)));
+    }
 
     let unknown = profile.unknown_reloption_keys(&args.reloptions);
     if !unknown.is_empty() {
@@ -145,7 +149,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         profile,
         &index_prefix,
         &args.m,
-        args.ef_construction,
+        args.ef_construction.unwrap_or(DEFAULT_HNSW_EF_CONSTRUCTION),
         args.storage_format.as_deref(),
         &args.reloptions,
     );
@@ -293,6 +297,16 @@ struct FlagCollision {
 fn unsupported_m_error(profile: &IndexProfile) -> String {
     format!(
         "--m is not supported by profile {:?}; use --reloption for {} tuning instead (known keys: {}). Example: `ecaz corpus load --profile {} --reloption graph_degree=48 --reloption alpha=1.2 ...`",
+        profile.name,
+        profile.name,
+        profile.known_reloptions.join(", "),
+        profile.name
+    )
+}
+
+fn unsupported_ef_construction_error(profile: &IndexProfile) -> String {
+    format!(
+        "--ef-construction is not supported by profile {:?}; use --reloption for {} tuning instead (known keys: {}). Example: `ecaz corpus load --profile {} --reloption graph_degree=48 --reloption build_list_size=128 ...`",
         profile.name,
         profile.name,
         profile.known_reloptions.join(", "),
@@ -758,6 +772,16 @@ mod tests {
         assert!(err.contains("--m is not supported by profile \"ec_diskann\""));
         assert!(err.contains("known keys: graph_degree, build_list_size, list_size"));
         assert!(err.contains("--profile ec_diskann --reloption graph_degree=48"));
+    }
+
+    #[test]
+    fn unsupported_ef_construction_error_points_diskann_operators_at_reloptions() {
+        let err = unsupported_ef_construction_error(&EC_DISKANN);
+        assert!(err.contains("--ef-construction is not supported by profile \"ec_diskann\""));
+        assert!(err.contains("known keys: graph_degree, build_list_size, list_size"));
+        assert!(err.contains(
+            "--profile ec_diskann --reloption graph_degree=48 --reloption build_list_size=128"
+        ));
     }
 
     // --- manifest orchestration ---
