@@ -259,6 +259,12 @@ pub(crate) struct EcParallelCoordinatorAdmitPendingOutputSelection {
     pub(crate) admission: EcParallelCoordinatorAdmissionSnapshot,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct EcParallelCoordinatorAdmittedResultSelection {
+    pub(crate) coordinator: EcParallelCoordinatorSnapshot,
+    pub(crate) admitted_result: EcParallelCoordinatorAdmittedResultSnapshot,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) execution_phase: u32,
@@ -1752,6 +1758,48 @@ fn load_admission_snapshot(
     }
 }
 
+unsafe fn take_admitted_result_locked(
+    attachment: &ParallelScanAttachment,
+) -> Result<Option<EcParallelCoordinatorAdmittedResultSelection>, &'static str> {
+    let coordinator = unsafe { &*attachment.coordinator };
+    let count = coordinator
+        .admitted_result_count
+        .load(Ordering::Acquire)
+        .min(attachment.admitted_result_count);
+    if count == 0 {
+        return Ok(None);
+    }
+
+    let head = unsafe { attachment.admitted_result(0) }?;
+    let admitted_result = load_admitted_result_snapshot(unsafe { &*head });
+    if admitted_result.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
+        return Ok(None);
+    }
+    let coordinator_snapshot = load_coordinator_snapshot(coordinator);
+
+    for result_index in 1..count {
+        let src = unsafe { attachment.admitted_result(result_index) }?;
+        let dst = unsafe { attachment.admitted_result(result_index - 1) }?;
+        let snapshot = load_admitted_result_snapshot(unsafe { &*src });
+        store_admitted_result(unsafe { &*dst }, &snapshot.pending_output);
+    }
+
+    let tail = unsafe { attachment.admitted_result(count - 1) }?;
+    clear_admitted_result(unsafe { &*tail });
+    coordinator
+        .admitted_result_count
+        .store(count - 1, Ordering::Release);
+    coordinator
+        .admitted_result_generation
+        .fetch_add(1, Ordering::AcqRel);
+    let _ = refresh_admitted_worst_score_locked(attachment)?;
+
+    Ok(Some(EcParallelCoordinatorAdmittedResultSelection {
+        coordinator: coordinator_snapshot,
+        admitted_result,
+    }))
+}
+
 fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_count: u32) {
     *state = EcParallelScanState {
         magic: EC_PARALLEL_SCAN_STATE_MAGIC,
@@ -2249,6 +2297,14 @@ pub(crate) unsafe fn read_parallel_scan_admitted_result_snapshot(
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let result = unsafe { attachment.admitted_result(result_index) }?;
     Ok(load_admitted_result_snapshot(unsafe { &*result }))
+}
+
+pub(crate) unsafe fn take_parallel_scan_admitted_result_snapshot(
+    state: *mut EcParallelScanState,
+) -> Result<Option<EcParallelCoordinatorAdmittedResultSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+    unsafe { take_admitted_result_locked(&attachment) }
 }
 
 pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
@@ -5312,6 +5368,288 @@ mod tests {
                 },
             },
             "rejecting a worse candidate should preserve the admitted tail too"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_admitted_result_snapshot_returns_none_without_admission() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { take_parallel_scan_admitted_result_snapshot(attachment.state) }
+                .expect("empty admitted take should succeed"),
+            None,
+            "taking with no admitted results should return None"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_admitted_result_snapshot_clears_last_result() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 130,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: Some(-8.5),
+                    comparison_score: Some(-9.25),
+                    approx_rank_base: Some(6),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 131,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("admission should succeed")
+                .expect("admission should see the selected pending output")
+                .admitted,
+            "the admitted window should contain one result before take"
+        );
+
+        assert_eq!(
+            unsafe { take_parallel_scan_admitted_result_snapshot(attachment.state) }
+                .expect("admitted take should succeed"),
+            Some(EcParallelCoordinatorAdmittedResultSelection {
+                coordinator: EcParallelCoordinatorSnapshot {
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID,
+                    claimed_worker_slots: 1,
+                    published_result_slots: 1,
+                    result_publish_generation: 1,
+                    selected_result_slot_index: Some(slot_index),
+                    selected_result_score: Some(-9.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 131,
+                            offset_number: 2,
+                        },
+                        score: -9.0,
+                        approx_score: Some(-8.5),
+                        approx_rank: Some(6),
+                        comparison_score: Some(-9.25),
+                    }),
+                    admitted_result_count: 1,
+                    admitted_result_generation: 1,
+                    admitted_worst_score: Some(-9.0),
+                },
+                admitted_result: EcParallelCoordinatorAdmittedResultSnapshot {
+                    flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
+                        | EC_PARALLEL_RESULT_SLOT_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
+                    pending_output: EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 131,
+                            offset_number: 2,
+                        },
+                        score: -9.0,
+                        approx_score: Some(-8.5),
+                        approx_rank: Some(6),
+                        comparison_score: Some(-9.25),
+                    },
+                },
+            }),
+            "taking the only admitted result should return the pre-clear head snapshot"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_admission_snapshot(attachment.state) }
+                .expect("admission snapshot should read back after take"),
+            EcParallelCoordinatorAdmissionSnapshot {
+                admitted_result_count: 0,
+                admitted_result_generation: 2,
+                admitted_worst_score: None,
+            },
+            "taking the only admitted result should clear the admission window"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_admitted_result_snapshot(attachment.state, 0) }
+                .expect("head admitted result snapshot should still read back"),
+            EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: 0,
+                pending_output: EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: 0.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                },
+            },
+            "taking the only admitted result should return the head slot to idle state"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_admitted_result_snapshot_shifts_next_best_head() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 140,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 141,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("first admission should succeed")
+                .expect("first admission should see the selected pending output")
+                .admitted,
+            "first admission should seed the window"
+        );
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 142,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -7.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 143,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("second publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("second admission should succeed")
+                .expect("second admission should see the selected pending output")
+                .admitted,
+            "second admission should insert the better result at the head"
+        );
+
+        let taken = unsafe { take_parallel_scan_admitted_result_snapshot(attachment.state) }
+            .expect("admitted take should succeed")
+            .expect("admitted window should expose a head result");
+        assert_eq!(
+            taken.admitted_result,
+            EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID,
+                pending_output: EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 143,
+                        offset_number: 2,
+                    },
+                    score: -7.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                },
+            },
+            "taking should return the best admitted result first"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_admission_snapshot(attachment.state) }
+                .expect("admission snapshot should read back after head take"),
+            EcParallelCoordinatorAdmissionSnapshot {
+                admitted_result_count: 1,
+                admitted_result_generation: 3,
+                admitted_worst_score: Some(-4.0),
+            },
+            "taking the head should shift the remaining admitted result and update the counters"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_admitted_result_snapshot(attachment.state, 0) }
+                .expect("new admitted head should read back"),
+            EcParallelCoordinatorAdmittedResultSnapshot {
+                flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID,
+                pending_output: EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 141,
+                        offset_number: 2,
+                    },
+                    score: -4.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                },
+            },
+            "taking the head should shift the next best admitted result into slot zero"
         );
     }
 

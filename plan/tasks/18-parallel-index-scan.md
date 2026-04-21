@@ -219,6 +219,12 @@ See ADR-040 for the full shape. Summary:
   read the next global heap TID plus score metadata directly instead of
   recomputing it from the staged worker slot on every read.
 
+- **Admitted-window consume staging.** The coordinator-owned admitted-result
+  window can now return and remove its current best admitted result one at a
+  time while keeping the remaining admitted prefix compact, score-ordered, and
+  generation-tracked. This is still a staged consume seam, not the final
+  planner-visible shared top-K execution path.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
