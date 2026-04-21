@@ -1101,6 +1101,7 @@ mod tests {
         assert!(sql.contains("FROM dbpedia_10k_corpus"));
         assert!(sql.contains("encode_to_ecvector($1::real[], $2::integer, $3::bigint)"));
         assert!(sql.contains("ORDER BY embedding <#>"));
+        assert!(!sql.contains("pg_catalog"), "got: {sql}");
         assert!(sql.contains("LIMIT $4"));
     }
 
