@@ -202,6 +202,12 @@ See ADR-040 for the full shape. Summary:
   rebuild on every per-slot mutation. Full lock-guarded shared top-K admission
   remains deferred.
 
+- **Serialized staged-heap mutation.** Coordinator staged-heap mutation now
+  runs behind a shared lock word in the AM-private descriptor so publish,
+  clear, and staged take no longer depend on the single-writer assumption once
+  real parallel execution starts wiring in. Planner-visible parallel scans and
+  the eventual shared top-K admission path still remain deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

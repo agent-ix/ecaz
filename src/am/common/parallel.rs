@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use pgrx::pg_sys;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 5;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 6;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 
 #[repr(C)]
@@ -42,6 +42,7 @@ pub(crate) struct EcParallelCoordinatorState {
 #[repr(C)]
 #[derive(Debug)]
 pub(crate) struct EcParallelCoordinatorHeapState {
+    pub(crate) mutex: AtomicU32,
     pub(crate) live_entry_count: AtomicU32,
     pub(crate) heap_generation: AtomicU32,
 }
@@ -227,6 +228,16 @@ pub(crate) struct ParallelScanAttachment {
     result_slot_bytes: pg_sys::Size,
     worker_slot_bytes: pg_sys::Size,
     pub(crate) rescan_epoch: u32,
+}
+
+struct ParallelScanHeapLockGuard {
+    lock: *const AtomicU32,
+}
+
+impl Drop for ParallelScanHeapLockGuard {
+    fn drop(&mut self) {
+        unsafe { &*self.lock }.store(0, Ordering::Release);
+    }
 }
 
 impl ParallelScanAttachment {
@@ -473,6 +484,7 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
 
     unsafe {
         *heap_state_ptr(state) = EcParallelCoordinatorHeapState {
+            mutex: AtomicU32::new(0),
             live_entry_count: AtomicU32::new(0),
             heap_generation: AtomicU32::new(0),
         };
@@ -895,6 +907,19 @@ unsafe fn rebuild_parallel_scan_heap_with_attachment(
     Ok(live_entry_count)
 }
 
+unsafe fn acquire_parallel_scan_heap_lock(
+    attachment: &ParallelScanAttachment,
+) -> ParallelScanHeapLockGuard {
+    let lock = unsafe { &(*attachment.heap_state).mutex };
+    while lock
+        .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        std::hint::spin_loop();
+    }
+    ParallelScanHeapLockGuard { lock }
+}
+
 unsafe fn detach_parallel_scan_heap_entry_with_attachment(
     attachment: &ParallelScanAttachment,
     slot_index: u32,
@@ -1016,10 +1041,9 @@ unsafe fn reap_parallel_scan_dead_root_slots_with_attachment(
     }
 }
 
-fn refresh_coordinator_selected_result_fast_path(
+fn refresh_coordinator_selected_result_fast_path_locked(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
-    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(attachment) }?;
     let coordinator = unsafe { &*attachment.coordinator };
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
@@ -1087,12 +1111,20 @@ unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
     Ok(reaped)
 }
 
-fn refresh_coordinator_selection_snapshot(
+fn refresh_coordinator_selection_snapshot_locked(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
     unsafe { reap_dead_parallel_scan_result_slots_with_attachment(attachment) }?;
     unsafe { rebuild_parallel_scan_heap_with_attachment(attachment) }?;
-    refresh_coordinator_selected_result_fast_path(attachment)
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(attachment) }?;
+    refresh_coordinator_selected_result_fast_path_locked(attachment)
+}
+
+fn refresh_coordinator_selection_snapshot(
+    attachment: &ParallelScanAttachment,
+) -> Result<(), &'static str> {
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(attachment) };
+    refresh_coordinator_selection_snapshot_locked(attachment)
 }
 
 fn load_coordinator_result_slot_snapshot(
@@ -1312,6 +1344,21 @@ unsafe fn clear_parallel_scan_result_slot_with_attachment(
     rescan_epoch: u32,
     refresh_selection_snapshot: bool,
 ) -> Result<bool, &'static str> {
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(attachment) };
+    clear_parallel_scan_result_slot_locked(
+        attachment,
+        slot_index,
+        rescan_epoch,
+        refresh_selection_snapshot,
+    )
+}
+
+unsafe fn clear_parallel_scan_result_slot_locked(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+    rescan_epoch: u32,
+    refresh_selection_snapshot: bool,
+) -> Result<bool, &'static str> {
     let worker_slot = unsafe { attachment.worker_slot(slot_index) }?;
     let worker_slot_ref = unsafe { &*worker_slot };
     if worker_slot_ref
@@ -1352,7 +1399,7 @@ unsafe fn clear_parallel_scan_result_slot_with_attachment(
         .result_publish_generation
         .fetch_add(1, Ordering::AcqRel);
     if refresh_selection_snapshot {
-        refresh_coordinator_selection_snapshot(attachment)?;
+        refresh_coordinator_selection_snapshot_locked(attachment)?;
     }
     Ok(true)
 }
@@ -1403,6 +1450,7 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
     snapshot: EcParallelCoordinatorResultSlotRuntimeSnapshot,
 ) -> Result<bool, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
     let worker_slot = unsafe { attachment.worker_slot(slot_index) }?;
     let worker_slot_ref = unsafe { &*worker_slot };
     if worker_slot_ref
@@ -1487,7 +1535,8 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
         .result_publish_generation
         .fetch_add(1, Ordering::AcqRel);
     unsafe { upsert_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
-    refresh_coordinator_selected_result_fast_path(&attachment)?;
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+    refresh_coordinator_selected_result_fast_path_locked(&attachment)?;
     Ok(true)
 }
 
@@ -1571,6 +1620,7 @@ pub(crate) unsafe fn read_parallel_scan_coordinator_heap_snapshot(
     state: *mut EcParallelScanState,
 ) -> Result<EcParallelCoordinatorHeapSnapshot, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
     Ok(load_coordinator_heap_snapshot(&attachment))
 }
 
@@ -1605,7 +1655,8 @@ pub(crate) unsafe fn read_parallel_scan_selected_result_slot_snapshot(
                 selected_result_slot,
             }));
         }
-        refresh_coordinator_selection_snapshot(&attachment)?;
+        let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+        refresh_coordinator_selection_snapshot_locked(&attachment)?;
     }
 
     Ok(None)
@@ -1616,6 +1667,7 @@ pub(crate) unsafe fn take_parallel_scan_selected_result_slot_snapshot(
 ) -> Result<Option<EcParallelCoordinatorResultSelection>, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     for _ in 0..2 {
+        let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
         let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
         let Some(slot_index) = coordinator.selected_result_slot_index else {
             return Ok(None);
@@ -1628,21 +1680,22 @@ pub(crate) unsafe fn take_parallel_scan_selected_result_slot_snapshot(
                 &selected_result_slot,
             )
         } {
-            refresh_coordinator_selection_snapshot(&attachment)?;
+            refresh_coordinator_selection_snapshot_locked(&attachment)?;
             continue;
         }
         if !unsafe {
-            clear_parallel_scan_result_slot_with_attachment(
+            clear_parallel_scan_result_slot_locked(
                 &attachment,
                 slot_index,
                 attachment.rescan_epoch,
                 false,
             )
         }? {
-            refresh_coordinator_selection_snapshot(&attachment)?;
+            refresh_coordinator_selection_snapshot_locked(&attachment)?;
             continue;
         }
-        refresh_coordinator_selected_result_fast_path(&attachment)?;
+        unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+        refresh_coordinator_selected_result_fast_path_locked(&attachment)?;
 
         return Ok(Some(EcParallelCoordinatorResultSelection {
             coordinator,
@@ -1657,6 +1710,7 @@ pub(crate) unsafe fn select_best_parallel_scan_coordinator_result_slot(
     state: *mut EcParallelScanState,
 ) -> Result<Option<EcParallelCoordinatorResultSelection>, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
     let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
     let selected =
         unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(&attachment) }?;
