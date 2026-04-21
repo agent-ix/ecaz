@@ -28,6 +28,7 @@ use crate::storage::wal;
 use crate::{DEFAULT_QUANT_BITS, DEFAULT_QUANT_SEED};
 
 use super::build::{build_and_persist_vamana, BuildOutput, BuildParams};
+use super::insert;
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
@@ -40,7 +41,8 @@ const P_NEW: pg_sys::BlockNumber = u32::MAX;
 
 #[derive(Debug)]
 struct RawHeapTuple {
-    heap_tid: ItemPointer,
+    primary_heap_tid: ItemPointer,
+    overflow_heap_tids: Vec<ItemPointer>,
     source_vector: Vec<f32>,
 }
 
@@ -83,11 +85,28 @@ impl BuildState {
                 "ec_diskann ambuild requires a single dimension; saw {dim} after {existing}"
             ),
         }
+        if let Some(existing) = self
+            .heap_tuples
+            .iter_mut()
+            .find(|existing| source_vectors_match_exactly(&existing.source_vector, &source_vector))
+        {
+            existing.overflow_heap_tids.push(heap_tid);
+            return;
+        }
         self.heap_tuples.push(RawHeapTuple {
-            heap_tid,
+            primary_heap_tid: heap_tid,
+            overflow_heap_tids: Vec::new(),
             source_vector,
         });
     }
+}
+
+fn source_vectors_match_exactly(left: &[f32], right: &[f32]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(lhs, rhs)| lhs.to_bits() == rhs.to_bits())
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_ambuild(
@@ -238,7 +257,7 @@ unsafe fn flush_build_state(
                 None => Vec::new(),
             };
             NodePayload {
-                primary_heaptid: t.heap_tid,
+                primary_heaptid: t.primary_heap_tid,
                 binary_words,
                 search_code,
             }
@@ -270,6 +289,18 @@ unsafe fn flush_build_state(
         persisted,
     } = build_out;
     let mut chain = persisted.chain;
+    let binary_word_count = params.binary_word_count();
+    let search_code_len = params.search_code_len();
+    for (node_index, tuple) in state.heap_tuples.iter().enumerate() {
+        insert::stage_overflow_heap_tids_in_chain(
+            &mut chain,
+            metadata.graph_degree_r,
+            binary_word_count,
+            search_code_len,
+            persisted.node_to_tid[node_index],
+            &tuple.overflow_heap_tids,
+        )?;
+    }
     let codebook_head = stage_grouped_codebook_chain(&mut chain, &model)?;
     let mut metadata = metadata;
     metadata.grouped_codebook_head = codebook_head;

@@ -395,6 +395,103 @@ fn rewrite_overflow_tuple_in_chain(
     page.update_raw_tuple(tid, encoded)
 }
 
+fn rewrite_node_tuple_in_chain(
+    chain: &mut DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+    tid: ItemPointer,
+    tuple: &VamanaNodeTuple,
+) -> Result<(), String> {
+    let encoded = tuple.encode(graph_degree_r, binary_word_count, search_code_len)?;
+    let page = chain.get_page_mut(tid.block_number).ok_or_else(|| {
+        format!(
+            "ec_diskann node rewrite could not find page {} for ({},{})",
+            tid.block_number, tid.block_number, tid.offset_number
+        )
+    })?;
+    page.update_raw_tuple(tid, encoded)
+}
+
+pub(super) fn stage_overflow_heap_tids_in_chain(
+    chain: &mut DataPageChain,
+    graph_degree_r: u16,
+    binary_word_count: usize,
+    search_code_len: usize,
+    owner_tid: ItemPointer,
+    overflow_heap_tids: &[ItemPointer],
+) -> Result<(), String> {
+    if overflow_heap_tids.is_empty() {
+        return Ok(());
+    }
+    if owner_tid == ItemPointer::INVALID {
+        return Err("ec_diskann overflow staging requires a valid owner_tid".into());
+    }
+
+    let owner_raw = {
+        let page = chain.get_page(owner_tid.block_number).ok_or_else(|| {
+            format!(
+                "ec_diskann overflow staging could not find page {} for ({},{})",
+                owner_tid.block_number, owner_tid.block_number, owner_tid.offset_number
+            )
+        })?;
+        page.raw_tuple(owner_tid)?.to_vec()
+    };
+    let mut owner_tuple = VamanaNodeTuple::decode(
+        &owner_raw,
+        graph_degree_r,
+        binary_word_count,
+        search_code_len,
+    )?;
+    if owner_tuple.primary_heaptid == ItemPointer::INVALID {
+        return Err(format!(
+            "ec_diskann overflow staging owner ({},{}) has no primary heap tid",
+            owner_tid.block_number, owner_tid.offset_number
+        ));
+    }
+    if owner_tuple.has_overflow_heaptids {
+        return Err(format!(
+            "ec_diskann overflow staging owner ({},{}) already has overflow heap tids",
+            owner_tid.block_number, owner_tid.offset_number
+        ));
+    }
+    if overflow_heap_tids.contains(&owner_tuple.primary_heaptid) {
+        return Err(format!(
+            "ec_diskann overflow staging owner ({},{}) received a duplicate primary heap tid",
+            owner_tid.block_number, owner_tid.offset_number
+        ));
+    }
+
+    let mut overflow_tuples = Vec::new();
+    for chunk in overflow_heap_tids.chunks(VAMANA_OVERFLOW_HEAPTID_CAPACITY) {
+        let mut tuple = VamanaOverflowTuple::placeholder(owner_tid);
+        for heap_tid in chunk {
+            tuple.push_heap_tid(*heap_tid)?;
+        }
+        let tid = chain.insert_raw_tuple(tuple.encode()?)?;
+        overflow_tuples.push((tid, tuple));
+    }
+
+    for index in 0..overflow_tuples.len().saturating_sub(1) {
+        overflow_tuples[index].1.nexttid = overflow_tuples[index + 1].0;
+        rewrite_overflow_tuple_in_chain(
+            chain,
+            overflow_tuples[index].0,
+            &overflow_tuples[index].1,
+        )?;
+    }
+
+    owner_tuple.has_overflow_heaptids = true;
+    rewrite_node_tuple_in_chain(
+        chain,
+        graph_degree_r,
+        binary_word_count,
+        search_code_len,
+        owner_tid,
+        &owner_tuple,
+    )
+}
+
 pub(super) fn vacuum_bound_heap_rows<P>(
     chain: &mut DataPageChain,
     owner_tid: ItemPointer,
@@ -1660,6 +1757,33 @@ mod tests {
         (metadata, chain, vectors, model)
     }
 
+    fn single_node_chain() -> (VamanaMetadataPage, DataPageChain, ItemPointer, ItemPointer) {
+        let metadata = VamanaMetadataPage::empty(4, 16, 1.2, 8, 42);
+        let owner_primary = ItemPointer {
+            block_number: 1000,
+            offset_number: 1,
+        };
+        let owner_tuple = VamanaNodeTuple {
+            deleted: false,
+            has_overflow_heaptids: false,
+            primary_heaptid: owner_primary,
+            rerank_tid: ItemPointer::INVALID,
+            binary_words: Vec::new(),
+            search_code: Vec::new(),
+            neighbors: vec![ItemPointer::INVALID; metadata.graph_degree_r as usize],
+            neighbor_count: 0,
+        };
+        let mut chain = DataPageChain::new(DEFAULT_PAGE_SIZE);
+        let owner_tid = chain
+            .insert_raw_tuple(
+                owner_tuple
+                    .encode(metadata.graph_degree_r, 0, 0)
+                    .expect("owner tuple should encode"),
+            )
+            .expect("owner tuple should stage");
+        (metadata, chain, owner_tid, owner_primary)
+    }
+
     // IN-001: derive_insert_payload_from_persisted matches the build-side
     // grouped-PQ search code and persisted binary sidecar derivation.
     #[test]
@@ -1733,6 +1857,39 @@ mod tests {
         let err = derive_insert_payload_from_persisted(&metadata, &chain, &vectors[0])
             .expect_err("bad codec should fail");
         assert!(err.contains("codec kind"), "got: {err}");
+    }
+
+    #[test]
+    fn in_005b_stage_overflow_heap_tids_in_chain_roundtrips_multiple_chunks() {
+        let (metadata, mut chain, owner_tid, owner_primary) = single_node_chain();
+        let overflow_heap_tids = (0..12_u32)
+            .map(|offset| ItemPointer {
+                block_number: 2000 + offset,
+                offset_number: 1,
+            })
+            .collect::<Vec<_>>();
+
+        stage_overflow_heap_tids_in_chain(
+            &mut chain,
+            metadata.graph_degree_r,
+            0,
+            0,
+            owner_tid,
+            &overflow_heap_tids,
+        )
+        .expect("overflow staging should succeed");
+
+        let reader = PersistedGraphReader::new(&chain, metadata.graph_degree_r, 0, 0);
+        let owner_tuple = reader
+            .read_node(owner_tid)
+            .expect("owner tuple should decode");
+        assert!(owner_tuple.has_overflow_heaptids);
+
+        let bound_heap_tids =
+            bound_heap_tids_for_owner(&chain, owner_tid, owner_tuple.primary_heaptid)
+                .expect("bound heap tids should decode");
+        assert_eq!(bound_heap_tids[0], owner_primary);
+        assert_eq!(bound_heap_tids[1..], overflow_heap_tids);
     }
 
     #[test]
