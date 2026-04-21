@@ -650,6 +650,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                     pgrx::error!("ec_diskann scan source-column resolution failed: {e}")
                 });
             let rerank_error = RefCell::new(None::<String>);
+            let sql_result_cap = sql_scan_result_cap(opaque.top_k, opaque.rerank_budget);
             let results = scan::vamana_scan_with(
                 &reader,
                 &mut opaque.visited,
@@ -657,7 +658,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
                     entry_point,
                     list_size: opaque.list_size,
                     rerank_budget: opaque.rerank_budget,
-                    top_k: opaque.top_k,
+                    top_k: sql_result_cap,
                 },
                 |tuple| -grouped_pq_score_f32(&opaque.query_lut, group_count, &tuple.search_code),
                 |heap_tid| match exact_heap_rerank_distance(
@@ -693,7 +694,7 @@ unsafe extern "C-unwind" fn ec_diskann_amrescan(
             opaque.result_buf = expand_scan_results_with_bound_heap_tids(
                 &opaque.chain,
                 &node_results,
-                opaque.top_k,
+                sql_result_cap,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_diskann duplicate expansion failed: {e}"));
             opaque.result_cursor = 0;
@@ -1764,6 +1765,15 @@ fn expand_scan_results_with_bound_heap_tids(
     Ok(expanded)
 }
 
+fn sql_scan_result_cap(reloption_top_k: usize, rerank_budget: usize) -> usize {
+    // `LIMIT` is not visible to `amrescan`, so the SQL scan path must
+    // materialize the full rerank window and let the executor truncate.
+    // The reloption `top_k` remains a pure scan-shell knob rather than a
+    // hard SQL result cap.
+    let _ = reloption_top_k;
+    rerank_budget
+}
+
 unsafe fn exact_heap_rerank_distance(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
@@ -1996,6 +2006,20 @@ mod tests {
 
     fn explain_plan_uses_index(plan: &str) -> bool {
         plan.contains("Index Scan") || plan.contains("Index Only Scan")
+    }
+
+    #[test]
+    fn sql_scan_result_cap_defaults_to_rerank_budget() {
+        assert_eq!(
+            super::sql_scan_result_cap(10, 64),
+            64,
+            "the SQL path must materialize the full rerank window when LIMIT is not visible",
+        );
+        assert_eq!(
+            super::sql_scan_result_cap(128, 64),
+            64,
+            "reloption top_k must not exceed the rerank window in the SQL scan path",
+        );
     }
 
     fn diskann_large_query_array() -> String {
@@ -2389,6 +2413,66 @@ mod tests {
             ordered_ids[0], 1,
             "runtime ordered ec_diskann scan should return the nearest vector first"
         );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_sql_limit_can_exceed_reloption_top_k() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_sql_limit_over_top_k (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_diskann_sql_limit_over_top_k_idx ON ec_diskann_sql_limit_over_top_k USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        for id in 1..=12_i64 {
+            Spi::run(&format!(
+                "INSERT INTO ec_diskann_sql_limit_over_top_k VALUES \
+                 ({id}, encode_to_ecvector(ARRAY[1.0, 0.0, 0.5, -1.0], 4, 42))"
+            ))
+            .expect("duplicate insert should succeed");
+        }
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+
+        let plan = explain_ordered_diskann_ids(
+            "ec_diskann_sql_limit_over_top_k",
+            "ARRAY[1.0, 0.0, 0.5, -1.0]::real[]",
+            12,
+        );
+
+        assert!(
+            explain_plan_uses_index(&plan),
+            "ordered LIMIT-over-top_k test should route through ec_diskann at runtime: {plan}"
+        );
+
+        let mut ordered_ids = Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT id FROM ec_diskann_sql_limit_over_top_k \
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.5, -1.0]::real[] \
+                     LIMIT 12",
+                    None,
+                    &[],
+                )
+                .expect("ordered SELECT should succeed")
+                .map(|row| {
+                    row["id"]
+                        .value::<i64>()
+                        .expect("id should decode")
+                        .expect("id should be non-null")
+                })
+                .collect::<Vec<_>>()
+        });
+        ordered_ids.sort_unstable();
+        assert_eq!(
+            ordered_ids.len(),
+            12,
+            "runtime ordered ec_diskann scan should not be capped by the reloption top_k default",
+        );
+        assert_eq!(ordered_ids, (1..=12_i64).collect::<Vec<_>>());
     }
 
     #[pg_test]
