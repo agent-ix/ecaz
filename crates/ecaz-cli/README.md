@@ -52,6 +52,7 @@ name or a Unix socket directory such as `/home/peter/.pgrx`.
 ```
 ecaz
 ├── corpus
+│   ├── fetch       # fetch a canonical parquet release into a local directory
 │   ├── load        # load a <basename>_{corpus,queries}.tsv fixture + build an index
 │   ├── inspect     # show row counts, dim, indexes for a loaded corpus
 │   ├── list        # enumerate corpora in the database
@@ -88,6 +89,27 @@ single corpus can be measured against multiple access methods without
 re-loading data. Today `ec_hnsw`, `ec_ivf`, and `ec_diskann` all use `ecvector` as
 the embedding column type, so one `<prefix>_corpus` table supports multiple
 indexes side-by-side.
+
+For the real-corpus path, the intended flow is now:
+
+```sh
+ecaz corpus fetch --output-dir /path/to/qdrant-dbpedia-openai3-1m
+ecaz corpus prepare \
+  --profile ec_hnsw_real_10k \
+  --parquet /path/to/qdrant-dbpedia-openai3-1m/data \
+  --output-dir /path/to/staged
+ecaz corpus load \
+  --prefix ec_hnsw_real_10k \
+  --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv \
+  --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv \
+  --profile ec_diskann
+```
+
+`ecaz corpus fetch` currently pins one first-class remote dataset:
+Qdrant's DBpedia OpenAI `text-embedding-3-large` `1536`-dimensional
+1M-row release on Hugging Face. It writes deterministic parquet shard
+names under `<output-dir>/data/` plus a small `ecaz_fetch_manifest.json`
+recording the source repo and revision.
 
 ## Access-method profiles
 

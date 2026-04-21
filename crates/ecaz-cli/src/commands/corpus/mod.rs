@@ -1,4 +1,4 @@
-//! `ecaz corpus` — load / inspect / list / generate corpora.
+//! `ecaz corpus` — fetch / prepare / load / inspect / list / generate corpora.
 //!
 //! A "corpus" is a named fixture identified by `--prefix`. Each corpus
 //! occupies two tables (`<prefix>_corpus`, `<prefix>_queries`) and any
@@ -11,12 +11,14 @@ use color_eyre::eyre::Result;
 
 use crate::psql::ConnectionOptions;
 
+mod fetch;
 mod generate;
 mod inspect;
 mod list;
 mod load;
 mod prepare;
 
+pub use fetch::FetchArgs;
 pub use generate::GenerateArgs;
 pub use inspect::InspectArgs;
 pub use load::LoadArgs;
@@ -24,6 +26,8 @@ pub use prepare::PrepareArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum CorpusCommand {
+    /// Fetch a canonical parquet release into a local directory.
+    Fetch(FetchArgs),
     /// Load a local-file fixture (`<basename>_corpus.tsv` + `<basename>_queries.tsv`)
     /// into Postgres under the given prefix and build an index.
     Load(LoadArgs),
@@ -42,6 +46,7 @@ pub enum CorpusCommand {
 impl CorpusCommand {
     pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
+            CorpusCommand::Fetch(args) => fetch::run(conn, args).await,
             CorpusCommand::Load(args) => load::run(conn, args).await,
             CorpusCommand::Inspect(args) => inspect::run(conn, args).await,
             CorpusCommand::List => list::run(conn).await,
