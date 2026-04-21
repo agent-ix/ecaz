@@ -6,9 +6,9 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
-mod latency;
+pub mod latency;
 mod overhead;
-mod recall;
+pub mod recall;
 mod storage;
 
 pub use latency::LatencyArgs;

@@ -164,6 +164,16 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     Ok(())
 }
 
+/// `fetch_sources` reachable from sibling modules (e.g. `compare::pgvector`)
+/// without exporting from the binary crate root.
+pub async fn fetch_sources_public(
+    client: &Client,
+    table: &str,
+    limit: Option<usize>,
+) -> Result<(Vec<i64>, Array2<f32>)> {
+    fetch_sources(client, table, limit).await
+}
+
 async fn fetch_sources(
     client: &Client,
     table: &str,
