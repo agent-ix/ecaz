@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for the tqvector SQL overhead breakdown launcher."""
+"""Regression tests for the ecvector SQL overhead breakdown launcher."""
 
 from __future__ import annotations
 
@@ -108,13 +108,13 @@ if len(statements) > 1:
             ef = current_ef or 0
             log_event("plan", ef)
             outputs.append(plan_output(expected_index, ef, fallback_ef))
-        elif "encode_to_tqvector(" in normalized_stmt:
+        elif "encode_to_ecvector(" in normalized_stmt:
             ef = current_ef or 0
             log_event("measure_encode", ef)
             outputs.append("0.75")
         elif (
             "WITH started AS" in normalized_stmt
-            and "encode_to_tqvector(" not in normalized_stmt
+            and "encode_to_ecvector(" not in normalized_stmt
             and f"SELECT id FROM {corpus_table}" in normalized_stmt
         ):
             ef = current_ef or 0
@@ -176,13 +176,13 @@ elif "EXPLAIN" in normalized:
     ef = extract_ef(sql) or 0
     log_event("plan", ef)
     print(plan_output(expected_index, ef, fallback_ef))
-elif "encode_to_tqvector(" in normalized:
+elif "encode_to_ecvector(" in normalized:
     ef = extract_ef(sql) or 0
     log_event("measure_encode", ef)
     print("0.75")
 elif (
     "WITH started AS" in normalized
-    and "encode_to_tqvector(" not in normalized
+    and "encode_to_ecvector(" not in normalized
     and f"SELECT id FROM {corpus_table}" in normalized
 ):
     ef = extract_ef(sql) or 0

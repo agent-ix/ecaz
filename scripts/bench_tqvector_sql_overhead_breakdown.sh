@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Break down tqvector SQL latency into encode, internal scan, and residual SQL
+# Break down ecvector SQL latency into encode, internal scan, and residual SQL
 # overhead on a real-corpus lane.
 set -euo pipefail
 
@@ -18,14 +18,14 @@ Usage:
       [--output FILE]
 
 Options:
-  --corpus-table  tqvector corpus table to scan. Must expose:
+  --corpus-table  ecvector corpus table to scan. Must expose:
                   - id bigint/int
-                  - embedding tqvector
+                  - embedding ecvector
   --query-table   Query table to read. Must expose:
                   - source real[]
   --index-name    Exact ec_hnsw index name expected for every measured cell.
-  --bits          Quantizer bits for encode_to_tqvector timing. Default: 4.
-  --seed          Quantizer seed for encode_to_tqvector timing. Default: 42.
+  --bits          Quantizer bits for encode_to_ecvector timing. Default: 4.
+  --seed          Quantizer seed for encode_to_ecvector timing. Default: 42.
   --ef-search     Comma-separated ef_search list. Default: 40,64,128,320.
   --query-limit   Cap the number of queries per ef_search cell. Default:
                   all rows in --query-table.
@@ -263,7 +263,7 @@ require_regprocedure \
   "tests.ec_hnsw_debug_scan_heap_fetch_profile(oid,real[],integer,integer)" \
   "run scripts/refresh_adr030_scratch_debug_helpers.sh after installing a new pg_test build"
 
-echo "=== tqvector SQL overhead breakdown ==="
+echo "=== ecvector SQL overhead breakdown ==="
 echo "Database:     ${PGDATABASE:-(libpq default)}"
 echo "Corpus table: $CORPUS_TABLE"
 echo "Query table:  $QUERY_TABLE"
@@ -437,7 +437,7 @@ WITH started AS (
   SELECT clock_timestamp() AS t0
 ),
 measured AS MATERIALIZED (
-  SELECT encode_to_tqvector('${query_line}'::real[], ${BITS}, ${SEED}) AS vec
+  SELECT encode_to_ecvector('${query_line}'::real[], ${BITS}, ${SEED}) AS vec
 ),
 finished AS (
   SELECT clock_timestamp() AS t1, count(*) AS rows_seen FROM measured
