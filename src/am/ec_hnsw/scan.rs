@@ -3592,6 +3592,19 @@ unsafe fn emit_materialized_parallel_scan_output(
     Some(output)
 }
 
+unsafe fn emit_prefetched_parallel_scan_output(
+    opaque: &mut TqScanOpaque,
+) -> Option<PendingScanOutput> {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+        || !graph_traversal_cursor(opaque).has_prefetched_output()
+    {
+        return None;
+    }
+
+    unsafe { try_take_parallel_scan_next_output(opaque) }
+}
+
 unsafe fn produce_next_scan_heap_tid(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
@@ -4713,6 +4726,18 @@ unsafe fn produce_next_graph_traversal_heap_tid(
             "graph traversal tuple production should only run with prefetched output or an exhausted graph phase"
         );
         return false;
+    }
+
+    if let Some(output) = unsafe { emit_prefetched_parallel_scan_output(opaque) } {
+        emit_scan_output(scan, opaque, output);
+        opaque.explain_counters.record_heap_tid_returned();
+        if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+            let opaque_ptr = opaque as *mut TqScanOpaque;
+            unsafe {
+                graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+            }
+        }
+        return true;
     }
 
     let emitted = graph_traversal_cursor(opaque)
@@ -6626,6 +6651,86 @@ mod tests {
                 offset_number: 2,
             },
             "republish after the merged consume should expose the next local duplicate in the shared result-slot snapshot"
+        );
+    }
+
+    #[test]
+    fn emit_prefetched_parallel_scan_output_routes_prefetched_row_through_shared_merge() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.result_state.set_current_with_details(
+            tid(26, 1),
+            -4.0,
+            Some(-3.5),
+            Some(7),
+            Some(-4.5),
+        );
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) }
+            .expect("prefetched graph rows should emit through the shared merge seam");
+        assert_eq!(
+            output,
+            PendingScanOutput {
+                heap_tid: tid(31, 1),
+                score: -4.0,
+                approx_score: Some(-3.5),
+                approx_rank: Some(7),
+                comparison_score: Some(-4.5),
+            },
+            "prefetched graph rows should drain through the shared merge seam"
+        );
+        assert_eq!(
+            opaque.result_state.pending_index(),
+            1,
+            "shared merge consume should advance the local graph duplicate-drain cursor"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 31,
+                offset_number: 2,
+            },
+            "republish after graph-side consume should expose the next local duplicate in the shared result-slot snapshot"
         );
     }
 
