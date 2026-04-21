@@ -190,6 +190,10 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     )?;
 
     let client = psql::connect(conn).await?;
+    client
+        .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
+        .await
+        .wrap_err("ensuring ecaz extension")?;
 
     let corpus_loaded = ensure_corpus_table(
         &client,
