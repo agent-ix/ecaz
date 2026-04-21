@@ -46,10 +46,10 @@ pub struct PgvectorArgs {
     /// k for recall@k / latency measurement.
     #[arg(long, default_value_t = 10)]
     pub k: usize,
-    /// Ecaz-side tuning value (sets the profile's `ef_search` GUC for the
-    /// timed queries).
-    #[arg(long, default_value_t = 100)]
-    pub ecaz_ef_search: i32,
+    /// Ecaz-side tuning value for the selected profile's sweep axis
+    /// (`ef_search` for HNSW, `list_size` for DiskANN).
+    #[arg(long = "ecaz-sweep", alias = "ecaz-ef-search", default_value_t = 100)]
+    pub ecaz_sweep: i32,
     /// pgvector-side `hnsw.ef_search` for the timed queries.
     #[arg(long, default_value_t = 100)]
     pub pgvector_ef_search: i32,
@@ -159,7 +159,7 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
 
     // Ecaz side.
     client
-        .batch_execute(&format!("SET {ecaz_guc} = {}", args.ecaz_ef_search))
+        .batch_execute(&format!("SET {ecaz_guc} = {}", args.ecaz_sweep))
         .await
         .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
     let ecaz_sql = build_knn_sql(profile, &corpus_table);
@@ -199,8 +199,18 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     .await?;
 
     let rows = vec![
-        ComparisonRow::new("ecaz", ecaz_recall, ecaz_ndcg, ecaz_stats),
-        ComparisonRow::new("pgvector", pgv_recall, pgv_ndcg, pgv_stats),
+        ComparisonRow::new(
+            &configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep),
+            ecaz_recall,
+            ecaz_ndcg,
+            ecaz_stats,
+        ),
+        ComparisonRow::new(
+            &configured_engine_label("pgvector", "ef_search", args.pgvector_ef_search),
+            pgv_recall,
+            pgv_ndcg,
+            pgv_stats,
+        ),
     ];
     print_comparison(&rows);
     Ok(())
@@ -468,9 +478,14 @@ fn format_ms(d: Duration) -> String {
     }
 }
 
+fn configured_engine_label(engine: &str, axis_label: &str, value: i32) -> String {
+    format!("{engine}[{axis_label}={value}]")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::{Command, FromArgMatches};
 
     // --- name helpers ---
 
@@ -515,6 +530,45 @@ mod tests {
         assert!(sql.contains("USING hnsw (embedding vector_ip_ops)"));
         assert!(sql.contains("m = 16"));
         assert!(sql.contains("ef_construction = 128"));
+    }
+
+    #[test]
+    fn configured_engine_label_is_self_describing() {
+        assert_eq!(
+            configured_engine_label("ec_diskann", "list_size", 200),
+            "ec_diskann[list_size=200]"
+        );
+        assert_eq!(
+            configured_engine_label("pgvector", "ef_search", 100),
+            "pgvector[ef_search=100]"
+        );
+    }
+
+    #[test]
+    fn pgvector_args_accept_generic_ecaz_sweep_flag() {
+        let cmd = PgvectorArgs::augment_args(Command::new("pgvector"));
+        let matches = cmd
+            .try_get_matches_from(["pgvector", "--prefix", "dbpedia_10k", "--ecaz-sweep", "200"])
+            .unwrap();
+        let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
+        assert_eq!(args.prefix, "dbpedia_10k");
+        assert_eq!(args.ecaz_sweep, 200);
+    }
+
+    #[test]
+    fn pgvector_args_keep_legacy_ecaz_ef_search_alias() {
+        let cmd = PgvectorArgs::augment_args(Command::new("pgvector"));
+        let matches = cmd
+            .try_get_matches_from([
+                "pgvector",
+                "--prefix",
+                "dbpedia_10k",
+                "--ecaz-ef-search",
+                "160",
+            ])
+            .unwrap();
+        let args = PgvectorArgs::from_arg_matches(&matches).unwrap();
+        assert_eq!(args.ecaz_sweep, 160);
     }
 
     #[test]
