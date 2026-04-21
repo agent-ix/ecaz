@@ -76,7 +76,7 @@ pub async fn run(conn: &ConnectionOptions, args: VacuumArgs) -> Result<()> {
     let client = psql::connect(conn).await?;
     ensure_debug_functions(&client).await?;
 
-    eprintln!("[stress] seeding {} rows into {table}", args.seed_rows);
+    crate::ecaz_eprintln!("[stress] seeding {} rows into {table}", args.seed_rows);
     client
         .batch_execute(&build_seed_ddl(&table, &index_name, args.seed_rows))
         .await
@@ -126,7 +126,7 @@ pub async fn run(conn: &ConnectionOptions, args: VacuumArgs) -> Result<()> {
     let sb = scan_b.await.map_err(|e| eyre!("scan_b worker: {e}"))??;
     let _ = deadline_watcher.await;
 
-    eprintln!("[stress] running final VACUUM (ANALYZE) and measuring invariants");
+    crate::ecaz_eprintln!("[stress] running final VACUUM (ANALYZE) and measuring invariants");
     client
         .batch_execute(&format!("VACUUM (ANALYZE) {table}"))
         .await
@@ -405,8 +405,8 @@ fn render_summary(s: VacuumSummary) {
     ] {
         t.add_row(vec![Cell::new(k), Cell::new(v)]);
     }
-    println!("{t}");
-    println!("vacuum concurrency harness passed");
+    crate::ecaz_println!("{t}");
+    crate::ecaz_println!("vacuum concurrency harness passed");
 }
 
 #[cfg(test)]

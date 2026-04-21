@@ -8,6 +8,7 @@
 
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
+use std::path::PathBuf;
 
 use crate::{commands, psql};
 
@@ -49,6 +50,11 @@ pub struct Cli {
     /// PostgreSQL password. Prefer `.pgpass` for non-local use.
     #[arg(long, global = true, env = "PGPASSWORD", hide_env_values = true)]
     pub password: Option<String>,
+
+    /// Mirror CLI stdout/stderr into a file for packet-local artifact capture.
+    /// Progress bars are suppressed so the file stays stable and diffable.
+    #[arg(long, global = true)]
+    pub log_file: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -133,6 +139,26 @@ mod tests {
         assert_eq!(cli.port, Some(28818));
         assert_eq!(cli.user.as_deref(), Some("peter"));
         assert_eq!(cli.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn cli_parses_log_file_override() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "--database",
+            "postgres",
+            "--log-file",
+            "review/11074-task17-ecaz-log-file/artifacts/load.log",
+            "corpus",
+            "list",
+        ])
+        .expect("cli parses");
+        assert_eq!(
+            cli.log_file.as_deref(),
+            Some(std::path::Path::new(
+                "review/11074-task17-ecaz-log-file/artifacts/load.log"
+            ))
+        );
     }
 
     #[test]

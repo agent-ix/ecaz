@@ -95,7 +95,7 @@ pub async fn run(conn: &ConnectionOptions, args: InspectArgs) -> Result<()> {
             &access_methods,
         )),
     ]);
-    println!("{header}");
+    crate::ecaz_println!("{header}");
 
     let mut idx = Table::new();
     idx.load_preset(UTF8_FULL);
@@ -129,7 +129,7 @@ pub async fn run(conn: &ConnectionOptions, args: InspectArgs) -> Result<()> {
             ]);
         }
     }
-    println!("{idx}");
+    crate::ecaz_println!("{idx}");
     Ok(())
 }
 

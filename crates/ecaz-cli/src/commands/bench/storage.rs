@@ -78,7 +78,7 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
         "per row (heap only)".into(),
         Cell::new(format!("{:.1} B", per_row_bytes(heap_size, rows))),
     ]);
-    println!("{header}");
+    crate::ecaz_println!("{header}");
 
     // Per-index breakdown.
     let index_rows = client
@@ -132,7 +132,7 @@ pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
             ]);
         }
     }
-    println!("{idx}");
+    crate::ecaz_println!("{idx}");
     Ok(())
 }
 

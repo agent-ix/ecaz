@@ -68,9 +68,9 @@ async fn run_ecaz_pg_test(args: InstallEcazPgTestArgs) -> Result<()> {
     let repo_root = repo_root()?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = resolve_install(args.pg, args.pg_config, &pgrx_home)?;
-    println!("[install] repo={}", repo_root.display());
-    println!("[install] pgrx_home={}", pgrx_home.display());
-    println!("[install] pg_config={}", install.pg_config.display());
+    crate::ecaz_println!("[install] repo={}", repo_root.display());
+    crate::ecaz_println!("[install] pgrx_home={}", pgrx_home.display());
+    crate::ecaz_println!("[install] pg_config={}", install.pg_config.display());
 
     let mut command = Command::new("cargo");
     command
@@ -89,12 +89,12 @@ async fn run_ecaz_pg_test(args: InstallEcazPgTestArgs) -> Result<()> {
     let release_artifact = repo_root.join("target/release/libecaz.so");
     let installed_backend = install.root.join("lib/postgresql/ecaz.so");
     assert_matching_backend(&release_artifact, &installed_backend)?;
-    println!("[install] backend .so assertion passed");
-    println!(
+    crate::ecaz_println!("[install] backend .so assertion passed");
+    crate::ecaz_println!(
         "[install] installed_backend={}",
         installed_backend.display()
     );
-    println!("[install] sha256={}", sha256_hex(&installed_backend)?);
+    crate::ecaz_println!("[install] sha256={}", sha256_hex(&installed_backend)?);
     Ok(())
 }
 
@@ -104,9 +104,9 @@ async fn run_pgvector(args: InstallPgvectorArgs) -> Result<()> {
     }
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = resolve_install(args.pg, args.pg_config, &pgrx_home)?;
-    println!("[install] pgvector_repo={}", args.repo.display());
-    println!("[install] pgrx_home={}", pgrx_home.display());
-    println!("[install] pg_config={}", install.pg_config.display());
+    crate::ecaz_println!("[install] pgvector_repo={}", args.repo.display());
+    crate::ecaz_println!("[install] pgrx_home={}", pgrx_home.display());
+    crate::ecaz_println!("[install] pg_config={}", install.pg_config.display());
 
     let mut command = Command::new("make");
     command
@@ -115,7 +115,7 @@ async fn run_pgvector(args: InstallPgvectorArgs) -> Result<()> {
         .arg(format!("PG_CONFIG={}", install.pg_config.display()))
         .arg("install");
     run_status(command).await?;
-    println!("[install] finished installing pgvector");
+    crate::ecaz_println!("[install] finished installing pgvector");
     Ok(())
 }
 
