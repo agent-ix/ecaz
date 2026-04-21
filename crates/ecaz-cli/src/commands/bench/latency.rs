@@ -95,9 +95,9 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             profiles::names().join(", ")
         )
     })?;
-    let guc = profile.ef_search_guc.ok_or_else(|| {
-        eyre!("profile {:?} has no tuning GUC to sweep", profile.name)
-    })?;
+    let guc = profile
+        .ef_search_guc
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
     let sweep_values: Vec<i32> = if args.sweep.is_empty() {
         if profile.default_sweep.is_empty() {
             return Err(eyre!(
@@ -121,6 +121,13 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
 
     // Pull query vectors once into memory. Iterations > n_queries wraps.
     let bootstrap = psql::connect(database).await?;
+    if psql::index_count_with_am(&bootstrap, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
     let rows = bootstrap
         .query(
             &format!("SELECT source FROM {queries_table} ORDER BY id"),

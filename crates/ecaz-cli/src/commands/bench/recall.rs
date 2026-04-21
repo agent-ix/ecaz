@@ -125,6 +125,13 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     let queries_table = format!("{}_queries", args.prefix);
 
     let client = psql::connect(database).await?;
+    if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
     eprintln!("[recall] fetching queries from {queries_table} ...");
     let (query_ids, queries) = fetch_sources(&client, &queries_table, args.queries_limit).await?;
     if queries.nrows() == 0 {

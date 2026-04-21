@@ -100,6 +100,13 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
     let explain_sql = format!("EXPLAIN (ANALYZE, FORMAT JSON) {full_sql}");
 
     let client = psql::connect(database).await?;
+    if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
     let query_rows = client
         .query(
             &format!("SELECT source FROM {queries_table} ORDER BY id"),

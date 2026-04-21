@@ -96,10 +96,7 @@ impl IndexProfile {
     /// Postgres reject them at `CREATE INDEX` time. Unknown keys still
     /// pass through verbatim — the caller decides whether to warn or
     /// stop.
-    pub fn unknown_reloption_keys<'a>(
-        &self,
-        reloptions: &'a [(String, String)],
-    ) -> Vec<&'a str> {
+    pub fn unknown_reloption_keys<'a>(&self, reloptions: &'a [(String, String)]) -> Vec<&'a str> {
         reloptions
             .iter()
             .map(|(k, _)| k.as_str())

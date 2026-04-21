@@ -423,7 +423,10 @@ fn reloption_flag_collisions(
 ) -> Vec<FlagCollision> {
     let mut managed: Vec<FlagCollision> = Vec::new();
     if profile.sweep_axis_is_m() {
-        managed.push(FlagCollision { key: "m", flag: "--m" });
+        managed.push(FlagCollision {
+            key: "m",
+            flag: "--m",
+        });
         managed.push(FlagCollision {
             key: "ef_construction",
             flag: "--ef-construction",
@@ -1240,7 +1243,10 @@ mod tests {
 
     #[test]
     fn collision_hnsw_ef_construction_and_build_source_flagged() {
-        let opts = vec![opt("ef_construction", "96"), opt("build_source_column", "x")];
+        let opts = vec![
+            opt("ef_construction", "96"),
+            opt("build_source_column", "x"),
+        ];
         let c = reloption_flag_collisions(&EC_HNSW, &opts, None);
         let keys: Vec<&str> = c.iter().map(|c| c.key).collect();
         assert!(keys.contains(&"ef_construction"));

@@ -93,6 +93,24 @@ pub async fn row_count(client: &Client, table: &str) -> Result<i64> {
     Ok(row.get::<_, i64>(0))
 }
 
+/// Count indexes on `table` whose access method matches `am`.
+pub async fn index_count_with_am(client: &Client, table: &str, am: &str) -> Result<i64> {
+    let row = client
+        .query_one(
+            "SELECT count(*)
+             FROM pg_class t
+             JOIN pg_index ix ON ix.indrelid = t.oid
+             JOIN pg_class i  ON i.oid = ix.indexrelid
+             JOIN pg_am    pam ON pam.oid = i.relam
+             WHERE t.relname = $1
+               AND pam.amname = $2",
+            &[&table, &am],
+        )
+        .await
+        .wrap_err_with(|| format!("counting {am:?} indexes on {table:?}"))?;
+    Ok(row.get::<_, i64>(0))
+}
+
 /// Does an index with the given `pg_class.reloptions` prefix exist? The
 /// caller passes the canonical `key=value` list; a match means every
 /// listed reloption is present (via array containment), so other
