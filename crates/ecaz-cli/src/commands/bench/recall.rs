@@ -62,13 +62,20 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     if args.k == 0 {
         return Err(eyre!("--k must be >= 1"));
     }
-    let profile = profiles::resolve(&args.profile)
-        .ok_or_else(|| eyre!("unknown profile {:?}; try {}", args.profile, profiles::names().join(", ")))?;
+    let profile = profiles::resolve(&args.profile).ok_or_else(|| {
+        eyre!(
+            "unknown profile {:?}; try {}",
+            args.profile,
+            profiles::names().join(", ")
+        )
+    })?;
     let guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no ef_search GUC to sweep", profile.name))?;
     if args.sweep.is_empty() {
-        return Err(eyre!("--sweep requires at least one value (e.g. --sweep 100,200,400)"));
+        return Err(eyre!(
+            "--sweep requires at least one value (e.g. --sweep 100,200,400)"
+        ));
     }
 
     let corpus_table = format!("{}_corpus", args.prefix);
@@ -108,12 +115,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
 
     let mut t = Table::new();
     t.load_preset(UTF8_FULL);
-    t.set_header(vec![
-        "sweep",
-        "recall@k",
-        "ndcg@k",
-        "mean q-time",
-    ]);
+    t.set_header(vec!["sweep", "recall@k", "ndcg@k", "mean q-time"]);
 
     for value in &args.sweep {
         client
@@ -310,8 +312,11 @@ pub fn ndcg_at_k(
         return 0.0;
     }
     // id -> corpus-row-position lookup, built once.
-    let id_to_pos: std::collections::HashMap<i64, usize> =
-        corpus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    let id_to_pos: std::collections::HashMap<i64, usize> = corpus_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i))
+        .collect();
     let log2 = |x: f64| x.log2();
     let mut sum = 0.0f64;
     for (q, pred) in pred_ids.iter().enumerate() {

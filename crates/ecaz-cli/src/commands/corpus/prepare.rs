@@ -1,6 +1,6 @@
 //! `ecaz corpus prepare` — parquet → canonical TSV + manifest.
 //!
-//! Ports `scripts/qdrant_dbpedia_to_tsv.py`. Given a parquet release (file
+//! Given a parquet release (file
 //! or directory of `*.parquet`) and a named subset profile, picks the
 //! reproducible first-N / next-M rows under ascending lexicographic id
 //! order and emits `<prefix>_{corpus,queries}.tsv` + `<prefix>_manifest.json`.
@@ -156,8 +156,12 @@ pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
         args.dim,
     )?;
 
-    let corpus_path = args.output_dir.join(format!("{}_corpus.tsv", profile.prefix));
-    let queries_path = args.output_dir.join(format!("{}_queries.tsv", profile.prefix));
+    let corpus_path = args
+        .output_dir
+        .join(format!("{}_corpus.tsv", profile.prefix));
+    let queries_path = args
+        .output_dir
+        .join(format!("{}_queries.tsv", profile.prefix));
     let manifest_path = args
         .output_dir
         .join(format!("{}_manifest.json", profile.prefix));
@@ -342,11 +346,17 @@ fn load_sorted_ids(
         let f = File::open(file)?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(f)?;
         let schema = builder.schema();
-        let col_idx = schema
-            .index_of(id_column)
-            .map_err(|_| eyre!("id column {id_column:?} missing from shard {}", file.display()))?;
+        let col_idx = schema.index_of(id_column).map_err(|_| {
+            eyre!(
+                "id column {id_column:?} missing from shard {}",
+                file.display()
+            )
+        })?;
         let mask = ProjectionMask::roots(builder.parquet_schema(), [col_idx]);
-        let reader = builder.with_projection(mask).with_batch_size(16_384).build()?;
+        let reader = builder
+            .with_projection(mask)
+            .with_batch_size(16_384)
+            .build()?;
         for batch in reader {
             let batch = batch?;
             let array = batch.column(0);
@@ -390,7 +400,10 @@ fn load_selected_rows(
         let builder = ParquetRecordBatchReaderBuilder::try_new(f)?;
         let schema = builder.schema();
         let id_idx = schema.index_of(id_column).map_err(|_| {
-            eyre!("id column {id_column:?} missing from shard {}", file.display())
+            eyre!(
+                "id column {id_column:?} missing from shard {}",
+                file.display()
+            )
         })?;
         let vec_idx = schema.index_of(vector_column).map_err(|_| {
             eyre!(
@@ -399,7 +412,10 @@ fn load_selected_rows(
             )
         })?;
         let mask = ProjectionMask::roots(builder.parquet_schema(), [id_idx, vec_idx]);
-        let reader = builder.with_projection(mask).with_batch_size(4_096).build()?;
+        let reader = builder
+            .with_projection(mask)
+            .with_batch_size(4_096)
+            .build()?;
         for batch in reader {
             let batch = batch?;
             let ids = batch.column(0);
@@ -457,7 +473,9 @@ fn read_vector_at(
     id: &str,
 ) -> Result<Vec<f32>> {
     if array.is_null(idx) {
-        return Err(eyre!("row id {id}: vector column {vector_column:?} is null"));
+        return Err(eyre!(
+            "row id {id}: vector column {vector_column:?} is null"
+        ));
     }
     if let Some(list) = array.as_list_opt::<i32>() {
         return list_to_vec(list.value(idx).as_ref(), dim, vector_column, id);
@@ -578,8 +596,8 @@ pub fn split_sorted_ids(
     profile: &SubsetProfile,
 ) -> (Vec<String>, Vec<String>) {
     let corpus = sorted_ids[..profile.corpus_rows].to_vec();
-    let query = sorted_ids[profile.query_start()..profile.query_start() + profile.query_rows]
-        .to_vec();
+    let query =
+        sorted_ids[profile.query_start()..profile.query_start() + profile.query_rows].to_vec();
     (corpus, query)
 }
 
@@ -610,13 +628,12 @@ pub fn write_tsv(
     let mut last_id: Option<i64> = None;
     let mut first_src: Option<String> = None;
     let mut last_src: Option<String> = None;
-    let file =
-        File::create(path).wrap_err_with(|| format!("creating {}", path.display()))?;
+    let file = File::create(path).wrap_err_with(|| format!("creating {}", path.display()))?;
     let mut w = BufWriter::new(file);
     for (row_id, source_id) in entries {
-        let v = rows_by_id
-            .get(source_id)
-            .ok_or_else(|| eyre!("row {row_id}: source id {source_id:?} not in materialized set"))?;
+        let v = rows_by_id.get(source_id).ok_or_else(|| {
+            eyre!("row {row_id}: source id {source_id:?} not in materialized set")
+        })?;
         let line = format!("{row_id}\t{}\n", canonical_json_array(v)?);
         if first_id.is_none() {
             first_id = Some(*row_id);
@@ -629,11 +646,7 @@ pub fn write_tsv(
     }
     w.flush()?;
     Ok(FileManifest {
-        file: path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned(),
+        file: path.file_name().unwrap().to_string_lossy().into_owned(),
         rows: entries.len(),
         sha256: hex::encode(hasher.finalize()),
         first_id,
@@ -762,10 +775,7 @@ mod tests {
     #[test]
     fn resolve_vector_column_picks_unique_candidate() {
         let schema = vec!["id".to_owned(), "embedding".to_owned()];
-        assert_eq!(
-            resolve_vector_column(&schema, None).unwrap(),
-            "embedding"
-        );
+        assert_eq!(resolve_vector_column(&schema, None).unwrap(), "embedding");
     }
 
     #[test]
@@ -899,10 +909,7 @@ mod tests {
 
     #[test]
     fn source_parquet_basename_handles_trailing_slash_directory() {
-        assert_eq!(
-            source_parquet_basename(Path::new("/tmp/foo/")),
-            "foo"
-        );
+        assert_eq!(source_parquet_basename(Path::new("/tmp/foo/")), "foo");
         assert_eq!(
             source_parquet_basename(Path::new("/tmp/foo.parquet")),
             "foo.parquet"
@@ -954,7 +961,10 @@ mod tests {
         assert_eq!(v["source_parquet_basename"], "foo.parquet");
         assert_eq!(v["selection_rule"]["corpus_rows"], 5);
         assert_eq!(v["selection_rule"]["query_start"], 5);
-        assert_eq!(v["selection_rule"]["sort_key"], "id ascending lexicographic");
+        assert_eq!(
+            v["selection_rule"]["sort_key"],
+            "id ascending lexicographic"
+        );
         assert_eq!(v["corpus"]["rows"], 5);
         assert_eq!(v["queries"]["first_source_id"], "s5");
     }

@@ -26,7 +26,12 @@ pub struct Cli {
     command: Command,
 
     /// PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench'.
-    #[arg(long, global = true, env = "PGDATABASE", default_value = "tqvector_bench")]
+    #[arg(
+        long,
+        global = true,
+        env = "PGDATABASE",
+        default_value = "tqvector_bench"
+    )]
     pub database: String,
 }
 

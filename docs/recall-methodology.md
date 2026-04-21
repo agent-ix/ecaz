@@ -27,7 +27,7 @@ Subsets are deterministic, not random:
 2. `ec_hnsw_real_50k` corpus: rows [0, 49,999], queries: rows [50,000, 50,999]
 3. `ec_hnsw_real_10k` corpus: rows [0, 9,999], queries: rows [10,000, 10,199]
 
-The canonical conversion script is `scripts/qdrant_dbpedia_to_tsv.py`.
+The canonical conversion command is `ecaz corpus prepare`.
 
 ## File Format
 
@@ -39,7 +39,7 @@ Corpus and query files are tab-separated:
 ## Loading
 
 ```bash
-python3 scripts/load_real_corpus.py
+ecaz corpus load --prefix ec_hnsw_real_50k --corpus-file /path/to/ec_hnsw_real_50k_corpus.tsv --queries-file /path/to/ec_hnsw_real_50k_queries.tsv --m 8,16
 ```
 
 The loader is idempotent — it skips tables that already exist.
@@ -47,11 +47,12 @@ The loader is idempotent — it skips tables that already exist.
 ## Reproducing Results
 
 ```bash
-# Load the dataset
-python3 scripts/load_real_corpus.py
+# Prepare and load the dataset
+ecaz corpus prepare --profile ec_hnsw_real_50k --parquet /path/to/parquet --output-dir /path/to/staged
+ecaz corpus load --prefix ec_hnsw_real_50k --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv --m 8,16
 
 # Run the SQL recall benchmark
-make bench-recall-sql
+ecaz bench recall --prefix ec_hnsw_real_50k --profile ec_hnsw --k 10 --sweep 40,128,200
 ```
 
 ## Further Reading

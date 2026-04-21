@@ -219,7 +219,7 @@ Bidirectional traceability between requirements and test cases.
 | TC-212 | Small table serial fallback | FR-021-AC-5 | 100-row table build does not launch workers |
 | TC-213 | Vacuum removes dead heap TIDs | FR-022-AC-1, FR-022-AC-2 | DELETE + VACUUM + search, verify deleted row absent |
 | TC-214 | Vacuum maintains graph connectivity | FR-022-AC-3 | Delete 10%, VACUUM, measure recall ≥ 80% of pre-vacuum |
-| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `scripts/vacuum_concurrency_scratch.sh --duration 60` runs concurrent INSERT + ec_hnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data |
+| TC-215 | Vacuum concurrent safety | FR-022-AC-4 | `ecaz stress vacuum --duration-seconds 60` runs concurrent INSERT + ec_hnsw scan + VACUUM for 60s, then performs a final post-quiesce `VACUUM (ANALYZE)` and asserts the live index's reachable live-element count stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data |
 | TC-216 | Strategy translation: COMPARE_LT | FR-023-AC-2 | Verify amtranslatestrategy(1) returns COMPARE_LT |
 | TC-217 | Strategy translation: invalid | FR-023-AC-4 | Verify amtranslatestrategy(99) returns COMPARE_INVALID |
 | TC-218 | EXPLAIN (ecaz) recognized | FR-024-AC-1 | `EXPLAIN (ecaz) SELECT ...` parses without error |

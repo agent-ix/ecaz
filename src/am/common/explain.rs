@@ -356,10 +356,7 @@ pub(crate) unsafe fn register_pg18_explain_hooks() {
             return;
         }
 
-        pg_sys::RegisterExtensionExplainOption(
-            c"ecaz".as_ptr(),
-            Some(ecaz_explain_option_handler),
-        );
+        pg_sys::RegisterExtensionExplainOption(c"ecaz".as_ptr(), Some(ecaz_explain_option_handler));
         let _ = PREVIOUS_EXPLAIN_PER_NODE_HOOK.set(pg_sys::explain_per_node_hook);
         pg_sys::explain_per_node_hook = Some(ecaz_explain_per_node_hook);
         ECAZ_EXPLAIN_REGISTERED.store(true, Ordering::Release);

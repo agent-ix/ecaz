@@ -2,7 +2,7 @@
 
 Motivation: Review 218 item 7 flagged that the real-corpus A4 lane has no
 external oracle. If `build_external_recall_context` or the Qdrant parquet
-converter (`scripts/qdrant_dbpedia_to_tsv.py`) has a subtle bug, every
+converter path (`ecaz corpus prepare`) has a subtle bug, every
 real-corpus gate run will be silently wrong and we will have no published
 reference number to catch it. Reviews 220/221/222 explicitly deferred this
 item. With the canonical loader path now proven on the real DBpedia corpus,
@@ -48,7 +48,7 @@ Add `docs/RECALL_ANN_BENCHMARKS_ANCHOR.md` that states, in one page:
 
 ### Step 2 — load the anchor corpus
 
-Extend `scripts/qdrant_dbpedia_to_tsv.py` with a third profile that covers
+Extend `ecaz corpus prepare` with a third profile that covers
 the anchor's row count:
 
 - If the anchor is against the full 1M Qdrant corpus at 10k queries, add a
@@ -61,7 +61,7 @@ the anchor's row count:
 - The profile must be additive — do not change existing
   `ec_hnsw_real_50k` / `ec_hnsw_real_10k` behavior.
 
-The loader (`scripts/load_real_corpus.py`) already handles any prefix that
+The loader (`ecaz corpus load`) already handles any prefix that
 matches the canonical `<prefix>_{corpus,queries}.tsv` layout. No loader
 changes should be needed.
 
@@ -120,7 +120,7 @@ they are measuring against the same staged subset.
 - If the anchor's published number is against cosine and our default is
   inner product on unit-normalized vectors, explicitly call that
   equivalence out in the doc. The loader already logs unit-norm stats
-  (`scripts/load_real_corpus.py` `VectorNormStats`), so the equivalence
+  (`ecaz corpus load`), so the equivalence
   is verifiable at load time.
 - Do not swap the anchor corpus for a synthetic one to make the probe
   cheaper. The whole point of the anchor is that it is on real data.

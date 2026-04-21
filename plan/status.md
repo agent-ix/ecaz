@@ -111,7 +111,7 @@ Testing / validation rollup: 76%
 | --- | --- | --- | ---: | --- |
 | Microbenchmark infrastructure | Criterion, iai-callgrind, dhat, Makefile targets, shared generators | Done | 100% | Harnesses are built and validated |
 | Quantizer-level benchmark runs | Pure-Rust microbench and recall-smoke evidence | Strong | 84% | Useful baseline numbers exist, and the merged SIMD lane now has current-main vs merged Criterion evidence for `prepare_ip_query` and `score_ip_encoded` |
-| SQL benchmark infrastructure | `bench_sql_latency.sh`, `bench_storage.sh`, `bench_recall.py`, reporting template | Done | 90% | Scripts exist, but depend on working scan/insert/vacuum |
+| SQL benchmark infrastructure | `ecaz bench latency`, `ecaz bench storage`, `ecaz bench recall`, reporting template | Done | 90% | CLI surfaces exist, but depend on working scan/insert/vacuum |
 | End-to-end HNSW latency/storage results | NFR-001 and NFR-002 result artifacts | In progress | 42% | Durable real-corpus NFR-001 latency artifacts now exist on `main` (`m=8` canonical, `m=16` isolated), but they still miss the latency target badly and NFR-002 storage artifacts are still pending |
 | End-to-end HNSW recall results | NFR-003 result artifacts over built indexes | Strong | 78% | The initial real-corpus signoff surface is now closed: canonical real `10K` passes strongly and the broader real `50K` `50`-query gate reports `92.6% / 94.4% / 94.8% / 95.2%`; broader post-gate reporting remains under `C1` |
 | Runtime hot-path profiling | Real graph traversal profiling and bottleneck evidence | Strong | 68% | Real `10K` hot-path profiling is now in hand; graph rereads and then repeated scoring were both measured and converted into merged scan-path wins |

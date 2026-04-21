@@ -1,8 +1,8 @@
 //! Instruction-count benchmarks for FWHT (iai-callgrind).
 
+use ecaz::bench_api::fwht_in_place;
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
-use ecaz::bench_api::fwht_in_place;
 
 #[library_benchmark]
 fn fwht_2048() {

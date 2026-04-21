@@ -152,9 +152,9 @@ follow-up in the review packet, do not land it here.
 
 The real win for `tqvector_encode_many` is on the *real-corpus*
 index build path, where the savings compound over millions of rows.
-That use case is the responsibility of the loader scripts
-(`scripts/load_real_corpus.py`), not the smoke fixture. Document the
-use case in the review packet but do not modify the loader script
+That use case is the responsibility of the real-corpus loader surface
+(`ecaz corpus load`), not the smoke fixture. Document the
+use case in the review packet but do not modify the loader
 either — that is its own task and its own review.
 
 ### Step 6 — bit-exact regression test
@@ -230,7 +230,7 @@ scratch reuse is wired in, the target is **3-5×**.
 
 - Rewriting `create_external_recall_smoke_fixture` to use the bulk
   surface (note as follow-up only).
-- Rewriting `scripts/load_real_corpus.py` to use the bulk surface
+- Rewriting `ecaz corpus load` to use the bulk surface
   (also note as follow-up).
 - Adding a bulk decode surface. There is no pressing need.
 - Changing `encode_to_tqvector`'s argument names or return type.

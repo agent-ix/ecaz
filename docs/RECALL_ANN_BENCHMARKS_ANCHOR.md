@@ -2,7 +2,7 @@
 
 This document records the single published external recall result we anchor the
 real-corpus A4 lane against. It exists so that, if `build_external_recall_context`
-or `scripts/qdrant_dbpedia_to_tsv.py` ever silently corrupts the corpus, the
+or `ecaz corpus prepare` ever silently corrupts the corpus, the
 real-corpus gate runs do not become a self-referential measurement that nobody
 can spot-check.
 
@@ -50,7 +50,7 @@ embedding corpus. The Qdrant benchmark is a published, source-controlled
 fixture, the engine is hnsw with `m=16, ef_construct=128`, the search uses a
 plain `hnsw_ef=128` with no quantization or rerank, and the dataset family is
 the same DBpedia / OpenAI 1536-dim split that
-`scripts/qdrant_dbpedia_to_tsv.py` already converts. Picking the
+`ecaz corpus prepare` already converts. Picking the
 `hnsw_ef=128` row in particular matches the build path our gate already uses
 (`ef_construction=128`) and uses an `ef_search` value that is already in the
 A4 gate sweep, so the anchor reuses the existing build artifact rather than
@@ -69,7 +69,7 @@ permalink.
 - **Distance metric.** The Qdrant benchmark dataset declares `distance:
   cosine`. Our local probe uses inner product on unit-normalized vectors. On
   unit-norm input these produce the same ranking, so `recall@10` is directly
-  comparable. The loader (`scripts/load_real_corpus.py` `VectorNormStats`)
+  comparable. The loader (`ecaz corpus load`)
   logs mean / min / max L2 norm at load time; if the staged corpus is not
   unit-norm the operator will see a warning before the anchor is run.
 - **Query split.** The published benchmark uses a separate held-out query
@@ -97,7 +97,7 @@ real-corpus lane already loads.
 
 1. Convert the parquet release into the anchor TSV pair plus manifest:
    ```bash
-   python3 scripts/qdrant_dbpedia_to_tsv.py \
+   ecaz corpus prepare \
        --profile ec_hnsw_real_ann_benchmarks_anchor \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
@@ -106,11 +106,11 @@ real-corpus lane already loads.
    - `ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv` (990,000 rows)
    - `ec_hnsw_real_ann_benchmarks_anchor_queries.tsv` (10,000 rows)
    - `ec_hnsw_real_ann_benchmarks_anchor_manifest.json`
-2. Load it. The loader is the same `scripts/load_real_corpus.py` used by the
+2. Load it. The loader is the same `ecaz corpus load` flow used by the
    primary gate. Build the `m=16` index (other `m` values are not part of the
    anchor):
    ```bash
-   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+   ecaz corpus load \
        --prefix ec_hnsw_real_ann_benchmarks_anchor \
        --corpus-file /path/to/staged/ec_hnsw_real_ann_benchmarks_anchor_corpus.tsv \
        --queries-file /path/to/staged/ec_hnsw_real_ann_benchmarks_anchor_queries.tsv \

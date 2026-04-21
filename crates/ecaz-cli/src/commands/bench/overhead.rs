@@ -125,7 +125,10 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
             .wrap_err("preparing EXPLAIN")?;
         let q0 = &queries[0];
         let explain_rows = client
-            .query(&explain_stmt, &[q0, &args.bits, &args.seed, &(args.k as i64)])
+            .query(
+                &explain_stmt,
+                &[q0, &args.bits, &args.seed, &(args.k as i64)],
+            )
             .await
             .wrap_err("running EXPLAIN")?;
         // EXPLAIN (FORMAT JSON) emits one `text` row per top-level JSON
@@ -136,8 +139,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
             .map(|r| r.get::<_, String>(0))
             .collect::<Vec<_>>()
             .join("\n");
-        let plan_json: Value = serde_json::from_str(&plan_text)
-            .wrap_err("parsing EXPLAIN JSON")?;
+        let plan_json: Value = serde_json::from_str(&plan_text).wrap_err("parsing EXPLAIN JSON")?;
         let internal_ms = parse_execution_time_ms(&plan_json)
             .ok_or_else(|| eyre!("EXPLAIN JSON did not contain Execution Time"))?;
 

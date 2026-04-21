@@ -27,10 +27,7 @@ pub async fn run(database: &str, args: InspectArgs) -> Result<()> {
 
     let client = psql::connect(database).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
-        return Err(eyre!(
-            "no corpus table {:?} in this database",
-            corpus_table
-        ));
+        return Err(eyre!("no corpus table {:?} in this database", corpus_table));
     }
 
     let corpus_rows = psql::row_count(&client, &corpus_table).await?;

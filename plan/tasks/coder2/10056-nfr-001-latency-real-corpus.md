@@ -2,7 +2,7 @@
 
 Motivation: `docs/RECALL_REAL_CORPUS.md:260-264` already notes that `NFR-001`
 latency benchmarking reuses the same loader path as the A4 recall lane but
-targets a different reporting surface (`scripts/bench_sql_latency.sh`). Now
+targets a different reporting surface (`ecaz bench latency`). Now
 that the real DBpedia fixture is staged and the canonical
 `ec_hnsw_real_10k` / `ec_hnsw_real_50k` tables have been proven to load and
 index, we can get a second axis of NFR coverage on the real corpus almost
@@ -14,7 +14,7 @@ Status: ready
 
 ## Prompt
 
-Wire the existing `scripts/bench_sql_latency.sh` benchmark path to the
+Wire the existing `ecaz bench latency` benchmark path to the
 canonical real-corpus prefixes and record a first latency sweep against the
 already-loaded `ec_hnsw_real_10k` subset.
 
@@ -22,12 +22,12 @@ already-loaded `ec_hnsw_real_10k` subset.
 
 Read, in order, before touching anything:
 
-- `scripts/bench_sql_latency.sh` — current invocation shape, assumed
-  table/index names, output format.
+- `crates/ecaz-cli/src/commands/bench/latency.rs` — current invocation shape,
+  assumed table/index names, output format.
 - `docs/RECALL_REAL_CORPUS.md:147-164` — the canonical index DDL and
   schema the A4 lane uses.
-- `scripts/load_real_corpus.py` — confirm the canonical corpus/queries/
-  index names that get produced.
+- `crates/ecaz-cli/src/commands/corpus/load.rs` — confirm the canonical
+  corpus/queries/index names that get produced.
 - `spec/non-functional/NFR-001-latency.md` (or whichever file currently
   houses the NFR-001 target numbers) — confirm the metric, the
   percentiles, and the query-rate assumptions the gate expects.
@@ -38,7 +38,7 @@ than a refactor.
 
 ### Step 2 — accept canonical prefixes directly
 
-Modify `scripts/bench_sql_latency.sh` so it accepts a canonical real-corpus
+Modify `ecaz bench latency` so it accepts a canonical real-corpus
 prefix (e.g. `ec_hnsw_real_10k` or `ec_hnsw_real_50k`) as a first-class
 argument and derives:
 
@@ -50,19 +50,17 @@ without requiring the caller to hand-edit SQL or set per-run env vars. The
 existing synthetic-fixture path should keep working unchanged — add the real
 path, do not replace the synthetic path.
 
-If `bench_sql_latency.sh` currently hardcodes a corpus shape, factor the
+If `ecaz bench latency` currently hardcodes a corpus shape, factor the
 corpus-specific bits into a small helper function or a clearly-labeled
 argument group rather than duplicating the whole script. Keep the diff
 minimal and focused: the goal is "accept a new fixture", not "rewrite the
 bench harness".
 
-### Step 3 — add a scratch-cluster wrapper
+### Step 3 — add scratch-cluster docs
 
-Add `scripts/bench_sql_latency_scratch.sh` that mirrors
-`scripts/load_real_corpus_scratch.sh` in shape — same socket, port, database,
-`psql` binary pinning — and forwards all other arguments to
-`bench_sql_latency.sh`. This keeps the "one-shot on the pgrx scratch
-cluster" story consistent with the A4 lane.
+Document the libpq env needed to point `ecaz bench latency` at the scratch
+cluster (`PGHOST`, `PGPORT`, `PGDATABASE`) so the "one-shot on the pgrx
+scratch cluster" story stays consistent with the A4 lane.
 
 ### Step 4 — record the first latency sweep
 
@@ -111,7 +109,7 @@ hitting the latency doc see that the real-corpus lane exists.
 
 ## Out of scope
 
-- Rewriting `bench_sql_latency.sh` from scratch.
+- Rewriting `ecaz bench latency` from scratch.
 - Adding new latency percentiles that NFR-001 does not currently declare.
 - Chasing latency regressions. Record the number, pass or fail; if it
   fails, open a review, do not try to fix it on this branch.
@@ -121,16 +119,15 @@ hitting the latency doc see that the real-corpus lane exists.
 ## Validate
 
 ```bash
-bash -n scripts/bench_sql_latency.sh
-bash -n scripts/bench_sql_latency_scratch.sh
+cargo test -p ecaz-cli latency
 ```
 
 Then actually run the bench against the scratch cluster with the already-
 loaded `ec_hnsw_real_10k` fixture and record the output:
 
 ```bash
-scripts/bench_sql_latency_scratch.sh --prefix ec_hnsw_real_10k --m 8 --m 16 \
-    --ef-search 40,64,100,128,160,200 > /tmp/nfr1_real_10k.txt
+PGHOST=/home/peter/.pgrx PGPORT=28817 PGDATABASE=postgres \
+ecaz bench latency --prefix ec_hnsw_real_10k --profile ec_hnsw --sweep 40,64,100,128,160,200
 ```
 
 Attach `/tmp/nfr1_real_10k.txt` verbatim to the review packet.

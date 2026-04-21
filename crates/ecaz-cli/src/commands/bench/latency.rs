@@ -74,9 +74,9 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
             profiles::names().join(", ")
         )
     })?;
-    let guc = profile.ef_search_guc.ok_or_else(|| {
-        eyre!("profile {:?} has no tuning GUC to sweep", profile.name)
-    })?;
+    let guc = profile
+        .ef_search_guc
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
     if args.sweep.is_empty() {
         return Err(eyre!(
             "--sweep requires at least one value (e.g. --sweep 100,200,400)"
@@ -155,8 +155,7 @@ async fn run_sweep_point(
 ) -> Result<Vec<Duration>> {
     let bar = ProgressBar::new(iterations as u64);
     bar.set_style(
-        ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})")
-            .unwrap(),
+        ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
     bar.set_message(format!("{guc}={value}"));
     bar.enable_steady_tick(Duration::from_millis(250));

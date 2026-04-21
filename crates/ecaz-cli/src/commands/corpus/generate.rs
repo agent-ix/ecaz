@@ -33,7 +33,7 @@ pub struct GenerateArgs {
     #[arg(long, default_value_t = 42)]
     pub seed: u64,
     /// Starting id. Loader expects unique bigint ids; default 0 matches the
-    /// legacy `gen_synthetic_data.py`.
+    /// historical synthetic-fixture convention.
     #[arg(long, default_value_t = 0)]
     pub start_id: i64,
     /// Output format. `corpus` = id + embedding; `queries` = same shape,
@@ -65,10 +65,9 @@ pub async fn run(_database: &str, args: GenerateArgs) -> Result<()> {
     let mut writer: Box<dyn Write> = if write_stdout {
         Box::new(BufWriter::new(std::io::stdout().lock()))
     } else {
-        Box::new(BufWriter::new(
-            File::create(&args.output)
-                .wrap_err_with(|| format!("creating {}", args.output.display()))?,
-        ))
+        Box::new(BufWriter::new(File::create(&args.output).wrap_err_with(
+            || format!("creating {}", args.output.display()),
+        )?))
     };
 
     let mut rng = StdRng::seed_from_u64(args.seed);

@@ -78,7 +78,12 @@ pub const EC_HNSW: IndexProfile = IndexProfile {
     ef_search_guc: Some("ec_hnsw.ef_search"),
     build_source_column: Some("source"),
     sweep_axis: SweepAxis::M,
-    known_reloptions: &["m", "ef_construction", "build_source_column", "storage_format"],
+    known_reloptions: &[
+        "m",
+        "ef_construction",
+        "build_source_column",
+        "storage_format",
+    ],
 };
 
 pub const EC_DISKANN: IndexProfile = IndexProfile {
@@ -174,9 +179,21 @@ mod tests {
         for p in REGISTRY {
             assert!(!p.name.is_empty(), "profile with empty name");
             assert!(!p.access_method.is_empty(), "profile {} missing AM", p.name);
-            assert!(!p.operator_class.is_empty(), "profile {} missing opclass", p.name);
-            assert!(!p.embedding_type.is_empty(), "profile {} missing embedding type", p.name);
-            assert!(!p.encoder_function.is_empty(), "profile {} missing encoder", p.name);
+            assert!(
+                !p.operator_class.is_empty(),
+                "profile {} missing opclass",
+                p.name
+            );
+            assert!(
+                !p.embedding_type.is_empty(),
+                "profile {} missing embedding type",
+                p.name
+            );
+            assert!(
+                !p.encoder_function.is_empty(),
+                "profile {} missing encoder",
+                p.name
+            );
         }
     }
 
@@ -185,7 +202,11 @@ mod tests {
         let mut names: Vec<&str> = REGISTRY.iter().map(|p| p.name).collect();
         names.sort_unstable();
         let unique: std::collections::HashSet<&&str> = names.iter().collect();
-        assert_eq!(names.len(), unique.len(), "duplicate profile name in REGISTRY");
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "duplicate profile name in REGISTRY"
+        );
     }
 
     #[test]

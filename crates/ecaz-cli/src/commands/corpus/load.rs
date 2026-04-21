@@ -1,4 +1,4 @@
-//! `ecaz corpus load` — port of the legacy `scripts/load_real_corpus.py`.
+//! `ecaz corpus load` — canonical real-corpus loader for Postgres fixtures.
 //!
 //! See the module-level doc in `super` for the corpus model. This command
 //! is the only way new data enters Postgres; everything downstream assumes
@@ -239,7 +239,10 @@ fn verify_manifest_if_present(
         query_stats,
     );
     if problems.is_empty() {
-        eprintln!("[loader] verified manifest {} for prefix {prefix}", path.display());
+        eprintln!(
+            "[loader] verified manifest {} for prefix {prefix}",
+            path.display()
+        );
         return Ok(());
     }
     let joined = problems
@@ -247,7 +250,10 @@ fn verify_manifest_if_present(
         .map(|p| p.0.as_str())
         .collect::<Vec<_>>()
         .join("; ");
-    let msg = format!("manifest verification failed for {}: {joined}", path.display());
+    let msg = format!(
+        "manifest verification failed for {}: {joined}",
+        path.display()
+    );
     if allow_mismatch {
         eprintln!("[loader] warning: {msg}");
         Ok(())
@@ -444,9 +450,7 @@ async fn copy_rows_from_tsv(
         .finish()
         .await
         .wrap_err_with(|| format!("COPY finish failed for {table}"))?;
-    bar.finish_with_message(format!(
-        "loaded {finished} {label} rows into {table}"
-    ));
+    bar.finish_with_message(format!("loaded {finished} {label} rows into {table}"));
     Ok(())
 }
 
@@ -564,7 +568,9 @@ mod tests {
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[0].name, "foo_pq_fastscan_m8_idx");
         assert!(jobs[0].reloptions.contains(&opt("ef_construction", "96")));
-        assert!(jobs[0].reloptions.contains(&opt("storage_format", "pq_fastscan")));
+        assert!(jobs[0]
+            .reloptions
+            .contains(&opt("storage_format", "pq_fastscan")));
     }
 
     #[test]
@@ -575,7 +581,13 @@ mod tests {
         let keys: Vec<&str> = jobs[0].reloptions.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(
             keys,
-            vec!["m", "ef_construction", "build_source_column", "storage_format", "custom"]
+            vec![
+                "m",
+                "ef_construction",
+                "build_source_column",
+                "storage_format",
+                "custom"
+            ]
         );
     }
 
@@ -605,10 +617,19 @@ mod tests {
 
     #[test]
     fn diskann_plan_appends_storage_format_to_extras() {
-        let jobs = plan_index_jobs(&EC_DISKANN, "foo_pq_fastscan", &[], 128, Some("pq_fastscan"), &[]);
+        let jobs = plan_index_jobs(
+            &EC_DISKANN,
+            "foo_pq_fastscan",
+            &[],
+            128,
+            Some("pq_fastscan"),
+            &[],
+        );
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].name, "foo_pq_fastscan_idx");
-        assert!(jobs[0].reloptions.contains(&opt("storage_format", "pq_fastscan")));
+        assert!(jobs[0]
+            .reloptions
+            .contains(&opt("storage_format", "pq_fastscan")));
     }
 
     // --- manifest orchestration ---
@@ -710,14 +731,24 @@ mod tests {
         std::fs::write(&manifest_path, body).unwrap();
 
         let strict = verify_manifest_if_present(
-            None, &corpus, &queries, "x", 4,
-            &stats(1, &"a".repeat(64)), &stats(1, &"b".repeat(64)),
+            None,
+            &corpus,
+            &queries,
+            "x",
+            4,
+            &stats(1, &"a".repeat(64)),
+            &stats(1, &"b".repeat(64)),
             false,
         );
         assert!(strict.is_err());
         let lenient = verify_manifest_if_present(
-            None, &corpus, &queries, "x", 4,
-            &stats(1, &"a".repeat(64)), &stats(1, &"b".repeat(64)),
+            None,
+            &corpus,
+            &queries,
+            "x",
+            4,
+            &stats(1, &"a".repeat(64)),
+            &stats(1, &"b".repeat(64)),
             true,
         );
         assert!(lenient.is_ok());

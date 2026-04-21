@@ -31,9 +31,9 @@ rows in the exact same order.
 
 ### Step 2 — mirror the loader's COPY literal format
 
-`scripts/load_real_corpus.py` already uses the curly-brace `real[]` COPY
+`ecaz corpus load` already uses the curly-brace `real[]` COPY
 literal format: `{v0,v1,...}` with `repr(float(v))` per element (see
-`_format_real_array_literal` near `scripts/load_real_corpus.py:305`). Use
+its row-literal formatting helper. Use
 the same format in the smoke — it is already proven against the canonical
 corpus table schema. Per-element format: `repr(f32 as f64)` is fine; the
 target column is `real[]`, and Postgres will accept any format Rust's
@@ -84,7 +84,7 @@ pg_test build and scratch cluster", not "takes too long").
 - Do not introduce a new crate dependency. `pgrx` already provides
   everything you need; if it does not, fall back to multi-row `INSERT`
   rather than adding a Postgres client crate.
-- Do not rewrite the real loader (`scripts/load_real_corpus.py`). Its
+- Do not rewrite the real loader (`ecaz corpus load`). Its
   COPY path already works and this task is only about the Rust smoke
   test.
 - The target is "seeding drops from ~160s to <5s". If you hit that, stop

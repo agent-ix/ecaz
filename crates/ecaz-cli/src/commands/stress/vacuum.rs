@@ -1,6 +1,6 @@
 //! `ecaz stress vacuum` — concurrent insert/delete/scan/VACUUM harness.
 //!
-//! Ports `scripts/vacuum_concurrency_scratch.sh`. Drives four concurrent
+//! Drives four concurrent
 //! workers against a synthetic `ec_hnsw`-indexed table for a fixed wall
 //! duration, then asserts that VACUUM left the index structurally sound.
 //!
@@ -350,13 +350,14 @@ async fn scan_worker(
 ) -> Result<u64> {
     let client = connect_worker(&database).await?;
     let stmt = client
-        .prepare(
-            "SELECT tests.ec_hnsw_debug_scan_result_count($1::regclass::oid, $2::real[])",
-        )
+        .prepare("SELECT tests.ec_hnsw_debug_scan_result_count($1::regclass::oid, $2::real[])")
         .await?;
     let mut iterations = 0_u64;
     while !stop.load(Ordering::Relaxed) && Instant::now() < deadline {
-        let count: i64 = client.query_one(&stmt, &[&index_name, &query]).await?.get(0);
+        let count: i64 = client
+            .query_one(&stmt, &[&index_name, &query])
+            .await?
+            .get(0);
         if count <= 0 {
             return Err(eyre!(
                 "scan worker saw ec_hnsw scan return {count} rows (expected > 0)"
@@ -494,7 +495,9 @@ mod tests {
 
     #[test]
     fn reachability_floor_fails_below_threshold() {
-        let err = check_reachability_floor(80, 100, 90).unwrap_err().to_string();
+        let err = check_reachability_floor(80, 100, 90)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("fell below"), "got {err}");
     }
 

@@ -1,10 +1,10 @@
 //! Property tests for page codec invariants.
 
-use proptest::prelude::*;
 use ecaz::bench_api::{
     CurrentFormatMetadata, ItemPointer, MetadataPage, TqElementTuple, TqNeighborTuple,
     HEAPTID_INLINE_CAPACITY, ITEM_POINTER_BYTES,
 };
+use proptest::prelude::*;
 
 // P9: TqElementTuple encode/decode roundtrip.
 proptest! {
