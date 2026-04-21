@@ -105,6 +105,13 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     if !psql::relation_exists(&client, &queries_table, 'r').await? {
         return Err(eyre!("no queries table {queries_table} in this database"));
     }
+    if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            crate::commands::bench::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
 
     client
         .batch_execute("CREATE EXTENSION IF NOT EXISTS vector")
