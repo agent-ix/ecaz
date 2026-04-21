@@ -196,6 +196,12 @@ See ADR-040 for the full shape. Summary:
   heap after every staged consume. Full shared top-K admission and mutation
   remain deferred.
 
+- **Incremental staged-heap maintenance.** Worker result publish, clear, and
+  staged coordinator take now maintain reverse slot-to-heap membership and
+  reheapify in place, so the shared staged frontier no longer does a full heap
+  rebuild on every per-slot mutation. Full lock-guarded shared top-K admission
+  remains deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

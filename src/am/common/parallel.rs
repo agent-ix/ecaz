@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use pgrx::pg_sys;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 4;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 5;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 
 #[repr(C)]
@@ -52,6 +52,7 @@ pub(crate) struct EcParallelCoordinatorResultSlot {
     pub(crate) flags: AtomicU32,
     pub(crate) slot_index: u32,
     pub(crate) observed_rescan_epoch: AtomicU32,
+    heap_index: AtomicU32,
     element_block_number: AtomicU32,
     element_offset_number: AtomicU32,
     heap_block_number: AtomicU32,
@@ -505,6 +506,7 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
                 flags: AtomicU32::new(0),
                 slot_index,
                 observed_rescan_epoch: AtomicU32::new(state_ref.rescan_epoch),
+                heap_index: AtomicU32::new(EC_PARALLEL_HEAP_ENTRY_INVALID),
                 element_block_number: AtomicU32::new(EcParallelItemPointer::INVALID.block_number),
                 element_offset_number: AtomicU32::new(
                     EcParallelItemPointer::INVALID.offset_number as u32,
@@ -600,6 +602,8 @@ fn load_parallel_item_pointer(
 
 fn reset_result_slot_runtime(slot: &EcParallelCoordinatorResultSlot) {
     let runtime = EcParallelCoordinatorResultSlotRuntimeSnapshot::idle();
+    slot.heap_index
+        .store(EC_PARALLEL_HEAP_ENTRY_INVALID, Ordering::Release);
     store_parallel_item_pointer(
         &slot.element_block_number,
         &slot.element_offset_number,
@@ -762,6 +766,27 @@ unsafe fn heap_entry_snapshot(
     Ok(load_coordinator_result_slot_snapshot(unsafe { &*slot }))
 }
 
+unsafe fn slot_heap_index(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+) -> Result<Option<u32>, &'static str> {
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    let heap_index = unsafe { &*slot }.heap_index.load(Ordering::Acquire);
+    Ok((heap_index != EC_PARALLEL_HEAP_ENTRY_INVALID).then_some(heap_index))
+}
+
+unsafe fn store_slot_heap_index(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+    heap_index: u32,
+) -> Result<(), &'static str> {
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    unsafe { &*slot }
+        .heap_index
+        .store(heap_index, Ordering::Release);
+    Ok(())
+}
+
 unsafe fn swap_heap_entries(
     attachment: &ParallelScanAttachment,
     lhs_index: u32,
@@ -769,7 +794,11 @@ unsafe fn swap_heap_entries(
 ) -> Result<(), &'static str> {
     let lhs = unsafe { attachment.heap_entry(lhs_index) }?;
     let rhs = unsafe { attachment.heap_entry(rhs_index) }?;
+    let lhs_slot_index = unsafe { *lhs };
+    let rhs_slot_index = unsafe { *rhs };
     unsafe { std::ptr::swap(lhs, rhs) };
+    unsafe { store_slot_heap_index(attachment, lhs_slot_index, rhs_index) }?;
+    unsafe { store_slot_heap_index(attachment, rhs_slot_index, lhs_index) }?;
     Ok(())
 }
 
@@ -828,6 +857,11 @@ unsafe fn sift_down_heap_entry(
 unsafe fn rebuild_parallel_scan_heap_with_attachment(
     attachment: &ParallelScanAttachment,
 ) -> Result<u32, &'static str> {
+    for slot_index in 0..attachment.result_slot_count {
+        unsafe {
+            store_slot_heap_index(attachment, slot_index, EC_PARALLEL_HEAP_ENTRY_INVALID)?;
+        }
+    }
     for entry_index in 0..attachment.heap_entry_count {
         let entry = unsafe { attachment.heap_entry(entry_index) }?;
         unsafe {
@@ -848,6 +882,7 @@ unsafe fn rebuild_parallel_scan_heap_with_attachment(
         unsafe {
             *entry = slot_index;
         }
+        unsafe { store_slot_heap_index(attachment, slot_index, live_entry_count) }?;
         unsafe { sift_up_heap_entry(attachment, live_entry_count) }?;
         live_entry_count += 1;
     }
@@ -860,9 +895,131 @@ unsafe fn rebuild_parallel_scan_heap_with_attachment(
     Ok(live_entry_count)
 }
 
+unsafe fn detach_parallel_scan_heap_entry_with_attachment(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+) -> Result<(), &'static str> {
+    let Some(mut heap_index) = (unsafe { slot_heap_index(attachment, slot_index) })? else {
+        return Ok(());
+    };
+    let heap_state = unsafe { &*attachment.heap_state };
+    let live_entry_count = heap_state.live_entry_count.load(Ordering::Acquire);
+    if heap_index >= live_entry_count {
+        unsafe { store_slot_heap_index(attachment, slot_index, EC_PARALLEL_HEAP_ENTRY_INVALID) }?;
+        return Ok(());
+    }
+
+    let last_entry_index = live_entry_count - 1;
+    let mut replacement_slot_index = None;
+    if heap_index != last_entry_index {
+        let moved_slot_index = unsafe { heap_entry_slot_index(attachment, last_entry_index) }?;
+        let heap_entry = unsafe { attachment.heap_entry(heap_index) }?;
+        unsafe {
+            *heap_entry = moved_slot_index;
+        }
+        unsafe { store_slot_heap_index(attachment, moved_slot_index, heap_index) }?;
+        replacement_slot_index = Some(moved_slot_index);
+    }
+
+    let last_entry = unsafe { attachment.heap_entry(last_entry_index) }?;
+    unsafe {
+        *last_entry = EC_PARALLEL_HEAP_ENTRY_INVALID;
+    }
+    unsafe { store_slot_heap_index(attachment, slot_index, EC_PARALLEL_HEAP_ENTRY_INVALID) }?;
+
+    let new_live_entry_count = live_entry_count - 1;
+    heap_state
+        .live_entry_count
+        .store(new_live_entry_count, Ordering::Release);
+    heap_state.heap_generation.fetch_add(1, Ordering::AcqRel);
+
+    if heap_index != last_entry_index && new_live_entry_count != 0 {
+        unsafe { sift_up_heap_entry(attachment, heap_index) }?;
+        if let Some(moved_slot_index) = replacement_slot_index {
+            heap_index = (unsafe { slot_heap_index(attachment, moved_slot_index) })?
+                .expect("replacement slot should stay present after heap detach");
+            unsafe { sift_down_heap_entry(attachment, heap_index, new_live_entry_count) }?;
+        }
+    }
+
+    Ok(())
+}
+
+unsafe fn upsert_parallel_scan_heap_entry_with_attachment(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+) -> Result<(), &'static str> {
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if !unsafe { coordinator_result_slot_snapshot_is_live_with_attachment(attachment, &snapshot) } {
+        unsafe { detach_parallel_scan_heap_entry_with_attachment(attachment, slot_index) }?;
+        return Ok(());
+    }
+
+    let heap_state = unsafe { &*attachment.heap_state };
+    if let Some(mut heap_index) = (unsafe { slot_heap_index(attachment, slot_index) })? {
+        unsafe { sift_up_heap_entry(attachment, heap_index) }?;
+        heap_index = (unsafe { slot_heap_index(attachment, slot_index) })?
+            .expect("slot should stay present after heap update");
+        let live_entry_count = heap_state.live_entry_count.load(Ordering::Acquire);
+        unsafe { sift_down_heap_entry(attachment, heap_index, live_entry_count) }?;
+        heap_state.heap_generation.fetch_add(1, Ordering::AcqRel);
+        return Ok(());
+    }
+
+    let live_entry_count = heap_state.live_entry_count.load(Ordering::Acquire);
+    let entry = unsafe { attachment.heap_entry(live_entry_count) }?;
+    unsafe {
+        *entry = slot_index;
+    }
+    unsafe { store_slot_heap_index(attachment, slot_index, live_entry_count) }?;
+    heap_state
+        .live_entry_count
+        .store(live_entry_count + 1, Ordering::Release);
+    unsafe { sift_up_heap_entry(attachment, live_entry_count) }?;
+    heap_state.heap_generation.fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
+unsafe fn reap_parallel_scan_dead_root_slots_with_attachment(
+    attachment: &ParallelScanAttachment,
+) -> Result<(), &'static str> {
+    loop {
+        let heap_snapshot = load_coordinator_heap_snapshot(attachment);
+        let Some(slot_index) = heap_snapshot.root_slot_index else {
+            return Ok(());
+        };
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let slot_ref = unsafe { &*slot };
+        let snapshot = load_coordinator_result_slot_snapshot(slot_ref);
+        if unsafe {
+            coordinator_result_slot_snapshot_is_live_with_attachment(attachment, &snapshot)
+        } {
+            return Ok(());
+        }
+
+        unsafe { detach_parallel_scan_heap_entry_with_attachment(attachment, slot_index) }?;
+        if snapshot.observed_rescan_epoch == attachment.rescan_epoch
+            && snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0
+            && !unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) }
+        {
+            reset_result_slot_runtime(slot_ref);
+            slot_ref.flags.store(0, Ordering::Release);
+            let coordinator = unsafe { &*attachment.coordinator };
+            coordinator
+                .published_result_slots
+                .fetch_sub(1, Ordering::AcqRel);
+            coordinator
+                .result_publish_generation
+                .fetch_add(1, Ordering::AcqRel);
+        }
+    }
+}
+
 fn refresh_coordinator_selected_result_fast_path(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(attachment) }?;
     let coordinator = unsafe { &*attachment.coordinator };
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
@@ -892,43 +1049,6 @@ fn refresh_coordinator_selected_result_fast_path(
         }
     }
     Ok(())
-}
-
-unsafe fn pop_parallel_scan_heap_root_with_attachment(
-    attachment: &ParallelScanAttachment,
-) -> Result<Option<u32>, &'static str> {
-    let heap_state = unsafe { &*attachment.heap_state };
-    let live_entry_count = heap_state.live_entry_count.load(Ordering::Acquire);
-    if live_entry_count == 0 {
-        return Ok(None);
-    }
-
-    let root_slot_index = unsafe { heap_entry_slot_index(attachment, 0) }?;
-    let last_entry_index = live_entry_count - 1;
-    if last_entry_index != 0 {
-        let replacement = unsafe { heap_entry_slot_index(attachment, last_entry_index) }?;
-        let root_entry = unsafe { attachment.heap_entry(0) }?;
-        unsafe {
-            *root_entry = replacement;
-        }
-    }
-
-    let last_entry = unsafe { attachment.heap_entry(last_entry_index) }?;
-    unsafe {
-        *last_entry = EC_PARALLEL_HEAP_ENTRY_INVALID;
-    }
-
-    let new_live_entry_count = live_entry_count - 1;
-    heap_state
-        .live_entry_count
-        .store(new_live_entry_count, Ordering::Release);
-    heap_state.heap_generation.fetch_add(1, Ordering::AcqRel);
-
-    if new_live_entry_count != 0 {
-        unsafe { sift_down_heap_entry(attachment, 0, new_live_entry_count) }?;
-    }
-
-    Ok(Some(root_slot_index))
 }
 
 unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
@@ -1221,6 +1341,7 @@ unsafe fn clear_parallel_scan_result_slot_with_attachment(
         return Ok(false);
     }
 
+    unsafe { detach_parallel_scan_heap_entry_with_attachment(attachment, slot_index) }?;
     reset_result_slot_runtime(result_slot_ref);
     result_slot_ref.flags.store(0, Ordering::Release);
     let coordinator = unsafe { &*attachment.coordinator };
@@ -1365,7 +1486,8 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
     coordinator
         .result_publish_generation
         .fetch_add(1, Ordering::AcqRel);
-    refresh_coordinator_selection_snapshot(&attachment)?;
+    unsafe { upsert_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
+    refresh_coordinator_selected_result_fast_path(&attachment)?;
     Ok(true)
 }
 
@@ -1517,16 +1639,6 @@ pub(crate) unsafe fn take_parallel_scan_selected_result_slot_snapshot(
                 false,
             )
         }? {
-            refresh_coordinator_selection_snapshot(&attachment)?;
-            continue;
-        }
-        let Some(popped_slot_index) =
-            (unsafe { pop_parallel_scan_heap_root_with_attachment(&attachment) })?
-        else {
-            refresh_coordinator_selection_snapshot(&attachment)?;
-            continue;
-        };
-        if popped_slot_index != slot_index {
             refresh_coordinator_selection_snapshot(&attachment)?;
             continue;
         }
@@ -2135,6 +2247,96 @@ mod tests {
             selection.coordinator.selected_result_score,
             Some(-5.0),
             "coordinator snapshot should carry the chosen staged result score too"
+        );
+    }
+
+    #[test]
+    fn publish_parallel_scan_coordinator_result_slot_runtime_snapshot_reheapifies_existing_slot() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second claim should succeed");
+
+        for (slot_index, block_number, score) in [(first_slot, 71, -4.0), (second_slot, 72, -7.0)] {
+            unsafe {
+                publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                    EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                        element_tid: EcParallelItemPointer {
+                            block_number,
+                            offset_number: 1,
+                        },
+                        heap_tid: EcParallelItemPointer::INVALID,
+                        score,
+                        approx_score: None,
+                        comparison_score: None,
+                        approx_rank_base: None,
+                        pending_count: 1,
+                        pending_index: 0,
+                    },
+                )
+            }
+            .expect("publish should succeed");
+        }
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 71,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                },
+            )
+        }
+        .expect("republish should succeed");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
+                .expect("coordinator snapshot should read back after republish"),
+            EcParallelCoordinatorSnapshot {
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                claimed_worker_slots: 2,
+                published_result_slots: 2,
+                result_publish_generation: 3,
+                selected_result_slot_index: Some(first_slot),
+                selected_result_score: Some(-9.0),
+            },
+            "republishing an existing slot with a lower score should retarget the coordinator fast path to that slot"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_heap_snapshot(attachment.state) }
+                .expect("coordinator heap snapshot should read back after republish"),
+            EcParallelCoordinatorHeapSnapshot {
+                live_entry_count: 2,
+                entry_capacity: TEST_WORKER_SLOT_COUNT,
+                heap_generation: 3,
+                root_slot_index: Some(first_slot),
+            },
+            "republishing a staged result should reheapify the slot in place instead of rebuilding the shared heap"
         );
     }
 
