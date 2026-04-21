@@ -157,6 +157,19 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         );
     }
 
+    let collisions =
+        reloption_flag_collisions(profile, &args.reloptions, args.storage_format.as_deref());
+    if !collisions.is_empty() {
+        let formatted = collisions
+            .iter()
+            .map(|c| format!("--reloption {}=... conflicts with {}", c.key, c.flag))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(eyre!(
+            "{formatted}. Use the native CLI flag or drop the --reloption, not both"
+        ));
+    }
+
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
     let index_prefix = match args.storage_format.as_deref() {
@@ -391,6 +404,45 @@ fn verify_manifest_if_present(
     } else {
         Err(eyre!(msg))
     }
+}
+
+/// Pair describing a `--reloption key=...` that duplicates a native CLI flag.
+struct FlagCollision {
+    key: &'static str,
+    flag: &'static str,
+}
+
+/// Reject `--reloption` keys that a native CLI flag already sets. Postgres
+/// rejects duplicate reloption keys at `CREATE INDEX`, and even when it
+/// doesn't, letting `--reloption` silently override a native flag is worse
+/// UX than a clear up-front error pointing at the redundant flag.
+fn reloption_flag_collisions(
+    profile: &IndexProfile,
+    reloptions: &[(String, String)],
+    storage_format: Option<&str>,
+) -> Vec<FlagCollision> {
+    let mut managed: Vec<FlagCollision> = Vec::new();
+    if profile.sweep_axis_is_m() {
+        managed.push(FlagCollision { key: "m", flag: "--m" });
+        managed.push(FlagCollision {
+            key: "ef_construction",
+            flag: "--ef-construction",
+        });
+        managed.push(FlagCollision {
+            key: "build_source_column",
+            flag: "(HNSW built-in)",
+        });
+    }
+    if storage_format.is_some() {
+        managed.push(FlagCollision {
+            key: "storage_format",
+            flag: "--storage-format",
+        });
+    }
+    managed
+        .into_iter()
+        .filter(|c| reloptions.iter().any(|(k, _)| k == c.key))
+        .collect()
 }
 
 fn plan_index_jobs(
@@ -1174,6 +1226,49 @@ mod tests {
             .reloptions
             .iter()
             .any(|(k, _)| k == "build_source_column"));
+    }
+
+    // --- reloption / CLI flag collisions ---
+
+    #[test]
+    fn collision_hnsw_m_reloption_flagged() {
+        let opts = vec![opt("m", "32")];
+        let c = reloption_flag_collisions(&EC_HNSW, &opts, None);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].key, "m");
+    }
+
+    #[test]
+    fn collision_hnsw_ef_construction_and_build_source_flagged() {
+        let opts = vec![opt("ef_construction", "96"), opt("build_source_column", "x")];
+        let c = reloption_flag_collisions(&EC_HNSW, &opts, None);
+        let keys: Vec<&str> = c.iter().map(|c| c.key).collect();
+        assert!(keys.contains(&"ef_construction"));
+        assert!(keys.contains(&"build_source_column"));
+    }
+
+    #[test]
+    fn collision_storage_format_flagged_only_when_cli_flag_set() {
+        let opts = vec![opt("storage_format", "pq_fastscan")];
+        assert!(reloption_flag_collisions(&EC_DISKANN, &opts, None).is_empty());
+        let c = reloption_flag_collisions(&EC_DISKANN, &opts, Some("turboquant"));
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].key, "storage_format");
+    }
+
+    #[test]
+    fn collision_diskann_m_reloption_not_flagged() {
+        // DiskANN has no --m flag; an `m=` reloption here is just pass-through
+        // (and independently flagged as unknown by profile.unknown_reloption_keys).
+        let opts = vec![opt("m", "32")];
+        assert!(reloption_flag_collisions(&EC_DISKANN, &opts, None).is_empty());
+    }
+
+    #[test]
+    fn collision_empty_when_no_overlap() {
+        let opts = vec![opt("graph_degree", "48"), opt("alpha", "1.2")];
+        assert!(reloption_flag_collisions(&EC_DISKANN, &opts, None).is_empty());
+        assert!(reloption_flag_collisions(&EC_HNSW, &[], None).is_empty());
     }
 
     // --- manifest orchestration ---
