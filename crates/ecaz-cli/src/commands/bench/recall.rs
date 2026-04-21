@@ -7,7 +7,7 @@
 //! 2. Compute ground truth with a parallel `queries · corpusᵀ` matmul
 //!    (ndarray+rayon), then argsort the top-k per row.
 //! 3. For each sweep value, set the profile's tuning GUC and run one
-//!    `ORDER BY embedding <#> encode_to_<embedding>(...) LIMIT k` per query.
+//!    `ORDER BY embedding <#> $1::real[] LIMIT k` per query.
 //! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
 //!
 //! # Purity boundary
@@ -26,7 +26,7 @@ use rayon::prelude::*;
 use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
-use crate::profiles::{self, IndexProfile};
+use crate::profiles;
 use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
@@ -47,13 +47,6 @@ pub struct RecallArgs {
     /// Cap the query set (default: all rows in `<prefix>_queries`).
     #[arg(long)]
     pub queries_limit: Option<usize>,
-    /// Quantization bits used when encoding query vectors at scan time.
-    /// Must match the loader's `--bits` for the embedding column.
-    #[arg(long, default_value_t = 4)]
-    pub bits: i32,
-    /// Quantizer seed (must match loader's `--seed`).
-    #[arg(long, default_value_t = 42)]
-    pub seed: i64,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
@@ -128,8 +121,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     let t0 = Instant::now();
     let gt = brute_force_top_k(&corpus, &queries, args.k);
     crate::ecaz_eprintln!("[recall] ground truth in {:.2?}", t0.elapsed());
+    psql::prefer_ordered_ann_path(&client).await?;
 
-    let sql = build_knn_sql(profile, &corpus_table);
+    let sql = build_knn_sql(&corpus_table);
 
     let mut t = Table::new();
     t.load_preset(UTF8_FULL);
@@ -163,7 +157,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             let row_vec: Vec<f32> = queries.row(q).to_vec();
             let t0 = Instant::now();
             let rows = client
-                .query(&stmt, &[&row_vec, &args.bits, &args.seed, &(args.k as i64)])
+                .query(&stmt, &[&row_vec, &(args.k as i64)])
                 .await
                 .wrap_err("executing recall KNN query")?;
             total_ns += t0.elapsed().as_nanos();
@@ -363,23 +357,21 @@ pub fn ndcg_at_k(
     sum / pred_ids.len() as f64
 }
 
-/// KNN SQL template used for recall. Binds are `($1::real[], $2::integer,
-/// $3::bigint, $4::bigint)` = (query_source, bits, seed, k). Exposed so a
-/// test can pin the operator and encoder wiring for each profile.
-pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
+/// KNN SQL template used for ecaz scans. Binds are `($1::real[], $2::bigint)`
+/// = (query_source, k). Exposed so tests can pin the operator-facing query
+/// shape the AM scans expect.
+pub fn build_knn_sql(corpus_table: &str) -> String {
     format!(
         "SELECT id FROM {corpus_table} \
          ORDER BY embedding <#> \
-         {enc}($1::real[], $2::integer, $3::bigint) \
-         LIMIT $4",
-        enc = profile.encoder_function,
+         $1::real[] \
+         LIMIT $2",
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profiles::{EC_DISKANN, EC_HNSW};
     use ndarray::arr2;
 
     // --- top_k_desc ---
@@ -539,22 +531,14 @@ mod tests {
     // --- build_knn_sql ---
 
     #[test]
-    fn build_knn_sql_uses_profile_encoder_and_ip_operator() {
-        let sql = build_knn_sql(&EC_HNSW, "dbpedia_10k_corpus");
+    fn build_knn_sql_uses_raw_real_query_and_ip_operator() {
+        let sql = build_knn_sql("dbpedia_10k_corpus");
         assert!(sql.contains("FROM dbpedia_10k_corpus"));
-        assert!(sql.contains("encode_to_ecvector($1::real[], $2::integer, $3::bigint)"));
         assert!(sql.contains("<#>"));
+        assert!(sql.contains("$1::real[]"));
+        assert!(!sql.contains("encode_to_ecvector"), "got: {sql}");
         assert!(!sql.contains("pg_catalog"), "got: {sql}");
-        assert!(sql.contains("LIMIT $4"));
-    }
-
-    #[test]
-    fn build_knn_sql_is_profile_polymorphic() {
-        // DiskANN uses the same embedding type + encoder today, but the SQL
-        // must reference the profile's `encoder_function` field, not a
-        // hardcoded name.
-        let sql = build_knn_sql(&EC_DISKANN, "corpus");
-        assert!(sql.contains(EC_DISKANN.encoder_function));
+        assert!(sql.contains("LIMIT $2"));
     }
 
     // --- map_indices_to_ids ---

@@ -117,6 +117,21 @@ pub async fn index_count_with_am(client: &Client, table: &str, am: &str) -> Resu
     Ok(row.get::<_, i64>(0))
 }
 
+/// Bias the session toward the ordered ANN index path instead of seqscan/sort
+/// fallbacks. Measurement commands use this so they time the selected access
+/// method rather than an arbitrary planner alternative.
+pub async fn prefer_ordered_ann_path(client: &Client) -> Result<()> {
+    client
+        .batch_execute(
+            "SET enable_seqscan = off;
+             SET enable_bitmapscan = off;
+             SET enable_sort = off",
+        )
+        .await
+        .wrap_err("forcing ordered ANN plan shape")?;
+    Ok(())
+}
+
 /// Does an index with the given `pg_class.reloptions` prefix exist? The
 /// caller passes the canonical `key=value` list; a match means every
 /// listed reloption is present (via array containment), so other

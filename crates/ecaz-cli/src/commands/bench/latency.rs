@@ -52,12 +52,6 @@ pub struct LatencyArgs {
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
-    /// Quantization bits used when encoding query vectors (must match loader).
-    #[arg(long, default_value_t = 4)]
-    pub bits: i32,
-    /// Quantizer seed (must match loader).
-    #[arg(long, default_value_t = 42)]
-    pub seed: i64,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
@@ -95,7 +89,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
-    let sql = build_knn_sql(profile, &corpus_table);
+    let sql = build_knn_sql(&corpus_table);
 
     // Pull query vectors once into memory. Iterations > n_queries wraps.
     let bootstrap = psql::connect(conn).await?;
@@ -144,8 +138,6 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Arc::clone(&queries),
             args.concurrency,
             args.iterations,
-            args.bits,
-            args.seed,
             args.k,
         )
         .await?;
@@ -176,8 +168,6 @@ async fn run_sweep_point(
     queries: Arc<Vec<Vec<f32>>>,
     concurrency: usize,
     iterations: usize,
-    bits: i32,
-    seed: i64,
     k: usize,
 ) -> Result<Vec<Duration>> {
     let bar = crate::output::progress_bar(iterations as u64);
@@ -198,10 +188,7 @@ async fn run_sweep_point(
         let counter = Arc::clone(&counter);
         let bar = Arc::clone(&bar);
         handles.push(tokio::spawn(async move {
-            worker(
-                conn, guc, value, sql, queries, counter, iterations, bits, seed, k, bar,
-            )
-            .await
+            worker(conn, guc, value, sql, queries, counter, iterations, k, bar).await
         }));
     }
 
@@ -223,13 +210,12 @@ async fn worker(
     queries: Arc<Vec<Vec<f32>>>,
     counter: Arc<AtomicUsize>,
     iterations: usize,
-    bits: i32,
-    seed: i64,
     k: usize,
     bar: Arc<ProgressBar>,
 ) -> Result<Vec<Duration>> {
     // Each worker needs its own connection so the session-local GUC sticks.
     let client = psql::connect(&conn).await?;
+    psql::prefer_ordered_ann_path(&client).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
@@ -244,7 +230,7 @@ async fn worker(
         }
         let q = &queries[idx % queries.len()];
         let t0 = Instant::now();
-        let _ = client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+        let _ = client.query(&stmt, &[q, &k_i64]).await?;
         durations.push(t0.elapsed());
         bar.inc(1);
     }
