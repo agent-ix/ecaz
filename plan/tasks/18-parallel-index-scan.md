@@ -262,6 +262,12 @@ See ADR-040 for the full shape. Summary:
   merge seam instead of bypassing the coordinator on first emit. Prefetched
   graph-traversal rows now do the same at emit time.
 
+- **Worker bootstrap diversification staging.** Parallel-bound scans now use
+  the claimed worker slot plus `scan_seed` to rotate and stride the layer-0
+  bootstrap tail while retaining the shared best seed candidate. Serial and
+  `n=1` paths stay byte-identical because unbound and single-worker scans keep
+  the original ordered bootstrap candidate list.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

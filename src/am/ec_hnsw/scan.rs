@@ -4348,10 +4348,67 @@ fn stage_ordered_graph_results(
     opaque: &mut TqScanOpaque,
     candidates: impl IntoIterator<Item = search::BeamCandidate<page::ItemPointer>>,
 ) {
+    let candidates = parallel_scan_worker_bootstrap_candidates(
+        opaque,
+        candidates.into_iter().collect::<Vec<_>>(),
+    );
     clear_scan_candidate_state(opaque);
     reset_bootstrap_expansion_state(opaque, bootstrap_frontier_limit(opaque));
     reset_scan_expanded_state(opaque);
     seed_discovered_candidates(opaque, candidates);
+}
+
+fn parallel_scan_worker_bootstrap_candidates(
+    opaque: &TqScanOpaque,
+    candidates: Vec<search::BeamCandidate<page::ItemPointer>>,
+) -> Vec<search::BeamCandidate<page::ItemPointer>> {
+    if candidates.len() <= 1
+        || opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        return candidates;
+    }
+
+    let worker_slot_count = match usize::try_from(opaque.parallel_scan_worker_slot_count) {
+        Ok(worker_slot_count) if worker_slot_count > 1 => worker_slot_count,
+        _ => return candidates,
+    };
+    let worker_slot_index = match usize::try_from(opaque.parallel_scan_worker_slot_index) {
+        Ok(worker_slot_index) if worker_slot_index < worker_slot_count => worker_slot_index,
+        _ => return candidates,
+    };
+
+    let mut candidates = candidates;
+    let head = candidates[0];
+    let mut tail = candidates.split_off(1);
+    if tail.is_empty() {
+        return vec![head];
+    }
+
+    let worker_seed = splitmix64(
+        opaque.scan_seed
+            ^ u64::from(opaque.parallel_scan_worker_slot_index)
+            ^ u64::from(opaque.parallel_scan_worker_slot_count) << 32,
+    );
+    let rotation = usize::try_from(worker_seed % tail.len() as u64)
+        .expect("tail rotation should fit in usize");
+    tail.rotate_left(rotation);
+
+    let mut selected = Vec::with_capacity(1 + tail.len().div_ceil(worker_slot_count));
+    selected.push(head);
+    selected.extend(
+        tail.into_iter()
+            .skip(worker_slot_index)
+            .step_by(worker_slot_count),
+    );
+    selected
+}
+
+fn splitmix64(mut state: u64) -> u64 {
+    state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    state = (state ^ (state >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    state = (state ^ (state >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    state ^ (state >> 31)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -8259,6 +8316,69 @@ mod tests {
                 offset_number: 1,
             }),
             "after the best candidate is marked expanded, the score-order policy should fall back to the next best seeded candidate"
+        );
+    }
+
+    #[test]
+    fn parallel_scan_worker_bootstrap_candidates_preserves_serial_order() {
+        let candidates = vec![
+            beam_candidate(18, 1, -4.0),
+            beam_candidate(18, 2, -3.0),
+            beam_candidate(18, 3, -2.0),
+            beam_candidate(18, 4, -1.0),
+        ];
+        let opaque = TqScanOpaque::default();
+
+        assert_eq!(
+            parallel_scan_worker_bootstrap_candidates(&opaque, candidates.clone()),
+            candidates,
+            "unbound scans should keep the serial bootstrap candidate order"
+        );
+    }
+
+    #[test]
+    fn parallel_scan_worker_bootstrap_candidates_diversify_parallel_tail() {
+        let candidates = vec![
+            beam_candidate(19, 1, -5.0),
+            beam_candidate(19, 2, -4.0),
+            beam_candidate(19, 3, -3.0),
+            beam_candidate(19, 4, -2.0),
+            beam_candidate(19, 5, -1.0),
+        ];
+        let first_worker = TqScanOpaque {
+            parallel_scan_state: std::ptr::dangling_mut(),
+            parallel_scan_worker_slot_count: 3,
+            parallel_scan_worker_slot_index: 0,
+            scan_seed: 41,
+            ..Default::default()
+        };
+
+        let second_worker = TqScanOpaque {
+            parallel_scan_state: std::ptr::dangling_mut(),
+            parallel_scan_worker_slot_count: 3,
+            parallel_scan_worker_slot_index: 1,
+            scan_seed: 41,
+            ..Default::default()
+        };
+
+        let first_worker_candidates =
+            parallel_scan_worker_bootstrap_candidates(&first_worker, candidates.clone());
+        let second_worker_candidates =
+            parallel_scan_worker_bootstrap_candidates(&second_worker, candidates);
+
+        assert_eq!(
+            first_worker_candidates.first().copied(),
+            Some(beam_candidate(19, 1, -5.0)),
+            "parallel bootstrap diversification should retain the shared best seed candidate"
+        );
+        assert_eq!(
+            second_worker_candidates.first().copied(),
+            Some(beam_candidate(19, 1, -5.0)),
+            "parallel bootstrap diversification should retain the shared best seed candidate"
+        );
+        assert_ne!(
+            first_worker_candidates, second_worker_candidates,
+            "different worker slots should stage different bootstrap tails from the same scan seed"
         );
     }
 
