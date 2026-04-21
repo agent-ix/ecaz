@@ -99,10 +99,18 @@ pub async fn run(database: &str, args: StorageArgs) -> Result<()> {
 
     let mut idx = Table::new();
     idx.load_preset(UTF8_FULL);
-    idx.set_header(vec!["index", "am", "reloptions", "size", "per row"]);
+    idx.set_header(vec![
+        "index",
+        "access method",
+        "profile",
+        "reloptions",
+        "size",
+        "per row",
+    ]);
     if index_rows.is_empty() {
         idx.add_row(vec![
             Cell::new("<none>"),
+            Cell::new(""),
             Cell::new(""),
             Cell::new(""),
             Cell::new(""),
@@ -116,7 +124,8 @@ pub async fn run(database: &str, args: StorageArgs) -> Result<()> {
             let size: i64 = r.get(3);
             idx.add_row(vec![
                 Cell::new(name),
-                Cell::new(am),
+                Cell::new(&am),
+                Cell::new(profile_label_for_access_method(&am)),
                 Cell::new(opts),
                 Cell::new(format_bytes(size)),
                 Cell::new(format!("{:.1} B", per_row_bytes(size, rows))),
@@ -155,6 +164,12 @@ pub fn format_bytes(n: i64) -> String {
     } else {
         format!("{v:.1} {}", UNITS[u])
     }
+}
+
+fn profile_label_for_access_method(access_method: &str) -> &'static str {
+    profiles::resolve_by_access_method(access_method)
+        .map(|p| p.name)
+        .unwrap_or("<unknown>")
 }
 
 #[cfg(test)]
@@ -203,5 +218,16 @@ mod tests {
     #[test]
     fn format_bytes_negative_falls_back_to_raw() {
         assert_eq!(format_bytes(-1), "-1");
+    }
+
+    #[test]
+    fn profile_label_for_access_method_maps_known_profiles() {
+        assert_eq!(profile_label_for_access_method("ec_hnsw"), "ec_hnsw");
+        assert_eq!(profile_label_for_access_method("ec_diskann"), "ec_diskann");
+    }
+
+    #[test]
+    fn profile_label_for_access_method_marks_unknown_access_methods() {
+        assert_eq!(profile_label_for_access_method("btree"), "<unknown>");
     }
 }
