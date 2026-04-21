@@ -62,12 +62,6 @@ pub struct PgvectorArgs {
     /// Cap the query set (default: all rows).
     #[arg(long)]
     pub queries_limit: Option<usize>,
-    /// Quantization bits used when encoding query vectors (must match loader).
-    #[arg(long, default_value_t = 4)]
-    pub bits: i32,
-    /// Quantizer seed (must match loader).
-    #[arg(long, default_value_t = 42)]
-    pub seed: i64,
     /// Drop + rebuild the pgvector sidecar table + index before measuring.
     #[arg(long, default_value_t = false)]
     pub rebuild: bool,
@@ -155,6 +149,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     let t0 = Instant::now();
     let gt = brute_force_top_k(&corpus, &queries, args.k);
     crate::ecaz_eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
+    psql::prefer_ordered_ann_path(&client).await?;
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
     let ecaz_label =
         configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep);
@@ -165,7 +160,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         .batch_execute(&format!("SET {ecaz_guc} = {}", args.ecaz_sweep))
         .await
         .wrap_err_with(|| format!("SET {ecaz_guc}"))?;
-    let ecaz_sql = build_knn_sql(profile, &corpus_table);
+    let ecaz_sql = build_knn_sql(&corpus_table);
     let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
         &client,
         &ecaz_label,
@@ -175,10 +170,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         &corpus_ids,
         &truth_ids,
         args.k,
-        EngineBinds::Ecaz {
-            bits: args.bits,
-            seed: args.seed,
-        },
+        EngineBinds::Ecaz,
     )
     .await?;
 
@@ -338,7 +330,7 @@ async fn ensure_pgvector_sidecar(
 }
 
 enum EngineBinds {
-    Ecaz { bits: i32, seed: i64 },
+    Ecaz,
     Pgvector,
 }
 
@@ -369,9 +361,7 @@ async fn measure_engine(
         let row_vec: Vec<f32> = queries.row(q).to_vec();
         let t0 = Instant::now();
         let rows = match &binds {
-            EngineBinds::Ecaz { bits, seed } => {
-                client.query(&stmt, &[&row_vec, bits, seed, &k_i64]).await
-            }
+            EngineBinds::Ecaz => client.query(&stmt, &[&row_vec, &k_i64]).await,
             EngineBinds::Pgvector => client.query(&stmt, &[&row_vec, &k_i64]).await,
         }
         .wrap_err_with(|| format!("{label} KNN"))?;

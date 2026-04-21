@@ -314,6 +314,7 @@ async fn worker(
 ) -> Result<LatencyWorkerResult> {
     // Each worker needs its own connection so the session-local GUC sticks.
     let client = psql::connect(&conn).await?;
+    psql::prefer_ordered_ann_path(&client).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;

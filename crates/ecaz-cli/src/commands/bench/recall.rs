@@ -184,6 +184,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     }
 
     let sql = build_knn_sql(profile, &corpus_table);
+    psql::prefer_ordered_ann_path(&client).await?;
 
     let mut t = Table::new();
     t.load_preset(UTF8_FULL);

@@ -5,7 +5,7 @@
 //! # Approach
 //!
 //! For each sweep value, per query:
-//! - measure *full* wall-clock of `ORDER BY ... encode(...) LIMIT k`
+//! - measure *full* wall-clock of `ORDER BY embedding <#> $1::real[] LIMIT k`
 //! - measure *encode-only* wall-clock of `SELECT encode_to_<embedding>(...)`
 //!
 //! Once per sweep value, run `EXPLAIN (ANALYZE, FORMAT JSON)` on the full
@@ -93,7 +93,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
-    let full_sql = build_knn_sql(profile, &corpus_table);
+    let full_sql = build_knn_sql(&corpus_table);
     let encode_sql = build_encode_only_sql(profile);
     // EXPLAIN's result columns are `text`, even with FORMAT JSON — so we
     // read them as String and parse client-side with serde_json rather
@@ -119,6 +119,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
         return Err(eyre!("{queries_table} is empty"));
     }
     let queries: Vec<Vec<f32>> = query_rows.iter().map(|r| r.get::<_, Vec<f32>>(0)).collect();
+    psql::prefer_ordered_ann_path(&client).await?;
 
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
@@ -145,10 +146,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
             .wrap_err("preparing EXPLAIN")?;
         let q0 = &queries[0];
         let explain_rows = client
-            .query(
-                &explain_stmt,
-                &[q0, &args.bits, &args.seed, &(args.k as i64)],
-            )
+            .query(&explain_stmt, &[q0, &(args.k as i64)])
             .await
             .wrap_err("running EXPLAIN")?;
         // EXPLAIN (FORMAT JSON) emits one `text` row per top-level JSON
@@ -179,7 +177,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
             let q = &queries[i % queries.len()];
             let t0 = Instant::now();
             let _ = client
-                .query(&full_stmt, &[q, &args.bits, &args.seed, &k_i64])
+                .query(&full_stmt, &[q, &k_i64])
                 .await
                 .wrap_err("full KNN query")?;
             full_durs.push(t0.elapsed());
