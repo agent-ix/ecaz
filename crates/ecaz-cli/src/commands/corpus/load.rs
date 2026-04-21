@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio_postgres::Client;
 
+use crate::manifest;
 use crate::profiles::{self, IndexProfile};
 use crate::psql;
 use crate::reloptions;
@@ -140,6 +141,17 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         corpus_stats.rows, corpus_stats.sha256_hex, query_stats.rows, query_stats.sha256_hex
     );
 
+    verify_manifest_if_present(
+        args.manifest_file.as_deref(),
+        &args.corpus_file,
+        &args.queries_file,
+        &args.prefix,
+        args.dim,
+        &corpus_stats,
+        &query_stats,
+        args.allow_manifest_mismatch,
+    )?;
+
     let client = psql::connect(database).await?;
 
     let corpus_loaded = ensure_corpus_table(
@@ -175,6 +187,73 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         &index_jobs,
     );
     Ok(())
+}
+
+/// Verify a sibling manifest if one was requested or auto-discovered.
+///
+/// Three paths:
+/// - `--manifest-file` passed: the path must exist, or we fail.
+/// - No flag, sibling auto-discovered and present: verify it.
+/// - No flag, no sibling on disk: log once, continue without verification.
+///
+/// When problems are found and `allow_mismatch` is false, bail with the
+/// full diff. With `allow_mismatch`, log a warning and continue so a
+/// reviewer can poke at an inconsistent fixture without rebuilding it.
+fn verify_manifest_if_present(
+    explicit: Option<&Path>,
+    corpus_file: &Path,
+    queries_file: &Path,
+    prefix: &str,
+    dim: usize,
+    corpus_stats: &tsv::VectorFileStats,
+    query_stats: &tsv::VectorFileStats,
+    allow_mismatch: bool,
+) -> Result<()> {
+    let derived = manifest::derive_manifest_path(corpus_file, queries_file);
+    let (path, explicit_request): (PathBuf, bool) = match (explicit, derived) {
+        (Some(p), _) => (p.to_path_buf(), true),
+        (None, Some(p)) if p.exists() => (p, false),
+        (None, Some(p)) => {
+            eprintln!(
+                "[loader] no sibling manifest at {}; continuing without verification",
+                p.display()
+            );
+            return Ok(());
+        }
+        (None, None) => return Ok(()),
+    };
+    if explicit_request && !path.exists() {
+        return Err(eyre!("manifest file {:?} does not exist", path));
+    }
+    let raw = std::fs::read_to_string(&path)
+        .wrap_err_with(|| format!("reading manifest {}", path.display()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw)
+        .wrap_err_with(|| format!("parsing manifest {}", path.display()))?;
+    let problems = manifest::verify(
+        &parsed,
+        prefix,
+        corpus_file,
+        queries_file,
+        dim,
+        corpus_stats,
+        query_stats,
+    );
+    if problems.is_empty() {
+        eprintln!("[loader] verified manifest {} for prefix {prefix}", path.display());
+        return Ok(());
+    }
+    let joined = problems
+        .iter()
+        .map(|p| p.0.as_str())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let msg = format!("manifest verification failed for {}: {joined}", path.display());
+    if allow_mismatch {
+        eprintln!("[loader] warning: {msg}");
+        Ok(())
+    } else {
+        Err(eyre!(msg))
+    }
 }
 
 fn plan_index_jobs(
@@ -442,9 +521,21 @@ fn print_summary(
 mod tests {
     use super::*;
     use crate::profiles::{EC_DISKANN, EC_HNSW};
+    use crate::tsv::VectorFileStats;
+    use std::io::Write as _;
+    use tempfile::TempDir;
 
     fn opt(k: &str, v: &str) -> (String, String) {
         (k.to_owned(), v.to_owned())
+    }
+
+    fn stats(rows: usize, sha: &str) -> VectorFileStats {
+        VectorFileStats {
+            rows,
+            sha256_hex: sha.to_owned(),
+            first_id: Some(0),
+            last_id: Some(rows.saturating_sub(1) as i64),
+        }
     }
 
     #[test]
@@ -477,6 +568,28 @@ mod tests {
     }
 
     #[test]
+    fn hnsw_plan_passes_extras_through_and_orders_after_built_ins() {
+        let extras = vec![opt("storage_format", "turboquant"), opt("custom", "x")];
+        let jobs = plan_index_jobs(&EC_HNSW, "p", &[8], 128, None, &extras);
+        // built-ins come first so duplicates from --reloption would override
+        let keys: Vec<&str> = jobs[0].reloptions.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(
+            keys,
+            vec!["m", "ef_construction", "build_source_column", "storage_format", "custom"]
+        );
+    }
+
+    #[test]
+    fn dedup_preserve_order_keeps_first_occurrence() {
+        assert_eq!(
+            dedup_preserve_order(vec![16, 8, 16, 32, 8]),
+            vec![16, 8, 32]
+        );
+        assert_eq!(dedup_preserve_order(vec![]), Vec::<i32>::new());
+        assert_eq!(dedup_preserve_order(vec![8]), vec![8]);
+    }
+
+    #[test]
     fn diskann_plan_is_single_index_with_no_hnsw_defaults() {
         let extras = vec![opt("graph_degree", "48")];
         let jobs = plan_index_jobs(&EC_DISKANN, "foo", &[], 128, None, &extras);
@@ -488,5 +601,125 @@ mod tests {
             .reloptions
             .iter()
             .any(|(k, _)| k == "build_source_column"));
+    }
+
+    #[test]
+    fn diskann_plan_appends_storage_format_to_extras() {
+        let jobs = plan_index_jobs(&EC_DISKANN, "foo_pq_fastscan", &[], 128, Some("pq_fastscan"), &[]);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].name, "foo_pq_fastscan_idx");
+        assert!(jobs[0].reloptions.contains(&opt("storage_format", "pq_fastscan")));
+    }
+
+    // --- manifest orchestration ---
+
+    fn write(dir: &TempDir, name: &str, body: &str) -> PathBuf {
+        let p = dir.path().join(name);
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(body.as_bytes()).unwrap();
+        p
+    }
+
+    #[test]
+    fn manifest_orchestration_no_derived_no_explicit_is_ok() {
+        let td = TempDir::new().unwrap();
+        let corpus = write(&td, "odd_name.txt", "");
+        let queries = write(&td, "other.txt", "");
+        let res = verify_manifest_if_present(
+            None,
+            &corpus,
+            &queries,
+            "p",
+            4,
+            &stats(1, &"a".repeat(64)),
+            &stats(1, &"b".repeat(64)),
+            false,
+        );
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn manifest_orchestration_explicit_missing_errs() {
+        let td = TempDir::new().unwrap();
+        let corpus = write(&td, "x_corpus.tsv", "");
+        let queries = write(&td, "x_queries.tsv", "");
+        let missing = td.path().join("nope.json");
+        let err = verify_manifest_if_present(
+            Some(&missing),
+            &corpus,
+            &queries,
+            "x",
+            4,
+            &stats(1, &"a".repeat(64)),
+            &stats(1, &"b".repeat(64)),
+            false,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("does not exist"), "err: {err}");
+    }
+
+    #[test]
+    fn manifest_orchestration_sibling_auto_discovered_verified() {
+        let td = TempDir::new().unwrap();
+        let corpus = write(&td, "x_corpus.tsv", "");
+        let queries = write(&td, "x_queries.tsv", "");
+        let manifest_path = td.path().join("x_manifest.json");
+        let body = serde_json::json!({
+            "manifest_version": 1,
+            "prefix": "x",
+            "dimension": 4,
+            "corpus": {
+                "file": "x_corpus.tsv", "rows": 1,
+                "sha256": "a".repeat(64), "first_id": 0, "last_id": 0
+            },
+            "queries": {
+                "file": "x_queries.tsv", "rows": 1,
+                "sha256": "b".repeat(64), "first_id": 0, "last_id": 0
+            }
+        })
+        .to_string();
+        std::fs::write(&manifest_path, body).unwrap();
+        verify_manifest_if_present(
+            None,
+            &corpus,
+            &queries,
+            "x",
+            4,
+            &stats(1, &"a".repeat(64)),
+            &stats(1, &"b".repeat(64)),
+            false,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn manifest_orchestration_mismatch_errs_unless_allowed() {
+        let td = TempDir::new().unwrap();
+        let corpus = write(&td, "x_corpus.tsv", "");
+        let queries = write(&td, "x_queries.tsv", "");
+        let manifest_path = td.path().join("x_manifest.json");
+        let body = serde_json::json!({
+            "manifest_version": 1, "prefix": "x", "dimension": 4,
+            "corpus": { "file": "x_corpus.tsv", "rows": 99,
+                        "sha256": "a".repeat(64), "first_id": 0, "last_id": 0 },
+            "queries": { "file": "x_queries.tsv", "rows": 1,
+                         "sha256": "b".repeat(64), "first_id": 0, "last_id": 0 },
+        })
+        .to_string();
+        std::fs::write(&manifest_path, body).unwrap();
+
+        let strict = verify_manifest_if_present(
+            None, &corpus, &queries, "x", 4,
+            &stats(1, &"a".repeat(64)), &stats(1, &"b".repeat(64)),
+            false,
+        );
+        assert!(strict.is_err());
+        let lenient = verify_manifest_if_present(
+            None, &corpus, &queries, "x", 4,
+            &stats(1, &"a".repeat(64)), &stats(1, &"b".repeat(64)),
+            true,
+        );
+        assert!(lenient.is_ok());
     }
 }

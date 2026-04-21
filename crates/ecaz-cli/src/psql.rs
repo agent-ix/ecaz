@@ -156,6 +156,25 @@ mod tests {
     }
 
     #[test]
+    fn build_index_sql_with_empty_reloptions_omits_with_clause() {
+        let sql = build_create_index_sql("t", "idx", &EC_HNSW, &[]);
+        assert!(!sql.contains("WITH"));
+        assert!(sql.contains("USING ec_hnsw (embedding ecvector_ip_ops)"));
+    }
+
+    #[test]
+    fn build_index_sql_renders_multiple_reloptions_in_order() {
+        let opts = vec![
+            ("m".into(), "8".into()),
+            ("ef_construction".into(), "128".into()),
+        ];
+        let sql = build_create_index_sql("t", "idx", &EC_HNSW, &opts);
+        let m_pos = sql.find("m = 8").expect("m missing");
+        let ef_pos = sql.find("ef_construction = 128").expect("ef missing");
+        assert!(m_pos < ef_pos, "reloption order not preserved: {sql}");
+    }
+
+    #[test]
     fn diskann_index_sql_quotes_strings_but_not_numerics() {
         let opts = vec![
             ("graph_degree".into(), "48".into()),

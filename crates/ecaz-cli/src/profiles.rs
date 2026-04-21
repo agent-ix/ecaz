@@ -168,6 +168,34 @@ mod tests {
     }
 
     #[test]
+    fn every_profile_has_nonempty_access_method_and_opclass() {
+        for p in REGISTRY {
+            assert!(!p.name.is_empty(), "profile with empty name");
+            assert!(!p.access_method.is_empty(), "profile {} missing AM", p.name);
+            assert!(!p.operator_class.is_empty(), "profile {} missing opclass", p.name);
+            assert!(!p.embedding_type.is_empty(), "profile {} missing embedding type", p.name);
+            assert!(!p.encoder_function.is_empty(), "profile {} missing encoder", p.name);
+        }
+    }
+
+    #[test]
+    fn registry_has_no_duplicate_names() {
+        let mut names: Vec<&str> = REGISTRY.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        let unique: std::collections::HashSet<&&str> = names.iter().collect();
+        assert_eq!(names.len(), unique.len(), "duplicate profile name in REGISTRY");
+    }
+
+    #[test]
+    fn hnsw_and_diskann_share_embedding_type_so_one_corpus_serves_both() {
+        // README contract: a single <prefix>_corpus table supports both
+        // ec_hnsw and ec_diskann indexes without re-encoding. If this ever
+        // fails, the multi-corpus story in README.md needs updating.
+        assert_eq!(EC_HNSW.embedding_type, EC_DISKANN.embedding_type);
+        assert_eq!(EC_HNSW.encoder_function, EC_DISKANN.encoder_function);
+    }
+
+    #[test]
     fn validate_ident_rejects_injection_attempts() {
         assert!(validate_ident("foo; DROP TABLE x").is_err());
         assert!(validate_ident("1_leading_digit").is_err());

@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 
 mod cli;
 mod commands;
+mod manifest;
 mod profiles;
 mod psql;
 mod reloptions;

@@ -224,4 +224,61 @@ mod tests {
         assert_eq!(format_real_array_literal(&[1.0, 2.5, -3.0]), "{1.0,2.5,-3.0}");
         assert_eq!(format_real_array_literal(&[]), "{}");
     }
+
+    #[test]
+    fn format_real_array_literal_roundtrips_fractional_floats() {
+        // `{:?}` on f32 must produce the shortest round-trippable decimal so
+        // Postgres parses back to the same bits. Guarding against a regression
+        // that would subtly change recall numbers.
+        let v = [0.123_456_f32, -0.000_1, 1e-10, 1e10];
+        let rendered = format_real_array_literal(&v);
+        let trimmed = &rendered[1..rendered.len() - 1];
+        let parsed: Vec<f32> = trimmed.split(',').map(|s| s.parse().unwrap()).collect();
+        assert_eq!(parsed, v);
+    }
+
+    #[test]
+    fn iter_rows_handles_crlf_line_endings() {
+        let f = write_temp("1\t[1.0, 2.0]\r\n2\t[3.0, 4.0]\r\n");
+        let rows: Vec<_> = iter_rows(f.path(), 2)
+            .unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].values, vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn iter_rows_rejects_missing_tab_separator() {
+        let f = write_temp("nope_no_tab\n");
+        let err = iter_rows(f.path(), 1).unwrap().next().unwrap().unwrap_err().to_string();
+        assert!(err.contains("expected '<id>\\t<json_array>'"), "err: {err}");
+    }
+
+    #[test]
+    fn iter_rows_rejects_invalid_json() {
+        let f = write_temp("1\t[not-json]\n");
+        let err = iter_rows(f.path(), 1).unwrap().next().unwrap().unwrap_err().to_string();
+        assert!(err.contains("not valid JSON"), "err: {err}");
+    }
+
+    #[test]
+    fn inspect_on_empty_file_reports_zero_rows_and_no_ids() {
+        let f = write_temp("");
+        let s = inspect(f.path(), 1).unwrap();
+        assert_eq!(s.rows, 0);
+        assert_eq!(s.first_id, None);
+        assert_eq!(s.last_id, None);
+        assert_eq!(s.sha256_hex.len(), 64);
+    }
+
+    #[test]
+    fn inspect_sha256_matches_plain_file_digest() {
+        use sha2::{Digest, Sha256};
+        let body = "10\t[1.0]\n11\t[2.0]\n";
+        let f = write_temp(body);
+        let stats = inspect(f.path(), 1).unwrap();
+        let expected = hex::encode(Sha256::digest(body.as_bytes()));
+        assert_eq!(stats.sha256_hex, expected);
+    }
 }

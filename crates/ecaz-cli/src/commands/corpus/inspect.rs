@@ -147,4 +147,27 @@ mod tests {
         assert_eq!(format_bytes(5 * 1024 * 1024), "5.0 MiB");
         assert_eq!(format_bytes(3 * 1024 * 1024 * 1024), "3.0 GiB");
     }
+
+    #[test]
+    fn format_bytes_handles_boundary_at_1024() {
+        // Just below: still bytes. At/above: promote unit so the number
+        // never displays as "1024.0 KiB".
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.0 KiB");
+    }
+
+    #[test]
+    fn format_bytes_falls_back_to_raw_for_negative() {
+        // pg_relation_size is i64 — a bogus negative should round-trip so a
+        // reviewer sees something unambiguously wrong rather than "-1.0 B".
+        assert_eq!(format_bytes(-1), "-1");
+    }
+
+    #[test]
+    fn format_bytes_caps_at_largest_unit() {
+        // Numbers beyond TiB reuse the last unit instead of overflowing the
+        // array; 2 PiB shows as "2048.0 TiB".
+        let two_pib = 2_i64 * 1024 * 1024 * 1024 * 1024 * 1024;
+        assert_eq!(format_bytes(two_pib), "2048.0 TiB");
+    }
 }

@@ -142,4 +142,47 @@ mod tests {
         let opts = vec![kv("m", "8"), kv("ef_construction", "128")];
         assert_eq!(normalize_list(&opts), vec!["m=8", "ef_construction=128"]);
     }
+
+    #[test]
+    fn format_sql_value_passes_pre_quoted_values_through() {
+        // A caller who already quoted their value (e.g. re-serialising a
+        // pg_class.reloption) should not get double-quoted.
+        assert_eq!(format_sql_value("'already-quoted'"), "'already-quoted'");
+    }
+
+    #[test]
+    fn format_sql_value_rejects_numeric_with_extra_text_as_string() {
+        // "1.2x" is not a SQL numeric literal — quote it.
+        assert_eq!(format_sql_value("1.2x"), "'1.2x'");
+    }
+
+    #[test]
+    fn format_sql_value_leading_dot_fraction_is_numeric() {
+        assert_eq!(format_sql_value(".5"), ".5");
+        assert_eq!(format_sql_value("-.5"), "-.5");
+    }
+
+    #[test]
+    fn format_sql_value_quotes_string_with_multiple_apostrophes() {
+        assert_eq!(format_sql_value("it''s"), "'it''''s'");
+    }
+
+    #[test]
+    fn parse_rejects_empty_key_or_value_explicitly() {
+        assert!(parse("=v").is_err());
+        assert!(parse("k=").is_err());
+        assert!(parse("=").is_err());
+    }
+
+    #[test]
+    fn parse_accepts_equals_sign_in_value() {
+        // Only the *first* = separates; trailing = stays in the value.
+        assert_eq!(parse("k=a=b").unwrap(), kv("k", "a=b"));
+    }
+
+    #[test]
+    fn parse_cli_error_is_string_typed() {
+        let err: String = parse_cli("no_equals").unwrap_err();
+        assert!(err.contains("expected key=value"));
+    }
 }
