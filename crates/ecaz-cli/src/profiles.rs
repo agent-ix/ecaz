@@ -176,6 +176,13 @@ pub fn resolve(name: &str) -> Option<&'static IndexProfile> {
     REGISTRY.iter().find(|p| p.name == name).copied()
 }
 
+pub fn resolve_by_access_method(access_method: &str) -> Option<&'static IndexProfile> {
+    REGISTRY
+        .iter()
+        .find(|p| p.access_method == access_method)
+        .copied()
+}
+
 pub fn names() -> Vec<&'static str> {
     let mut v: Vec<&'static str> = REGISTRY.iter().map(|p| p.name).collect();
     v.sort_unstable();
@@ -209,6 +216,19 @@ mod tests {
             Some("ecvector_diskann_ip_ops")
         );
         assert!(resolve("ec_bogus").is_none());
+    }
+
+    #[test]
+    fn resolve_known_access_methods() {
+        assert_eq!(
+            resolve_by_access_method("ec_hnsw").map(|p| p.name),
+            Some("ec_hnsw")
+        );
+        assert_eq!(
+            resolve_by_access_method("ec_diskann").map(|p| p.name),
+            Some("ec_diskann")
+        );
+        assert!(resolve_by_access_method("btree").is_none());
     }
 
     #[test]
