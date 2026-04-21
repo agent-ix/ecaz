@@ -173,6 +173,11 @@ See ADR-040 for the full shape. Summary:
   without rescanning all staged result slots. The full shared top-K drain
   path is still deferred.
 
+- **Coordinator take staging.** Shared helpers can now take the currently
+  selected staged result, clear that slot, and refresh the coordinator fast
+  path to the next best staged result when one exists. This is still a staged
+  result-slot consume seam, not the final shared top-K heap drain path.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
