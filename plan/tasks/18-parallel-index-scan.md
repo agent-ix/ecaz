@@ -275,6 +275,11 @@ See ADR-040 for the full shape. Summary:
   actual worker count, so planner-visible cost and LIMIT budgeting remain
   deferred.
 
+- **Owner-aware staged drain.** The scan-side shared take helper now only
+  advances staged pending or admitted outputs for the owning worker slot.
+  Foreign workers can observe that work exists, but they no longer mutate a
+  peer's duplicate-drain cursor just by probing the shared merge seam.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

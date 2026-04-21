@@ -3576,8 +3576,9 @@ unsafe fn try_take_parallel_scan_next_output(
     publish_parallel_scan_worker_slot_snapshot(opaque);
 
     let admitted_result = unsafe {
-        super::parallel::take_parallel_scan_next_output_snapshot(
+        super::parallel::take_parallel_scan_owned_next_output_snapshot(
             opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
             parallel_scan_admission_result_limit(),
         )
     }
