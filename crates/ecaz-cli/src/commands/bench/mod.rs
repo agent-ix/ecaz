@@ -1,19 +1,18 @@
 //! `ecaz bench` — measurements against a loaded corpus.
 //!
-//! All subcommands here accept `--profile` and `--prefix` so a single corpus
-//! can be measured against multiple access methods without re-loading data.
-//!
-//! v1 status: `recall`, `latency`, and `storage` are implemented.
-//! `overhead` remains a stub and lands in a follow-up commit.
+//! All subcommands accept `--profile` and `--prefix` so a single corpus
+//! can be measured against multiple access methods without re-loading.
 
-use clap::{Args, Subcommand};
-use color_eyre::eyre::{eyre, Result};
+use clap::Subcommand;
+use color_eyre::eyre::Result;
 
 mod latency;
+mod overhead;
 mod recall;
 mod storage;
 
 pub use latency::LatencyArgs;
+pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
 pub use storage::StorageArgs;
 
@@ -25,27 +24,17 @@ pub enum BenchCommand {
     Latency(LatencyArgs),
     /// Storage accounting: corpus table size, per-index size, per-vector datum size.
     Storage(StorageArgs),
-    /// Latency overhead breakdown: encode vs internal scan vs residual SQL time.
+    /// Latency overhead breakdown: encode vs internal scan vs residual client/protocol.
     Overhead(OverheadArgs),
-}
-
-#[derive(Args, Debug)]
-pub struct OverheadArgs {
-    #[arg(long)]
-    pub prefix: String,
-    #[arg(long, default_value = "ec_hnsw")]
-    pub profile: String,
 }
 
 impl BenchCommand {
     pub async fn run(self, database: &str) -> Result<()> {
         match self {
-            BenchCommand::Recall(args) => recall::run(database, args).await,
-            BenchCommand::Latency(args) => latency::run(database, args).await,
-            BenchCommand::Storage(args) => storage::run(database, args).await,
-            BenchCommand::Overhead(_) => Err(eyre!(
-                "ecaz bench overhead: not yet implemented (ported in a follow-up commit)"
-            )),
+            BenchCommand::Recall(a) => recall::run(database, a).await,
+            BenchCommand::Latency(a) => latency::run(database, a).await,
+            BenchCommand::Storage(a) => storage::run(database, a).await,
+            BenchCommand::Overhead(a) => overhead::run(database, a).await,
         }
     }
 }
