@@ -3544,12 +3544,49 @@ fn consume_parallel_scan_admitted_result(
     pending_scan_output_from_parallel_pending_output(admitted_result.pending_output)
 }
 
+fn parallel_scan_admission_result_limit() -> u32 {
+    // The planner-visible LIMIT budget is not wired into the scan descriptor yet.
+    // Until that seam lands, let the shared admission path use the full staged
+    // descriptor capacity instead of baking in a fake query limit here.
+    u32::MAX
+}
+
+unsafe fn try_take_parallel_scan_next_output(
+    opaque: &mut TqScanOpaque,
+) -> Option<PendingScanOutput> {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        return None;
+    }
+
+    publish_parallel_scan_worker_slot_snapshot(opaque);
+
+    let admitted_result = unsafe {
+        super::parallel::take_parallel_scan_next_output_snapshot(
+            opaque.parallel_scan_state,
+            parallel_scan_admission_result_limit(),
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan next-output take failed: {err}"))?;
+
+    let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
+    publish_parallel_scan_worker_slot_snapshot(opaque);
+    Some(output)
+}
+
 unsafe fn produce_next_scan_heap_tid(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    if let Some(output) = unsafe { try_take_parallel_scan_next_output(opaque) } {
+        emit_scan_output(scan, opaque, output);
+        opaque.explain_counters.record_heap_tid_returned();
+        return true;
+    }
+
     match opaque.execution_phase {
         ScanExecutionPhase::GraphTraversal => unsafe {
             produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
@@ -6391,6 +6428,91 @@ mod tests {
             opaque.fallback_result_state.pending_index(),
             1,
             "owned-slot admitted rows should advance the local fallback cursor"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_next_output_advances_owned_slot_and_republishes() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.result_state.set_current_with_details(
+            tid(26, 1),
+            -4.0,
+            Some(-3.5),
+            Some(7),
+            Some(-4.5),
+        );
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let output =
+            unsafe { try_take_parallel_scan_next_output(&mut opaque) }.expect("output expected");
+
+        assert_eq!(
+            output,
+            PendingScanOutput {
+                heap_tid: tid(31, 1),
+                score: -4.0,
+                approx_score: Some(-3.5),
+                approx_rank: Some(7),
+                comparison_score: Some(-4.5),
+            },
+            "taking the next staged parallel output should project the admitted row into a normal pending output"
+        );
+        assert_eq!(
+            opaque.result_state.pending_index(),
+            1,
+            "owned-slot coordinator consume should advance the local duplicate-drain cursor"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 31,
+                offset_number: 2,
+            },
+            "republish after consume should advance the staged next heap tid to the remaining local duplicate"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_index, 1,
+            "republish after consume should keep shared pending-index state aligned with the local cursor"
         );
     }
 

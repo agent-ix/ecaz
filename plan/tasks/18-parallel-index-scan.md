@@ -252,6 +252,13 @@ See ADR-040 for the full shape. Summary:
   cursor when that admitted row came from this worker slot. The actual
   parallel scan execution loop still remains deferred.
 
+- **Scan-side merge consume staging.** `produce_next_scan_heap_tid(...)` now
+  checks the staged shared coordinator merge seam first when a parallel-scan
+  descriptor is bound, consumes the admitted row through the scan-side helper,
+  and republishes the local worker snapshot afterward so the next duplicate or
+  next staged row stays visible. This still uses the descriptor-capacity
+  admitted window because planner-visible LIMIT budgeting is not wired yet.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
