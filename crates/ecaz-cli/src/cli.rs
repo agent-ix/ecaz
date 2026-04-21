@@ -9,7 +9,7 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::Result;
 
-use crate::commands;
+use crate::{commands, psql};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -34,7 +34,7 @@ pub struct Cli {
     )]
     pub database: String,
 
-    /// PostgreSQL host or socket directory.
+    /// PostgreSQL host name or Unix socket directory.
     #[arg(long, global = true, env = "PGHOST")]
     pub host: Option<String>,
 
@@ -42,12 +42,12 @@ pub struct Cli {
     #[arg(long, global = true, env = "PGPORT")]
     pub port: Option<u16>,
 
-    /// PostgreSQL user.
+    /// PostgreSQL user name.
     #[arg(long, global = true, env = "PGUSER")]
     pub user: Option<String>,
 
-    /// PostgreSQL password.
-    #[arg(long, global = true, env = "PGPASSWORD")]
+    /// PostgreSQL password. Prefer `.pgpass` for non-local use.
+    #[arg(long, global = true, env = "PGPASSWORD", hide_env_values = true)]
     pub password: Option<String>,
 }
 
@@ -87,27 +87,51 @@ enum Command {
 
 impl Cli {
     pub async fn run(self) -> Result<()> {
-        if let Some(host) = &self.host {
-            std::env::set_var("PGHOST", host);
-        }
-        if let Some(port) = self.port {
-            std::env::set_var("PGPORT", port.to_string());
-        }
-        if let Some(user) = &self.user {
-            std::env::set_var("PGUSER", user);
-        }
-        if let Some(password) = &self.password {
-            std::env::set_var("PGPASSWORD", password);
-        }
-
-        let db = self.database;
+        let conn = psql::ConnectionOptions {
+            database: self.database,
+            host: self.host,
+            port: self.port,
+            user: self.user,
+            password: self.password,
+        };
         match self.command {
-            Command::Corpus { command } => command.run(&db).await,
-            Command::Bench { command } => command.run(&db).await,
-            Command::Compare { command } => command.run(&db).await,
-            Command::Dev { command } => command.run(&db).await,
-            Command::Quant { command } => command.run(&db).await,
-            Command::Stress { command } => command.run(&db).await,
+            Command::Corpus { command } => command.run(&conn).await,
+            Command::Bench { command } => command.run(&conn).await,
+            Command::Compare { command } => command.run(&conn).await,
+            Command::Dev { command } => command.run(&conn.database).await,
+            Command::Quant { command } => command.run(&conn.database).await,
+            Command::Stress { command } => command.run(&conn).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn cli_parses_explicit_connection_overrides() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "--database",
+            "bench",
+            "--host",
+            "/home/peter/.pgrx",
+            "--port",
+            "28818",
+            "--user",
+            "peter",
+            "--password",
+            "secret",
+            "corpus",
+            "list",
+        ])
+        .expect("cli parses");
+        assert_eq!(cli.database, "bench");
+        assert_eq!(cli.host.as_deref(), Some("/home/peter/.pgrx"));
+        assert_eq!(cli.port, Some(28818));
+        assert_eq!(cli.user.as_deref(), Some("peter"));
+        assert_eq!(cli.password.as_deref(), Some("secret"));
     }
 }

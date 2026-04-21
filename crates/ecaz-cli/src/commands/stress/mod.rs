@@ -3,6 +3,8 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::psql::ConnectionOptions;
+
 mod ivf_insert;
 mod ivf_vacuum_scale;
 mod vacuum;
@@ -23,11 +25,11 @@ pub enum StressCommand {
 }
 
 impl StressCommand {
-    pub async fn run(self, database: &str) -> Result<()> {
+    pub async fn run(self, conn: &ConnectionOptions) -> Result<()> {
         match self {
-            StressCommand::IvfInsert(a) => ivf_insert::run(database, a).await,
-            StressCommand::IvfVacuumScale(a) => ivf_vacuum_scale::run(database, a).await,
-            StressCommand::Vacuum(a) => vacuum::run(database, a).await,
+            StressCommand::IvfInsert(a) => ivf_insert::run(&conn.database, a).await,
+            StressCommand::IvfVacuumScale(a) => ivf_vacuum_scale::run(&conn.database, a).await,
+            StressCommand::Vacuum(a) => vacuum::run(conn, a).await,
         }
     }
 }

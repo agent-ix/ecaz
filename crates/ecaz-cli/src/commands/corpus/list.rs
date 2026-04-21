@@ -9,10 +9,10 @@ use color_eyre::eyre::{Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
 use crate::profiles;
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
-pub async fn run(database: &str) -> Result<()> {
-    let client = psql::connect(database).await?;
+pub async fn run(conn: &ConnectionOptions) -> Result<()> {
+    let client = psql::connect(conn).await?;
     let rows = client
         .query(
             "WITH corpora AS (
@@ -43,7 +43,7 @@ pub async fn run(database: &str) -> Result<()> {
         .wrap_err("listing corpora")?;
 
     if rows.is_empty() {
-        println!("(no corpora loaded in {database})");
+        println!("(no corpora loaded in {})", conn.database);
         return Ok(());
     }
 

@@ -5,16 +5,17 @@
 //! Everything that issues DDL/DML lives on top of `connect`; nothing else
 //! in the crate should shell out to `psql`.
 //!
-//! Connection defaults come from libpq environment variables (`PGHOST`,
-//! `PGPORT`, `PGUSER`, …). The `database` argument is passed explicitly so
-//! commands can be pointed at a fixture DB without mutating environment
-//! state.
+//! Connection defaults are resolved at the clap layer from explicit
+//! global flags (`--database`, `--host`, `--port`, `--user`, `--password`)
+//! with libpq env vars as fallback. This module consumes the concrete
+//! connection options so commands can target a fixture DB or scratch
+//! cluster without mutating process environment.
 
 use color_eyre::eyre::{Context, Result};
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::{Client, Config, NoTls};
 
-#[derive(Debug, Clone)]
-pub struct ConnectParams {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionOptions {
     pub database: String,
     pub host: Option<String>,
     pub port: Option<u16>,
@@ -22,41 +23,76 @@ pub struct ConnectParams {
     pub password: Option<String>,
 }
 
-/// Open a connection to the named database using libpq-style environment
-/// variables for everything else (host, port, user, password, ssl mode).
-pub async fn connect(database: &str) -> Result<Client> {
-    let params = ConnectParams {
-        database: database.to_string(),
-        host: std::env::var("PGHOST").ok(),
-        port: std::env::var("PGPORT")
-            .ok()
-            .and_then(|port| port.parse().ok()),
-        user: std::env::var("PGUSER").ok(),
-        password: std::env::var("PGPASSWORD").ok(),
-    };
-    connect_with(&params).await
+impl ConnectionOptions {
+    pub fn config(&self) -> Config {
+        let mut config = Config::new();
+        config.dbname(&self.database);
+        if let Some(host) = &self.host {
+            config.host(host);
+        }
+        if let Some(port) = self.port {
+            config.port(port);
+        }
+        if let Some(user) = &self.user {
+            config.user(user);
+        }
+        if let Some(password) = &self.password {
+            config.password(password);
+        }
+        config
+    }
 }
 
-pub async fn connect_with(params: &ConnectParams) -> Result<Client> {
-    let mut config = tokio_postgres::Config::new();
-    config.dbname(&params.database);
-    if let Some(host) = &params.host {
-        config.host(host);
-    }
-    if let Some(port) = params.port {
-        config.port(port);
-    }
-    if let Some(user) = &params.user {
-        config.user(user);
-    }
-    if let Some(password) = &params.password {
-        config.password(password);
-    }
+pub trait ConnectTarget {
+    fn connection_options(&self) -> ConnectionOptions;
+}
 
+impl ConnectTarget for ConnectionOptions {
+    fn connection_options(&self) -> ConnectionOptions {
+        self.clone()
+    }
+}
+
+impl ConnectTarget for &ConnectionOptions {
+    fn connection_options(&self) -> ConnectionOptions {
+        (*self).clone()
+    }
+}
+
+impl ConnectTarget for &str {
+    fn connection_options(&self) -> ConnectionOptions {
+        ConnectionOptions {
+            database: (*self).to_string(),
+            host: std::env::var("PGHOST").ok(),
+            port: std::env::var("PGPORT")
+                .ok()
+                .and_then(|port| port.parse().ok()),
+            user: std::env::var("PGUSER").ok(),
+            password: std::env::var("PGPASSWORD").ok(),
+        }
+    }
+}
+
+impl ConnectTarget for &String {
+    fn connection_options(&self) -> ConnectionOptions {
+        self.as_str().connection_options()
+    }
+}
+
+impl ConnectTarget for String {
+    fn connection_options(&self) -> ConnectionOptions {
+        self.as_str().connection_options()
+    }
+}
+
+/// Open a connection using the already-resolved connection options.
+pub async fn connect<T: ConnectTarget>(target: T) -> Result<Client> {
+    let options = target.connection_options();
+    let config = options.config();
     let (client, connection) = config
         .connect(NoTls)
         .await
-        .wrap_err_with(|| format!("connecting to Postgres database {:?}", params.database))?;
+        .wrap_err_with(|| format!("connecting to Postgres database {:?}", options.database))?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
@@ -165,6 +201,23 @@ pub fn build_create_index_sql(
 mod tests {
     use super::*;
     use crate::profiles::{EC_DISKANN, EC_HNSW, EC_IVF};
+
+    #[test]
+    fn connection_options_config_sets_explicit_overrides() {
+        let options = ConnectionOptions {
+            database: "bench".into(),
+            host: Some("/home/peter/.pgrx".into()),
+            port: Some(28818),
+            user: Some("peter".into()),
+            password: Some("secret".into()),
+        };
+        let config = options.config();
+        assert_eq!(config.get_dbname(), Some("bench"));
+        assert_eq!(config.get_hosts().len(), 1);
+        assert_eq!(config.get_ports(), &[28818]);
+        assert_eq!(config.get_user(), Some("peter"));
+        assert_eq!(config.get_password(), Some(&b"secret"[..]));
+    }
 
     #[test]
     fn hnsw_index_sql_matches_legacy_loader_shape() {

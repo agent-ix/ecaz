@@ -22,7 +22,7 @@ use tokio_postgres::{Client, Transaction};
 
 use crate::manifest;
 use crate::profiles::{self, IndexProfile};
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 use crate::reloptions;
 use crate::tsv;
 
@@ -129,7 +129,7 @@ struct LoadedChunkedManifest {
     base_dir: PathBuf,
 }
 
-pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
@@ -206,7 +206,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     }
 
     if let Some(chunked_manifest) = chunked_manifest {
-        let mut client = psql::connect(database).await?;
+        let mut client = psql::connect(conn).await?;
         let corpus_table = format!("{}_corpus", args.prefix);
         let queries_table = format!("{}_queries", args.prefix);
         let corpus_loaded = ensure_chunked_corpus_table(
@@ -265,7 +265,7 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         args.allow_manifest_mismatch,
     )?;
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
 
     let corpus_loaded = ensure_corpus_table(
         &client,

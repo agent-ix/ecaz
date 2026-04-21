@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 use crate::manifest::{
     ChunkManifest, ChunkedFileManifest, ARTIFACT_LAYOUT_CHUNKED, ARTIFACT_LAYOUT_SINGLE_TSV,
 };
+use crate::psql::ConnectionOptions;
 
 pub const DEFAULT_SOURCE_DATASET: &str =
     "Qdrant dbpedia-entities-openai3-text-embedding-3-large-1536-1M";
@@ -154,7 +155,7 @@ struct SelectedOrdinal {
     ordinal: i64,
 }
 
-pub async fn run(_database: &str, args: PrepareArgs) -> Result<()> {
+pub async fn run(_conn: &ConnectionOptions, args: PrepareArgs) -> Result<()> {
     let profile = resolve_profile(&args.profile).ok_or_else(|| {
         let names: Vec<&str> = PROFILES.iter().map(|p| p.prefix).collect();
         eyre!(

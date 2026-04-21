@@ -18,6 +18,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
+use crate::psql::ConnectionOptions;
+
 #[derive(Args, Debug)]
 pub struct GenerateArgs {
     /// Output TSV path. Use `-` to write to stdout.
@@ -48,7 +50,7 @@ pub enum GenerateKind {
     Queries,
 }
 
-pub async fn run(_database: &str, args: GenerateArgs) -> Result<()> {
+pub async fn run(_conn: &ConnectionOptions, args: GenerateArgs) -> Result<()> {
     if args.n == 0 {
         return Err(eyre!("--n must be >= 1"));
     }

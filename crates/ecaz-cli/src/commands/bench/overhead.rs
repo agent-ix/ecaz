@@ -33,7 +33,7 @@ use serde_json::Value;
 use std::time::{Duration, Instant};
 
 use crate::profiles::{self, IndexProfile};
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 use super::latency::summarize;
 use super::recall::build_knn_sql;
@@ -63,7 +63,7 @@ pub struct OverheadArgs {
     pub seed: i64,
 }
 
-pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     if args.k == 0 || args.iterations == 0 {
@@ -100,7 +100,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
     // than enabling the tokio-postgres `with-serde_json-1` feature.
     let explain_sql = format!("EXPLAIN (ANALYZE, FORMAT JSON) {full_sql}");
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
     if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
         return Err(eyre!(
             "{} on {:?}",

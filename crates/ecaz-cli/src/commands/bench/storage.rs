@@ -17,7 +17,7 @@ use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
 use crate::profiles;
-use crate::psql;
+use crate::psql::{self, ConnectionOptions};
 
 #[derive(Args, Debug)]
 pub struct StorageArgs {
@@ -26,12 +26,12 @@ pub struct StorageArgs {
     pub prefix: String,
 }
 
-pub async fn run(database: &str, args: StorageArgs) -> Result<()> {
+pub async fn run(conn: &ConnectionOptions, args: StorageArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
     let corpus_table = format!("{}_corpus", args.prefix);
 
-    let client = psql::connect(database).await?;
+    let client = psql::connect(conn).await?;
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
         return Err(eyre!("no corpus table {:?} in this database", corpus_table));
     }
