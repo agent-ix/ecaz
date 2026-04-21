@@ -314,6 +314,24 @@ fn unsupported_ef_construction_error(profile: &IndexProfile) -> String {
     )
 }
 
+fn existing_single_index_conflict_error(
+    profile: &IndexProfile,
+    index: &str,
+    reloptions: &[(String, String)],
+) -> String {
+    let requested = if reloptions.is_empty() {
+        "<default>".to_owned()
+    } else {
+        reloptions::normalize_list(reloptions).join(", ")
+    };
+    format!(
+        "index {:?} already exists for profile {:?}; {} keeps one index name per prefix, so `ecaz corpus load` will not rebuild it in place. Drop it first (for example: `DROP INDEX {index}`) or change --prefix / --storage-format. Requested reloptions: {requested}",
+        index,
+        profile.name,
+        profile.name,
+    )
+}
+
 /// Reject `--reloption` keys that a native CLI flag already sets. Postgres
 /// rejects duplicate reloption keys at `CREATE INDEX`, and even when it
 /// doesn't, letting `--reloption` silently override a native flag is worse
@@ -560,6 +578,13 @@ async fn ensure_index(
         );
         return Ok(());
     }
+    if !profile.sweep_axis_is_m() && psql::relation_exists(client, &job.name, 'i').await? {
+        return Err(eyre!(existing_single_index_conflict_error(
+            profile,
+            &job.name,
+            &job.reloptions
+        )));
+    }
     eprintln!(
         "[loader] building {index} using {am} (reloptions=[{summary}]) ...",
         index = job.name,
@@ -782,6 +807,20 @@ mod tests {
         assert!(err.contains(
             "--profile ec_diskann --reloption graph_degree=48 --reloption build_list_size=128"
         ));
+    }
+
+    #[test]
+    fn existing_single_index_conflict_error_points_diskann_operator_at_drop_index() {
+        let err = existing_single_index_conflict_error(
+            &EC_DISKANN,
+            "dbpedia_10k_idx",
+            &[opt("graph_degree", "48"), opt("build_list_size", "128")],
+        );
+        assert!(err.contains("index \"dbpedia_10k_idx\" already exists"));
+        assert!(err.contains("profile \"ec_diskann\""));
+        assert!(err.contains("DROP INDEX dbpedia_10k_idx"));
+        assert!(err.contains("graph_degree=48"));
+        assert!(err.contains("build_list_size=128"));
     }
 
     // --- manifest orchestration ---
