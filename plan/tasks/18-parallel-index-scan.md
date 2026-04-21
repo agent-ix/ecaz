@@ -168,6 +168,11 @@ See ADR-040 for the full shape. Summary:
   work can read coordinator state directly without rescanning the staged slots
   on every access.
 
+- **Claim-aware coordinator drain.** The staged coordinator selection/read/take
+  path now treats a result slot as dead when its owning worker slot is no
+  longer claimed for the active rescan epoch, and refreshes past that stale
+  fast-path entry before exposing the next live staged result.
+
 - **Coordinator fast-path staging.** Shared helpers can now read the staged
   selected result directly from the coordinator snapshot and slot header,
   without rescanning all staged result slots. The full shared top-K drain
