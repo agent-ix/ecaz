@@ -106,35 +106,35 @@ async fn run_restart(args: ScratchRestartArgs) -> Result<()> {
     let data_dir = pgrx_home.join("data-17");
     stop_existing_postmaster(&data_dir).await?;
 
-    println!("[scratch] repo={}", repo_root.display());
-    println!("[scratch] pgrx_home={}", pgrx_home.display());
-    println!("[scratch] window={}", args.window);
-    println!("[scratch] grouped_score_mode={}", args.grouped_score_mode);
-    println!("[scratch] rerank_mode={}", args.rerank_mode);
-    println!(
+    crate::ecaz_println!("[scratch] repo={}", repo_root.display());
+    crate::ecaz_println!("[scratch] pgrx_home={}", pgrx_home.display());
+    crate::ecaz_println!("[scratch] window={}", args.window);
+    crate::ecaz_println!("[scratch] grouped_score_mode={}", args.grouped_score_mode);
+    crate::ecaz_println!("[scratch] rerank_mode={}", args.rerank_mode);
+    crate::ecaz_println!(
         "[scratch] rerank_source_column={}",
         args.rerank_source_column
             .as_deref()
             .unwrap_or("build_source_column")
     );
     if args.exact_scope.is_some() || args.exact_limit.is_some() || args.exact_strategy.is_some() {
-        println!(
+        crate::ecaz_println!(
             "[scratch] exact_scope={}",
             args.exact_scope.as_deref().unwrap_or("all")
         );
-        println!(
+        crate::ecaz_println!(
             "[scratch] exact_strategy={}",
             args.exact_strategy.as_deref().unwrap_or("expansion")
         );
-        println!(
+        crate::ecaz_println!(
             "[scratch] exact_limit={}",
             args.exact_limit.as_deref().unwrap_or("all")
         );
     } else {
-        println!("[scratch] exact_scope=disabled");
+        crate::ecaz_println!("[scratch] exact_scope=disabled");
     }
     for assignment in &args.env {
-        println!("[scratch] extra_env={assignment}");
+        crate::ecaz_println!("[scratch] extra_env={assignment}");
     }
 
     let mut command = Command::new("cargo");
@@ -200,7 +200,7 @@ async fn stop_existing_postmaster(data_dir: &PathBuf) -> Result<()> {
     let mut kill_check = Command::new("kill");
     kill_check.arg("-0").arg(&pid);
     if kill_check.status().await?.success() {
-        println!("[scratch] stopping existing postmaster pid={pid}");
+        crate::ecaz_println!("[scratch] stopping existing postmaster pid={pid}");
         let mut stop = Command::new("kill");
         stop.arg(&pid);
         run_status(stop).await?;

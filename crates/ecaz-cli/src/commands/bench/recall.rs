@@ -20,7 +20,7 @@
 use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressStyle;
 use ndarray::Array2;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
@@ -79,7 +79,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
                 profile.name
             ));
         }
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[recall] no --sweep provided; using profile default {} values {:?}",
             profile.sweep_axis_label(),
             profile.default_sweep
@@ -100,9 +100,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             corpus_table
         ));
     }
-    eprintln!("[recall] fetching corpus from {corpus_table} ...");
+    crate::ecaz_eprintln!("[recall] fetching corpus from {corpus_table} ...");
     let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
-    eprintln!("[recall] fetching queries from {queries_table} ...");
+    crate::ecaz_eprintln!("[recall] fetching queries from {queries_table} ...");
     let (_query_ids, queries) = fetch_sources(&client, &queries_table, args.queries_limit).await?;
     if corpus.nrows() == 0 || queries.nrows() == 0 {
         return Err(eyre!(
@@ -119,7 +119,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         ));
     }
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[recall] computing ground truth: {} queries vs {} corpus rows (dim={}) ...",
         queries.nrows(),
         corpus.nrows(),
@@ -127,7 +127,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
     );
     let t0 = Instant::now();
     let gt = brute_force_top_k(&corpus, &queries, args.k);
-    eprintln!("[recall] ground truth in {:.2?}", t0.elapsed());
+    crate::ecaz_eprintln!("[recall] ground truth in {:.2?}", t0.elapsed());
 
     let sql = build_knn_sql(profile, &corpus_table);
 
@@ -145,7 +145,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             .batch_execute(&format!("SET {guc} = {value}"))
             .await
             .wrap_err_with(|| format!("SET {guc} = {value}"))?;
-        let bar = ProgressBar::new(queries.nrows() as u64);
+        let bar = crate::output::progress_bar(queries.nrows() as u64);
         bar.set_style(
             ProgressStyle::with_template("[recall {msg}] {wide_bar} {pos}/{len} ({per_sec})")
                 .unwrap(),
@@ -185,7 +185,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         ]);
     }
 
-    println!("{t}");
+    crate::ecaz_println!("{t}");
     Ok(())
 }
 

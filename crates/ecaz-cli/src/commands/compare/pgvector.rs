@@ -23,7 +23,7 @@
 use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressStyle;
 use std::time::{Duration, Instant};
 use tokio_postgres::Client;
 
@@ -131,7 +131,7 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
     )
     .await?;
 
-    eprintln!("[compare] fetching corpus + queries for ground truth ...");
+    crate::ecaz_eprintln!("[compare] fetching corpus + queries for ground truth ...");
     let (corpus_ids, corpus) =
         super::super::bench::recall::fetch_sources_public(&client, &corpus_table, None).await?;
     let (_, queries) = super::super::bench::recall::fetch_sources_public(
@@ -151,10 +151,10 @@ pub async fn run(conn: &ConnectionOptions, args: PgvectorArgs) -> Result<()> {
         ));
     }
 
-    eprintln!("[compare] computing ground truth ...");
+    crate::ecaz_eprintln!("[compare] computing ground truth ...");
     let t0 = Instant::now();
     let gt = brute_force_top_k(&corpus, &queries, args.k);
-    eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
+    crate::ecaz_eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
     let ecaz_label =
         configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep);
@@ -289,7 +289,7 @@ async fn ensure_pgvector_sidecar(
     rebuild: bool,
 ) -> Result<()> {
     if rebuild {
-        eprintln!("[compare] --rebuild: dropping {sidecar} (and dependent index)");
+        crate::ecaz_eprintln!("[compare] --rebuild: dropping {sidecar} (and dependent index)");
         client
             .batch_execute(&format!("DROP TABLE IF EXISTS {sidecar} CASCADE"))
             .await
@@ -310,7 +310,7 @@ async fn ensure_pgvector_sidecar(
         .await?
         .get(0);
     if existing < corpus_rows {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[compare] populating {sidecar}: {} rows missing from {corpus_rows}",
             corpus_rows - existing
         );
@@ -321,7 +321,7 @@ async fn ensure_pgvector_sidecar(
     }
 
     if !psql::relation_exists(client, index_name, 'i').await? {
-        eprintln!("[compare] building pgvector HNSW index {index_name}");
+        crate::ecaz_eprintln!("[compare] building pgvector HNSW index {index_name}");
         let t0 = Instant::now();
         client
             .batch_execute(&build_pgvector_create_index_sql(
@@ -332,7 +332,7 @@ async fn ensure_pgvector_sidecar(
             ))
             .await
             .wrap_err("creating pgvector index")?;
-        eprintln!("[compare] built {index_name} in {:.2?}", t0.elapsed());
+        crate::ecaz_eprintln!("[compare] built {index_name} in {:.2?}", t0.elapsed());
     }
     Ok(())
 }
@@ -355,7 +355,7 @@ async fn measure_engine(
     binds: EngineBinds,
 ) -> Result<(f64, f64, LatencyStats)> {
     let stmt = client.prepare(sql).await.wrap_err("preparing KNN")?;
-    let bar = ProgressBar::new(queries.nrows() as u64);
+    let bar = crate::output::progress_bar(queries.nrows() as u64);
     bar.set_style(
         ProgressStyle::with_template("[compare {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
@@ -437,7 +437,7 @@ fn print_comparison(rows: &[ComparisonRow]) {
             Cell::new(format_pct_delta_ms(a.stats.mean, b.stats.mean)),
         ]);
     }
-    println!("{t}");
+    crate::ecaz_println!("{t}");
 }
 
 /// Percent change from `base` to `other`. Returns `None` when `base` is

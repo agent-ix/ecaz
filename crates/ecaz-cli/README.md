@@ -42,10 +42,13 @@ cargo install --path crates/ecaz-cli
 ```
 
 That puts `ecaz` on `$PATH`. All commands accept `--database`, `--host`,
-`--port`, `--user`, and `--password`; each also falls back to the matching
-libpq environment variable (`PGDATABASE`, `PGHOST`, `PGPORT`, `PGUSER`,
-`PGPASSWORD`) when the flag is omitted. `--host` may be either a TCP host
-name or a Unix socket directory such as `/home/peter/.pgrx`.
+`--port`, `--user`, `--password`, and `--log-file`; each also falls back to
+the matching libpq environment variable (`PGDATABASE`, `PGHOST`, `PGPORT`,
+`PGUSER`, `PGPASSWORD`) when the flag is omitted. `--host` may be either a
+TCP host name or a Unix socket directory such as `/home/peter/.pgrx`.
+`--log-file` mirrors the CLI's stdout/stderr into a packet-local artifact
+file so review runs do not need shell `tee` wrappers. When `--log-file` is
+set, transient progress bars are suppressed so the artifact stays stable.
 
 ## Command tree
 
@@ -88,6 +91,7 @@ ecaz corpus prepare \
   --parquet /path/to/qdrant-dbpedia-openai3-1m/data \
   --output-dir /path/to/staged
 ecaz corpus load \
+  --log-file review/11073-task17-diskann-real-10k-recall/artifacts/load.log \
   --prefix ec_hnsw_real_10k \
   --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv \
   --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv \

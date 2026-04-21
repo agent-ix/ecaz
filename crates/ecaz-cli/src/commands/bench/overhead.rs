@@ -28,7 +28,7 @@
 use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressStyle;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
@@ -81,7 +81,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
                 profile.name
             ));
         }
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[overhead] no --sweep provided; using profile default {} values {:?}",
             profile.sweep_axis_label(),
             profile.default_sweep
@@ -165,7 +165,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
 
         let full_stmt = client.prepare(&full_sql).await?;
         let encode_stmt = client.prepare(&encode_sql).await?;
-        let bar = ProgressBar::new(args.iterations as u64);
+        let bar = crate::output::progress_bar(args.iterations as u64);
         bar.set_style(
             ProgressStyle::with_template("[overhead {msg}] {wide_bar} {pos}/{len}").unwrap(),
         );
@@ -206,7 +206,7 @@ pub async fn run(conn: &ConnectionOptions, args: OverheadArgs) -> Result<()> {
             Cell::new(format!("{:.1}%", b.residual_fraction * 100.0)),
         ]);
     }
-    println!("{table}");
+    crate::ecaz_println!("{table}");
     Ok(())
 }
 

@@ -134,7 +134,7 @@ pub async fn run(_conn: &ConnectionOptions, args: PrepareArgs) -> Result<()> {
     let id_column = resolve_id_column(&schema_names, args.id_column.as_deref())?;
     let vector_column = resolve_vector_column(&schema_names, args.vector_column.as_deref())?;
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[prepare] pass 1: scanning {} shard(s) for sorted-id prefix (K={})",
         parquet_files.len(),
         profile.needed_rows()
@@ -142,7 +142,7 @@ pub async fn run(_conn: &ConnectionOptions, args: PrepareArgs) -> Result<()> {
     let sorted_ids = load_sorted_ids(&parquet_files, &id_column, profile.needed_rows())?;
     let (corpus_source_ids, query_source_ids) = split_sorted_ids(&sorted_ids, profile);
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[prepare] pass 2: materializing {} selected vectors",
         corpus_source_ids.len() + query_source_ids.len()
     );
@@ -211,12 +211,15 @@ pub async fn run(_conn: &ConnectionOptions, args: PrepareArgs) -> Result<()> {
     serde_json::to_writer_pretty(&mut handle, &manifest)?;
     handle.write_all(b"\n")?;
 
-    eprintln!("[prepare] wrote {}", corpus_path.display());
-    eprintln!("[prepare] wrote {}", queries_path.display());
-    eprintln!("[prepare] wrote {}", manifest_path.display());
-    eprintln!(
+    crate::ecaz_eprintln!("[prepare] wrote {}", corpus_path.display());
+    crate::ecaz_eprintln!("[prepare] wrote {}", queries_path.display());
+    crate::ecaz_eprintln!("[prepare] wrote {}", manifest_path.display());
+    crate::ecaz_eprintln!(
         "[prepare] profile={} corpus_rows={} query_rows={} sort_key='{} ascending lexicographic'",
-        profile.prefix, profile.corpus_rows, profile.query_rows, id_column
+        profile.prefix,
+        profile.corpus_rows,
+        profile.query_rows,
+        id_column
     );
     Ok(())
 }

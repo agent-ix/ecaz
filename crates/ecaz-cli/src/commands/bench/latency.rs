@@ -83,7 +83,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                 profile.name
             ));
         }
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[latency] no --sweep provided; using profile default {} values {:?}",
             profile.sweep_axis_label(),
             profile.default_sweep
@@ -162,7 +162,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.max)),
         ]);
     }
-    println!("{table}");
+    crate::ecaz_println!("{table}");
     Ok(())
 }
 
@@ -180,7 +180,7 @@ async fn run_sweep_point(
     seed: i64,
     k: usize,
 ) -> Result<Vec<Duration>> {
-    let bar = ProgressBar::new(iterations as u64);
+    let bar = crate::output::progress_bar(iterations as u64);
     bar.set_style(
         ProgressStyle::with_template("[latency {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );

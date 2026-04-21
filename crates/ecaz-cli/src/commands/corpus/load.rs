@@ -14,7 +14,7 @@ use clap::Args;
 use color_eyre::eyre::{eyre, Context, Result};
 use comfy_table::{presets::UTF8_FULL, Cell, Table};
 use futures::SinkExt;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressStyle;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio_postgres::Client;
@@ -124,7 +124,7 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
 
     let unknown = profile.unknown_reloption_keys(&args.reloptions);
     if !unknown.is_empty() {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] warning: profile {:?} does not list {} as known reloption{}; \
              passing through verbatim. Known reloptions: {}",
             profile.name,
@@ -165,14 +165,17 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
     // Inspect inputs first: row counts drive progress bars and manifest
     // verification, and we want to fail fast on malformed files before we
     // open any transactions.
-    eprintln!("[loader] inspecting {}", args.corpus_file.display());
+    crate::ecaz_eprintln!("[loader] inspecting {}", args.corpus_file.display());
     let corpus_stats = tsv::inspect(&args.corpus_file, args.dim)?;
-    eprintln!("[loader] inspecting {}", args.queries_file.display());
+    crate::ecaz_eprintln!("[loader] inspecting {}", args.queries_file.display());
     let query_stats = tsv::inspect(&args.queries_file, args.dim)?;
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] corpus: {} rows, sha256={}  queries: {} rows, sha256={}",
-        corpus_stats.rows, corpus_stats.sha256_hex, query_stats.rows, query_stats.sha256_hex
+        corpus_stats.rows,
+        corpus_stats.sha256_hex,
+        query_stats.rows,
+        query_stats.sha256_hex
     );
 
     verify_manifest_if_present(
@@ -248,7 +251,7 @@ fn verify_manifest_if_present(
         (Some(p), _) => (p.to_path_buf(), true),
         (None, Some(p)) if p.exists() => (p, false),
         (None, Some(p)) => {
-            eprintln!(
+            crate::ecaz_eprintln!(
                 "[loader] no sibling manifest at {}; continuing without verification",
                 p.display()
             );
@@ -273,7 +276,7 @@ fn verify_manifest_if_present(
         query_stats,
     );
     if problems.is_empty() {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] verified manifest {} for prefix {prefix}",
             path.display()
         );
@@ -289,7 +292,7 @@ fn verify_manifest_if_present(
         path.display()
     );
     if allow_mismatch {
-        eprintln!("[loader] warning: {msg}");
+        crate::ecaz_eprintln!("[loader] warning: {msg}");
         Ok(())
     } else {
         Err(eyre!(msg))
@@ -471,10 +474,10 @@ async fn ensure_corpus_table(
     if psql::relation_exists(client, table, 'r').await? {
         let existing = psql::row_count(client, table).await? as usize;
         if existing > 0 {
-            eprintln!("[loader] {table} already has {existing} rows; skipping reload");
+            crate::ecaz_eprintln!("[loader] {table} already has {existing} rows; skipping reload");
             return Ok(existing);
         }
-        eprintln!("[loader] {table} exists but is empty; dropping and reloading");
+        crate::ecaz_eprintln!("[loader] {table} exists but is empty; dropping and reloading");
         client
             .batch_execute(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
             .await?;
@@ -493,7 +496,7 @@ async fn ensure_corpus_table(
 
     copy_rows_from_tsv(client, table, path, dim, expected_rows, "corpus").await?;
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] encoding {embedding_type} embeddings via {fn_name}(source, {bits}, {seed}) ...",
         embedding_type = profile.embedding_type,
         fn_name = profile.encoder_function
@@ -518,10 +521,10 @@ async fn ensure_queries_table(
     if psql::relation_exists(client, table, 'r').await? {
         let existing = psql::row_count(client, table).await? as usize;
         if existing > 0 {
-            eprintln!("[loader] {table} already has {existing} rows; skipping reload");
+            crate::ecaz_eprintln!("[loader] {table} already has {existing} rows; skipping reload");
             return Ok(existing);
         }
-        eprintln!("[loader] {table} exists but is empty; dropping and reloading");
+        crate::ecaz_eprintln!("[loader] {table} exists but is empty; dropping and reloading");
         client
             .batch_execute(&format!("DROP TABLE IF EXISTS {table} CASCADE"))
             .await?;
@@ -555,7 +558,7 @@ async fn copy_rows_from_tsv(
         .wrap_err_with(|| format!("opening COPY stream for {table}"))?;
     futures::pin_mut!(sink);
 
-    let bar = ProgressBar::new(expected_rows as u64);
+    let bar = crate::output::progress_bar(expected_rows as u64);
     bar.set_style(
         ProgressStyle::with_template(
             "[loader] {msg} {wide_bar} {human_pos}/{human_len} ({per_sec}, eta {eta})",
@@ -610,7 +613,7 @@ async fn ensure_index(
         reloptions::normalize_list(&job.reloptions).join(", ")
     };
     if psql::index_exists_with_reloptions(client, &job.name, &job.reloptions).await? {
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[loader] {index} already exists with reloptions=[{summary}]; skipping rebuild",
             index = job.name
         );
@@ -623,7 +626,7 @@ async fn ensure_index(
             &job.reloptions
         )));
     }
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[loader] building {index} using {am} (reloptions=[{summary}]) ...",
         index = job.name,
         am = profile.access_method,
@@ -669,7 +672,7 @@ fn print_summary(
         .collect::<Vec<_>>()
         .join("\n");
     t.add_row(vec!["indexes".into(), Cell::new(indexes)]);
-    println!("{t}");
+    crate::ecaz_println!("{t}");
 }
 
 #[cfg(test)]

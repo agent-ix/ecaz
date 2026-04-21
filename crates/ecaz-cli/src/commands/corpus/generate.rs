@@ -83,9 +83,13 @@ pub async fn run(_conn: &ConnectionOptions, args: GenerateArgs) -> Result<()> {
         writer.write_all(b"\n").wrap_err("writing newline")?;
     }
     writer.flush().wrap_err("flushing output")?;
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[generate] wrote {} × dim {} rows to {} (kind={:?}, seed={})",
-        args.n, args.dim, target_display, args.kind, args.seed
+        args.n,
+        args.dim,
+        target_display,
+        args.kind,
+        args.seed
     );
     Ok(())
 }

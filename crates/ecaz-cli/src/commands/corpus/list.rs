@@ -43,7 +43,7 @@ pub async fn run(conn: &ConnectionOptions) -> Result<()> {
         .wrap_err("listing corpora")?;
 
     if rows.is_empty() {
-        println!("(no corpora loaded in {})", conn.database);
+        crate::ecaz_println!("(no corpora loaded in {})", conn.database);
         return Ok(());
     }
 
@@ -73,7 +73,7 @@ pub async fn run(conn: &ConnectionOptions) -> Result<()> {
             Cell::new(format_name_list(&profile_names)),
         ]);
     }
-    println!("{t}");
+    crate::ecaz_println!("{t}");
     Ok(())
 }
 

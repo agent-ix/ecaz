@@ -214,13 +214,15 @@ LIMIT 1
         bail!("observer backend should see shared distance calculations increase");
     }
 
-    println!("[pg18-preload] install={}", install.version_label);
-    println!("[pg18-preload] shared_preload_libraries={preload_setting}");
-    println!(
+    crate::ecaz_println!("[pg18-preload] install={}", install.version_label);
+    crate::ecaz_println!("[pg18-preload] shared_preload_libraries={preload_setting}");
+    crate::ecaz_println!(
         "[pg18-preload] baseline_scans={baseline_scans} baseline_distance_calcs={baseline_distance}"
     );
-    println!("[pg18-preload] shared_scans={shared_scans} shared_distance_calcs={shared_distance}");
-    println!("[pg18-preload] preload-aware PG18 shared pgstat validation passed");
+    crate::ecaz_println!(
+        "[pg18-preload] shared_scans={shared_scans} shared_distance_calcs={shared_distance}"
+    );
+    crate::ecaz_println!("[pg18-preload] preload-aware PG18 shared pgstat validation passed");
     Ok(())
 }
 

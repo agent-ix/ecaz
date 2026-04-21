@@ -99,7 +99,7 @@ pub async fn run(_conn: &ConnectionOptions, args: FetchArgs) -> Result<()> {
         let destination = data_dir.join(shard);
         if destination.exists() && !args.force {
             skipped += 1;
-            eprintln!(
+            crate::ecaz_eprintln!(
                 "[fetch] [{}/{}] skipping existing {}",
                 idx + 1,
                 shards.len(),
@@ -109,7 +109,7 @@ pub async fn run(_conn: &ConnectionOptions, args: FetchArgs) -> Result<()> {
         }
 
         let url = build_download_url(dataset, &revision, shard);
-        eprintln!(
+        crate::ecaz_eprintln!(
             "[fetch] [{}/{}] downloading {}",
             idx + 1,
             shards.len(),
@@ -133,13 +133,13 @@ pub async fn run(_conn: &ConnectionOptions, args: FetchArgs) -> Result<()> {
         .await
         .wrap_err_with(|| format!("writing {}", manifest_path.display()))?;
 
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[fetch] done. downloaded={} skipped={} parquet_dir={}",
         downloaded,
         skipped,
         data_dir.display()
     );
-    eprintln!(
+    crate::ecaz_eprintln!(
         "[fetch] next: ecaz corpus prepare --profile ec_hnsw_real_10k --parquet {} --output-dir /path/to/staged",
         data_dir.display()
     );
