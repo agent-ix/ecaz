@@ -2788,7 +2788,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next"
+            "parallel scan still needs a real multi-worker output ownership contract before amcanparallel can turn on"
         );
         assert_eq!(
             Spi::get_one::<String>(

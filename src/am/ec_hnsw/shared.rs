@@ -792,7 +792,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
         next_runtime_blocker:
-            "no merged runtime blocker remains on main; post-vacuum benchmark/reporting is next",
+            "parallel scan still needs a real multi-worker output ownership contract before amcanparallel can turn on",
         next_pg18_blocker: if diagnostics.pg18_pgstat_kind_ready {
             "no merged PG18 blocker remains on main"
         } else {
