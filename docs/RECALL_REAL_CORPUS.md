@@ -155,7 +155,7 @@ The loader creates these tables in the target database:
 CREATE TABLE <prefix>_corpus (
     id          bigint PRIMARY KEY,
     source      real[] NOT NULL,
-    embedding   tqvector
+    embedding   ecvector
 );
 
 CREATE TABLE <prefix>_queries (
@@ -165,8 +165,10 @@ CREATE TABLE <prefix>_queries (
 ```
 
 The `<prefix>_corpus.embedding` column is populated as
-`encode_to_tqvector(source, 4, 42)` so it lives next to the source for
+`encode_to_ecvector(source, 4, 42)` so it lives next to the source for
 `source`-build-mode ec_hnsw indexing and exact-quantized comparison probes.
+The same `<prefix>_corpus` table also serves `ec_diskann` indexes because
+both AMs share the `ecvector` embedding type.
 
 The ec_hnsw indexes are created via the existing `build_source_column = 'source'`
 path so the graph is built on raw `source` vectors rather than re-decoded
@@ -176,11 +178,11 @@ Legacy/default loader runs keep the historical index names:
 
 ```sql
 CREATE INDEX <prefix>_m8_idx ON <prefix>_corpus
-USING ec_hnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (m = 8, ef_construction = 128, build_source_column = 'source');
 
 CREATE INDEX <prefix>_m16_idx ON <prefix>_corpus
-USING ec_hnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (m = 16, ef_construction = 128, build_source_column = 'source');
 ```
 
@@ -190,7 +192,7 @@ family while reusing the same `<prefix>_corpus` / `<prefix>_queries` tables:
 
 ```sql
 CREATE INDEX <prefix>_turboquant_m8_idx ON <prefix>_corpus
-USING ec_hnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (
     m = 8,
     ef_construction = 128,
@@ -199,7 +201,7 @@ WITH (
 );
 
 CREATE INDEX <prefix>_pq_fastscan_m8_idx ON <prefix>_corpus
-USING ec_hnsw (embedding tqvector_ip_ops)
+USING ec_hnsw (embedding ecvector_ip_ops)
 WITH (
     m = 8,
     ef_construction = 128,
@@ -311,6 +313,66 @@ WITH (
        128
    );
    ```
+
+## Access-Method Profiles
+
+`scripts/load_real_corpus.py` accepts `--index-profile {ec_hnsw,ec_diskann}`
+so the same staged corpus serves both access methods without re-encoding.
+The profile selects the `USING <am>`, operator class, and reloption surface;
+per-AM tunables ride through `--reloption key=value` (repeatable).
+
+The default profile is `ec_hnsw`, which preserves the legacy
+`<prefix>_m{N}_idx` naming and the `--m` / `--storage-format` flags.
+
+### DiskANN on the same corpus
+
+To build a DiskANN index over an already-staged `<prefix>_corpus` /
+`<prefix>_queries` pair (from any earlier HNSW loader run), rerun the loader
+with the `ec_diskann` profile:
+
+```bash
+PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+    --prefix ec_hnsw_real_10k \
+    --corpus-file /path/to/staged/ec_hnsw_real_10k_corpus.tsv \
+    --queries-file /path/to/staged/ec_hnsw_real_10k_queries.tsv \
+    --index-profile ec_diskann \
+    --reloption graph_degree=32 \
+    --reloption alpha=1.2
+```
+
+The loader skips the corpus/query load if the tables already match and
+creates a single `<prefix>_idx` on the `ec_diskann` access method. `--m` is
+rejected for non-HNSW profiles with a clear error — DiskANN's tuning axis
+is `list_size` (scan-time GUC `ec_diskann.list_size`), not graph degree.
+
+### Recall / latency via the ecaz CLI
+
+Once the tables exist, the `ecaz` CLI (shipped from `main`) drives
+AM-generic recall and latency sweeps against the same `<prefix>_corpus`:
+
+```bash
+# Recall sweep over DiskANN's list_size
+ecaz bench recall \
+    --prefix ec_hnsw_real_10k \
+    --profile ec_diskann \
+    --k 10 \
+    --sweep 64,128,200,400
+
+# Latency sweep on the same index
+ecaz bench latency \
+    --prefix ec_hnsw_real_10k \
+    --profile ec_diskann \
+    --sweep 64,128,200,400
+```
+
+Swap `--profile ec_hnsw` to measure the HNSW indexes sitting alongside on
+the same staged corpus. The CLI sets the profile's `ef_search_guc`
+(`ec_hnsw.ef_search` or `ec_diskann.list_size`) automatically per sweep
+value, so the A4/NFR-001 SQL surfaces are not required for AM-to-AM
+comparisons.
+
+The A4 SQL gate surfaces described below remain HNSW-only; DiskANN recall
+evaluation currently lives in the `ecaz bench recall` path.
 
 ## Diagnostics
 
@@ -467,7 +529,7 @@ planner to lie.
 
 ### Scratch DB missing the new `tests.ec_hnsw_graph_scan_recall_external_*` functions
 
-If the scratch cluster already has `tqvector` installed from an older
+If the scratch cluster already has `ecaz` installed from an older
 same-version `pg_test` build, rerunning `cargo pgrx install` updates the SQL on
 disk but does not refresh the already-created SQL objects in the database.
 
