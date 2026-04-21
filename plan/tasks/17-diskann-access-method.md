@@ -1,13 +1,15 @@
 # Task 17: DiskANN (Vamana) as Second Access Method
 
 Status: **substantially complete on branch — callback buildout phases 1–9
-landed by 2026-04-20.** The remaining work is review, merge, and
-higher-level signoff/hygiene rather than another missing `ec_diskann`
-AM callback slice. Working branch: `adr034-diskann-rebased`.
+landed by 2026-04-20, and 2026-04-21 follow-up recovery/signoff work
+closed the remaining local DiskANN runtime smoke gaps.** The remaining
+work is review, merge, and final faster-machine signoff rather than
+another missing `ec_diskann` AM callback slice. Working branch:
+`adr034-diskann-rebased`.
 
 Executes ADR-034.
 
-## Current status (2026-04-20)
+## Current status (2026-04-21)
 
 ### Landed on `adr034-diskann-rebased`
 
@@ -27,6 +29,32 @@ Executes ADR-034.
   landed code.
 - Module path: `src/am/ec_diskann/`. SQL AM name: `ec_diskann`. FFI
   handler: `ec_diskann_handler`.
+
+### 2026-04-21 recovery / signoff follow-up
+
+- Real-corpus pg18 Recall@10 recovered to the expected range after the
+  post-buildout runtime fixes in packet `11078`:
+  - `list_size=64` → `0.9280`
+  - `list_size=128` → `0.9310`
+  - `list_size=200` → `0.9315`
+- Vacuum/runtime follow-ups landed directly in the DiskANN AM:
+  - packet `11081` bounded repair search to `R` and restored interrupt
+    servicing in long scan/vacuum loops
+  - packet `11082` removed the redundant exact-rerank stage from the
+    vacuum repair frontier planner
+- Local pg18 post-vacuum smoke now completes on the slower development
+  machine (packet `11083`) using the canonical `ecaz` path on the real
+  10k fixture:
+  - pre-vacuum `Recall@10 = 0.9310` at `list_size=128`
+  - delete 10% of corpus rows
+  - `VACUUM (ANALYZE)` completes instead of stalling in the index phase
+  - post-vacuum `Recall@10 = 0.9285` at `list_size=128`
+
+### Remaining signoff work
+
+- Review / merge hygiene on `adr034-diskann-rebased`
+- Final performance benches on the faster machine
+- Any reviewer-driven follow-up packets that surface during integration
 
 ### Resolved prep from the 2026-04-19 review batch
 
