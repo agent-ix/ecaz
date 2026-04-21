@@ -121,7 +121,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     let mut t = Table::new();
     t.load_preset(UTF8_FULL);
     t.set_header(vec![
-        "sweep",
+        profile.sweep_axis_label(),
         "recall@k",
         "ndcg@k",
         "mean q-time",

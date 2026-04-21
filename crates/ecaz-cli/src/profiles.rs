@@ -74,6 +74,19 @@ impl IndexProfile {
         matches!(self.sweep_axis, SweepAxis::M)
     }
 
+    /// Short label for the sweep axis, used as the per-command table
+    /// header by `bench recall` / `latency` / `overhead`. Derived from
+    /// `ef_search_guc` (e.g. `ec_hnsw.ef_search` → `ef_search`,
+    /// `ec_diskann.list_size` → `list_size`) so the table column matches
+    /// the GUC the operator actually set. Falls back to `"sweep"` for
+    /// profiles that have no per-scan knob.
+    pub fn sweep_axis_label(&self) -> &'static str {
+        match self.ef_search_guc {
+            Some(guc) => guc.rsplit('.').next().unwrap_or(guc),
+            None => "sweep",
+        }
+    }
+
     /// Return the subset of `reloptions` keys not in
     /// [`IndexProfile::known_reloptions`]. Used by commands to surface
     /// typos early (`--reloption graph_degre=48`) rather than letting
@@ -235,6 +248,12 @@ mod tests {
                 p.name
             );
         }
+    }
+
+    #[test]
+    fn sweep_axis_label_strips_module_prefix() {
+        assert_eq!(EC_HNSW.sweep_axis_label(), "ef_search");
+        assert_eq!(EC_DISKANN.sweep_axis_label(), "list_size");
     }
 
     #[test]

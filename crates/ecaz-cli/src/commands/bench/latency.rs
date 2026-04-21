@@ -116,7 +116,15 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
     table.set_header(vec![
-        "sweep", "count", "mean", "stddev", "min", "p50", "p95", "p99", "max",
+        profile.sweep_axis_label(),
+        "count",
+        "mean",
+        "stddev",
+        "min",
+        "p50",
+        "p95",
+        "p99",
+        "max",
     ]);
 
     for value in &sweep_values {

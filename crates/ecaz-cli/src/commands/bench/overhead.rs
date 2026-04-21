@@ -115,7 +115,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
     let mut table = Table::new();
     table.load_preset(UTF8_FULL);
     table.set_header(vec![
-        "sweep",
+        profile.sweep_axis_label(),
         "full p50",
         "full p95",
         "encode p50",
