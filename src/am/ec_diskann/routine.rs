@@ -1342,7 +1342,7 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         ));
     }
 
-    let node_results = {
+    let frontier_candidates = {
         let reader = PersistedGraphReader::new(
             planner.chain,
             planner.metadata.graph_degree_r,
@@ -1353,47 +1353,23 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         let Some(entry_point) = entry_point else {
             return Ok(Vec::new());
         };
-        let rerank_error = RefCell::new(None::<String>);
-        let results = scan::vamana_scan_with(
+        scan::greedy_descent_with(
             &reader,
             visited,
-            ScanParams {
-                entry_point,
-                list_size: repair_scan_budget,
-                rerank_budget: repair_scan_budget,
-                top_k: repair_scan_budget,
+            entry_point,
+            repair_scan_budget,
+            &|tuple: &VamanaNodeTuple| {
+                -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code)
             },
-            |tuple| -grouped_pq_score_f32(&query_lut, group_count, &tuple.search_code),
-            |heap_tid| match exact_heap_rerank_distance(
-                planner.heap_relation,
-                planner.snapshot,
-                planner.slot,
-                planner.source_attnum,
-                &target_source_vector,
-                heap_tid,
-            ) {
-                Ok(distance) => distance,
-                Err(error) => {
-                    if rerank_error.borrow().is_none() {
-                        *rerank_error.borrow_mut() = Some(error);
-                    }
-                    f32::INFINITY
-                }
-            },
-        )?;
-        if let Some(error) = rerank_error.into_inner() {
-            return Err(format!(
-                "ec_diskann vacuum repair exact rerank failed: {error}"
-            ));
-        }
-        results
+        )?
     };
 
     existing_neighbor_set.insert(target_tid);
-    for result in node_results {
+    for candidate in frontier_candidates {
         maybe_check_for_interrupts();
 
-        if planner.dead_set.contains(&result.tid) || !existing_neighbor_set.insert(result.tid) {
+        if planner.dead_set.contains(&candidate.tid) || !existing_neighbor_set.insert(candidate.tid)
+        {
             continue;
         }
 
@@ -1402,7 +1378,7 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
             planner.metadata.graph_degree_r,
             binary_word_count,
             search_code_len,
-            result.tid,
+            candidate.tid,
         )?;
         if !candidate_tuple.is_live() || candidate_tuple.primary_heaptid == ItemPointer::INVALID {
             continue;
@@ -1418,7 +1394,7 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
             )?
         };
         planning_candidates.push(insert::ForwardNeighborCandidate {
-            tid: result.tid,
+            tid: candidate.tid,
             source_vector: candidate_source_vector,
         });
     }
