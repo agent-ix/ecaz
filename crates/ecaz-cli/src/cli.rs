@@ -1,0 +1,67 @@
+//! Top-level clap surface.
+//!
+//! Subcommand groups mirror the conceptual split in the CLI README:
+//! `corpus` (data in/out of Postgres), `bench` (measurements against loaded
+//! corpora), `compare` (cross-engine comparison), and `stress` (correctness
+//! under load). Adding a new group means adding one variant to `Command`
+//! and one module under `commands/`.
+
+use clap::{Parser, Subcommand};
+use color_eyre::eyre::Result;
+
+use crate::commands;
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "ecaz",
+    version,
+    about = "Operator CLI for the Ecaz Postgres extension",
+    long_about = "ecaz — corpus loading, benchmarking (recall / latency / storage), \
+                  and cross-engine comparison for the Ecaz Postgres vector extension. \
+                  Access methods (ec_hnsw, ec_diskann, future) are selected via \
+                  `--profile`; every command is profile-aware."
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    command: Command,
+
+    /// PostgreSQL database name. Defaults to $PGDATABASE or 'tqvector_bench'.
+    #[arg(long, global = true, env = "PGDATABASE", default_value = "tqvector_bench")]
+    pub database: String,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Corpus plumbing: load fixtures, inspect what's loaded, verify manifests.
+    Corpus {
+        #[command(subcommand)]
+        command: commands::corpus::CorpusCommand,
+    },
+    /// Benchmarks against a loaded corpus (recall, latency, storage, ...).
+    Bench {
+        #[command(subcommand)]
+        command: commands::bench::BenchCommand,
+    },
+    /// Compare Ecaz against external vector-search engines on the same corpus.
+    Compare {
+        #[command(subcommand)]
+        command: commands::compare::CompareCommand,
+    },
+    /// Correctness-under-load harnesses (vacuum concurrency, crash recovery, ...).
+    Stress {
+        #[command(subcommand)]
+        command: commands::stress::StressCommand,
+    },
+}
+
+impl Cli {
+    pub async fn run(self) -> Result<()> {
+        let db = self.database;
+        match self.command {
+            Command::Corpus { command } => command.run(&db).await,
+            Command::Bench { command } => command.run(&db).await,
+            Command::Compare { command } => command.run(&db).await,
+            Command::Stress { command } => command.run(&db).await,
+        }
+    }
+}

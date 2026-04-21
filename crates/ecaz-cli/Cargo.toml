@@ -1,0 +1,38 @@
+[package]
+name = "ecaz-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Ecaz operator CLI: corpus loading, benchmarking, and cross-engine comparison for the Ecaz Postgres extension."
+rust-version = "1.78"
+
+[[bin]]
+name = "ecaz"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "cargo", "env"] }
+color-eyre = "0.6"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "signal"] }
+tokio-postgres = "0.7"
+bytes = "1"
+futures = "0.3"
+indicatif = "0.17"
+comfy-table = "7"
+ndarray = { version = "0.16", features = ["rayon"] }
+rayon = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+rand_distr = "0.4"
+parquet = { version = "55", default-features = false, features = ["arrow", "snap", "zstd", "flate2", "lz4"] }
+arrow-array = "55"
+arrow-schema = "55"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
