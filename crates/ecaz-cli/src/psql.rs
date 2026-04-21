@@ -66,12 +66,23 @@ pub async fn connect_with(params: &ConnectParams) -> Result<Client> {
     connect(params).await
 }
 
+fn encode_relkind(relkind: char) -> Result<i8> {
+    i8::try_from(u32::from(relkind))
+        .wrap_err_with(|| format!("relkind {:?} must be an ASCII catalog code", relkind))
+}
+
 /// Does a relation with the given name and `relkind` exist?
 pub async fn relation_exists(client: &Client, name: &str, relkind: char) -> Result<bool> {
+    let relkind = encode_relkind(relkind)?;
     let row = client
         .query_one(
-            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = $2)",
-            &[&name, &(relkind.to_string())],
+            "SELECT EXISTS (
+                SELECT 1
+                FROM pg_class
+                WHERE relname = $1
+                  AND relkind = $2::\"char\"
+            )",
+            &[&name, &relkind],
         )
         .await
         .wrap_err_with(|| format!("checking relation {name:?} exists"))?;
@@ -176,6 +187,18 @@ mod tests {
         assert_eq!(config.get_ports(), &[28818]);
         assert_eq!(config.get_user(), Some("peter"));
         assert_eq!(config.get_password(), Some(&b"secret"[..]));
+    }
+
+    #[test]
+    fn relkind_ascii_codes_encode_to_postgres_char() {
+        assert_eq!(encode_relkind('r').unwrap(), b'r' as i8);
+        assert_eq!(encode_relkind('i').unwrap(), b'i' as i8);
+    }
+
+    #[test]
+    fn relkind_rejects_non_ascii_catalog_codes() {
+        let err = encode_relkind('λ').unwrap_err().to_string();
+        assert!(err.contains("must be an ASCII catalog code"), "got: {err}");
     }
 
     #[test]
