@@ -7,7 +7,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 8;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 9;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 
 #[repr(C)]
@@ -49,6 +49,12 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) admitted_result_count: AtomicU32,
     pub(crate) admitted_result_generation: AtomicU32,
     pub(crate) admitted_worst_score_bits: AtomicU32,
+    pub(crate) admitted_head_block_number: AtomicU32,
+    pub(crate) admitted_head_offset_number: AtomicU32,
+    pub(crate) admitted_head_score_bits: AtomicU32,
+    pub(crate) admitted_head_approx_score_bits: AtomicU32,
+    pub(crate) admitted_head_comparison_score_bits: AtomicU32,
+    pub(crate) admitted_head_approx_rank_bits: AtomicU32,
 }
 
 #[repr(C)]
@@ -114,7 +120,26 @@ const EC_PARALLEL_WORKER_SLOT_FREE: u32 = 0;
 const EC_PARALLEL_WORKER_SLOT_CLAIMED: u32 = 1;
 const EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID: u32 = 1 << 0;
 const EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID: u32 = 1 << 1;
+const EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID: u32 = 1 << 2;
+const EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID: u32 = 1 << 3;
+const EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID: u32 = 1 << 4;
+const EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID: u32 = 1 << 5;
 const EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID: u32 = 1 << 6;
+const EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_SCORE_VALID: u32 = 1 << 7;
+const EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_COMPARISON_SCORE_VALID: u32 = 1 << 8;
+const EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_RANK_VALID: u32 = 1 << 9;
+const EC_PARALLEL_COORDINATOR_SELECTION_VALIDITY_MASK: u32 =
+    EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+        | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID;
+const EC_PARALLEL_COORDINATOR_ADMISSION_VALIDITY_MASK: u32 =
+    EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID
+        | EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID
+        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_SCORE_VALID
+        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_COMPARISON_SCORE_VALID
+        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_RANK_VALID;
 const EC_PARALLEL_RESULT_SLOT_PUBLISHED: u32 = 1 << 0;
 const EC_PARALLEL_RESULT_SLOT_SCORE_VALID: u32 = 1 << 1;
 const EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID: u32 = 1 << 2;
@@ -263,6 +288,12 @@ pub(crate) struct EcParallelCoordinatorAdmitPendingOutputSelection {
 pub(crate) struct EcParallelCoordinatorAdmittedResultSelection {
     pub(crate) coordinator: EcParallelCoordinatorSnapshot,
     pub(crate) admitted_result: EcParallelCoordinatorAdmittedResultSnapshot,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct EcParallelCoordinatorAdmittedHeadSelection {
+    pub(crate) coordinator: EcParallelCoordinatorSnapshot,
+    pub(crate) admitted_head: EcParallelPendingOutputSnapshot,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -656,6 +687,14 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             admitted_result_count: AtomicU32::new(0),
             admitted_result_generation: AtomicU32::new(0),
             admitted_worst_score_bits: AtomicU32::new(0),
+            admitted_head_block_number: AtomicU32::new(EcParallelItemPointer::INVALID.block_number),
+            admitted_head_offset_number: AtomicU32::new(u32::from(
+                EcParallelItemPointer::INVALID.offset_number,
+            )),
+            admitted_head_score_bits: AtomicU32::new(0),
+            admitted_head_approx_score_bits: AtomicU32::new(0),
+            admitted_head_comparison_score_bits: AtomicU32::new(0),
+            admitted_head_approx_rank_bits: AtomicU32::new(0),
         };
     }
 
@@ -915,13 +954,99 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
     }
 }
 
+fn load_coordinator_pending_output_snapshot(
+    coordinator: &EcParallelCoordinatorState,
+    flags: u32,
+) -> Option<EcParallelPendingOutputSnapshot> {
+    (flags & EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID != 0).then(|| {
+        EcParallelPendingOutputSnapshot {
+            heap_tid: load_parallel_item_pointer(
+                &coordinator.selected_pending_block_number,
+                &coordinator.selected_pending_offset_number,
+            ),
+            score: f32::from_bits(
+                coordinator
+                    .selected_result_score_bits
+                    .load(Ordering::Acquire),
+            ),
+            approx_score: (flags & EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID != 0).then(
+                || {
+                    f32::from_bits(
+                        coordinator
+                            .selected_pending_approx_score_bits
+                            .load(Ordering::Acquire),
+                    )
+                },
+            ),
+            comparison_score: (flags & EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID != 0)
+                .then(|| {
+                    f32::from_bits(
+                        coordinator
+                            .selected_pending_comparison_score_bits
+                            .load(Ordering::Acquire),
+                    )
+                }),
+            approx_rank: (flags & EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID != 0).then(
+                || {
+                    i32::from_ne_bytes(
+                        coordinator
+                            .selected_pending_approx_rank_bits
+                            .load(Ordering::Acquire)
+                            .to_ne_bytes(),
+                    )
+                },
+            ),
+        }
+    })
+}
+
+fn load_coordinator_admitted_head_snapshot(
+    coordinator: &EcParallelCoordinatorState,
+    flags: u32,
+) -> Option<EcParallelPendingOutputSnapshot> {
+    (flags & EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID != 0).then(|| {
+        EcParallelPendingOutputSnapshot {
+            heap_tid: load_parallel_item_pointer(
+                &coordinator.admitted_head_block_number,
+                &coordinator.admitted_head_offset_number,
+            ),
+            score: f32::from_bits(coordinator.admitted_head_score_bits.load(Ordering::Acquire)),
+            approx_score: (flags & EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_SCORE_VALID != 0)
+                .then(|| {
+                    f32::from_bits(
+                        coordinator
+                            .admitted_head_approx_score_bits
+                            .load(Ordering::Acquire),
+                    )
+                }),
+            comparison_score: (flags
+                & EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_COMPARISON_SCORE_VALID
+                != 0)
+                .then(|| {
+                    f32::from_bits(
+                        coordinator
+                            .admitted_head_comparison_score_bits
+                            .load(Ordering::Acquire),
+                    )
+                }),
+            approx_rank: (flags & EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_RANK_VALID != 0)
+                .then(|| {
+                    i32::from_ne_bytes(
+                        coordinator
+                            .admitted_head_approx_rank_bits
+                            .load(Ordering::Acquire)
+                            .to_ne_bytes(),
+                    )
+                }),
+        }
+    })
+}
+
 fn load_coordinator_snapshot(
     coordinator: &EcParallelCoordinatorState,
 ) -> EcParallelCoordinatorSnapshot {
     let flags = coordinator.flags.load(Ordering::Acquire);
     let selected_result_valid = flags & EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID != 0;
-    let selected_pending_output_valid =
-        flags & EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID != 0;
     EcParallelCoordinatorSnapshot {
         flags,
         claimed_worker_slots: coordinator.claimed_worker_slots.load(Ordering::Acquire),
@@ -941,44 +1066,7 @@ fn load_coordinator_snapshot(
                     .load(Ordering::Acquire),
             )
         }),
-        selected_pending_output: selected_pending_output_valid.then(|| {
-            EcParallelPendingOutputSnapshot {
-                heap_tid: load_parallel_item_pointer(
-                    &coordinator.selected_pending_block_number,
-                    &coordinator.selected_pending_offset_number,
-                ),
-                score: f32::from_bits(
-                    coordinator
-                        .selected_result_score_bits
-                        .load(Ordering::Acquire),
-                ),
-                approx_score: (flags & EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID != 0).then(
-                    || {
-                        f32::from_bits(
-                            coordinator
-                                .selected_pending_approx_score_bits
-                                .load(Ordering::Acquire),
-                        )
-                    },
-                ),
-                comparison_score: (flags & EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID != 0)
-                    .then(|| {
-                        f32::from_bits(
-                            coordinator
-                                .selected_pending_comparison_score_bits
-                                .load(Ordering::Acquire),
-                        )
-                    }),
-                approx_rank: (flags & EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID != 0).then(|| {
-                    i32::from_ne_bytes(
-                        coordinator
-                            .selected_pending_approx_rank_bits
-                            .load(Ordering::Acquire)
-                            .to_ne_bytes(),
-                    )
-                }),
-            }
-        }),
+        selected_pending_output: load_coordinator_pending_output_snapshot(coordinator, flags),
         admitted_result_count: coordinator.admitted_result_count.load(Ordering::Acquire),
         admitted_result_generation: coordinator
             .admitted_result_generation
@@ -1352,12 +1440,127 @@ unsafe fn reap_parallel_scan_dead_root_slots_with_attachment(
     }
 }
 
+fn store_coordinator_pending_output_fast_path(
+    coordinator: &EcParallelCoordinatorState,
+    pending_output: &EcParallelPendingOutputSnapshot,
+) -> u32 {
+    store_parallel_item_pointer(
+        &coordinator.selected_pending_block_number,
+        &coordinator.selected_pending_offset_number,
+        pending_output.heap_tid,
+    );
+    coordinator.selected_pending_approx_score_bits.store(
+        pending_output.approx_score.unwrap_or_default().to_bits(),
+        Ordering::Release,
+    );
+    coordinator.selected_pending_comparison_score_bits.store(
+        pending_output
+            .comparison_score
+            .unwrap_or_default()
+            .to_bits(),
+        Ordering::Release,
+    );
+    coordinator.selected_pending_approx_rank_bits.store(
+        u32::from_ne_bytes(pending_output.approx_rank.unwrap_or_default().to_ne_bytes()),
+        Ordering::Release,
+    );
+
+    let mut flags = EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID;
+    if pending_output.approx_score.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID;
+    }
+    if pending_output.comparison_score.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID;
+    }
+    if pending_output.approx_rank.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID;
+    }
+    flags
+}
+
+fn clear_coordinator_pending_output_fast_path(coordinator: &EcParallelCoordinatorState) {
+    store_parallel_item_pointer(
+        &coordinator.selected_pending_block_number,
+        &coordinator.selected_pending_offset_number,
+        EcParallelItemPointer::INVALID,
+    );
+    coordinator
+        .selected_pending_approx_score_bits
+        .store(0, Ordering::Release);
+    coordinator
+        .selected_pending_comparison_score_bits
+        .store(0, Ordering::Release);
+    coordinator
+        .selected_pending_approx_rank_bits
+        .store(0, Ordering::Release);
+}
+
+fn store_coordinator_admitted_head_fast_path(
+    coordinator: &EcParallelCoordinatorState,
+    admitted_head: &EcParallelPendingOutputSnapshot,
+) -> u32 {
+    store_parallel_item_pointer(
+        &coordinator.admitted_head_block_number,
+        &coordinator.admitted_head_offset_number,
+        admitted_head.heap_tid,
+    );
+    coordinator
+        .admitted_head_score_bits
+        .store(admitted_head.score.to_bits(), Ordering::Release);
+    coordinator.admitted_head_approx_score_bits.store(
+        admitted_head.approx_score.unwrap_or_default().to_bits(),
+        Ordering::Release,
+    );
+    coordinator.admitted_head_comparison_score_bits.store(
+        admitted_head.comparison_score.unwrap_or_default().to_bits(),
+        Ordering::Release,
+    );
+    coordinator.admitted_head_approx_rank_bits.store(
+        u32::from_ne_bytes(admitted_head.approx_rank.unwrap_or_default().to_ne_bytes()),
+        Ordering::Release,
+    );
+
+    let mut flags = EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID;
+    if admitted_head.approx_score.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_SCORE_VALID;
+    }
+    if admitted_head.comparison_score.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_COMPARISON_SCORE_VALID;
+    }
+    if admitted_head.approx_rank.is_some() {
+        flags |= EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_RANK_VALID;
+    }
+    flags
+}
+
+fn clear_coordinator_admitted_head_fast_path(coordinator: &EcParallelCoordinatorState) {
+    store_parallel_item_pointer(
+        &coordinator.admitted_head_block_number,
+        &coordinator.admitted_head_offset_number,
+        EcParallelItemPointer::INVALID,
+    );
+    coordinator
+        .admitted_head_score_bits
+        .store(0, Ordering::Release);
+    coordinator
+        .admitted_head_approx_score_bits
+        .store(0, Ordering::Release);
+    coordinator
+        .admitted_head_comparison_score_bits
+        .store(0, Ordering::Release);
+    coordinator
+        .admitted_head_approx_rank_bits
+        .store(0, Ordering::Release);
+}
+
+// Caller must reap dead roots first when that cleanup is required; this helper
+// only refreshes the cached coordinator fast-path fields from the current root.
 fn refresh_coordinator_selected_fast_paths_locked(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
     let coordinator = unsafe { &*attachment.coordinator };
-    let admission_flags = coordinator.flags.load(Ordering::Acquire)
-        & EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID;
+    let preserved_flags = coordinator.flags.load(Ordering::Acquire)
+        & !EC_PARALLEL_COORDINATOR_SELECTION_VALIDITY_MASK;
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
         Some(selected) => {
@@ -1369,58 +1572,15 @@ fn refresh_coordinator_selected_fast_paths_locked(
                 .selected_result_score_bits
                 .store(selected.runtime.score.to_bits(), Ordering::Release);
             if let Some(pending_output) = pending_output {
-                store_parallel_item_pointer(
-                    &coordinator.selected_pending_block_number,
-                    &coordinator.selected_pending_offset_number,
-                    pending_output.heap_tid,
-                );
-                coordinator.selected_pending_approx_score_bits.store(
-                    pending_output.approx_score.unwrap_or_default().to_bits(),
-                    Ordering::Release,
-                );
-                coordinator.selected_pending_comparison_score_bits.store(
-                    pending_output
-                        .comparison_score
-                        .unwrap_or_default()
-                        .to_bits(),
-                    Ordering::Release,
-                );
-                coordinator.selected_pending_approx_rank_bits.store(
-                    u32::from_ne_bytes(
-                        pending_output.approx_rank.unwrap_or_default().to_ne_bytes(),
-                    ),
-                    Ordering::Release,
-                );
-                let mut valid_flags = EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
-                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID;
-                if pending_output.approx_score.is_some() {
-                    valid_flags |= EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID;
-                }
-                if pending_output.comparison_score.is_some() {
-                    valid_flags |= EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID;
-                }
-                if pending_output.approx_rank.is_some() {
-                    valid_flags |= EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID;
-                }
-                valid_flags |= admission_flags;
-                coordinator.flags.store(valid_flags, Ordering::Release);
+                let valid_flags = EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | store_coordinator_pending_output_fast_path(coordinator, &pending_output);
+                coordinator
+                    .flags
+                    .store(preserved_flags | valid_flags, Ordering::Release);
             } else {
-                store_parallel_item_pointer(
-                    &coordinator.selected_pending_block_number,
-                    &coordinator.selected_pending_offset_number,
-                    EcParallelItemPointer::INVALID,
-                );
-                coordinator
-                    .selected_pending_approx_score_bits
-                    .store(0, Ordering::Release);
-                coordinator
-                    .selected_pending_comparison_score_bits
-                    .store(0, Ordering::Release);
-                coordinator
-                    .selected_pending_approx_rank_bits
-                    .store(0, Ordering::Release);
+                clear_coordinator_pending_output_fast_path(coordinator);
                 coordinator.flags.store(
-                    EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID | admission_flags,
+                    preserved_flags | EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
                     Ordering::Release,
                 );
             }
@@ -1432,21 +1592,9 @@ fn refresh_coordinator_selected_fast_paths_locked(
             coordinator
                 .selected_result_score_bits
                 .store(0, Ordering::Release);
-            store_parallel_item_pointer(
-                &coordinator.selected_pending_block_number,
-                &coordinator.selected_pending_offset_number,
-                EcParallelItemPointer::INVALID,
-            );
-            coordinator
-                .selected_pending_approx_score_bits
-                .store(0, Ordering::Release);
-            coordinator
-                .selected_pending_comparison_score_bits
-                .store(0, Ordering::Release);
-            coordinator
-                .selected_pending_approx_rank_bits
-                .store(0, Ordering::Release);
-            coordinator.flags.store(admission_flags, Ordering::Release);
+            clear_coordinator_pending_output_fast_path(coordinator);
+            // coordinator.flags currently only carries selection/admission validity bits.
+            coordinator.flags.store(preserved_flags, Ordering::Release);
         }
     }
     Ok(())
@@ -1504,30 +1652,54 @@ fn refresh_coordinator_selection_snapshot(
     refresh_coordinator_selection_snapshot_locked(attachment)
 }
 
-fn refresh_admitted_worst_score_locked(
+fn refresh_coordinator_admission_fast_paths_locked(
     attachment: &ParallelScanAttachment,
 ) -> Result<EcParallelCoordinatorAdmissionSnapshot, &'static str> {
     let coordinator = unsafe { &*attachment.coordinator };
     let admitted_count = coordinator.admitted_result_count.load(Ordering::Acquire);
     if admitted_count == 0 {
-        coordinator.flags.fetch_and(
-            !EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID,
-            Ordering::AcqRel,
-        );
+        clear_coordinator_admitted_head_fast_path(coordinator);
         coordinator
             .admitted_worst_score_bits
             .store(0, Ordering::Release);
+        let preserved_flags = coordinator.flags.load(Ordering::Acquire)
+            & !EC_PARALLEL_COORDINATOR_ADMISSION_VALIDITY_MASK;
+        // coordinator.flags currently only carries selection/admission validity bits.
+        coordinator.flags.store(preserved_flags, Ordering::Release);
     } else {
+        let head = unsafe { attachment.admitted_result(0) }?;
+        let head_snapshot = load_admitted_result_snapshot(unsafe { &*head });
         let worst = unsafe { attachment.admitted_result(admitted_count - 1) }?;
         let worst_snapshot = load_admitted_result_snapshot(unsafe { &*worst });
-        coordinator.admitted_worst_score_bits.store(
-            worst_snapshot.pending_output.score.to_bits(),
-            Ordering::Release,
-        );
-        coordinator.flags.fetch_or(
-            EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID,
-            Ordering::AcqRel,
-        );
+        let preserved_flags = coordinator.flags.load(Ordering::Acquire)
+            & !EC_PARALLEL_COORDINATOR_ADMISSION_VALIDITY_MASK;
+        let mut admission_flags = 0;
+
+        if head_snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
+            admission_flags |= store_coordinator_admitted_head_fast_path(
+                coordinator,
+                &head_snapshot.pending_output,
+            );
+        } else {
+            clear_coordinator_admitted_head_fast_path(coordinator);
+        }
+
+        if worst_snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
+            coordinator.admitted_worst_score_bits.store(
+                worst_snapshot.pending_output.score.to_bits(),
+                Ordering::Release,
+            );
+            admission_flags |= EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID;
+        } else {
+            coordinator
+                .admitted_worst_score_bits
+                .store(0, Ordering::Release);
+        }
+
+        // coordinator.flags currently only carries selection/admission validity bits.
+        coordinator
+            .flags
+            .store(preserved_flags | admission_flags, Ordering::Release);
     }
     Ok(load_admission_snapshot(coordinator))
 }
@@ -1617,7 +1789,7 @@ unsafe fn admit_pending_output_locked(
     coordinator
         .admitted_result_generation
         .fetch_add(1, Ordering::AcqRel);
-    let _ = refresh_admitted_worst_score_locked(attachment)?;
+    let _ = refresh_coordinator_admission_fast_paths_locked(attachment)?;
     Ok(true)
 }
 
@@ -1792,7 +1964,7 @@ unsafe fn take_admitted_result_locked(
     coordinator
         .admitted_result_generation
         .fetch_add(1, Ordering::AcqRel);
-    let _ = refresh_admitted_worst_score_locked(attachment)?;
+    let _ = refresh_coordinator_admission_fast_paths_locked(attachment)?;
 
     Ok(Some(EcParallelCoordinatorAdmittedResultSelection {
         coordinator: coordinator_snapshot,
@@ -2297,6 +2469,39 @@ pub(crate) unsafe fn read_parallel_scan_admitted_result_snapshot(
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let result = unsafe { attachment.admitted_result(result_index) }?;
     Ok(load_admitted_result_snapshot(unsafe { &*result }))
+}
+
+pub(crate) unsafe fn read_parallel_scan_admitted_head_snapshot(
+    state: *mut EcParallelScanState,
+) -> Result<Option<EcParallelCoordinatorAdmittedHeadSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    for _ in 0..2 {
+        let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+        let cached_head = load_coordinator_admitted_head_snapshot(
+            unsafe { &*attachment.coordinator },
+            coordinator.flags,
+        );
+        if coordinator.admitted_result_count == 0 {
+            if cached_head.is_none() {
+                return Ok(None);
+            }
+        } else if let Some(admitted_head) = cached_head {
+            let head = unsafe { attachment.admitted_result(0) }?;
+            let admitted_result = load_admitted_result_snapshot(unsafe { &*head });
+            if admitted_result.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0
+                && admitted_result.pending_output == admitted_head
+            {
+                return Ok(Some(EcParallelCoordinatorAdmittedHeadSelection {
+                    coordinator,
+                    admitted_head,
+                }));
+            }
+        }
+        let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+        let _ = refresh_coordinator_admission_fast_paths_locked(&attachment)?;
+    }
+
+    Ok(None)
 }
 
 pub(crate) unsafe fn take_parallel_scan_admitted_result_snapshot(
@@ -2970,9 +3175,9 @@ mod tests {
             EcParallelCoordinatorSnapshot {
                 flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                     | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
-                    | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
-                    | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
-                    | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
+                    | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+                    | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+                    | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID,
                 claimed_worker_slots: 1,
                 published_result_slots: 1,
                 result_publish_generation: 1,
@@ -4026,9 +4231,9 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                         | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 1,
@@ -4089,9 +4294,9 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                         | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 2,
@@ -4834,9 +5039,9 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                         | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 1,
@@ -4991,6 +5196,7 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                         | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID
                         | EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
@@ -5394,6 +5600,28 @@ mod tests {
     }
 
     #[test]
+    fn read_parallel_scan_admitted_head_snapshot_returns_none_without_admission() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_admitted_head_snapshot(attachment.state) }
+                .expect("empty admitted-head read should succeed"),
+            None,
+            "reading the admitted head with no admitted results should return None"
+        );
+    }
+
+    #[test]
     fn take_parallel_scan_admitted_result_snapshot_clears_last_result() {
         let mut storage = TestParallelScanStorage::default();
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
@@ -5449,9 +5677,13 @@ mod tests {
                 coordinator: EcParallelCoordinatorSnapshot {
                     flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
                         | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
-                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_PENDING_APPROX_RANK_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_COORDINATOR_ADMITTED_HEAD_APPROX_RANK_VALID
                         | EC_PARALLEL_COORDINATOR_ADMITTED_WORST_SCORE_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
@@ -5650,6 +5882,161 @@ mod tests {
                 },
             },
             "taking the head should shift the next best admitted result into slot zero"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_admitted_head_snapshot_tracks_head_across_take() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 150,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: Some(-3.75),
+                    comparison_score: None,
+                    approx_rank_base: Some(8),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 151,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("first admission should succeed")
+                .expect("first admission should expose the selected pending output")
+                .admitted,
+            "first admission should seed the admitted window"
+        );
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 152,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -7.0,
+                    approx_score: Some(-6.5),
+                    comparison_score: Some(-7.25),
+                    approx_rank_base: Some(3),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 153,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("second publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("second admission should succeed")
+                .expect("second admission should expose the selected pending output")
+                .admitted,
+            "second admission should install the better admitted head"
+        );
+
+        let admitted_head = unsafe { read_parallel_scan_admitted_head_snapshot(attachment.state) }
+            .expect("admitted-head read should succeed")
+            .expect("admitted-head read should expose the current head");
+        assert_eq!(
+            admitted_head.coordinator.admitted_result_count, 2,
+            "the coordinator snapshot should report both admitted results"
+        );
+        assert_eq!(
+            admitted_head.coordinator.admitted_result_generation, 2,
+            "two admits should advance the admitted generation twice"
+        );
+        assert_eq!(
+            admitted_head.coordinator.admitted_worst_score,
+            Some(-4.0),
+            "the cached admission summary should retain the admitted tail score"
+        );
+        assert_eq!(
+            admitted_head.admitted_head,
+            EcParallelPendingOutputSnapshot {
+                heap_tid: EcParallelItemPointer {
+                    block_number: 153,
+                    offset_number: 2,
+                },
+                score: -7.0,
+                approx_score: Some(-6.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-7.25),
+            },
+            "the admitted-head fast path should expose the best admitted pending output"
+        );
+
+        let taken = unsafe { take_parallel_scan_admitted_result_snapshot(attachment.state) }
+            .expect("admitted take should succeed")
+            .expect("admitted take should remove the current head");
+        assert_eq!(
+            taken.admitted_result.pending_output, admitted_head.admitted_head,
+            "taking should remove the same admitted head that the fast path exposed"
+        );
+
+        let advanced_head = unsafe { read_parallel_scan_admitted_head_snapshot(attachment.state) }
+            .expect("post-take admitted-head read should succeed")
+            .expect("the remaining admitted result should become the new head");
+        assert_eq!(
+            advanced_head.coordinator.admitted_result_count, 1,
+            "after one take the admitted window should shrink to one result"
+        );
+        assert_eq!(
+            advanced_head.coordinator.admitted_result_generation, 3,
+            "the admitted generation should advance again after the take"
+        );
+        assert_eq!(
+            advanced_head.coordinator.admitted_worst_score,
+            Some(-4.0),
+            "with one admitted result left the head is also the worst score"
+        );
+        assert_eq!(
+            advanced_head.admitted_head,
+            EcParallelPendingOutputSnapshot {
+                heap_tid: EcParallelItemPointer {
+                    block_number: 151,
+                    offset_number: 2,
+                },
+                score: -4.0,
+                approx_score: Some(-3.75),
+                approx_rank: Some(8),
+                comparison_score: None,
+            },
+            "after the take the admitted-head fast path should advance to the remaining result"
         );
     }
 

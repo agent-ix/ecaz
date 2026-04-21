@@ -225,6 +225,11 @@ See ADR-040 for the full shape. Summary:
   generation-tracked. This is still a staged consume seam, not the final
   planner-visible shared top-K execution path.
 
+- **Admitted-head fast path.** The coordinator now also caches the current
+  admitted-window head in its snapshot state so later final-output drain work
+  can read the next admitted heap TID directly and only fall back to the
+  shared admitted array when the cache needs refresh.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
