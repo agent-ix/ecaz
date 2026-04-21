@@ -3599,10 +3599,7 @@ unsafe fn emit_materialized_parallel_scan_output(
     }
 
     active_result_state_mut(opaque).materialize(selected);
-    let output = unsafe { try_take_parallel_scan_next_output(opaque) }.unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw parallel scan materialization did not produce a coordinator output")
-    });
-    Some(output)
+    unsafe { try_take_parallel_scan_next_output(opaque) }
 }
 
 unsafe fn emit_prefetched_parallel_scan_output(
@@ -4822,6 +4819,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         .emit_prefetched_output()
         .map(|output| {
             emit_scan_output(scan, opaque, output);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
             true
         })
         .unwrap_or(false);
@@ -4877,6 +4875,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         .emit_materialized_output(selected)
         .map(|output| {
             emit_scan_output(scan, opaque, output);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
             true
         })
         .unwrap_or(false);
@@ -6733,6 +6732,130 @@ mod tests {
     }
 
     #[test]
+    fn emit_materialized_parallel_scan_output_returns_none_when_foreign_head_stays_ahead() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+
+        let attachment =
+            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                .expect("parallel scan attachment should validate")
+                .expect("parallel scan attachment should expose AM-private state");
+        let second_slot =
+            unsafe { crate::am::ec_hnsw::parallel::claim_parallel_scan_worker_slot(&attachment) }
+                .expect("second worker claim should succeed");
+        assert_eq!(
+            second_slot, 1,
+            "the first opaque should already own slot zero, so the extra claim should get slot one"
+        );
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                opaque.parallel_scan_state,
+                second_slot,
+                opaque.parallel_scan_rescan_epoch,
+                crate::am::ec_hnsw::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 70,
+                        offset_number: 1,
+                    },
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: [crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 71,
+                        offset_number: 2,
+                    }; page::HEAPTID_INLINE_CAPACITY],
+                },
+            )
+        }
+        .expect("foreign publish should succeed");
+        assert!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                    opaque.parallel_scan_state,
+                    2,
+                )
+            }
+            .expect("foreign admission should succeed")
+            .expect("foreign admission should expose the selected pending output")
+            .admitted,
+            "foreign worker should seed the admitted head"
+        );
+
+        let output = unsafe {
+            emit_materialized_parallel_scan_output(
+                &mut opaque,
+                SelectedScanResult {
+                    element_tid: tid(27, 1),
+                    score: -5.0,
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: Some(-5.5),
+                    heap_tids: CachedHeapTids::from_iter([tid(32, 1), tid(32, 2)]),
+                },
+            )
+        };
+
+        assert_eq!(
+            output, None,
+            "owner-aware staging should return None instead of panicking when a foreign admitted head stays ahead"
+        );
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 32,
+                offset_number: 1,
+            },
+            "blocked local materialization should still stage the current local heap tid in the shared slot"
+        );
+    }
+
+    #[test]
     fn emit_prefetched_parallel_scan_output_routes_prefetched_row_through_shared_merge() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
@@ -6809,6 +6932,118 @@ mod tests {
                 offset_number: 2,
             },
             "republish after graph-side consume should expose the next local duplicate in the shared result-slot snapshot"
+        );
+    }
+
+    #[test]
+    fn emit_prefetched_parallel_scan_output_returns_none_when_foreign_head_stays_ahead() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.result_state.set_current_with_details(
+            tid(26, 1),
+            -4.0,
+            Some(-3.5),
+            Some(7),
+            Some(-4.5),
+        );
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+
+        let attachment =
+            unsafe { crate::am::ec_hnsw::parallel::parallel_scan_attachment(parallel_scan) }
+                .expect("parallel scan attachment should validate")
+                .expect("parallel scan attachment should expose AM-private state");
+        let second_slot =
+            unsafe { crate::am::ec_hnsw::parallel::claim_parallel_scan_worker_slot(&attachment) }
+                .expect("second worker claim should succeed");
+        assert_eq!(second_slot, 1, "foreign claim should bind slot one");
+        unsafe {
+            crate::am::ec_hnsw::parallel::publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                opaque.parallel_scan_state,
+                second_slot,
+                opaque.parallel_scan_rescan_epoch,
+                crate::am::ec_hnsw::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 80,
+                        offset_number: 1,
+                    },
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: [crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 81,
+                        offset_number: 2,
+                    }; page::HEAPTID_INLINE_CAPACITY],
+                },
+            )
+        }
+        .expect("foreign publish should succeed");
+        assert!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                    opaque.parallel_scan_state,
+                    2,
+                )
+            }
+            .expect("foreign admission should succeed")
+            .expect("foreign admission should expose the selected pending output")
+            .admitted,
+            "foreign worker should seed the admitted head"
+        );
+
+        let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) };
+        assert_eq!(
+            output, None,
+            "owner-aware staging should return None instead of panicking when a foreign admitted head stays ahead"
+        );
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 31,
+                offset_number: 1,
+            },
+            "blocked prefetched output should leave the local shared slot staged at the current heap tid"
         );
     }
 

@@ -280,6 +280,12 @@ See ADR-040 for the full shape. Summary:
   Foreign workers can observe that work exists, but they no longer mutate a
   peer's duplicate-drain cursor just by probing the shared merge seam.
 
+- **Blocked-owner staging fallback.** When a foreign admitted head still stays
+  ahead, the current staged scan helpers now return `None` instead of
+  panicking, and the serial local emit path republishes the advanced local
+  cursor back into the shared snapshot. This keeps the staging branch usable
+  while the final multi-worker output-handoff contract is still deferred.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
