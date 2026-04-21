@@ -74,9 +74,21 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
     let guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no tuning GUC", profile.name))?;
-    if args.sweep.is_empty() {
-        return Err(eyre!("--sweep requires at least one value"));
-    }
+    let sweep_values: Vec<i32> = if args.sweep.is_empty() {
+        if profile.default_sweep.is_empty() {
+            return Err(eyre!(
+                "--sweep is required for profile {:?} (no default sweep registered)",
+                profile.name
+            ));
+        }
+        eprintln!(
+            "[overhead] no --sweep provided; using profile default {:?}",
+            profile.default_sweep
+        );
+        profile.default_sweep.to_vec()
+    } else {
+        args.sweep.clone()
+    };
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -112,7 +124,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
         "residual %",
     ]);
 
-    for value in &args.sweep {
+    for value in &sweep_values {
         client
             .batch_execute(&format!("SET {guc} = {value}"))
             .await

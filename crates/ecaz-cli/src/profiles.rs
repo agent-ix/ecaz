@@ -49,6 +49,12 @@ pub struct IndexProfile {
     /// Reloption keys the CLI knows about. Unknown keys are still accepted
     /// by `--reloption` passthrough — this set is for help text only.
     pub known_reloptions: &'static [&'static str],
+    /// Default sweep values used by `bench recall` / `bench latency` /
+    /// `bench overhead` when the operator does not pass `--sweep`. Picked
+    /// to cover the recall/latency Pareto frontier roughly evenly for
+    /// this access method. Empty when the AM has no `ef_search_guc` to
+    /// sweep.
+    pub default_sweep: &'static [i32],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +102,7 @@ pub const EC_HNSW: IndexProfile = IndexProfile {
     build_source_column: Some("source"),
     sweep_axis: SweepAxis::M,
     known_reloptions: &["m", "ef_construction", "build_source_column", "storage_format"],
+    default_sweep: &[40, 64, 100, 128, 160, 200],
 };
 
 pub const EC_DISKANN: IndexProfile = IndexProfile {
@@ -116,6 +123,7 @@ pub const EC_DISKANN: IndexProfile = IndexProfile {
         "alpha",
         "storage_format",
     ],
+    default_sweep: &[64, 128, 200, 400, 800],
 };
 
 const REGISTRY: &[&IndexProfile] = &[&EC_HNSW, &EC_DISKANN];
@@ -212,6 +220,38 @@ mod tests {
         // fails, the multi-corpus story in README.md needs updating.
         assert_eq!(EC_HNSW.embedding_type, EC_DISKANN.embedding_type);
         assert_eq!(EC_HNSW.encoder_function, EC_DISKANN.encoder_function);
+    }
+
+    #[test]
+    fn every_profile_has_nonempty_default_sweep() {
+        // Every registered profile must ship a sensible default sweep so
+        // `bench recall/latency/overhead --profile X` without an explicit
+        // --sweep works out of the box. Future AMs without a sweep axis
+        // will need explicit opt-out plus a CLI update.
+        for p in REGISTRY {
+            assert!(
+                !p.default_sweep.is_empty(),
+                "profile {} has empty default_sweep",
+                p.name
+            );
+        }
+    }
+
+    #[test]
+    fn default_sweep_is_strictly_ascending() {
+        // comfy-table rows print in the order we sweep; an unsorted default
+        // would confuse the reader scanning for the recall/latency knee.
+        for p in REGISTRY {
+            let s = p.default_sweep;
+            for i in 1..s.len() {
+                assert!(
+                    s[i] > s[i - 1],
+                    "profile {} default_sweep not strictly ascending: {:?}",
+                    p.name,
+                    s
+                );
+            }
+        }
     }
 
     #[test]

@@ -77,11 +77,21 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
     let guc = profile.ef_search_guc.ok_or_else(|| {
         eyre!("profile {:?} has no tuning GUC to sweep", profile.name)
     })?;
-    if args.sweep.is_empty() {
-        return Err(eyre!(
-            "--sweep requires at least one value (e.g. --sweep 100,200,400)"
-        ));
-    }
+    let sweep_values: Vec<i32> = if args.sweep.is_empty() {
+        if profile.default_sweep.is_empty() {
+            return Err(eyre!(
+                "--sweep is required for profile {:?} (no default sweep registered)",
+                profile.name
+            ));
+        }
+        eprintln!(
+            "[latency] no --sweep provided; using profile default {:?}",
+            profile.default_sweep
+        );
+        profile.default_sweep.to_vec()
+    } else {
+        args.sweep.clone()
+    };
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -109,7 +119,7 @@ pub async fn run(database: &str, args: LatencyArgs) -> Result<()> {
         "sweep", "count", "mean", "stddev", "min", "p50", "p95", "p99", "max",
     ]);
 
-    for value in &args.sweep {
+    for value in &sweep_values {
         let durations = run_sweep_point(
             database,
             guc,
