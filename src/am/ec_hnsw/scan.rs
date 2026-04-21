@@ -5545,10 +5545,10 @@ mod tests {
     fn bind_parallel_scan_state_captures_shared_rescan_epoch() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 1024],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 1024] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
