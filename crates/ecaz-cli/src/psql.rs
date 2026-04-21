@@ -13,30 +13,50 @@
 use color_eyre::eyre::{Context, Result};
 use tokio_postgres::{Client, NoTls};
 
+#[derive(Debug, Clone)]
+pub struct ConnectParams {
+    pub database: String,
+    pub host: Option<String>,
+    pub port: Option<u16>,
+    pub user: Option<String>,
+    pub password: Option<String>,
+}
+
 /// Open a connection to the named database using libpq-style environment
 /// variables for everything else (host, port, user, password, ssl mode).
 pub async fn connect(database: &str) -> Result<Client> {
+    let params = ConnectParams {
+        database: database.to_string(),
+        host: std::env::var("PGHOST").ok(),
+        port: std::env::var("PGPORT")
+            .ok()
+            .and_then(|port| port.parse().ok()),
+        user: std::env::var("PGUSER").ok(),
+        password: std::env::var("PGPASSWORD").ok(),
+    };
+    connect_with(&params).await
+}
+
+pub async fn connect_with(params: &ConnectParams) -> Result<Client> {
     let mut config = tokio_postgres::Config::new();
-    config.dbname(database);
-    if let Ok(host) = std::env::var("PGHOST") {
-        config.host(&host);
+    config.dbname(&params.database);
+    if let Some(host) = &params.host {
+        config.host(host);
     }
-    if let Ok(port) = std::env::var("PGPORT") {
-        if let Ok(p) = port.parse() {
-            config.port(p);
-        }
+    if let Some(port) = params.port {
+        config.port(port);
     }
-    if let Ok(user) = std::env::var("PGUSER") {
-        config.user(&user);
+    if let Some(user) = &params.user {
+        config.user(user);
     }
-    if let Ok(password) = std::env::var("PGPASSWORD") {
-        config.password(&password);
+    if let Some(password) = &params.password {
+        config.password(password);
     }
 
     let (client, connection) = config
         .connect(NoTls)
         .await
-        .wrap_err_with(|| format!("connecting to Postgres database {database:?}"))?;
+        .wrap_err_with(|| format!("connecting to Postgres database {:?}", params.database))?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {

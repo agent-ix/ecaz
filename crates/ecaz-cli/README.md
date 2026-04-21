@@ -5,13 +5,18 @@ entry point, profile-aware across access methods.
 
 ## Status
 
-**v1 foundation PR (current):** CLI skeleton, full `--help` tree, foundation
-modules (`profiles`, `psql`, `reloptions`) with tests. All commands declared,
-but only the skeleton is implemented — every subcommand currently exits
-with `not yet implemented`.
+The CLI is now the supported operator surface for:
 
-**v2 PRs (follow-up):** port the Python/shell scripts command-by-command.
-Each port is its own PR so review stays tractable.
+- corpus preparation, generation, loading, inspection, and listing
+- recall / latency / storage / overhead benches
+- pgvector comparison
+- vacuum stress validation
+- scratch-cluster control and local development/test helpers
+
+Wrapper scripts that only forwarded into one of those surfaces are being
+removed from `main`. The remaining live shell entry points are either
+`make` aliases or truly generic repo helpers that do not have a better
+home in the operator CLI.
 
 ## Why another CLI
 
@@ -37,8 +42,9 @@ cargo install --path crates/ecaz-cli
 ```
 
 That puts `ecaz` on `$PATH`. All commands accept `--database` (or read
-`PGDATABASE`) and inherit libpq environment variables (`PGHOST`, `PGPORT`,
-`PGUSER`, `PGPASSWORD`) for connection setup.
+`PGDATABASE`) and the CLI now exposes explicit connection flags
+(`--host`, `--port`, `--user`, `--password`) in addition to the libpq
+environment variables.
 
 ## Command tree
 
@@ -47,7 +53,9 @@ ecaz
 ├── corpus
 │   ├── load        # load a <basename>_{corpus,queries}.tsv fixture + build an index
 │   ├── inspect     # show row counts, dim, indexes for a loaded corpus
-│   └── list        # enumerate corpora in the database
+│   ├── list        # enumerate corpora in the database
+│   ├── generate    # synthesize unit-sphere TSV fixtures
+│   └── prepare     # parquet -> canonical TSV + manifest
 ├── bench
 │   ├── recall      # recall@k sweep against ground truth
 │   ├── latency     # p50/p95/p99 SQL latency under concurrency
@@ -55,6 +63,10 @@ ecaz
 │   └── overhead    # encode / internal scan / residual SQL breakdown
 ├── compare
 │   └── pgvector    # side-by-side recall + latency vs pgvector
+├── dev
+│   ├── install     # local ecaz/pgvector install helpers
+│   ├── scratch     # scratch cluster restart/sql/refresh helpers
+│   └── test        # pgrx and preload-aware PG18 validation lanes
 └── stress
     └── vacuum      # concurrent insert/delete/VACUUM invariant harness
 ```
@@ -136,8 +148,11 @@ Neither is needed today.
 
 ```sh
 cargo test -p ecaz-cli
+cargo pgrx test pg17
+cargo pgrx test pg18
+ecaz dev test pg18-preload-pgstat
 ```
 
 Unit tests cover `profiles`, `reloptions`, and the SQL builders in
-`psql`. Integration tests against a live Postgres land alongside each
-command port.
+`psql`, and the dev/test helpers now own the old wrapper-script validation
+surface directly.

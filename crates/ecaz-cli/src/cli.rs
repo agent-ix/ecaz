@@ -33,6 +33,22 @@ pub struct Cli {
         default_value = "tqvector_bench"
     )]
     pub database: String,
+
+    /// PostgreSQL host or socket directory.
+    #[arg(long, global = true, env = "PGHOST")]
+    pub host: Option<String>,
+
+    /// PostgreSQL port.
+    #[arg(long, global = true, env = "PGPORT")]
+    pub port: Option<u16>,
+
+    /// PostgreSQL user.
+    #[arg(long, global = true, env = "PGUSER")]
+    pub user: Option<String>,
+
+    /// PostgreSQL password.
+    #[arg(long, global = true, env = "PGPASSWORD")]
+    pub password: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -52,6 +68,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::compare::CompareCommand,
     },
+    /// Development/setup/test helpers that own the old wrapper-script surface.
+    Dev {
+        #[command(subcommand)]
+        command: commands::dev::DevCommand,
+    },
     /// Correctness-under-load harnesses (vacuum concurrency, crash recovery, ...).
     Stress {
         #[command(subcommand)]
@@ -61,11 +82,25 @@ enum Command {
 
 impl Cli {
     pub async fn run(self) -> Result<()> {
+        if let Some(host) = &self.host {
+            std::env::set_var("PGHOST", host);
+        }
+        if let Some(port) = self.port {
+            std::env::set_var("PGPORT", port.to_string());
+        }
+        if let Some(user) = &self.user {
+            std::env::set_var("PGUSER", user);
+        }
+        if let Some(password) = &self.password {
+            std::env::set_var("PGPASSWORD", password);
+        }
+
         let db = self.database;
         match self.command {
             Command::Corpus { command } => command.run(&db).await,
             Command::Bench { command } => command.run(&db).await,
             Command::Compare { command } => command.run(&db).await,
+            Command::Dev { command } => command.run(&db).await,
             Command::Stress { command } => command.run(&db).await,
         }
     }

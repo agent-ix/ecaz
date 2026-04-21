@@ -66,7 +66,7 @@ actual `IndexAmRoutine` / hook / pgstat surface.
 - [x] **Register custom pgstat-kind.** PG18 now has a preload-aware registration path through a small C shim over `pgstat_internal.h`. Registration succeeds when `ecaz` is loaded through `shared_preload_libraries`; non-preloaded sessions keep the current backend-local fallback.
 - [x] **Increment sites.** Shared scan counters now increment at the live scan seams that already feed EXPLAIN.
 - [x] **`ecaz_stats()` SQL function.** PG18 now exposes the shared pgstat snapshot when registration is active, and otherwise falls back to backend-local counters so non-preloaded sessions still have a descriptive SQL surface.
-- [x] **Preload-aware validation coverage.** `scripts/run_pg18_preload_pgstat_test.sh` now starts a repo-local PG18 cluster with `shared_preload_libraries = 'ecaz'`, verifies the planner snapshot clears the PG18 blocker, and checks that `ecaz_stats()` exposes scan deltas across backend boundaries.
+- [x] **Preload-aware validation coverage.** `ecaz dev test pg18-preload-pgstat` now starts a repo-local PG18 cluster with `shared_preload_libraries = 'ecaz'`, verifies the planner snapshot clears the PG18 blocker, and checks that `ecaz_stats()` exposes scan deltas across backend boundaries.
 
 ### ReadStream activation
 

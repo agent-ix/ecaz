@@ -58,7 +58,7 @@ Each review topic is a directory under `review/`:
 - Work in narrow, testable slices.
 - After each code checkpoint, run:
   - `cargo test`
-  - `scripts/run_pgrx_pg17_test.sh`
+  - `cargo pgrx test pg17`
   - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
 - Commit each green code checkpoint.
 - After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
