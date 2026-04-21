@@ -3348,6 +3348,13 @@ struct PendingScanOutput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+enum ParallelScanOutputState {
+    Empty,
+    Blocked,
+    Emitted(PendingScanOutput),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct BufferedGroupedScanResult {
     element_tid: page::ItemPointer,
     approx_score: f32,
@@ -3564,16 +3571,31 @@ fn parallel_scan_admission_result_limit() -> u32 {
     u32::MAX
 }
 
-unsafe fn try_take_parallel_scan_next_output(
-    opaque: &mut TqScanOpaque,
-) -> Option<PendingScanOutput> {
+unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> ParallelScanOutputState {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
-        return None;
+        return ParallelScanOutputState::Empty;
     }
 
     publish_parallel_scan_worker_slot_snapshot(opaque);
+    match unsafe {
+        super::parallel::read_parallel_scan_owned_output_state(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+            parallel_scan_admission_result_limit(),
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan readiness read failed: {err}"))
+    {
+        super::parallel::EcParallelOwnedOutputState::Empty => {
+            return ParallelScanOutputState::Empty;
+        }
+        super::parallel::EcParallelOwnedOutputState::Blocked => {
+            return ParallelScanOutputState::Blocked;
+        }
+        super::parallel::EcParallelOwnedOutputState::Ready => {}
+    }
 
     let admitted_result = unsafe {
         super::parallel::take_parallel_scan_owned_next_output_snapshot(
@@ -3582,20 +3604,23 @@ unsafe fn try_take_parallel_scan_next_output(
             parallel_scan_admission_result_limit(),
         )
     }
-    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan next-output take failed: {err}"))?;
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan next-output take failed: {err}"))
+    .unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw parallel scan ready state produced no owned output to take")
+    });
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
     publish_parallel_scan_worker_slot_snapshot(opaque);
-    Some(output)
+    ParallelScanOutputState::Emitted(output)
 }
 
 unsafe fn emit_materialized_parallel_scan_output(
     opaque: &mut TqScanOpaque,
     selected: SelectedScanResult,
-) -> Option<PendingScanOutput> {
+) -> ParallelScanOutputState {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
-        return None;
+        return ParallelScanOutputState::Empty;
     }
 
     active_result_state_mut(opaque).materialize(selected);
@@ -3604,12 +3629,12 @@ unsafe fn emit_materialized_parallel_scan_output(
 
 unsafe fn emit_prefetched_parallel_scan_output(
     opaque: &mut TqScanOpaque,
-) -> Option<PendingScanOutput> {
+) -> ParallelScanOutputState {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
         || !graph_traversal_cursor(opaque).has_prefetched_output()
     {
-        return None;
+        return ParallelScanOutputState::Empty;
     }
 
     unsafe { try_take_parallel_scan_next_output(opaque) }
@@ -3621,7 +3646,9 @@ unsafe fn produce_next_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
-    if let Some(output) = unsafe { try_take_parallel_scan_next_output(opaque) } {
+    if let ParallelScanOutputState::Emitted(output) =
+        unsafe { try_take_parallel_scan_next_output(opaque) }
+    {
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
         if opaque.execution_phase.is_graph_traversal()
@@ -4803,7 +4830,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
-    if let Some(output) = unsafe { emit_prefetched_parallel_scan_output(opaque) } {
+    if let ParallelScanOutputState::Emitted(output) =
+        unsafe { emit_prefetched_parallel_scan_output(opaque) }
+    {
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
         if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
@@ -4865,7 +4894,9 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     };
 
     mark_emitted_element(opaque, selected.element_tid);
-    if let Some(output) = unsafe { emit_materialized_parallel_scan_output(opaque, selected) } {
+    if let ParallelScanOutputState::Emitted(output) =
+        unsafe { emit_materialized_parallel_scan_output(opaque, selected) }
+    {
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
         return true;
@@ -6600,18 +6631,17 @@ mod tests {
         );
         opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
 
-        let output =
-            unsafe { try_take_parallel_scan_next_output(&mut opaque) }.expect("output expected");
+        let output = unsafe { try_take_parallel_scan_next_output(&mut opaque) };
 
         assert_eq!(
             output,
-            PendingScanOutput {
+            ParallelScanOutputState::Emitted(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
                 approx_score: Some(-3.5),
                 approx_rank: Some(7),
                 comparison_score: Some(-4.5),
-            },
+            }),
             "taking the next staged parallel output should project the admitted row into a normal pending output"
         );
         assert_eq!(
@@ -6692,20 +6722,17 @@ mod tests {
                     heap_tids: CachedHeapTids::from_iter([tid(32, 1), tid(32, 2)]),
                 },
             )
-        }
-        .expect(
-            "parallel merge should emit the first heap tid from a newly materialized local row",
-        );
+        };
 
         assert_eq!(
             output,
-            PendingScanOutput {
+            ParallelScanOutputState::Emitted(PendingScanOutput {
                 heap_tid: tid(32, 1),
                 score: -5.0,
                 approx_score: None,
                 approx_rank: None,
                 comparison_score: Some(-5.5),
-            },
+            }),
             "newly materialized local fallback rows should flow through the shared coordinator merge path"
         );
         assert_eq!(
@@ -6732,7 +6759,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_materialized_parallel_scan_output_returns_none_when_foreign_head_stays_ahead() {
+    fn emit_materialized_parallel_scan_output_reports_blocked_when_foreign_head_stays_ahead() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
             bytes: [u8; 320],
@@ -6835,8 +6862,9 @@ mod tests {
         };
 
         assert_eq!(
-            output, None,
-            "owner-aware staging should return None instead of panicking when a foreign admitted head stays ahead"
+            output,
+            ParallelScanOutputState::Blocked,
+            "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
@@ -6899,17 +6927,16 @@ mod tests {
         );
         opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
 
-        let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) }
-            .expect("prefetched graph rows should emit through the shared merge seam");
+        let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) };
         assert_eq!(
             output,
-            PendingScanOutput {
+            ParallelScanOutputState::Emitted(PendingScanOutput {
                 heap_tid: tid(31, 1),
                 score: -4.0,
                 approx_score: Some(-3.5),
                 approx_rank: Some(7),
                 comparison_score: Some(-4.5),
-            },
+            }),
             "prefetched graph rows should drain through the shared merge seam"
         );
         assert_eq!(
@@ -6936,7 +6963,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_prefetched_parallel_scan_output_returns_none_when_foreign_head_stays_ahead() {
+    fn emit_prefetched_parallel_scan_output_reports_blocked_when_foreign_head_stays_ahead() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
             bytes: [u8; 320],
@@ -7027,8 +7054,9 @@ mod tests {
 
         let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) };
         assert_eq!(
-            output, None,
-            "owner-aware staging should return None instead of panicking when a foreign admitted head stays ahead"
+            output,
+            ParallelScanOutputState::Blocked,
+            "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(

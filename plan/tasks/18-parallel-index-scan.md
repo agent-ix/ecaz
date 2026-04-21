@@ -286,6 +286,11 @@ See ADR-040 for the full shape. Summary:
   cursor back into the shared snapshot. This keeps the staging branch usable
   while the final multi-worker output-handoff contract is still deferred.
 
+- **Explicit owner readiness staging.** The scan-side helper now distinguishes
+  `Empty`, `Blocked`, and `Emitted` states instead of collapsing blocked-owner
+  waits into a plain `None`. That gives the remaining handoff work a concrete
+  state machine at the scan layer instead of inferring ownership from absence.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
