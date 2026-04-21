@@ -516,7 +516,7 @@ fn format_g9(value: f64) -> String {
     // switches to scientific notation outside 1e-4..1e17 range.
     let abs = value.abs();
     let exp = abs.log10().floor() as i32;
-    let use_sci = exp < -4 || exp >= 9;
+    let use_sci = !(-4..9).contains(&exp);
     let raw = if use_sci {
         format!("{value:.8e}")
     } else {
@@ -573,8 +573,8 @@ pub fn canonical_json_array(values: &[f32]) -> Result<String> {
 
 /// Split the sorted-id prefix into `(corpus_ids, query_ids)` using the
 /// profile's `corpus_rows` / `query_start` boundaries.
-pub fn split_sorted_ids<'a>(
-    sorted_ids: &'a [String],
+pub fn split_sorted_ids(
+    sorted_ids: &[String],
     profile: &SubsetProfile,
 ) -> (Vec<String>, Vec<String>) {
     let corpus = sorted_ids[..profile.corpus_rows].to_vec();

@@ -58,6 +58,8 @@ pub enum SweepAxis {
     /// DiskANN's `list_size` (L_search frontier width at scan time).
     ListSize,
     /// No native sweep axis; callers build a single index named `<prefix>_idx`.
+    /// Reserved for future AMs without a tuning knob.
+    #[allow(dead_code)]
     None,
 }
 

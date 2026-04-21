@@ -493,7 +493,7 @@ mod tests {
         let sc = arr2(&[[1.0_f32, -0.5]]);
         let pred = vec![vec![2_i64, 1]];
         let n = ndcg_at_k(&ts, &pred, &ids, &sc, 2);
-        assert!(n >= 0.0 && n <= 1.0, "got {n}");
+        assert!((0.0..=1.0).contains(&n), "got {n}");
     }
 
     #[test]
