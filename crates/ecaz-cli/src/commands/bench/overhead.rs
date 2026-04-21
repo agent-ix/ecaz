@@ -100,6 +100,13 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
     let explain_sql = format!("EXPLAIN (ANALYZE, FORMAT JSON) {full_sql}");
 
     let client = psql::connect(database).await?;
+    if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
     let query_rows = client
         .query(
             &format!("SELECT source FROM {queries_table} ORDER BY id"),
@@ -137,7 +144,10 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
             .wrap_err("preparing EXPLAIN")?;
         let q0 = &queries[0];
         let explain_rows = client
-            .query(&explain_stmt, &[q0, &args.bits, &args.seed, &(args.k as i64)])
+            .query(
+                &explain_stmt,
+                &[q0, &args.bits, &args.seed, &(args.k as i64)],
+            )
             .await
             .wrap_err("running EXPLAIN")?;
         // EXPLAIN (FORMAT JSON) emits one `text` row per top-level JSON
@@ -148,8 +158,7 @@ pub async fn run(database: &str, args: OverheadArgs) -> Result<()> {
             .map(|r| r.get::<_, String>(0))
             .collect::<Vec<_>>()
             .join("\n");
-        let plan_json: Value = serde_json::from_str(&plan_text)
-            .wrap_err("parsing EXPLAIN JSON")?;
+        let plan_json: Value = serde_json::from_str(&plan_text).wrap_err("parsing EXPLAIN JSON")?;
         let internal_ms = parse_execution_time_ms(&plan_json)
             .ok_or_else(|| eyre!("EXPLAIN JSON did not contain Execution Time"))?;
 

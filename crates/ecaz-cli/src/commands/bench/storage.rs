@@ -65,7 +65,10 @@ pub async fn run(database: &str, args: StorageArgs) -> Result<()> {
         "table (heap + toast + fsm/vm)".into(),
         Cell::new(format_bytes(table_size)),
     ]);
-    header.add_row(vec!["indexes".into(), Cell::new(format_bytes(indexes_size))]);
+    header.add_row(vec![
+        "indexes".into(),
+        Cell::new(format_bytes(indexes_size)),
+    ]);
     header.add_row(vec!["total".into(), Cell::new(format_bytes(total_size))]);
     header.add_row(vec![
         "per row (total)".into(),

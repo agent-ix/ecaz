@@ -86,9 +86,9 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
             profiles::names().join(", ")
         )
     })?;
-    let ecaz_guc = profile.ef_search_guc.ok_or_else(|| {
-        eyre!("profile {:?} has no tuning GUC to set", profile.name)
-    })?;
+    let ecaz_guc = profile
+        .ef_search_guc
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to set", profile.name))?;
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -98,7 +98,9 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     let client = psql::connect(database).await?;
 
     if !psql::relation_exists(&client, &corpus_table, 'r').await? {
-        return Err(eyre!("no ecaz corpus table {corpus_table} in this database"));
+        return Err(eyre!(
+            "no ecaz corpus table {corpus_table} in this database"
+        ));
     }
     if !psql::relation_exists(&client, &queries_table, 'r').await? {
         return Err(eyre!("no queries table {queries_table} in this database"));
@@ -345,8 +347,7 @@ async fn measure_engine(
     let stmt = client.prepare(sql).await.wrap_err("preparing KNN")?;
     let bar = ProgressBar::new(queries.nrows() as u64);
     bar.set_style(
-        ProgressStyle::with_template("[compare {msg}] {wide_bar} {pos}/{len} ({per_sec})")
-            .unwrap(),
+        ProgressStyle::with_template("[compare {msg}] {wide_bar} {pos}/{len} ({per_sec})").unwrap(),
     );
     bar.set_message(label.to_owned());
     bar.enable_steady_tick(Duration::from_millis(250));
@@ -359,9 +360,7 @@ async fn measure_engine(
         let t0 = Instant::now();
         let rows = match &binds {
             EngineBinds::Ecaz { bits, seed } => {
-                client
-                    .query(&stmt, &[&row_vec, bits, seed, &k_i64])
-                    .await
+                client.query(&stmt, &[&row_vec, bits, seed, &k_i64]).await
             }
             EngineBinds::Pgvector => client.query(&stmt, &[&row_vec, &k_i64]).await,
         }
@@ -470,7 +469,10 @@ mod tests {
 
     #[test]
     fn pgvector_sidecar_name_is_suffixed_from_prefix() {
-        assert_eq!(pgvector_sidecar_name("dbpedia_10k"), "dbpedia_10k_corpus_pgvector");
+        assert_eq!(
+            pgvector_sidecar_name("dbpedia_10k"),
+            "dbpedia_10k_corpus_pgvector"
+        );
     }
 
     #[test]
@@ -502,8 +504,7 @@ mod tests {
 
     #[test]
     fn create_index_sql_pins_hnsw_ip_ops_and_reloptions() {
-        let sql =
-            build_pgvector_create_index_sql("t_corpus_pgvector", "t_pgv_idx", 16, 128);
+        let sql = build_pgvector_create_index_sql("t_corpus_pgvector", "t_pgv_idx", 16, 128);
         assert!(sql.contains("USING hnsw (embedding vector_ip_ops)"));
         assert!(sql.contains("m = 16"));
         assert!(sql.contains("ef_construction = 128"));

@@ -3,9 +3,9 @@
 #[path = "../helpers.rs"]
 mod helpers;
 
+use ecaz::bench_api::ProdQuantizer;
 use iai_callgrind::{library_benchmark, library_benchmark_group, main};
 use std::hint::black_box;
-use ecaz::bench_api::ProdQuantizer;
 
 #[library_benchmark]
 fn score_ip_encoded_1536_4() -> f32 {

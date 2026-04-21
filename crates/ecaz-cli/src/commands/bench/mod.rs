@@ -6,6 +6,8 @@
 use clap::Subcommand;
 use color_eyre::eyre::Result;
 
+use crate::profiles::IndexProfile;
+
 pub mod latency;
 mod overhead;
 pub mod recall;
@@ -15,6 +17,13 @@ pub use latency::LatencyArgs;
 pub use overhead::OverheadArgs;
 pub use recall::RecallArgs;
 pub use storage::StorageArgs;
+
+pub(crate) fn missing_am_error(profile: &IndexProfile, am: &str) -> String {
+    format!(
+        "no {am} index found for profile {:?}; build one first with `ecaz corpus load --profile {} ...`",
+        profile.name, profile.name
+    )
+}
 
 #[derive(Subcommand, Debug)]
 pub enum BenchCommand {
@@ -36,5 +45,27 @@ impl BenchCommand {
             BenchCommand::Storage(a) => storage::run(database, a).await,
             BenchCommand::Overhead(a) => overhead::run(database, a).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profiles::{EC_DISKANN, EC_HNSW};
+
+    #[test]
+    fn missing_am_error_points_operator_at_matching_profile_load() {
+        assert_eq!(
+            missing_am_error(&EC_DISKANN, "ec_diskann"),
+            "no ec_diskann index found for profile \"ec_diskann\"; build one first with `ecaz corpus load --profile ec_diskann ...`"
+        );
+    }
+
+    #[test]
+    fn missing_am_error_preserves_explicit_am_argument() {
+        assert_eq!(
+            missing_am_error(&EC_HNSW, "custom_am"),
+            "no custom_am index found for profile \"ec_hnsw\"; build one first with `ecaz corpus load --profile ec_hnsw ...`"
+        );
     }
 }

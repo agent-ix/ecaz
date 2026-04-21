@@ -62,8 +62,13 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     if args.k == 0 {
         return Err(eyre!("--k must be >= 1"));
     }
-    let profile = profiles::resolve(&args.profile)
-        .ok_or_else(|| eyre!("unknown profile {:?}; try {}", args.profile, profiles::names().join(", ")))?;
+    let profile = profiles::resolve(&args.profile).ok_or_else(|| {
+        eyre!(
+            "unknown profile {:?}; try {}",
+            args.profile,
+            profiles::names().join(", ")
+        )
+    })?;
     let guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no ef_search GUC to sweep", profile.name))?;
@@ -87,6 +92,13 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     let queries_table = format!("{}_queries", args.prefix);
 
     let client = psql::connect(database).await?;
+    if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
+        return Err(eyre!(
+            "{} on {:?}",
+            super::missing_am_error(profile, profile.access_method),
+            corpus_table
+        ));
+    }
     eprintln!("[recall] fetching corpus from {corpus_table} ...");
     let (corpus_ids, corpus) = fetch_sources(&client, &corpus_table, None).await?;
     eprintln!("[recall] fetching queries from {queries_table} ...");
@@ -322,8 +334,11 @@ pub fn ndcg_at_k(
         return 0.0;
     }
     // id -> corpus-row-position lookup, built once.
-    let id_to_pos: std::collections::HashMap<i64, usize> =
-        corpus_ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    let id_to_pos: std::collections::HashMap<i64, usize> = corpus_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| (id, i))
+        .collect();
     let log2 = |x: f64| x.log2();
     let mut sum = 0.0f64;
     for (q, pred) in pred_ids.iter().enumerate() {

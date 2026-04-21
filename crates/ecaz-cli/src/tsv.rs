@@ -30,44 +30,38 @@ pub struct VectorFileStats {
 /// Iterate non-empty rows from `path`. Each parsed row is validated to
 /// contain exactly `dim` floats; mismatched rows are surfaced with a
 /// line-number-prefixed error so operators can find bad input fast.
-pub fn iter_rows(
-    path: &Path,
-    dim: usize,
-) -> Result<impl Iterator<Item = Result<VectorLine>>> {
-    let file = File::open(path)
-        .wrap_err_with(|| format!("opening vector file {}", path.display()))?;
+pub fn iter_rows(path: &Path, dim: usize) -> Result<impl Iterator<Item = Result<VectorLine>>> {
+    let file =
+        File::open(path).wrap_err_with(|| format!("opening vector file {}", path.display()))?;
     let reader = BufReader::new(file);
     let path_display = path.display().to_string();
-    Ok(reader
-        .lines()
-        .enumerate()
-        .filter_map(move |(idx, line)| {
-            let line_number = idx + 1;
-            match line {
-                Ok(raw) => {
-                    let trimmed = raw.trim_end_matches(['\r', '\n']);
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(parse_line(&path_display, line_number, trimmed, dim))
-                    }
+    Ok(reader.lines().enumerate().filter_map(move |(idx, line)| {
+        let line_number = idx + 1;
+        match line {
+            Ok(raw) => {
+                let trimmed = raw.trim_end_matches(['\r', '\n']);
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(parse_line(&path_display, line_number, trimmed, dim))
                 }
-                Err(e) => Some(Err(eyre!(
-                    "{}:{}: read error: {}",
-                    path_display,
-                    line_number,
-                    e
-                ))),
             }
-        }))
+            Err(e) => Some(Err(eyre!(
+                "{}:{}: read error: {}",
+                path_display,
+                line_number,
+                e
+            ))),
+        }
+    }))
 }
 
 /// Single-pass stats computation without materialising the full corpus in
 /// RAM. Intended for manifest verification and the pre-load summary line.
 pub fn inspect(path: &Path, dim: usize) -> Result<VectorFileStats> {
     use sha2::{Digest, Sha256};
-    let file = File::open(path)
-        .wrap_err_with(|| format!("opening vector file {}", path.display()))?;
+    let file =
+        File::open(path).wrap_err_with(|| format!("opening vector file {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut hasher = Sha256::new();
     let mut rows = 0usize;
@@ -205,7 +199,12 @@ mod tests {
     #[test]
     fn iter_rows_rejects_non_integer_id() {
         let f = write_temp("abc\t[1.0]\n");
-        let err = iter_rows(f.path(), 1).unwrap().next().unwrap().unwrap_err().to_string();
+        let err = iter_rows(f.path(), 1)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("is not an integer"), "err: {err}");
     }
 
@@ -221,7 +220,10 @@ mod tests {
 
     #[test]
     fn format_real_array_literal_uses_pg_array_syntax() {
-        assert_eq!(format_real_array_literal(&[1.0, 2.5, -3.0]), "{1.0,2.5,-3.0}");
+        assert_eq!(
+            format_real_array_literal(&[1.0, 2.5, -3.0]),
+            "{1.0,2.5,-3.0}"
+        );
         assert_eq!(format_real_array_literal(&[]), "{}");
     }
 
@@ -251,14 +253,24 @@ mod tests {
     #[test]
     fn iter_rows_rejects_missing_tab_separator() {
         let f = write_temp("nope_no_tab\n");
-        let err = iter_rows(f.path(), 1).unwrap().next().unwrap().unwrap_err().to_string();
+        let err = iter_rows(f.path(), 1)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("expected '<id>\\t<json_array>'"), "err: {err}");
     }
 
     #[test]
     fn iter_rows_rejects_invalid_json() {
         let f = write_temp("1\t[not-json]\n");
-        let err = iter_rows(f.path(), 1).unwrap().next().unwrap().unwrap_err().to_string();
+        let err = iter_rows(f.path(), 1)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("not valid JSON"), "err: {err}");
     }
 

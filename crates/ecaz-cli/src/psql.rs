@@ -48,11 +48,7 @@ pub async fn connect(database: &str) -> Result<Client> {
 }
 
 /// Does a relation with the given name and `relkind` exist?
-pub async fn relation_exists(
-    client: &Client,
-    name: &str,
-    relkind: char,
-) -> Result<bool> {
+pub async fn relation_exists(client: &Client, name: &str, relkind: char) -> Result<bool> {
     let row = client
         .query_one(
             "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = $2)",
@@ -70,6 +66,24 @@ pub async fn row_count(client: &Client, table: &str) -> Result<i64> {
         .query_one(sql.as_str(), &[])
         .await
         .wrap_err_with(|| format!("counting rows in {table:?}"))?;
+    Ok(row.get::<_, i64>(0))
+}
+
+/// Count indexes on `table` whose access method matches `am`.
+pub async fn index_count_with_am(client: &Client, table: &str, am: &str) -> Result<i64> {
+    let row = client
+        .query_one(
+            "SELECT count(*)
+             FROM pg_class t
+             JOIN pg_index ix ON ix.indrelid = t.oid
+             JOIN pg_class i  ON i.oid = ix.indexrelid
+             JOIN pg_am    pam ON pam.oid = i.relam
+             WHERE t.relname = $1
+               AND pam.amname = $2",
+            &[&table, &am],
+        )
+        .await
+        .wrap_err_with(|| format!("counting {am:?} indexes on {table:?}"))?;
     Ok(row.get::<_, i64>(0))
 }
 
@@ -135,12 +149,8 @@ mod tests {
             ("ef_construction".into(), "128".into()),
             ("build_source_column".into(), "source".into()),
         ];
-        let sql = build_create_index_sql(
-            "dbpedia_10k_corpus",
-            "dbpedia_10k_m8_idx",
-            &EC_HNSW,
-            &opts,
-        );
+        let sql =
+            build_create_index_sql("dbpedia_10k_corpus", "dbpedia_10k_m8_idx", &EC_HNSW, &opts);
         assert!(sql.contains("USING ec_hnsw (embedding ecvector_ip_ops)"));
         assert!(sql.contains("m = 8"));
         assert!(sql.contains("build_source_column = 'source'"));
@@ -149,8 +159,7 @@ mod tests {
 
     #[test]
     fn diskann_index_sql_uses_diskann_opclass_and_no_default_reloptions() {
-        let sql =
-            build_create_index_sql("dbpedia_10k_corpus", "dbpedia_10k_idx", &EC_DISKANN, &[]);
+        let sql = build_create_index_sql("dbpedia_10k_corpus", "dbpedia_10k_idx", &EC_DISKANN, &[]);
         assert!(sql.contains("USING ec_diskann (embedding ecvector_diskann_ip_ops)"));
         assert!(!sql.contains("WITH ("));
     }
