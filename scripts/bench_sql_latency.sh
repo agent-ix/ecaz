@@ -256,7 +256,7 @@ run_real_corpus_bench() {
   local query_table="${QUERY_TABLE_OVERRIDE:-${prefix}_queries}"
   local k="${K:-10}"
 
-  echo "=== tqvector SQL latency (real corpus) ==="
+  echo "=== ecvector SQL latency (real corpus) ==="
   echo "Database:     ${PGDATABASE:-(libpq default)}"
   echo "Corpus table: $corpus_table"
   echo "Query table:  $query_table"
@@ -602,7 +602,7 @@ K="${K:-10}"
 RUNS="${RUNS:-100}"
 SEED="${SEED:-42}"
 
-echo "=== tqvector SQL Latency Benchmark ==="
+echo "=== ecvector SQL Latency Benchmark ==="
 echo "Database: $PGDATABASE"
 echo "Corpus: $N vectors, dim=$DIM, bits=$BITS"
 echo "Index: m=$M, ef_construction=$EF_CONSTRUCTION"
@@ -624,7 +624,7 @@ python3 scripts/gen_synthetic_data.py --n "$N" --dim "$DIM" --seed "$SEED" \
 echo "[2/5] Encoding vectors..."
 psql "$PGDATABASE" -q <<SQL
 CREATE TABLE bench_encoded AS
-SELECT id, encode_to_tqvector(embedding, $BITS, $SEED) AS vec
+SELECT id, encode_to_ecvector(embedding, $BITS, $SEED) AS vec
 FROM bench_vectors;
 SQL
 
@@ -632,7 +632,7 @@ SQL
 echo "[3/5] Building HNSW index..."
 psql "$PGDATABASE" -q <<SQL
 CREATE INDEX bench_idx ON bench_encoded
-USING ec_hnsw (vec tqvector_ip_ops)
+USING ec_hnsw (vec ecvector_ip_ops)
 WITH (m = $M, ef_construction = $EF_CONSTRUCTION);
 SQL
 
