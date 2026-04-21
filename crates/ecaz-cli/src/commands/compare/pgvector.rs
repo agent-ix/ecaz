@@ -156,6 +156,9 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     let gt = brute_force_top_k(&corpus, &queries, args.k);
     eprintln!("[compare] ground truth in {:.2?}", t0.elapsed());
     let truth_ids = map_indices_to_ids(&gt.indices, &corpus_ids);
+    let ecaz_label =
+        configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep);
+    let pgv_label = configured_engine_label("pgvector", "ef_search", args.pgvector_ef_search);
 
     // Ecaz side.
     client
@@ -165,7 +168,7 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     let ecaz_sql = build_knn_sql(profile, &corpus_table);
     let (ecaz_recall, ecaz_ndcg, ecaz_stats) = measure_engine(
         &client,
-        "ecaz",
+        &ecaz_label,
         &ecaz_sql,
         &queries,
         &gt,
@@ -187,7 +190,7 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     let pgv_sql = build_pgvector_knn_sql(&sidecar_table, dim);
     let (pgv_recall, pgv_ndcg, pgv_stats) = measure_engine(
         &client,
-        "pgvector",
+        &pgv_label,
         &pgv_sql,
         &queries,
         &gt,
@@ -199,18 +202,8 @@ pub async fn run(database: &str, args: PgvectorArgs) -> Result<()> {
     .await?;
 
     let rows = vec![
-        ComparisonRow::new(
-            &configured_engine_label(profile.name, profile.sweep_axis_label(), args.ecaz_sweep),
-            ecaz_recall,
-            ecaz_ndcg,
-            ecaz_stats,
-        ),
-        ComparisonRow::new(
-            &configured_engine_label("pgvector", "ef_search", args.pgvector_ef_search),
-            pgv_recall,
-            pgv_ndcg,
-            pgv_stats,
-        ),
+        ComparisonRow::new(&ecaz_label, ecaz_recall, ecaz_ndcg, ecaz_stats),
+        ComparisonRow::new(&pgv_label, pgv_recall, pgv_ndcg, pgv_stats),
     ];
     print_comparison(&rows);
     Ok(())
@@ -633,8 +626,8 @@ mod tests {
             p99: Duration::from_millis(7),
             max: Duration::from_millis(8),
         };
-        let row = ComparisonRow::new("ecaz", 0.9, 0.8, stats);
-        assert_eq!(row.engine, "ecaz");
+        let row = ComparisonRow::new("ec_diskann[list_size=200]", 0.9, 0.8, stats);
+        assert_eq!(row.engine, "ec_diskann[list_size=200]");
         assert!((row.recall - 0.9).abs() < 1e-9);
         assert!((row.ndcg - 0.8).abs() < 1e-9);
         assert_eq!(row.stats.count, 10);
