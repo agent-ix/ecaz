@@ -29,6 +29,7 @@ use crate::tsv;
 const DEFAULT_HNSW_BUILD_SOURCE_COLUMN: &str = "source";
 const DEFAULT_HNSW_EF_CONSTRUCTION: i32 = 128;
 const DEFAULT_HNSW_M_SWEEP: &[i32] = &[8, 16];
+const HNSW_ONLY_RELOPTIONS: &[&str] = &["m", "ef_construction", "build_source_column"];
 /// Flush the COPY sink at roughly this size. Large enough to amortise the
 /// async send overhead, small enough that a 10M-row corpus still surfaces
 /// progress before finishing.
@@ -144,6 +145,13 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
     }
     if !profile.sweep_axis_is_m() && args.ef_construction.is_some() {
         return Err(eyre!(unsupported_ef_construction_error(profile)));
+    }
+    let hnsw_only_reloptions = foreign_hnsw_reloption_keys(profile, &args.reloptions);
+    if !hnsw_only_reloptions.is_empty() {
+        return Err(eyre!(unsupported_hnsw_reloption_error(
+            profile,
+            &hnsw_only_reloptions
+        )));
     }
 
     let unknown = profile.unknown_reloption_keys(&args.reloptions);
@@ -428,6 +436,36 @@ fn unsupported_ef_construction_error(profile: &IndexProfile) -> String {
         "--ef-construction is not supported by profile {:?}; use --reloption for {} tuning instead (known keys: {}). Example: `ecaz corpus load --profile {} --reloption graph_degree=48 --reloption build_list_size=128 ...`",
         profile.name,
         profile.name,
+        profile.known_reloptions.join(", "),
+        profile.name
+    )
+}
+
+fn foreign_hnsw_reloption_keys(
+    profile: &IndexProfile,
+    reloptions: &[(String, String)],
+) -> Vec<String> {
+    if profile.sweep_axis_is_m() {
+        return Vec::new();
+    }
+    let keys: std::collections::BTreeSet<String> = reloptions
+        .iter()
+        .filter_map(|(key, _)| {
+            HNSW_ONLY_RELOPTIONS
+                .iter()
+                .any(|hnsw_key| hnsw_key == &key.as_str())
+                .then(|| key.clone())
+        })
+        .collect();
+    keys.into_iter().collect()
+}
+
+fn unsupported_hnsw_reloption_error(profile: &IndexProfile, keys: &[String]) -> String {
+    format!(
+        "profile {:?} does not support HNSW-only reloption{} {}; use DiskANN reloptions instead (known keys: {}). Example: `ecaz corpus load --profile {} --reloption graph_degree=48 --reloption build_list_size=128 ...`",
+        profile.name,
+        if keys.len() == 1 { "" } else { "s" },
+        keys.join(", "),
         profile.known_reloptions.join(", "),
         profile.name
     )
@@ -1335,6 +1373,40 @@ mod tests {
     fn unsupported_ef_construction_error_points_diskann_operators_at_reloptions() {
         let err = unsupported_ef_construction_error(&EC_DISKANN);
         assert!(err.contains("--ef-construction is not supported by profile \"ec_diskann\""));
+        assert!(err.contains("known keys: graph_degree, build_list_size, list_size"));
+        assert!(err.contains(
+            "--profile ec_diskann --reloption graph_degree=48 --reloption build_list_size=128"
+        ));
+    }
+
+    #[test]
+    fn foreign_hnsw_reloption_keys_find_hnsw_only_keys_once_for_diskann() {
+        let keys = foreign_hnsw_reloption_keys(
+            &EC_DISKANN,
+            &[
+                opt("m", "16"),
+                opt("custom", "x"),
+                opt("ef_construction", "128"),
+                opt("m", "32"),
+            ],
+        );
+        assert_eq!(keys, vec!["ef_construction".to_string(), "m".to_string()]);
+    }
+
+    #[test]
+    fn foreign_hnsw_reloption_keys_are_ignored_for_hnsw_profile() {
+        let keys = foreign_hnsw_reloption_keys(&EC_HNSW, &[opt("m", "16")]);
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn unsupported_hnsw_reloption_error_points_diskann_operator_at_known_keys() {
+        let err = unsupported_hnsw_reloption_error(
+            &EC_DISKANN,
+            &["m".to_string(), "ef_construction".to_string()],
+        );
+        assert!(err.contains("profile \"ec_diskann\" does not support HNSW-only reloptions"));
+        assert!(err.contains("m, ef_construction"));
         assert!(err.contains("known keys: graph_degree, build_list_size, list_size"));
         assert!(err.contains(
             "--profile ec_diskann --reloption graph_degree=48 --reloption build_list_size=128"
