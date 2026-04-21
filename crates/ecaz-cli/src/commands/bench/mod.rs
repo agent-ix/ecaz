@@ -25,6 +25,10 @@ pub(crate) fn missing_am_error(profile: &IndexProfile, am: &str) -> String {
     )
 }
 
+pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
+    format!("{}={value}", profile.sweep_axis_label())
+}
+
 #[derive(Subcommand, Debug)]
 pub enum BenchCommand {
     /// Recall@k sweep: measure accuracy vs ground truth for a set of tuning points.
@@ -67,5 +71,11 @@ mod tests {
             missing_am_error(&EC_HNSW, "custom_am"),
             "no custom_am index found for profile \"ec_hnsw\"; build one first with `ecaz corpus load --profile ec_hnsw ...`"
         );
+    }
+
+    #[test]
+    fn sweep_value_label_uses_profile_axis_name() {
+        assert_eq!(sweep_value_label(&EC_HNSW, 100), "ef_search=100");
+        assert_eq!(sweep_value_label(&EC_DISKANN, 200), "list_size=200");
     }
 }

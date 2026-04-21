@@ -8,7 +8,7 @@
 //!    (ndarray+rayon), then argsort the top-k per row. When
 //!    `--truth-cache-dir` is set, reuse an exact top-k truth cache keyed by
 //!    source ids, source values, dimensions, query limit, and k.
-//! 3. For each sweep value, set the profile's `ef_search` GUC and run one
+//! 3. For each sweep value, set the profile's tuning GUC and run one
 //!    `ORDER BY embedding <#> encode_to_<embedding>(...) LIMIT k` per query.
 //! 4. Print a comfy-table: sweep value, recall@k, NDCG@k, mean query time.
 //!
@@ -46,7 +46,7 @@ pub struct RecallArgs {
     /// k for recall@k / NDCG@k.
     #[arg(long, default_value_t = 10)]
     pub k: usize,
-    /// Sweep values for the profile's tuning GUC. Accepts `--sweep 100,200,400`
+    /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200,400`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
     pub sweep: Vec<i32>,
@@ -98,7 +98,7 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
     })?;
     let guc = profile
         .ef_search_guc
-        .ok_or_else(|| eyre!("profile {:?} has no ef_search GUC to sweep", profile.name))?;
+        .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
     if args.truth_cache_dir.is_some() && args.truth_cache_file.is_some() {
         return Err(eyre!(
             "--truth-cache-dir and --truth-cache-file are mutually exclusive"
@@ -112,7 +112,8 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
             ));
         }
         eprintln!(
-            "[recall] no --sweep provided; using profile default {:?}",
+            "[recall] no --sweep provided; using profile default {} values {:?}",
+            profile.sweep_axis_label(),
             profile.default_sweep
         );
         profile.default_sweep.to_vec()
@@ -217,9 +218,12 @@ pub async fn run(database: &str, args: RecallArgs) -> Result<()> {
         );
         let msg = match args.rerank_width {
             Some(rerank_width) => {
-                format!("{guc}={value} ec_ivf.rerank_width={rerank_width}")
+                format!(
+                    "{} ec_ivf.rerank_width={rerank_width}",
+                    super::sweep_value_label(profile, *value)
+                )
             }
-            None => format!("{guc}={value}"),
+            None => super::sweep_value_label(profile, *value),
         };
         bar.set_message(msg);
         bar.enable_steady_tick(Duration::from_millis(250));
