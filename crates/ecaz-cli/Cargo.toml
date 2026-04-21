@@ -14,6 +14,8 @@ clap = { version = "4", features = ["derive", "cargo", "env"] }
 color-eyre = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "signal"] }
 tokio-postgres = "0.7"
+bytes = "1"
+futures = "0.3"
 indicatif = "0.17"
 comfy-table = "7"
 ndarray = { version = "0.16", features = ["rayon"] }

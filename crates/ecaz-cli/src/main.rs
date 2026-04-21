@@ -11,6 +11,7 @@ mod commands;
 mod profiles;
 mod psql;
 mod reloptions;
+mod tsv;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -47,6 +47,64 @@ pub async fn connect(database: &str) -> Result<Client> {
     Ok(client)
 }
 
+/// Does a relation with the given name and `relkind` exist?
+pub async fn relation_exists(
+    client: &Client,
+    name: &str,
+    relkind: char,
+) -> Result<bool> {
+    let row = client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = $2)",
+            &[&name, &(relkind.to_string())],
+        )
+        .await
+        .wrap_err_with(|| format!("checking relation {name:?} exists"))?;
+    Ok(row.get::<_, bool>(0))
+}
+
+/// Row count for `table`, assumed to exist.
+pub async fn row_count(client: &Client, table: &str) -> Result<i64> {
+    let sql = format!("SELECT count(*) FROM {table}");
+    let row = client
+        .query_one(sql.as_str(), &[])
+        .await
+        .wrap_err_with(|| format!("counting rows in {table:?}"))?;
+    Ok(row.get::<_, i64>(0))
+}
+
+/// Does an index with the given `pg_class.reloptions` prefix exist? The
+/// caller passes the canonical `key=value` list; a match means every
+/// listed reloption is present (via array containment), so other
+/// reloptions we don't care about don't cause false negatives.
+pub async fn index_exists_with_reloptions(
+    client: &Client,
+    index: &str,
+    reloptions: &[(String, String)],
+) -> Result<bool> {
+    let normalized = crate::reloptions::normalize_list(reloptions);
+    if normalized.is_empty() {
+        let row = client
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = $1 AND relkind = 'i')",
+                &[&index],
+            )
+            .await?;
+        return Ok(row.get::<_, bool>(0));
+    }
+    let row = client
+        .query_one(
+            "SELECT EXISTS (
+                SELECT 1 FROM pg_class
+                WHERE relname = $1 AND relkind = 'i'
+                AND reloptions @> $2::text[]
+            )",
+            &[&index, &normalized],
+        )
+        .await?;
+    Ok(row.get::<_, bool>(0))
+}
+
 /// Build a `CREATE INDEX <name> ON <table> USING <am> (embedding <opclass>) WITH (...)`
 /// statement for the given profile and reloption list. The profile controls
 /// the access method and operator class; `reloptions` is passed through
