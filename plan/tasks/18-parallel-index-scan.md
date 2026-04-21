@@ -230,6 +230,11 @@ See ADR-040 for the full shape. Summary:
   can read the next admitted heap TID directly and only fall back to the
   shared admitted array when the cache needs refresh.
 
+- **Admission probe fast path.** Workers can now read a claim-safe probe for
+  the currently selected pending output and tell whether it would enter the
+  admitted window before taking the coordinator serializer, including duplicate
+  rejection and full-window tail comparison.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
