@@ -3,11 +3,15 @@
 //! All subcommands here accept `--profile` and `--prefix` so a single corpus
 //! can be measured against multiple access methods without re-loading data.
 //!
-//! v1 status: command tree is declared so the shape is visible; individual
-//! bench implementations land in v2 PRs (see crates/ecaz-cli/README.md).
+//! v1 status: `recall` is implemented. `latency`, `storage`, `overhead`
+//! remain stubs and land in follow-up commits.
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{eyre, Result};
+
+mod recall;
+
+pub use recall::RecallArgs;
 
 #[derive(Subcommand, Debug)]
 pub enum BenchCommand {
@@ -19,20 +23,6 @@ pub enum BenchCommand {
     Storage(StorageArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual SQL time.
     Overhead(OverheadArgs),
-}
-
-#[derive(Args, Debug)]
-pub struct RecallArgs {
-    #[arg(long)]
-    pub prefix: String,
-    #[arg(long, default_value = "ec_hnsw")]
-    pub profile: String,
-    /// k for recall@k.
-    #[arg(long, default_value_t = 10)]
-    pub k: usize,
-    /// Sweep values for the profile's tuning GUC (e.g. `--sweep 100,200,400`).
-    #[arg(long, value_delimiter = ',')]
-    pub sweep: Vec<i32>,
 }
 
 #[derive(Args, Debug)]
@@ -64,15 +54,20 @@ pub struct OverheadArgs {
 }
 
 impl BenchCommand {
-    pub async fn run(self, _database: &str) -> Result<()> {
-        Err(eyre!(
-            "ecaz bench {}: not yet implemented (ported in a v2 PR; see crates/ecaz-cli/README.md)",
-            match self {
-                BenchCommand::Recall(_) => "recall",
-                BenchCommand::Latency(_) => "latency",
-                BenchCommand::Storage(_) => "storage",
-                BenchCommand::Overhead(_) => "overhead",
+    pub async fn run(self, database: &str) -> Result<()> {
+        match self {
+            BenchCommand::Recall(args) => recall::run(database, args).await,
+            BenchCommand::Latency(_) | BenchCommand::Storage(_) | BenchCommand::Overhead(_) => {
+                Err(eyre!(
+                    "ecaz bench {}: not yet implemented (ported in a follow-up commit)",
+                    match self {
+                        BenchCommand::Latency(_) => "latency",
+                        BenchCommand::Storage(_) => "storage",
+                        BenchCommand::Overhead(_) => "overhead",
+                        BenchCommand::Recall(_) => unreachable!(),
+                    }
+                ))
             }
-        ))
+        }
     }
 }
