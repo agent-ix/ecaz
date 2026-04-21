@@ -39,6 +39,11 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) result_publish_generation: AtomicU32,
     pub(crate) selected_result_slot_index: AtomicU32,
     pub(crate) selected_result_score_bits: AtomicU32,
+    pub(crate) selected_pending_block_number: AtomicU32,
+    pub(crate) selected_pending_offset_number: AtomicU32,
+    pub(crate) selected_pending_approx_score_bits: AtomicU32,
+    pub(crate) selected_pending_comparison_score_bits: AtomicU32,
+    pub(crate) selected_pending_approx_rank_bits: AtomicU32,
 }
 
 #[repr(C)]
@@ -91,6 +96,7 @@ pub(crate) struct EcParallelWorkerSlot {
 const EC_PARALLEL_WORKER_SLOT_FREE: u32 = 0;
 const EC_PARALLEL_WORKER_SLOT_CLAIMED: u32 = 1;
 const EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID: u32 = 1 << 0;
+const EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID: u32 = 1 << 1;
 const EC_PARALLEL_RESULT_SLOT_PUBLISHED: u32 = 1 << 0;
 const EC_PARALLEL_RESULT_SLOT_SCORE_VALID: u32 = 1 << 1;
 const EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID: u32 = 1 << 2;
@@ -177,6 +183,7 @@ pub(crate) struct EcParallelCoordinatorSnapshot {
     pub(crate) result_publish_generation: u32,
     pub(crate) selected_result_slot_index: Option<u32>,
     pub(crate) selected_result_score: Option<f32>,
+    pub(crate) selected_pending_output: Option<EcParallelPendingOutputSnapshot>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -513,6 +520,15 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             result_publish_generation: AtomicU32::new(0),
             selected_result_slot_index: AtomicU32::new(u32::MAX),
             selected_result_score_bits: AtomicU32::new(0),
+            selected_pending_block_number: AtomicU32::new(
+                EcParallelItemPointer::INVALID.block_number,
+            ),
+            selected_pending_offset_number: AtomicU32::new(u32::from(
+                EcParallelItemPointer::INVALID.offset_number,
+            )),
+            selected_pending_approx_score_bits: AtomicU32::new(0),
+            selected_pending_comparison_score_bits: AtomicU32::new(0),
+            selected_pending_approx_rank_bits: AtomicU32::new(0),
         };
     }
 
@@ -722,6 +738,9 @@ fn load_coordinator_snapshot(
     coordinator: &EcParallelCoordinatorState,
 ) -> EcParallelCoordinatorSnapshot {
     let flags = coordinator.flags.load(Ordering::Acquire);
+    let selected_result_valid = flags & EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID != 0;
+    let selected_pending_output_valid =
+        flags & EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID != 0;
     EcParallelCoordinatorSnapshot {
         flags,
         claimed_worker_slots: coordinator.claimed_worker_slots.load(Ordering::Acquire),
@@ -729,21 +748,56 @@ fn load_coordinator_snapshot(
         result_publish_generation: coordinator
             .result_publish_generation
             .load(Ordering::Acquire),
-        selected_result_slot_index: (flags & EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID != 0)
-            .then(|| {
+        selected_result_slot_index: selected_result_valid.then(|| {
+            coordinator
+                .selected_result_slot_index
+                .load(Ordering::Acquire)
+        }),
+        selected_result_score: selected_result_valid.then(|| {
+            f32::from_bits(
                 coordinator
-                    .selected_result_slot_index
-                    .load(Ordering::Acquire)
-            }),
-        selected_result_score: (flags & EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID != 0).then(
-            || {
-                f32::from_bits(
+                    .selected_result_score_bits
+                    .load(Ordering::Acquire),
+            )
+        }),
+        selected_pending_output: selected_pending_output_valid.then(|| {
+            EcParallelPendingOutputSnapshot {
+                heap_tid: load_parallel_item_pointer(
+                    &coordinator.selected_pending_block_number,
+                    &coordinator.selected_pending_offset_number,
+                ),
+                score: f32::from_bits(
                     coordinator
                         .selected_result_score_bits
                         .load(Ordering::Acquire),
-                )
-            },
-        ),
+                ),
+                approx_score: (flags & EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID != 0).then(
+                    || {
+                        f32::from_bits(
+                            coordinator
+                                .selected_pending_approx_score_bits
+                                .load(Ordering::Acquire),
+                        )
+                    },
+                ),
+                comparison_score: (flags & EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID != 0)
+                    .then(|| {
+                        f32::from_bits(
+                            coordinator
+                                .selected_pending_comparison_score_bits
+                                .load(Ordering::Acquire),
+                        )
+                    }),
+                approx_rank: (flags & EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID != 0).then(|| {
+                    i32::from_ne_bytes(
+                        coordinator
+                            .selected_pending_approx_rank_bits
+                            .load(Ordering::Acquire)
+                            .to_ne_bytes(),
+                    )
+                }),
+            }
+        }),
     }
 }
 
@@ -1105,23 +1159,75 @@ unsafe fn reap_parallel_scan_dead_root_slots_with_attachment(
     }
 }
 
-fn refresh_coordinator_selected_result_fast_path_locked(
+fn refresh_coordinator_selected_fast_paths_locked(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
     let coordinator = unsafe { &*attachment.coordinator };
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
         Some(selected) => {
+            let pending_output = coordinator_pending_output_snapshot(&selected);
             coordinator
                 .selected_result_slot_index
                 .store(selected.slot_index, Ordering::Release);
             coordinator
                 .selected_result_score_bits
                 .store(selected.runtime.score.to_bits(), Ordering::Release);
-            coordinator.flags.fetch_or(
-                EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
-                Ordering::AcqRel,
-            );
+            if let Some(pending_output) = pending_output {
+                store_parallel_item_pointer(
+                    &coordinator.selected_pending_block_number,
+                    &coordinator.selected_pending_offset_number,
+                    pending_output.heap_tid,
+                );
+                coordinator.selected_pending_approx_score_bits.store(
+                    pending_output.approx_score.unwrap_or_default().to_bits(),
+                    Ordering::Release,
+                );
+                coordinator.selected_pending_comparison_score_bits.store(
+                    pending_output
+                        .comparison_score
+                        .unwrap_or_default()
+                        .to_bits(),
+                    Ordering::Release,
+                );
+                coordinator.selected_pending_approx_rank_bits.store(
+                    u32::from_ne_bytes(
+                        pending_output.approx_rank.unwrap_or_default().to_ne_bytes(),
+                    ),
+                    Ordering::Release,
+                );
+                let mut valid_flags = EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID;
+                if pending_output.approx_score.is_some() {
+                    valid_flags |= EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID;
+                }
+                if pending_output.comparison_score.is_some() {
+                    valid_flags |= EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID;
+                }
+                if pending_output.approx_rank.is_some() {
+                    valid_flags |= EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID;
+                }
+                coordinator.flags.store(valid_flags, Ordering::Release);
+            } else {
+                store_parallel_item_pointer(
+                    &coordinator.selected_pending_block_number,
+                    &coordinator.selected_pending_offset_number,
+                    EcParallelItemPointer::INVALID,
+                );
+                coordinator
+                    .selected_pending_approx_score_bits
+                    .store(0, Ordering::Release);
+                coordinator
+                    .selected_pending_comparison_score_bits
+                    .store(0, Ordering::Release);
+                coordinator
+                    .selected_pending_approx_rank_bits
+                    .store(0, Ordering::Release);
+                coordinator.flags.store(
+                    EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    Ordering::Release,
+                );
+            }
         }
         None => {
             coordinator
@@ -1130,10 +1236,21 @@ fn refresh_coordinator_selected_result_fast_path_locked(
             coordinator
                 .selected_result_score_bits
                 .store(0, Ordering::Release);
-            coordinator.flags.fetch_and(
-                !EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
-                Ordering::AcqRel,
+            store_parallel_item_pointer(
+                &coordinator.selected_pending_block_number,
+                &coordinator.selected_pending_offset_number,
+                EcParallelItemPointer::INVALID,
             );
+            coordinator
+                .selected_pending_approx_score_bits
+                .store(0, Ordering::Release);
+            coordinator
+                .selected_pending_comparison_score_bits
+                .store(0, Ordering::Release);
+            coordinator
+                .selected_pending_approx_rank_bits
+                .store(0, Ordering::Release);
+            coordinator.flags.store(0, Ordering::Release);
         }
     }
     Ok(())
@@ -1181,7 +1298,7 @@ fn refresh_coordinator_selection_snapshot_locked(
     unsafe { reap_dead_parallel_scan_result_slots_with_attachment(attachment) }?;
     unsafe { rebuild_parallel_scan_heap_with_attachment(attachment) }?;
     unsafe { reap_parallel_scan_dead_root_slots_with_attachment(attachment) }?;
-    refresh_coordinator_selected_result_fast_path_locked(attachment)
+    refresh_coordinator_selected_fast_paths_locked(attachment)
 }
 
 fn refresh_coordinator_selection_snapshot(
@@ -1625,7 +1742,7 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
         .fetch_add(1, Ordering::AcqRel);
     unsafe { upsert_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
     unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-    refresh_coordinator_selected_result_fast_path_locked(&attachment)?;
+    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
     Ok(true)
 }
 
@@ -1751,6 +1868,42 @@ pub(crate) unsafe fn read_parallel_scan_selected_result_slot_snapshot(
     Ok(None)
 }
 
+pub(crate) unsafe fn read_parallel_scan_selected_pending_output_snapshot(
+    state: *mut EcParallelScanState,
+) -> Result<Option<EcParallelCoordinatorPendingOutputSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    for _ in 0..2 {
+        let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+        let Some(slot_index) = coordinator.selected_result_slot_index else {
+            return Ok(None);
+        };
+        let Some(pending_output) = coordinator.selected_pending_output else {
+            let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+            refresh_coordinator_selection_snapshot_locked(&attachment)?;
+            continue;
+        };
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let selected_result_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+        if unsafe {
+            coordinator_result_slot_snapshot_is_live_with_attachment(
+                &attachment,
+                &selected_result_slot,
+            )
+        } && coordinator_pending_output_snapshot(&selected_result_slot) == Some(pending_output)
+        {
+            return Ok(Some(EcParallelCoordinatorPendingOutputSelection {
+                coordinator,
+                selected_result_slot,
+                pending_output,
+            }));
+        }
+        let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+        refresh_coordinator_selection_snapshot_locked(&attachment)?;
+    }
+
+    Ok(None)
+}
+
 pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
     state: *mut EcParallelScanState,
 ) -> Result<Option<EcParallelCoordinatorPendingOutputSelection>, &'static str> {
@@ -1806,6 +1959,7 @@ pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
             unsafe { &*attachment.coordinator }
                 .result_publish_generation
                 .fetch_add(1, Ordering::AcqRel);
+            refresh_coordinator_selected_fast_paths_locked(&attachment)?;
         } else {
             if !unsafe {
                 clear_parallel_scan_result_slot_locked(
@@ -1819,7 +1973,7 @@ pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
                 continue;
             }
             unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-            refresh_coordinator_selected_result_fast_path_locked(&attachment)?;
+            refresh_coordinator_selected_fast_paths_locked(&attachment)?;
         }
 
         return Ok(Some(EcParallelCoordinatorPendingOutputSelection {
@@ -1865,7 +2019,7 @@ pub(crate) unsafe fn take_parallel_scan_selected_result_slot_snapshot(
             continue;
         }
         unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-        refresh_coordinator_selected_result_fast_path_locked(&attachment)?;
+        refresh_coordinator_selected_fast_paths_locked(&attachment)?;
 
         return Ok(Some(EcParallelCoordinatorResultSelection {
             coordinator,
@@ -2293,12 +2447,26 @@ mod tests {
             unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
                 .expect("coordinator snapshot should read back"),
             EcParallelCoordinatorSnapshot {
-                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+                    | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
+                    | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
+                    | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
                 claimed_worker_slots: 1,
                 published_result_slots: 1,
                 result_publish_generation: 1,
                 selected_result_slot_index: Some(slot_index),
                 selected_result_score: Some(-9.5),
+                selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 88,
+                        offset_number: 3,
+                    },
+                    score: -9.5,
+                    approx_score: Some(-8.0),
+                    approx_rank: Some(5),
+                    comparison_score: Some(-9.25),
+                }),
             },
             "publishing a first result slot should update the coordinator counters and selected-result snapshot"
         );
@@ -2413,12 +2581,23 @@ mod tests {
         assert_eq!(
             selection.coordinator,
             EcParallelCoordinatorSnapshot {
-                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                 claimed_worker_slots: 2,
                 published_result_slots: 2,
                 result_publish_generation: 2,
                 selected_result_slot_index: Some(second_slot),
                 selected_result_score: Some(-6.5),
+                selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 11,
+                        offset_number: 2,
+                    },
+                    score: -6.5,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                }),
             },
             "selection should carry the current coordinator counters and selected-result snapshot too"
         );
@@ -2586,12 +2765,23 @@ mod tests {
             unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
                 .expect("coordinator snapshot should read back after republish"),
             EcParallelCoordinatorSnapshot {
-                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                 claimed_worker_slots: 2,
                 published_result_slots: 2,
                 result_publish_generation: 3,
                 selected_result_slot_index: Some(first_slot),
                 selected_result_score: Some(-9.0),
+                selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 71,
+                        offset_number: 2,
+                    },
+                    score: -9.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                }),
             },
             "republishing an existing slot with a lower score should retarget the coordinator fast path to that slot"
         );
@@ -2679,6 +2869,100 @@ mod tests {
     }
 
     #[test]
+    fn read_parallel_scan_selected_pending_output_snapshot_reads_coordinator_fast_path() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index =
+            unsafe { claim_parallel_scan_worker_slot(&attachment) }.expect("claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 141,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 141,
+                        offset_number: 2,
+                    },
+                    score: -8.0,
+                    approx_score: Some(-7.5),
+                    comparison_score: Some(-8.25),
+                    approx_rank_base: Some(3),
+                    pending_count: 2,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([
+                        EcParallelItemPointer {
+                            block_number: 141,
+                            offset_number: 2,
+                        },
+                        EcParallelItemPointer {
+                            block_number: 141,
+                            offset_number: 3,
+                        },
+                    ]),
+                },
+            )
+        }
+        .expect("publish should succeed");
+
+        let selection =
+            unsafe { read_parallel_scan_selected_pending_output_snapshot(attachment.state) }
+                .expect("pending direct read should succeed")
+                .expect("pending direct read should surface the coordinator-selected output");
+        assert_eq!(
+            selection.coordinator.selected_result_slot_index,
+            Some(slot_index),
+            "pending direct read should report the coordinator-selected slot"
+        );
+        assert_eq!(
+            selection.coordinator.selected_pending_output,
+            Some(EcParallelPendingOutputSnapshot {
+                heap_tid: EcParallelItemPointer {
+                    block_number: 141,
+                    offset_number: 2,
+                },
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-8.25),
+            }),
+            "pending direct read should expose the cached next output"
+        );
+        assert_eq!(
+            selection.pending_output,
+            EcParallelPendingOutputSnapshot {
+                heap_tid: EcParallelItemPointer {
+                    block_number: 141,
+                    offset_number: 2,
+                },
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-8.25),
+            },
+            "pending direct read should return the selected pending output details"
+        );
+        assert_eq!(
+            selection.selected_result_slot.runtime.pending_index, 0,
+            "pending direct read should not advance the staged slot"
+        );
+    }
+
+    #[test]
     fn read_parallel_scan_selected_result_slot_snapshot_returns_none_without_selection() {
         let mut storage = TestParallelScanStorage::default();
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
@@ -2760,12 +3044,23 @@ mod tests {
                 .expect("direct read should succeed after claim drop"),
             Some(EcParallelCoordinatorResultSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 3,
                     selected_result_slot_index: Some(first_slot),
                     selected_result_score: Some(-4.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 71,
+                            offset_number: 2,
+                        },
+                        score: -4.0,
+                        approx_score: None,
+                        approx_rank: None,
+                        comparison_score: None,
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID,
@@ -2896,6 +3191,7 @@ mod tests {
                 result_publish_generation: 2,
                 selected_result_slot_index: None,
                 selected_result_score: None,
+                selected_pending_output: None,
             },
             "refreshing past an unclaimed staged result should clear the coordinator fast path"
         );
@@ -2961,12 +3257,23 @@ mod tests {
                 .expect("take should succeed"),
             Some(EcParallelCoordinatorResultSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 1,
                     selected_result_slot_index: Some(slot_index),
                     selected_result_score: Some(-9.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 51,
+                            offset_number: 2,
+                        },
+                        score: -9.0,
+                        approx_score: None,
+                        approx_rank: None,
+                        comparison_score: None,
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID,
@@ -3009,6 +3316,7 @@ mod tests {
                 result_publish_generation: 2,
                 selected_result_slot_index: None,
                 selected_result_score: None,
+                selected_pending_output: None,
             },
             "taking the selected staged result should clear the coordinator snapshot"
         );
@@ -3073,12 +3381,23 @@ mod tests {
                 .expect("direct read should succeed after take"),
             Some(EcParallelCoordinatorResultSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                     claimed_worker_slots: 2,
                     published_result_slots: 1,
                     result_publish_generation: 3,
                     selected_result_slot_index: Some(first_slot),
                     selected_result_score: Some(-4.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 61,
+                            offset_number: 2,
+                        },
+                        score: -4.0,
+                        approx_score: None,
+                        approx_rank: None,
+                        comparison_score: None,
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
@@ -3160,12 +3479,26 @@ mod tests {
                 .expect("pending take should succeed"),
             Some(EcParallelCoordinatorPendingOutputSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 1,
                     selected_result_slot_index: Some(slot_index),
                     selected_result_score: Some(-9.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 91,
+                            offset_number: 2,
+                        },
+                        score: -9.0,
+                        approx_score: Some(-8.5),
+                        approx_rank: Some(6),
+                        comparison_score: Some(-9.25),
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
@@ -3206,12 +3539,23 @@ mod tests {
                 .expect("direct read should succeed after pending take"),
             Some(EcParallelCoordinatorResultSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID
+                        | EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID,
                     claimed_worker_slots: 1,
                     published_result_slots: 1,
                     result_publish_generation: 2,
                     selected_result_slot_index: Some(slot_index),
                     selected_result_score: Some(-9.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: second_heap_tid,
+                        score: -9.0,
+                        approx_score: Some(-8.5),
+                        approx_rank: Some(7),
+                        comparison_score: Some(-9.25),
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
@@ -3364,12 +3708,23 @@ mod tests {
             unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
                 .expect("coordinator snapshot should read back after publish"),
             EcParallelCoordinatorSnapshot {
-                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                 claimed_worker_slots: 2,
                 published_result_slots: 2,
                 result_publish_generation: 2,
                 selected_result_slot_index: Some(second_slot),
                 selected_result_score: Some(-7.0),
+                selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 32,
+                        offset_number: 2,
+                    },
+                    score: -7.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                }),
             },
             "coordinator snapshot should point at the lowest-score staged result before clear"
         );
@@ -3390,12 +3745,23 @@ mod tests {
             unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
                 .expect("coordinator snapshot should read back after clear"),
             EcParallelCoordinatorSnapshot {
-                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                    | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                 claimed_worker_slots: 2,
                 published_result_slots: 1,
                 result_publish_generation: 3,
                 selected_result_slot_index: Some(first_slot),
                 selected_result_score: Some(-4.0),
+                selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 31,
+                        offset_number: 2,
+                    },
+                    score: -4.0,
+                    approx_score: None,
+                    approx_rank: None,
+                    comparison_score: None,
+                }),
             },
             "clearing the selected slot should refresh the coordinator snapshot to the remaining best staged result"
         );
@@ -3405,12 +3771,23 @@ mod tests {
                 .expect("direct read should still see the remaining staged result"),
             EcParallelCoordinatorResultSelection {
                 coordinator: EcParallelCoordinatorSnapshot {
-                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID,
+                    flags: EC_PARALLEL_COORDINATOR_SELECTED_RESULT_VALID
+                        | EC_PARALLEL_COORDINATOR_SELECTED_PENDING_OUTPUT_VALID,
                     claimed_worker_slots: 2,
                     published_result_slots: 1,
                     result_publish_generation: 3,
                     selected_result_slot_index: Some(first_slot),
                     selected_result_score: Some(-4.0),
+                    selected_pending_output: Some(EcParallelPendingOutputSnapshot {
+                        heap_tid: EcParallelItemPointer {
+                            block_number: 31,
+                            offset_number: 2,
+                        },
+                        score: -4.0,
+                        approx_score: None,
+                        approx_rank: None,
+                        comparison_score: None,
+                    }),
                 },
                 selected_result_slot: EcParallelCoordinatorResultSlotSnapshot {
                     flags: EC_PARALLEL_RESULT_SLOT_PUBLISHED
@@ -3573,6 +3950,7 @@ mod tests {
                 result_publish_generation: 2,
                 selected_result_slot_index: None,
                 selected_result_score: None,
+                selected_pending_output: None,
             },
             "publishing then clearing should leave the coordinator with no staged results"
         );
@@ -3661,6 +4039,7 @@ mod tests {
                 result_publish_generation: 2,
                 selected_result_slot_index: None,
                 selected_result_score: None,
+                selected_pending_output: None,
             },
             "release should also clear the coordinator-owned result slot for the worker"
         );
@@ -3800,6 +4179,7 @@ mod tests {
                 result_publish_generation: 0,
                 selected_result_slot_index: None,
                 selected_result_score: None,
+                selected_pending_output: None,
             },
             "rescan should also clear the staged coordinator-result counters"
         );

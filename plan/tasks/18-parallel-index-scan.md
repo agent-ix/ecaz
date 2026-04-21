@@ -214,6 +214,11 @@ See ADR-040 for the full shape. Summary:
   worker result is fully emitted. This is still the staged worker-frontier
   merge seam, not the final shared top-K admission heap described by ADR-040.
 
+- **Coordinator pending-output fast path.** The coordinator snapshot now also
+  caches the currently selected pending output itself, so later merge work can
+  read the next global heap TID plus score metadata directly instead of
+  recomputing it from the staged worker slot on every read.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
