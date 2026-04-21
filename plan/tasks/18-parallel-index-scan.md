@@ -290,6 +290,10 @@ See ADR-040 for the full shape. Summary:
   `Empty`, `Blocked`, and `Emitted` states instead of collapsing blocked-owner
   waits into a plain `None`. That gives the remaining handoff work a concrete
   state machine at the scan layer instead of inferring ownership from absence.
+  The blocked state now also carries the blocker reason
+  (`ForeignSelectedPending`, `ForeignAdmittedHead`, or `AdmissionWindow`) so
+  the eventual worker/consumer handoff can branch on explicit ownership
+  metadata instead of reverse-engineering it from coordinator side effects.
 
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete

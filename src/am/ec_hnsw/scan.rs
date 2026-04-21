@@ -3350,7 +3350,7 @@ struct PendingScanOutput {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ParallelScanOutputState {
     Empty,
-    Blocked,
+    Blocked(super::parallel::EcParallelOwnedOutputBlocker),
     Emitted(PendingScanOutput),
 }
 
@@ -3591,8 +3591,8 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         super::parallel::EcParallelOwnedOutputState::Empty => {
             return ParallelScanOutputState::Empty;
         }
-        super::parallel::EcParallelOwnedOutputState::Blocked => {
-            return ParallelScanOutputState::Blocked;
+        super::parallel::EcParallelOwnedOutputState::Blocked(blocker) => {
+            return ParallelScanOutputState::Blocked(blocker);
         }
         super::parallel::EcParallelOwnedOutputState::Ready => {}
     }
@@ -6863,7 +6863,12 @@ mod tests {
 
         assert_eq!(
             output,
-            ParallelScanOutputState::Blocked,
+            ParallelScanOutputState::Blocked(
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(second_slot),
+                },
+            ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
         );
         let result_snapshot = unsafe {
@@ -7055,7 +7060,12 @@ mod tests {
         let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) };
         assert_eq!(
             output,
-            ParallelScanOutputState::Blocked,
+            ParallelScanOutputState::Blocked(
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(second_slot),
+                },
+            ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
         );
         let result_snapshot = unsafe {

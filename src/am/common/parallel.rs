@@ -312,10 +312,23 @@ pub(crate) struct EcParallelCoordinatorAdmittedHeadSelection {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum EcParallelOwnedOutputBlockerKind {
+    ForeignSelectedPending,
+    ForeignAdmittedHead,
+    AdmissionWindow,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelOwnedOutputBlocker {
+    pub(crate) kind: EcParallelOwnedOutputBlockerKind,
+    pub(crate) slot_index: Option<u32>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum EcParallelOwnedOutputState {
     Empty,
     Ready,
-    Blocked,
+    Blocked(EcParallelOwnedOutputBlocker),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -2924,7 +2937,12 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
     };
 
     if coordinator.selected_result_slot_index != Some(owner_slot_index) {
-        return Ok(EcParallelOwnedOutputState::Blocked);
+        return Ok(EcParallelOwnedOutputState::Blocked(
+            EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: coordinator.selected_result_slot_index,
+            },
+        ));
     }
 
     let selected = EcParallelCoordinatorPendingOutputSelection {
@@ -2943,9 +2961,20 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
         {
             return Ok(EcParallelOwnedOutputState::Ready);
         }
+        return Ok(EcParallelOwnedOutputState::Blocked(
+            EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                slot_index: snapshot.source_slot_index,
+            },
+        ));
     }
 
-    Ok(EcParallelOwnedOutputState::Blocked)
+    Ok(EcParallelOwnedOutputState::Blocked(
+        EcParallelOwnedOutputBlocker {
+            kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+            slot_index: None,
+        },
+    ))
 }
 
 pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
@@ -7108,8 +7137,246 @@ mod tests {
         assert_eq!(
             unsafe { read_parallel_scan_owned_output_state(attachment.state, second_slot, 2) }
                 .expect("owned output state read should succeed"),
-            EcParallelOwnedOutputState::Blocked,
+            EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(first_slot),
+            }),
             "a worker with local staged output should report blocked while a foreign slot remains selected"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_owned_output_state_reports_admission_window_blocker() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 260,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 261,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 1) }
+                .expect("first admission should succeed")
+                .expect("first admission should expose the selected pending output")
+                .admitted,
+            "first slot should seed the admitted window"
+        );
+        unsafe {
+            clear_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+            )
+        }
+        .expect("clearing the already-admitted foreign staged slot should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 262,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 263,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("second publish should succeed");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_owned_output_state(attachment.state, second_slot, 1) }
+                .expect("owned output state read should succeed"),
+            EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+                slot_index: None,
+            }),
+            "a local pending output that loses the full admitted window should report an admission-window blocker"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_owned_output_state_reports_foreign_admitted_head_blocker() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+        let third_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("third worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 270,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 271,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("first admission should succeed")
+                .expect("first admission should expose the selected pending output")
+                .admitted,
+            "first slot should seed the admitted window"
+        );
+        unsafe {
+            clear_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+            )
+        }
+        .expect("clearing the already-admitted foreign staged slot should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 272,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -2.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 273,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("second publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 3) }
+                .expect("second admission should succeed")
+                .expect("second admission should expose the selected pending output")
+                .admitted,
+            "second slot should extend the admitted window with a weaker tail"
+        );
+        unsafe {
+            clear_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+            )
+        }
+        .expect("clearing the already-admitted foreign tail slot should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                third_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 274,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 275,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("third publish should succeed");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_owned_output_state(attachment.state, third_slot, 3) }
+                .expect("owned output state read should succeed"),
+            EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                slot_index: Some(first_slot),
+            }),
+            "a local selected pending output that would admit behind a better foreign head should report a foreign-admitted-head blocker"
         );
     }
 
