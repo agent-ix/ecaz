@@ -67,6 +67,23 @@ impl IndexProfile {
     pub fn sweep_axis_is_m(&self) -> bool {
         matches!(self.sweep_axis, SweepAxis::M)
     }
+
+    /// Return the subset of `reloptions` keys not in
+    /// [`IndexProfile::known_reloptions`]. Used by commands to surface
+    /// typos early (`--reloption graph_degre=48`) rather than letting
+    /// Postgres reject them at `CREATE INDEX` time. Unknown keys still
+    /// pass through verbatim — the caller decides whether to warn or
+    /// stop.
+    pub fn unknown_reloption_keys<'a>(
+        &self,
+        reloptions: &'a [(String, String)],
+    ) -> Vec<&'a str> {
+        reloptions
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .filter(|k| !self.known_reloptions.iter().any(|known| known == k))
+            .collect()
+    }
 }
 
 pub const EC_HNSW: IndexProfile = IndexProfile {
@@ -195,6 +212,44 @@ mod tests {
         // fails, the multi-corpus story in README.md needs updating.
         assert_eq!(EC_HNSW.embedding_type, EC_DISKANN.embedding_type);
         assert_eq!(EC_HNSW.encoder_function, EC_DISKANN.encoder_function);
+    }
+
+    #[test]
+    fn unknown_reloption_keys_returns_only_keys_outside_known_set() {
+        let opts = vec![
+            ("graph_degree".to_string(), "48".to_string()),
+            ("graph_degre".to_string(), "48".to_string()), // typo
+            ("alpha".to_string(), "1.2".to_string()),
+            ("rerank_budge".to_string(), "64".to_string()), // typo
+        ];
+        let unknown = EC_DISKANN.unknown_reloption_keys(&opts);
+        assert_eq!(unknown, vec!["graph_degre", "rerank_budge"]);
+    }
+
+    #[test]
+    fn unknown_reloption_keys_empty_when_all_known() {
+        let opts = vec![
+            ("m".to_string(), "8".to_string()),
+            ("ef_construction".to_string(), "128".to_string()),
+        ];
+        assert!(EC_HNSW.unknown_reloption_keys(&opts).is_empty());
+    }
+
+    #[test]
+    fn unknown_reloption_keys_empty_when_no_reloptions() {
+        assert!(EC_HNSW.unknown_reloption_keys(&[]).is_empty());
+    }
+
+    #[test]
+    fn unknown_reloption_keys_is_case_sensitive() {
+        // SQL is case-insensitive for identifiers, but pg_class.reloptions
+        // stores canonical lowercase — surface GRAPH_DEGREE as unknown so
+        // the operator sees a clean warning rather than a silent downcase.
+        let opts = vec![("GRAPH_DEGREE".to_string(), "48".to_string())];
+        assert_eq!(
+            EC_DISKANN.unknown_reloption_keys(&opts),
+            vec!["GRAPH_DEGREE"]
+        );
     }
 
     #[test]

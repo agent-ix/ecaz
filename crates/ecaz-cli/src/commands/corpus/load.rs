@@ -113,6 +113,18 @@ pub async fn run(database: &str, args: LoadArgs) -> Result<()> {
         ));
     }
 
+    let unknown = profile.unknown_reloption_keys(&args.reloptions);
+    if !unknown.is_empty() {
+        eprintln!(
+            "[loader] warning: profile {:?} does not list {} as known reloption{}; \
+             passing through verbatim. Known reloptions: {}",
+            profile.name,
+            unknown.join(", "),
+            if unknown.len() == 1 { "" } else { "s" },
+            profile.known_reloptions.join(", ")
+        );
+    }
+
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
     let index_prefix = match args.storage_format.as_deref() {
