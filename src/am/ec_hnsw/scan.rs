@@ -3575,6 +3575,23 @@ unsafe fn try_take_parallel_scan_next_output(
     Some(output)
 }
 
+unsafe fn emit_materialized_parallel_scan_output(
+    opaque: &mut TqScanOpaque,
+    selected: SelectedScanResult,
+) -> Option<PendingScanOutput> {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        return None;
+    }
+
+    active_result_state_mut(opaque).materialize(selected);
+    let output = unsafe { try_take_parallel_scan_next_output(opaque) }.unwrap_or_else(|| {
+        pgrx::error!("ec_hnsw parallel scan materialization did not produce a coordinator output")
+    });
+    Some(output)
+}
+
 unsafe fn produce_next_scan_heap_tid(
     scan: pg_sys::IndexScanDesc,
     index_relation: pg_sys::Relation,
@@ -4747,6 +4764,12 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     };
 
     mark_emitted_element(opaque, selected.element_tid);
+    if let Some(output) = unsafe { emit_materialized_parallel_scan_output(opaque, selected) } {
+        emit_scan_output(scan, opaque, output);
+        opaque.explain_counters.record_heap_tid_returned();
+        return true;
+    }
+
     let emitted = linear_fallback_cursor(opaque)
         .emit_materialized_output(selected)
         .map(|output| {
@@ -5148,7 +5171,7 @@ impl Default for CurrentScanResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct SelectedScanResult {
     element_tid: page::ItemPointer,
     score: f32,
@@ -6513,6 +6536,96 @@ mod tests {
         assert_eq!(
             result_snapshot.runtime.pending_index, 1,
             "republish after consume should keep shared pending-index state aligned with the local cursor"
+        );
+    }
+
+    #[test]
+    fn emit_materialized_parallel_scan_output_routes_new_local_row_through_shared_merge() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+
+        let output = unsafe {
+            emit_materialized_parallel_scan_output(
+                &mut opaque,
+                SelectedScanResult {
+                    element_tid: tid(27, 1),
+                    score: -5.0,
+                    approx_score: None,
+                    approx_rank_base: None,
+                    comparison_score: Some(-5.5),
+                    heap_tids: CachedHeapTids::from_iter([tid(32, 1), tid(32, 2)]),
+                },
+            )
+        }
+        .expect(
+            "parallel merge should emit the first heap tid from a newly materialized local row",
+        );
+
+        assert_eq!(
+            output,
+            PendingScanOutput {
+                heap_tid: tid(32, 1),
+                score: -5.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: Some(-5.5),
+            },
+            "newly materialized local fallback rows should flow through the shared coordinator merge path"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.pending_index(),
+            1,
+            "shared merge consume should advance the local fallback duplicate-drain cursor immediately"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 32,
+                offset_number: 2,
+            },
+            "republish after the merged consume should expose the next local duplicate in the shared result-slot snapshot"
         );
     }
 

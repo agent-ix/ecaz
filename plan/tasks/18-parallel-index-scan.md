@@ -258,6 +258,8 @@ See ADR-040 for the full shape. Summary:
   and republishes the local worker snapshot afterward so the next duplicate or
   next staged row stays visible. This still uses the descriptor-capacity
   admitted window because planner-visible LIMIT budgeting is not wired yet.
+  Newly materialized linear-fallback rows now stage through that same shared
+  merge seam instead of bypassing the coordinator on first emit.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
