@@ -190,6 +190,12 @@ See ADR-040 for the full shape. Summary:
   worker-slot capacity, so the heap layout remains query-independent while the
   real lock-guarded push/pop admission path is still deferred.
 
+- **Heap-root drain staging.** Coordinator staged-result take now clears the
+  selected slot, pops the shared heap root in place, and refreshes the
+  fast-path snapshot from the next heap root instead of rebuilding the entire
+  heap after every staged consume. Full shared top-K admission and mutation
+  remain deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
