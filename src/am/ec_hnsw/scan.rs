@@ -976,9 +976,10 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
                 pg_sys::ForkNumber::MAIN_FORKNUM,
             );
             let scan_tuning = super::options::resolve_scan_tuning(&index_options);
-            opaque.bootstrap_frontier_limit = usize::try_from(scan_tuning.effective_ef_search)
-                .expect("ef_search should fit in usize")
-                .max(1);
+            opaque.bootstrap_frontier_limit = resolve_bootstrap_frontier_limit(
+                scan_tuning,
+                opaque.parallel_scan_worker_slot_count,
+            );
             #[cfg(any(test, feature = "pg_test"))]
             let scan_setup_elapsed_us = u64::try_from(scan_setup_started.elapsed().as_micros())
                 .expect("timing should fit in u64");
@@ -1213,6 +1214,18 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
             }
         }
     }
+}
+
+fn resolve_bootstrap_frontier_limit(
+    tuning: super::options::ScanTuning,
+    parallel_worker_slot_count: u32,
+) -> usize {
+    usize::try_from(super::options::resolve_parallel_scan_ef_search(
+        tuning,
+        parallel_worker_slot_count,
+    ))
+    .expect("ef_search should fit in usize")
+    .max(1)
 }
 
 fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
@@ -8379,6 +8392,43 @@ mod tests {
         assert_ne!(
             first_worker_candidates, second_worker_candidates,
             "different worker slots should stage different bootstrap tails from the same scan seed"
+        );
+    }
+
+    #[test]
+    fn resolve_bootstrap_frontier_limit_keeps_serial_budget_without_parallel_slots() {
+        let tuning = super::super::options::ScanTuning {
+            relation_ef_search: 100,
+            session_ef_search: None,
+            effective_ef_search: 100,
+            source: super::super::options::EfSearchSource::Relation,
+        };
+
+        assert_eq!(
+            resolve_bootstrap_frontier_limit(tuning, 0),
+            100,
+            "unbound scans should keep the serial ef_search frontier budget"
+        );
+        assert_eq!(
+            resolve_bootstrap_frontier_limit(tuning, 1),
+            100,
+            "single-worker staged scans should keep the serial ef_search frontier budget"
+        );
+    }
+
+    #[test]
+    fn resolve_bootstrap_frontier_limit_uses_parallel_overlap_split() {
+        let tuning = super::super::options::ScanTuning {
+            relation_ef_search: 100,
+            session_ef_search: None,
+            effective_ef_search: 100,
+            source: super::super::options::EfSearchSource::Relation,
+        };
+
+        assert_eq!(
+            resolve_bootstrap_frontier_limit(tuning, 4),
+            28,
+            "parallel-bound scans should use the staged per-worker ef_search split with overlap"
         );
     }
 

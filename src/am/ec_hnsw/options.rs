@@ -11,9 +11,13 @@ use super::{
 pub(crate) use crate::quant::Family as StorageFormat;
 
 const EC_HNSW_SESSION_EF_SEARCH_UNSET: i32 = -1;
+const EC_HNSW_DEFAULT_PARALLEL_EF_OVERLAP: f64 = 0.1;
+const EC_HNSW_MAX_PARALLEL_EF_OVERLAP: f64 = 0.5;
 
 static EC_HNSW_EF_SEARCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(EC_HNSW_SESSION_EF_SEARCH_UNSET);
+static EC_HNSW_PARALLEL_EF_OVERLAP_GUC: GucSetting<f64> =
+    GucSetting::<f64>::new(EC_HNSW_DEFAULT_PARALLEL_EF_OVERLAP);
 static EC_HNSW_DISABLE_BINARY_PREFILTER_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static EC_HNSW_FORCE_BINARY_DERIVATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
@@ -75,6 +79,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_float_guc(
+        c"ec_hnsw.parallel_ef_overlap",
+        c"Overlap multiplier for staged parallel ec_hnsw search breadth.",
+        c"Applies a 0.0-0.5 overlap term to the staged per-worker ec_hnsw ef_search budget when a parallel-scan descriptor is bound; planner-visible actual worker-count budgeting remains deferred.",
+        &EC_HNSW_PARALLEL_EF_OVERLAP_GUC,
+        0.0,
+        EC_HNSW_MAX_PARALLEL_EF_OVERLAP,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_hnsw.disable_binary_prefilter",
         c"Disable ADR-031 binary prefilter runtime behavior.",
@@ -95,6 +109,16 @@ pub(super) fn register_gucs() {
 
 pub(super) fn current_session_ef_search() -> i32 {
     EC_HNSW_EF_SEARCH_GUC.get()
+}
+
+#[cfg(test)]
+pub(crate) fn current_parallel_ef_overlap() -> f64 {
+    EC_HNSW_DEFAULT_PARALLEL_EF_OVERLAP
+}
+
+#[cfg(not(test))]
+pub(crate) fn current_parallel_ef_overlap() -> f64 {
+    EC_HNSW_PARALLEL_EF_OVERLAP_GUC.get()
 }
 
 #[cfg(test)]
@@ -121,6 +145,17 @@ pub(crate) fn resolve_scan_tuning(options: &TqHnswOptions) -> ScanTuning {
     resolve_scan_tuning_values(options.ef_search, current_session_ef_search())
 }
 
+pub(crate) fn resolve_parallel_scan_ef_search(
+    tuning: ScanTuning,
+    worker_slot_capacity: u32,
+) -> i32 {
+    resolve_parallel_scan_ef_search_values(
+        tuning.effective_ef_search,
+        worker_slot_capacity,
+        current_parallel_ef_overlap(),
+    )
+}
+
 fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -> ScanTuning {
     if session_ef_search == EC_HNSW_SESSION_EF_SEARCH_UNSET {
         ScanTuning {
@@ -137,6 +172,22 @@ fn resolve_scan_tuning_values(relation_ef_search: i32, session_ef_search: i32) -
             source: EfSearchSource::Session,
         }
     }
+}
+
+fn resolve_parallel_scan_ef_search_values(
+    effective_ef_search: i32,
+    worker_slot_capacity: u32,
+    overlap: f64,
+) -> i32 {
+    if worker_slot_capacity <= 1 {
+        return effective_ef_search.max(1);
+    }
+
+    let worker_count =
+        i32::try_from(worker_slot_capacity).expect("worker slot capacity should fit in i32");
+    let per_worker_base = ((effective_ef_search.max(1) + worker_count - 1) / worker_count) as f64;
+    let overlapped = (per_worker_base * (1.0 + overlap)).ceil();
+    overlapped.clamp(1.0, i32::MAX as f64).round() as i32
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_hnsw_amoptions(
@@ -288,9 +339,9 @@ pub(crate) unsafe fn relation_options(index_relation: pg_sys::Relation) -> TqHns
 #[cfg(test)]
 mod tests {
     use super::{
-        disable_binary_prefilter, force_binary_derivation, resolve_scan_tuning_values,
-        EfSearchSource, ScanTuning, StorageFormat, EC_HNSW_DEFAULT_EF_SEARCH,
-        EC_HNSW_SESSION_EF_SEARCH_UNSET,
+        disable_binary_prefilter, force_binary_derivation, resolve_parallel_scan_ef_search_values,
+        resolve_scan_tuning_values, EfSearchSource, ScanTuning, StorageFormat,
+        EC_HNSW_DEFAULT_EF_SEARCH, EC_HNSW_SESSION_EF_SEARCH_UNSET,
     };
 
     #[test]
@@ -342,6 +393,26 @@ mod tests {
                 effective_ef_search: EC_HNSW_DEFAULT_EF_SEARCH,
                 source: EfSearchSource::Session,
             }
+        );
+    }
+
+    #[test]
+    fn resolve_parallel_scan_ef_search_keeps_serial_budget_without_parallel_slots() {
+        assert_eq!(resolve_parallel_scan_ef_search_values(100, 0, 0.1), 100);
+        assert_eq!(resolve_parallel_scan_ef_search_values(100, 1, 0.1), 100);
+    }
+
+    #[test]
+    fn resolve_parallel_scan_ef_search_splits_and_overlaps_budget() {
+        assert_eq!(
+            resolve_parallel_scan_ef_search_values(100, 4, 0.1),
+            28,
+            "100 total ef_search over four staged workers should ceil(25 * 1.1)"
+        );
+        assert_eq!(
+            resolve_parallel_scan_ef_search_values(101, 4, 0.1),
+            29,
+            "non-divisible budgets should ceil the per-worker base before applying overlap"
         );
     }
 

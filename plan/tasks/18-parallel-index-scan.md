@@ -268,6 +268,13 @@ See ADR-040 for the full shape. Summary:
   `n=1` paths stay byte-identical because unbound and single-worker scans keep
   the original ordered bootstrap candidate list.
 
+- **Capacity-based `ef_search` split staging.** Bound parallel scans now use
+  `ec_hnsw.parallel_ef_overlap` (default `0.1`) plus the shared descriptor's
+  worker-slot capacity to derive a staged per-worker bootstrap frontier limit.
+  This is still an upper-bound stand-in for the eventual executor-visible
+  actual worker count, so planner-visible cost and LIMIT budgeting remain
+  deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
