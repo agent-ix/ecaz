@@ -1917,6 +1917,58 @@ mod tests {
         materialized
     }
 
+    #[pg_test]
+    fn test_ec_diskann_session_list_size_override_changes_scan_width() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_session_list_size_override (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_session_list_size_override VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.9, 0.1, 0.0, 0.0], 4, 42)),
+             (3, encode_to_ecvector(ARRAY[0.8, 0.2, 0.0, 0.0], 4, 42)),
+             (4, encode_to_ecvector(ARRAY[0.7, 0.3, 0.0, 0.0], 4, 42))",
+        )
+        .expect("fixture rows should insert");
+        Spi::run(
+            "CREATE INDEX ec_diskann_session_list_size_override_idx ON ec_diskann_session_list_size_override USING ec_diskann \
+             (embedding ecvector_diskann_ip_ops) WITH (list_size = 111)",
+        )
+        .expect("index creation should succeed");
+
+        let index_relation = unsafe {
+            pg_sys::index_open(
+                index_oid("ec_diskann_session_list_size_override_idx"),
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+
+        let relation_options = unsafe { super::options::relation_options(index_relation) };
+        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        let relation_opaque =
+            scan_state::DiskannScanOpaque::new(metadata, chain, relation_options.clone())
+                .expect("relation scan state should build");
+        assert_eq!(
+            relation_opaque.list_size, 111,
+            "without a session override, DiskANN scan state should use the reloption width",
+        );
+
+        Spi::run("SET ec_diskann.list_size = 7").expect("session override should succeed");
+        let (metadata, chain) = unsafe { scan_state::materialize_chain_from_index(index_relation) }
+            .expect("materialize_chain_from_index should succeed");
+        let session_opaque = scan_state::DiskannScanOpaque::new(metadata, chain, relation_options)
+            .expect("session scan state should build");
+        assert_eq!(
+            session_opaque.list_size, 7,
+            "session ec_diskann.list_size should override the reloption during scan setup",
+        );
+        Spi::run("RESET ec_diskann.list_size").expect("reset should succeed");
+
+        unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    }
+
     fn explain_text(sql: &str) -> String {
         Spi::connect(|client| {
             let rows = client

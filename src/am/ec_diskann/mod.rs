@@ -21,6 +21,10 @@ pub mod tuple;
 pub mod vacuum;
 pub mod vamana;
 
+pub(crate) fn register_gucs() {
+    options::register_gucs();
+}
+
 pub(super) const ECDISKANN_DEFAULT_GRAPH_DEGREE: i32 = 32;
 pub(super) const ECDISKANN_MIN_GRAPH_DEGREE: i32 = 4;
 pub(super) const ECDISKANN_MAX_GRAPH_DEGREE: i32 = 256;
@@ -46,3 +50,4 @@ pub(super) const ECDISKANN_MIN_ALPHA: f32 = 1.0;
 pub(super) const ECDISKANN_MAX_ALPHA: f32 = 2.0;
 
 pub(super) const ECDISKANN_PLANNER_SCAN_ENABLED: bool = true;
+pub(super) const ECDISKANN_UNIT_NORM_DISTANCE_BIAS: f32 = 1.0;

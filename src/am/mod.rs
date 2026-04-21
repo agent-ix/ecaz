@@ -17,6 +17,7 @@ pub(crate) use self::ec_ivf::{
 };
 
 pub(crate) fn register_gucs() {
+    ec_diskann::register_gucs();
     ec_hnsw::register_gucs();
     ec_ivf::register_gucs();
 }

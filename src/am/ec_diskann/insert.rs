@@ -41,6 +41,7 @@ use super::{
     scan_state,
     tuple::VamanaNodeTuple,
     vamana::{robust_prune, Candidate},
+    ECDISKANN_UNIT_NORM_DISTANCE_BIAS,
 };
 
 const EMPTY_INSERT_BOOTSTRAP_KMEANS_ITERS: usize = 8;
@@ -1590,7 +1591,7 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> Result<f32, Str
         .zip(right.iter())
         .map(|(lhs, rhs)| lhs * rhs)
         .sum::<f32>();
-    Ok((-ip).max(0.0))
+    Ok((ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ip).max(0.0))
 }
 
 #[cfg(test)]
@@ -1611,6 +1612,20 @@ mod tests {
             vec![0.3, -0.7, 0.8, -0.1, 0.9, -0.4, 0.6, -0.2],
             vec![-0.4, 0.6, -0.9, 0.2, -0.8, 0.5, -0.3, 0.1],
         ]
+    }
+
+    #[test]
+    fn source_inner_product_distance_keeps_positive_ip_pairs_distinct() {
+        let identical =
+            super::source_inner_product_distance(&[1.0, 0.0], &[1.0, 0.0]).expect("same dim");
+        let merely_similar =
+            super::source_inner_product_distance(&[1.0, 0.0], &[0.8, 0.6]).expect("same dim");
+        let orthogonal =
+            super::source_inner_product_distance(&[1.0, 0.0], &[0.0, 1.0]).expect("same dim");
+
+        assert_eq!(identical, 0.0);
+        assert!(merely_similar > identical);
+        assert!(orthogonal > merely_similar);
     }
 
     fn staged_metadata(

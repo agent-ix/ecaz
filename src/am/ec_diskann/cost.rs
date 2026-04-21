@@ -44,6 +44,7 @@ pub(super) unsafe extern "C-unwind" fn ec_diskann_amcostestimate(
 
 unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCostEstimate {
     let relation_options = unsafe { options::relation_options(index_relation) };
+    let scan_tuning = options::resolve_scan_tuning(&relation_options);
     let block_count = unsafe {
         pg_sys::RelationGetNumberOfBlocksInFork(index_relation, pg_sys::ForkNumber::MAIN_FORKNUM)
     };
@@ -66,7 +67,7 @@ unsafe fn compute_amcostestimate(index_relation: pg_sys::Relation) -> PlannerCos
             index_pages,
             reltuples,
             m: relation_options.graph_degree,
-            ef_search: relation_options.list_size,
+            ef_search: scan_tuning.effective_list_size,
             dimensions: metadata.dimensions,
             tree_height: DISKANN_SINGLE_LAYER_TREE_HEIGHT,
         },
