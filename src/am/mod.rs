@@ -12,6 +12,7 @@ pub(crate) use self::ec_hnsw::{
 };
 
 pub(crate) fn register_gucs() {
+    ec_diskann::register_gucs();
     ec_hnsw::register_gucs();
 }
 

@@ -36,6 +36,7 @@ impl DiskannScanOpaque {
         chain: DataPageChain,
         options: TqDiskannOptions,
     ) -> Result<Self, String> {
+        let scan_tuning = super::options::resolve_scan_tuning(&options);
         Ok(Self {
             metadata,
             chain,
@@ -47,7 +48,7 @@ impl DiskannScanOpaque {
             result_cursor: 0,
             rescan_called: false,
             top_k: reloption_usize(options.top_k, "top_k")?,
-            list_size: reloption_usize(options.list_size, "list_size")?,
+            list_size: reloption_usize(scan_tuning.effective_list_size, "list_size")?,
             rerank_budget: reloption_usize(options.rerank_budget, "rerank_budget")?,
         })
     }

@@ -6,9 +6,11 @@
 //! for the full pipeline.
 //!
 //! V0 scope: indexed column must be `ecvector` (flat f32). The build
-//! distance is the raw fp32 source-vector inner product (clamped to
-//! non-negative) — this yields a higher-quality graph than scoring on
-//! quantized codes and matches the intent of ADR-034 (IP-first).
+//! distance is `1 - ip(source_vector, source_vector)` so unit-normalized
+//! embeddings keep the `<#>` ordering while satisfying Vamana's
+//! nonnegative-distance requirement. This yields a higher-quality graph
+//! than scoring on quantized codes and matches the intent of ADR-034
+//! (IP-first).
 //!
 //! ADR-046 frozen rule 1 / ADR-047 frozen rule 4: `PAYLOAD_FLAG_COLD_RERANK_PAYLOAD`
 //! stays clear on V0 builds. The V0 rerank source is the heap
@@ -29,6 +31,7 @@ use super::build::{build_and_persist_vamana, BuildOutput, BuildParams};
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
+use super::ECDISKANN_UNIT_NORM_DISTANCE_BIAS;
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -282,7 +285,7 @@ fn source_inner_product_distance(left: &[f32], right: &[f32]) -> f32 {
     for (l, r) in left.iter().zip(right.iter()) {
         ip += *l * *r;
     }
-    let d = -ip;
+    let d = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ip;
     if d < 0.0 {
         0.0
     } else {
@@ -490,4 +493,20 @@ pub(super) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
         unsafe { pg_sys::pfree(varlena.cast()) };
     }
     vec
+}
+
+#[cfg(test)]
+mod tests {
+    use super::source_inner_product_distance;
+
+    #[test]
+    fn source_inner_product_distance_keeps_positive_ip_pairs_distinct() {
+        let identical = source_inner_product_distance(&[1.0, 0.0], &[1.0, 0.0]);
+        let merely_similar = source_inner_product_distance(&[1.0, 0.0], &[0.8, 0.6]);
+        let orthogonal = source_inner_product_distance(&[1.0, 0.0], &[0.0, 1.0]);
+
+        assert_eq!(identical, 0.0);
+        assert!(merely_similar > identical);
+        assert!(orthogonal > merely_similar);
+    }
 }

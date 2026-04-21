@@ -1,7 +1,7 @@
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
-use pgrx::pg_sys;
+use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::{
     ECDISKANN_DEFAULT_ALPHA, ECDISKANN_DEFAULT_BUILD_LIST_SIZE, ECDISKANN_DEFAULT_GRAPH_DEGREE,
@@ -11,6 +11,11 @@ use super::{
     ECDISKANN_MIN_ALPHA, ECDISKANN_MIN_BUILD_LIST_SIZE, ECDISKANN_MIN_GRAPH_DEGREE,
     ECDISKANN_MIN_RERANK_BUDGET, ECDISKANN_MIN_SCAN_LIST_SIZE, ECDISKANN_MIN_TOP_K,
 };
+
+const ECDISKANN_SESSION_LIST_SIZE_UNSET: i32 = -1;
+
+static ECDISKANN_LIST_SIZE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISKANN_SESSION_LIST_SIZE_UNSET);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +80,59 @@ impl TqDiskannOptions {
         alpha: ECDISKANN_DEFAULT_ALPHA,
         storage_format: StorageFormat::DEFAULT,
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ListSizeSource {
+    Relation,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ScanTuning {
+    pub(super) relation_list_size: i32,
+    pub(super) session_list_size: Option<i32>,
+    pub(super) effective_list_size: i32,
+    pub(super) source: ListSizeSource,
+}
+
+pub(super) fn register_gucs() {
+    GucRegistry::define_int_guc(
+        c"ec_diskann.list_size",
+        c"Session override for ec_diskann search breadth.",
+        c"Overrides ec_diskann index list_size reloptions when set to 1-10000; -1 uses the relation value.",
+        &ECDISKANN_LIST_SIZE_GUC,
+        ECDISKANN_SESSION_LIST_SIZE_UNSET,
+        ECDISKANN_MAX_SCAN_LIST_SIZE,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+}
+
+pub(super) fn current_session_list_size() -> i32 {
+    ECDISKANN_LIST_SIZE_GUC.get()
+}
+
+pub(super) fn resolve_scan_tuning(options: &TqDiskannOptions) -> ScanTuning {
+    resolve_scan_tuning_values(options.list_size, current_session_list_size())
+}
+
+fn resolve_scan_tuning_values(relation_list_size: i32, session_list_size: i32) -> ScanTuning {
+    if session_list_size == ECDISKANN_SESSION_LIST_SIZE_UNSET {
+        ScanTuning {
+            relation_list_size,
+            session_list_size: None,
+            effective_list_size: relation_list_size,
+            source: ListSizeSource::Relation,
+        }
+    } else {
+        ScanTuning {
+            relation_list_size,
+            session_list_size: Some(session_list_size),
+            effective_list_size: session_list_size,
+            source: ListSizeSource::Session,
+        }
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_diskann_amoptions(
@@ -231,7 +289,11 @@ pub(super) fn storage_format_name(fmt: StorageFormat) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        resolve_scan_tuning_values, ListSizeSource, ScanTuning, StorageFormat, TqDiskannOptions,
+        ECDISKANN_DEFAULT_RERANK_BUDGET, ECDISKANN_DEFAULT_SCAN_LIST_SIZE, ECDISKANN_DEFAULT_TOP_K,
+        ECDISKANN_SESSION_LIST_SIZE_UNSET,
+    };
 
     #[test]
     fn diskann_default_options_include_scan_runtime_defaults() {
@@ -240,5 +302,60 @@ mod tests {
         assert_eq!(defaults.rerank_budget, ECDISKANN_DEFAULT_RERANK_BUDGET);
         assert_eq!(defaults.top_k, ECDISKANN_DEFAULT_TOP_K);
         assert_eq!(defaults.storage_format, StorageFormat::PqFastScan);
+    }
+
+    #[test]
+    fn resolve_scan_tuning_uses_relation_value_when_session_is_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(128, ECDISKANN_SESSION_LIST_SIZE_UNSET),
+            ScanTuning {
+                relation_list_size: 128,
+                session_list_size: None,
+                effective_list_size: 128,
+                source: ListSizeSource::Relation,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_uses_session_value_when_non_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(128, 512),
+            ScanTuning {
+                relation_list_size: 128,
+                session_list_size: Some(512),
+                effective_list_size: 512,
+                source: ListSizeSource::Session,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_keeps_default_relation_when_both_are_default() {
+        assert_eq!(
+            resolve_scan_tuning_values(
+                ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+                ECDISKANN_SESSION_LIST_SIZE_UNSET
+            ),
+            ScanTuning {
+                relation_list_size: ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+                session_list_size: None,
+                effective_list_size: ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+                source: ListSizeSource::Relation,
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_scan_tuning_uses_explicit_default_session_override() {
+        assert_eq!(
+            resolve_scan_tuning_values(512, ECDISKANN_DEFAULT_SCAN_LIST_SIZE),
+            ScanTuning {
+                relation_list_size: 512,
+                session_list_size: Some(ECDISKANN_DEFAULT_SCAN_LIST_SIZE),
+                effective_list_size: ECDISKANN_DEFAULT_SCAN_LIST_SIZE,
+                source: ListSizeSource::Session,
+            }
+        );
     }
 }
