@@ -3582,7 +3582,6 @@ unsafe fn try_take_parallel_scan_next_output(
         )
     }
     .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan next-output take failed: {err}"))?;
-
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
     publish_parallel_scan_worker_slot_snapshot(opaque);
     Some(output)
@@ -3627,6 +3626,14 @@ unsafe fn produce_next_scan_heap_tid(
     if let Some(output) = unsafe { try_take_parallel_scan_next_output(opaque) } {
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
+        if opaque.execution_phase.is_graph_traversal()
+            && !graph_traversal_cursor(opaque).has_prefetched_output()
+        {
+            let opaque_ptr = opaque as *mut TqScanOpaque;
+            unsafe {
+                graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+            }
+        }
         return true;
     }
 

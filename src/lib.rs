@@ -15505,6 +15505,68 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ech_parallel_n1_matches_serial_scores() {
+        Spi::run(
+            "CREATE TABLE ec_hnsw_single_worker_parallel_scalar (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_single_worker_parallel_scalar VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8]::real[]::ecvector),
+             (3, ARRAY[0.0, 1.0, 0.0, 0.0]::real[]::ecvector),
+             (4, ARRAY[-1.0, 0.0, 0.0, 1.0]::real[]::ecvector),
+             (5, ARRAY[0.4, 0.2, 0.9, -0.4]::real[]::ecvector)",
+        )
+        .expect("fixture insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_single_worker_parallel_scalar_idx ON ec_hnsw_single_worker_parallel_scalar USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_single_worker_parallel_scalar_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+
+        let serial =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores(index_oid, query.clone()) };
+        let parallel_bound = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores_parallel_bound(index_oid, query, 1)
+        };
+
+        assert_eq!(
+            parallel_bound, serial,
+            "n=1 parallel-bound ordered scan should stay byte-identical to the serial emitted heap-tid and score stream"
+        );
+    }
+
+    #[pg_test]
+    fn test_ech_parallel_n1_pq_matches_serial() {
+        let table_name = "ec_hnsw_single_worker_parallel_pq";
+        let index_name = "ec_hnsw_single_worker_parallel_pq_idx";
+        let index_oid = create_pq_fastscan_runtime_fixture(table_name, index_name);
+        let query = pq_fastscan_runtime_query();
+
+        let serial = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons(index_oid, query.clone())
+        };
+        let parallel_bound = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_score_comparisons_parallel_bound(
+                index_oid, query, 1,
+            )
+        };
+
+        assert_eq!(
+            parallel_bound, serial,
+            "n=1 parallel-bound PqFastScan ordered scan should preserve the serial heap-tid, approximate score, comparison score, and approximate-rank stream"
+        );
+    }
+
+    #[pg_test]
     fn test_ech_gettuple_scaffold_returns_false_for_empty_index() {
         Spi::run(
             "CREATE TABLE ec_hnsw_gettuple_empty_scaffold (id bigint primary key, embedding ecvector)",

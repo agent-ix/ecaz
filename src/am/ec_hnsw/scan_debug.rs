@@ -1,4 +1,6 @@
 #[cfg(any(test, feature = "pg_test"))]
+use std::mem::size_of;
+#[cfg(any(test, feature = "pg_test"))]
 use std::ptr;
 #[cfg(any(test, feature = "pg_test"))]
 use std::time::Instant;
@@ -460,6 +462,7 @@ struct DebugHeapBackedScan {
     scan: pg_sys::IndexScanDesc,
     registered_snapshot: pg_sys::Snapshot,
     pushed_registered_snapshot: bool,
+    parallel_scan_allocation: *mut std::ffi::c_void,
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -474,7 +477,46 @@ unsafe fn debug_push_latest_snapshot(failure_label: &str) -> pg_sys::Snapshot {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+fn debug_scan_maxalign(size: pg_sys::Size) -> pg_sys::Size {
+    let align = size_of::<usize>();
+    debug_assert!(align.is_power_of_two());
+    (size + align - 1) & !(align - 1)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_allocate_parallel_scan(worker_slot_count: u32) -> *mut std::ffi::c_void {
+    let parallel_scan_bytes =
+        debug_scan_maxalign(size_of::<pg_sys::ParallelIndexScanDescData>() as pg_sys::Size);
+    let descriptor_bytes = super::parallel::ec_parallel_scan_descriptor_size();
+    let total_bytes = parallel_scan_bytes
+        .checked_add(descriptor_bytes)
+        .expect("debug parallel scan allocation should fit in pg_sys::Size");
+    let allocation = unsafe { pg_sys::palloc0(total_bytes) };
+    let parallel_scan = allocation.cast::<pg_sys::ParallelIndexScanDescData>();
+    #[cfg(feature = "pg17")]
+    unsafe {
+        (*parallel_scan).ps_offset = parallel_scan_bytes;
+    }
+    #[cfg(feature = "pg18")]
+    unsafe {
+        (*parallel_scan).ps_offset_am = parallel_scan_bytes;
+    }
+    let target = unsafe { allocation.cast::<u8>().add(parallel_scan_bytes) }.cast();
+    unsafe {
+        super::parallel::initialize_parallel_scan_target_with_worker_slots(
+            target,
+            worker_slot_count,
+        )
+    }
+    .expect("debug parallel scan target should initialize");
+    allocation
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_begin_heap_backed_scan_internal(
+    index_oid: pg_sys::Oid,
+    parallel_worker_slots: Option<u32>,
+) -> DebugHeapBackedScan {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let heap_oid = unsafe { pg_sys::IndexGetRelation((*index_relation).rd_id, false) };
@@ -517,6 +559,15 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         }
         pgrx::error!("debug scan failed to begin heap-backed index scan");
     }
+    let parallel_scan_allocation = if let Some(worker_slot_count) = parallel_worker_slots {
+        let allocation = unsafe { debug_allocate_parallel_scan(worker_slot_count) };
+        unsafe {
+            (*scan).parallel_scan = allocation.cast::<pg_sys::ParallelIndexScanDescData>();
+        }
+        allocation
+    } else {
+        ptr::null_mut()
+    };
 
     DebugHeapBackedScan {
         index_relation,
@@ -524,13 +575,30 @@ unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBacke
         scan,
         registered_snapshot,
         pushed_registered_snapshot,
+        parallel_scan_allocation,
     }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_begin_heap_backed_scan(index_oid: pg_sys::Oid) -> DebugHeapBackedScan {
+    unsafe { debug_begin_heap_backed_scan_internal(index_oid, None) }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn debug_begin_heap_backed_parallel_scan(
+    index_oid: pg_sys::Oid,
+    worker_slot_count: u32,
+) -> DebugHeapBackedScan {
+    unsafe { debug_begin_heap_backed_scan_internal(index_oid, Some(worker_slot_count)) }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
 unsafe fn debug_end_heap_backed_scan(state: DebugHeapBackedScan) {
     unsafe {
         pg_sys::index_endscan(state.scan);
+        if !state.parallel_scan_allocation.is_null() {
+            pg_sys::pfree(state.parallel_scan_allocation);
+        }
         if state.pushed_registered_snapshot {
             pg_sys::PopActiveSnapshot();
             pg_sys::UnregisterSnapshot(state.registered_snapshot);
@@ -2122,6 +2190,33 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores(
 }
 
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_bound(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    worker_slot_count: u32,
+) -> Vec<(HeapTidCoords, f32)> {
+    let scan_state = unsafe { debug_begin_heap_backed_parallel_scan(index_oid, worker_slot_count) };
+    let scan = scan_state.scan;
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let score = debug_scan_orderby_score(scan)
+            .expect("parallel-bound scan should publish an order-by score for emitted tuples");
+        tids.push((heap_tid, score));
+    }
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
@@ -2141,6 +2236,36 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons(
         let approx_score = debug_current_result_approx_score(scan)
             .or_else(|| debug_scan_orderby_score(scan))
             .expect("graph-first scan should publish an approximate score for emitted tuples");
+        let comparison_score = debug_current_result_comparison_score(scan);
+        let approx_rank = debug_current_result_approx_rank(scan);
+        tids.push((heap_tid, approx_score, comparison_score, approx_rank));
+    }
+
+    unsafe { debug_end_heap_backed_scan(scan_state) };
+    tids
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_score_comparisons_parallel_bound(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    worker_slot_count: u32,
+) -> Vec<(HeapTidCoords, f32, Option<f32>, Option<i32>)> {
+    let scan_state = unsafe { debug_begin_heap_backed_parallel_scan(index_oid, worker_slot_count) };
+    let scan = scan_state.scan;
+
+    let mut orderby = pg_sys::ScanKeyData {
+        sk_argument: pgrx::IntoDatum::into_datum(query).expect("query should convert to datum"),
+        ..Default::default()
+    };
+    unsafe { ec_hnsw_amrescan(scan, ptr::null_mut(), 0, &mut orderby, 1) };
+
+    let mut tids = Vec::new();
+    while unsafe { ec_hnsw_amgettuple(scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+        let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe { (*scan).xs_heaptid });
+        let approx_score = debug_current_result_approx_score(scan)
+            .or_else(|| debug_scan_orderby_score(scan))
+            .expect("parallel-bound scan should publish an approximate score for emitted tuples");
         let comparison_score = debug_current_result_comparison_score(scan);
         let approx_rank = debug_current_result_approx_rank(scan);
         tids.push((heap_tid, approx_score, comparison_score, approx_rank));
