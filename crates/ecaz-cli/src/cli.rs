@@ -122,4 +122,24 @@ mod tests {
         assert_eq!(cli.user.as_deref(), Some("peter"));
         assert_eq!(cli.password.as_deref(), Some("secret"));
     }
+
+    #[test]
+    fn cli_parses_corpus_fetch_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "--database",
+            "postgres",
+            "corpus",
+            "fetch",
+            "--dataset",
+            "dbpedia-openai3-large-1536-1m",
+            "--output-dir",
+            "/data/real-corpus",
+            "--revision",
+            "main",
+            "--force",
+        ])
+        .expect("cli parses");
+        assert_eq!(cli.database, "postgres");
+    }
 }
