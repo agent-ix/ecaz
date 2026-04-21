@@ -240,6 +240,11 @@ See ADR-040 for the full shape. Summary:
   stays current, so duplicate and full-window loser cases no longer need the
   coordinator serializer before preserving the admitted window unchanged.
 
+- **Coordinator merge staging.** A staged merge helper can now choose between
+  the admitted head and the selected pending output, admitting the selected
+  output first when it beats the admitted head and otherwise draining the
+  admitted head in score order.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`

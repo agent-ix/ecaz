@@ -2521,6 +2521,64 @@ pub(crate) unsafe fn take_parallel_scan_admitted_result_snapshot(
     unsafe { take_admitted_result_locked(&attachment) }
 }
 
+pub(crate) unsafe fn take_parallel_scan_next_output_snapshot(
+    state: *mut EcParallelScanState,
+    result_limit: u32,
+) -> Result<Option<EcParallelCoordinatorAdmittedResultSelection>, &'static str> {
+    for _ in 0..4 {
+        let admitted_head = unsafe { read_parallel_scan_admitted_head_snapshot(state) }?;
+        let selected_probe = unsafe {
+            read_parallel_scan_selected_pending_output_admission_probe(state, result_limit)
+        }?;
+
+        match (admitted_head, selected_probe) {
+            (None, None) => return Ok(None),
+            (Some(_), None) => {
+                return unsafe { take_parallel_scan_admitted_result_snapshot(state) };
+            }
+            (None, Some(probe)) => {
+                if !probe.would_admit {
+                    return Ok(None);
+                }
+                let Some(selected) =
+                    (unsafe { take_parallel_scan_selected_pending_output_snapshot(state) })?
+                else {
+                    continue;
+                };
+                let attachment = unsafe { validate_parallel_scan_state(state) }?;
+                let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+                let _ = unsafe {
+                    admit_pending_output_locked(&attachment, &selected.pending_output, result_limit)
+                }?;
+                continue;
+            }
+            (Some(admitted_head), Some(probe)) => {
+                if !probe.would_admit
+                    || !pending_output_orders_before(
+                        &probe.pending_output,
+                        &admitted_head.admitted_head,
+                    )
+                {
+                    return unsafe { take_parallel_scan_admitted_result_snapshot(state) };
+                }
+                let Some(selected) =
+                    (unsafe { take_parallel_scan_selected_pending_output_snapshot(state) })?
+                else {
+                    continue;
+                };
+                let attachment = unsafe { validate_parallel_scan_state(state) }?;
+                let _heap_lock = unsafe { acquire_parallel_scan_heap_lock(&attachment) };
+                let _ = unsafe {
+                    admit_pending_output_locked(&attachment, &selected.pending_output, result_limit)
+                }?;
+                continue;
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -6160,6 +6218,305 @@ mod tests {
                 .expect("empty admitted-head read should succeed"),
             None,
             "reading the admitted head with no admitted results should return None"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_next_output_snapshot_returns_none_without_work() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+
+        assert_eq!(
+            unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+                .expect("empty coordinator merge take should succeed"),
+            None,
+            "the coordinator merge helper should stay empty with no admitted or staged pending outputs"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_next_output_snapshot_admits_selected_when_window_empty() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 190,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 191,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("publish should succeed");
+
+        let taken = unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+            .expect("merge helper should succeed")
+            .expect("merge helper should return the admitted staged output");
+        assert_eq!(
+            taken.admitted_result.pending_output,
+            EcParallelPendingOutputSnapshot {
+                heap_tid: EcParallelItemPointer {
+                    block_number: 191,
+                    offset_number: 2,
+                },
+                score: -9.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
+            },
+            "with an empty admitted window the merge helper should admit and return the selected pending output"
+        );
+        assert_eq!(
+            unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+                .expect("second merge helper call should succeed"),
+            None,
+            "once the only staged pending output is consumed and drained the merge helper should go empty"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_next_output_snapshot_drains_admitted_head_before_worse_selected() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 200,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -7.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 201,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("first publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("first admission should succeed")
+                .expect("first admission should see the selected pending output")
+                .admitted,
+            "first admission should seed the admitted window"
+        );
+        let _ = unsafe { take_parallel_scan_selected_pending_output_snapshot(attachment.state) }
+            .expect("seed slot consume should succeed")
+            .expect("seed slot consume should advance the staged pending output");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 202,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 203,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("worse publish should succeed");
+
+        let first_taken = unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+            .expect("merge helper should succeed for admitted head")
+            .expect("merge helper should return the admitted head");
+        assert_eq!(
+            first_taken.admitted_result.pending_output.heap_tid,
+            EcParallelItemPointer {
+                block_number: 201,
+                offset_number: 2,
+            },
+            "the admitted head should drain before a worse staged pending output"
+        );
+
+        let second_taken = unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+            .expect("merge helper should succeed for remaining staged pending output")
+            .expect("merge helper should eventually return the remaining staged pending output");
+        assert_eq!(
+            second_taken.admitted_result.pending_output.heap_tid,
+            EcParallelItemPointer {
+                block_number: 203,
+                offset_number: 2,
+            },
+            "after the admitted head drains the remaining staged pending output should be admitted and returned"
+        );
+    }
+
+    #[test]
+    fn take_parallel_scan_next_output_snapshot_admits_better_selected_before_drain() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first worker claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                first_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 210,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -4.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 211,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("seed publish should succeed");
+        assert!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("seed admission should succeed")
+                .expect("seed admission should see the selected pending output")
+                .admitted,
+            "seed admission should populate the admitted window"
+        );
+        let _ = unsafe { take_parallel_scan_selected_pending_output_snapshot(attachment.state) }
+            .expect("seed slot consume should succeed")
+            .expect("seed slot consume should advance the staged pending output");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                second_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 212,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer::INVALID,
+                    score: -8.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 213,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("better publish should succeed");
+
+        let first_taken = unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+            .expect("merge helper should succeed for better selected output")
+            .expect("merge helper should return the better selected output first");
+        assert_eq!(
+            first_taken.admitted_result.pending_output.heap_tid,
+            EcParallelItemPointer {
+                block_number: 213,
+                offset_number: 2,
+            },
+            "a better staged pending output should be admitted ahead of the current admitted head"
+        );
+
+        let second_taken = unsafe { take_parallel_scan_next_output_snapshot(attachment.state, 2) }
+            .expect("merge helper should succeed for remaining admitted head")
+            .expect("merge helper should then return the older admitted head");
+        assert_eq!(
+            second_taken.admitted_result.pending_output.heap_tid,
+            EcParallelItemPointer {
+                block_number: 211,
+                offset_number: 2,
+            },
+            "after the better selected output drains the older admitted head should still remain"
         );
     }
 
