@@ -255,7 +255,7 @@ pub fn build_pgvector_create_index_sql(
 pub fn build_pgvector_knn_sql(sidecar: &str, dim: usize) -> String {
     format!(
         "SELECT id FROM {sidecar} \
-         ORDER BY embedding OPERATOR(pg_catalog.<#>) \
+         ORDER BY embedding <#> \
          $1::real[]::vector({dim}) \
          LIMIT $2"
     )
@@ -569,6 +569,7 @@ mod tests {
         let sql = build_pgvector_knn_sql("t_corpus_pgvector", 1536);
         assert!(sql.contains("FROM t_corpus_pgvector"));
         assert!(sql.contains("<#>"));
+        assert!(!sql.contains("pg_catalog"), "got: {sql}");
         assert!(sql.contains("$1::real[]::vector(1536)"));
         assert!(sql.contains("LIMIT $2"));
     }

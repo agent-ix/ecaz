@@ -369,7 +369,7 @@ pub fn ndcg_at_k(
 pub fn build_knn_sql(profile: &IndexProfile, corpus_table: &str) -> String {
     format!(
         "SELECT id FROM {corpus_table} \
-         ORDER BY embedding OPERATOR(pg_catalog.<#>) \
+         ORDER BY embedding <#> \
          {enc}($1::real[], $2::integer, $3::bigint) \
          LIMIT $4",
         enc = profile.encoder_function,
@@ -544,6 +544,7 @@ mod tests {
         assert!(sql.contains("FROM dbpedia_10k_corpus"));
         assert!(sql.contains("encode_to_ecvector($1::real[], $2::integer, $3::bigint)"));
         assert!(sql.contains("<#>"));
+        assert!(!sql.contains("pg_catalog"), "got: {sql}");
         assert!(sql.contains("LIMIT $4"));
     }
 
