@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Load a real-corpus fixture into Postgres for Ecaz access-method evaluation.
+"""Load a real-corpus recall fixture into Postgres for ec_hnsw A4 measurement.
 
 This script implements the local-file loader path described in
 ``docs/RECALL_REAL_CORPUS.md``. It is the bridge between a staged
 ``<basename>_corpus.tsv`` / ``<basename>_queries.tsv`` pair on disk and the
-Postgres-side corpus/query tables used by the extension's recall and benchmark
-surfaces.
+SQL-side recall probes exposed by the extension.
 
-It is intentionally idempotent so the real-corpus lane can preserve the
-one-time load / one-time index build / repeated rerun discipline used by the
-synthetic fixture-backed gate.
+It is intentionally idempotent so the recall lane can preserve the one-time
+load / one-time index build / repeated rerun discipline used by the synthetic
+fixture-backed gate.
 
 Usage:
 
@@ -18,12 +17,6 @@ Usage:
         --corpus-file /path/to/dbpedia_50k_corpus.tsv \\
         --queries-file /path/to/dbpedia_1k_queries.tsv \\
         --m 8 16
-
-    PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \\
-        --prefix ec_diskann_real_10k \\
-        --corpus-file /path/to/dbpedia_10k_corpus.tsv \\
-        --queries-file /path/to/dbpedia_200_queries.tsv \\
-        --index-profile ec_diskann
 
 The corpus and query files MUST follow the contract in
 ``docs/RECALL_REAL_CORPUS.md``: each line is ``<id>\\t<json_array>`` where
@@ -50,48 +43,9 @@ from typing import Iterable, List, Sequence
 DEFAULT_BITS = 4
 DEFAULT_SEED = 42
 DEFAULT_EF_CONSTRUCTION = 128
-DEFAULT_BUILD_SOURCE_COLUMN = "source"
-DEFAULT_EMBEDDING_TYPE = "ecvector"
-DEFAULT_ENCODER_FUNCTION = "encode_to_ecvector"
 UNIT_NORM_TOLERANCE = 0.05
 SQL_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 VALID_STORAGE_FORMATS = frozenset(("turboquant", "pq_fastscan"))
-SQL_NUMERIC_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$")
-SQL_BOOLEAN_LITERALS = frozenset(("true", "false"))
-
-
-@dataclass(frozen=True)
-class IndexProfile:
-    name: str
-    access_method: str
-    operator_class: str
-    embedding_type: str
-    encoder_function: str
-    supports_build_source_column: bool
-    supports_m_sweep: bool
-
-
-INDEX_PROFILES = {
-    "ec_hnsw": IndexProfile(
-        name="ec_hnsw",
-        access_method="ec_hnsw",
-        operator_class="ecvector_ip_ops",
-        embedding_type="ecvector",
-        encoder_function="encode_to_ecvector",
-        supports_build_source_column=True,
-        supports_m_sweep=True,
-    ),
-    "ec_diskann": IndexProfile(
-        name="ec_diskann",
-        access_method="ec_diskann",
-        operator_class="ecvector_diskann_ip_ops",
-        embedding_type="ecvector",
-        encoder_function="encode_to_ecvector",
-        supports_build_source_column=False,
-        supports_m_sweep=False,
-    ),
-}
-DEFAULT_INDEX_PROFILE = "ec_hnsw"
 
 
 @dataclass
@@ -154,29 +108,6 @@ def _validate_storage_format(raw_value: str) -> str:
     return raw_value
 
 
-def _validate_index_profile(raw_value: str) -> str:
-    if raw_value not in INDEX_PROFILES:
-        allowed = ", ".join(sorted(INDEX_PROFILES))
-        raise argparse.ArgumentTypeError(
-            f"index profile {raw_value!r} must be one of: {allowed}"
-        )
-    return raw_value
-
-
-def _validate_reloption(raw_value: str) -> str:
-    key, sep, value = raw_value.partition("=")
-    if sep != "=" or not key or not value:
-        raise argparse.ArgumentTypeError(
-            f"index reloption {raw_value!r} must look like key=value"
-        )
-    _validate_ident(key, "index reloption key")
-    return f"{key}={value}"
-
-
-def _resolve_index_profile(name: str) -> IndexProfile:
-    return INDEX_PROFILES[name]
-
-
 def _index_prefix(prefix: str, storage_format: str | None) -> str:
     if storage_format is None:
         return prefix
@@ -187,58 +118,38 @@ def _index_name(index_prefix: str, m: int) -> str:
     return f"{index_prefix}_m{m}_idx"
 
 
-def _format_hnsw_reloptions(
-    m: int,
-    ef_construction: int,
-    storage_format: str | None,
-    build_source_column: str,
+def _expected_index_reloptions(
+    m: int, ef_construction: int, storage_format: str | None
 ) -> list[str]:
     reloptions = [
         f"m={m}",
         f"ef_construction={ef_construction}",
-        f"build_source_column={build_source_column}",
+        "build_source_column=source",
     ]
     if storage_format is not None:
         reloptions.append(f"storage_format={storage_format}")
     return reloptions
 
 
-def _parse_reloption(reloption: str) -> tuple[str, str]:
-    key, sep, value = reloption.partition("=")
-    if sep != "=" or not key or not value:
-        raise ValueError(f"invalid reloption {reloption!r}: expected key=value")
-    return key, value
-
-
-def _format_reloption_sql_value(raw_value: str) -> str:
-    if raw_value.startswith("'") and raw_value.endswith("'"):
-        return raw_value
-    lowered = raw_value.lower()
-    if lowered in SQL_BOOLEAN_LITERALS or SQL_NUMERIC_RE.match(raw_value):
-        return raw_value
-    return "'" + raw_value.replace("'", "''") + "'"
-
-
-def _expected_index_reloptions(reloptions: Sequence[str]) -> list[str]:
-    return [f"{key}={value}" for key, value in (_parse_reloption(item) for item in reloptions)]
-
-
 def _build_index_sql(
     corpus_table: str,
     index_name: str,
-    access_method: str,
-    operator_class: str,
-    reloptions: Sequence[str],
+    m: int,
+    ef_construction: int,
+    storage_format: str | None,
 ) -> str:
-    joined_options = ", ".join(
-        f"{key} = {_format_reloption_sql_value(value)}"
-        for key, value in (_parse_reloption(item) for item in reloptions)
-    )
-    with_clause = f"\n        WITH ({joined_options})" if joined_options else ""
+    with_options = [
+        f"m = {m}",
+        f"ef_construction = {ef_construction}",
+        "build_source_column = 'source'",
+    ]
+    if storage_format is not None:
+        with_options.append(f"storage_format = '{storage_format}'")
+    joined_options = ", ".join(with_options)
     return (
         f"CREATE INDEX {index_name} ON {corpus_table}\n"
-        f"        USING {access_method} (embedding {operator_class})"
-        f"{with_clause}"
+        "        USING ec_hnsw (embedding tqvector_ip_ops)\n"
+        f"        WITH ({joined_options})"
     )
 
 
@@ -298,20 +209,17 @@ def _table_row_count(database: str, table: str) -> int:
 def _index_exists_with_options(
     database: str,
     index: str,
-    reloptions: Sequence[str],
+    m: int,
+    ef_construction: int,
+    storage_format: str | None,
 ) -> bool:
-    expected = _expected_index_reloptions(reloptions)
-    if not expected:
-        sql = (
-            "SELECT EXISTS (SELECT 1 FROM pg_class "
-            f"WHERE relname = '{index}' AND relkind = 'i')"
-        )
-        return _psql(database, sql, capture=True).lower() == "t"
-    expected_joined = "', '".join(expected)
+    expected_reloptions = "', '".join(
+        _expected_index_reloptions(m, ef_construction, storage_format)
+    )
     sql = (
         "SELECT EXISTS (SELECT 1 FROM pg_class "
         f"WHERE relname = '{index}' AND relkind = 'i' "
-        f"AND reloptions @> ARRAY['{expected_joined}'])"
+        f"AND reloptions @> ARRAY['{expected_reloptions}'])"
     )
     return _psql(database, sql, capture=True).lower() == "t"
 
@@ -499,7 +407,6 @@ def _load_corpus(
     dim: int,
     bits: int,
     seed: int,
-    profile: IndexProfile,
 ) -> int:
     # COPY ... FROM STDIN as text. Each row: id\tsource_real_array
     # Then materialize embedding via UPDATE in one shot to avoid per-row SPI
@@ -520,13 +427,12 @@ def _load_corpus(
     inserted = _table_row_count(database, table)
     norm_stats.log()
     print(
-        f"[loader] encoding {profile.embedding_type} embedding column for {inserted} "
-        f"rows in {table} via {profile.encoder_function}() ...",
+        f"[loader] encoding tqvector embedding column for {inserted} rows in {table} ...",
         file=sys.stderr,
     )
     _psql(
         database,
-        f"UPDATE {table} SET embedding = {profile.encoder_function}(source, {bits}, {seed})",
+        f"UPDATE {table} SET embedding = encode_to_tqvector(source, {bits}, {seed})",
     )
     return inserted
 
@@ -556,7 +462,6 @@ def _ensure_corpus_table(
     dim: int,
     bits: int,
     seed: int,
-    profile: IndexProfile,
 ) -> int:
     if _table_exists(database, table):
         existing = _table_row_count(database, table)
@@ -575,11 +480,11 @@ def _ensure_corpus_table(
         CREATE TABLE {table} (
             id        bigint PRIMARY KEY,
             source    real[] NOT NULL,
-            embedding {profile.embedding_type}
+            embedding tqvector
         )
         """,
     )
-    return _load_corpus(database, table, path, dim, bits, seed, profile)
+    return _load_corpus(database, table, path, dim, bits, seed)
 
 
 def _ensure_queries_table(database: str, table: str, path: str, dim: int) -> int:
@@ -609,72 +514,36 @@ def _ensure_index(
     database: str,
     corpus_table: str,
     index_name: str,
-    profile: IndexProfile,
-    reloptions: Sequence[str],
+    m: int,
+    ef_construction: int,
+    storage_format: str | None,
 ) -> None:
-    reloption_summary = ", ".join(reloptions) if reloptions else "<none>"
-    if _index_exists_with_options(database, index_name, reloptions):
+    if _index_exists_with_options(database, index_name, m, ef_construction, storage_format):
         print(
-            f"[loader] {index_name} already exists with reloptions=[{reloption_summary}]; "
-            "skipping rebuild",
+            f"[loader] {index_name} already exists with m={m} ef_construction={ef_construction}"
+            + (
+                f" storage_format={storage_format}; skipping rebuild"
+                if storage_format is not None
+                else "; skipping rebuild"
+            ),
             file=sys.stderr,
         )
         return
     print(
-        f"[loader] building {index_name} using {profile.access_method} "
-        f"(reloptions=[{reloption_summary}]) ...",
+        f"[loader] building {index_name} (m={m}, ef_construction={ef_construction}"
+        + (
+            f", storage_format={storage_format}) ..."
+            if storage_format is not None
+            else ") ..."
+        ),
         file=sys.stderr,
     )
-    _psql(
-        database,
-        _build_index_sql(
-            corpus_table,
-            index_name,
-            profile.access_method,
-            profile.operator_class,
-            reloptions,
-        ),
-    )
-
-
-def _dedupe_int_sweep(groups: Sequence[Sequence[int]]) -> list[int]:
-    result: list[int] = []
-    seen: set[int] = set()
-    for group in groups:
-        for value in group:
-            if value in seen:
-                continue
-            seen.add(value)
-            result.append(value)
-    return result
-
-
-def _build_hnsw_reloption_sweep(
-    m_values: Sequence[int],
-    ef_construction: int,
-    storage_format: str | None,
-    build_source_column: str,
-    extra_reloptions: Sequence[str],
-) -> list[tuple[int, list[str]]]:
-    sweep: list[tuple[int, list[str]]] = []
-    for m_value in m_values:
-        reloptions = _format_hnsw_reloptions(
-            m_value,
-            ef_construction,
-            storage_format,
-            build_source_column,
-        )
-        reloptions.extend(extra_reloptions)
-        sweep.append((m_value, reloptions))
-    return sweep
+    _psql(database, _build_index_sql(corpus_table, index_name, m, ef_construction, storage_format))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description=(
-            "Load a real-corpus fixture into Postgres for Ecaz access-method evaluation "
-            "(ec_hnsw today, ec_diskann in progress, extensible to future AMs)."
-        ),
+        description="Load a real-corpus recall fixture into Postgres for ec_hnsw A4 measurement.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -687,36 +556,22 @@ def main() -> int:
     parser.add_argument("--queries-file", required=True, help="Path to <basename>_queries.tsv")
     parser.add_argument("--dim", type=int, default=1536, help="Vector dimensionality (default 1536)")
     parser.add_argument(
-        "--index-profile",
-        type=_validate_index_profile,
-        default=DEFAULT_INDEX_PROFILE,
-        help=(
-            "Access-method profile to use. Controls embedding column type, encoder, "
-            "operator class, and USING clause. "
-            f"Choices: {', '.join(sorted(INDEX_PROFILES))} (default: {DEFAULT_INDEX_PROFILE})."
-        ),
-    )
-    parser.add_argument(
         "--bits",
         type=int,
         default=DEFAULT_BITS,
-        help=f"Quantization bits passed to the profile's encoder (default {DEFAULT_BITS})",
+        help=f"Quantization bits passed to encode_to_tqvector (default {DEFAULT_BITS})",
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=DEFAULT_SEED,
-        help=f"Quantizer seed passed to the profile's encoder (default {DEFAULT_SEED})",
+        help=f"Quantizer seed passed to encode_to_tqvector (default {DEFAULT_SEED})",
     )
     parser.add_argument(
         "--ef-construction",
         type=int,
         default=DEFAULT_EF_CONSTRUCTION,
-        help=(
-            f"ef_construction passed to CREATE INDEX for HNSW profiles "
-            f"(default {DEFAULT_EF_CONSTRUCTION}). Ignored for profiles without an "
-            "m-sweep (e.g. ec_diskann)."
-        ),
+        help=f"ef_construction passed to CREATE INDEX (default {DEFAULT_EF_CONSTRUCTION})",
     )
     parser.add_argument(
         "--m",
@@ -726,19 +581,7 @@ def main() -> int:
         default=None,
         help=(
             "m values to build indexes for. Accepts either '--m 8 16' or "
-            "repeated '--m 8 --m 16' forms. HNSW profiles only (default: 8 16 for HNSW)."
-        ),
-    )
-    parser.add_argument(
-        "--reloption",
-        action="append",
-        default=[],
-        type=_validate_reloption,
-        metavar="key=value",
-        help=(
-            "Pass-through CREATE INDEX WITH (...) reloption. Repeatable. "
-            "Use this for AM-specific tunables not covered by dedicated flags "
-            "(e.g. --reloption graph_degree=48 --reloption alpha=1.2)."
+            "repeated '--m 8 --m 16' forms (default: 8 16)."
         ),
     )
     parser.add_argument(
@@ -763,29 +606,27 @@ def main() -> int:
         "--storage-format",
         type=_validate_storage_format,
         help=(
-            "Optional storage format reloption. For ec_hnsw, the loader builds "
-            "coexisting format-specific indexes named <prefix>_<storage_format>_m{N}_idx. "
-            "For ec_diskann, only 'pq_fastscan' is accepted by the AM."
+            "Optional ec_hnsw storage format reloption. When set, the loader builds "
+            "coexisting format-specific indexes named <prefix>_<storage_format>_m{N}_idx."
         ),
     )
 
     args = parser.parse_args()
+    m_values = [8, 16]
+    if args.m:
+        m_values = []
+        seen_m_values: set[int] = set()
+        for m_group in args.m:
+            for m_value in m_group:
+                if m_value in seen_m_values:
+                    continue
+                seen_m_values.add(m_value)
+                m_values.append(m_value)
 
     try:
         prefix = _validate_ident(args.prefix, "fixture prefix")
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-    profile = _resolve_index_profile(args.index_profile)
-    extra_reloptions: list[str] = list(args.reloption or [])
-
-    if not profile.supports_m_sweep and args.m:
-        print(
-            f"error: --m is not supported by index profile {profile.name!r}; "
-            "use --reloption key=value to pass AM-specific tunables",
-            file=sys.stderr,
-        )
         return 2
 
     corpus_table = f"{prefix}_corpus"
@@ -795,27 +636,6 @@ def main() -> int:
     manifest_path = args.manifest_file or _derive_manifest_path(
         args.corpus_file, args.queries_file
     )
-
-    if profile.supports_m_sweep:
-        m_values = _dedupe_int_sweep(args.m) if args.m else [8, 16]
-        index_plan = _build_hnsw_reloption_sweep(
-            m_values,
-            args.ef_construction,
-            storage_format,
-            DEFAULT_BUILD_SOURCE_COLUMN,
-            extra_reloptions,
-        )
-        index_jobs = [
-            (_index_name(index_prefix, m_value), reloptions)
-            for m_value, reloptions in index_plan
-        ]
-        sweep_summary = f"m={m_values}"
-    else:
-        reloptions = list(extra_reloptions)
-        if storage_format is not None:
-            reloptions.append(f"storage_format={storage_format}")
-        index_jobs = [(f"{index_prefix}_idx", reloptions)]
-        sweep_summary = "single index"
 
     try:
         if manifest_path and os.path.exists(manifest_path):
@@ -841,7 +661,6 @@ def main() -> int:
             args.dim,
             args.bits,
             args.seed,
-            profile,
         )
         query_rows = _ensure_queries_table(
             args.database,
@@ -849,22 +668,24 @@ def main() -> int:
             args.queries_file,
             args.dim,
         )
-        for index_name, reloptions in index_jobs:
+        for m_value in m_values:
+            index_name = _index_name(index_prefix, m_value)
             _ensure_index(
                 args.database,
                 corpus_table,
                 index_name,
-                profile,
-                reloptions,
+                m_value,
+                args.ef_construction,
+                storage_format,
             )
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
     print(
-        f"[loader] done. profile={profile.name}, corpus={corpus_table} ({corpus_rows} rows), "
+        f"[loader] done. corpus={corpus_table} ({corpus_rows} rows), "
         f"queries={queries_table} ({query_rows} rows), index_prefix={index_prefix}, "
-        f"storage_format={storage_format or 'default'}, {sweep_summary}",
+        f"storage_format={storage_format or 'default'}, m={m_values}",
         file=sys.stderr,
     )
     return 0

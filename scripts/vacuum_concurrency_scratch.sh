@@ -134,10 +134,10 @@ run_sql "${harness_db}" "
 DROP TABLE IF EXISTS ${table_name} CASCADE;
 CREATE TABLE ${table_name} (
     id bigserial PRIMARY KEY,
-    embedding ecvector NOT NULL
+    embedding tqvector NOT NULL
 );
 INSERT INTO ${table_name} (embedding)
-SELECT encode_to_ecvector(
+SELECT encode_to_tqvector(
     ARRAY[
         sin((gs * 0.013)::double precision)::real,
         cos((gs * 0.013)::double precision)::real,
@@ -149,7 +149,7 @@ SELECT encode_to_ecvector(
 )
 FROM generate_series(1, 2000) AS gs;
 CREATE INDEX ${index_name}
-ON ${table_name} USING ec_hnsw (embedding ecvector_ip_ops)
+ON ${table_name} USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 " >/dev/null
 
@@ -158,7 +158,7 @@ insert_worker() {
     while (( $(date +%s) < end_time )); do
         run_sql "${harness_db}" "
         INSERT INTO ${table_name} (embedding)
-        SELECT encode_to_ecvector(
+        SELECT encode_to_tqvector(
             ARRAY[
                 (random() * 2.0 - 1.0)::real,
                 (random() * 2.0 - 1.0)::real,
@@ -259,7 +259,7 @@ final_scan_result_count="$(
 run_sql "${harness_db}" "DROP INDEX IF EXISTS ${ref_index_name}" >/dev/null
 run_sql "${harness_db}" "
 CREATE INDEX ${ref_index_name}
-ON ${table_name} USING ec_hnsw (embedding ecvector_ip_ops)
+ON ${table_name} USING ec_hnsw (embedding tqvector_ip_ops)
 WITH (m = 8, ef_construction = 64);
 " >/dev/null
 reference_live_elements="$(
