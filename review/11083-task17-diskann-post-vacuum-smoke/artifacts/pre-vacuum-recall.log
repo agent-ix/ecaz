@@ -1,0 +1,9 @@
+[recall] fetching corpus from ec_hnsw_real_10k_corpus ...
+[recall] fetching queries from ec_hnsw_real_10k_queries ...
+[recall] computing ground truth: 200 queries vs 10000 corpus rows (dim=1536) ...
+[recall] ground truth in 4.46s
+┌───────────┬──────────┬────────┬─────────────┐
+│ list_size ┆ recall@k ┆ ndcg@k ┆ mean q-time │
+╞═══════════╪══════════╪════════╪═════════════╡
+│ 128       ┆ 0.9310   ┆ 0.9965 ┆ 82.34 ms    │
+└───────────┴──────────┴────────┴─────────────┘
