@@ -3,14 +3,16 @@
 //! All subcommands here accept `--profile` and `--prefix` so a single corpus
 //! can be measured against multiple access methods without re-loading data.
 //!
-//! v1 status: `recall` is implemented. `latency`, `storage`, `overhead`
-//! remain stubs and land in follow-up commits.
+//! v1 status: `recall` and `latency` are implemented. `storage` and
+//! `overhead` remain stubs and land in follow-up commits.
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{eyre, Result};
 
+mod latency;
 mod recall;
 
+pub use latency::LatencyArgs;
 pub use recall::RecallArgs;
 
 #[derive(Subcommand, Debug)]
@@ -23,20 +25,6 @@ pub enum BenchCommand {
     Storage(StorageArgs),
     /// Latency overhead breakdown: encode vs internal scan vs residual SQL time.
     Overhead(OverheadArgs),
-}
-
-#[derive(Args, Debug)]
-pub struct LatencyArgs {
-    #[arg(long)]
-    pub prefix: String,
-    #[arg(long, default_value = "ec_hnsw")]
-    pub profile: String,
-    #[arg(long, default_value_t = 10)]
-    pub k: usize,
-    #[arg(long, default_value_t = 1)]
-    pub concurrency: usize,
-    #[arg(long, default_value_t = 1000)]
-    pub iterations: usize,
 }
 
 #[derive(Args, Debug)]
@@ -57,17 +45,15 @@ impl BenchCommand {
     pub async fn run(self, database: &str) -> Result<()> {
         match self {
             BenchCommand::Recall(args) => recall::run(database, args).await,
-            BenchCommand::Latency(_) | BenchCommand::Storage(_) | BenchCommand::Overhead(_) => {
-                Err(eyre!(
-                    "ecaz bench {}: not yet implemented (ported in a follow-up commit)",
-                    match self {
-                        BenchCommand::Latency(_) => "latency",
-                        BenchCommand::Storage(_) => "storage",
-                        BenchCommand::Overhead(_) => "overhead",
-                        BenchCommand::Recall(_) => unreachable!(),
-                    }
-                ))
-            }
+            BenchCommand::Latency(args) => latency::run(database, args).await,
+            BenchCommand::Storage(_) | BenchCommand::Overhead(_) => Err(eyre!(
+                "ecaz bench {}: not yet implemented (ported in a follow-up commit)",
+                match self {
+                    BenchCommand::Storage(_) => "storage",
+                    BenchCommand::Overhead(_) => "overhead",
+                    _ => unreachable!(),
+                }
+            )),
         }
     }
 }
