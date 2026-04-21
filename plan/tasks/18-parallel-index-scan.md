@@ -235,6 +235,11 @@ See ADR-040 for the full shape. Summary:
   admitted window before taking the coordinator serializer, including duplicate
   rejection and full-window tail comparison.
 
+- **Admission fast-reject staging.** The mutating selected-pending-output
+  admission path now returns directly from that probe state when the rejection
+  stays current, so duplicate and full-window loser cases no longer need the
+  coordinator serializer before preserving the admitted window unchanged.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
