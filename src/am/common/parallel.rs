@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use pgrx::pg_sys;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 3;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 4;
+const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -15,13 +16,16 @@ pub(crate) struct EcParallelScanState {
     flags: u16,
     descriptor_bytes: pg_sys::Size,
     coordinator_bytes: pg_sys::Size,
+    heap_bytes: pg_sys::Size,
+    heap_entry_bytes: pg_sys::Size,
     result_slot_bytes: pg_sys::Size,
     worker_slot_bytes: pg_sys::Size,
+    heap_entry_count: u32,
     result_slot_count: u32,
     worker_slot_count: u32,
     reserved_worker_slots: u32,
-    rescan_epoch: u32,
     reserved0: u32,
+    rescan_epoch: u32,
 }
 
 #[repr(C)]
@@ -33,6 +37,13 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) result_publish_generation: AtomicU32,
     pub(crate) selected_result_slot_index: AtomicU32,
     pub(crate) selected_result_score_bits: AtomicU32,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub(crate) struct EcParallelCoordinatorHeapState {
+    pub(crate) live_entry_count: AtomicU32,
+    pub(crate) heap_generation: AtomicU32,
 }
 
 #[repr(C)]
@@ -148,6 +159,14 @@ pub(crate) struct EcParallelCoordinatorSnapshot {
     pub(crate) selected_result_score: Option<f32>,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct EcParallelCoordinatorHeapSnapshot {
+    pub(crate) live_entry_count: u32,
+    pub(crate) entry_capacity: u32,
+    pub(crate) heap_generation: u32,
+    pub(crate) root_slot_index: Option<u32>,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct EcParallelCoordinatorResultSelection {
     pub(crate) coordinator: EcParallelCoordinatorSnapshot,
@@ -195,11 +214,15 @@ pub(crate) struct EcParallelWorkerSlotSnapshot {
 pub(crate) struct ParallelScanAttachment {
     pub(crate) state: *mut EcParallelScanState,
     pub(crate) coordinator: *mut EcParallelCoordinatorState,
+    heap_state: *mut EcParallelCoordinatorHeapState,
     result_slots: *mut EcParallelCoordinatorResultSlot,
+    heap_entries: *mut u32,
     worker_slots: *mut EcParallelWorkerSlot,
     pub(crate) descriptor_bytes: pg_sys::Size,
+    pub(crate) heap_entry_count: u32,
     pub(crate) result_slot_count: u32,
     pub(crate) worker_slot_count: u32,
+    heap_entry_bytes: pg_sys::Size,
     result_slot_bytes: pg_sys::Size,
     worker_slot_bytes: pg_sys::Size,
     pub(crate) rescan_epoch: u32,
@@ -235,6 +258,18 @@ impl ParallelScanAttachment {
         );
         Ok(unsafe { self.worker_slots.cast::<u8>().add(offset) }.cast())
     }
+
+    pub(crate) unsafe fn heap_entry(&self, entry_index: u32) -> Result<*mut u32, &'static str> {
+        if entry_index >= self.heap_entry_count {
+            return Err("parallel heap entry index was outside the descriptor capacity");
+        }
+        let offset = checked_mul_size(
+            self.heap_entry_bytes,
+            entry_index as pg_sys::Size,
+            "parallel heap entry offset",
+        );
+        Ok(unsafe { self.heap_entries.cast::<u8>().add(offset) }.cast())
+    }
 }
 
 fn maxalign(size: pg_sys::Size) -> pg_sys::Size {
@@ -261,6 +296,14 @@ pub(crate) fn ec_parallel_scan_coordinator_size() -> pg_sys::Size {
     maxalign(size_of::<EcParallelCoordinatorState>())
 }
 
+pub(crate) fn ec_parallel_scan_heap_size() -> pg_sys::Size {
+    maxalign(size_of::<EcParallelCoordinatorHeapState>())
+}
+
+pub(crate) fn ec_parallel_scan_heap_entry_size() -> pg_sys::Size {
+    size_of::<u32>()
+}
+
 pub(crate) fn ec_parallel_scan_result_slot_size() -> pg_sys::Size {
     maxalign(size_of::<EcParallelCoordinatorResultSlot>())
 }
@@ -270,6 +313,12 @@ pub(crate) fn ec_parallel_scan_worker_slot_size() -> pg_sys::Size {
 }
 
 fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size {
+    let heap_entry_count = ec_parallel_scan_heap_entry_capacity_for(worker_slot_count);
+    let heap_entry_bytes = checked_mul_size(
+        ec_parallel_scan_heap_entry_size(),
+        heap_entry_count as pg_sys::Size,
+        "parallel heap entry descriptor size",
+    );
     let result_slot_count = ec_parallel_scan_result_slot_capacity_for(worker_slot_count);
     let result_slot_bytes = checked_mul_size(
         ec_parallel_scan_result_slot_size(),
@@ -287,6 +336,15 @@ fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size 
             ec_parallel_scan_coordinator_size(),
             "parallel scan state plus coordinator size",
         ),
+        checked_add_size(
+            ec_parallel_scan_heap_size(),
+            heap_entry_bytes,
+            "parallel heap header plus entry array size",
+        ),
+        "parallel scan state plus coordinator and heap size",
+    );
+    let shared_header_bytes = checked_add_size(
+        shared_header_bytes,
         result_slot_bytes,
         "parallel scan state plus coordinator and result-slot size",
     );
@@ -300,6 +358,10 @@ fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size 
 pub(crate) fn ec_parallel_scan_worker_slot_capacity() -> u32 {
     let max_workers = unsafe { pg_sys::max_parallel_workers_per_gather }.max(0) as u32;
     max_workers.saturating_add(1)
+}
+
+fn ec_parallel_scan_heap_entry_capacity_for(worker_slot_count: u32) -> u32 {
+    worker_slot_count
 }
 
 fn ec_parallel_scan_result_slot_capacity_for(worker_slot_count: u32) -> u32 {
@@ -326,24 +388,71 @@ unsafe fn result_slots_ptr(
         unsafe { (*state).coordinator_bytes },
         "parallel result slot base offset",
     );
+    let result_slot_offset = checked_add_size(
+        result_slot_offset,
+        checked_add_size(
+            unsafe { (*state).heap_bytes },
+            checked_mul_size(
+                unsafe { (*state).heap_entry_bytes },
+                unsafe { (*state).heap_entry_count as pg_sys::Size },
+                "parallel heap entry bytes span",
+            ),
+            "parallel heap header and entry span",
+        ),
+        "parallel result slot base offset after heap state",
+    );
     unsafe { state.cast::<u8>().add(result_slot_offset) }.cast()
 }
 
-unsafe fn worker_slots_ptr(state: *mut EcParallelScanState) -> *mut EcParallelWorkerSlot {
-    let coordinator_and_results_offset = checked_add_size(
+unsafe fn heap_state_ptr(state: *mut EcParallelScanState) -> *mut EcParallelCoordinatorHeapState {
+    let heap_offset = checked_add_size(
+        ec_parallel_scan_state_size(),
+        unsafe { (*state).coordinator_bytes },
+        "parallel heap state base offset",
+    );
+    unsafe { state.cast::<u8>().add(heap_offset) }.cast()
+}
+
+unsafe fn heap_entries_ptr(state: *mut EcParallelScanState) -> *mut u32 {
+    let heap_entries_offset = checked_add_size(
         ec_parallel_scan_state_size(),
         checked_add_size(
             unsafe { (*state).coordinator_bytes },
-            checked_mul_size(
-                unsafe { (*state).result_slot_bytes },
-                unsafe { (*state).result_slot_count as pg_sys::Size },
-                "parallel result slot bytes span",
+            unsafe { (*state).heap_bytes },
+            "parallel heap state plus header size",
+        ),
+        "parallel heap entry base offset",
+    );
+    unsafe { state.cast::<u8>().add(heap_entries_offset) }.cast()
+}
+
+unsafe fn worker_slots_ptr(state: *mut EcParallelScanState) -> *mut EcParallelWorkerSlot {
+    let coordinator_heap_results_offset = checked_add_size(
+        ec_parallel_scan_state_size(),
+        checked_add_size(
+            unsafe { (*state).coordinator_bytes },
+            checked_add_size(
+                checked_add_size(
+                    unsafe { (*state).heap_bytes },
+                    checked_mul_size(
+                        unsafe { (*state).heap_entry_bytes },
+                        unsafe { (*state).heap_entry_count as pg_sys::Size },
+                        "parallel heap entry bytes span",
+                    ),
+                    "parallel heap entry span offset",
+                ),
+                checked_mul_size(
+                    unsafe { (*state).result_slot_bytes },
+                    unsafe { (*state).result_slot_count as pg_sys::Size },
+                    "parallel result slot bytes span",
+                ),
+                "parallel result slot span offset",
             ),
-            "parallel result slot span offset",
+            "parallel heap and result slot span offset",
         ),
         "parallel worker slot base offset",
     );
-    unsafe { state.cast::<u8>().add(coordinator_and_results_offset) }.cast()
+    unsafe { state.cast::<u8>().add(coordinator_heap_results_offset) }.cast()
 }
 
 unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
@@ -359,6 +468,25 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             selected_result_slot_index: AtomicU32::new(u32::MAX),
             selected_result_score_bits: AtomicU32::new(0),
         };
+    }
+
+    unsafe {
+        *heap_state_ptr(state) = EcParallelCoordinatorHeapState {
+            live_entry_count: AtomicU32::new(0),
+            heap_generation: AtomicU32::new(0),
+        };
+    }
+
+    for entry_index in 0..state_ref.heap_entry_count {
+        let entry = unsafe {
+            heap_entries_ptr(state).cast::<u8>().add(checked_mul_size(
+                state_ref.heap_entry_bytes,
+                entry_index as pg_sys::Size,
+                "parallel heap entry reset offset",
+            ))
+        }
+        .cast::<u32>();
+        unsafe { *entry = EC_PARALLEL_HEAP_ENTRY_INVALID };
     }
 
     for slot_index in 0..state_ref.result_slot_count {
@@ -539,6 +667,26 @@ fn load_coordinator_snapshot(
     }
 }
 
+fn load_coordinator_heap_snapshot(
+    attachment: &ParallelScanAttachment,
+) -> EcParallelCoordinatorHeapSnapshot {
+    let heap_state = unsafe { &*attachment.heap_state };
+    let live_entry_count = heap_state.live_entry_count.load(Ordering::Acquire);
+    let root_slot_index = if live_entry_count == 0 {
+        None
+    } else {
+        let root = unsafe { *attachment.heap_entries };
+        (root != EC_PARALLEL_HEAP_ENTRY_INVALID).then_some(root)
+    };
+
+    EcParallelCoordinatorHeapSnapshot {
+        live_entry_count,
+        entry_capacity: attachment.heap_entry_count,
+        heap_generation: heap_state.heap_generation.load(Ordering::Acquire),
+        root_slot_index,
+    }
+}
+
 fn coordinator_result_slot_snapshot_is_live(
     snapshot: &EcParallelCoordinatorResultSlotSnapshot,
     rescan_epoch: u32,
@@ -575,32 +723,16 @@ unsafe fn coordinator_result_slot_snapshot_is_live_with_attachment(
 unsafe fn select_best_parallel_scan_coordinator_result_slot_with_attachment(
     attachment: &ParallelScanAttachment,
 ) -> Result<Option<EcParallelCoordinatorResultSlotSnapshot>, &'static str> {
-    let mut selected: Option<EcParallelCoordinatorResultSlotSnapshot> = None;
-
-    for slot_index in 0..attachment.result_slot_count {
-        let slot = unsafe { attachment.result_slot(slot_index) }?;
-        let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
-        if !unsafe {
-            coordinator_result_slot_snapshot_is_live_with_attachment(attachment, &snapshot)
-        } {
-            continue;
-        }
-
-        let should_replace = match selected {
-            None => true,
-            Some(current) => snapshot
-                .runtime
-                .score
-                .total_cmp(&current.runtime.score)
-                .then_with(|| snapshot.slot_index.cmp(&current.slot_index))
-                .is_lt(),
-        };
-        if should_replace {
-            selected = Some(snapshot);
-        }
+    let heap_snapshot = load_coordinator_heap_snapshot(attachment);
+    let Some(slot_index) = heap_snapshot.root_slot_index else {
+        return Ok(None);
+    };
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if !unsafe { coordinator_result_slot_snapshot_is_live_with_attachment(attachment, &snapshot) } {
+        return Ok(None);
     }
-
-    Ok(selected)
+    Ok(Some(snapshot))
 }
 
 unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
@@ -642,8 +774,77 @@ unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
 fn refresh_coordinator_selection_snapshot(
     attachment: &ParallelScanAttachment,
 ) -> Result<(), &'static str> {
+    fn result_slot_orders_before(
+        lhs: &EcParallelCoordinatorResultSlotSnapshot,
+        rhs: &EcParallelCoordinatorResultSlotSnapshot,
+    ) -> bool {
+        lhs.runtime
+            .score
+            .total_cmp(&rhs.runtime.score)
+            .then_with(|| lhs.slot_index.cmp(&rhs.slot_index))
+            .is_lt()
+    }
+
+    unsafe fn heap_entry_snapshot(
+        attachment: &ParallelScanAttachment,
+        heap_index: u32,
+    ) -> Result<EcParallelCoordinatorResultSlotSnapshot, &'static str> {
+        let slot_index = unsafe { *attachment.heap_entry(heap_index)? };
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        Ok(load_coordinator_result_slot_snapshot(unsafe { &*slot }))
+    }
+
+    unsafe fn sift_up_heap_entry(
+        attachment: &ParallelScanAttachment,
+        mut heap_index: u32,
+    ) -> Result<(), &'static str> {
+        while heap_index > 0 {
+            let parent_index = (heap_index - 1) / 2;
+            let child_snapshot = unsafe { heap_entry_snapshot(attachment, heap_index) }?;
+            let parent_snapshot = unsafe { heap_entry_snapshot(attachment, parent_index) }?;
+            if !result_slot_orders_before(&child_snapshot, &parent_snapshot) {
+                break;
+            }
+            let child_entry = unsafe { attachment.heap_entry(heap_index) }?;
+            let parent_entry = unsafe { attachment.heap_entry(parent_index) }?;
+            unsafe { std::ptr::swap(child_entry, parent_entry) };
+            heap_index = parent_index;
+        }
+        Ok(())
+    }
+
     unsafe { reap_dead_parallel_scan_result_slots_with_attachment(attachment) }?;
+    for entry_index in 0..attachment.heap_entry_count {
+        let entry = unsafe { attachment.heap_entry(entry_index) }?;
+        unsafe {
+            *entry = EC_PARALLEL_HEAP_ENTRY_INVALID;
+        }
+    }
+
+    let mut live_entry_count = 0;
+    for slot_index in 0..attachment.result_slot_count {
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+        if !unsafe {
+            coordinator_result_slot_snapshot_is_live_with_attachment(attachment, &snapshot)
+        } {
+            continue;
+        }
+        let entry = unsafe { attachment.heap_entry(live_entry_count) }?;
+        unsafe {
+            *entry = slot_index;
+        }
+        unsafe { sift_up_heap_entry(attachment, live_entry_count) }?;
+        live_entry_count += 1;
+    }
+
     let coordinator = unsafe { &*attachment.coordinator };
+    let heap_state = unsafe { &*attachment.heap_state };
+    heap_state
+        .live_entry_count
+        .store(live_entry_count, Ordering::Release);
+    heap_state.heap_generation.fetch_add(1, Ordering::AcqRel);
+
     match unsafe { select_best_parallel_scan_coordinator_result_slot_with_attachment(attachment) }?
     {
         Some(selected) => {
@@ -713,13 +914,16 @@ fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_c
         flags: 0,
         descriptor_bytes: ec_parallel_scan_descriptor_size_for(worker_slot_count),
         coordinator_bytes: ec_parallel_scan_coordinator_size(),
+        heap_bytes: ec_parallel_scan_heap_size(),
+        heap_entry_bytes: ec_parallel_scan_heap_entry_size(),
         result_slot_bytes: ec_parallel_scan_result_slot_size(),
         worker_slot_bytes: ec_parallel_scan_worker_slot_size(),
+        heap_entry_count: ec_parallel_scan_heap_entry_capacity_for(worker_slot_count),
         result_slot_count: ec_parallel_scan_result_slot_capacity_for(worker_slot_count),
         worker_slot_count,
         reserved_worker_slots: 0,
-        rescan_epoch: 0,
         reserved0: 0,
+        rescan_epoch: 0,
     };
     unsafe { reset_parallel_scan_layout(state) };
 }
@@ -741,6 +945,12 @@ unsafe fn validate_parallel_scan_state(
     if state_ref.coordinator_bytes < ec_parallel_scan_coordinator_size() {
         return Err("AM-private parallel scan coordinator size was smaller than the shared header");
     }
+    if state_ref.heap_bytes < ec_parallel_scan_heap_size() {
+        return Err("AM-private parallel scan heap size was smaller than the shared header");
+    }
+    if state_ref.heap_entry_bytes < ec_parallel_scan_heap_entry_size() {
+        return Err("AM-private parallel scan heap entry size was smaller than the shared entry");
+    }
     if state_ref.result_slot_bytes < ec_parallel_scan_result_slot_size() {
         return Err("AM-private parallel scan result-slot size was smaller than the shared header");
     }
@@ -761,11 +971,15 @@ unsafe fn validate_parallel_scan_state(
     Ok(ParallelScanAttachment {
         state,
         coordinator: unsafe { coordinator_ptr(state) },
+        heap_state: unsafe { heap_state_ptr(state) },
         result_slots: unsafe { result_slots_ptr(state) },
+        heap_entries: unsafe { heap_entries_ptr(state) },
         worker_slots: unsafe { worker_slots_ptr(state) },
         descriptor_bytes: state_ref.descriptor_bytes,
+        heap_entry_count: state_ref.heap_entry_count,
         result_slot_count: state_ref.result_slot_count,
         worker_slot_count: state_ref.worker_slot_count,
+        heap_entry_bytes: state_ref.heap_entry_bytes,
         result_slot_bytes: state_ref.result_slot_bytes,
         worker_slot_bytes: state_ref.worker_slot_bytes,
         rescan_epoch: state_ref.rescan_epoch,
@@ -1128,6 +1342,13 @@ pub(crate) unsafe fn read_parallel_scan_coordinator_snapshot(
     }))
 }
 
+pub(crate) unsafe fn read_parallel_scan_coordinator_heap_snapshot(
+    state: *mut EcParallelScanState,
+) -> Result<EcParallelCoordinatorHeapSnapshot, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    Ok(load_coordinator_heap_snapshot(&attachment))
+}
+
 pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
@@ -1341,6 +1562,11 @@ mod tests {
             "parallel scan coordinator header should stay MAXALIGN-sized"
         );
         assert_eq!(
+            ec_parallel_scan_heap_size() % size_of::<usize>(),
+            0,
+            "parallel scan heap header should stay MAXALIGN-sized"
+        );
+        assert_eq!(
             ec_parallel_scan_result_slot_size() % size_of::<usize>(),
             0,
             "parallel scan result-slot header should stay MAXALIGN-sized"
@@ -1357,12 +1583,14 @@ mod tests {
         let descriptor_bytes = ec_parallel_scan_descriptor_size_for(TEST_WORKER_SLOT_COUNT);
         let minimum = ec_parallel_scan_state_size()
             + ec_parallel_scan_coordinator_size()
+            + ec_parallel_scan_heap_size()
+            + ec_parallel_scan_heap_entry_size() * TEST_WORKER_SLOT_COUNT as pg_sys::Size
             + ec_parallel_scan_result_slot_size() * TEST_WORKER_SLOT_COUNT as pg_sys::Size
             + ec_parallel_scan_worker_slot_size() * TEST_WORKER_SLOT_COUNT as pg_sys::Size;
 
         assert!(
             descriptor_bytes >= minimum,
-            "descriptor size should cover the shared state, coordinator, result slots, and worker slots"
+            "descriptor size should cover the shared state, coordinator, heap, result slots, and worker slots"
         );
         assert_eq!(
             descriptor_bytes % size_of::<usize>(),
@@ -1399,6 +1627,10 @@ mod tests {
             "attachment should report the configured worker slot capacity"
         );
         assert_eq!(
+            attachment.heap_entry_count, TEST_WORKER_SLOT_COUNT,
+            "attachment should reserve one shared heap entry per worker slot in this checkpoint"
+        );
+        assert_eq!(
             attachment.result_slot_count, TEST_WORKER_SLOT_COUNT,
             "attachment should reserve one staged result slot per worker slot in this checkpoint"
         );
@@ -1419,6 +1651,17 @@ mod tests {
                 .load(Ordering::Acquire),
             0,
             "freshly initialized coordinator state should start with no published result slots"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_heap_snapshot(attachment.state) }
+                .expect("coordinator heap snapshot should read back"),
+            EcParallelCoordinatorHeapSnapshot {
+                live_entry_count: 0,
+                entry_capacity: TEST_WORKER_SLOT_COUNT,
+                heap_generation: 0,
+                root_slot_index: None,
+            },
+            "freshly initialized heap state should start empty"
         );
     }
 
@@ -1584,6 +1827,17 @@ mod tests {
             },
             "publishing a first result slot should update the coordinator counters and selected-result snapshot"
         );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_heap_snapshot(attachment.state) }
+                .expect("coordinator heap snapshot should read back"),
+            EcParallelCoordinatorHeapSnapshot {
+                live_entry_count: 1,
+                entry_capacity: TEST_WORKER_SLOT_COUNT,
+                heap_generation: 1,
+                root_slot_index: Some(slot_index),
+            },
+            "publishing a first result slot should seed the shared heap root from the owning slot"
+        );
     }
 
     #[test]
@@ -1692,6 +1946,17 @@ mod tests {
         assert_eq!(
             selection.selected_result_slot.runtime.score, -6.5,
             "selection should surface the selected slot's score"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_heap_snapshot(attachment.state) }
+                .expect("coordinator heap snapshot should read back"),
+            EcParallelCoordinatorHeapSnapshot {
+                live_entry_count: 2,
+                entry_capacity: TEST_WORKER_SLOT_COUNT,
+                heap_generation: 2,
+                root_slot_index: Some(second_slot),
+            },
+            "the shared heap root should mirror the lowest-score published staged result"
         );
     }
 

@@ -184,6 +184,12 @@ See ADR-040 for the full shape. Summary:
   path to the next best staged result when one exists. This is still a staged
   result-slot consume seam, not the final shared top-K heap drain path.
 
+- **Shared heap frontier staging.** The shared descriptor now carries a
+  coordinator-owned min-heap over the one-live-result-per-worker staged
+  frontier, keyed by the current rescan epoch. Heap capacity stays bounded by
+  worker-slot capacity, so the heap layout remains query-independent while the
+  real lock-guarded push/pop admission path is still deferred.
+
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
   for `ef_search ≤ 200`. Revisit if a workload emerges where `ef_search`
