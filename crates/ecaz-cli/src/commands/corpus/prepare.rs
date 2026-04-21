@@ -1,6 +1,6 @@
 //! `ecaz corpus prepare` — parquet → canonical TSV + manifest.
 //!
-//! Ports `scripts/qdrant_dbpedia_to_tsv.py`. Given a parquet release (file
+//! Given a parquet release (file
 //! or directory of `*.parquet`) and a named subset profile, picks the
 //! reproducible first-N / next-M rows under ascending lexicographic id
 //! order and emits `<prefix>_{corpus,queries}.tsv` + `<prefix>_manifest.json`.

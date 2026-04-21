@@ -1,4 +1,4 @@
-//! `ecaz corpus load` — port of the legacy `scripts/load_real_corpus.py`.
+//! `ecaz corpus load` — canonical real-corpus loader for Postgres fixtures.
 //!
 //! See the module-level doc in `super` for the corpus model. This command
 //! is the only way new data enters Postgres; everything downstream assumes

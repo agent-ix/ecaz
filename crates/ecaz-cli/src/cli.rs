@@ -34,7 +34,7 @@ pub struct Cli {
     )]
     pub database: String,
 
-    /// PostgreSQL host name or Unix socket directory.
+    /// PostgreSQL host or socket directory.
     #[arg(long, global = true, env = "PGHOST")]
     pub host: Option<String>,
 
@@ -68,6 +68,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::compare::CompareCommand,
     },
+    /// Development/setup/test helpers that own the old wrapper-script surface.
+    Dev {
+        #[command(subcommand)]
+        command: commands::dev::DevCommand,
+    },
     /// Correctness-under-load harnesses (vacuum concurrency, crash recovery, ...).
     Stress {
         #[command(subcommand)]
@@ -88,6 +93,7 @@ impl Cli {
             Command::Corpus { command } => command.run(&conn).await,
             Command::Bench { command } => command.run(&conn).await,
             Command::Compare { command } => command.run(&conn).await,
+            Command::Dev { command } => command.run(&conn.database).await,
             Command::Stress { command } => command.run(&conn).await,
         }
     }

@@ -35,7 +35,7 @@ pub struct GenerateArgs {
     #[arg(long, default_value_t = 42)]
     pub seed: u64,
     /// Starting id. Loader expects unique bigint ids; default 0 matches the
-    /// legacy `gen_synthetic_data.py`.
+    /// historical synthetic-fixture convention.
     #[arg(long, default_value_t = 0)]
     pub start_id: i64,
     /// Output format. `corpus` = id + embedding; `queries` = same shape,

@@ -1,8 +1,8 @@
 # Task: Portable `source_parquet` Field in Real-Corpus Manifest
 
 Motivation: Review 222 feedback observation N4 flagged that
-`scripts/qdrant_dbpedia_to_tsv.py` records the parquet input path via
-`os.path.abspath(args.parquet)` at line 410. The first official DBpedia
+`ecaz corpus prepare` records the parquet input path via an absolute-path
+field in the manifest. The first official DBpedia
 manifest is about to be committed alongside the first recorded benchmark
 result, and the committed manifest will therefore carry a per-developer
 absolute path like `/home/peter/dev/datasets/...` that does not exist on any
@@ -19,8 +19,7 @@ dataset identity separately from the local fetch path.
 
 ### Step 1 — add a portable dataset identity field
 
-In `scripts/qdrant_dbpedia_to_tsv.py`, update `_write_manifest` (around
-`qdrant_dbpedia_to_tsv.py:288`) to record, in addition to the current
+In `ecaz corpus prepare`, update manifest emission to record, in addition to the current
 `source_parquet` path:
 
 - `source_parquet_basename`: the basename only (directory or single-file
@@ -44,7 +43,7 @@ a path. No rename needed.
 
 ### Step 2 — update the loader's manifest verifier
 
-In `scripts/load_real_corpus.py`, `_verify_manifest` (around line 239)
+In `ecaz corpus load`, manifest verification
 should:
 
 - accept manifests **with or without** the new fields (older manifests
@@ -131,8 +130,8 @@ is coder-1's job when the first gate number lands.
 ## Validate
 
 ```bash
-python3 -m py_compile scripts/qdrant_dbpedia_to_tsv.py scripts/load_real_corpus.py
-python3 scripts/qdrant_dbpedia_to_tsv.py --help
+cargo test -p ecaz-cli manifest
+cargo run -p ecaz-cli -- corpus prepare --help
 ```
 
 Manifest round-trip smoke (no real parquet needed — reuse the synthetic

@@ -20,11 +20,11 @@ Progress notes:
   `deleted = true` once pass 1 removes their last heap TID.
 - Duplicate discovery now skips deleted / empty-heaptid elements, so a post-vacuum duplicate
   insert cannot reattach to a finalized dead node.
-- Concurrency validation is now landed: `scripts/vacuum_concurrency_scratch.sh` runs a 60-second
-  scratch-cluster race with concurrent INSERT, ec_hnsw graph scan, and VACUUM workers, using a
-  `pg_test`-only SQL wrapper around the live `ambeginscan/amrescan/amgettuple` path plus a final
-  post-quiesce `VACUUM (ANALYZE)` check that the live index's reachable live-element count stays
-  within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data.
+- Concurrency validation is now landed: `ecaz stress vacuum --duration-seconds 60` runs a
+  60-second race with concurrent INSERT, ec_hnsw graph scan, and VACUUM workers, using
+  `pg_test`-only SQL wrappers around the live `ambeginscan/amrescan/amgettuple` path plus a
+  final post-quiesce `VACUUM (ANALYZE)` check that the live index's reachable live-element count
+  stays within 90% of a freshly rebuilt reference ec_hnsw index on the same final table data.
 
 ## Scope
 
@@ -82,7 +82,7 @@ Implement ambulkdelete with three-pass delete algorithm and amvacuumcleanup with
 - The landed replacement slice still keeps writes narrow: candidate planning stays read-only
   outside `BUFFER_LOCK_EXCLUSIVE`, and the write phase only fills currently free slots on
   affected live nodes instead of evicting existing neighbors.
-- The close-out concurrency proof currently lives as a scratch-cluster harness instead of a normal
+- The close-out concurrency proof currently lives as an external CLI harness instead of a normal
   `#[pg_test]`, because it needs multiple independent PostgreSQL sessions running for 60 seconds.
 - pgvector reference: `hnswvacuum.c` three-pass algorithm.
 - Runtime scan and graph traversal still skip both `deleted` elements and empty-heaptid elements,

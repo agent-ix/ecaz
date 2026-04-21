@@ -18,8 +18,8 @@ Current staged behavior:
 - On PG18, `ecaz_stats()` is live.
 - When `ecaz` is loaded through `shared_preload_libraries`, `_PG_init()` registers the custom
   pgstat kind through the preload-only C shim and the SQL surface reads the shared snapshot.
-- `scripts/run_pg18_preload_pgstat_test.sh` validates that preload lane by starting a repo-local
-  PG18 cluster, forcing `shared_preload_libraries = 'ecaz'`, and checking that shared counters are
+- `ecaz dev test pg18-preload-pgstat` validates that preload lane by starting a repo-local PG18
+  cluster, forcing `shared_preload_libraries = 'ecaz'`, and checking that shared counters are
   visible across backend boundaries.
 - In ordinary non-preloaded PG18 sessions, the same SQL surface falls back to backend-local
   counters and diagnostics continue to report `pg18_pgstat_kind_ready = false`.

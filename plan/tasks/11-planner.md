@@ -12,7 +12,7 @@ Progress notes:
   `cargo test`, `cargo pgrx test pg18`, `cargo pgrx test pg17`,
   `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`,
   `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`, and
-  `bash scripts/run_pgrx_pg17_test.sh`.
+  the direct `cargo pgrx test pg17` lane.
 - The original planner scaffolding from `planner-integration-lane` / `planner-part2` remains
   merged on `main`, including the pure FR-020 / FR-023 / FR-024 / FR-025 / FR-019 helpers and
   snapshot surfaces that made the later PG18 binding work narrow.
@@ -23,7 +23,7 @@ Progress notes:
   shared-pgstat gating from the otherwise-live PG18 surfaces, and ReadStream snapshots report the
   active PG18 scan/vacuum wiring.
 - The remaining gap in this task is not callback wiring. The preload-only shared pgstat lane now
-  has a dedicated repo validation script; what remains is later measurement work plus optional
+  has a dedicated `ecaz dev` validation command; what remains is later measurement work plus optional
   parallel-scan callbacks that were always outside the narrow shared-infrastructure landing.
 
 ## Scope

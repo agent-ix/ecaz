@@ -130,7 +130,7 @@ the LUT 4x. Composes with tiling.
   from `1386us` to `1us`. That is the measurement that productizes the
   ADR-043 `ecvector` native-type direction.
 - **Vacuum-concurrency regression from packet `437` is fixed in packet
-  `438`.** `scripts/vacuum_concurrency_scratch.sh --duration 60` now passes
+  `438`.** `ecaz stress vacuum --duration-seconds 60` now passes
   on current head; the stale metadata-entry-point repair lives in generic
   AM code (`src/am/shared.rs`, `src/am/vacuum.rs`, `src/am/scan.rs`).
 - **Packet `442` replaces the old canonical quantized-row surface with a

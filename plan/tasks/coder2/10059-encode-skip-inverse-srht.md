@@ -161,7 +161,7 @@ defeats the whole purpose of the regression test.
 
 Capture before/after wall-clock for `ProdQuantizer::encode` on a
 single 1536-dim vector via a microbenchmark. The repo's
-`scripts/bench_sql_latency.sh` is too coarse for this; add a small
+`ecaz bench latency` is too coarse for this; add a small
 inline `#[bench]`-style harness in `src/quant/prod.rs#tests` that uses
 `std::time::Instant` over 10_000 encodes and prints the average.
 Remove the harness before commit (or gate it under `#[ignore]`).

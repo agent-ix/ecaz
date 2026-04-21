@@ -31,15 +31,10 @@ Benchmarks SHALL be run on representative hardware and reported in `BENCHMARKS.m
 
 The real-corpus latency lane reuses the canonical loader path documented in
 `docs/RECALL_REAL_CORPUS.md` (see "Reusing the Loaded Tables for NFR-001
-Latency"). Durable HNSW artifacts should use
-`scripts/bench_sql_latency_verified.sh --prefix <canonical-prefix> --m <m>`,
-which aborts unless a representative `EXPLAIN` plan selects the expected
-ec_hnsw index for that run. The delegated reporting surface remains
-`scripts/bench_sql_latency.sh`, which emits per-cell `p50` / `p95` / `p99`
-summaries, `server_qps` derived from the summed per-query timing surface for
-the selected mode (`EXPLAIN (ANALYZE)` by default, or plain server-side
-statement timing or cached-plan server-function timing when requested), and a
-stdout environment banner for artifact capture.
+Latency`). Durable HNSW artifacts should use `ecaz bench latency` against a
+canonically loaded corpus. Artifacts MUST record the exact `ecaz` invocation,
+the selected profile/prefix/sweep surface, and a representative `EXPLAIN` plan
+showing that the expected `ec_hnsw` index was chosen for the measured run.
 
 ### Required Methodology
 

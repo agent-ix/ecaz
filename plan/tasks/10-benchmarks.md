@@ -39,7 +39,7 @@ Build the complete quality and performance benchmark infrastructure required by 
 - [x] **CI pipeline updates.** Layout assertions, property tests (256 cases) on PR. Criterion + benchmark-action (110% threshold), miri on main push. Fuzz on nightly.
 - [x] **clippy.toml.** cognitive-complexity=30, too-many-arguments=8.
 - [x] **BENCHMARKS.md template.** NFR-001/002/003 reporting tables.
-- [x] **SQL benchmark scripts.** bench_sql_latency.sh, bench_storage.sh, bench_recall.py, gen_synthetic_data.py.
+- [x] **SQL benchmark CLI surfaces.** `ecaz bench latency`, `ecaz bench storage`, `ecaz bench recall`, and `ecaz corpus generate`.
 
 ### Validated
 
@@ -51,7 +51,7 @@ All criterion benchmarks run successfully with `--quick`. Representative results
 
 ### Open Result-Capture Work
 
-- [ ] **Latency benchmarks (NFR-001).** Capture warm/cold HNSW p50/p99 on the canonical real corpus, plus sequential-scan throughput and artifact metadata. First slice: harden `bench_sql_latency.sh` real-corpus reporting so `ef_search`, cache state, and host / GUC details are recorded correctly.
+- [ ] **Latency benchmarks (NFR-001).** Capture warm/cold HNSW p50/p99 on the canonical real corpus, plus sequential-scan throughput and artifact metadata. First slice: harden `ecaz bench latency` real-corpus reporting so `ef_search`, cache state, and host / GUC details are recorded correctly.
 - [ ] **Storage accounting (NFR-002).** Capture `pg_relation_size`, `pg_total_relation_size`, and per-datum sizing against the same real-corpus benchmark surfaces.
 - [ ] **Full recall suite (NFR-003).** Extend beyond the A4 gate into broader `(m, ef)` SQL reporting, post-insert drift checkpoints, post-vacuum recall refresh, and MSE-only vs MSE+QJL ablations.
 - [ ] **BC-001 through BC-016.** Result artifacts now depend on running the scripts against staged benchmark corpora, not on missing scan / insert / vacuum functionality.

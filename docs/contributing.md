@@ -30,7 +30,7 @@ make audit-unsafe        # verify SAFETY comments on unsafe blocks
 make test                # unit tests (no Postgres required)
 make pg-test             # pgrx integration tests (pg18)
 make pg-test-pg17        # pgrx integration tests (pg17)
-scripts/run_pg18_preload_pgstat_test.sh  # preload-aware PG18 shared-pgstat lane
+ecaz dev test pg18-preload-pgstat        # preload-aware PG18 shared-pgstat lane
 make proptest            # property-based tests
 make layout-check        # struct layout and size assertions
 make miri                # Miri on pure-Rust paths (requires nightly)

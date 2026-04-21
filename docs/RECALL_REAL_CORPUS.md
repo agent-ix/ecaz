@@ -56,9 +56,9 @@ The emitted TSV ids are deterministic global row indices from that sorted
 ordering. The original source ids remain in the manifest as
 `first_source_id` / `last_source_id`.
 
-The canonical conversion recipe is implemented in
-`scripts/qdrant_dbpedia_to_tsv.py`. Official first-run A4 numbers should be
-derived from that script, not from ad hoc parquet slicing.
+The canonical conversion recipe is implemented by `ecaz corpus prepare`.
+Official first-run A4 numbers should be derived from that command, not from ad
+hoc parquet slicing.
 
 ## Local File Contract
 
@@ -214,28 +214,18 @@ WITH (
 
 1. Convert the parquet release into canonical TSV + manifest files:
    ```bash
-   python3 scripts/qdrant_dbpedia_to_tsv.py \
+   ecaz corpus prepare \
        --profile ec_hnsw_real_50k \
        --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
        --output-dir /path/to/staged
    ```
-   This requires `pyarrow` to be installed locally. The converter writes:
+   The converter writes:
    - `ec_hnsw_real_50k_corpus.tsv`
    - `ec_hnsw_real_50k_queries.tsv`
    - `ec_hnsw_real_50k_manifest.json`
-   If you are targeting the repo-local scratch `pg17` cluster, the same flow is
-   available as a single command:
-   ```bash
-   scripts/prepare_real_corpus_scratch.sh \
-       --profile ec_hnsw_real_50k \
-       --parquet /path/to/qdrant-dbpedia-entities-openai3-text-embedding-3-large-1536-1M/data \
-       --output-dir /path/to/staged \
-       --m 8 --m 16
-   ```
-   That wrapper runs the canonical converter first, then calls
-   `scripts/load_real_corpus_scratch.sh` on the emitted TSVs. To build an
-   explicit coexisting family instead of the legacy default names, append
-   `--storage-format turboquant` or `--storage-format pq_fastscan`.
+   If you are targeting the repo-local scratch `pg17` cluster, point normal
+   libpq env vars at it before invoking `ecaz`:
+   `PGHOST=/home/peter/.pgrx PGPORT=28817 PGDATABASE=postgres`.
 2. Install the `pg_test` build of the extension before running the SQL
    recall surfaces from `psql`:
    ```bash
@@ -247,28 +237,28 @@ WITH (
    client binary before invoking the loader.
 3. Run the loader:
    ```bash
-   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+   ecaz corpus load \
        --prefix ec_hnsw_real_50k \
        --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
        --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
-       --m 8 16
+       --m 8,16
    ```
    That preserves the legacy `<prefix>_m{N}_idx` names. To stage both
    first-class formats on the same corpus without rebuilding the tables, rerun
    the loader with explicit storage formats:
    ```bash
-   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+   ecaz corpus load \
        --prefix ec_hnsw_real_50k \
        --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
        --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
-       --m 8 16 \
+       --m 8,16 \
        --storage-format turboquant
 
-   PGDATABASE=tqvector_bench python3 scripts/load_real_corpus.py \
+   ecaz corpus load \
        --prefix ec_hnsw_real_50k \
        --corpus-file /path/to/staged/ec_hnsw_real_50k_corpus.tsv \
        --queries-file /path/to/staged/ec_hnsw_real_50k_queries.tsv \
-       --m 8 16 \
+       --m 8,16 \
        --storage-format pq_fastscan
    ```
    Those runs reuse the existing `<prefix>_corpus` / `<prefix>_queries` tables
@@ -276,12 +266,8 @@ WITH (
    - `<prefix>_turboquant_m8_idx`, `<prefix>_turboquant_m16_idx`
    - `<prefix>_pq_fastscan_m8_idx`, `<prefix>_pq_fastscan_m16_idx`
    If a sibling `ec_hnsw_real_50k_manifest.json` exists, the loader verifies it
-   automatically before loading. You can also pass `--manifest-file` explicitly.
-   For the repo-local scratch `pg17` cluster, use
-   `scripts/load_real_corpus_scratch.sh` to pin the expected socket, port,
-   database, and `psql` binary. The scratch helper defaults `PGDATABASE` to
-   `postgres` because the pgrx scratch cluster does not provision a separate
-   `tqvector_bench` database.
+   automatically before loading. You can also pass `--manifest-file`
+   explicitly.
 4. Run the A4 gate report:
    ```sql
    SELECT * FROM ec_hnsw_graph_scan_recall_external_gate_report(
@@ -505,81 +491,28 @@ The first real-corpus run is documented in
 
 The same `<prefix>_corpus`, `<prefix>_queries`, and either the legacy
 `<prefix>_m{N}_idx` or explicit-format `<prefix>_<storage_format>_m{N}_idx`
-artifacts produced by `scripts/load_real_corpus.py` for the A4 recall lane
-also serve the `NFR-001` query-latency lane: load and bench are decoupled, so
-once the loader has built the tables and indexes there is no second load step.
-The raw reporting surface is `scripts/bench_sql_latency.sh`, but
-durable `NFR-001` artifacts should go through the planner-verified launcher
-`scripts/bench_sql_latency_verified.sh`, which first checks a representative
-`EXPLAIN` plan and refuses to run unless the planner selects the expected
-index. The verified launcher currently accepts one effective `m` per invocation
-so the chosen index is unambiguous. With no extra flag it derives the legacy
-`<prefix>_m{N}_idx` name; with `--storage-format pq_fastscan` it derives
-`<prefix>_pq_fastscan_m{N}_idx`. A worked example against the already-loaded
-`ec_hnsw_real_10k` fixture:
+artifacts produced by `ecaz corpus load` for the A4 recall lane also serve the
+`NFR-001` query-latency lane: load and bench are decoupled, so once the loader
+has built the tables and indexes there is no second load step. Use
+`ecaz bench latency` for the measurement surface, and capture a representative
+`EXPLAIN` plan separately in the artifact packet so the measured run shows the
+expected index selection.
+
+A worked example against the already-loaded `ec_hnsw_real_10k` fixture:
 
 ```bash
-scripts/bench_sql_latency_verified_scratch.sh \
+ecaz bench latency \
     --prefix ec_hnsw_real_10k \
-    --storage-format pq_fastscan \
-    --m 8 \
-    --ef-search 40,64,100,128,160,200 \
-    --cache-state cold \
-    --output /tmp/nfr1_real_10k_m8.summary > /tmp/nfr1_real_10k_m8.stdout
+    --profile ec_hnsw \
+    --k 10 \
+    --concurrency 1 \
+    --iterations 1000 \
+    --sweep 40,64,100,128,160,200
 ```
 
-For warm-cache runs, the same launcher now also supports:
-
-- `--warmup-passes N` to prime the exact query set before timing each
-  `(m, ef_search)` cell
-- `--session-mode per-cell` to keep the entire warmup + timed cell in one
-  backend session instead of opening a fresh `psql` connection per query
-- `--timing-mode plain-server` to time the ordered query with server-side
-  `clock_timestamp()` around a `MATERIALIZED` subquery instead of relying on
-  per-query `EXPLAIN (ANALYZE)`
-- `--timing-mode cached-plan` to time a temp server function whose ordered
-  scan plan is reused across the whole cell; this mode only works with
-  `--session-mode per-cell`
-
-Example warm-cache run:
-
-```bash
-scripts/bench_sql_latency_verified_scratch.sh \
-    --prefix ec_hnsw_real_10k \
-    --m 8 \
-    --ef-search 40 \
-    --cache-state warm-after-prime \
-    --warmup-passes 3 \
-    --session-mode per-cell \
-    --output /tmp/nfr1_real_10k_m8_warm.summary > /tmp/nfr1_real_10k_m8_warm.stdout
-```
-
-The wrapper pins the same socket / port / database / `psql` binary as
-`load_real_corpus_scratch.sh`, so the "load then bench" path against the
-repo-local pgrx scratch cluster needs no per-run env setup. Each
-`(m, ef_search)` cell emits one summary line with `p50`, `p95`, `p99`,
-`mean`, `min`, `max`, `server_qps`, and total cell wall time against the
-same query set used by the recall probes. `server_qps` is derived from the
-summed per-query `EXPLAIN (ANALYZE)` execution times, so it reflects server
-execution rather than `psql` process-spawn overhead. Stdout also emits a
-host / GUC banner (`CPU`, `RAM`, `shared_buffers`, `work_mem`,
-`max_parallel_workers_per_gather`, and the operator-supplied `--cache-state`
-label), which is why the canonical command redirects stdout to a companion
-artifact file. See `spec/non-functional/NFR-001-query-latency.md` for the
-gate target.
-
-The default timing seam is still `--timing-mode explain`, because it remains
-useful for cross-checking planner-visible execution surfaces. The newer
-`--timing-mode plain-server` path is available when you want the same
-planner-verified query measured without per-query `EXPLAIN` output. The
-`--timing-mode cached-plan` path goes one step further and reuses a single
-server-side planned ordered query across the full cell so parse / planning
-churn can be bounded separately from the AM hot path.
-
-`--session-mode per-query` remains the default for backward compatibility, but
-it materially overstates warm-cache latency because each timed query runs in a
-fresh backend session. Warm-cache artifacts should therefore use
-`--session-mode per-cell`.
+Against the repo-local scratch cluster, set `PGHOST`, `PGPORT`, and
+`PGDATABASE` first, then run the same `ecaz` command. See
+`spec/non-functional/NFR-001-query-latency.md` for the gate target.
 
 If the planner surface is not active for the target index, the verified
 launcher aborts before timing and prints the representative plan. That is the
@@ -615,7 +548,7 @@ prepared to reload the fixture afterward.
 - Bulk dataset acquisition. The user is responsible for obtaining the corpus.
   The repo never checks in dataset binaries.
 - Latency benchmarking. `NFR-001` work uses the same loader path but a
-  different reporting surface (`scripts/bench_sql_latency.sh`).
+  different reporting surface (`ecaz bench latency`).
 - Insert drift / vacuum recall. Both follow `A5` / `A6` and re-use the loaded
   tables once they exist.
 - The published external reference anchor. That is a one-time oracle on a

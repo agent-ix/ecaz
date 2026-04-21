@@ -23,6 +23,8 @@ pub struct ConnectionOptions {
     pub password: Option<String>,
 }
 
+pub type ConnectParams = ConnectionOptions;
+
 impl ConnectionOptions {
     pub fn config(&self) -> Config {
         let mut config = Config::new();
@@ -58,6 +60,10 @@ pub async fn connect(options: &ConnectionOptions) -> Result<Client> {
     });
 
     Ok(client)
+}
+
+pub async fn connect_with(params: &ConnectParams) -> Result<Client> {
+    connect(params).await
 }
 
 /// Does a relation with the given name and `relkind` exist?

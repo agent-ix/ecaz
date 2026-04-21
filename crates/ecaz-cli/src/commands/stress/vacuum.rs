@@ -1,6 +1,6 @@
 //! `ecaz stress vacuum` — concurrent insert/delete/scan/VACUUM harness.
 //!
-//! Ports `scripts/vacuum_concurrency_scratch.sh`. Drives four concurrent
+//! Drives four concurrent
 //! workers against a synthetic `ec_hnsw`-indexed table for a fixed wall
 //! duration, then asserts that VACUUM left the index structurally sound.
 //!

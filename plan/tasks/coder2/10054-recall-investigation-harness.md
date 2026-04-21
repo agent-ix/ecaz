@@ -158,7 +158,8 @@ cargo pgrx test pg17
 ```
 
 Manually smoke against the scratch cluster once the real `ec_hnsw_real_10k`
-fixture is loaded (the loader is in `scripts/load_real_corpus_scratch.sh`):
+fixture is loaded (use `ecaz corpus load` with `PGHOST` / `PGPORT` /
+`PGDATABASE` pointed at the scratch cluster):
 
 ```sql
 SELECT * FROM tests.ec_hnsw_graph_scan_recall_histogram(

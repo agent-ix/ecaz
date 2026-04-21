@@ -35,21 +35,21 @@ task is the lane that resolved that ambiguity on `main`.
   `dbpedia-entities-openai3-text-embedding-3-large-1536-1M`; default working subset
   `ec_hnsw_real_50k` (50k corpus, 1k queries). Local file format: TSV with
   `<id>\t<json_array>` columns, no header.
-- [x] **Canonical subset rule.** `scripts/qdrant_dbpedia_to_tsv.py` pins the default subsets by
-  sorting the full parquet release by the source parquet id column ascending (currently `_id`
-  lexicographic for the Qdrant/Hugging Face release), then taking rows `[0, 49_999]` / `[50_000,
-  50_999]` for `ec_hnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `ec_hnsw_real_10k`.
-- [x] **Manifest contract.** The converter emits `<prefix>_manifest.json` with SHA-256 digests,
-  counts, id ranges, dimensionality, and selection metadata. `scripts/load_real_corpus.py`
-  auto-discovers and verifies the sibling manifest (or takes `--manifest-file` explicitly) before
-  loading, refusing mismatches unless `--allow-manifest-mismatch` is passed.
-- [x] **One-shot scratch helper.** `scripts/prepare_real_corpus_scratch.sh` chains canonical
-  parquet conversion into the existing scratch-cluster loader so the first local DBpedia run does
-  not depend on a manual multi-step copy/paste sequence.
-- [x] **Local loader path.** `scripts/load_real_corpus.py` ingests `<basename>_corpus.tsv` /
-  `<basename>_queries.tsv` via `psql COPY ... FROM STDIN`, then encodes the `embedding tqvector`
-  column with `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is
-  already populated and skips index rebuild when reloptions match.
+- [x] **Canonical subset rule.** `ecaz corpus prepare` pins the default subsets by sorting the
+  full parquet release by the source parquet id column ascending (currently `_id` lexicographic
+  for the Qdrant/Hugging Face release), then taking rows `[0, 49_999]` / `[50_000, 50_999]` for
+  `ec_hnsw_real_50k` and `[0, 9_999]` / `[10_000, 10_199]` for `ec_hnsw_real_10k`.
+- [x] **Manifest contract.** The CLI emits `<prefix>_manifest.json` with SHA-256 digests,
+  counts, id ranges, dimensionality, and selection metadata. `ecaz corpus load` auto-discovers
+  and verifies the sibling manifest (or takes `--manifest-file` explicitly) before loading,
+  refusing mismatches unless `--allow-manifest-mismatch` is passed.
+- [x] **Scratch-cluster compatibility.** The CLI uses normal libpq env vars, so the same
+  `ecaz corpus prepare` / `ecaz corpus load` flow works against a scratch cluster once `PGHOST`,
+  `PGPORT`, and `PGDATABASE` point at it.
+- [x] **Local loader path.** `ecaz corpus load` ingests `<basename>_corpus.tsv` /
+  `<basename>_queries.tsv`, then encodes the `embedding tqvector` column with
+  `encode_to_tqvector(source, 4, 42)`. Idempotent: skips reload when the table is already
+  populated and skips index rebuild when reloptions match.
 - [x] **External-corpus relation seam.** Added
   `probe_graph_scan_recall_external_summary_for_relation` and the `ec_hnsw_graph_scan_recall_external_summary`
   pg_extern. Reads `(id, source)` from the loaded tables, builds fp32 truth from the actual loaded
