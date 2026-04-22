@@ -304,6 +304,12 @@ See ADR-040 for the full shape. Summary:
   foreign selected/admitted output. That makes the remaining handoff seam
   visible in shared state instead of only in local scan control flow.
 
+- **Blocker generation snapshots.** Blocked-owner state now also carries the
+  relevant coordinator generation (`result_publish_generation` for foreign
+  selected output, `admitted_result_generation` for foreign head/window state)
+  so workers can tell whether they are still blocked on the same foreign state
+  or the owner already advanced underneath them.
+
 - **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
   admission-window stalls so scan diagnostics can distinguish why a

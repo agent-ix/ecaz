@@ -7,7 +7,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 10;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 11;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 
@@ -104,6 +104,7 @@ pub(crate) struct EcParallelWorkerSlot {
     active_result_has_current: AtomicU32,
     owned_output_blocker_kind: AtomicU32,
     owned_output_blocker_slot_index: AtomicU32,
+    owned_output_blocker_generation: AtomicU32,
 }
 
 #[repr(C)]
@@ -327,6 +328,7 @@ pub(crate) enum EcParallelOwnedOutputBlockerKind {
 pub(crate) struct EcParallelOwnedOutputBlocker {
     pub(crate) kind: EcParallelOwnedOutputBlockerKind,
     pub(crate) slot_index: Option<u32>,
+    pub(crate) generation: u32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -363,6 +365,7 @@ pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) active_result_has_current: bool,
     pub(crate) owned_output_blocker_kind: u32,
     pub(crate) owned_output_blocker_slot_index: Option<u32>,
+    pub(crate) owned_output_blocker_generation: u32,
 }
 
 impl EcParallelWorkerSlotRuntimeSnapshot {
@@ -379,6 +382,7 @@ impl EcParallelWorkerSlotRuntimeSnapshot {
             active_result_has_current: false,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
             owned_output_blocker_slot_index: None,
+            owned_output_blocker_generation: 0,
         }
     }
 }
@@ -844,6 +848,7 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
                 active_result_has_current: AtomicU32::new(0),
                 owned_output_blocker_kind: AtomicU32::new(EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE),
                 owned_output_blocker_slot_index: AtomicU32::new(EC_PARALLEL_SLOT_INDEX_INVALID),
+                owned_output_blocker_generation: AtomicU32::new(0),
             };
         }
     }
@@ -910,6 +915,8 @@ fn reset_worker_slot_runtime(slot: &EcParallelWorkerSlot) {
             .unwrap_or(EC_PARALLEL_SLOT_INDEX_INVALID),
         Ordering::Release,
     );
+    slot.owned_output_blocker_generation
+        .store(runtime.owned_output_blocker_generation, Ordering::Release);
 }
 
 fn load_admitted_result_snapshot(
@@ -1034,6 +1041,9 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
                 slot.owned_output_blocker_slot_index.load(Ordering::Acquire),
             )
             .filter(|slot_index| *slot_index != EC_PARALLEL_SLOT_INDEX_INVALID),
+            owned_output_blocker_generation: slot
+                .owned_output_blocker_generation
+                .load(Ordering::Acquire),
         },
     }
 }
@@ -2547,6 +2557,9 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
             .unwrap_or(EC_PARALLEL_SLOT_INDEX_INVALID),
         Ordering::Release,
     );
+    slot_ref
+        .owned_output_blocker_generation
+        .store(snapshot.owned_output_blocker_generation, Ordering::Release);
     Ok(true)
 }
 
@@ -2987,6 +3000,7 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
             EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: coordinator.selected_result_slot_index,
+                generation: coordinator.result_publish_generation,
             },
         ));
     }
@@ -3011,6 +3025,7 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
             EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
                 slot_index: snapshot.source_slot_index,
+                generation: coordinator.admitted_result_generation,
             },
         ));
     }
@@ -3019,6 +3034,7 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
         EcParallelOwnedOutputBlocker {
             kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
             slot_index: None,
+            generation: coordinator.admitted_result_generation,
         },
     ))
 }
@@ -5415,6 +5431,7 @@ mod tests {
             active_result_has_current: true,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
             owned_output_blocker_slot_index: None,
+            owned_output_blocker_generation: 0,
         };
 
         assert!(
@@ -5689,6 +5706,7 @@ mod tests {
                         active_result_has_current: true,
                         owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
                         owned_output_blocker_slot_index: None,
+                        owned_output_blocker_generation: 0,
                     },
                 )
             }
@@ -7190,6 +7208,7 @@ mod tests {
             EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: Some(first_slot),
+                generation: 2,
             }),
             "a worker with local staged output should report blocked while a foreign slot remains selected"
         );
@@ -7286,6 +7305,7 @@ mod tests {
             EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
                 slot_index: None,
+                generation: 1,
             }),
             "a local pending output that loses the full admitted window should report an admission-window blocker"
         );
@@ -7425,6 +7445,7 @@ mod tests {
             EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
                 slot_index: Some(first_slot),
+                generation: 2,
             }),
             "a local selected pending output that would admit behind a better foreign head should report a foreign-admitted-head blocker"
         );

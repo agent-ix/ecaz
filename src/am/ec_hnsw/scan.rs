@@ -1123,15 +1123,24 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     } else {
         saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
     };
-    let (owned_output_blocker_kind, owned_output_blocker_slot_index) = opaque
+    let (
+        owned_output_blocker_kind,
+        owned_output_blocker_slot_index,
+        owned_output_blocker_generation,
+    ) = opaque
         .parallel_owned_output_blocker
         .map(|blocker| {
             (
                 super::parallel::owned_output_blocker_kind_code(blocker.kind),
                 blocker.slot_index,
+                blocker.generation,
             )
         })
-        .unwrap_or((super::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE, None));
+        .unwrap_or((
+            super::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            None,
+            0,
+        ));
 
     let snapshot = super::parallel::EcParallelWorkerSlotRuntimeSnapshot {
         execution_phase: parallel_scan_worker_phase(opaque.execution_phase),
@@ -1145,6 +1154,7 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         active_result_has_current: active_result_state.current().has_element(),
         owned_output_blocker_kind,
         owned_output_blocker_slot_index,
+        owned_output_blocker_generation,
     };
 
     match unsafe {
@@ -6150,6 +6160,10 @@ mod tests {
             snapshot.runtime.owned_output_blocker_slot_index, None,
             "idle worker snapshots should not report a blocker owner slot"
         );
+        assert_eq!(
+            snapshot.runtime.owned_output_blocker_generation, 0,
+            "idle worker snapshots should not report a blocker generation"
+        );
 
         let coordinator_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
@@ -6997,6 +7011,7 @@ mod tests {
                 crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(second_slot),
+                    generation: 2,
                 },
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
@@ -7036,6 +7051,11 @@ mod tests {
             worker_snapshot.runtime.owned_output_blocker_slot_index,
             Some(second_slot),
             "blocked materialized staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation,
+            2,
+            "blocked materialized staging should publish the blocker generation into the shared worker runtime snapshot"
         );
         assert_eq!(
             opaque
@@ -7233,6 +7253,7 @@ mod tests {
                 crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(second_slot),
+                    generation: 2,
                 },
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
@@ -7272,6 +7293,11 @@ mod tests {
             worker_snapshot.runtime.owned_output_blocker_slot_index,
             Some(second_slot),
             "blocked prefetched staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation,
+            2,
+            "blocked prefetched staging should publish the blocker generation into the shared worker runtime snapshot"
         );
         assert_eq!(
             opaque
@@ -7420,6 +7446,7 @@ mod tests {
             blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
                 kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
                 slot_index: None,
+                generation: 0,
             }),
             BlockedParallelScanDisposition::DropAndContinue,
             "admission-window blockers should drop the staged local row and continue searching"
@@ -7428,6 +7455,7 @@ mod tests {
             blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
                 kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: Some(1),
+                generation: 0,
             }),
             BlockedParallelScanDisposition::KeepLocalEmit,
             "foreign-owner blockers should keep the staged local-direct emit fallback until the handoff contract lands"
