@@ -2866,6 +2866,45 @@ mod tests {
 
     #[cfg(feature = "pg18")]
     #[pg_test]
+    fn test_pg18_parallel_scan_lwlock_reacquires_after_ereport() {
+        assert!(
+            unsafe { am::common::parallel::debug_parallel_scan_lwlock_reacquire_ok() }
+                .expect("initial LWLock probe should succeed"),
+            "backend-local parallel scan LWLock fixture should be acquirable before the error path"
+        );
+
+        assert!(
+            pg_sys::PgTryBuilder::new(|| unsafe {
+                am::common::parallel::debug_parallel_scan_lwlock_ereport()
+            })
+            .catch_others(|cause| match cause {
+                pg_sys::panic::CaughtError::ErrorReport(report)
+                | pg_sys::panic::CaughtError::PostgresError(report) => {
+                    assert!(
+                        report
+                            .message()
+                            .contains("debug parallel scan LWLock ereport while held"),
+                        "held-lock ereport should preserve its test error message: {report:?}"
+                    );
+                    true
+                }
+                pg_sys::panic::CaughtError::RustPanic { ereport, .. } => {
+                    panic!("expected a PostgreSQL error, got a Rust panic: {ereport:?}");
+                }
+            })
+            .execute(),
+            "held-lock ereport should be caught inside PgTryBuilder"
+        );
+
+        assert!(
+            unsafe { am::common::parallel::debug_parallel_scan_lwlock_reacquire_ok() }
+                .expect("post-ereport LWLock probe should succeed"),
+            "LWLock should still be acquirable after the ereport unwind releases held locks"
+        );
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
     fn test_pg18_module_identity_reports_loaded_module_version() {
         let version = Spi::get_one::<String>(
             "SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'",

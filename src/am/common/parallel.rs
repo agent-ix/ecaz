@@ -1,5 +1,9 @@
 use std::ffi::{c_int, c_void};
 use std::mem::size_of;
+#[cfg(any(test, feature = "pg_test"))]
+use std::ptr;
+#[cfg(any(test, feature = "pg_test"))]
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 
 use pgrx::pg_sys;
@@ -430,6 +434,8 @@ impl Drop for ParallelScanCoordinatorLockGuard {
 static PARALLEL_SCAN_LWLOCK_TRANCHE_ID: AtomicI32 = AtomicI32::new(0);
 #[cfg(test)]
 static TEST_PARALLEL_SCAN_LWLOCK_TRANCHE_ID: AtomicI32 = AtomicI32::new(1);
+#[cfg(any(test, feature = "pg_test"))]
+static TEST_BACKEND_LOCAL_PARALLEL_SCAN_TARGET: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 
 impl ParallelScanAttachment {
     pub(crate) unsafe fn result_slot(
@@ -1408,6 +1414,30 @@ unsafe fn rebuild_parallel_scan_heap_with_attachment(
 
 fn parallel_scan_lwlock_tranche_name() -> &'static core::ffi::CStr {
     c"ecaz_parallel_scan_dsm"
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+unsafe fn backend_local_parallel_scan_test_target() -> *mut c_void {
+    let existing = TEST_BACKEND_LOCAL_PARALLEL_SCAN_TARGET.load(Ordering::Acquire);
+    if !existing.is_null() {
+        return existing;
+    }
+
+    let descriptor_bytes = ec_parallel_scan_descriptor_size_for(1);
+    let allocation =
+        unsafe { pg_sys::MemoryContextAllocZero(pg_sys::TopMemoryContext, descriptor_bytes) };
+    unsafe { initialize_parallel_scan_target_with_worker_slots(allocation, 1) }
+        .expect("backend-local parallel scan test target should initialize");
+
+    match TEST_BACKEND_LOCAL_PARALLEL_SCAN_TARGET.compare_exchange(
+        ptr::null_mut(),
+        allocation,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ) {
+        Ok(_) => allocation,
+        Err(existing) => existing,
+    }
 }
 
 unsafe fn register_parallel_scan_lwlock_tranche(tranche_id: i32) {
@@ -3447,6 +3477,25 @@ pub(crate) unsafe extern "C-unwind" fn ec_amparallelrescan(scan: pg_sys::IndexSc
                 .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan rescan failed: {err}"));
         })
     }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_parallel_scan_lwlock_reacquire_ok() -> Result<bool, &'static str> {
+    let target = unsafe { backend_local_parallel_scan_test_target() };
+    let attachment = unsafe { validate_parallel_scan_state(target.cast::<EcParallelScanState>()) }?;
+    let _guard = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    Ok(true)
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_parallel_scan_lwlock_ereport() -> ! {
+    let target = unsafe { backend_local_parallel_scan_test_target() };
+    let attachment = unsafe {
+        validate_parallel_scan_state(target.cast::<EcParallelScanState>())
+            .expect("backend-local parallel scan test target should validate")
+    };
+    let _guard = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    pgrx::error!("debug parallel scan LWLock ereport while held");
 }
 
 #[cfg(test)]
