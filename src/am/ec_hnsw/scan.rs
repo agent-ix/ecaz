@@ -3789,20 +3789,88 @@ fn best_deferred_parallel_blocked_output(
         })
 }
 
-fn should_prefer_deferred_parallel_blocked_output(
+fn deferred_parallel_blocked_output_preference_score(
     opaque: &TqScanOpaque,
-) -> Option<DeferredParallelBlockedOutput> {
-    let deferred = best_deferred_parallel_blocked_output(opaque)?;
-    let active = active_result_state_ref(opaque).current();
-    if !active.has_element() {
-        return Some(*deferred);
-    }
-
-    if active.score() <= deferred.state.current().score() {
+    deferred: &DeferredParallelBlockedOutput,
+) -> Option<f32> {
+    if !deferred.state.current().has_element() || deferred.state.pending_count() == 0 {
         return None;
     }
 
-    Some(*deferred)
+    let Some(retained) = deferred.retained_blocker else {
+        return Some(deferred.state.current().score());
+    };
+
+    if should_drop_deferred_parallel_blocked_output(deferred)
+        || opaque.parallel_scan_state.is_null()
+    {
+        return None;
+    }
+
+    match retained.blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            let expected_slot = retained.blocker.slot_index?;
+            let selected = unsafe {
+                super::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!("ec_hnsw parallel scan selected-pending preference read failed: {err}")
+            })?;
+            (selected.coordinator.selected_result_slot_index == Some(expected_slot)
+                && selected.coordinator.result_publish_generation == retained.blocker.generation)
+                .then_some(selected.pending_output.score)
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            let admitted = unsafe {
+                super::parallel::read_parallel_scan_admitted_head_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!("ec_hnsw parallel scan admitted-head preference read failed: {err}")
+            })?;
+            (admitted.coordinator.admitted_result_generation == retained.blocker.generation)
+                .then_some(admitted.admitted_head.score)
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => None,
+    }
+}
+
+fn best_preferable_deferred_parallel_blocked_output(
+    opaque: &TqScanOpaque,
+) -> Option<(DeferredParallelBlockedOutput, f32)> {
+    opaque
+        .deferred_parallel_blocked_results
+        .iter()
+        .filter_map(|deferred| {
+            let preference_score =
+                deferred_parallel_blocked_output_preference_score(opaque, deferred)?;
+            Some((*deferred, preference_score))
+        })
+        .min_by(|(left, left_score), (right, right_score)| {
+            left_score.total_cmp(right_score).then_with(|| {
+                item_pointer_order_key(left.state.current().element_tid())
+                    .cmp(&item_pointer_order_key(right.state.current().element_tid()))
+            })
+        })
+}
+
+fn should_prefer_deferred_parallel_blocked_output(
+    opaque: &TqScanOpaque,
+) -> Option<DeferredParallelBlockedOutput> {
+    let (deferred, deferred_score) = best_preferable_deferred_parallel_blocked_output(opaque)?;
+    let active = active_result_state_ref(opaque).current();
+    if !active.has_element() {
+        return Some(deferred);
+    }
+
+    if active.score() <= deferred_score {
+        return None;
+    }
+
+    Some(deferred)
 }
 
 fn try_emit_preferred_deferred_parallel_blocked_output(
@@ -9554,6 +9622,67 @@ mod tests {
                 .element_tid(),
             tid(81, 1),
             "the still-blocked best deferred row should stay in the stash for a later retry"
+        );
+    }
+
+    #[test]
+    fn take_preferred_deferred_parallel_blocked_output_does_not_emit_worse_ready_row() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque
+            .fallback_result_state
+            .set_current_with_details(tid(85, 1), -7.0, None, None, None);
+        opaque.fallback_result_state.store_pending(&[tid(85, 2)]);
+
+        let mut blocked = ScanResultState::default();
+        blocked.set_current_with_details(tid(86, 1), -9.0, None, None, None);
+        blocked.store_pending(&[tid(86, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: blocked,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(3),
+                        generation: 33,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 150,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(86, 1),
+                }),
+            });
+
+        let mut ready = ScanResultState::default();
+        ready.set_current_with_details(tid(87, 1), -6.0, None, None, None);
+        ready.store_pending(&[tid(87, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: ready,
+                retained_blocker: None,
+            });
+
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut opaque),
+            None,
+            "a blocked best deferred row should not cause a worse ready deferred row to outrank the active local row"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            tid(85, 1),
+            "rejecting the worse ready deferred row should leave the active local row intact"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results.len(),
+            2,
+            "both deferred rows should remain stashed when no preferable deferred output exists"
         );
     }
 
