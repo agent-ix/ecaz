@@ -393,6 +393,15 @@ See ADR-040 for the full shape. Summary:
   multiple blocked local rows accumulate before the final ownership-transfer
   seam lands.
 
+- **Deferred-row shared handoff retry.** A deferred blocked row now remembers
+  which scan phase produced it and gets one last shared-handoff retry before
+  local emit. The scan temporarily restores that deferred row into its original
+  graph or linear state, probes the shared ownership seam again, and only falls
+  back to local emit if the foreign blocker is still unresolved. This still is
+  not a full ownership transfer, but it narrows the remaining gap by retrying
+  the shared seam at the last possible point instead of draining every deferred
+  row locally by default.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
