@@ -3354,6 +3354,26 @@ enum ParallelScanOutputState {
     Emitted(PendingScanOutput),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BlockedParallelScanDisposition {
+    KeepLocalEmit,
+    DropAndContinue,
+}
+
+fn blocked_parallel_scan_disposition(
+    blocker: super::parallel::EcParallelOwnedOutputBlocker,
+) -> BlockedParallelScanDisposition {
+    match blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+            BlockedParallelScanDisposition::DropAndContinue
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending
+        | super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            BlockedParallelScanDisposition::KeepLocalEmit
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BufferedGroupedScanResult {
     element_tid: page::ItemPointer,
@@ -3643,6 +3663,15 @@ unsafe fn emit_prefetched_parallel_scan_output(
     }
 
     unsafe { try_take_parallel_scan_next_output(opaque) }
+}
+
+fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
+    active_result_state_mut(opaque).clear();
+    if !opaque.parallel_scan_state.is_null()
+        && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+    {
+        publish_parallel_scan_worker_slot_snapshot(opaque);
+    }
 }
 
 unsafe fn produce_next_scan_heap_tid(
@@ -4905,34 +4934,44 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return true;
     }
 
-    let Some(selected) =
-        (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
-    else {
-        return false;
-    };
+    loop {
+        let Some(selected) =
+            (unsafe { select_next_linear_scan_result(index_relation, opaque, code_len) })
+        else {
+            return false;
+        };
 
-    if let ParallelScanOutputState::Emitted(output) =
-        unsafe { emit_materialized_parallel_scan_output(opaque, selected) }
-    {
-        mark_emitted_element(opaque, selected.element_tid);
-        emit_scan_output(scan, opaque, output);
-        opaque.explain_counters.record_heap_tid_returned();
-        return true;
+        match unsafe { emit_materialized_parallel_scan_output(opaque, selected) } {
+            ParallelScanOutputState::Emitted(output) => {
+                mark_emitted_element(opaque, selected.element_tid);
+                emit_scan_output(scan, opaque, output);
+                opaque.explain_counters.record_heap_tid_returned();
+                return true;
+            }
+            ParallelScanOutputState::Blocked(blocker)
+                if blocked_parallel_scan_disposition(blocker)
+                    == BlockedParallelScanDisposition::DropAndContinue =>
+            {
+                discard_active_parallel_scan_output(opaque);
+                continue;
+            }
+            ParallelScanOutputState::Blocked(_) | ParallelScanOutputState::Empty => {
+                let emitted = linear_fallback_cursor(opaque)
+                    .emit_materialized_output(selected)
+                    .map(|output| {
+                        mark_emitted_element(opaque, selected.element_tid);
+                        emit_scan_output(scan, opaque, output);
+                        publish_parallel_scan_worker_slot_snapshot(opaque);
+                        true
+                    })
+                    .unwrap_or(false);
+                if emitted {
+                    opaque.explain_counters.record_heap_tid_returned();
+                }
+                return emitted;
+            }
+        }
     }
-
-    let emitted = linear_fallback_cursor(opaque)
-        .emit_materialized_output(selected)
-        .map(|output| {
-            mark_emitted_element(opaque, selected.element_tid);
-            emit_scan_output(scan, opaque, output);
-            publish_parallel_scan_worker_slot_snapshot(opaque);
-            true
-        })
-        .unwrap_or(false);
-    if emitted {
-        opaque.explain_counters.record_heap_tid_returned();
-    }
-    emitted
 }
 
 unsafe fn select_next_linear_scan_result(
@@ -7248,6 +7287,105 @@ mod tests {
             opaque.result_state.current().element_tid(),
             page::ItemPointer::INVALID,
             "linear fallback materialization should not backfill graph cursor result-state storage"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_drops_admission_window() {
+        assert_eq!(
+            blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+                slot_index: None,
+            }),
+            BlockedParallelScanDisposition::DropAndContinue,
+            "admission-window blockers should drop the staged local row and continue searching"
+        );
+        assert_eq!(
+            blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+            }),
+            BlockedParallelScanDisposition::KeepLocalEmit,
+            "foreign-owner blockers should keep the staged local-direct emit fallback until the handoff contract lands"
+        );
+    }
+
+    #[test]
+    fn discard_active_parallel_scan_output_clears_fallback_state_and_snapshot() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..TqScanOpaque::default()
+        };
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.fallback_result_state.materialize_with_details(
+            tid(41, 1),
+            -12.0,
+            None,
+            None,
+            Some(-12.5),
+            &[tid(42, 1)],
+        );
+        publish_parallel_scan_worker_slot_snapshot(&opaque);
+
+        discard_active_parallel_scan_output(&mut opaque);
+
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            page::ItemPointer::INVALID,
+            "discarding the active parallel output should clear the local fallback current result"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.pending_count(),
+            0,
+            "discarding the active parallel output should clear local duplicate drain state"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.element_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            "discarding the active parallel output should clear the shared staged element snapshot too"
+        );
+        assert_eq!(
+            result_snapshot.runtime.pending_count, 0,
+            "discarding the active parallel output should clear shared pending duplicate state too"
         );
     }
 
