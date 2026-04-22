@@ -457,6 +457,12 @@ See ADR-040 for the full shape. Summary:
   concealed row immediately. The hidden row still wakes back into the shared
   seam afterward.
 
+- **Ready deferred rows retry the shared seam.** A deferred row that is no
+  longer carrying a live blocker no longer falls straight into deferred
+  local-only emit. It now restores itself through the shared next-output seam
+  first, so ready deferred work still drains under the staged coordinator
+  contract before the branch uses the last-resort local fallback.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

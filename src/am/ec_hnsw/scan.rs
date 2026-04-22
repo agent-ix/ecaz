@@ -4373,7 +4373,11 @@ fn take_next_deferred_parallel_blocked_output(
         let mut deferred = opaque
             .deferred_parallel_blocked_results
             .remove(selected_idx);
-        if deferred.retained_blocker.is_some() {
+        if !opaque.parallel_scan_state.is_null()
+            && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+            && deferred.state.current().has_element()
+            && deferred.state.pending_count() != 0
+        {
             if let Some(output) =
                 unsafe { try_take_parallel_scan_deferred_handoff_output(opaque, &mut deferred) }
             {
@@ -4383,6 +4387,8 @@ fn take_next_deferred_parallel_blocked_output(
                 restore_deferred_parallel_blocked_outputs(opaque, blocked_fallback);
                 return Some(output);
             }
+        }
+        if deferred.retained_blocker.is_some() {
             if should_drop_deferred_parallel_blocked_output(&deferred) {
                 continue;
             }
@@ -9813,6 +9819,92 @@ mod tests {
                 .element_tid(),
             tid(92, 1),
             "the local deferred row should remain stashed for later ownership resolution after the foreign handoff drains"
+        );
+    }
+
+    #[test]
+    fn take_next_deferred_parallel_blocked_output_retries_shared_seam_for_ready_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        owner.execution_phase = ScanExecutionPhase::Exhausted;
+
+        let mut ready = ScanResultState::default();
+        ready.set_current_with_details(tid(94, 1), -7.0, Some(-6.5), Some(3), Some(-7.5));
+        ready.store_pending(&[tid(95, 1), tid(95, 2)]);
+        owner
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::LinearFallback,
+                state: ready,
+                retained_blocker: None,
+            });
+
+        assert_eq!(
+            take_next_deferred_parallel_blocked_output(&mut owner, true),
+            Some(PendingScanOutput {
+                heap_tid: tid(95, 1),
+                score: -7.0,
+                approx_score: Some(-6.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-7.5),
+            }),
+            "a ready deferred row should retry the shared seam before falling back to a local-only emit"
+        );
+        assert_eq!(
+            owner.explain_counters.stats_parallel_deferred_local_emits, 0,
+            "retrying the shared seam for a ready deferred row should not increment the deferred local-emit counter"
+        );
+        assert_eq!(
+            owner.execution_phase,
+            ScanExecutionPhase::Exhausted,
+            "restoring a ready deferred row through the shared seam should preserve the caller's exhausted phase"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "the deferred row should remain stashed when it still has another heap tid after the shared drain"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0]
+                .state
+                .pending_index(),
+            1,
+            "the shared retry should advance the deferred row's pending cursor"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0].retained_blocker, None,
+            "a ready deferred row that drains through the shared seam should stay unblocked"
         );
     }
 
