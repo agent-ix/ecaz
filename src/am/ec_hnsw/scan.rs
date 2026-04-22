@@ -4133,6 +4133,7 @@ fn stash_active_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
 
 fn take_next_deferred_parallel_blocked_output(
     opaque: &mut TqScanOpaque,
+    allow_local_emit: bool,
 ) -> Option<PendingScanOutput> {
     let (selected_idx, _) = opaque
         .deferred_parallel_blocked_results
@@ -4178,11 +4179,21 @@ fn take_next_deferred_parallel_blocked_output(
             {
                 sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             }
-            return take_next_deferred_parallel_blocked_output(opaque);
+            return take_next_deferred_parallel_blocked_output(opaque, allow_local_emit);
+        }
+        if !allow_local_emit {
+            opaque.deferred_parallel_blocked_results.push(deferred);
+            sort_deferred_parallel_blocked_outputs(opaque);
+            if !opaque.parallel_scan_state.is_null()
+                && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+            {
+                sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            }
+            return None;
         }
     }
     let Some(output) = deferred.state.take_pending_output() else {
-        return take_next_deferred_parallel_blocked_output(opaque);
+        return take_next_deferred_parallel_blocked_output(opaque, allow_local_emit);
     };
     mark_emitted_element(opaque, deferred.state.current().element_tid());
     if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
@@ -4204,14 +4215,14 @@ fn take_preferred_deferred_parallel_blocked_output(
     opaque: &mut TqScanOpaque,
 ) -> Option<PendingScanOutput> {
     should_prefer_deferred_parallel_blocked_output(opaque)?;
-    take_next_deferred_parallel_blocked_output(opaque)
+    take_next_deferred_parallel_blocked_output(opaque, false)
 }
 
 fn emit_next_deferred_parallel_blocked_output(
     scan: pg_sys::IndexScanDesc,
     opaque: &mut TqScanOpaque,
 ) -> bool {
-    let Some(output) = take_next_deferred_parallel_blocked_output(opaque) else {
+    let Some(output) = take_next_deferred_parallel_blocked_output(opaque, true) else {
         return false;
     };
     emit_scan_output(scan, opaque, output);
@@ -9175,6 +9186,64 @@ mod tests {
         assert!(
             opaque.deferred_parallel_blocked_results.is_empty(),
             "the single-pending deferred row should drain completely after emitting first"
+        );
+    }
+
+    #[test]
+    fn take_preferred_deferred_parallel_blocked_output_keeps_live_blocked_row_deferred() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque
+            .fallback_result_state
+            .set_current_with_details(tid(64, 1), -4.0, None, None, None);
+        opaque.fallback_result_state.store_pending(&[tid(64, 2)]);
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(65, 1), -8.0, None, None, None);
+        deferred.store_pending(&[tid(65, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(2),
+                        generation: 21,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 99,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(65, 1),
+                }),
+            });
+
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut opaque),
+            None,
+            "a better deferred row that is still blocked by a live foreign owner should stay deferred instead of locally emitting early"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results.len(),
+            1,
+            "an unresolved preferred deferred row should remain in the stash"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(65, 1),
+            "the blocked deferred row should stay intact for a later retry"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            tid(64, 1),
+            "keeping the blocked deferred row deferred should leave the active local row untouched"
         );
     }
 
