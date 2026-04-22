@@ -4330,6 +4330,9 @@ fn take_next_deferred_parallel_blocked_output(
     if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
         blocked_fallback.push(deferred);
     }
+    opaque
+        .explain_counters
+        .record_parallel_deferred_local_emit();
     opaque.explain_counters.record_heap_tid_returned();
     restore_deferred_parallel_blocked_outputs(opaque, blocked_fallback);
     Some(output)
@@ -9346,6 +9349,11 @@ mod tests {
         assert!(
             opaque.deferred_parallel_blocked_results.is_empty(),
             "the single blocked row should drain completely once it becomes the only remaining deferred work"
+        );
+        assert_eq!(
+            opaque.explain_counters.stats_parallel_deferred_local_emits,
+            1,
+            "forcing the last still-blocked deferred row through a local emit should be visible in EXPLAIN counters"
         );
     }
 

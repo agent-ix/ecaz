@@ -421,6 +421,12 @@ See ADR-040 for the full shape. Summary:
   blocked row. This still is not the final ownership transfer, but it reduces
   unnecessary local fallback while preserving progress.
 
+- **Deferred local-emit EXPLAIN counter.** That last-resort deferred local emit
+  is now explicit in the `Ecaz Stats` output as
+  `Parallel Deferred Local Emits`, so the remaining ownership gap is visible in
+  PG18 explain output instead of staying hidden behind ordinary heap-tid
+  returned counts.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

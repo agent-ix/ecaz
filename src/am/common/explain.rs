@@ -67,10 +67,11 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_blocked_foreign_selected_pending: u32,
     pub stats_parallel_blocked_foreign_admitted_head: u32,
     pub stats_parallel_blocked_admission_window: u32,
+    pub stats_parallel_deferred_local_emits: u32,
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 10] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 11] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -116,6 +117,12 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 10] = [
         counter_type: "u32",
         increments_when:
             "parallel scan staging is blocked because the current output loses the admitted window",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_deferred_local_emits",
+        counter_type: "u32",
+        increments_when:
+            "a deferred blocked row is still locally emitted because no shared handoff-ready deferred row remains",
     },
     ExplainCounterDefinition {
         counter_name: "stats_quantizer_cache_hit",
@@ -187,6 +194,10 @@ impl TqExplainCounters {
         self.stats_parallel_blocked_admission_window += 1;
     }
 
+    pub(crate) fn record_parallel_deferred_local_emit(&mut self) {
+        self.stats_parallel_deferred_local_emits += 1;
+    }
+
     pub(crate) fn record_quantizer_cache_hit(&mut self) {
         self.stats_quantizer_cache_hit = true;
     }
@@ -195,7 +206,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 10] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 11] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -236,6 +247,10 @@ impl TqExplainCounters {
             ExplainProperty {
                 property_name: "Parallel Blocked: Admission Window",
                 value: ExplainPropertyValue::Integer(self.stats_parallel_blocked_admission_window),
+            },
+            ExplainProperty {
+                property_name: "Parallel Deferred Local Emits",
+                value: ExplainPropertyValue::Integer(self.stats_parallel_deferred_local_emits),
             },
             ExplainProperty {
                 property_name: "Quantizer Cache Hit",
@@ -485,6 +500,12 @@ mod tests {
                         "parallel scan staging is blocked because the current output loses the admitted window",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_deferred_local_emits",
+                    counter_type: "u32",
+                    increments_when:
+                        "a deferred blocked row is still locally emitted because no shared handoff-ready deferred row remains",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_quantizer_cache_hit",
                     counter_type: "bool",
                     increments_when: "ProdQuantizer was reused from cache",
@@ -518,6 +539,7 @@ mod tests {
         counters.record_parallel_blocked_foreign_selected_pending();
         counters.record_parallel_blocked_foreign_admitted_head();
         counters.record_parallel_blocked_admission_window();
+        counters.record_parallel_deferred_local_emit();
         counters.record_quantizer_cache_hit();
 
         assert_eq!(
@@ -532,6 +554,7 @@ mod tests {
                 stats_parallel_blocked_foreign_selected_pending: 1,
                 stats_parallel_blocked_foreign_admitted_head: 1,
                 stats_parallel_blocked_admission_window: 1,
+                stats_parallel_deferred_local_emits: 1,
                 stats_quantizer_cache_hit: true,
             }
         );
@@ -549,6 +572,7 @@ mod tests {
             stats_parallel_blocked_foreign_selected_pending: 17,
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
+            stats_parallel_deferred_local_emits: 29,
             stats_quantizer_cache_hit: true,
         };
 
@@ -569,6 +593,7 @@ mod tests {
             stats_parallel_blocked_foreign_selected_pending: 17,
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
+            stats_parallel_deferred_local_emits: 29,
             stats_quantizer_cache_hit: true,
         };
 
@@ -610,6 +635,10 @@ mod tests {
                 ExplainProperty {
                     property_name: "Parallel Blocked: Admission Window",
                     value: ExplainPropertyValue::Integer(23),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits",
+                    value: ExplainPropertyValue::Integer(29),
                 },
                 ExplainProperty {
                     property_name: "Quantizer Cache Hit",
