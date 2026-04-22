@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    ambuild, cost, insert, options,
+    ambuild, cost, insert, maybe_check_for_interrupts, options,
     page::VamanaMetadataPage,
     reader::{PersistedGraphReader, VisitedState},
     scan::{self, ScanParams},
@@ -25,7 +25,7 @@ use super::{
     },
     scan_state::{self, DiskannScanOpaque},
     tuple::VamanaNodeTuple,
-    vacuum,
+    vacuum, warn_on_non_unit_source_vector,
 };
 
 type BulkDeleteCallback = unsafe extern "C-unwind" fn(pg_sys::ItemPointer, *mut c_void) -> bool;
@@ -52,17 +52,6 @@ struct VacuumBulkDeletePassResult {
     live_tuple_count: usize,
     removed_heap_tids: usize,
     entry_point_needs_medoid_refresh: bool,
-}
-
-#[inline]
-fn maybe_check_for_interrupts() {
-    #[cfg(all(test, not(feature = "pg_test")))]
-    {}
-
-    #[cfg(not(all(test, not(feature = "pg_test"))))]
-    {
-        pgrx::check_for_interrupts!();
-    }
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -223,6 +212,7 @@ unsafe extern "C-unwind" fn ec_diskann_aminsert(
             }
 
             let source_vector = ambuild::ecvector_datum_to_vec(datum);
+            warn_on_non_unit_source_vector(&source_vector, "aminsert");
             let heap_tid = ambuild::decode_heap_tid(heap_tid);
             let metadata = insert::read_metadata_page(index_relation).unwrap_or_else(|e| {
                 pgrx::error!("ec_diskann aminsert failed to read metadata: {e}")
@@ -1409,13 +1399,13 @@ unsafe fn plan_vacuum_fill_candidates_for_target(
         planner.metadata.alpha,
         planner.metadata.graph_degree_r as usize,
     )?;
-    let existing_neighbor_set = existing_neighbor_tids
+    let prior_neighbor_set = existing_neighbor_tids
         .iter()
         .copied()
         .collect::<HashSet<_>>();
     Ok(selected
         .into_iter()
-        .filter(|tid| !existing_neighbor_set.contains(tid))
+        .filter(|tid| !prior_neighbor_set.contains(tid))
         .take(free_slots)
         .collect())
 }

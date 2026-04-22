@@ -6,8 +6,9 @@
 //! for the full pipeline.
 //!
 //! V0 scope: indexed column must be `ecvector` (flat f32). The build
-//! distance is `1 - ip(source_vector, source_vector)` so unit-normalized
-//! embeddings keep the `<#>` ordering while satisfying Vamana's
+//! distance is `1 - ip(source_vector, source_vector)` and ambuild rejects
+//! sampled source vectors whose norms drift outside the unit-normalized
+//! precondition. That keeps the `<#>` ordering while satisfying Vamana's
 //! nonnegative-distance requirement. This yields a higher-quality graph
 //! than scoring on quantized codes and matches the intent of ADR-034
 //! (IP-first).
@@ -32,7 +33,10 @@ use super::insert;
 use super::options::{self, TqDiskannOptions};
 use super::page::VamanaMetadataPage;
 use super::persist::{stage_grouped_codebook_chain, NodePayload};
-use super::ECDISKANN_UNIT_NORM_DISTANCE_BIAS;
+use super::{
+    warn_on_non_unit_source_vector_sample, ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
+    ECDISKANN_UNIT_NORM_DISTANCE_BIAS,
+};
 
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
@@ -226,6 +230,11 @@ unsafe fn flush_build_state(
         .iter()
         .map(|t| t.source_vector.as_slice())
         .collect();
+    warn_on_non_unit_source_vector_sample(
+        &source_refs,
+        ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
+        "ambuild",
+    );
 
     let model = training::train_grouped_pq4_model(
         &source_refs,
