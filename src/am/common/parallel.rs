@@ -7,7 +7,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 9;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 10;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 
@@ -102,7 +102,8 @@ pub(crate) struct EcParallelWorkerSlot {
     emitted_count: AtomicU32,
     active_result_pending_count: AtomicU32,
     active_result_has_current: AtomicU32,
-    reserved0: u32,
+    owned_output_blocker_kind: AtomicU32,
+    owned_output_blocker_slot_index: AtomicU32,
 }
 
 #[repr(C)]
@@ -154,6 +155,10 @@ pub(crate) const EC_PARALLEL_WORKER_PHASE_IDLE: u32 = 0;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL: u32 = 1;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK: u32 = 2;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_EXHAUSTED: u32 = 3;
+pub(crate) const EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE: u32 = 0;
+pub(crate) const EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING: u32 = 1;
+pub(crate) const EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_ADMITTED_HEAD: u32 = 2;
+pub(crate) const EC_PARALLEL_OWNED_OUTPUT_BLOCKER_ADMISSION_WINDOW: u32 = 3;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct EcParallelItemPointer {
@@ -331,6 +336,20 @@ pub(crate) enum EcParallelOwnedOutputState {
     Blocked(EcParallelOwnedOutputBlocker),
 }
 
+pub(crate) fn owned_output_blocker_kind_code(kind: EcParallelOwnedOutputBlockerKind) -> u32 {
+    match kind {
+        EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING
+        }
+        EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_ADMITTED_HEAD
+        }
+        EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+            EC_PARALLEL_OWNED_OUTPUT_BLOCKER_ADMISSION_WINDOW
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) execution_phase: u32,
@@ -342,6 +361,8 @@ pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) emitted_count: u32,
     pub(crate) active_result_pending_count: u32,
     pub(crate) active_result_has_current: bool,
+    pub(crate) owned_output_blocker_kind: u32,
+    pub(crate) owned_output_blocker_slot_index: Option<u32>,
 }
 
 impl EcParallelWorkerSlotRuntimeSnapshot {
@@ -356,6 +377,8 @@ impl EcParallelWorkerSlotRuntimeSnapshot {
             emitted_count: 0,
             active_result_pending_count: 0,
             active_result_has_current: false,
+            owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            owned_output_blocker_slot_index: None,
         }
     }
 }
@@ -819,7 +842,8 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
                 emitted_count: AtomicU32::new(0),
                 active_result_pending_count: AtomicU32::new(0),
                 active_result_has_current: AtomicU32::new(0),
-                reserved0: 0,
+                owned_output_blocker_kind: AtomicU32::new(EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE),
+                owned_output_blocker_slot_index: AtomicU32::new(EC_PARALLEL_SLOT_INDEX_INVALID),
             };
         }
     }
@@ -876,6 +900,14 @@ fn reset_worker_slot_runtime(slot: &EcParallelWorkerSlot) {
         .store(runtime.active_result_pending_count, Ordering::Release);
     slot.active_result_has_current.store(
         u32::from(runtime.active_result_has_current),
+        Ordering::Release,
+    );
+    slot.owned_output_blocker_kind
+        .store(runtime.owned_output_blocker_kind, Ordering::Release);
+    slot.owned_output_blocker_slot_index.store(
+        runtime
+            .owned_output_blocker_slot_index
+            .unwrap_or(EC_PARALLEL_SLOT_INDEX_INVALID),
         Ordering::Release,
     );
 }
@@ -997,6 +1029,11 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
             emitted_count: slot.emitted_count.load(Ordering::Acquire),
             active_result_pending_count: slot.active_result_pending_count.load(Ordering::Acquire),
             active_result_has_current: slot.active_result_has_current.load(Ordering::Acquire) != 0,
+            owned_output_blocker_kind: slot.owned_output_blocker_kind.load(Ordering::Acquire),
+            owned_output_blocker_slot_index: Some(
+                slot.owned_output_blocker_slot_index.load(Ordering::Acquire),
+            )
+            .filter(|slot_index| *slot_index != EC_PARALLEL_SLOT_INDEX_INVALID),
         },
     }
 }
@@ -2499,6 +2536,15 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
         .store(snapshot.active_result_pending_count, Ordering::Release);
     slot_ref.active_result_has_current.store(
         u32::from(snapshot.active_result_has_current),
+        Ordering::Release,
+    );
+    slot_ref
+        .owned_output_blocker_kind
+        .store(snapshot.owned_output_blocker_kind, Ordering::Release);
+    slot_ref.owned_output_blocker_slot_index.store(
+        snapshot
+            .owned_output_blocker_slot_index
+            .unwrap_or(EC_PARALLEL_SLOT_INDEX_INVALID),
         Ordering::Release,
     );
     Ok(true)
@@ -5367,6 +5413,8 @@ mod tests {
             emitted_count: 3,
             active_result_pending_count: 2,
             active_result_has_current: true,
+            owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            owned_output_blocker_slot_index: None,
         };
 
         assert!(
@@ -5639,6 +5687,8 @@ mod tests {
                         emitted_count: 1,
                         active_result_pending_count: 1,
                         active_result_has_current: true,
+                        owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+                        owned_output_blocker_slot_index: None,
                     },
                 )
             }

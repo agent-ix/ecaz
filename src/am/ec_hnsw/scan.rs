@@ -1123,6 +1123,15 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     } else {
         saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
     };
+    let (owned_output_blocker_kind, owned_output_blocker_slot_index) = opaque
+        .parallel_owned_output_blocker
+        .map(|blocker| {
+            (
+                super::parallel::owned_output_blocker_kind_code(blocker.kind),
+                blocker.slot_index,
+            )
+        })
+        .unwrap_or((super::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE, None));
 
     let snapshot = super::parallel::EcParallelWorkerSlotRuntimeSnapshot {
         execution_phase: parallel_scan_worker_phase(opaque.execution_phase),
@@ -1134,6 +1143,8 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         emitted_count,
         active_result_pending_count: u32::from(active_result_state.pending_count()),
         active_result_has_current: active_result_state.current().has_element(),
+        owned_output_blocker_kind,
+        owned_output_blocker_slot_index,
     };
 
     match unsafe {
@@ -1253,6 +1264,7 @@ fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
     opaque.parallel_scan_rescan_epoch = 0;
     opaque.parallel_scan_worker_slot_count = 0;
     opaque.parallel_scan_worker_slot_index = INVALID_PARALLEL_SCAN_WORKER_SLOT;
+    opaque.parallel_owned_output_blocker = None;
 }
 
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
@@ -1272,6 +1284,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.parallel_scan_rescan_epoch = attachment.rescan_epoch;
             opaque.parallel_scan_worker_slot_count = attachment.worker_slot_count;
             opaque.parallel_scan_worker_slot_index = worker_slot_index;
+            opaque.parallel_owned_output_blocker = None;
             publish_parallel_scan_worker_slot_snapshot(opaque);
         }
         Ok(None) => clear_parallel_scan_state(opaque),
@@ -3603,6 +3616,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         return ParallelScanOutputState::Empty;
     }
 
+    opaque.parallel_owned_output_blocker = None;
     publish_parallel_scan_worker_slot_snapshot(opaque);
     match unsafe {
         super::parallel::read_parallel_scan_owned_output_state(
@@ -3617,6 +3631,8 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
             return ParallelScanOutputState::Empty;
         }
         super::parallel::EcParallelOwnedOutputState::Blocked(blocker) => {
+            opaque.parallel_owned_output_blocker = Some(blocker);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
             return ParallelScanOutputState::Blocked(blocker);
         }
         super::parallel::EcParallelOwnedOutputState::Ready => {}
@@ -3633,6 +3649,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     .unwrap_or_else(|| {
         pgrx::error!("ec_hnsw parallel scan ready state produced no owned output to take")
     });
+    opaque.parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
     publish_parallel_scan_worker_slot_snapshot(opaque);
     ParallelScanOutputState::Emitted(output)
@@ -3667,6 +3684,7 @@ unsafe fn emit_prefetched_parallel_scan_output(
 
 fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
     active_result_state_mut(opaque).clear();
+    opaque.parallel_owned_output_blocker = None;
     if !opaque.parallel_scan_state.is_null()
         && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
@@ -4912,6 +4930,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         .map(|output| {
             mark_emitted_element(opaque, opaque.result_state.current().element_tid());
             emit_scan_output(scan, opaque, output);
+            opaque.parallel_owned_output_blocker = None;
             publish_parallel_scan_worker_slot_snapshot(opaque);
             true
         })
@@ -4979,6 +4998,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                     .map(|output| {
                         mark_emitted_element(opaque, selected.element_tid);
                         emit_scan_output(scan, opaque, output);
+                        opaque.parallel_owned_output_blocker = None;
                         publish_parallel_scan_worker_slot_snapshot(opaque);
                         true
                     })
@@ -5596,6 +5616,7 @@ pub(super) struct TqScanOpaque {
     parallel_scan_rescan_epoch: u32,
     parallel_scan_worker_slot_count: u32,
     parallel_scan_worker_slot_index: u32,
+    parallel_owned_output_blocker: Option<super::parallel::EcParallelOwnedOutputBlocker>,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5673,6 +5694,7 @@ impl Default for TqScanOpaque {
             parallel_scan_rescan_epoch: 0,
             parallel_scan_worker_slot_count: 0,
             parallel_scan_worker_slot_index: INVALID_PARALLEL_SCAN_WORKER_SLOT,
+            parallel_owned_output_blocker: None,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -6101,6 +6123,15 @@ mod tests {
         assert!(
             snapshot.runtime.active_result_has_current,
             "worker snapshot should record whether the active result state still has a current row"
+        );
+        assert_eq!(
+            snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            "idle worker snapshots should not report an ownership blocker when no blocked state has been observed"
+        );
+        assert_eq!(
+            snapshot.runtime.owned_output_blocker_slot_index, None,
+            "idle worker snapshots should not report a blocker owner slot"
         );
 
         let coordinator_snapshot = unsafe {
@@ -6972,6 +7003,23 @@ mod tests {
             },
             "blocked local materialization should still stage the current local heap tid in the shared slot"
         );
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
+            "blocked materialized staging should publish the foreign-selected blocker into the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_slot_index,
+            Some(second_slot),
+            "blocked materialized staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+        );
     }
 
     #[test]
@@ -7178,6 +7226,23 @@ mod tests {
                 offset_number: 1,
             },
             "blocked prefetched output should leave the local shared slot staged at the current heap tid"
+        );
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
+            "blocked prefetched staging should publish the foreign-selected blocker into the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_slot_index,
+            Some(second_slot),
+            "blocked prefetched staging should publish the foreign blocker slot into the shared worker runtime snapshot"
         );
     }
 

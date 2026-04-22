@@ -299,6 +299,11 @@ See ADR-040 for the full shape. Summary:
   local search continues, while foreign-owner blockers still use the explicit
   staging fallback until the real handoff contract lands.
 
+- **Shared blocker snapshot staging.** Worker-runtime snapshots now publish the
+  current ownership blocker kind and blocker slot when a scan is blocked on a
+  foreign selected/admitted output. That makes the remaining handoff seam
+  visible in shared state instead of only in local scan control flow.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
