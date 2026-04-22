@@ -386,6 +386,13 @@ See ADR-040 for the full shape. Summary:
   behavior, but it is still a scan-local fallback rather than a full
   cross-worker ownership transfer protocol.
 
+- **Per-row deferred blocker metadata.** Deferred blocked rows no longer share
+  one global retained blocker record. Each deferred row now carries its own
+  blocker metadata, and worker-runtime snapshots publish the blocker attached
+  to the best deferred row. That keeps ownership diagnostics aligned even when
+  multiple blocked local rows accumulate before the final ownership-transfer
+  seam lands.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
