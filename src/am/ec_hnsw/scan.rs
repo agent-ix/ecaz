@@ -1275,6 +1275,7 @@ fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
     opaque.parallel_scan_worker_slot_count = 0;
     opaque.parallel_scan_worker_slot_index = INVALID_PARALLEL_SCAN_WORKER_SLOT;
     opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
 }
 
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
@@ -1295,6 +1296,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.parallel_scan_worker_slot_count = attachment.worker_slot_count;
             opaque.parallel_scan_worker_slot_index = worker_slot_index;
             opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
             publish_parallel_scan_worker_slot_snapshot(opaque);
         }
         Ok(None) => clear_parallel_scan_state(opaque),
@@ -3378,21 +3380,45 @@ enum ParallelScanOutputState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RetainedParallelOwnedOutputBlocker {
+    blocker: super::parallel::EcParallelOwnedOutputBlocker,
+    element_tid: page::ItemPointer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockedParallelScanDisposition {
     KeepLocalEmit,
+    RetryShared,
     DropAndContinue,
 }
 
 fn blocked_parallel_scan_disposition(
+    opaque: &mut TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
 ) -> BlockedParallelScanDisposition {
     match blocker.kind {
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+            opaque.retained_parallel_owned_output_blocker = None;
             BlockedParallelScanDisposition::DropAndContinue
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending
         | super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
-            BlockedParallelScanDisposition::KeepLocalEmit
+            let element_tid = active_result_state_ref(opaque).current().element_tid();
+            let previous = opaque
+                .retained_parallel_owned_output_blocker
+                .filter(|retained| retained.element_tid == element_tid)
+                .map(|retained| retained.blocker);
+            opaque.retained_parallel_owned_output_blocker = (element_tid
+                != page::ItemPointer::INVALID)
+                .then_some(RetainedParallelOwnedOutputBlocker {
+                    blocker,
+                    element_tid,
+                });
+            if previous == Some(blocker) {
+                BlockedParallelScanDisposition::KeepLocalEmit
+            } else {
+                BlockedParallelScanDisposition::RetryShared
+            }
         }
     }
 }
@@ -3677,6 +3703,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         pgrx::error!("ec_hnsw parallel scan ready state produced no owned output to take")
     });
     opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
     publish_parallel_scan_worker_slot_snapshot(opaque);
     ParallelScanOutputState::Emitted(output)
@@ -3692,6 +3719,7 @@ unsafe fn emit_materialized_parallel_scan_output(
         return ParallelScanOutputState::Empty;
     }
 
+    opaque.retained_parallel_owned_output_blocker = None;
     active_result_state_mut(opaque).materialize(selected);
     unsafe { try_take_parallel_scan_next_output(opaque) }
 }
@@ -3712,6 +3740,7 @@ unsafe fn emit_prefetched_parallel_scan_output(
 fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
     active_result_state_mut(opaque).clear();
     opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
     if !opaque.parallel_scan_state.is_null()
         && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
@@ -4934,21 +4963,24 @@ unsafe fn produce_next_graph_traversal_heap_tid(
                 }
                 return true;
             }
-            ParallelScanOutputState::Blocked(blocker)
-                if blocked_parallel_scan_disposition(blocker)
-                    == BlockedParallelScanDisposition::DropAndContinue =>
-            {
-                discard_active_parallel_scan_output(opaque);
-                let opaque_ptr = opaque as *mut TqScanOpaque;
-                if !unsafe {
-                    graph_traversal_cursor(opaque)
-                        .ensure_prefetched_output(index_relation, opaque_ptr)
-                } {
-                    return false;
+            ParallelScanOutputState::Blocked(blocker) => {
+                match blocked_parallel_scan_disposition(opaque, blocker) {
+                    BlockedParallelScanDisposition::DropAndContinue => {
+                        discard_active_parallel_scan_output(opaque);
+                        let opaque_ptr = opaque as *mut TqScanOpaque;
+                        if !unsafe {
+                            graph_traversal_cursor(opaque)
+                                .ensure_prefetched_output(index_relation, opaque_ptr)
+                        } {
+                            return false;
+                        }
+                        continue;
+                    }
+                    BlockedParallelScanDisposition::RetryShared => continue,
+                    BlockedParallelScanDisposition::KeepLocalEmit => break,
                 }
-                continue;
             }
-            ParallelScanOutputState::Blocked(_) | ParallelScanOutputState::Empty => break,
+            ParallelScanOutputState::Empty => break,
         }
     }
 
@@ -5012,14 +5044,17 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                 opaque.explain_counters.record_heap_tid_returned();
                 return true;
             }
-            ParallelScanOutputState::Blocked(blocker)
-                if blocked_parallel_scan_disposition(blocker)
-                    == BlockedParallelScanDisposition::DropAndContinue =>
-            {
-                discard_active_parallel_scan_output(opaque);
-                continue;
+            ParallelScanOutputState::Blocked(blocker) => {
+                match blocked_parallel_scan_disposition(opaque, blocker) {
+                    BlockedParallelScanDisposition::DropAndContinue => {
+                        discard_active_parallel_scan_output(opaque);
+                        continue;
+                    }
+                    BlockedParallelScanDisposition::RetryShared => continue,
+                    BlockedParallelScanDisposition::KeepLocalEmit => {}
+                }
             }
-            ParallelScanOutputState::Blocked(_) | ParallelScanOutputState::Empty => {
+            ParallelScanOutputState::Empty => {
                 let emitted = linear_fallback_cursor(opaque)
                     .emit_materialized_output(selected)
                     .map(|output| {
@@ -5644,6 +5679,7 @@ pub(super) struct TqScanOpaque {
     parallel_scan_worker_slot_count: u32,
     parallel_scan_worker_slot_index: u32,
     parallel_owned_output_blocker: Option<super::parallel::EcParallelOwnedOutputBlocker>,
+    retained_parallel_owned_output_blocker: Option<RetainedParallelOwnedOutputBlocker>,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5722,6 +5758,7 @@ impl Default for TqScanOpaque {
             parallel_scan_worker_slot_count: 0,
             parallel_scan_worker_slot_index: INVALID_PARALLEL_SCAN_WORKER_SLOT,
             parallel_owned_output_blocker: None,
+            retained_parallel_owned_output_blocker: None,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -7442,23 +7479,92 @@ mod tests {
 
     #[test]
     fn blocked_parallel_scan_disposition_drops_admission_window() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(40, 1), -1.0);
+
         assert_eq!(
-            blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
-                slot_index: None,
-                generation: 0,
-            }),
+            blocked_parallel_scan_disposition(
+                &mut opaque,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+                    slot_index: None,
+                    generation: 0,
+                }
+            ),
             BlockedParallelScanDisposition::DropAndContinue,
             "admission-window blockers should drop the staged local row and continue searching"
         );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_retries_on_new_foreign_blocker() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(41, 1), -2.0);
+
         assert_eq!(
-            blocked_parallel_scan_disposition(crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                slot_index: Some(1),
-                generation: 0,
-            }),
+            blocked_parallel_scan_disposition(
+                &mut opaque,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 7,
+                }
+            ),
+            BlockedParallelScanDisposition::RetryShared,
+            "the first observation of a foreign-owner blocker should retry the shared seam before falling back to local emit"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_keeps_local_emit_for_stable_foreign_blocker() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(42, 1), -3.0);
+        let blocker = crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+            kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            slot_index: Some(1),
+            generation: 7,
+        };
+
+        assert_eq!(
+            blocked_parallel_scan_disposition(&mut opaque, blocker),
+            BlockedParallelScanDisposition::RetryShared,
+            "the first foreign-owner blocker observation should still retry once"
+        );
+        assert_eq!(
+            blocked_parallel_scan_disposition(&mut opaque, blocker),
             BlockedParallelScanDisposition::KeepLocalEmit,
-            "foreign-owner blockers should keep the staged local-direct emit fallback until the handoff contract lands"
+            "a repeated foreign-owner blocker for the same staged row should fall back to local emit"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_retries_when_foreign_generation_changes() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(43, 1), -4.0);
+
+        assert_eq!(
+            blocked_parallel_scan_disposition(
+                &mut opaque,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 7,
+                }
+            ),
+            BlockedParallelScanDisposition::RetryShared,
+            "the first foreign-owner blocker observation should retry once"
+        );
+        assert_eq!(
+            blocked_parallel_scan_disposition(
+                &mut opaque,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 8,
+                }
+            ),
+            BlockedParallelScanDisposition::RetryShared,
+            "a changed foreign-owner generation should reopen one retry against the shared seam"
         );
     }
 

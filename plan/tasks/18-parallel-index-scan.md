@@ -310,6 +310,12 @@ See ADR-040 for the full shape. Summary:
   so workers can tell whether they are still blocked on the same foreign state
   or the owner already advanced underneath them.
 
+- **Generation-aware foreign blocker retry.** Foreign-owner blockers now get
+  one immediate retry when the blocker generation changes for the same staged
+  row; only a repeated stable blocker falls back to the current local
+  keep-and-emit path. That keeps the staged foreign-owner fallback from holding
+  the same row forever after the owner has already advanced.
+
 - **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
   admission-window stalls so scan diagnostics can distinguish why a
