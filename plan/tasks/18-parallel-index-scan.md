@@ -345,6 +345,12 @@ See ADR-040 for the full shape. Summary:
   trip `pgrx`'s cross-thread FFI guard while the runtime path still exercises
   real LWLock acquire/release on PG18.
 
+- **Foreign admitted-head handoff staging.** When a worker is blocked only by
+  a foreign admitted head, scan-side handoff can now drain that already-admitted
+  global row through the shared merge path instead of immediately degrading into
+  local-only fallback. This still does not hand off foreign selected-pending
+  cursors; it only consumes rows that are already in the admitted window.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

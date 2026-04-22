@@ -3653,6 +3653,32 @@ fn consume_parallel_scan_admitted_result(
     pending_scan_output_from_parallel_pending_output(admitted_result.pending_output)
 }
 
+unsafe fn try_take_parallel_scan_handoff_output(
+    opaque: &mut TqScanOpaque,
+    blocker: super::parallel::EcParallelOwnedOutputBlocker,
+) -> Option<PendingScanOutput> {
+    if blocker.kind != super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead
+        || opaque.parallel_scan_state.is_null()
+    {
+        return None;
+    }
+
+    let admitted_result = unsafe {
+        super::parallel::take_parallel_scan_next_output_snapshot(
+            opaque.parallel_scan_state,
+            parallel_scan_admission_result_limit(),
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan handoff take failed: {err}"))?;
+
+    opaque.parallel_local_only_output_active = false;
+    opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
+    let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
+    publish_parallel_scan_worker_slot_snapshot(opaque);
+    Some(output)
+}
+
 fn parallel_scan_admission_result_limit() -> u32 {
     // The planner-visible LIMIT budget is not wired into the scan descriptor yet.
     // Until that seam lands, let the shared admission path use the full staged
@@ -3683,6 +3709,10 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
             return ParallelScanOutputState::Empty;
         }
         super::parallel::EcParallelOwnedOutputState::Blocked(blocker) => {
+            if let Some(output) = unsafe { try_take_parallel_scan_handoff_output(opaque, blocker) }
+            {
+                return ParallelScanOutputState::Emitted(output);
+            }
             match blocker.kind {
                 super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
                     opaque
@@ -6978,6 +7008,129 @@ mod tests {
         assert_eq!(
             result_snapshot.runtime.pending_index, 1,
             "republish after consume should keep shared pending-index state aligned with the local cursor"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_handoff_output_drains_foreign_admitted_head() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(50, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(60, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let first_admitted = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                local.parallel_scan_state,
+                2,
+            )
+        }
+        .expect("foreign selected output should admit")
+        .expect("foreign selected output should seed the admission window");
+        assert!(
+            first_admitted.admitted,
+            "the foreign slot should seed the shared admitted window before handoff"
+        );
+
+        let admitted_head = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_result_snapshot(
+                local.parallel_scan_state,
+                0,
+            )
+        }
+        .expect("admitted-head snapshot should read back");
+        assert_eq!(
+            admitted_head.source_slot_index,
+            Some(foreign.parallel_scan_worker_slot_index),
+            "the foreign slot should own the admitted head before the local worker probes"
+        );
+
+        local.result_state.set_current_with_details(
+            tid(51, 1),
+            -6.0,
+            Some(-5.5),
+            Some(7),
+            Some(-6.5),
+        );
+        local.result_state.store_pending(&[tid(61, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&local);
+
+        let output = unsafe {
+            try_take_parallel_scan_handoff_output(
+                &mut local,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 1,
+                    element_tid: admitted_head.element_tid,
+                },
+            )
+        };
+
+        assert_eq!(
+            output,
+            Some(PendingScanOutput {
+                heap_tid: tid(60, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "a local worker blocked by a foreign admitted head should drain that admitted row through the shared handoff path"
+        );
+        assert_eq!(
+            local.result_state.current().element_tid(),
+            tid(51, 1),
+            "draining a foreign admitted row should not mutate the local worker's staged current result"
+        );
+        assert_eq!(
+            local.result_state.pending_index(),
+            0,
+            "draining a foreign admitted row should not advance the local worker's duplicate-drain cursor"
         );
     }
 
