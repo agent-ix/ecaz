@@ -3717,6 +3717,23 @@ fn deferred_parallel_blocked_output_order_key(
     )
 }
 
+fn should_drop_deferred_parallel_blocked_output(deferred: &DeferredParallelBlockedOutput) -> bool {
+    let Some(retained) = deferred.retained_blocker else {
+        return false;
+    };
+
+    match retained.blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => true,
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending
+        | super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            let blocker_element_tid =
+                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+            blocker_element_tid != page::ItemPointer::INVALID
+                && blocker_element_tid == deferred.state.current().element_tid()
+        }
+    }
+}
+
 fn sort_deferred_parallel_blocked_outputs(opaque: &mut TqScanOpaque) {
     opaque
         .deferred_parallel_blocked_results
@@ -4133,6 +4150,17 @@ fn emit_next_deferred_parallel_blocked_output(
                 sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             }
             return true;
+        }
+        if should_drop_deferred_parallel_blocked_output(&deferred) {
+            if opaque.deferred_parallel_blocked_results.is_empty() {
+                opaque.retained_parallel_owned_output_blocker = None;
+            }
+            if !opaque.parallel_scan_state.is_null()
+                && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+            {
+                sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            }
+            return emit_next_deferred_parallel_blocked_output(scan, opaque);
         }
     }
     let Some(output) = deferred.state.take_pending_output() else {
@@ -8842,6 +8870,81 @@ mod tests {
             BlockedParallelScanDisposition::RetryShared,
             "a changed foreign-owner generation should reopen one retry against the shared seam"
         );
+    }
+
+    #[test]
+    fn should_drop_deferred_parallel_blocked_output_for_admission_window() {
+        let mut state = ScanResultState::default();
+        state.set_current(tid(44, 1), -4.0);
+        state.store_pending(&[tid(45, 1)]);
+
+        assert!(should_drop_deferred_parallel_blocked_output(
+            &DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::LinearFallback,
+                state,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+                        slot_index: None,
+                        generation: 9,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    },
+                    element_tid: tid(44, 1),
+                }),
+            }
+        ));
+    }
+
+    #[test]
+    fn should_drop_deferred_parallel_blocked_output_for_same_element_foreign_blocker() {
+        let mut state = ScanResultState::default();
+        state.set_current(tid(46, 1), -6.0);
+        state.store_pending(&[tid(47, 1)]);
+
+        assert!(should_drop_deferred_parallel_blocked_output(
+            &DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(2),
+                        generation: 11,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 46,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(46, 1),
+                }),
+            }
+        ));
+    }
+
+    #[test]
+    fn should_keep_deferred_parallel_blocked_output_for_distinct_foreign_blocker() {
+        let mut state = ScanResultState::default();
+        state.set_current(tid(48, 1), -7.0);
+        state.store_pending(&[tid(49, 1)]);
+
+        assert!(!should_drop_deferred_parallel_blocked_output(
+            &DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                        slot_index: Some(3),
+                        generation: 12,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 88,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(48, 1),
+                }),
+            }
+        ));
     }
 
     #[test]

@@ -402,6 +402,11 @@ See ADR-040 for the full shape. Summary:
   the shared seam at the last possible point instead of draining every deferred
   row locally by default.
 
+- **Deferred-row obsolete-drop guard.** After that final shared retry, deferred
+  rows no longer locally emit when the blocker proves they are already obsolete.
+  Admission-window losers and same-element foreign duplicates now drop out of
+  the deferred stash instead of bypassing the ownership seam on the last drain.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
