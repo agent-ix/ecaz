@@ -8948,6 +8948,117 @@ mod tests {
     }
 
     #[test]
+    fn emit_next_deferred_parallel_blocked_output_skips_obsolete_row() {
+        let mut scan_desc = pg_sys::IndexScanDescData::default();
+        let scan = &mut scan_desc as pg_sys::IndexScanDesc;
+        let mut opaque = TqScanOpaque::default();
+
+        let mut obsolete = ScanResultState::default();
+        obsolete.set_current(tid(50, 1), -9.0);
+        obsolete.store_pending(&[tid(51, 1)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: obsolete,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
+                        slot_index: None,
+                        generation: 17,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    },
+                    element_tid: tid(50, 1),
+                }),
+            });
+
+        let mut next = ScanResultState::default();
+        next.set_current(tid(52, 1), -5.0);
+        next.store_pending(&[tid(53, 1)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::LinearFallback,
+                state: next,
+                retained_blocker: None,
+            });
+
+        assert!(
+            emit_next_deferred_parallel_blocked_output(scan, &mut opaque),
+            "deferred drain should skip the obsolete row and emit the next eligible deferred row"
+        );
+        let emitted_heap_tid = unsafe { (*scan).xs_heaptid };
+        assert_eq!(
+            (
+                emitted_heap_tid.ip_blkid.bi_hi,
+                emitted_heap_tid.ip_blkid.bi_lo
+            ),
+            (0_u16, 53_u16),
+            "the emitted heap tid should write the expected heap block into xs_heaptid"
+        );
+        assert_eq!(
+            emitted_heap_tid.ip_posid, 1,
+            "the emitted heap tid should come from the next eligible deferred row after the obsolete row drops"
+        );
+        assert!(
+            !staged_or_emitted_contains_element(&opaque, tid(50, 1)),
+            "dropping an obsolete deferred row should remove that element from staged-or-emitted ownership tracking"
+        );
+        assert!(
+            opaque.deferred_parallel_blocked_results.is_empty(),
+            "the next eligible deferred row should also drain completely in this single-pending fixture"
+        );
+    }
+
+    #[test]
+    fn emit_next_deferred_parallel_blocked_output_returns_false_for_only_obsolete_row() {
+        let mut scan_desc = pg_sys::IndexScanDescData::default();
+        let scan = &mut scan_desc as pg_sys::IndexScanDesc;
+        let mut opaque = TqScanOpaque::default();
+
+        let mut obsolete = ScanResultState::default();
+        obsolete.set_current(tid(54, 1), -8.0);
+        obsolete.store_pending(&[tid(55, 1)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: obsolete,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(4),
+                        generation: 18,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 54,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(54, 1),
+                }),
+            });
+
+        assert!(
+            !emit_next_deferred_parallel_blocked_output(scan, &mut opaque),
+            "if the only deferred row is obsolete, the deferred drain should finish without emitting a local row"
+        );
+        assert!(
+            opaque.deferred_parallel_blocked_results.is_empty(),
+            "obsolete deferred rows should drop out of the stash entirely"
+        );
+        let emitted_heap_tid = unsafe { (*scan).xs_heaptid };
+        assert_eq!(
+            (
+                emitted_heap_tid.ip_blkid.bi_hi,
+                emitted_heap_tid.ip_blkid.bi_lo,
+                emitted_heap_tid.ip_posid
+            ),
+            (0_u16, 0_u16, 0_u16),
+            "dropping the only obsolete deferred row should leave the scan heap tid untouched"
+        );
+    }
+
+    #[test]
     fn blocked_parallel_scan_disposition_retries_when_owner_slot_progresses() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
