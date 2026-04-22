@@ -29,20 +29,12 @@
 //! path, iterate the returned [`ScanResult`]s. The shell here is what
 //! that callback will call.
 
-use crate::am::ec_diskann::reader::{PersistedGraphReader, VisitedState};
-use crate::am::ec_diskann::tuple::VamanaNodeTuple;
+use super::{
+    maybe_check_for_interrupts,
+    reader::{PersistedGraphReader, VisitedState},
+    tuple::VamanaNodeTuple,
+};
 use crate::storage::page::ItemPointer;
-
-#[inline]
-fn maybe_check_for_interrupts() {
-    #[cfg(all(test, not(feature = "pg_test")))]
-    {}
-
-    #[cfg(not(all(test, not(feature = "pg_test"))))]
-    {
-        pgrx::check_for_interrupts!();
-    }
-}
 
 /// Scan-time tuning parameters. Every value must be > 0.
 #[derive(Debug, Clone, Copy)]

@@ -50,4 +50,161 @@ pub(super) const ECDISKANN_MIN_ALPHA: f32 = 1.0;
 pub(super) const ECDISKANN_MAX_ALPHA: f32 = 2.0;
 
 pub(super) const ECDISKANN_PLANNER_SCAN_ENABLED: bool = true;
+// V0 exact graph distances use `1 - ip`, which only preserves the `<#>`
+// ordering when the source vectors are unit-normalized.
 pub(super) const ECDISKANN_UNIT_NORM_DISTANCE_BIAS: f32 = 1.0;
+pub(super) const ECDISKANN_UNIT_NORM_EPSILON: f32 = 0.01;
+pub(super) const ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP: usize = 1024;
+
+pub(super) fn validate_source_vector_unit_norm(
+    source_vector: &[f32],
+    context: &str,
+) -> Result<(), String> {
+    let norm = source_vector_l2_norm(source_vector);
+    if !norm.is_finite() {
+        return Err(format!(
+            "ec_diskann {context} requires finite unit-normalized source vectors; got ||v|| = {norm}"
+        ));
+    }
+    let low = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ECDISKANN_UNIT_NORM_EPSILON;
+    let high = ECDISKANN_UNIT_NORM_DISTANCE_BIAS + ECDISKANN_UNIT_NORM_EPSILON;
+    if !(low..=high).contains(&norm) {
+        return Err(format!(
+            "ec_diskann {context} requires unit-normalized source vectors for the v0 distance wrapper; got ||v|| = {norm:.4}, expected within [{low:.4}, {high:.4}]"
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_source_vector_unit_norm_sample(
+    source_vectors: &[&[f32]],
+    sample_cap: usize,
+    context: &str,
+) -> Result<(), String> {
+    let sample_len = source_vectors.len().min(sample_cap);
+    if sample_len == 0 {
+        return Ok(());
+    }
+
+    let mut norm_sum = 0.0_f32;
+    let mut min_norm = f32::INFINITY;
+    let mut max_norm = f32::NEG_INFINITY;
+    let mut first_outlier = None;
+    let low = ECDISKANN_UNIT_NORM_DISTANCE_BIAS - ECDISKANN_UNIT_NORM_EPSILON;
+    let high = ECDISKANN_UNIT_NORM_DISTANCE_BIAS + ECDISKANN_UNIT_NORM_EPSILON;
+
+    for (idx, source_vector) in source_vectors.iter().take(sample_len).enumerate() {
+        let norm = source_vector_l2_norm(source_vector);
+        if !norm.is_finite() {
+            return Err(format!(
+                "ec_diskann {context} requires finite unit-normalized source vectors; sampled non-finite ||v|| at position {idx}"
+            ));
+        }
+        norm_sum += norm;
+        min_norm = min_norm.min(norm);
+        max_norm = max_norm.max(norm);
+        if !(low..=high).contains(&norm) && first_outlier.is_none() {
+            first_outlier = Some((idx, norm));
+        }
+    }
+
+    let mean_norm = norm_sum / sample_len as f32;
+    if !(low..=high).contains(&mean_norm) || first_outlier.is_some() {
+        let outlier_suffix = first_outlier
+            .map(|(idx, norm)| format!("; first outlier at sample {idx} had ||v|| = {norm:.4}"))
+            .unwrap_or_default();
+        return Err(format!(
+            "ec_diskann {context} requires unit-normalized source vectors for the v0 distance wrapper; sampled {sample_len} vector(s) with mean ||v|| = {mean_norm:.4} and range [{min_norm:.4}, {max_norm:.4}], expected within [{low:.4}, {high:.4}]{outlier_suffix}"
+        ));
+    }
+
+    Ok(())
+}
+
+pub(super) fn warn_on_non_unit_source_vector(source_vector: &[f32], context: &str) {
+    if let Err(message) = validate_source_vector_unit_norm(source_vector, context) {
+        emit_unit_norm_warning(&message);
+    }
+}
+
+pub(super) fn warn_on_non_unit_source_vector_sample(
+    source_vectors: &[&[f32]],
+    sample_cap: usize,
+    context: &str,
+) {
+    if let Err(message) =
+        validate_source_vector_unit_norm_sample(source_vectors, sample_cap, context)
+    {
+        emit_unit_norm_warning(&message);
+    }
+}
+
+#[inline]
+pub(super) fn maybe_check_for_interrupts() {
+    #[cfg(all(test, not(feature = "pg_test")))]
+    {}
+
+    #[cfg(not(all(test, not(feature = "pg_test"))))]
+    {
+        pgrx::check_for_interrupts!();
+    }
+}
+
+fn emit_unit_norm_warning(message: &str) {
+    #[cfg(all(test, not(feature = "pg_test")))]
+    {
+        let _ = message;
+    }
+
+    #[cfg(not(all(test, not(feature = "pg_test"))))]
+    {
+        pgrx::warning!("{message}");
+    }
+}
+
+fn source_vector_l2_norm(source_vector: &[f32]) -> f32 {
+    source_vector
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        validate_source_vector_unit_norm, validate_source_vector_unit_norm_sample,
+        ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
+    };
+
+    #[test]
+    fn validate_source_vector_unit_norm_accepts_unit_vectors() {
+        assert!(
+            validate_source_vector_unit_norm(&[0.6, 0.8], "unit test").is_ok(),
+            "vectors with ||v|| = 1 should satisfy the v0 DiskANN precondition",
+        );
+    }
+
+    #[test]
+    fn validate_source_vector_unit_norm_rejects_non_unit_vectors() {
+        let error = validate_source_vector_unit_norm(&[2.0, 0.0], "unit test")
+            .expect_err("non-unit vectors must be rejected");
+        assert!(error.contains("unit-normalized"));
+        assert!(error.contains("||v|| = 2.0000"));
+    }
+
+    #[test]
+    fn validate_source_vector_unit_norm_sample_reports_sample_stats() {
+        let unit = [1.0_f32, 0.0];
+        let non_unit = [2.0_f32, 0.0];
+        let sample = vec![unit.as_slice(), non_unit.as_slice()];
+        let error = validate_source_vector_unit_norm_sample(
+            &sample,
+            ECDISKANN_UNIT_NORM_BUILD_SAMPLE_CAP,
+            "ambuild",
+        )
+        .expect_err("non-unit build samples must be rejected");
+        assert!(error.contains("sampled 2 vector(s)"));
+        assert!(error.contains("first outlier"));
+    }
+}
