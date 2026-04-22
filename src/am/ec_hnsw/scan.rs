@@ -3976,6 +3976,11 @@ fn try_emit_preferred_deferred_parallel_blocked_output(
     true
 }
 
+fn should_prefer_deferred_before_local_only_wakeup(opaque: &TqScanOpaque) -> bool {
+    opaque.parallel_local_only_output_active
+        && should_prefer_deferred_parallel_blocked_output(opaque).is_some()
+}
+
 fn pending_scan_output_from_parallel_pending_output(
     output: super::parallel::EcParallelPendingOutputSnapshot,
 ) -> PendingScanOutput {
@@ -4491,6 +4496,12 @@ unsafe fn produce_next_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    if should_prefer_deferred_before_local_only_wakeup(opaque)
+        && try_emit_preferred_deferred_parallel_blocked_output(scan, opaque)
+    {
+        return true;
+    }
+
     if let ParallelScanOutputState::Emitted(output) =
         unsafe { try_take_parallel_scan_next_output(opaque) }
     {
@@ -10139,6 +10150,131 @@ mod tests {
             opaque.deferred_parallel_blocked_results.len(),
             2,
             "both deferred rows should remain stashed when no preferable deferred output exists"
+        );
+    }
+
+    #[test]
+    fn should_prefer_deferred_before_local_only_wakeup_prefers_ready_better_deferred_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(90, 1),
+            -9.0,
+            Some(-8.5),
+            Some(4),
+            Some(-9.5),
+        );
+        foreign.result_state.store_pending(&[tid(91, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        owner.fallback_result_state.set_current_with_details(
+            tid(92, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .fallback_result_state
+            .store_pending(&[tid(93, 1), tid(93, 2)]);
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: selected.coordinator.selected_result_slot_index,
+                generation: selected.coordinator.result_publish_generation,
+                element_tid: selected.selected_result_slot.runtime.element_tid,
+            },
+            element_tid: tid(92, 1),
+        });
+        owner.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        foreign.result_state.clear_current();
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(94, 1), -10.0, Some(-9.5), Some(2), Some(-10.5));
+        deferred.store_pending(&[tid(95, 1)]);
+        owner
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: None,
+            });
+
+        assert!(
+            should_prefer_deferred_before_local_only_wakeup(&owner),
+            "a better ready deferred row should outrank the hidden local-only wakeup path"
+        );
+        assert!(
+            owner.parallel_local_only_output_active,
+            "the ordering check alone should not disturb the hidden local-only row"
+        );
+        assert_eq!(
+            owner.fallback_result_state.current().element_tid(),
+            tid(92, 1),
+            "the hidden local-only row should remain staged while the ordering check decides whether deferred work should go first"
+        );
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(93, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(6),
+                comparison_score: Some(-8.5),
+            }),
+            "the hidden local-only row should still wake back into the shared path when the caller does not choose deferred work first"
         );
     }
 

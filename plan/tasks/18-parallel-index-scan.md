@@ -451,6 +451,12 @@ See ADR-040 for the full shape. Summary:
   back into the coordinator slot first, then lets it resume normal shared
   drain/admission behavior.
 
+- **Better deferred rows outrank hidden local-only wakeup.** When a concealed
+  local-only row is still staged but a better ready deferred row already exists,
+  the scan now lets that deferred row emit first instead of waking the
+  concealed row immediately. The hidden row still wakes back into the shared
+  seam afterward.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
