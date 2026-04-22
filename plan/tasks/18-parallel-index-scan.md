@@ -414,6 +414,13 @@ See ADR-040 for the full shape. Summary:
   transfer, but it narrows ordering drift by preferring the better deferred
   candidate before emitting a worse live local row.
 
+- **Deferred-drain ready-row preference.** When deferred-only drain reaches a
+  still-live blocked best row, the scan now keeps looking for the next ready
+  deferred row before falling back to local emit. Only when no deferred row can
+  hand off or drain safely does the staged path locally emit the remaining
+  blocked row. This still is not the final ownership transfer, but it reduces
+  unnecessary local fallback while preserving progress.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
