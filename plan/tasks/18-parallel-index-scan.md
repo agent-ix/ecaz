@@ -53,7 +53,8 @@ See ADR-040 for the full shape. Summary:
 
 ### Coordinator and DSM
 
-- [ ] **DSM layout.** Define shared top-K heap, lock word, and worker state
+- [ ] **DSM layout.** Define shared top-K heap, coordinator serializer, and
+  worker state
   slots in `src/am/common/parallel.rs`. Size computed by
   `amestimateparallelscan`.
 - [ ] **Shared top-K push/pop.** Lock-guarded; hot path is "is candidate
@@ -334,6 +335,15 @@ See ADR-040 for the full shape. Summary:
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
   admission-window stalls so scan diagnostics can distinguish why a
   parallel-bound worker stayed blocked.
+
+- **LWLock-backed coordinator serializer.** The shared coordinator serializer
+  no longer uses the staged raw atomic lock word. The DSM heap state now embeds
+  a real PostgreSQL `LWLock`, the descriptor initializer assigns and registers
+  a named tranche for it, and attach-time validation re-registers that tranche
+  before using the shared lock. The standalone unit-test backend keeps a local
+  atomic shim over the embedded `LWLock.state` field so Rust unit tests do not
+  trip `pgrx`'s cross-thread FFI guard while the runtime path still exercises
+  real LWLock acquire/release on PG18.
 
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete

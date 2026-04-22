@@ -48,6 +48,25 @@ typedef struct ErrorData {
     MemoryContext assoc_context;
 } ErrorData;
 
+typedef struct {
+    uint32_t value;
+} pg_atomic_uint32;
+
+typedef struct {
+    uintptr_t head;
+} proclist_head;
+
+typedef struct {
+    uint16_t tranche;
+    pg_atomic_uint32 state;
+    proclist_head waiters;
+} LWLock;
+
+typedef unsigned int LWLockMode;
+
+#define LW_EXCLUSIVE 0
+#define LW_SHARED 1
+
 extern void ecaz_test_pg_backend_panic(const char *message);
 
 static MemoryContextData tqvector_test_memory_context_storage = {0};
@@ -56,6 +75,9 @@ MemoryContext CurrentMemoryContext = &tqvector_test_memory_context_storage;
 MemoryContext ErrorContext = &tqvector_test_memory_context_storage;
 ErrorContextCallback *error_context_stack = NULL;
 void *PG_exception_stack = NULL;
+uint32_t InterruptHoldoffCount = 1;
+
+static int ecaz_test_next_lwlock_tranche_id = 1;
 
 static __thread ErrorData tqvector_current_error = {0};
 static __thread bool tqvector_current_error_active = false;
@@ -237,4 +259,28 @@ void *palloc0(size_t size) {
 
 void pfree(void *pointer) {
     free(pointer);
+}
+
+bool LWLockAcquire(LWLock *lock, LWLockMode mode) {
+    (void)lock;
+    (void)mode;
+    return true;
+}
+
+void LWLockRelease(LWLock *lock) {
+    (void)lock;
+}
+
+int LWLockNewTrancheId(void) {
+    return ecaz_test_next_lwlock_tranche_id++;
+}
+
+void LWLockRegisterTranche(int tranche_id, const char *tranche_name) {
+    (void)tranche_id;
+    (void)tranche_name;
+}
+
+void LWLockInitialize(LWLock *lock, int tranche_id) {
+    memset(lock, 0, sizeof(*lock));
+    lock->tranche = (uint16_t)tranche_id;
 }
