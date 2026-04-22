@@ -357,6 +357,13 @@ See ADR-040 for the full shape. Summary:
   helper consumes the globally selected row, but the broader blocked-owner state
   machine and planner-visible parallel execution remain deferred.
 
+- **Owner-slot reconciliation staging.** When a worker falls back behind a
+  foreign-owner blocker, it now reconciles its local duplicate-drain cursor
+  against the owning shared result slot before degrading into local emit. If a
+  foreign worker already advanced or fully drained that slot, the local worker
+  catches up and retries the shared seam instead of keeping a stale local
+  cursor.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

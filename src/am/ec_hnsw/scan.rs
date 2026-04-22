@@ -3400,6 +3400,79 @@ enum BlockedParallelScanDisposition {
     DropAndContinue,
 }
 
+fn reconcile_parallel_owner_progress_from_shared_slot(opaque: &mut TqScanOpaque) -> bool {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+        || opaque.parallel_local_only_output_active
+    {
+        return false;
+    }
+
+    let current = active_result_state_ref(opaque).current();
+    if !current.has_element() {
+        return false;
+    }
+
+    let shared_slot = unsafe {
+        super::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel owner-slot read failed: {err}"));
+
+    let current_element = parallel_item_pointer(active_result_state_ref(opaque).current().element_tid());
+
+    if shared_slot.runtime.element_tid == current_element {
+        let shared_pending_count = usize::try_from(shared_slot.runtime.pending_count)
+            .expect("shared pending count should fit in usize");
+        let local_pending_count = usize::from(active_result_state_ref(opaque).pending_count());
+        let shared_pending_index = usize::try_from(shared_slot.runtime.pending_index)
+            .expect("shared pending index should fit in usize");
+        let local_pending_index = usize::from(active_result_state_ref(opaque).pending_index());
+
+        let shared_pending_heap_tids = &shared_slot.runtime.pending_heap_tids[..shared_pending_count
+            .min(page::HEAPTID_INLINE_CAPACITY)];
+        let local_pending_heap_tids = active_result_state_ref(opaque).pending_heap_tids();
+
+        if shared_pending_count == local_pending_count
+            && shared_pending_heap_tids
+                .iter()
+                .copied()
+                .map(item_pointer_from_parallel_item_pointer)
+                .eq(local_pending_heap_tids.iter().copied())
+            && shared_pending_index > local_pending_index
+        {
+            let result_state = active_result_state_mut(opaque);
+            while usize::from(result_state.pending_index()) < shared_pending_index {
+                if result_state.take_pending_output().is_none() {
+                    break;
+                }
+            }
+            if result_state.pending_count() == 0 {
+                result_state.clear_current();
+            }
+            opaque.parallel_owned_output_blocker = None;
+            publish_parallel_scan_worker_slot_snapshot(opaque);
+            return true;
+        }
+
+        return false;
+    }
+
+    if !shared_slot.runtime.element_tid.is_valid() {
+        let result_state = active_result_state_mut(opaque);
+        if result_state.current().has_element() {
+            result_state.clear();
+            opaque.parallel_owned_output_blocker = None;
+            publish_parallel_scan_worker_slot_snapshot(opaque);
+            return true;
+        }
+    }
+
+    false
+}
+
 fn blocked_parallel_scan_disposition(
     opaque: &mut TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
@@ -3418,6 +3491,10 @@ fn blocked_parallel_scan_disposition(
             {
                 opaque.retained_parallel_owned_output_blocker = None;
                 return BlockedParallelScanDisposition::DropAndContinue;
+            }
+            if reconcile_parallel_owner_progress_from_shared_slot(opaque) {
+                opaque.retained_parallel_owned_output_blocker = None;
+                return BlockedParallelScanDisposition::RetryShared;
             }
             let previous = opaque
                 .retained_parallel_owned_output_blocker
@@ -7980,6 +8057,193 @@ mod tests {
             ),
             BlockedParallelScanDisposition::RetryShared,
             "a changed foreign-owner generation should reopen one retry against the shared seam"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_retries_when_owner_slot_progresses() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        owner.result_state.set_current(tid(45, 1), -7.0);
+        owner.result_state.store_pending(&[tid(46, 1), tid(46, 2)]);
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        let advanced = unsafe {
+            crate::am::ec_hnsw::parallel::take_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected take should succeed")
+        .expect("owner slot should seed the selected pending output");
+        assert_eq!(
+            advanced.pending_output.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 46,
+                offset_number: 1,
+            },
+            "the first shared drain should advance the owner slot to its second heap tid"
+        );
+
+        foreign.result_state.set_current(tid(47, 1), -9.0);
+        foreign.result_state.store_pending(&[tid(48, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            blocked_parallel_scan_disposition(
+                &mut owner,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 2,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 47,
+                        offset_number: 1,
+                    },
+                }
+            ),
+            BlockedParallelScanDisposition::RetryShared,
+            "a stale local owner cursor should retry the shared seam after reconciling to the advanced shared slot"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            1,
+            "owner reconciliation should advance local duplicate-drain progress to the shared pending index"
+        );
+        assert_eq!(
+            owner.result_state.pending_count(),
+            2,
+            "owner reconciliation should preserve the remaining staged duplicate set"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_retries_when_owner_slot_was_fully_drained() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        owner.result_state.set_current(tid(49, 1), -7.0);
+        owner.result_state.store_pending(&[tid(50, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        let drained = unsafe {
+            crate::am::ec_hnsw::parallel::take_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected take should succeed")
+        .expect("owner slot should publish one selected pending output");
+        assert_eq!(
+            drained.pending_output.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 50,
+                offset_number: 1,
+            },
+            "the shared take should fully drain the staged owner slot"
+        );
+
+        foreign.result_state.set_current(tid(51, 1), -9.0);
+        foreign.result_state.store_pending(&[tid(52, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            blocked_parallel_scan_disposition(
+                &mut owner,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 2,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 51,
+                        offset_number: 1,
+                    },
+                }
+            ),
+            BlockedParallelScanDisposition::RetryShared,
+            "a fully drained shared owner slot should retry the shared seam after clearing stale local state"
+        );
+        assert!(
+            !owner.result_state.current().has_element(),
+            "owner reconciliation should clear a stale local current result once the shared slot was fully drained elsewhere"
+        );
+        assert_eq!(
+            owner.result_state.pending_count(),
+            0,
+            "owner reconciliation should clear the local duplicate-drain buffer after full shared drain"
         );
     }
 
