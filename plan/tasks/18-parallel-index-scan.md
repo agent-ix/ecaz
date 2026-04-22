@@ -433,6 +433,12 @@ See ADR-040 for the full shape. Summary:
   TID. If so, the local deferred path skips that duplicate heap TID instead of
   re-emitting it locally and only falls back to the next unique local heap TID.
 
+- **Active duplicate suppression before defer.** The same live-foreign duplicate
+  check now also runs at the first blocked-owner disposition for the active row.
+  If the foreign selected/admitted output already owns the next local heap TID,
+  the scan consumes that duplicate immediately, republishes its worker snapshot,
+  and retries the shared seam before the row ever enters the deferred stash.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
