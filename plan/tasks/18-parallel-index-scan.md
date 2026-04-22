@@ -316,6 +316,11 @@ See ADR-040 for the full shape. Summary:
   keep-and-emit path. That keeps the staged foreign-owner fallback from holding
   the same row forever after the owner has already advanced.
 
+- **Local-only foreign fallback staging.** When a stable foreign-owner blocker
+  does fall back to local emit, the row now becomes local-only between retries:
+  the worker snapshot still reports an active local row, but the coordinator
+  result slot is cleared until the next shared retry explicitly republishes it.
+
 - **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
   admission-window stalls so scan diagnostics can distinguish why a

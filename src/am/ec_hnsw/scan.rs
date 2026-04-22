@@ -1170,7 +1170,7 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     }
 
     let current_result = active_result_state.current();
-    if current_result.has_element() {
+    if current_result.has_element() && !opaque.parallel_local_only_output_active {
         let pending_heap_tids = std::array::from_fn(|index| {
             active_result_state
                 .pending_heap_tids()
@@ -1276,6 +1276,7 @@ fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
     opaque.parallel_scan_worker_slot_index = INVALID_PARALLEL_SCAN_WORKER_SLOT;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
+    opaque.parallel_local_only_output_active = false;
 }
 
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
@@ -1297,6 +1298,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.parallel_scan_worker_slot_index = worker_slot_index;
             opaque.parallel_owned_output_blocker = None;
             opaque.retained_parallel_owned_output_blocker = None;
+            opaque.parallel_local_only_output_active = false;
             publish_parallel_scan_worker_slot_snapshot(opaque);
         }
         Ok(None) => clear_parallel_scan_state(opaque),
@@ -3652,6 +3654,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         return ParallelScanOutputState::Empty;
     }
 
+    opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     publish_parallel_scan_worker_slot_snapshot(opaque);
     match unsafe {
@@ -3702,6 +3705,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     .unwrap_or_else(|| {
         pgrx::error!("ec_hnsw parallel scan ready state produced no owned output to take")
     });
+    opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
@@ -3719,6 +3723,7 @@ unsafe fn emit_materialized_parallel_scan_output(
         return ParallelScanOutputState::Empty;
     }
 
+    opaque.parallel_local_only_output_active = false;
     opaque.retained_parallel_owned_output_blocker = None;
     active_result_state_mut(opaque).materialize(selected);
     unsafe { try_take_parallel_scan_next_output(opaque) }
@@ -3739,6 +3744,7 @@ unsafe fn emit_prefetched_parallel_scan_output(
 
 fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
     active_result_state_mut(opaque).clear();
+    opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     if !opaque.parallel_scan_state.is_null()
@@ -4989,6 +4995,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         .map(|output| {
             mark_emitted_element(opaque, opaque.result_state.current().element_tid());
             emit_scan_output(scan, opaque, output);
+            opaque.parallel_local_only_output_active =
+                active_result_state_ref(opaque).current().has_element();
             opaque.parallel_owned_output_blocker = None;
             publish_parallel_scan_worker_slot_snapshot(opaque);
             true
@@ -5060,6 +5068,8 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                     .map(|output| {
                         mark_emitted_element(opaque, selected.element_tid);
                         emit_scan_output(scan, opaque, output);
+                        opaque.parallel_local_only_output_active =
+                            active_result_state_ref(opaque).current().has_element();
                         opaque.parallel_owned_output_blocker = None;
                         publish_parallel_scan_worker_slot_snapshot(opaque);
                         true
@@ -5680,6 +5690,7 @@ pub(super) struct TqScanOpaque {
     parallel_scan_worker_slot_index: u32,
     parallel_owned_output_blocker: Option<super::parallel::EcParallelOwnedOutputBlocker>,
     retained_parallel_owned_output_blocker: Option<RetainedParallelOwnedOutputBlocker>,
+    parallel_local_only_output_active: bool,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -5759,6 +5770,7 @@ impl Default for TqScanOpaque {
             parallel_scan_worker_slot_index: INVALID_PARALLEL_SCAN_WORKER_SLOT,
             parallel_owned_output_blocker: None,
             retained_parallel_owned_output_blocker: None,
+            parallel_local_only_output_active: false,
             query_dimensions: 0,
             query_values: ptr::null_mut(),
             prepared_query: ptr::null_mut(),
@@ -6283,6 +6295,93 @@ mod tests {
                 offset_number: 2,
             },
             "coordinator result snapshot should stage the second pending heap tid inline"
+        );
+    }
+
+    #[test]
+    fn publish_parallel_scan_worker_slot_snapshot_hides_local_only_output_from_coordinator() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        opaque.result_state.set_current(tid(30, 1), -7.0);
+        opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+        opaque.parallel_local_only_output_active = true;
+
+        publish_parallel_scan_worker_slot_snapshot(&opaque);
+
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert!(
+            worker_snapshot.runtime.active_result_has_current,
+            "local-only fallback should stay visible in the worker snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.active_result_pending_count, 2,
+            "local-only fallback should preserve pending duplicate count in the worker snapshot"
+        );
+
+        let coordinator_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert_eq!(
+            coordinator_snapshot.published_result_slots, 0,
+            "local-only fallback should clear the worker's coordinator slot from the shared published set"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.flags, 0,
+            "local-only fallback should leave the coordinator result slot cleared"
+        );
+        assert_eq!(
+            result_snapshot.runtime.element_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            "cleared local-only coordinator slots should not expose a staged element tid"
         );
     }
 
