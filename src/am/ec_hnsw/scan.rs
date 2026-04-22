@@ -1124,11 +1124,15 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
     };
     let published_blocker = opaque.parallel_owned_output_blocker.or_else(|| {
-        (opaque.parallel_local_only_output_active
-            || !opaque.deferred_parallel_blocked_results.is_empty())
-        .then_some(opaque.retained_parallel_owned_output_blocker)
-        .flatten()
-        .map(|retained| retained.blocker)
+        if opaque.parallel_local_only_output_active {
+            return opaque
+                .retained_parallel_owned_output_blocker
+                .map(|retained| retained.blocker);
+        }
+
+        best_deferred_parallel_blocked_output(opaque)
+            .and_then(|deferred| deferred.retained_blocker)
+            .map(|retained| retained.blocker)
     });
     let (
         owned_output_blocker_kind,
@@ -3402,6 +3406,12 @@ struct RetainedParallelOwnedOutputBlocker {
     element_tid: page::ItemPointer,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct DeferredParallelBlockedOutput {
+    state: ScanResultState,
+    retained_blocker: Option<RetainedParallelOwnedOutputBlocker>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BlockedParallelScanDisposition {
     KeepLocalEmit,
@@ -3697,6 +3707,48 @@ fn item_pointer_order_key(tid: page::ItemPointer) -> (u32, u16) {
     (tid.block_number, tid.offset_number)
 }
 
+fn deferred_parallel_blocked_output_order_key(
+    deferred: &DeferredParallelBlockedOutput,
+) -> (f32, (u32, u16)) {
+    (
+        deferred.state.current().score(),
+        item_pointer_order_key(deferred.state.current().element_tid()),
+    )
+}
+
+fn sort_deferred_parallel_blocked_outputs(opaque: &mut TqScanOpaque) {
+    opaque
+        .deferred_parallel_blocked_results
+        .sort_by(|left, right| {
+            deferred_parallel_blocked_output_order_key(left)
+                .0
+                .total_cmp(&deferred_parallel_blocked_output_order_key(right).0)
+                .then_with(|| {
+                    deferred_parallel_blocked_output_order_key(left)
+                        .1
+                        .cmp(&deferred_parallel_blocked_output_order_key(right).1)
+                })
+        });
+}
+
+fn best_deferred_parallel_blocked_output(
+    opaque: &TqScanOpaque,
+) -> Option<&DeferredParallelBlockedOutput> {
+    opaque
+        .deferred_parallel_blocked_results
+        .iter()
+        .min_by(|left, right| {
+            deferred_parallel_blocked_output_order_key(left)
+                .0
+                .total_cmp(&deferred_parallel_blocked_output_order_key(right).0)
+                .then_with(|| {
+                    deferred_parallel_blocked_output_order_key(left)
+                        .1
+                        .cmp(&deferred_parallel_blocked_output_order_key(right).1)
+                })
+        })
+}
+
 fn pending_scan_output_from_parallel_pending_output(
     output: super::parallel::EcParallelPendingOutputSnapshot,
 ) -> PendingScanOutput {
@@ -3934,21 +3986,19 @@ fn stash_active_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
         return false;
     }
 
-    opaque.deferred_parallel_blocked_results.push(active);
     opaque
         .deferred_parallel_blocked_results
-        .sort_by(|left, right| {
-            left.current()
-                .score()
-                .total_cmp(&right.current().score())
-                .then_with(|| {
-                    item_pointer_order_key(left.current().element_tid())
-                        .cmp(&item_pointer_order_key(right.current().element_tid()))
-                })
+        .push(DeferredParallelBlockedOutput {
+            state: active,
+            retained_blocker: opaque
+                .retained_parallel_owned_output_blocker
+                .filter(|retained| retained.element_tid == active.current().element_tid()),
         });
+    sort_deferred_parallel_blocked_outputs(opaque);
     active_result_state_mut(opaque).clear();
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
     if !opaque.parallel_scan_state.is_null()
         && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
@@ -3966,28 +4016,30 @@ fn emit_next_deferred_parallel_blocked_output(
         .iter()
         .enumerate()
         .min_by(|(_, left), (_, right)| {
-            left.current()
-                .score()
-                .total_cmp(&right.current().score())
+            deferred_parallel_blocked_output_order_key(left)
+                .0
+                .total_cmp(&deferred_parallel_blocked_output_order_key(right).0)
                 .then_with(|| {
-                    item_pointer_order_key(left.current().element_tid())
-                        .cmp(&item_pointer_order_key(right.current().element_tid()))
+                    deferred_parallel_blocked_output_order_key(left)
+                        .1
+                        .cmp(&deferred_parallel_blocked_output_order_key(right).1)
                 })
         })
     else {
         return false;
     };
 
-    let mut state = opaque
+    let mut deferred = opaque
         .deferred_parallel_blocked_results
         .remove(selected_idx);
-    let Some(output) = state.take_pending_output() else {
+    let Some(output) = deferred.state.take_pending_output() else {
         return emit_next_deferred_parallel_blocked_output(scan, opaque);
     };
-    mark_emitted_element(opaque, state.current().element_tid());
+    mark_emitted_element(opaque, deferred.state.current().element_tid());
     emit_scan_output(scan, opaque, output);
-    if state.pending_count() != 0 && state.current().has_element() {
-        opaque.deferred_parallel_blocked_results.push(state);
+    if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
+        opaque.deferred_parallel_blocked_results.push(deferred);
+        sort_deferred_parallel_blocked_outputs(opaque);
     } else if opaque.deferred_parallel_blocked_results.is_empty() {
         opaque.retained_parallel_owned_output_blocker = None;
     }
@@ -4678,7 +4730,7 @@ fn staged_or_emitted_contains_element(
         || opaque
             .deferred_parallel_blocked_results
             .iter()
-            .any(|state| state.current().element_tid() == element_tid)
+            .any(|deferred| deferred.state.current().element_tid() == element_tid)
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -5968,7 +6020,7 @@ pub(super) struct TqScanOpaque {
     parallel_owned_output_blocker: Option<super::parallel::EcParallelOwnedOutputBlocker>,
     retained_parallel_owned_output_blocker: Option<RetainedParallelOwnedOutputBlocker>,
     parallel_local_only_output_active: bool,
-    deferred_parallel_blocked_results: Vec<ScanResultState>,
+    deferred_parallel_blocked_results: Vec<DeferredParallelBlockedOutput>,
     pub(super) query_dimensions: u16,
     pub(super) query_values: *mut f32,
     pub(super) prepared_query: *mut PreparedQuery,
@@ -6684,6 +6736,104 @@ mod tests {
             result_snapshot.runtime.element_tid,
             crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
             "cleared local-only coordinator slots should not expose a staged element tid"
+        );
+    }
+
+    #[test]
+    fn publish_parallel_scan_worker_slot_snapshot_uses_best_deferred_blocker() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+
+        let mut slower = ScanResultState::default();
+        slower.set_current(tid(70, 1), -4.0);
+        slower.store_pending(&[tid(71, 1)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                state: slower,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(2),
+                        generation: 20,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    },
+                    element_tid: tid(70, 1),
+                }),
+            });
+
+        let mut best = ScanResultState::default();
+        best.set_current(tid(72, 1), -8.0);
+        best.store_pending(&[tid(73, 1)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                state: best,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                        slot_index: Some(1),
+                        generation: 11,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                    },
+                    element_tid: tid(72, 1),
+                }),
+            });
+
+        publish_parallel_scan_worker_slot_snapshot(&opaque);
+
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_ADMITTED_HEAD,
+            "worker snapshot should publish the blocker from the best deferred blocked row"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_slot_index,
+            Some(1),
+            "worker snapshot should publish the blocker owner slot from the best deferred blocked row"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation, 11,
+            "worker snapshot should publish the blocker generation from the best deferred blocked row"
         );
     }
 
@@ -8712,9 +8862,16 @@ mod tests {
             "a deferred blocked local row should still count as staged so the scan does not rematerialize the same element"
         );
         assert_eq!(
-            opaque.retained_parallel_owned_output_blocker.map(|retained| retained.element_tid),
+            opaque.deferred_parallel_blocked_results[0]
+                .retained_blocker
+                .map(|retained| retained.element_tid),
             Some(tid(53, 1)),
-            "stashing a blocked local row should preserve the retained blocker metadata for diagnostics"
+            "stashing a blocked local row should preserve per-row blocker metadata inside the deferred stash"
+        );
+        assert_eq!(
+            opaque.retained_parallel_owned_output_blocker,
+            None,
+            "stashing a blocked local row should clear the active retained blocker because deferred rows now own that metadata"
         );
     }
 
@@ -8724,7 +8881,12 @@ mod tests {
         let mut deferred = ScanResultState::default();
         deferred.set_current(tid(60, 1), -7.0);
         deferred.store_pending(&[tid(61, 1)]);
-        opaque.deferred_parallel_blocked_results.push(deferred);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                state: deferred,
+                retained_blocker: None,
+            });
 
         assert!(
             staged_or_emitted_contains_element(&opaque, tid(60, 1)),
