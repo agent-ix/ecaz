@@ -294,10 +294,10 @@ See ADR-040 for the full shape. Summary:
   (`ForeignSelectedPending`, `ForeignAdmittedHead`, or `AdmissionWindow`) so
   the eventual worker/consumer handoff can branch on explicit ownership
   metadata instead of reverse-engineering it from coordinator side effects.
-  The linear fallback path now uses that blocker taxonomy too: admission-window
-  losers are dropped from the staged local current slot and local search
-  continues, while foreign-owner blockers still use the explicit staging
-  fallback until the real handoff contract lands.
+  The linear and graph scan paths now use that blocker taxonomy too:
+  admission-window losers are dropped from the staged local current slot and
+  local search continues, while foreign-owner blockers still use the explicit
+  staging fallback until the real handoff contract lands.
 
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete

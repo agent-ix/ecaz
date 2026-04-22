@@ -4874,19 +4874,37 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         return false;
     }
 
-    if let ParallelScanOutputState::Emitted(output) =
-        unsafe { emit_prefetched_parallel_scan_output(opaque) }
-    {
-        mark_emitted_element(opaque, opaque.result_state.current().element_tid());
-        emit_scan_output(scan, opaque, output);
-        opaque.explain_counters.record_heap_tid_returned();
-        if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-            let opaque_ptr = opaque as *mut TqScanOpaque;
-            unsafe {
-                graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+    loop {
+        match unsafe { emit_prefetched_parallel_scan_output(opaque) } {
+            ParallelScanOutputState::Emitted(output) => {
+                mark_emitted_element(opaque, opaque.result_state.current().element_tid());
+                emit_scan_output(scan, opaque, output);
+                opaque.explain_counters.record_heap_tid_returned();
+                if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+                    let opaque_ptr = opaque as *mut TqScanOpaque;
+                    unsafe {
+                        graph_traversal_cursor(opaque)
+                            .ensure_prefetched_output(index_relation, opaque_ptr);
+                    }
+                }
+                return true;
             }
+            ParallelScanOutputState::Blocked(blocker)
+                if blocked_parallel_scan_disposition(blocker)
+                    == BlockedParallelScanDisposition::DropAndContinue =>
+            {
+                discard_active_parallel_scan_output(opaque);
+                let opaque_ptr = opaque as *mut TqScanOpaque;
+                if !unsafe {
+                    graph_traversal_cursor(opaque)
+                        .ensure_prefetched_output(index_relation, opaque_ptr)
+                } {
+                    return false;
+                }
+                continue;
+            }
+            ParallelScanOutputState::Blocked(_) | ParallelScanOutputState::Empty => break,
         }
-        return true;
     }
 
     let emitted = graph_traversal_cursor(opaque)
