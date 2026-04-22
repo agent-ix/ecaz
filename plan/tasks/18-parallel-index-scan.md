@@ -439,6 +439,12 @@ See ADR-040 for the full shape. Summary:
   the scan consumes that duplicate immediately, republishes its worker snapshot,
   and retries the shared seam before the row ever enters the deferred stash.
 
+- **Deferred duplicate skip now reopens shared handoff.** When deferred local
+  fallback skips a foreign-owned duplicate heap TID, it now retries the shared
+  handoff seam for that row immediately instead of sliding straight toward local
+  emit. That lets the worker drain the still-live foreign selected/admitted
+  output before considering local-only fallback for the remaining unique row.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

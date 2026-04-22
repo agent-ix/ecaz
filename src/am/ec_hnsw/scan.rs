@@ -4420,6 +4420,24 @@ fn take_next_deferred_parallel_blocked_output(
         if deferred_parallel_blocked_output_duplicates_live_foreign_heap_tid(opaque, &deferred) {
             let _ = deferred.state.take_pending_output();
             if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
+                if let Some(retained_blocker) = deferred.retained_blocker {
+                    if let Some(output) = unsafe {
+                        try_take_parallel_scan_handoff_output(opaque, retained_blocker.blocker)
+                    } {
+                        if deferred.state.current().has_element()
+                            && deferred.state.pending_count() != 0
+                        {
+                            blocked_fallback.push(deferred);
+                        }
+                        restore_deferred_parallel_blocked_outputs(opaque, blocked_fallback);
+                        return Some(output);
+                    }
+                    if should_drop_deferred_parallel_blocked_output(&deferred) {
+                        continue;
+                    }
+                }
+            }
+            if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
                 blocked_fallback.push(deferred);
             }
             continue;
@@ -9536,6 +9554,114 @@ mod tests {
                 &owner.deferred_parallel_blocked_results[0]
             ),
             "the duplicate-suppression helper should detect when a still-live foreign selected row already owns the same heap tid as the deferred local row"
+        );
+    }
+
+    #[test]
+    fn take_next_deferred_parallel_blocked_output_retries_handoff_after_duplicate_skip() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(90, 1),
+            -9.0,
+            Some(-8.5),
+            Some(4),
+            Some(-9.5),
+        );
+        foreign.result_state.store_pending(&[tid(91, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        let mut blocked = ScanResultState::default();
+        blocked.set_current_with_details(tid(92, 1), -8.0, Some(-7.5), Some(9), Some(-8.5));
+        blocked.store_pending(&[tid(91, 1), tid(92, 2)]);
+        owner
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: blocked,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: selected.coordinator.selected_result_slot_index,
+                        generation: selected.coordinator.result_publish_generation,
+                        element_tid: selected.selected_result_slot.runtime.element_tid,
+                    },
+                    element_tid: tid(92, 1),
+                }),
+            });
+
+        assert_eq!(
+            take_next_deferred_parallel_blocked_output(&mut owner, true),
+            Some(PendingScanOutput {
+                heap_tid: tid(91, 1),
+                score: -9.0,
+                approx_score: Some(-8.5),
+                approx_rank: Some(4),
+                comparison_score: Some(-9.5),
+            }),
+            "after skipping a foreign-owned duplicate heap tid, deferred drain should re-enter the shared handoff path before locally emitting the remaining row"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "the local deferred row should stay stashed after the foreign handoff output drains"
+        );
+        assert!(
+            owner.deferred_parallel_blocked_results[0].state.pending_count() > 0,
+            "retrying the shared handoff after duplicate suppression should leave the remaining local row staged for a later drain"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(92, 1),
+            "the local deferred row should remain stashed for later ownership resolution after the foreign handoff drains"
         );
     }
 
