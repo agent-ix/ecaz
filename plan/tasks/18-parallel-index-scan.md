@@ -364,6 +364,12 @@ See ADR-040 for the full shape. Summary:
   catches up and retries the shared seam instead of keeping a stale local
   cursor.
 
+- **Post-handoff republish reconciliation.** The worker snapshot/result-slot
+  republish path now also reconciles against the worker's own shared slot
+  before publishing. That keeps a worker from re-staging an already-drained
+  foreign-handoff row when another worker consumed its selected pending output
+  first.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

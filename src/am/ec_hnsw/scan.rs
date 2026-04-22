@@ -1063,7 +1063,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             #[cfg(not(any(test, feature = "pg_test")))]
             let amrescan_total_elapsed_us = 0;
             record_amrescan_total_elapsed(opaque, amrescan_total_elapsed_us);
-            publish_parallel_scan_worker_slot_snapshot(opaque);
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
         })
     }
 }
@@ -1243,6 +1243,11 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     }
 }
 
+fn sync_and_publish_parallel_scan_worker_slot_snapshot(opaque: &mut TqScanOpaque) {
+    reconcile_parallel_owner_progress_from_shared_slot(opaque);
+    publish_parallel_scan_worker_slot_snapshot(opaque);
+}
+
 fn resolve_bootstrap_frontier_limit(
     tuning: super::options::ScanTuning,
     parallel_worker_slot_count: u32,
@@ -1305,7 +1310,7 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.parallel_owned_output_blocker = None;
             opaque.retained_parallel_owned_output_blocker = None;
             opaque.parallel_local_only_output_active = false;
-            publish_parallel_scan_worker_slot_snapshot(opaque);
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
         }
         Ok(None) => clear_parallel_scan_state(opaque),
         Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
@@ -2183,7 +2188,7 @@ fn reset_scan_position(opaque: &mut TqScanOpaque) {
     reset_scan_expanded_state(opaque);
     reset_scan_visited_state(opaque);
     reset_scan_emitted_state(opaque);
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn reset_scan_graph_cache(opaque: &mut TqScanOpaque) {
@@ -3453,7 +3458,7 @@ fn reconcile_parallel_owner_progress_from_shared_slot(opaque: &mut TqScanOpaque)
                 result_state.clear_current();
             }
             opaque.parallel_owned_output_blocker = None;
-            publish_parallel_scan_worker_slot_snapshot(opaque);
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             return true;
         }
 
@@ -3461,12 +3466,23 @@ fn reconcile_parallel_owner_progress_from_shared_slot(opaque: &mut TqScanOpaque)
     }
 
     if !shared_slot.runtime.element_tid.is_valid() {
-        let result_state = active_result_state_mut(opaque);
-        if result_state.current().has_element() {
-            result_state.clear();
-            opaque.parallel_owned_output_blocker = None;
-            publish_parallel_scan_worker_slot_snapshot(opaque);
-            return true;
+        let shared_worker = unsafe {
+            super::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel worker-slot read failed: {err}"));
+        if shared_worker.runtime.active_result_has_current
+            && active_result_state_ref(opaque).current().heap_tid() == page::ItemPointer::INVALID
+        {
+            let result_state = active_result_state_mut(opaque);
+            if result_state.current().has_element() {
+                result_state.clear();
+                opaque.parallel_owned_output_blocker = None;
+                publish_parallel_scan_worker_slot_snapshot(opaque);
+                return true;
+            }
         }
     }
 
@@ -3762,7 +3778,7 @@ unsafe fn try_take_parallel_scan_handoff_output(
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     Some(output)
 }
 
@@ -3782,7 +3798,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
 
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     match unsafe {
         super::parallel::read_parallel_scan_owned_output_state(
             opaque.parallel_scan_state,
@@ -3818,7 +3834,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
                 }
             }
             opaque.parallel_owned_output_blocker = Some(blocker);
-            publish_parallel_scan_worker_slot_snapshot(opaque);
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             return ParallelScanOutputState::Blocked(blocker);
         }
         super::parallel::EcParallelOwnedOutputState::Ready => {}
@@ -3839,7 +3855,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     ParallelScanOutputState::Emitted(output)
 }
 
@@ -3880,7 +3896,7 @@ fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
     if !opaque.parallel_scan_state.is_null()
         && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
     {
-        publish_parallel_scan_worker_slot_snapshot(opaque);
+        sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     }
 }
 
@@ -4217,7 +4233,7 @@ fn enter_linear_fallback_phase(opaque: &mut TqScanOpaque) {
     opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::LinearFallback;
     opaque.stats_used_linear_fallback = true;
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
@@ -4226,7 +4242,7 @@ fn mark_scan_exhausted(opaque: &mut TqScanOpaque) {
     opaque.fallback_result_state.clear();
     opaque.execution_phase = ScanExecutionPhase::Exhausted;
     finalize_scan_stats(opaque);
-    publish_parallel_scan_worker_slot_snapshot(opaque);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
 fn reset_bootstrap_expansion_state(opaque: &mut TqScanOpaque, ef_search: usize) {
@@ -5128,7 +5144,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
             opaque.parallel_local_only_output_active =
                 active_result_state_ref(opaque).current().has_element();
             opaque.parallel_owned_output_blocker = None;
-            publish_parallel_scan_worker_slot_snapshot(opaque);
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             true
         })
         .unwrap_or(false);
@@ -5201,7 +5217,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                         opaque.parallel_local_only_output_active =
                             active_result_state_ref(opaque).current().has_element();
                         opaque.parallel_owned_output_blocker = None;
-                        publish_parallel_scan_worker_slot_snapshot(opaque);
+                        sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
                         true
                     })
                     .unwrap_or(false);
@@ -7318,6 +7334,143 @@ mod tests {
             local.result_state.pending_index(),
             0,
             "draining a foreign selected row should not advance the local worker's duplicate-drain cursor"
+        );
+    }
+
+    #[test]
+    fn foreign_selected_handoff_republish_advances_to_next_pending_output() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(55, 1),
+            -8.0,
+            Some(-7.5),
+            Some(5),
+            Some(-8.5),
+        );
+        foreign.result_state.store_pending(&[tid(65, 1), tid(65, 2)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        local.result_state.set_current_with_details(
+            tid(56, 1),
+            -6.0,
+            Some(-5.5),
+            Some(9),
+            Some(-6.5),
+        );
+        local.result_state.store_pending(&[tid(66, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&local);
+
+        let first = unsafe {
+            try_take_parallel_scan_handoff_output(
+                &mut local,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 1,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 55,
+                        offset_number: 1,
+                    },
+                },
+            )
+        };
+        assert_eq!(
+            first,
+            Some(PendingScanOutput {
+                heap_tid: tid(65, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(5),
+                comparison_score: Some(-8.5),
+            }),
+            "the first foreign selected handoff should drain the first pending heap tid"
+        );
+
+        sync_and_publish_parallel_scan_worker_slot_snapshot(&mut foreign);
+
+        let foreign_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                foreign.parallel_scan_state,
+                foreign.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("foreign result-slot snapshot should read back");
+        assert_eq!(
+            foreign_snapshot.runtime.pending_index, 1,
+            "foreign republish after handoff should reconcile to the advanced shared pending index"
+        );
+        assert_eq!(
+            foreign_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 65,
+                offset_number: 2,
+            },
+            "foreign republish after handoff should expose the next pending heap tid instead of restaging the drained one"
+        );
+
+        let second = unsafe {
+            try_take_parallel_scan_handoff_output(
+                &mut local,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 2,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 55,
+                        offset_number: 1,
+                    },
+                },
+            )
+        };
+        assert_eq!(
+            second,
+            Some(PendingScanOutput {
+                heap_tid: tid(65, 2),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(6),
+                comparison_score: Some(-8.5),
+            }),
+            "a second foreign handoff after republish should drain the next pending heap tid, not re-emit the one already drained"
         );
     }
 
