@@ -3766,13 +3766,26 @@ unsafe fn try_take_parallel_scan_handoff_output(
         return None;
     }
 
-    let admitted_result = unsafe {
-        super::parallel::take_parallel_scan_next_output_snapshot(
-            opaque.parallel_scan_state,
-            parallel_scan_admission_result_limit(),
-        )
-    }
-    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan handoff take failed: {err}"))?;
+    let admitted_result = match blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            let slot_index = blocker.slot_index?;
+            unsafe {
+                super::parallel::take_parallel_scan_foreign_selected_pending_output_snapshot(
+                    opaque.parallel_scan_state,
+                    slot_index,
+                    blocker.generation,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!("ec_hnsw parallel scan foreign-selected handoff failed: {err}")
+            })?
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => unsafe {
+            super::parallel::take_parallel_scan_admitted_result_snapshot(opaque.parallel_scan_state)
+        }
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan admitted-head handoff failed: {err}"))?,
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => return None,
+    };
 
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
@@ -7299,19 +7312,21 @@ mod tests {
         local.result_state.store_pending(&[tid(64, 1)]);
         publish_parallel_scan_worker_slot_snapshot(&local);
 
-        let output = unsafe {
-            try_take_parallel_scan_handoff_output(
-                &mut local,
-                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
-                    generation: 1,
-                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
-                        block_number: 53,
-                        offset_number: 1,
-                    },
-                },
+        let blocker = match unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_owned_output_state(
+                local.parallel_scan_state,
+                local.parallel_scan_worker_slot_index,
+                2,
             )
+        }
+        .expect("owned output state should read back")
+        {
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputState::Blocked(blocker) => blocker,
+            state => panic!("expected foreign-selected blocker, got {state:?}"),
+        };
+
+        let output = unsafe {
+            try_take_parallel_scan_handoff_output(&mut local, blocker)
         };
 
         assert_eq!(
@@ -7399,19 +7414,21 @@ mod tests {
         local.result_state.store_pending(&[tid(66, 1)]);
         publish_parallel_scan_worker_slot_snapshot(&local);
 
-        let first = unsafe {
-            try_take_parallel_scan_handoff_output(
-                &mut local,
-                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
-                    generation: 1,
-                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
-                        block_number: 55,
-                        offset_number: 1,
-                    },
-                },
+        let first_blocker = match unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_owned_output_state(
+                local.parallel_scan_state,
+                local.parallel_scan_worker_slot_index,
+                2,
             )
+        }
+        .expect("owned output state should read back")
+        {
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputState::Blocked(blocker) => blocker,
+            state => panic!("expected foreign-selected blocker, got {state:?}"),
+        };
+
+        let first = unsafe {
+            try_take_parallel_scan_handoff_output(&mut local, first_blocker)
         };
         assert_eq!(
             first,
@@ -7447,19 +7464,21 @@ mod tests {
             "foreign republish after handoff should expose the next pending heap tid instead of restaging the drained one"
         );
 
-        let second = unsafe {
-            try_take_parallel_scan_handoff_output(
-                &mut local,
-                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
-                    generation: 2,
-                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
-                        block_number: 55,
-                        offset_number: 1,
-                    },
-                },
+        let second_blocker = match unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_owned_output_state(
+                local.parallel_scan_state,
+                local.parallel_scan_worker_slot_index,
+                2,
             )
+        }
+        .expect("owned output state should read back")
+        {
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputState::Blocked(blocker) => blocker,
+            state => panic!("expected foreign-selected blocker, got {state:?}"),
+        };
+
+        let second = unsafe {
+            try_take_parallel_scan_handoff_output(&mut local, second_blocker)
         };
         assert_eq!(
             second,
@@ -7471,6 +7490,122 @@ mod tests {
                 comparison_score: Some(-8.5),
             }),
             "a second foreign handoff after republish should drain the next pending heap tid, not re-emit the one already drained"
+        );
+    }
+
+    #[test]
+    fn stale_foreign_selected_handoff_does_not_drain_new_selected_slot() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 3,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut first_foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut second_foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut first_foreign = TqScanOpaque::default();
+        let mut second_foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut first_foreign_scan_desc, &mut first_foreign);
+        bind_parallel_scan_state(&mut second_foreign_scan_desc, &mut second_foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        first_foreign.result_state.set_current_with_details(
+            tid(70, 1),
+            -8.0,
+            Some(-7.5),
+            Some(5),
+            Some(-8.5),
+        );
+        first_foreign.result_state.store_pending(&[tid(80, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&first_foreign);
+
+        let stale_blocker = crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+            kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            slot_index: Some(first_foreign.parallel_scan_worker_slot_index),
+            generation: 1,
+            element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 70,
+                offset_number: 1,
+            },
+        };
+
+        second_foreign.result_state.set_current_with_details(
+            tid(71, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        second_foreign.result_state.store_pending(&[tid(81, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&second_foreign);
+
+        local.result_state.set_current_with_details(
+            tid(72, 1),
+            -6.0,
+            Some(-5.5),
+            Some(9),
+            Some(-6.5),
+        );
+        local.result_state.store_pending(&[tid(82, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&local);
+
+        let output = unsafe { try_take_parallel_scan_handoff_output(&mut local, stale_blocker) };
+        assert_eq!(
+            output, None,
+            "a stale foreign-selected blocker should not drain a newly selected foreign slot"
+        );
+
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                local.parallel_scan_state,
+            )
+        }
+        .expect("selected pending snapshot should read back")
+        .expect("a newer selected pending slot should remain published");
+        assert_eq!(
+            selected.selected_result_slot.slot_index,
+            second_foreign.parallel_scan_worker_slot_index,
+            "a stale handoff attempt should leave the newer selected foreign slot intact"
+        );
+        assert_eq!(
+            selected.pending_output.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 81,
+                offset_number: 1,
+            },
+            "a stale handoff attempt should not consume the newer selected foreign row"
         );
     }
 

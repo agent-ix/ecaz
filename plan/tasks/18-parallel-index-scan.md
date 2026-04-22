@@ -370,6 +370,11 @@ See ADR-040 for the full shape. Summary:
   foreign-handoff row when another worker consumed its selected pending output
   first.
 
+- **Stale foreign-selected handoff guard.** Foreign selected-pending handoff
+  no longer goes through the generic global-next drain. It now only advances
+  the specific blocked foreign slot while the blocker slot/generation still
+  match, so a stale blocker cannot accidentally drain a newer selected row.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

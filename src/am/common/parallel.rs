@@ -2783,6 +2783,50 @@ pub(crate) unsafe fn take_parallel_scan_next_output_snapshot(
     Ok(None)
 }
 
+pub(crate) unsafe fn take_parallel_scan_foreign_selected_pending_output_snapshot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    result_publish_generation: u32,
+) -> Result<Option<EcParallelCoordinatorAdmittedResultSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+
+    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    if coordinator.selected_result_slot_index != Some(slot_index)
+        || coordinator.result_publish_generation != result_publish_generation
+    {
+        return Ok(None);
+    }
+
+    let Some(selected) = unsafe { take_selected_pending_output_locked(&attachment, slot_index) }?
+    else {
+        return Ok(None);
+    };
+
+    let mut flags = EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID;
+    if selected.pending_output.approx_score.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID;
+    }
+    if selected.pending_output.comparison_score.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID;
+    }
+    if selected.pending_output.approx_rank.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID;
+    }
+
+    Ok(Some(EcParallelCoordinatorAdmittedResultSelection {
+        coordinator: selected.coordinator,
+        admitted_result: EcParallelCoordinatorAdmittedResultSnapshot {
+            flags,
+            source_slot_index: Some(slot_index),
+            element_tid: selected.selected_result_slot.runtime.element_tid,
+            pending_output: selected.pending_output,
+        },
+    }))
+}
+
 pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     state: *mut EcParallelScanState,
     slot_index: u32,
