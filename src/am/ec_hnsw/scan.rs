@@ -4121,9 +4121,18 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         return ParallelScanOutputState::Empty;
     }
 
+    let waking_local_only_output = opaque.parallel_local_only_output_active;
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
-    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+    if waking_local_only_output {
+        // A local-only row keeps its worker snapshot visible while its
+        // coordinator slot stays intentionally cleared. If we reconcile before
+        // republishing that row, the empty coordinator slot looks like a stale
+        // fully-drained owner and we erase the still-live local cursor.
+        publish_parallel_scan_worker_slot_snapshot(opaque);
+    } else {
+        sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+    }
     match unsafe {
         super::parallel::read_parallel_scan_owned_output_state(
             opaque.parallel_scan_state,
@@ -7277,6 +7286,137 @@ mod tests {
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_generation, 11,
             "worker snapshot should publish the blocker generation from the best deferred blocked row"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_next_output_republishes_local_only_row_after_blocker_clears() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(84, 1),
+            -9.0,
+            Some(-8.5),
+            Some(4),
+            Some(-9.5),
+        );
+        foreign.result_state.store_pending(&[tid(85, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        owner.result_state.set_current_with_details(
+            tid(86, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner.result_state.store_pending(&[tid(87, 1), tid(87, 2)]);
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: selected.coordinator.selected_result_slot_index,
+                generation: selected.coordinator.result_publish_generation,
+                element_tid: selected.selected_result_slot.runtime.element_tid,
+            },
+            element_tid: tid(86, 1),
+        });
+        owner.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        let coordinator_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert_eq!(
+            coordinator_snapshot.published_result_slots, 1,
+            "a local-only row should stay hidden from the coordinator published set before the retry"
+        );
+
+        foreign.result_state.clear_current();
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(87, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(6),
+                comparison_score: Some(-8.5),
+            }),
+            "once the foreign blocker clears, the hidden local-only row should republish and emit through the shared parallel path"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "a successful shared retry should clear the local-only fallback flag"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            1,
+            "republishing the hidden local-only row should advance the local duplicate cursor after the shared consume"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                owner.parallel_scan_state,
+                owner.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 87,
+                offset_number: 2,
+            },
+            "after the shared retry consumes the first heap tid, the owner slot should republish the next remaining duplicate"
         );
     }
 

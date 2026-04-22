@@ -445,6 +445,12 @@ See ADR-040 for the full shape. Summary:
   emit. That lets the worker drain the still-live foreign selected/admitted
   output before considering local-only fallback for the remaining unique row.
 
+- **Local-only wakeup republished into shared state.** A row hidden in
+  local-only fallback no longer gets mistaken for a stale drained owner when
+  the foreign blocker clears. The next shared retry now republishes that row
+  back into the coordinator slot first, then lets it resume normal shared
+  drain/admission behavior.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
