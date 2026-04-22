@@ -3794,7 +3794,11 @@ fn should_prefer_deferred_parallel_blocked_output(
 ) -> Option<DeferredParallelBlockedOutput> {
     let deferred = best_deferred_parallel_blocked_output(opaque)?;
     let active = active_result_state_ref(opaque).current();
-    if !active.has_element() || active.score() <= deferred.state.current().score() {
+    if !active.has_element() {
+        return Some(*deferred);
+    }
+
+    if active.score() <= deferred.state.current().score() {
         return None;
     }
 
@@ -9309,6 +9313,33 @@ mod tests {
     }
 
     #[test]
+    fn should_prefer_deferred_parallel_blocked_output_without_active_result() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(83, 1), -8.0, None, None, None);
+        deferred.store_pending(&[tid(83, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: None,
+            });
+
+        let preferred = should_prefer_deferred_parallel_blocked_output(&opaque)
+            .expect("with no active local row, the best deferred row should be preferred");
+        assert_eq!(
+            preferred.state.current().element_tid(),
+            tid(83, 1),
+            "the best deferred row should be preferred when no active local row is staged"
+        );
+    }
+
+    #[test]
     fn take_preferred_deferred_parallel_blocked_output_prefers_better_deferred_row() {
         let mut opaque = TqScanOpaque {
             execution_phase: ScanExecutionPhase::LinearFallback,
@@ -9350,6 +9381,42 @@ mod tests {
             opaque.fallback_result_state.current().element_tid(),
             tid(62, 1),
             "preferring a deferred row should leave the active local row intact for the next turn"
+        );
+        assert!(
+            opaque.deferred_parallel_blocked_results.is_empty(),
+            "the single-pending deferred row should drain completely after emitting first"
+        );
+    }
+
+    #[test]
+    fn take_preferred_deferred_parallel_blocked_output_prefers_ready_deferred_without_active_row() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(84, 1), -8.0, Some(-8.5), Some(1), Some(-8.25));
+        deferred.store_pending(&[tid(84, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: None,
+            });
+
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut opaque)
+                .expect("a ready deferred row should drain before the scan looks for fresh local work"),
+            PendingScanOutput {
+                heap_tid: tid(84, 2),
+                score: -8.0,
+                approx_score: Some(-8.5),
+                approx_rank: Some(1),
+                comparison_score: Some(-8.25),
+            },
+            "the preferred deferred take should return the staged deferred row even when no active local row exists"
         );
         assert!(
             opaque.deferred_parallel_blocked_results.is_empty(),
