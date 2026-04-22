@@ -351,6 +351,12 @@ See ADR-040 for the full shape. Summary:
   local-only fallback. This still does not hand off foreign selected-pending
   cursors; it only consumes rows that are already in the admitted window.
 
+- **Foreign selected-pending handoff staging.** The same scan-side handoff seam
+  can now also drain a foreign selected-pending row through the shared global
+  next-output path. This still is not a full ownership transfer protocol: the
+  helper consumes the globally selected row, but the broader blocked-owner state
+  machine and planner-visible parallel execution remain deferred.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

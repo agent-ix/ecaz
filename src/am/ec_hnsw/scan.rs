@@ -3657,9 +3657,19 @@ unsafe fn try_take_parallel_scan_handoff_output(
     opaque: &mut TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
 ) -> Option<PendingScanOutput> {
-    if blocker.kind != super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead
-        || opaque.parallel_scan_state.is_null()
-    {
+    if opaque.parallel_scan_state.is_null() {
+        return None;
+    }
+
+    match blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending
+        | super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {}
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+            return None;
+        }
+    }
+
+    if opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT {
         return None;
     }
 
@@ -7135,6 +7145,106 @@ mod tests {
     }
 
     #[test]
+    fn try_take_parallel_scan_handoff_output_drains_foreign_selected_pending() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(53, 1),
+            -8.0,
+            Some(-7.5),
+            Some(5),
+            Some(-8.5),
+        );
+        foreign.result_state.store_pending(&[tid(63, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        local.result_state.set_current_with_details(
+            tid(54, 1),
+            -6.0,
+            Some(-5.5),
+            Some(9),
+            Some(-6.5),
+        );
+        local.result_state.store_pending(&[tid(64, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&local);
+
+        let output = unsafe {
+            try_take_parallel_scan_handoff_output(
+                &mut local,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 1,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 53,
+                        offset_number: 1,
+                    },
+                },
+            )
+        };
+
+        assert_eq!(
+            output,
+            Some(PendingScanOutput {
+                heap_tid: tid(63, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(5),
+                comparison_score: Some(-8.5),
+            }),
+            "a local worker blocked by a foreign selected pending row should be able to drain the shared global next output through the handoff helper"
+        );
+        assert_eq!(
+            local.result_state.current().element_tid(),
+            tid(54, 1),
+            "draining a foreign selected row should not mutate the local worker's staged current result"
+        );
+        assert_eq!(
+            local.result_state.pending_index(),
+            0,
+            "draining a foreign selected row should not advance the local worker's duplicate-drain cursor"
+        );
+    }
+
+    #[test]
     fn emit_materialized_parallel_scan_output_routes_new_local_row_through_shared_merge() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
@@ -7227,7 +7337,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_materialized_parallel_scan_output_reports_blocked_when_foreign_head_stays_ahead() {
+    fn emit_materialized_parallel_scan_output_handoffs_foreign_selected_pending() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
             bytes: [u8; 320],
@@ -7332,22 +7442,18 @@ mod tests {
 
         assert_eq!(
             output,
-            ParallelScanOutputState::Blocked(
-                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                    slot_index: Some(second_slot),
-                    generation: 2,
-                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
-                        block_number: 70,
-                        offset_number: 1,
-                    },
-                },
-            ),
-            "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(71, 2),
+                score: -9.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
+            }),
+            "materialized local staging should hand off a better foreign selected-pending row through the shared merge seam"
         );
         assert!(
-            !emitted_contains_element(&opaque, tid(27, 1)),
-            "blocked materialized staging should not mark the element as emitted before any heap tid returns"
+            emitted_contains_element(&opaque, tid(70, 1)),
+            "foreign handoff should mark the foreign element as emitted once its heap tid is returned"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
@@ -7362,7 +7468,7 @@ mod tests {
                 block_number: 32,
                 offset_number: 1,
             },
-            "blocked local materialization should still stage the current local heap tid in the shared slot"
+            "foreign handoff should leave the local materialized row staged in the shared slot for the next retry"
         );
         let worker_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
@@ -7373,30 +7479,30 @@ mod tests {
         .expect("parallel worker slot snapshot should read back");
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_kind,
-            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
-            "blocked materialized staging should publish the foreign-selected blocker into the shared worker runtime snapshot"
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            "foreign handoff should clear the local blocker after draining the shared output"
         );
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_slot_index,
-            Some(second_slot),
-            "blocked materialized staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+            None,
+            "foreign handoff should clear the blocker slot from the shared worker runtime snapshot"
         );
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_generation,
-            2,
-            "blocked materialized staging should publish the blocker generation into the shared worker runtime snapshot"
+            0,
+            "foreign handoff should clear the blocker generation from the shared worker runtime snapshot"
         );
         assert_eq!(
             opaque
                 .explain_counters
                 .stats_parallel_blocked_foreign_selected_pending,
-            1,
-            "blocked materialized staging should increment the foreign-selected EXPLAIN counter"
+            0,
+            "successful foreign handoff should not increment the blocked foreign-selected EXPLAIN counter"
         );
         assert_eq!(
             opaque.explain_counters.stats_parallel_blocked_foreign_admitted_head,
             0,
-            "blocked materialized staging should not increment the foreign-head EXPLAIN counter on a selected-pending blocker"
+            "foreign selected handoff should not increment the foreign-head EXPLAIN counter"
         );
     }
 
@@ -7485,7 +7591,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_prefetched_parallel_scan_output_reports_blocked_when_foreign_head_stays_ahead() {
+    fn emit_prefetched_parallel_scan_output_handoffs_foreign_selected_pending() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
             bytes: [u8; 320],
@@ -7578,22 +7684,18 @@ mod tests {
         let output = unsafe { emit_prefetched_parallel_scan_output(&mut opaque) };
         assert_eq!(
             output,
-            ParallelScanOutputState::Blocked(
-                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
-                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
-                    slot_index: Some(second_slot),
-                    generation: 2,
-                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
-                        block_number: 80,
-                        offset_number: 1,
-                    },
-                },
-            ),
-            "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(81, 2),
+                score: -9.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
+            }),
+            "prefetched local staging should hand off a better foreign selected-pending row through the shared merge seam"
         );
         assert!(
-            !emitted_contains_element(&opaque, tid(26, 1)),
-            "blocked prefetched staging should not mark the element as emitted before any heap tid returns"
+            emitted_contains_element(&opaque, tid(80, 1)),
+            "foreign handoff should mark the foreign prefetched element as emitted once its heap tid is returned"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
@@ -7608,7 +7710,7 @@ mod tests {
                 block_number: 31,
                 offset_number: 1,
             },
-            "blocked prefetched output should leave the local shared slot staged at the current heap tid"
+            "foreign handoff should leave the local prefetched row staged at the current heap tid"
         );
         let worker_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
@@ -7619,30 +7721,30 @@ mod tests {
         .expect("parallel worker slot snapshot should read back");
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_kind,
-            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
-            "blocked prefetched staging should publish the foreign-selected blocker into the shared worker runtime snapshot"
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            "foreign handoff should clear the blocker kind from the shared worker runtime snapshot"
         );
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_slot_index,
-            Some(second_slot),
-            "blocked prefetched staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+            None,
+            "foreign handoff should clear the blocker slot from the shared worker runtime snapshot"
         );
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_generation,
-            2,
-            "blocked prefetched staging should publish the blocker generation into the shared worker runtime snapshot"
+            0,
+            "foreign handoff should clear the blocker generation from the shared worker runtime snapshot"
         );
         assert_eq!(
             opaque
                 .explain_counters
                 .stats_parallel_blocked_foreign_selected_pending,
-            1,
-            "blocked prefetched staging should increment the foreign-selected EXPLAIN counter"
+            0,
+            "successful foreign handoff should not increment the blocked foreign-selected EXPLAIN counter"
         );
         assert_eq!(
             opaque.explain_counters.stats_parallel_blocked_foreign_admitted_head,
             0,
-            "blocked prefetched staging should not increment the foreign-head EXPLAIN counter on a selected-pending blocker"
+            "foreign selected handoff should not increment the foreign-head EXPLAIN counter"
         );
     }
 
