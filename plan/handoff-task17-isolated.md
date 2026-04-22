@@ -57,12 +57,30 @@ The next highest-value work should stay in signoff territory:
 - Keep the task docs / branch summary aligned with the now-current
   recovery and vacuum-smoke results.
 
+### Measurement contract for coder-1
+
+- Use profile `ec_diskann` with reloptions
+  `graph_degree=32`, `build_list_size=100`, `alpha=1.2`.
+- Sweep `list_size=64,128,200,400,800` first; those are the current
+  canonical comparison points from packet `11078`.
+- Start with the real 10k fixture and compare the faster-box numbers
+  against the baseline table in `plan/tasks/17-diskann-access-method.md`.
+- If the faster box is clean at real 10k, capture the 50k-row
+  `CREATE INDEX` success artifact as the remaining scale smoke from the
+  task Definition of Done.
+- Treat `Recall@10 >= 0.90` as the floor and `~0.95` as the preferred
+  target; include latency comparisons against `ec_hnsw` on matched
+  tuning rather than tuning `ec_diskann` in isolation.
+- If signoff is otherwise clean after the faster-machine run, queue the
+  ADR-034 PROPOSED → ACCEPTED flip rather than opening another local
+  polish loop.
+
 ## Conventions to keep
 
 - **Author:** coder-2.
 - **Review packets:** numbered 11000s, one directory per packet
   under `review/`, `request.md` is the single deliverable. Next free
-  task-17 packet is `11084`.
+  task-17 packet is `11086`.
 - **Commits:** separate code commits from review-packet commits.
 - **Tests:** pg18-only for task 17 on this branch, per operator
   instruction.
