@@ -3408,6 +3408,7 @@ struct RetainedParallelOwnedOutputBlocker {
 
 #[derive(Debug, Clone, Copy)]
 struct DeferredParallelBlockedOutput {
+    source_phase: ScanExecutionPhase,
     state: ScanResultState,
     retained_blocker: Option<RetainedParallelOwnedOutputBlocker>,
 }
@@ -3777,6 +3778,28 @@ fn active_result_state_mut(opaque: &mut TqScanOpaque) -> &mut ScanResultState {
     }
 }
 
+fn active_result_state_ref_for_phase(
+    opaque: &TqScanOpaque,
+    phase: ScanExecutionPhase,
+) -> &ScanResultState {
+    if phase == ScanExecutionPhase::LinearFallback {
+        &opaque.fallback_result_state
+    } else {
+        &opaque.result_state
+    }
+}
+
+fn active_result_state_mut_for_phase(
+    opaque: &mut TqScanOpaque,
+    phase: ScanExecutionPhase,
+) -> &mut ScanResultState {
+    if phase == ScanExecutionPhase::LinearFallback {
+        &mut opaque.fallback_result_state
+    } else {
+        &mut opaque.result_state
+    }
+}
+
 fn consume_parallel_scan_admitted_result(
     opaque: &mut TqScanOpaque,
     admitted_result: super::parallel::EcParallelCoordinatorAdmittedResultSnapshot,
@@ -3951,6 +3974,65 @@ unsafe fn emit_materialized_parallel_scan_output(
     unsafe { try_take_parallel_scan_next_output(opaque) }
 }
 
+unsafe fn try_take_parallel_scan_deferred_handoff_output(
+    opaque: &mut TqScanOpaque,
+    deferred: &mut DeferredParallelBlockedOutput,
+) -> Option<PendingScanOutput> {
+    let saved_phase = opaque.execution_phase;
+    opaque.execution_phase = deferred.source_phase;
+    *active_result_state_mut_for_phase(opaque, deferred.source_phase) = deferred.state;
+    opaque.parallel_local_only_output_active = false;
+    opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = deferred.retained_blocker;
+
+    let output_state = unsafe { try_take_parallel_scan_next_output(opaque) };
+    let remaining_state = *active_result_state_ref_for_phase(opaque, deferred.source_phase);
+    let remaining_retained_blocker = opaque
+        .retained_parallel_owned_output_blocker
+        .filter(|retained| retained.element_tid == remaining_state.current().element_tid());
+    active_result_state_mut_for_phase(opaque, deferred.source_phase).clear();
+    opaque.execution_phase = saved_phase;
+    opaque.parallel_local_only_output_active = false;
+    opaque.parallel_owned_output_blocker = None;
+    opaque.retained_parallel_owned_output_blocker = None;
+
+    match output_state {
+        ParallelScanOutputState::Emitted(output) => {
+            *deferred = DeferredParallelBlockedOutput {
+                source_phase: deferred.source_phase,
+                state: remaining_state,
+                retained_blocker: remaining_retained_blocker,
+            };
+            if !deferred.state.current().has_element() || deferred.state.pending_count() == 0 {
+                deferred.state.clear();
+                deferred.retained_blocker = None;
+            }
+            Some(output)
+        }
+        ParallelScanOutputState::Blocked(blocker) => {
+            *deferred = DeferredParallelBlockedOutput {
+                source_phase: deferred.source_phase,
+                state: remaining_state,
+                retained_blocker: remaining_state.current().has_element().then_some(
+                    RetainedParallelOwnedOutputBlocker {
+                        blocker,
+                        element_tid: remaining_state.current().element_tid(),
+                    },
+                ),
+            };
+            None
+        }
+        ParallelScanOutputState::Empty => {
+            *deferred = DeferredParallelBlockedOutput {
+                source_phase: deferred.source_phase,
+                state: remaining_state,
+                retained_blocker: remaining_retained_blocker,
+            };
+            None
+        }
+    }
+}
+
 unsafe fn emit_prefetched_parallel_scan_output(
     opaque: &mut TqScanOpaque,
 ) -> ParallelScanOutputState {
@@ -3989,6 +4071,7 @@ fn stash_active_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
     opaque
         .deferred_parallel_blocked_results
         .push(DeferredParallelBlockedOutput {
+            source_phase: opaque.execution_phase,
             state: active,
             retained_blocker: opaque
                 .retained_parallel_owned_output_blocker
@@ -4032,6 +4115,26 @@ fn emit_next_deferred_parallel_blocked_output(
     let mut deferred = opaque
         .deferred_parallel_blocked_results
         .remove(selected_idx);
+    if deferred.retained_blocker.is_some() {
+        if let Some(output) =
+            unsafe { try_take_parallel_scan_deferred_handoff_output(opaque, &mut deferred) }
+        {
+            emit_scan_output(scan, opaque, output);
+            if deferred.state.current().has_element() && deferred.state.pending_count() != 0 {
+                opaque.deferred_parallel_blocked_results.push(deferred);
+                sort_deferred_parallel_blocked_outputs(opaque);
+            } else if opaque.deferred_parallel_blocked_results.is_empty() {
+                opaque.retained_parallel_owned_output_blocker = None;
+            }
+            opaque.explain_counters.record_heap_tid_returned();
+            if !opaque.parallel_scan_state.is_null()
+                && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+            {
+                sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            }
+            return true;
+        }
+    }
     let Some(output) = deferred.state.take_pending_output() else {
         return emit_next_deferred_parallel_blocked_output(scan, opaque);
     };
@@ -6782,6 +6885,7 @@ mod tests {
         opaque
             .deferred_parallel_blocked_results
             .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
                 state: slower,
                 retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
                     blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
@@ -6800,6 +6904,7 @@ mod tests {
         opaque
             .deferred_parallel_blocked_results
             .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
                 state: best,
                 retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
                     blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
@@ -7617,6 +7722,129 @@ mod tests {
             local.result_state.pending_index(),
             0,
             "draining a foreign selected row should not advance the local worker's duplicate-drain cursor"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_deferred_handoff_output_restores_linear_fallback_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(80, 1),
+            -8.0,
+            Some(-7.5),
+            Some(5),
+            Some(-8.5),
+        );
+        foreign.result_state.store_pending(&[tid(81, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        local.execution_phase = ScanExecutionPhase::Exhausted;
+        let deferred = DeferredParallelBlockedOutput {
+            source_phase: ScanExecutionPhase::LinearFallback,
+            state: {
+                let mut state = ScanResultState::default();
+                state.set_current_with_details(
+                    tid(82, 1),
+                    -6.0,
+                    Some(-5.5),
+                    Some(9),
+                    Some(-6.5),
+                );
+                state.store_pending(&[tid(83, 1)]);
+                state
+            },
+            retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 1,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 80,
+                        offset_number: 1,
+                    },
+                },
+                element_tid: tid(82, 1),
+            }),
+        };
+
+        let mut deferred = deferred;
+        let output =
+            unsafe { try_take_parallel_scan_deferred_handoff_output(&mut local, &mut deferred) }
+                .expect("deferred local row should be able to drain the foreign selected handoff");
+
+        assert_eq!(
+            output,
+            PendingScanOutput {
+                heap_tid: tid(81, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(5),
+                comparison_score: Some(-8.5),
+            },
+            "deferred handoff retry should drain the foreign selected row before falling back to local emit"
+        );
+        assert_eq!(
+            deferred.source_phase,
+            ScanExecutionPhase::LinearFallback,
+            "deferred handoff retry should preserve the original source phase for the local row"
+        );
+        assert_eq!(
+            deferred.state.current().element_tid(),
+            tid(82, 1),
+            "deferred handoff retry should keep the local deferred row intact"
+        );
+        assert_eq!(
+            deferred.state.pending_index(),
+            0,
+            "draining a foreign handoff row should not advance the deferred local duplicate cursor"
+        );
+        assert_eq!(
+            local.execution_phase,
+            ScanExecutionPhase::Exhausted,
+            "deferred handoff retry should restore the caller's exhausted execution phase"
+        );
+        assert!(
+            !local.fallback_result_state.current().has_element(),
+            "deferred handoff retry should clear the temporary restored linear-fallback state after the handoff attempt"
         );
     }
 
@@ -8884,6 +9112,7 @@ mod tests {
         opaque
             .deferred_parallel_blocked_results
             .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
                 state: deferred,
                 retained_blocker: None,
             });
