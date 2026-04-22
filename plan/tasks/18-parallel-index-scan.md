@@ -407,6 +407,13 @@ See ADR-040 for the full shape. Summary:
   Admission-window losers and same-element foreign duplicates now drop out of
   the deferred stash instead of bypassing the ownership seam on the last drain.
 
+- **Deferred-row score-order preference.** The scan no longer waits for phase
+  exhaustion to revisit every deferred row. When the best deferred blocked row
+  already scores better than the currently active local row, the scan now drains
+  that deferred row first. This still does not solve the final ownership
+  transfer, but it narrows ordering drift by preferring the better deferred
+  candidate before emitting a worse live local row.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

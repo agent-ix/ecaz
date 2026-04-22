@@ -3767,6 +3767,30 @@ fn best_deferred_parallel_blocked_output(
         })
 }
 
+fn should_prefer_deferred_parallel_blocked_output(
+    opaque: &TqScanOpaque,
+) -> Option<DeferredParallelBlockedOutput> {
+    let deferred = best_deferred_parallel_blocked_output(opaque)?;
+    let active = active_result_state_ref(opaque).current();
+    if !active.has_element() || active.score() <= deferred.state.current().score() {
+        return None;
+    }
+
+    Some(*deferred)
+}
+
+fn try_emit_preferred_deferred_parallel_blocked_output(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    let Some(output) = take_preferred_deferred_parallel_blocked_output(opaque) else {
+        return false;
+    };
+    emit_scan_output(scan, opaque, output);
+    opaque.explain_counters.record_heap_tid_returned();
+    true
+}
+
 fn pending_scan_output_from_parallel_pending_output(
     output: super::parallel::EcParallelPendingOutputSnapshot,
 ) -> PendingScanOutput {
@@ -4107,11 +4131,10 @@ fn stash_active_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
     true
 }
 
-fn emit_next_deferred_parallel_blocked_output(
-    scan: pg_sys::IndexScanDesc,
+fn take_next_deferred_parallel_blocked_output(
     opaque: &mut TqScanOpaque,
-) -> bool {
-    let Some((selected_idx, _)) = opaque
+) -> Option<PendingScanOutput> {
+    let (selected_idx, _) = opaque
         .deferred_parallel_blocked_results
         .iter()
         .enumerate()
@@ -4124,10 +4147,7 @@ fn emit_next_deferred_parallel_blocked_output(
                         .1
                         .cmp(&deferred_parallel_blocked_output_order_key(right).1)
                 })
-        })
-    else {
-        return false;
-    };
+        })?;
 
     let mut deferred = opaque
         .deferred_parallel_blocked_results
@@ -4136,20 +4156,18 @@ fn emit_next_deferred_parallel_blocked_output(
         if let Some(output) =
             unsafe { try_take_parallel_scan_deferred_handoff_output(opaque, &mut deferred) }
         {
-            emit_scan_output(scan, opaque, output);
             if deferred.state.current().has_element() && deferred.state.pending_count() != 0 {
                 opaque.deferred_parallel_blocked_results.push(deferred);
                 sort_deferred_parallel_blocked_outputs(opaque);
             } else if opaque.deferred_parallel_blocked_results.is_empty() {
                 opaque.retained_parallel_owned_output_blocker = None;
             }
-            opaque.explain_counters.record_heap_tid_returned();
             if !opaque.parallel_scan_state.is_null()
                 && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
             {
                 sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             }
-            return true;
+            return Some(output);
         }
         if should_drop_deferred_parallel_blocked_output(&deferred) {
             if opaque.deferred_parallel_blocked_results.is_empty() {
@@ -4160,14 +4178,13 @@ fn emit_next_deferred_parallel_blocked_output(
             {
                 sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             }
-            return emit_next_deferred_parallel_blocked_output(scan, opaque);
+            return take_next_deferred_parallel_blocked_output(opaque);
         }
     }
     let Some(output) = deferred.state.take_pending_output() else {
-        return emit_next_deferred_parallel_blocked_output(scan, opaque);
+        return take_next_deferred_parallel_blocked_output(opaque);
     };
     mark_emitted_element(opaque, deferred.state.current().element_tid());
-    emit_scan_output(scan, opaque, output);
     if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
         opaque.deferred_parallel_blocked_results.push(deferred);
         sort_deferred_parallel_blocked_outputs(opaque);
@@ -4180,6 +4197,25 @@ fn emit_next_deferred_parallel_blocked_output(
     {
         sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     }
+    Some(output)
+}
+
+fn take_preferred_deferred_parallel_blocked_output(
+    opaque: &mut TqScanOpaque,
+) -> Option<PendingScanOutput> {
+    should_prefer_deferred_parallel_blocked_output(opaque)?;
+    take_next_deferred_parallel_blocked_output(opaque)
+}
+
+fn emit_next_deferred_parallel_blocked_output(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    let Some(output) = take_next_deferred_parallel_blocked_output(opaque) else {
+        return false;
+    };
+    emit_scan_output(scan, opaque, output);
+    opaque.explain_counters.record_heap_tid_returned();
     true
 }
 
@@ -4202,6 +4238,10 @@ unsafe fn produce_next_scan_heap_tid(
                 graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
             }
         }
+        return true;
+    }
+
+    if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
         return true;
     }
 
@@ -9055,6 +9095,86 @@ mod tests {
             ),
             (0_u16, 0_u16, 0_u16),
             "dropping the only obsolete deferred row should leave the scan heap tid untouched"
+        );
+    }
+
+    #[test]
+    fn should_prefer_deferred_parallel_blocked_output_when_it_beats_active_result() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque
+            .fallback_result_state
+            .set_current_with_details(tid(60, 1), -4.0, None, None, None);
+        opaque.fallback_result_state.store_pending(&[tid(60, 2)]);
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(61, 1), -8.0, None, None, None);
+        deferred.store_pending(&[tid(61, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: None,
+            });
+
+        let preferred = should_prefer_deferred_parallel_blocked_output(&opaque)
+            .expect("better deferred row should be preferred over the active local row");
+        assert_eq!(
+            preferred.state.current().element_tid(),
+            tid(61, 1),
+            "the preferred deferred row should be the lower-score blocked row"
+        );
+    }
+
+    #[test]
+    fn take_preferred_deferred_parallel_blocked_output_prefers_better_deferred_row() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque.fallback_result_state.set_current_with_details(
+            tid(62, 1),
+            -4.0,
+            Some(-4.5),
+            Some(2),
+            Some(-4.25),
+        );
+        opaque.fallback_result_state.store_pending(&[tid(62, 2)]);
+
+        let mut deferred = ScanResultState::default();
+        deferred.set_current_with_details(tid(63, 1), -8.0, Some(-8.5), Some(1), Some(-8.25));
+        deferred.store_pending(&[tid(63, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: deferred,
+                retained_blocker: None,
+            });
+
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut opaque)
+                .expect("a better deferred row should emit before the worse active local row"),
+            PendingScanOutput {
+                heap_tid: tid(63, 2),
+                score: -8.0,
+                approx_score: Some(-8.5),
+                approx_rank: Some(1),
+                comparison_score: Some(-8.25),
+            },
+            "the preferred deferred take should return the deferred row's pending output first"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            tid(62, 1),
+            "preferring a deferred row should leave the active local row intact for the next turn"
+        );
+        assert!(
+            opaque.deferred_parallel_blocked_results.is_empty(),
+            "the single-pending deferred row should drain completely after emitting first"
         );
     }
 
