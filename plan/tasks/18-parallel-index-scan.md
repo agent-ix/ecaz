@@ -343,7 +343,9 @@ See ADR-040 for the full shape. Summary:
   before using the shared lock. The standalone unit-test backend keeps a local
   atomic shim over the embedded `LWLock.state` field so Rust unit tests do not
   trip `pgrx`'s cross-thread FFI guard while the runtime path still exercises
-  real LWLock acquire/release on PG18.
+  real LWLock acquire/release on PG18. Runtime release now mirrors PostgreSQL's
+  normal unconditional `LWLockRelease` path and relies on abort cleanup via
+  `LWLockReleaseAll()` rather than a local `InterruptHoldoffCount` guard.
 
 - **Foreign admitted-head handoff staging.** When a worker is blocked only by
   a foreign admitted head, scan-side handoff can now drain that already-admitted

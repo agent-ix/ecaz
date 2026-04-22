@@ -1462,9 +1462,12 @@ unsafe fn release_parallel_scan_lwlock(lock: *mut pg_sys::LWLock) {
         }
     }
     #[cfg(not(test))]
-    if unsafe { pg_sys::InterruptHoldoffCount } > 0 {
-        unsafe { pg_sys::LWLockRelease(lock) };
-    }
+    // Mirror PostgreSQL's normal LWLock lifetime rules on the runtime path.
+    // Error unwinds run `LWLockReleaseAll()` during abort cleanup; ordinary
+    // scope exit should still unconditionally release the held lock here.
+    unsafe {
+        pg_sys::LWLockRelease(lock)
+    };
 }
 
 unsafe fn acquire_parallel_scan_coordinator_lock(
