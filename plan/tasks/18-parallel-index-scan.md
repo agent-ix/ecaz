@@ -324,6 +324,12 @@ See ADR-040 for the full shape. Summary:
   during that local-only window so the handoff seam stays visible even after
   coordinator publication is suppressed.
 
+- **Foreign-duplicate suppression staging.** Foreign-owner blockers now also
+  carry the blocking element TID, and scan-side ownership fallback drops the
+  local row outright when the foreign worker already owns that same element.
+  That keeps the staged handoff seam from degrading into a second local emit
+  for an already-owned duplicate row.
+
 - **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
   admission-window stalls so scan diagnostics can distinguish why a

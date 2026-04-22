@@ -3404,6 +3404,8 @@ fn blocked_parallel_scan_disposition(
     opaque: &mut TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
 ) -> BlockedParallelScanDisposition {
+    let element_tid = active_result_state_ref(opaque).current().element_tid();
+    let blocker_element_tid = item_pointer_from_parallel_item_pointer(blocker.element_tid);
     match blocker.kind {
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
             opaque.retained_parallel_owned_output_blocker = None;
@@ -3411,7 +3413,12 @@ fn blocked_parallel_scan_disposition(
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending
         | super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
-            let element_tid = active_result_state_ref(opaque).current().element_tid();
+            if blocker_element_tid != page::ItemPointer::INVALID
+                && blocker_element_tid == element_tid
+            {
+                opaque.retained_parallel_owned_output_blocker = None;
+                return BlockedParallelScanDisposition::DropAndContinue;
+            }
             let previous = opaque
                 .retained_parallel_owned_output_blocker
                 .filter(|retained| retained.element_tid == element_tid)
@@ -6347,6 +6354,7 @@ mod tests {
                 kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: Some(1),
                 generation: 9,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
             },
             element_tid: tid(30, 1),
         });
@@ -7176,6 +7184,10 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(second_slot),
                     generation: 2,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 70,
+                        offset_number: 1,
+                    },
                 },
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
@@ -7418,6 +7430,10 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(second_slot),
                     generation: 2,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 80,
+                        offset_number: 1,
+                    },
                 },
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
@@ -7616,6 +7632,7 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow,
                     slot_index: None,
                     generation: 0,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
                 }
             ),
             BlockedParallelScanDisposition::DropAndContinue,
@@ -7635,6 +7652,10 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(1),
                     generation: 7,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 99,
+                        offset_number: 1,
+                    },
                 }
             ),
             BlockedParallelScanDisposition::RetryShared,
@@ -7650,6 +7671,10 @@ mod tests {
             kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
             slot_index: Some(1),
             generation: 7,
+            element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 99,
+                offset_number: 1,
+            },
         };
 
         assert_eq!(
@@ -7676,6 +7701,10 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(1),
                     generation: 7,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 99,
+                        offset_number: 1,
+                    },
                 }
             ),
             BlockedParallelScanDisposition::RetryShared,
@@ -7688,10 +7717,37 @@ mod tests {
                     kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                     slot_index: Some(1),
                     generation: 8,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 99,
+                        offset_number: 1,
+                    },
                 }
             ),
             BlockedParallelScanDisposition::RetryShared,
             "a changed foreign-owner generation should reopen one retry against the shared seam"
+        );
+    }
+
+    #[test]
+    fn blocked_parallel_scan_disposition_drops_foreign_duplicate_element() {
+        let mut opaque = TqScanOpaque::default();
+        opaque.result_state.set_current(tid(44, 1), -5.0);
+
+        assert_eq!(
+            blocked_parallel_scan_disposition(
+                &mut opaque,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                    slot_index: Some(2),
+                    generation: 11,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 44,
+                        offset_number: 1,
+                    },
+                }
+            ),
+            BlockedParallelScanDisposition::DropAndContinue,
+            "a foreign owner that already holds the same element should suppress local duplicate emit instead of falling back to local-only output"
         );
     }
 

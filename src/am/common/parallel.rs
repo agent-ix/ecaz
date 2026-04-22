@@ -329,6 +329,7 @@ pub(crate) struct EcParallelOwnedOutputBlocker {
     pub(crate) kind: EcParallelOwnedOutputBlockerKind,
     pub(crate) slot_index: Option<u32>,
     pub(crate) generation: u32,
+    pub(crate) element_tid: EcParallelItemPointer,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -2996,11 +2997,19 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
     };
 
     if coordinator.selected_result_slot_index != Some(owner_slot_index) {
+        let selected_slot = coordinator
+            .selected_result_slot_index
+            .map(|slot_index| unsafe { attachment.result_slot(slot_index) })
+            .transpose()?
+            .map(|slot| load_coordinator_result_slot_snapshot(unsafe { &*slot }));
         return Ok(EcParallelOwnedOutputState::Blocked(
             EcParallelOwnedOutputBlocker {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: coordinator.selected_result_slot_index,
                 generation: coordinator.result_publish_generation,
+                element_tid: selected_slot
+                    .map(|snapshot| snapshot.runtime.element_tid)
+                    .unwrap_or(EcParallelItemPointer::INVALID),
             },
         ));
     }
@@ -3026,6 +3035,7 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
                 kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
                 slot_index: snapshot.source_slot_index,
                 generation: coordinator.admitted_result_generation,
+                element_tid: snapshot.element_tid,
             },
         ));
     }
@@ -3035,6 +3045,7 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
             kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
             slot_index: None,
             generation: coordinator.admitted_result_generation,
+            element_tid: EcParallelItemPointer::INVALID,
         },
     ))
 }
@@ -7209,6 +7220,10 @@ mod tests {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
                 slot_index: Some(first_slot),
                 generation: 2,
+                element_tid: EcParallelItemPointer {
+                    block_number: 250,
+                    offset_number: 1,
+                },
             }),
             "a worker with local staged output should report blocked while a foreign slot remains selected"
         );
@@ -7306,6 +7321,7 @@ mod tests {
                 kind: EcParallelOwnedOutputBlockerKind::AdmissionWindow,
                 slot_index: None,
                 generation: 1,
+                element_tid: EcParallelItemPointer::INVALID,
             }),
             "a local pending output that loses the full admitted window should report an admission-window blocker"
         );
@@ -7446,6 +7462,10 @@ mod tests {
                 kind: EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
                 slot_index: Some(first_slot),
                 generation: 2,
+                element_tid: EcParallelItemPointer {
+                    block_number: 270,
+                    offset_number: 1,
+                },
             }),
             "a local selected pending output that would admit behind a better foreign head should report a foreign-admitted-head blocker"
         );
