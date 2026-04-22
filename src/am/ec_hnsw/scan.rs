@@ -4211,8 +4211,7 @@ fn take_next_deferred_parallel_blocked_output(
             }
             if !allow_local_emit {
                 blocked_fallback.push(deferred);
-                restore_deferred_parallel_blocked_outputs(opaque, blocked_fallback);
-                return None;
+                continue;
             }
             blocked_fallback.push(deferred);
             continue;
@@ -9413,6 +9412,81 @@ mod tests {
             opaque.fallback_result_state.current().element_tid(),
             tid(64, 1),
             "keeping the blocked deferred row deferred should leave the active local row untouched"
+        );
+    }
+
+    #[test]
+    fn take_preferred_deferred_parallel_blocked_output_skips_blocked_best_for_ready_next() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque
+            .fallback_result_state
+            .set_current_with_details(tid(80, 1), -4.0, None, None, None);
+        opaque.fallback_result_state.store_pending(&[tid(80, 2)]);
+
+        let mut blocked = ScanResultState::default();
+        blocked.set_current_with_details(tid(81, 1), -9.0, None, None, None);
+        blocked.store_pending(&[tid(81, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: blocked,
+                retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                    blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                        kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                        slot_index: Some(2),
+                        generation: 31,
+                        element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                            block_number: 140,
+                            offset_number: 1,
+                        },
+                    },
+                    element_tid: tid(81, 1),
+                }),
+            });
+
+        let mut ready = ScanResultState::default();
+        ready.set_current_with_details(tid(82, 1), -8.0, None, None, None);
+        ready.store_pending(&[tid(82, 2)]);
+        opaque
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: ready,
+                retained_blocker: None,
+            });
+
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut opaque),
+            Some(PendingScanOutput {
+                heap_tid: tid(82, 2),
+                score: -8.0,
+                approx_score: None,
+                approx_rank: None,
+                comparison_score: None,
+            }),
+            "a blocked best deferred row should not prevent a ready next deferred row from outranking the active local row"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.current().element_tid(),
+            tid(80, 1),
+            "preferring a ready deferred row should leave the active local row intact"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results.len(),
+            1,
+            "the blocked best deferred row should remain deferred after the ready next row drains"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(81, 1),
+            "the still-blocked best deferred row should stay in the stash for a later retry"
         );
     }
 
