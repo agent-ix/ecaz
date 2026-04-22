@@ -2788,7 +2788,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "parallel scan still needs a real multi-worker output ownership contract before amcanparallel can turn on"
+            "parallel scan still needs a real ownership-transfer contract for genuinely blocked unique outputs before amcanparallel can turn on"
         );
         assert_eq!(
             Spi::get_one::<String>(

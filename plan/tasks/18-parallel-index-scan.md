@@ -458,9 +458,10 @@ See ADR-040 for the full shape. Summary:
   seam afterward.
 
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
-  ownership is not. The staged shared merge seam still needs a concrete
-  worker/consumer contract before `amcanparallel` can flip on without
-  duplicate or out-of-owner output hazards.
+  ownership transfer is not. The staged shared merge seam still needs a
+  concrete worker/consumer contract for genuinely blocked unique outputs
+  before `amcanparallel` can flip on without duplicate or out-of-owner output
+  hazards.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings
