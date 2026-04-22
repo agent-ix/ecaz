@@ -377,6 +377,15 @@ See ADR-040 for the full shape. Summary:
   the specific blocked foreign slot while the blocker slot/generation still
   match, so a stale blocker cannot accidentally drain a newer selected row.
 
+- **Deferred blocked-output stash.** A stable foreign-owner blocker no longer
+  immediately forces out-of-order local emit. Instead, the worker can now hide
+  its blocked local row in a scan-local deferred stash, keep that row visible
+  to staged-duplicate suppression and blocker diagnostics, and resume shared
+  work until the scan exhausts. Only once the shared seam is empty does the
+  worker drain that deferred local row. This removes the eager `KeepLocalEmit`
+  behavior, but it is still a scan-local fallback rather than a full
+  cross-worker ownership transfer protocol.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
