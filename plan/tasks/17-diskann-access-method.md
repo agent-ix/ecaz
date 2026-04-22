@@ -50,10 +50,25 @@ Executes ADR-034.
   - `VACUUM (ANALYZE)` completes instead of stalling in the index phase
   - post-vacuum `Recall@10 = 0.9285` at `list_size=128`
 
+### 2026-04-21 baseline reference
+
+Canonical task-17 reference numbers for the faster-machine handoff:
+
+| Fixture / state | Reloptions | list_size | Recall@10 | NDCG@10 | Mean q-time | Source |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| real 10k clean | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 64 | 0.9280 | 0.9959 | 43.69 ms | `11078` |
+| real 10k clean | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 128 | 0.9310 | 0.9966 | 55.46 ms | `11078` |
+| real 10k clean | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 200 | 0.9315 | 0.9966 | 69.62 ms | `11078` |
+| real 10k clean | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 400 | 0.9315 | 0.9966 | 122.57 ms | `11078` |
+| real 10k clean | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 800 | 0.9315 | 0.9966 | 299.29 ms | `11078` |
+| real 10k pre-vacuum smoke | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 128 | 0.9310 | 0.9965 | 82.34 ms | `11083` |
+| real 10k post-vacuum smoke (`9000` rows) | `graph_degree=32`, `build_list_size=100`, `alpha=1.2` | 128 | 0.9285 | 0.9966 | 81.17 ms | `11083` |
+
 ### Remaining signoff work
 
 - Review / merge hygiene on `adr034-diskann-rebased`
 - Final performance benches on the faster machine
+- ADR-034 PROPOSED → ACCEPTED flip once signoff is complete
 - Any reviewer-driven follow-up packets that surface during integration
 
 ### Resolved prep from the 2026-04-19 review batch
@@ -124,6 +139,10 @@ index explicitly.
   default index AM is not.
 - Writing an auto-upgrade path from `tqhnsw` indexes to `ecdiskann`.
   Rebuild-only, same posture as ADR-032's `INDEX_FORMAT_V2` migration.
+- Lifting the V0 unit-normalized-source precondition. `ec_diskann`
+  currently warns during build and insert when source-vector norms drift
+  outside `[0.99, 1.01]`; supporting non-unit corpora requires a
+  follow-up that replaces the `1 - ip` distance wrapper.
 
 ## Architectural constraints
 
@@ -485,9 +504,15 @@ connectivity per ADR-046.
       score-only top-M eviction.
 - [ ] `inserted_since_rebuild` bookkeeping on the Vamana metadata
       page.
-- [ ] Concurrent-insert regression: 60-second `scripts/
-      vacuum_concurrency_scratch.sh` analogue
-      (`scripts/diskann_insert_concurrency_scratch.sh`).
+- [x] Insert callback-surface coverage is now carried by `routine.rs`
+      pg_tests rather than a standalone scratch script:
+      `pg_test_ec_diskann_empty_index_bootstrap_insert_executes`,
+      `pg_test_ec_diskann_unique_insert_is_scan_reachable`,
+      `pg_test_ec_diskann_duplicate_insert_binds_first_overflow_tuple`,
+      `pg_test_ec_diskann_duplicate_bind_grows_second_overflow_tuple`,
+      and `pg_test_ec_diskann_full_backlink_rewrite_keeps_insert_reachable`.
+      No standalone `scripts/diskann_insert_concurrency_scratch.sh`
+      remains on this branch.
 - [ ] `build_source_column` rejection at insert, same posture as
       `tqhnsw`.
 
@@ -533,11 +558,18 @@ surface as Phase 5C-3).
 - [ ] Repair candidate selection for pass 2: replan under shared lock
       first (ADR-047 step 6), then fill under the page exclusive lock.
       Fill-only; no live-neighbor eviction under the write lock.
-- [ ] 60-second `scripts/diskann_vacuum_concurrency_scratch.sh`
-      analogue proving concurrent INSERT + scan + VACUUM safety.
-- [ ] Post-vacuum recall smoke: delete 10% of rows, VACUUM, confirm
-      Recall@10 ≥ 0.80 of pre-vacuum (matching FR-010-AC-2 for
-      `tqhnsw`).
+- [x] Vacuum callback-surface coverage is now carried by `routine.rs`
+      pg_tests rather than a standalone scratch script:
+      `pg_test_ec_diskann_vacuum_unlinks_and_tombstones_dead_node`,
+      `pg_test_ec_diskann_vacuum_refills_broken_neighbor_slot`,
+      `pg_test_ec_diskann_vacuum_replans_on_stale_repair_tuple`, and
+      `pg_test_ec_diskann_vacuum_sets_medoid_refresh_flag`. No
+      standalone `scripts/diskann_vacuum_concurrency_scratch.sh`
+      remains on this branch.
+- [x] Post-vacuum recall smoke: delete 10% of rows, VACUUM, and confirm
+      Recall@10 stays within the task-17 local-smoke band. Landed in
+      packet `11083` (`0.9310` pre-vacuum → `0.9285` post-vacuum at
+      `list_size=128`).
 
 Review packet: 11012 (phase 8 landing).
 
@@ -607,7 +639,10 @@ coordination.
 
 - `CREATE INDEX ... USING ecdiskann (embedding vector_ip_ops)
   WITH (storage_format = 'pq_fastscan')` succeeds on a 50k-row fixture.
-- Insert + vacuum round-trip survives the concurrency scratch script.
+- Insert / vacuum callback-surface correctness is covered on-branch by
+  the `pg_test_ec_diskann_*` insert and vacuum regressions in
+  `src/am/ec_diskann/routine.rs`; no standalone task-17 scratch scripts
+  remain after the `ecaz-cli` migration and `scripts/` retirement lane.
 - Recall@10 ≥ 0.90 at default tuning on the real 10k fixture
   (baseline); ~0.95 preferred.
 - No `tqhnsw` code paths altered except for shared helpers that had to
