@@ -427,6 +427,12 @@ See ADR-040 for the full shape. Summary:
   PG18 explain output instead of staying hidden behind ordinary heap-tid
   returned counts.
 
+- **Deferred duplicate suppression against live foreign output.** Before that
+  last-resort deferred local emit drains, the staged path now checks whether a
+  still-live foreign selected/admitted output already owns the same next heap
+  TID. If so, the local deferred path skips that duplicate heap TID instead of
+  re-emitting it locally and only falls back to the next unique local heap TID.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without
