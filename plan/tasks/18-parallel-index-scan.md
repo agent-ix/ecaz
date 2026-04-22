@@ -320,6 +320,9 @@ See ADR-040 for the full shape. Summary:
   does fall back to local emit, the row now becomes local-only between retries:
   the worker snapshot still reports an active local row, but the coordinator
   result slot is cleared until the next shared retry explicitly republishes it.
+  The worker snapshot also retains the foreign blocker kind/slot/generation
+  during that local-only window so the handoff seam stays visible even after
+  coordinator publication is suppressed.
 
 - **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
   increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and

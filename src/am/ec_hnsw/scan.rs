@@ -1123,12 +1123,18 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     } else {
         saturating_u32_from_usize(unsafe { &*opaque.emitted_result_tids }.len())
     };
+    let published_blocker = opaque.parallel_owned_output_blocker.or_else(|| {
+        opaque
+            .parallel_local_only_output_active
+            .then_some(opaque.retained_parallel_owned_output_blocker)
+            .flatten()
+            .map(|retained| retained.blocker)
+    });
     let (
         owned_output_blocker_kind,
         owned_output_blocker_slot_index,
         owned_output_blocker_generation,
-    ) = opaque
-        .parallel_owned_output_blocker
+    ) = published_blocker
         .map(|blocker| {
             (
                 super::parallel::owned_output_blocker_kind_code(blocker.kind),
@@ -6336,6 +6342,14 @@ mod tests {
         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
         opaque.result_state.set_current(tid(30, 1), -7.0);
         opaque.result_state.store_pending(&[tid(31, 1), tid(31, 2)]);
+        opaque.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 9,
+            },
+            element_tid: tid(30, 1),
+        });
         opaque.parallel_local_only_output_active = true;
 
         publish_parallel_scan_worker_slot_snapshot(&opaque);
@@ -6354,6 +6368,20 @@ mod tests {
         assert_eq!(
             worker_snapshot.runtime.active_result_pending_count, 2,
             "local-only fallback should preserve pending duplicate count in the worker snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
+            "local-only fallback should keep the retained foreign blocker visible in the worker snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_slot_index,
+            Some(1),
+            "local-only fallback should keep the retained blocker owner slot visible in the worker snapshot"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation, 9,
+            "local-only fallback should keep the retained blocker generation visible in the worker snapshot"
         );
 
         let coordinator_snapshot = unsafe {
