@@ -1100,6 +1100,18 @@ fn parallel_scan_worker_phase(phase: ScanExecutionPhase) -> u32 {
     }
 }
 
+fn published_parallel_worker_result_state(
+    opaque: &TqScanOpaque,
+) -> Option<(ScanExecutionPhase, &ScanResultState)> {
+    let active_result_state = active_result_state_ref(opaque);
+    if active_result_state.current().has_element() {
+        return Some((opaque.execution_phase, active_result_state));
+    }
+
+    best_deferred_parallel_blocked_output(opaque)
+        .map(|deferred| (deferred.source_phase, &deferred.state))
+}
+
 fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
@@ -1108,6 +1120,16 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     }
 
     let active_result_state = active_result_state_ref(opaque);
+    let visible_result_state = published_parallel_worker_result_state(opaque);
+    let published_phase = visible_result_state
+        .map(|(phase, _)| phase)
+        .unwrap_or(opaque.execution_phase);
+    let published_pending_count = visible_result_state
+        .map(|(_, state)| u32::from(state.pending_count()))
+        .unwrap_or(0);
+    let published_has_current = visible_result_state
+        .map(|(_, state)| state.current().has_element())
+        .unwrap_or(false);
     let scheduler_frontier_len = if opaque.bootstrap_expansion.is_null() {
         0
     } else {
@@ -1153,15 +1175,15 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         ));
 
     let snapshot = super::parallel::EcParallelWorkerSlotRuntimeSnapshot {
-        execution_phase: parallel_scan_worker_phase(opaque.execution_phase),
+        execution_phase: parallel_scan_worker_phase(published_phase),
         scan_dimensions: u32::from(opaque.scan_dimensions),
         bootstrap_frontier_limit: saturating_u32_from_usize(opaque.bootstrap_frontier_limit),
         visible_frontier_len: saturating_u32_from_usize(visible_frontier_ref(opaque).len()),
         scheduler_frontier_len,
         visited_count,
         emitted_count,
-        active_result_pending_count: u32::from(active_result_state.pending_count()),
-        active_result_has_current: active_result_state.current().has_element(),
+        active_result_pending_count: published_pending_count,
+        active_result_has_current: published_has_current,
         owned_output_blocker_kind,
         owned_output_blocker_slot_index,
         owned_output_blocker_generation,
@@ -7036,6 +7058,19 @@ mod tests {
             )
         }
         .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.execution_phase,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL,
+            "worker snapshot should publish the source phase for the best deferred blocked row"
+        );
+        assert!(
+            worker_snapshot.runtime.active_result_has_current,
+            "worker snapshot should expose that a best deferred blocked row is still staged locally"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.active_result_pending_count, 1,
+            "worker snapshot should publish the pending duplicate count from the best deferred blocked row"
+        );
         assert_eq!(
             worker_snapshot.runtime.owned_output_blocker_kind,
             crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_ADMITTED_HEAD,
