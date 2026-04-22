@@ -3543,6 +3543,11 @@ fn consume_parallel_scan_admitted_result(
     opaque: &mut TqScanOpaque,
     admitted_result: super::parallel::EcParallelCoordinatorAdmittedResultSnapshot,
 ) -> PendingScanOutput {
+    mark_emitted_element(
+        opaque,
+        item_pointer_from_parallel_item_pointer(admitted_result.element_tid),
+    );
+
     if admitted_result.source_slot_index == Some(opaque.parallel_scan_worker_slot_index) {
         let element_tid = item_pointer_from_parallel_item_pointer(admitted_result.element_tid);
         let expected_heap_tid =
@@ -3870,7 +3875,6 @@ unsafe fn prefetch_next_grouped_windowed_graph_result(
         return false;
     };
 
-    mark_emitted_element(opaque, buffered.element_tid);
     let output_score = grouped_live_rerank_output_score(opaque, &buffered);
     let result_state = unsafe { &mut *result_state };
     result_state.materialize_with_details(
@@ -3889,7 +3893,7 @@ unsafe fn buffer_grouped_graph_result_candidate(
     opaque: &mut TqScanOpaque,
     candidate: search::BeamCandidate<page::ItemPointer>,
 ) {
-    if emitted_contains_element(opaque, candidate.node) {
+    if staged_or_emitted_contains_element(opaque, candidate.node) {
         opaque.explain_counters.record_element_skipped();
         return;
     }
@@ -3934,7 +3938,7 @@ unsafe fn materialize_graph_result_candidate(
     result_state: *mut ScanResultState,
     candidate: search::BeamCandidate<page::ItemPointer>,
 ) -> Option<()> {
-    if emitted_contains_element(opaque, candidate.node) {
+    if staged_or_emitted_contains_element(opaque, candidate.node) {
         opaque.explain_counters.record_element_skipped();
         return None;
     }
@@ -3957,7 +3961,6 @@ unsafe fn materialize_graph_result_candidate(
         )
     };
     opaque.explain_counters.record_element_scored();
-    mark_emitted_element(opaque, candidate.node);
     let result_state = unsafe { &mut *result_state };
     result_state.materialize_with_details(
         candidate.node,
@@ -4294,6 +4297,19 @@ fn emitted_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointe
     }
 
     unsafe { &*opaque.emitted_result_tids }.contains(&element_tid)
+}
+
+fn staged_or_emitted_contains_element(
+    opaque: &TqScanOpaque,
+    element_tid: page::ItemPointer,
+) -> bool {
+    if element_tid == page::ItemPointer::INVALID {
+        return false;
+    }
+
+    emitted_contains_element(opaque, element_tid)
+        || opaque.result_state.current().element_tid() == element_tid
+        || opaque.fallback_result_state.current().element_tid() == element_tid
 }
 
 unsafe fn initialize_scan_entry_candidate(
@@ -4738,7 +4754,6 @@ pub(super) unsafe fn consume_and_refill_bootstrap_frontier(
 
 #[cfg(any(test, feature = "pg_test"))]
 fn seed_scan_result_state(opaque: &mut TqScanOpaque, selected: SelectedScanResult) {
-    mark_emitted_element(opaque, selected.element_tid);
     opaque.result_state.materialize(selected);
 }
 
@@ -4833,6 +4848,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     if let ParallelScanOutputState::Emitted(output) =
         unsafe { emit_prefetched_parallel_scan_output(opaque) }
     {
+        mark_emitted_element(opaque, opaque.result_state.current().element_tid());
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
         if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
@@ -4847,6 +4863,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     let emitted = graph_traversal_cursor(opaque)
         .emit_prefetched_output()
         .map(|output| {
+            mark_emitted_element(opaque, opaque.result_state.current().element_tid());
             emit_scan_output(scan, opaque, output);
             publish_parallel_scan_worker_slot_snapshot(opaque);
             true
@@ -4877,6 +4894,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     if linear_fallback_cursor(opaque)
         .emit_pending_output()
         .map(|output| {
+            mark_emitted_element(opaque, opaque.fallback_result_state.current().element_tid());
             emit_scan_output(scan, opaque, output);
             true
         })
@@ -4893,10 +4911,10 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         return false;
     };
 
-    mark_emitted_element(opaque, selected.element_tid);
     if let ParallelScanOutputState::Emitted(output) =
         unsafe { emit_materialized_parallel_scan_output(opaque, selected) }
     {
+        mark_emitted_element(opaque, selected.element_tid);
         emit_scan_output(scan, opaque, output);
         opaque.explain_counters.record_heap_tid_returned();
         return true;
@@ -4905,6 +4923,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     let emitted = linear_fallback_cursor(opaque)
         .emit_materialized_output(selected)
         .map(|output| {
+            mark_emitted_element(opaque, selected.element_tid);
             emit_scan_output(scan, opaque, output);
             publish_parallel_scan_worker_slot_snapshot(opaque);
             true
@@ -5043,7 +5062,7 @@ unsafe fn select_linear_scan_result_from_buffer(
             block_number,
             offset_number: offset,
         };
-        if emitted_contains_element(opaque, element_tid) {
+        if staged_or_emitted_contains_element(opaque, element_tid) {
             opaque.explain_counters.record_element_skipped();
             continue;
         }
@@ -6708,6 +6727,7 @@ mod tests {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
+        reset_scan_emitted_state(&mut opaque);
         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
 
         let output = unsafe {
@@ -6734,6 +6754,10 @@ mod tests {
                 comparison_score: Some(-5.5),
             }),
             "newly materialized local fallback rows should flow through the shared coordinator merge path"
+        );
+        assert!(
+            emitted_contains_element(&opaque, tid(27, 1)),
+            "a shared-merge materialized emit should mark the element as emitted only after returning a heap tid"
         );
         assert_eq!(
             opaque.fallback_result_state.pending_index(),
@@ -6795,6 +6819,7 @@ mod tests {
             execution_phase: ScanExecutionPhase::LinearFallback,
             ..TqScanOpaque::default()
         };
+        reset_scan_emitted_state(&mut opaque);
         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
 
         let attachment =
@@ -6871,6 +6896,10 @@ mod tests {
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
         );
+        assert!(
+            !emitted_contains_element(&opaque, tid(27, 1)),
+            "blocked materialized staging should not mark the element as emitted before any heap tid returns"
+        );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
                 opaque.parallel_scan_state,
@@ -6922,6 +6951,7 @@ mod tests {
             ..Default::default()
         };
         let mut opaque = TqScanOpaque::default();
+        reset_scan_emitted_state(&mut opaque);
         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
         opaque.result_state.set_current_with_details(
             tid(26, 1),
@@ -6943,6 +6973,10 @@ mod tests {
                 comparison_score: Some(-4.5),
             }),
             "prefetched graph rows should drain through the shared merge seam"
+        );
+        assert!(
+            emitted_contains_element(&opaque, tid(26, 1)),
+            "a shared-merge prefetched emit should mark the element as emitted only after returning a heap tid"
         );
         assert_eq!(
             opaque.result_state.pending_index(),
@@ -7001,6 +7035,7 @@ mod tests {
             ..Default::default()
         };
         let mut opaque = TqScanOpaque::default();
+        reset_scan_emitted_state(&mut opaque);
         bind_parallel_scan_state(&mut scan_desc, &mut opaque);
         opaque.result_state.set_current_with_details(
             tid(26, 1),
@@ -7067,6 +7102,10 @@ mod tests {
                 },
             ),
             "owner-aware staging should report a blocked state when a foreign admitted head stays ahead"
+        );
+        assert!(
+            !emitted_contains_element(&opaque, tid(26, 1)),
+            "blocked prefetched staging should not mark the element as emitted before any heap tid returns"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
