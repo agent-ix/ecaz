@@ -3631,6 +3631,23 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
             return ParallelScanOutputState::Empty;
         }
         super::parallel::EcParallelOwnedOutputState::Blocked(blocker) => {
+            match blocker.kind {
+                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+                    opaque
+                        .explain_counters
+                        .record_parallel_blocked_foreign_selected_pending();
+                }
+                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+                    opaque
+                        .explain_counters
+                        .record_parallel_blocked_foreign_admitted_head();
+                }
+                super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+                    opaque
+                        .explain_counters
+                        .record_parallel_blocked_admission_window();
+                }
+            }
             opaque.parallel_owned_output_blocker = Some(blocker);
             publish_parallel_scan_worker_slot_snapshot(opaque);
             return ParallelScanOutputState::Blocked(blocker);
@@ -7020,6 +7037,18 @@ mod tests {
             Some(second_slot),
             "blocked materialized staging should publish the foreign blocker slot into the shared worker runtime snapshot"
         );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_blocked_foreign_selected_pending,
+            1,
+            "blocked materialized staging should increment the foreign-selected EXPLAIN counter"
+        );
+        assert_eq!(
+            opaque.explain_counters.stats_parallel_blocked_foreign_admitted_head,
+            0,
+            "blocked materialized staging should not increment the foreign-head EXPLAIN counter on a selected-pending blocker"
+        );
     }
 
     #[test]
@@ -7243,6 +7272,18 @@ mod tests {
             worker_snapshot.runtime.owned_output_blocker_slot_index,
             Some(second_slot),
             "blocked prefetched staging should publish the foreign blocker slot into the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_blocked_foreign_selected_pending,
+            1,
+            "blocked prefetched staging should increment the foreign-selected EXPLAIN counter"
+        );
+        assert_eq!(
+            opaque.explain_counters.stats_parallel_blocked_foreign_admitted_head,
+            0,
+            "blocked prefetched staging should not increment the foreign-head EXPLAIN counter on a selected-pending blocker"
         );
     }
 

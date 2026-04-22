@@ -304,6 +304,11 @@ See ADR-040 for the full shape. Summary:
   foreign selected/admitted output. That makes the remaining handoff seam
   visible in shared state instead of only in local scan control flow.
 
+- **Blocked-owner EXPLAIN counters.** The staged ownership blocker now also
+  increments dedicated EXPLAIN counters for foreign-selected, foreign-head, and
+  admission-window stalls so scan diagnostics can distinguish why a
+  parallel-bound worker stayed blocked.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership is not. The staged shared merge seam still needs a concrete
   worker/consumer contract before `amcanparallel` can flip on without

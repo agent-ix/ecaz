@@ -64,10 +64,13 @@ pub(crate) struct TqExplainCounters {
     pub stats_elements_scored: u32,
     pub stats_elements_skipped: u32,
     pub stats_heap_tids_returned: u32,
+    pub stats_parallel_blocked_foreign_selected_pending: u32,
+    pub stats_parallel_blocked_foreign_admitted_head: u32,
+    pub stats_parallel_blocked_admission_window: u32,
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 10] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -97,6 +100,22 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
         counter_name: "stats_heap_tids_returned",
         counter_type: "u32",
         increments_when: "a heap TID is returned via amgettuple",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_blocked_foreign_selected_pending",
+        counter_type: "u32",
+        increments_when: "parallel scan staging is blocked by a foreign selected pending output",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_blocked_foreign_admitted_head",
+        counter_type: "u32",
+        increments_when: "parallel scan staging is blocked by a foreign admitted head",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_blocked_admission_window",
+        counter_type: "u32",
+        increments_when:
+            "parallel scan staging is blocked because the current output loses the admitted window",
     },
     ExplainCounterDefinition {
         counter_name: "stats_quantizer_cache_hit",
@@ -156,6 +175,18 @@ impl TqExplainCounters {
         self.stats_heap_tids_returned += 1;
     }
 
+    pub(crate) fn record_parallel_blocked_foreign_selected_pending(&mut self) {
+        self.stats_parallel_blocked_foreign_selected_pending += 1;
+    }
+
+    pub(crate) fn record_parallel_blocked_foreign_admitted_head(&mut self) {
+        self.stats_parallel_blocked_foreign_admitted_head += 1;
+    }
+
+    pub(crate) fn record_parallel_blocked_admission_window(&mut self) {
+        self.stats_parallel_blocked_admission_window += 1;
+    }
+
     pub(crate) fn record_quantizer_cache_hit(&mut self) {
         self.stats_quantizer_cache_hit = true;
     }
@@ -164,7 +195,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 7] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 10] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -189,6 +220,22 @@ impl TqExplainCounters {
             ExplainProperty {
                 property_name: "Heap TIDs Returned",
                 value: ExplainPropertyValue::Integer(self.stats_heap_tids_returned),
+            },
+            ExplainProperty {
+                property_name: "Parallel Blocked: Foreign Selected",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_blocked_foreign_selected_pending,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Blocked: Foreign Head",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_blocked_foreign_admitted_head,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Blocked: Admission Window",
+                value: ExplainPropertyValue::Integer(self.stats_parallel_blocked_admission_window),
             },
             ExplainProperty {
                 property_name: "Quantizer Cache Hit",
@@ -420,6 +467,24 @@ mod tests {
                     increments_when: "a heap TID is returned via amgettuple",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_blocked_foreign_selected_pending",
+                    counter_type: "u32",
+                    increments_when:
+                        "parallel scan staging is blocked by a foreign selected pending output",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_blocked_foreign_admitted_head",
+                    counter_type: "u32",
+                    increments_when:
+                        "parallel scan staging is blocked by a foreign admitted head",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_blocked_admission_window",
+                    counter_type: "u32",
+                    increments_when:
+                        "parallel scan staging is blocked because the current output loses the admitted window",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_quantizer_cache_hit",
                     counter_type: "bool",
                     increments_when: "ProdQuantizer was reused from cache",
@@ -450,6 +515,9 @@ mod tests {
         counters.record_element_scored();
         counters.record_element_skipped();
         counters.record_heap_tid_returned();
+        counters.record_parallel_blocked_foreign_selected_pending();
+        counters.record_parallel_blocked_foreign_admitted_head();
+        counters.record_parallel_blocked_admission_window();
         counters.record_quantizer_cache_hit();
 
         assert_eq!(
@@ -461,6 +529,9 @@ mod tests {
                 stats_elements_scored: 1,
                 stats_elements_skipped: 1,
                 stats_heap_tids_returned: 1,
+                stats_parallel_blocked_foreign_selected_pending: 1,
+                stats_parallel_blocked_foreign_admitted_head: 1,
+                stats_parallel_blocked_admission_window: 1,
                 stats_quantizer_cache_hit: true,
             }
         );
@@ -475,6 +546,9 @@ mod tests {
             stats_elements_scored: 7,
             stats_elements_skipped: 11,
             stats_heap_tids_returned: 13,
+            stats_parallel_blocked_foreign_selected_pending: 17,
+            stats_parallel_blocked_foreign_admitted_head: 19,
+            stats_parallel_blocked_admission_window: 23,
             stats_quantizer_cache_hit: true,
         };
 
@@ -492,6 +566,9 @@ mod tests {
             stats_elements_scored: 7,
             stats_elements_skipped: 11,
             stats_heap_tids_returned: 13,
+            stats_parallel_blocked_foreign_selected_pending: 17,
+            stats_parallel_blocked_foreign_admitted_head: 19,
+            stats_parallel_blocked_admission_window: 23,
             stats_quantizer_cache_hit: true,
         };
 
@@ -521,6 +598,18 @@ mod tests {
                 ExplainProperty {
                     property_name: "Heap TIDs Returned",
                     value: ExplainPropertyValue::Integer(13),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Blocked: Foreign Selected",
+                    value: ExplainPropertyValue::Integer(17),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Blocked: Foreign Head",
+                    value: ExplainPropertyValue::Integer(19),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Blocked: Admission Window",
+                    value: ExplainPropertyValue::Integer(23),
                 },
                 ExplainProperty {
                     property_name: "Quantizer Cache Hit",
