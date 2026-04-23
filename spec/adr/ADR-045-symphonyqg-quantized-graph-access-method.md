@@ -194,6 +194,45 @@ already accepted or proposed (RaBitQ, FastScan, HNSW). Deferring
 it leaves ecaz with a three-stage pipeline that SymphonyQG's
 authors have already demonstrated is unnecessary.
 
+## Open follow-ups
+
+### Rotation front-end alternatives (post-Stage 1)
+
+The Stage 1 implementation uses SRHT (sign flips + Fast
+Walsh–Hadamard) with power-of-2 padding and trim — the same
+construction the RaBitQ paper's reference implementation uses.
+For `D = 1536` this pads to 2048, applies the transform, and
+returns the first 1536 coordinates; the trimmed coords are linear
+combinations of the 1536 inputs plus 512 zeros, so per-coordinate
+variance scales by `1536 / 2048 = 0.75` relative to a true
+1536-dim rotation. This costs concentration and can leak into the
+ε-bound tail.
+
+Alternatives worth studying if/when someone re-opens the recall
+gate:
+
+1. **Block-diagonal SRHT.** Three 512-dim SRHT blocks stacked
+   (or two 768-dim blocks if we drop the power-of-2 constraint
+   via a different FWHT variant). No padding waste; concentration
+   should be comparable per-block.
+2. **Composed SRHTs** (`SRHT₁ ∘ SRHT₂`). Two passes, tighter
+   concentration, ~2× encode/prepare cost.
+3. **Full random orthogonal matrix.** One-time `O(D²)` build,
+   `O(D²)` apply. Strongest concentration, highest runtime cost.
+   Viable only if Stage 3's hot loop proves SRHT's padding cost
+   is material.
+4. **Gaussian random projection.** Approximately orthogonal, any
+   `D` without padding. Weaker theoretical guarantees than SRHT;
+   mainly interesting if `D` is far from a power of 2 and block
+   SRHT is awkward.
+
+Criteria for picking one: (a) ε-bound tail tightness on the
+real-corpus slices (50k / 1M), (b) encode + prepare_scorer
+latency, (c) AM build-time cost if the rotation changes per
+index. None are Stage 1 blockers — SRHT-with-padding is good
+enough to publish the recall-gate verdict on. Record as
+`review/` packet when investigated.
+
 ## References
 
 - Gou, Gao, Xu, "SymphonyQG: Towards Symphonious Integration of
