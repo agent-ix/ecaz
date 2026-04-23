@@ -2947,6 +2947,24 @@ pub(crate) unsafe fn read_parallel_scan_coordinator_result_slot_snapshot(
     Ok(load_coordinator_result_slot_snapshot(unsafe { &*slot }))
 }
 
+pub(crate) unsafe fn read_parallel_scan_hidden_local_only_result_slot_snapshot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+) -> Result<Option<EcParallelCoordinatorResultSlotSnapshot>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let Ok(slot) = (unsafe { attachment.result_slot(slot_index) }) else {
+        return Ok(None);
+    };
+    let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    if coordinator_result_slot_snapshot_is_hidden_local_only(&snapshot, attachment.rescan_epoch)
+        && unsafe { coordinator_result_slot_worker_claim_is_live(&attachment, slot_index) }
+    {
+        return Ok(Some(snapshot));
+    }
+
+    Ok(None)
+}
+
 pub(crate) unsafe fn read_parallel_scan_selected_result_slot_snapshot(
     state: *mut EcParallelScanState,
 ) -> Result<Option<EcParallelCoordinatorResultSelection>, &'static str> {

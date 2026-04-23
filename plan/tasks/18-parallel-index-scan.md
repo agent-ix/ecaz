@@ -565,6 +565,12 @@ See ADR-040 for the full shape. Summary:
   across the selected-to-admitted transition instead of prematurely treating
   themselves as ready.
 
+- **Blocker continuity now spans hidden local-only owner slots.** Retained
+  selected/admitted blockers no longer go falsely stale when the foreign owner
+  falls out of coordinator publication and parks the same row in a hidden
+  local-only DSM slot. Hidden and deferred rows now keep the blocker live and
+  keep using the foreign owner's score/heap-tid signal across that transition.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

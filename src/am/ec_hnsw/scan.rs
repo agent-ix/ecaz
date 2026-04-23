@@ -3847,20 +3847,42 @@ fn live_foreign_blocker_heap_tid(
                 pgrx::error!(
                     "ec_hnsw parallel scan selected-to-admitted live-blocker read failed: {err}"
                 )
-            })?;
-            let admitted = unsafe {
-                super::parallel::read_parallel_scan_admitted_result_snapshot(
+            });
+            if let Some(admitted_head) = admitted_head {
+                let admitted = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan selected-to-admitted result read failed: {err}"
+                    )
+                });
+                if item_pointer_from_parallel_item_pointer(admitted.element_tid)
+                    == blocker_element_tid
+                {
+                    return Some(item_pointer_from_parallel_item_pointer(
+                        admitted_head.admitted_head.heap_tid,
+                    ));
+                }
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
                     opaque.parallel_scan_state,
-                    0,
+                    expected_slot,
                 )
             }
             .unwrap_or_else(|err| {
                 pgrx::error!(
-                    "ec_hnsw parallel scan selected-to-admitted result read failed: {err}"
+                    "ec_hnsw parallel scan selected-to-hidden live-blocker read failed: {err}"
                 )
-            });
-            (item_pointer_from_parallel_item_pointer(admitted.element_tid) == blocker_element_tid)
-                .then(|| item_pointer_from_parallel_item_pointer(admitted_head.admitted_head.heap_tid))
+            })?;
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then(|| item_pointer_from_parallel_item_pointer(hidden.runtime.heap_tid))
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
             let admitted = unsafe {
@@ -3870,9 +3892,35 @@ fn live_foreign_blocker_heap_tid(
             }
             .unwrap_or_else(|err| {
                 pgrx::error!("ec_hnsw parallel scan admitted-head live-blocker read failed: {err}")
+            });
+            if let Some(admitted) = admitted {
+                if admitted.coordinator.admitted_result_generation == blocker.generation {
+                    return Some(item_pointer_from_parallel_item_pointer(
+                        admitted.admitted_head.heap_tid,
+                    ));
+                }
+            }
+
+            let expected_slot = blocker.slot_index?;
+            let blocker_element_tid = item_pointer_from_parallel_item_pointer(blocker.element_tid);
+            if blocker_element_tid == page::ItemPointer::INVALID {
+                return None;
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    expected_slot,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan admitted-to-hidden live-blocker read failed: {err}"
+                )
             })?;
-            (admitted.coordinator.admitted_result_generation == blocker.generation)
-                .then(|| item_pointer_from_parallel_item_pointer(admitted.admitted_head.heap_tid))
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then(|| item_pointer_from_parallel_item_pointer(hidden.runtime.heap_tid))
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => None,
     }
@@ -4008,8 +4056,7 @@ fn deferred_parallel_blocked_output_preference_score(
             });
             if let Some(selected) = selected {
                 if selected.coordinator.selected_result_slot_index == Some(expected_slot)
-                    && selected.coordinator.result_publish_generation
-                        == retained.blocker.generation
+                    && selected.coordinator.result_publish_generation == retained.blocker.generation
                 {
                     return Some(selected.pending_output.score);
                 }
@@ -4030,20 +4077,40 @@ fn deferred_parallel_blocked_output_preference_score(
                 pgrx::error!(
                     "ec_hnsw parallel scan selected-to-admitted preference read failed: {err}"
                 )
-            })?;
-            let admitted = unsafe {
-                super::parallel::read_parallel_scan_admitted_result_snapshot(
+            });
+            if let Some(admitted_head) = admitted_head {
+                let admitted = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan selected-to-admitted preference result read failed: {err}"
+                    )
+                });
+                if item_pointer_from_parallel_item_pointer(admitted.element_tid)
+                    == blocker_element_tid
+                {
+                    return Some(admitted_head.admitted_head.score);
+                }
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
                     opaque.parallel_scan_state,
-                    0,
+                    expected_slot,
                 )
             }
             .unwrap_or_else(|err| {
                 pgrx::error!(
-                    "ec_hnsw parallel scan selected-to-admitted preference result read failed: {err}"
+                    "ec_hnsw parallel scan selected-to-hidden preference read failed: {err}"
                 )
-            });
-            (item_pointer_from_parallel_item_pointer(admitted.element_tid) == blocker_element_tid)
-                .then_some(admitted_head.admitted_head.score)
+            })?;
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then_some(hidden.runtime.score)
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
             let admitted = unsafe {
@@ -4053,9 +4120,34 @@ fn deferred_parallel_blocked_output_preference_score(
             }
             .unwrap_or_else(|err| {
                 pgrx::error!("ec_hnsw parallel scan admitted-head preference read failed: {err}")
+            });
+            if let Some(admitted) = admitted {
+                if admitted.coordinator.admitted_result_generation == retained.blocker.generation {
+                    return Some(admitted.admitted_head.score);
+                }
+            }
+
+            let expected_slot = retained.blocker.slot_index?;
+            let blocker_element_tid =
+                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+            if blocker_element_tid == page::ItemPointer::INVALID {
+                return None;
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    expected_slot,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan admitted-to-hidden preference read failed: {err}"
+                )
             })?;
-            (admitted.coordinator.admitted_result_generation == retained.blocker.generation)
-                .then_some(admitted.admitted_head.score)
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then_some(hidden.runtime.score)
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => None,
     }
@@ -8269,8 +8361,7 @@ mod tests {
             "draining the foreign handoff should not advance the hidden local duplicate cursor"
         );
         assert_eq!(
-            owner.parallel_owned_output_blocker,
-            None,
+            owner.parallel_owned_output_blocker, None,
             "a successful shared handoff retry should clear the active blocker metadata"
         );
     }
@@ -11762,8 +11853,7 @@ mod tests {
         }
         .expect("admitted result snapshot should read back");
         assert_eq!(
-            admitted_head.element_tid,
-            selected.selected_result_slot.runtime.element_tid,
+            admitted_head.element_tid, selected.selected_result_slot.runtime.element_tid,
             "the admitted head should preserve the blocking foreign element identity"
         );
 
@@ -11950,6 +12040,180 @@ mod tests {
             preferred.state.current().element_tid(),
             tid(83, 1),
             "the best deferred row should be preferred when no active local row is staged"
+        );
+    }
+
+    #[test]
+    fn live_foreign_blocker_heap_tid_tracks_selected_blocker_into_hidden_local_only_slot() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(260, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(261, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected pending snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        foreign.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            live_foreign_blocker_heap_tid(
+                &owner,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: selected.coordinator.selected_result_slot_index,
+                    generation: selected.coordinator.result_publish_generation,
+                    element_tid: selected.selected_result_slot.runtime.element_tid,
+                },
+            ),
+            Some(tid(261, 1)),
+            "a retained selected blocker should stay live when the foreign owner moves into a hidden local-only slot"
+        );
+    }
+
+    #[test]
+    fn deferred_parallel_blocked_output_preference_score_tracks_admitted_blocker_into_hidden_local_only_slot(
+    ) {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(270, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(271, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let _admitted = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                owner.parallel_scan_state,
+                1,
+            )
+        }
+        .expect("selected pending output should admit")
+        .expect("foreign selected output should enter the admitted window");
+        let admitted_head = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_result_snapshot(
+                owner.parallel_scan_state,
+                0,
+            )
+        }
+        .expect("admitted result snapshot should read back");
+
+        foreign.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let mut blocked = ScanResultState::default();
+        blocked.set_current_with_details(tid(272, 1), -8.0, Some(-7.5), Some(9), Some(-8.5));
+        blocked.store_pending(&[tid(273, 1)]);
+        let deferred = DeferredParallelBlockedOutput {
+            source_phase: ScanExecutionPhase::GraphTraversal,
+            state: blocked,
+            retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: 1,
+                    element_tid: admitted_head.element_tid,
+                },
+                element_tid: tid(272, 1),
+            }),
+        };
+
+        assert_eq!(
+            deferred_parallel_blocked_output_preference_score(&owner, &deferred),
+            Some(-10.0),
+            "a retained admitted-head blocker should keep using the hidden foreign owner's score after that row moves into a hidden local-only slot"
         );
     }
 
