@@ -5949,7 +5949,6 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     loop {
         match unsafe { emit_prefetched_parallel_scan_output(opaque) } {
             ParallelScanOutputState::Emitted(output) => {
-                mark_emitted_element(opaque, opaque.result_state.current().element_tid());
                 emit_scan_output(scan, opaque, output);
                 opaque.explain_counters.record_heap_tid_returned();
                 if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
@@ -6028,7 +6027,6 @@ unsafe fn produce_next_graph_traversal_heap_tid(
 
     match unsafe { try_take_republished_local_only_parallel_output(opaque) } {
         ParallelScanOutputState::Emitted(output) => {
-            mark_emitted_element(opaque, opaque.result_state.current().element_tid());
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
@@ -9573,6 +9571,10 @@ mod tests {
         assert!(
             emitted_contains_element(&opaque, tid(80, 1)),
             "foreign handoff should mark the foreign prefetched element as emitted once its heap tid is returned"
+        );
+        assert!(
+            !emitted_contains_element(&opaque, tid(30, 1)),
+            "foreign handoff should not mark the still-staged local prefetched element as emitted"
         );
         let result_snapshot = unsafe {
             crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
