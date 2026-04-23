@@ -4448,6 +4448,33 @@ unsafe fn emit_prefetched_parallel_scan_output(
     unsafe { try_take_parallel_scan_next_output(opaque) }
 }
 
+fn emit_local_only_linear_pending_output(
+    scan: pg_sys::IndexScanDesc,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    let emitted = linear_fallback_cursor(opaque)
+        .emit_pending_output()
+        .map(|output| {
+            mark_active_result_element_emitted(opaque);
+            record_parallel_local_only_emit_counters(opaque);
+            emit_scan_output(scan, opaque, output);
+            true
+        })
+        .unwrap_or(false);
+    if emitted {
+        finish_local_only_linear_pending_emit(opaque);
+    }
+    emitted
+}
+
+fn finish_local_only_linear_pending_emit(opaque: &mut TqScanOpaque) {
+    linear_fallback_cursor(opaque).advance_after_emit();
+    opaque.parallel_local_only_output_active =
+        active_result_state_ref(opaque).current().has_element();
+    opaque.parallel_owned_output_blocker = None;
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+}
+
 fn discard_active_parallel_scan_output(opaque: &mut TqScanOpaque) {
     active_result_state_mut(opaque).clear();
     opaque.parallel_local_only_output_active = false;
@@ -6216,17 +6243,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         };
     }
 
-    if linear_fallback_cursor(opaque)
-        .emit_pending_output()
-        .map(|output| {
-            mark_active_result_element_emitted(opaque);
-            record_parallel_local_only_emit_counters(opaque);
-            emit_scan_output(scan, opaque, output);
-            true
-        })
-        .unwrap_or(false)
-    {
-        linear_fallback_cursor(opaque).advance_after_emit();
+    if emit_local_only_linear_pending_output(scan, opaque) {
         opaque.explain_counters.record_heap_tid_returned();
         return true;
     }
@@ -7609,6 +7626,115 @@ mod tests {
             result_snapshot.runtime.element_tid,
             crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
             "cleared local-only coordinator slots should not expose a staged element tid"
+        );
+    }
+
+    #[test]
+    fn finish_local_only_linear_pending_emit_republishes_hidden_worker_snapshot() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        reset_scan_emitted_state(&mut opaque);
+        opaque.fallback_result_state.set_current_with_details(
+            tid(300, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        opaque
+            .fallback_result_state
+            .store_pending(&[tid(301, 1), tid(301, 2)]);
+        opaque.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&opaque);
+
+        assert!(
+            linear_fallback_cursor(&mut opaque).emit_pending_output().is_some(),
+            "the hidden linear row should stage a pending heap tid before the post-emit republish step"
+        );
+        mark_active_result_element_emitted(&mut opaque);
+        finish_local_only_linear_pending_emit(&mut opaque);
+        assert!(
+            opaque.parallel_local_only_output_active,
+            "emitting the first hidden linear duplicate should keep the remaining row staged as local-only"
+        );
+        assert_eq!(
+            opaque.fallback_result_state.pending_index(),
+            1,
+            "linear local-only emit should advance the hidden duplicate cursor"
+        );
+
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.emitted_count, 1,
+            "the hidden linear wakeup emit should republish emitted-count progress to the worker snapshot"
+        );
+        assert!(
+            worker_snapshot.runtime.active_result_has_current,
+            "the hidden linear wakeup emit should keep the remaining local-only row visible in the worker snapshot"
+        );
+
+        let coordinator_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert_eq!(
+            coordinator_snapshot.published_result_slots, 0,
+            "hidden linear wakeup emits should keep the coordinator slot cleared"
+        );
+
+        let result_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel coordinator result-slot snapshot should read back");
+        assert_eq!(
+            result_snapshot.flags, 0,
+            "hidden linear wakeup emits should continue hiding the coordinator result slot"
         );
     }
 

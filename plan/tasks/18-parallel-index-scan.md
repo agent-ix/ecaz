@@ -538,6 +538,12 @@ See ADR-040 for the full shape. Summary:
   result bookkeeping instead of tagging the still-staged local owner row as
   emitted.
 
+- **Hidden linear wakeup emits republish worker progress.** When the linear
+  path still has to emit a hidden local-only row directly, it now republishes
+  the worker snapshot after advancing the duplicate cursor so shared runtime
+  state stays aligned even while the coordinator slot remains intentionally
+  cleared.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
