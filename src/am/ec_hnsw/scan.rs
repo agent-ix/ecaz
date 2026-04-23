@@ -5909,6 +5909,35 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         }
     }
 
+    match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
+        LocalOnlyParallelScanDisposition::EmitShared(output) => {
+            emit_scan_output(scan, opaque, output);
+            opaque.explain_counters.record_heap_tid_returned();
+            if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+                let opaque_ptr = opaque as *mut TqScanOpaque;
+                unsafe {
+                    graph_traversal_cursor(opaque)
+                        .ensure_prefetched_output(index_relation, opaque_ptr);
+                }
+            }
+            return true;
+        }
+        LocalOnlyParallelScanDisposition::Exhausted => {
+            let opaque_ptr = opaque as *mut TqScanOpaque;
+            let refreshed = unsafe {
+                graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
+            };
+            if refreshed {
+                return unsafe {
+                    produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+                };
+            }
+            return false;
+        }
+        LocalOnlyParallelScanDisposition::RetryLocalEmit
+        | LocalOnlyParallelScanDisposition::NoChange => {}
+    }
+
     let emitted = graph_traversal_cursor(opaque)
         .emit_prefetched_output()
         .map(|output| {
@@ -5922,43 +5951,6 @@ unsafe fn produce_next_graph_traversal_heap_tid(
             true
         })
         .unwrap_or(false);
-    let emitted = if emitted {
-        Some(true)
-    } else {
-        match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
-            LocalOnlyParallelScanDisposition::EmitShared(output) => {
-                emit_scan_output(scan, opaque, output);
-                Some(true)
-            }
-            LocalOnlyParallelScanDisposition::RetryLocalEmit
-            | LocalOnlyParallelScanDisposition::NoChange => graph_traversal_cursor(opaque)
-                .emit_prefetched_output()
-                .map(|output| {
-                    mark_emitted_element(opaque, opaque.result_state.current().element_tid());
-                    record_parallel_local_only_emit_counters(opaque);
-                    emit_scan_output(scan, opaque, output);
-                    opaque.parallel_local_only_output_active =
-                        active_result_state_ref(opaque).current().has_element();
-                    opaque.parallel_owned_output_blocker = None;
-                    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
-                    true
-                }),
-            LocalOnlyParallelScanDisposition::Exhausted => {
-                let opaque_ptr = opaque as *mut TqScanOpaque;
-                let refreshed = unsafe {
-                    graph_traversal_cursor(opaque)
-                        .ensure_prefetched_output(index_relation, opaque_ptr)
-                };
-                if refreshed {
-                    return unsafe {
-                        produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
-                    };
-                }
-                None
-            }
-        }
-    };
-    let emitted = emitted.unwrap_or(false);
     debug_assert!(
         emitted,
         "graph traversal should materialize pending output before returning true from graph-phase tuple production"
@@ -5981,6 +5973,17 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
+        LocalOnlyParallelScanDisposition::EmitShared(output) => {
+            emit_scan_output(scan, opaque, output);
+            opaque.explain_counters.record_heap_tid_returned();
+            return true;
+        }
+        LocalOnlyParallelScanDisposition::Exhausted => {}
+        LocalOnlyParallelScanDisposition::RetryLocalEmit
+        | LocalOnlyParallelScanDisposition::NoChange => {}
+    }
+
     if linear_fallback_cursor(opaque)
         .emit_pending_output()
         .map(|output| {
@@ -6026,16 +6029,6 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                 }
             }
             ParallelScanOutputState::Empty => {
-                match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
-                    LocalOnlyParallelScanDisposition::EmitShared(output) => {
-                        emit_scan_output(scan, opaque, output);
-                        opaque.explain_counters.record_heap_tid_returned();
-                        return true;
-                    }
-                    LocalOnlyParallelScanDisposition::Exhausted => continue,
-                    LocalOnlyParallelScanDisposition::RetryLocalEmit
-                    | LocalOnlyParallelScanDisposition::NoChange => {}
-                }
                 let emitted = linear_fallback_cursor(opaque)
                     .emit_materialized_output(selected)
                     .map(|output| {

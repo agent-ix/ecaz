@@ -451,6 +451,13 @@ See ADR-040 for the full shape. Summary:
   consumes that duplicate first, attempts shared handoff again, and only falls
   back to local emit for the next unique heap TID.
 
+- **Local-only wakeup suppression now runs before first emit.** The hidden
+  local-only wakeup branches in both graph traversal and linear fallback now
+  run the same local-only duplicate/obsolete suppression before their first
+  direct local emit attempt instead of only after the initial wakeup path. That
+  keeps the first wakeup from bypassing the already-landed foreign-owner guard
+  seams.
+
 - **Deferred duplicate skip now reopens shared handoff.** When deferred local
   fallback skips a foreign-owned duplicate heap TID, it now retries the shared
   handoff seam for that row immediately instead of sliding straight toward local
