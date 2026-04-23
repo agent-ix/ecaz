@@ -475,6 +475,11 @@ See ADR-040 for the full shape. Summary:
   as `Parallel Local-only Emits`, with blocker-kind breakdown for foreign
   selected versus foreign admitted blockers.
 
+- **Foreign handoff EXPLAIN counters.** `Ecaz Stats` now also exposes the
+  successful shared ownership-transfer path as `Parallel Handoffs: Foreign
+  Selected` and `Parallel Handoffs: Foreign Head`, so the staged handoff path
+  is measurable alongside the remaining local fallback counters.
+
 - **Better deferred rows outrank hidden local-only wakeup.** When a concealed
   local-only row is still staged but a better ready deferred row already exists,
   the scan now lets that deferred row emit first instead of waking the

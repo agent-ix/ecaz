@@ -4209,6 +4209,20 @@ unsafe fn try_take_parallel_scan_handoff_output(
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => return None,
     };
 
+    match blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            opaque
+                .explain_counters
+                .record_parallel_handoff_foreign_selected_pending();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            opaque
+                .explain_counters
+                .record_parallel_handoff_foreign_admitted_head();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {}
+    }
+
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
@@ -8302,6 +8316,20 @@ mod tests {
             0,
             "draining a foreign admitted row should not advance the local worker's duplicate-drain cursor"
         );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_admitted_head,
+            1,
+            "draining a foreign admitted row should increment the foreign-head handoff counter"
+        );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            0,
+            "draining a foreign admitted row should not increment the foreign-selected handoff counter"
+        );
     }
 
     #[test]
@@ -8401,6 +8429,20 @@ mod tests {
             local.result_state.pending_index(),
             0,
             "draining a foreign selected row should not advance the local worker's duplicate-drain cursor"
+        );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            1,
+            "draining a foreign selected row should increment the foreign-selected handoff counter"
+        );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_admitted_head,
+            0,
+            "draining a foreign selected row should not increment the foreign-head handoff counter"
         );
     }
 
@@ -9032,6 +9074,13 @@ mod tests {
         assert_eq!(
             opaque
                 .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            1,
+            "successful foreign handoff should increment the foreign-selected handoff EXPLAIN counter"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
                 .stats_parallel_blocked_foreign_selected_pending,
             0,
             "successful foreign handoff should not increment the blocked foreign-selected EXPLAIN counter"
@@ -9271,6 +9320,13 @@ mod tests {
             worker_snapshot.runtime.owned_output_blocker_generation,
             0,
             "foreign handoff should clear the blocker generation from the shared worker runtime snapshot"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            1,
+            "successful foreign handoff should increment the foreign-selected handoff EXPLAIN counter"
         );
         assert_eq!(
             opaque
