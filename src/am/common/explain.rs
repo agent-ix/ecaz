@@ -67,13 +67,16 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_blocked_foreign_selected_pending: u32,
     pub stats_parallel_blocked_foreign_admitted_head: u32,
     pub stats_parallel_blocked_admission_window: u32,
+    pub stats_parallel_local_only_emits: u32,
+    pub stats_parallel_local_only_emits_foreign_selected_pending: u32,
+    pub stats_parallel_local_only_emits_foreign_admitted_head: u32,
     pub stats_parallel_deferred_local_emits: u32,
     pub stats_parallel_deferred_local_emits_foreign_selected_pending: u32,
     pub stats_parallel_deferred_local_emits_foreign_admitted_head: u32,
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 13] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 16] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -119,6 +122,24 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 13] = [
         counter_type: "u32",
         increments_when:
             "parallel scan staging is blocked because the current output loses the admitted window",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_local_only_emits",
+        counter_type: "u32",
+        increments_when:
+            "a hidden local-only row is still locally emitted because shared retry did not drain a foreign output first",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_local_only_emits_foreign_selected_pending",
+        counter_type: "u32",
+        increments_when:
+            "a hidden local-only row is still locally emitted while blocked by a foreign selected pending output",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_local_only_emits_foreign_admitted_head",
+        counter_type: "u32",
+        increments_when:
+            "a hidden local-only row is still locally emitted while blocked by a foreign admitted head",
     },
     ExplainCounterDefinition {
         counter_name: "stats_parallel_deferred_local_emits",
@@ -208,6 +229,18 @@ impl TqExplainCounters {
         self.stats_parallel_blocked_admission_window += 1;
     }
 
+    pub(crate) fn record_parallel_local_only_emit(&mut self) {
+        self.stats_parallel_local_only_emits += 1;
+    }
+
+    pub(crate) fn record_parallel_local_only_emit_foreign_selected_pending(&mut self) {
+        self.stats_parallel_local_only_emits_foreign_selected_pending += 1;
+    }
+
+    pub(crate) fn record_parallel_local_only_emit_foreign_admitted_head(&mut self) {
+        self.stats_parallel_local_only_emits_foreign_admitted_head += 1;
+    }
+
     pub(crate) fn record_parallel_deferred_local_emit(&mut self) {
         self.stats_parallel_deferred_local_emits += 1;
     }
@@ -228,7 +261,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 13] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 16] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -269,6 +302,22 @@ impl TqExplainCounters {
             ExplainProperty {
                 property_name: "Parallel Blocked: Admission Window",
                 value: ExplainPropertyValue::Integer(self.stats_parallel_blocked_admission_window),
+            },
+            ExplainProperty {
+                property_name: "Parallel Local-only Emits",
+                value: ExplainPropertyValue::Integer(self.stats_parallel_local_only_emits),
+            },
+            ExplainProperty {
+                property_name: "Parallel Local-only Emits: Foreign Selected",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_local_only_emits_foreign_selected_pending,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Local-only Emits: Foreign Head",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_local_only_emits_foreign_admitted_head,
+                ),
             },
             ExplainProperty {
                 property_name: "Parallel Deferred Local Emits",
@@ -534,6 +583,26 @@ mod tests {
                         "parallel scan staging is blocked because the current output loses the admitted window",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_local_only_emits",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden local-only row is still locally emitted because shared retry did not drain a foreign output first",
+                },
+                ExplainCounterDefinition {
+                    counter_name:
+                        "stats_parallel_local_only_emits_foreign_selected_pending",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden local-only row is still locally emitted while blocked by a foreign selected pending output",
+                },
+                ExplainCounterDefinition {
+                    counter_name:
+                        "stats_parallel_local_only_emits_foreign_admitted_head",
+                    counter_type: "u32",
+                    increments_when:
+                        "a hidden local-only row is still locally emitted while blocked by a foreign admitted head",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_parallel_deferred_local_emits",
                     counter_type: "u32",
                     increments_when:
@@ -587,6 +656,9 @@ mod tests {
         counters.record_parallel_blocked_foreign_selected_pending();
         counters.record_parallel_blocked_foreign_admitted_head();
         counters.record_parallel_blocked_admission_window();
+        counters.record_parallel_local_only_emit();
+        counters.record_parallel_local_only_emit_foreign_selected_pending();
+        counters.record_parallel_local_only_emit_foreign_admitted_head();
         counters.record_parallel_deferred_local_emit();
         counters.record_parallel_deferred_local_emit_foreign_selected_pending();
         counters.record_parallel_deferred_local_emit_foreign_admitted_head();
@@ -604,6 +676,9 @@ mod tests {
                 stats_parallel_blocked_foreign_selected_pending: 1,
                 stats_parallel_blocked_foreign_admitted_head: 1,
                 stats_parallel_blocked_admission_window: 1,
+                stats_parallel_local_only_emits: 1,
+                stats_parallel_local_only_emits_foreign_selected_pending: 1,
+                stats_parallel_local_only_emits_foreign_admitted_head: 1,
                 stats_parallel_deferred_local_emits: 1,
                 stats_parallel_deferred_local_emits_foreign_selected_pending: 1,
                 stats_parallel_deferred_local_emits_foreign_admitted_head: 1,
@@ -624,9 +699,12 @@ mod tests {
             stats_parallel_blocked_foreign_selected_pending: 17,
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
-            stats_parallel_deferred_local_emits: 29,
-            stats_parallel_deferred_local_emits_foreign_selected_pending: 31,
-            stats_parallel_deferred_local_emits_foreign_admitted_head: 37,
+            stats_parallel_local_only_emits: 29,
+            stats_parallel_local_only_emits_foreign_selected_pending: 31,
+            stats_parallel_local_only_emits_foreign_admitted_head: 37,
+            stats_parallel_deferred_local_emits: 41,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 43,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 47,
             stats_quantizer_cache_hit: true,
         };
 
@@ -647,9 +725,12 @@ mod tests {
             stats_parallel_blocked_foreign_selected_pending: 17,
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
-            stats_parallel_deferred_local_emits: 29,
-            stats_parallel_deferred_local_emits_foreign_selected_pending: 31,
-            stats_parallel_deferred_local_emits_foreign_admitted_head: 37,
+            stats_parallel_local_only_emits: 29,
+            stats_parallel_local_only_emits_foreign_selected_pending: 31,
+            stats_parallel_local_only_emits_foreign_admitted_head: 37,
+            stats_parallel_deferred_local_emits: 41,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 43,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 47,
             stats_quantizer_cache_hit: true,
         };
 
@@ -693,16 +774,28 @@ mod tests {
                     value: ExplainPropertyValue::Integer(23),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits",
+                    property_name: "Parallel Local-only Emits",
                     value: ExplainPropertyValue::Integer(29),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                    property_name: "Parallel Local-only Emits: Foreign Selected",
                     value: ExplainPropertyValue::Integer(31),
                 },
                 ExplainProperty {
-                    property_name: "Parallel Deferred Local Emits: Foreign Head",
+                    property_name: "Parallel Local-only Emits: Foreign Head",
                     value: ExplainPropertyValue::Integer(37),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits",
+                    value: ExplainPropertyValue::Integer(41),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                    value: ExplainPropertyValue::Integer(43),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Head",
+                    value: ExplainPropertyValue::Integer(47),
                 },
                 ExplainProperty {
                     property_name: "Quantizer Cache Hit",

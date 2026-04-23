@@ -4441,6 +4441,27 @@ fn restore_deferred_parallel_blocked_outputs(
     }
 }
 
+fn record_parallel_local_only_emit_counters(opaque: &mut TqScanOpaque) {
+    opaque.explain_counters.record_parallel_local_only_emit();
+    let Some(retained) = opaque.retained_parallel_owned_output_blocker else {
+        return;
+    };
+
+    match retained.blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            opaque
+                .explain_counters
+                .record_parallel_local_only_emit_foreign_selected_pending();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            opaque
+                .explain_counters
+                .record_parallel_local_only_emit_foreign_admitted_head();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {}
+    }
+}
+
 fn take_next_deferred_parallel_blocked_output(
     opaque: &mut TqScanOpaque,
     allow_local_emit: bool,
@@ -5900,6 +5921,7 @@ unsafe fn produce_next_graph_traversal_heap_tid(
                 .emit_prefetched_output()
                 .map(|output| {
                     mark_emitted_element(opaque, opaque.result_state.current().element_tid());
+                    record_parallel_local_only_emit_counters(opaque);
                     emit_scan_output(scan, opaque, output);
                     opaque.parallel_local_only_output_active =
                         active_result_state_ref(opaque).current().has_element();
@@ -6003,6 +6025,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                     .emit_materialized_output(selected)
                     .map(|output| {
                         mark_emitted_element(opaque, selected.element_tid);
+                        record_parallel_local_only_emit_counters(opaque);
                         emit_scan_output(scan, opaque, output);
                         opaque.parallel_local_only_output_active =
                             active_result_state_ref(opaque).current().has_element();

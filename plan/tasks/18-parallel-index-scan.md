@@ -463,6 +463,11 @@ See ADR-040 for the full shape. Summary:
   back into the coordinator slot first, then lets it resume normal shared
   drain/admission behavior.
 
+- **Local-only wakeup EXPLAIN counters.** When a hidden local-only row still
+  has to emit locally after shared retry, `Ecaz Stats` now exposes that path
+  as `Parallel Local-only Emits`, with blocker-kind breakdown for foreign
+  selected versus foreign admitted blockers.
+
 - **Better deferred rows outrank hidden local-only wakeup.** When a concealed
   local-only row is still staged but a better ready deferred row already exists,
   the scan now lets that deferred row emit first instead of waking the
