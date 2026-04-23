@@ -1,0 +1,14 @@
+# ecaz quant feasibility
+# quantizer: Rabitq  corpus_file: target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_corpus.tsv  queries_file: target/real-corpus/ec_hnsw_real_10k/ec_hnsw_real_10k_queries.tsv
+# loaded: 10000 corpus vectors, 200 queries (dim=1536, top_k=10, seed=42)
+# storage: RaBitQ code 200 B, PQ4 code 768 B (parity ratio 3.84x)
+#   query 0: recall@10 = 9/10
+#   query 1: recall@10 = 7/10
+#   query 2: recall@10 = 9/10
+
+recall@10 mean: 0.8975
+bound  mean=0.050  p50=0.050  p99=0.052
+error  mean=0.010  p50=0.009  p99=0.037
+tightness (error / bound) mean: 0.211
+
+GATE: FAIL (recall gap 10.250 pp > 2.0 pp)
