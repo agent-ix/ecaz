@@ -588,6 +588,17 @@ See ADR-040 for the full shape. Summary:
   helpers. Hidden rows can now report ready and drain back through the owned
   shared admission/take path instead of only waking into direct local fallback.
 
+- **Foreign handoff now follows the same row into hidden owner slots.** If a
+  retained foreign selected/admitted blocker moves the same row into a hidden
+  local-only DSM slot on that worker, the handoff path can now drain it there
+  instead of giving up as soon as it leaves the selected/admitted fast paths.
+
+- **Better hidden foreign rows now surface as blockers.** Owned-output
+  readiness no longer ignores a live hidden foreign row just because it is not
+  selected or admitted. Under the coordinator lock, a better hidden pending
+  row now blocks the owner directly so the existing hidden-slot handoff path
+  can drain it before the owner advances.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

@@ -3216,6 +3216,59 @@ unsafe fn pending_output_would_admit_locked(
     Ok(admission_count < effective_limit)
 }
 
+unsafe fn best_hidden_local_only_blocker_locked(
+    attachment: &ParallelScanAttachment,
+    owner_slot_index: u32,
+    owner_pending_output: EcParallelPendingOutputSnapshot,
+) -> Result<Option<EcParallelOwnedOutputBlocker>, &'static str> {
+    let mut best_hidden: Option<(u32, EcParallelCoordinatorResultSlotSnapshot)> = None;
+
+    for slot_index in 0..attachment.result_slot_count {
+        if slot_index == owner_slot_index {
+            continue;
+        }
+
+        let slot = unsafe { attachment.result_slot(slot_index) }?;
+        let snapshot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+        if !coordinator_result_slot_snapshot_is_hidden_local_only(
+            &snapshot,
+            attachment.rescan_epoch,
+        ) || !unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) }
+        {
+            continue;
+        }
+
+        let Some(hidden_pending_output) = coordinator_pending_output_snapshot(&snapshot) else {
+            continue;
+        };
+        if !pending_output_orders_before(&hidden_pending_output, &owner_pending_output) {
+            continue;
+        }
+
+        let replace_best = match best_hidden {
+            Some((_, best_snapshot)) => {
+                let best_pending_output = coordinator_pending_output_snapshot(&best_snapshot)
+                    .expect("best hidden local-only blocker should keep a pending output");
+                pending_output_orders_before(&hidden_pending_output, &best_pending_output)
+            }
+            None => true,
+        };
+        if replace_best {
+            best_hidden = Some((slot_index, snapshot));
+        }
+    }
+
+    Ok(
+        best_hidden.map(|(slot_index, snapshot)| EcParallelOwnedOutputBlocker {
+            kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            slot_index: Some(slot_index),
+            generation: load_coordinator_snapshot(unsafe { &*attachment.coordinator })
+                .result_publish_generation,
+            element_tid: snapshot.runtime.element_tid,
+        }),
+    )
+}
+
 pub(crate) unsafe fn read_parallel_scan_owned_output_state(
     state: *mut EcParallelScanState,
     owner_slot_index: u32,
@@ -3280,6 +3333,15 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
         selected_result_slot: owner_slot,
         pending_output: owner_pending_output,
     };
+    if let Some(hidden_blocker) = unsafe {
+        best_hidden_local_only_blocker_locked(
+            &attachment,
+            owner_slot_index,
+            selected.pending_output,
+        )
+    }? {
+        return Ok(EcParallelOwnedOutputState::Blocked(hidden_blocker));
+    }
     if unsafe { pending_output_would_admit_locked(&attachment, &selected, result_limit) }? {
         if coordinator.admitted_result_count == 0 {
             return Ok(EcParallelOwnedOutputState::Ready);
@@ -3334,6 +3396,7 @@ pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
 unsafe fn take_hidden_local_only_pending_output_locked(
     attachment: &ParallelScanAttachment,
     slot_index: u32,
+    expected_element_tid: Option<EcParallelItemPointer>,
 ) -> Result<Option<EcParallelCoordinatorPendingOutputSelection>, &'static str> {
     let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
     let slot = unsafe { attachment.result_slot(slot_index) }?;
@@ -3345,6 +3408,11 @@ unsafe fn take_hidden_local_only_pending_output_locked(
     ) || !unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) }
     {
         return Ok(None);
+    }
+    if let Some(expected_element_tid) = expected_element_tid {
+        if selected_result_slot.runtime.element_tid != expected_element_tid {
+            return Ok(None);
+        }
     }
 
     let Some(pending_output) = coordinator_pending_output_snapshot(&selected_result_slot) else {
@@ -3390,6 +3458,46 @@ unsafe fn take_hidden_local_only_pending_output_locked(
     }))
 }
 
+pub(crate) unsafe fn take_parallel_scan_hidden_local_only_output_snapshot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    expected_element_tid: EcParallelItemPointer,
+) -> Result<Option<EcParallelCoordinatorAdmittedResultSelection>, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    let Some(selected) = (unsafe {
+        take_hidden_local_only_pending_output_locked(
+            &attachment,
+            slot_index,
+            Some(expected_element_tid),
+        )
+    })?
+    else {
+        return Ok(None);
+    };
+
+    let mut flags = EC_PARALLEL_RESULT_SLOT_PUBLISHED | EC_PARALLEL_RESULT_SLOT_SCORE_VALID;
+    if selected.pending_output.approx_score.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID;
+    }
+    if selected.pending_output.comparison_score.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID;
+    }
+    if selected.pending_output.approx_rank.is_some() {
+        flags |= EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID;
+    }
+
+    Ok(Some(EcParallelCoordinatorAdmittedResultSelection {
+        coordinator: selected.coordinator,
+        admitted_result: EcParallelCoordinatorAdmittedResultSnapshot {
+            flags,
+            source_slot_index: Some(slot_index),
+            element_tid: selected.selected_result_slot.runtime.element_tid,
+            pending_output: selected.pending_output,
+        },
+    }))
+}
+
 pub(crate) unsafe fn take_parallel_scan_owned_next_output_snapshot(
     state: *mut EcParallelScanState,
     owner_slot_index: u32,
@@ -3417,7 +3525,9 @@ pub(crate) unsafe fn take_parallel_scan_owned_next_output_snapshot(
         let owned_selected = if coordinator.selected_result_slot_index == Some(owner_slot_index) {
             unsafe { take_selected_pending_output_locked(&attachment, owner_slot_index) }?
         } else {
-            unsafe { take_hidden_local_only_pending_output_locked(&attachment, owner_slot_index) }?
+            unsafe {
+                take_hidden_local_only_pending_output_locked(&attachment, owner_slot_index, None)
+            }?
         };
 
         match (owned_admitted, owned_selected) {
@@ -7699,6 +7809,97 @@ mod tests {
                 .expect("owned output state read should succeed"),
             EcParallelOwnedOutputState::Ready,
             "a hidden local-only owner slot should still report ready for the owning worker"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_owned_output_state_reports_blocked_for_better_hidden_foreign_row() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let owner_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("owner worker claim should succeed");
+        let foreign_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("foreign worker claim should succeed");
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                owner_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 250,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 251,
+                        offset_number: 1,
+                    },
+                    score: -6.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 251,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("owner publish should succeed");
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                foreign_slot,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 252,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 253,
+                        offset_number: 1,
+                    },
+                    score: -9.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 253,
+                        offset_number: 1,
+                    }]),
+                },
+            )
+        }
+        .expect("foreign hidden publish should succeed");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_owned_output_state(attachment.state, owner_slot, 2) }
+                .expect("owned output state read should succeed"),
+            EcParallelOwnedOutputState::Blocked(EcParallelOwnedOutputBlocker {
+                kind: EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(foreign_slot),
+                generation: 1,
+                element_tid: EcParallelItemPointer {
+                    block_number: 252,
+                    offset_number: 1,
+                },
+            }),
+            "a better hidden foreign row should block the owner so the handoff path can drain it before the owner advances"
         );
     }
 

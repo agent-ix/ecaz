@@ -4607,23 +4607,56 @@ unsafe fn try_take_parallel_scan_handoff_output(
     let admitted_result = match blocker.kind {
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
             let slot_index = blocker.slot_index?;
-            unsafe {
+            let direct = unsafe {
                 super::parallel::take_parallel_scan_foreign_selected_pending_output_snapshot(
                     opaque.parallel_scan_state,
                     slot_index,
                     blocker.generation,
                 )
+            };
+            let direct = direct.unwrap_or_else(|err| {
+                pgrx::error!("ec_hnsw parallel scan foreign-selected handoff failed: {err}")
+            });
+            let hidden = unsafe {
+                super::parallel::take_parallel_scan_hidden_local_only_output_snapshot(
+                    opaque.parallel_scan_state,
+                    slot_index,
+                    blocker.element_tid,
+                )
             }
             .unwrap_or_else(|err| {
-                pgrx::error!("ec_hnsw parallel scan foreign-selected handoff failed: {err}")
-            })?
+                pgrx::error!(
+                    "ec_hnsw parallel scan foreign-selected hidden-slot handoff failed: {err}"
+                )
+            });
+            direct.or(hidden)?
         }
-        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => unsafe {
-            super::parallel::take_parallel_scan_admitted_result_snapshot(opaque.parallel_scan_state)
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            let direct = unsafe {
+                super::parallel::take_parallel_scan_admitted_result_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            };
+            let direct = direct.unwrap_or_else(|err| {
+                pgrx::error!("ec_hnsw parallel scan admitted-head handoff failed: {err}")
+            });
+            let hidden = {
+                let slot_index = blocker.slot_index?;
+                unsafe {
+                    super::parallel::take_parallel_scan_hidden_local_only_output_snapshot(
+                        opaque.parallel_scan_state,
+                        slot_index,
+                        blocker.element_tid,
+                    )
+                    .unwrap_or_else(|err| {
+                        pgrx::error!(
+                            "ec_hnsw parallel scan admitted-head hidden-slot handoff failed: {err}"
+                        )
+                    })
+                }
+            };
+            direct.or(hidden)?
         }
-        .unwrap_or_else(|err| {
-            pgrx::error!("ec_hnsw parallel scan admitted-head handoff failed: {err}")
-        })?,
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => return None,
     };
 
@@ -9547,13 +9580,13 @@ mod tests {
             crate::am::ec_hnsw::parallel::read_parallel_scan_owned_output_state(
                 local.parallel_scan_state,
                 local.parallel_scan_worker_slot_index,
-                2,
+                u32::MAX,
             )
         }
-        .expect("owned output state should read back")
+        .expect("owned-output state should read back")
         {
             crate::am::ec_hnsw::parallel::EcParallelOwnedOutputState::Blocked(blocker) => blocker,
-            state => panic!("expected foreign-selected blocker, got {state:?}"),
+            state => panic!("expected blocked owned output state, got {state:?}"),
         };
 
         let output = unsafe { try_take_parallel_scan_handoff_output(&mut local, blocker) };
@@ -9592,6 +9625,342 @@ mod tests {
                 .stats_parallel_handoffs_foreign_admitted_head,
             0,
             "draining a foreign selected row should not increment the foreign-head handoff counter"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_handoff_output_drains_foreign_hidden_selected_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(153, 1),
+            -8.0,
+            Some(-7.5),
+            Some(5),
+            Some(-8.5),
+        );
+        foreign.result_state.store_pending(&[tid(163, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let blocker = crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+            kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            slot_index: Some(foreign.parallel_scan_worker_slot_index),
+            generation: 1,
+            element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 153,
+                offset_number: 1,
+            },
+        };
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                local.parallel_scan_state,
+                foreign.parallel_scan_worker_slot_index,
+                foreign.parallel_scan_rescan_epoch,
+                crate::am::ec_hnsw::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 153,
+                        offset_number: 1,
+                    },
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 163,
+                        offset_number: 1,
+                    },
+                    score: -8.0,
+                    approx_score: Some(-7.5),
+                    comparison_score: Some(-8.5),
+                    approx_rank_base: Some(5),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: [crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 163,
+                        offset_number: 1,
+                    }; page::HEAPTID_INLINE_CAPACITY],
+                },
+            )
+        }
+        .expect("hidden publish should succeed");
+
+        let output = unsafe { try_take_parallel_scan_handoff_output(&mut local, blocker) };
+        assert_eq!(
+            output,
+            Some(PendingScanOutput {
+                heap_tid: tid(163, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(5),
+                comparison_score: Some(-8.5),
+            }),
+            "a foreign selected blocker should still hand off the same row after it moves into a hidden local-only slot"
+        );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            1,
+            "hidden selected handoff should still count as a foreign-selected handoff"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_handoff_output_drains_foreign_hidden_admitted_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut local_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        let mut local = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        bind_parallel_scan_state(&mut local_scan_desc, &mut local);
+
+        foreign.result_state.set_current_with_details(
+            tid(170, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(180, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let first_admitted = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                local.parallel_scan_state,
+                2,
+            )
+        }
+        .expect("foreign selected output should admit")
+        .expect("foreign selected output should seed the admission window");
+        assert!(first_admitted.admitted);
+
+        let admitted_head = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_result_snapshot(
+                local.parallel_scan_state,
+                0,
+            )
+        }
+        .expect("admitted-head snapshot should read back");
+        let blocker = crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+            kind:
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+            slot_index: Some(foreign.parallel_scan_worker_slot_index),
+            generation: 1,
+            element_tid: admitted_head.element_tid,
+        };
+
+        unsafe {
+            crate::am::ec_hnsw::parallel::publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                local.parallel_scan_state,
+                foreign.parallel_scan_worker_slot_index,
+                foreign.parallel_scan_rescan_epoch,
+                crate::am::ec_hnsw::parallel::EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: admitted_head.element_tid,
+                    heap_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 180,
+                        offset_number: 1,
+                    },
+                    score: -10.0,
+                    approx_score: Some(-9.5),
+                    comparison_score: Some(-10.5),
+                    approx_rank_base: Some(3),
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: [crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                        block_number: 180,
+                        offset_number: 1,
+                    }; page::HEAPTID_INLINE_CAPACITY],
+                },
+            )
+        }
+        .expect("hidden publish should succeed");
+        let _ = unsafe {
+            crate::am::ec_hnsw::parallel::take_parallel_scan_admitted_result_snapshot(
+                local.parallel_scan_state,
+            )
+        }
+        .expect("admitted head consume should succeed")
+        .expect("admitted head should clear so hidden fallback is required");
+
+        let output = unsafe { try_take_parallel_scan_handoff_output(&mut local, blocker) };
+        assert_eq!(
+            output,
+            Some(PendingScanOutput {
+                heap_tid: tid(180, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "a foreign admitted-head blocker should still hand off the same row after it moves into a hidden local-only slot"
+        );
+        assert_eq!(
+            local
+                .explain_counters
+                .stats_parallel_handoffs_foreign_admitted_head,
+            1,
+            "hidden admitted-head handoff should still count as a foreign-head handoff"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_next_output_drains_better_foreign_hidden_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        owner.result_state.set_current_with_details(
+            tid(190, 1),
+            -6.0,
+            Some(-5.5),
+            Some(7),
+            Some(-6.5),
+        );
+        owner.result_state.store_pending(&[tid(191, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        foreign.result_state.set_current_with_details(
+            tid(192, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(193, 1)]);
+        foreign.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(193, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "a better foreign hidden row should surface as the blocker and drain through the shared handoff path before the owner advances"
+        );
+        assert_eq!(
+            owner.result_state.current().element_tid(),
+            tid(190, 1),
+            "draining the foreign hidden row should not mutate the owner's staged current result"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            0,
+            "draining the foreign hidden row should not advance the owner's duplicate cursor"
+        );
+        assert_eq!(
+            owner
+                .explain_counters
+                .stats_parallel_handoffs_foreign_selected_pending,
+            1,
+            "draining a better foreign hidden row should count as a foreign-selected handoff"
         );
     }
 
