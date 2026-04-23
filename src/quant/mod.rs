@@ -31,6 +31,7 @@ pub mod hadamard;
 pub mod mse;
 pub mod prod;
 pub mod qjl;
+pub mod rabitq;
 pub mod rotation;
 mod simd;
 pub mod traits;
