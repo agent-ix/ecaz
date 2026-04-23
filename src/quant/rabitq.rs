@@ -42,13 +42,22 @@ use std::sync::Arc;
 use crate::quant::prod::ProdQuantizer;
 use crate::quant::rotation;
 
-/// Bytes per vector holding the rotated L2 norm `||c||`.
+/// Bytes per vector holding the rotated L2 norm `||o||`.
 pub const RABITQ_NORM_LEN: usize = 4;
-/// Bytes per vector holding `α_c = mean(|c_i|)` over rotated coordinates.
-/// Consumed by the slice-4 unbiased estimator.
-pub const RABITQ_ALPHA_LEN: usize = 4;
-/// Total scalar tail on each code: `||c||` plus `α_c`.
-pub const RABITQ_SCALAR_LEN: usize = RABITQ_NORM_LEN + RABITQ_ALPHA_LEN;
+/// Bytes per vector holding `o_dot = ⟨o_unit, sign(o)/√D⟩` — the
+/// cosine between the unit-normalized rotated vector and its
+/// normalized sign vector. Consumed by the paper-faithful RaBitQ
+/// estimator; replaces the slice-4 `α_c = mean(|c_i|)` scalar.
+pub const RABITQ_UNIT_DOT_LEN: usize = 4;
+/// Total scalar tail on each code: `||o||` plus `o_dot`.
+pub const RABITQ_SCALAR_LEN: usize = RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN;
+
+/// Confidence coefficient on the ε-concentration bound returned in
+/// `DistanceEstimate.bound`. `2.5` ≈ 99% one-sided confidence under
+/// the paper's Gaussian-tail concentration argument. Stage 3 can
+/// tune this via a follow-up constructor; picking one value here
+/// keeps the trait surface scalar.
+pub const RABITQ_BOUND_CONFIDENCE: f32 = 2.5;
 
 /// Binary-sign prepared query. Produced by
 /// [`ProdQuantizer::prepare_ip_query_binary_sign_no_qjl_4bit`] and
@@ -165,11 +174,16 @@ impl RaBitQQuantizer {
 }
 
 impl crate::quant::Quantizer for RaBitQQuantizer {
-    /// Canonical RaBitQ encode: rotate, take the sign bit of each
-    /// rotated coordinate into a `dim/8`-byte payload, then append
-    /// two f32 scalars — the L2 norm `||c||` and
-    /// `α_c = mean(|c_i|)`. Slice 4 consumes both in the unbiased
-    /// estimator and its Cauchy-Schwarz error bound.
+    /// Canonical RaBitQ encode (paper-faithful): rotate, take the
+    /// sign bit of each rotated coordinate into a `dim/8`-byte
+    /// payload, then append two f32 scalars — the L2 norm `||o||`
+    /// and `o_dot = ⟨o_unit, sign(o)/√D⟩`.
+    ///
+    /// `o_dot` is the cosine between the unit-normalized rotated
+    /// vector and its normalized sign vector. It is what lets the
+    /// paper's estimator cancel the variance introduced by the
+    /// binary approximation — a vector with `o_dot` close to 1 is
+    /// well-represented by its sign bits; one near `1/√D` is not.
     fn encode_code(&self, v: &[f32]) -> Box<[u8]> {
         let rotated = self.rotated(v);
         let mut out = vec![0_u8; self.sign_bytes() + RABITQ_SCALAR_LEN];
@@ -179,11 +193,20 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
             }
         }
         let norm = l2_norm(&rotated);
-        let alpha = mean_abs(&rotated);
-        let norm_start = self.sign_bytes();
-        out[norm_start..norm_start + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());
-        out[norm_start + RABITQ_NORM_LEN..norm_start + RABITQ_SCALAR_LEN]
-            .copy_from_slice(&alpha.to_le_bytes());
+        // o_dot = Σ|o_i| / (||o|| · √D). Derivation:
+        //   o_unit = o / ||o||
+        //   x̄_b   = sign(o) / √D
+        //   ⟨o_unit, x̄_b⟩ = Σ (o_i / ||o||) · (sign(o_i) / √D)
+        //                 = (1 / (||o|| · √D)) · Σ |o_i|
+        let sum_abs: f32 = rotated.iter().map(|x| x.abs()).sum();
+        let denom = norm * (self.dimensions as f32).sqrt();
+        let o_dot = if denom > 0.0 { sum_abs / denom } else { 0.0 };
+
+        let scalars_start = self.sign_bytes();
+        out[scalars_start..scalars_start + RABITQ_NORM_LEN]
+            .copy_from_slice(&norm.to_le_bytes());
+        out[scalars_start + RABITQ_NORM_LEN..scalars_start + RABITQ_SCALAR_LEN]
+            .copy_from_slice(&o_dot.to_le_bytes());
         out.into_boxed_slice()
     }
 
@@ -224,8 +247,9 @@ impl RaBitQQuantizer {
         }
     }
 
-    /// Unbiased inner-product estimate between `prepared` and a
-    /// code, plus a Cauchy-Schwarz error bound. See [`DistanceEstimate`].
+    /// Paper-faithful RaBitQ inner-product estimate between
+    /// `prepared` and a code, plus an ε-concentration bound at
+    /// ~99% confidence (see [`RABITQ_BOUND_CONFIDENCE`]).
     pub fn estimate_ip(&self, prepared: &PreparedEstimator, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &prepared.query_rotated,
@@ -409,27 +433,30 @@ fn l2_norm(rotated: &[f32]) -> f32 {
     rotated.iter().map(|x| x * x).sum::<f32>().sqrt()
 }
 
-/// Mean absolute value over rotated coordinates. This is `α_c` —
-/// the scalar that matches `c` against its sign-vector approximation
-/// `α_c · sign(c)` in a least-squares sense:
+/// Paper-faithful RaBitQ inner-product estimator with an
+/// ε-concentration error bound.
+///
+/// Given query `q` (rotated, full precision, norm `||q||`) and
+/// candidate code `[sign_bytes | ||o|| | o_dot]`:
 ///
 /// ```text
-/// α_c = argmin_α ||c - α·sign(c)||² = ⟨c, sign(c)⟩ / D = mean(|c_i|).
+/// q_dot_xb = ⟨q_unit, x̄_b⟩
+///          = (1 / (||q|| · √D)) · Σ_i q_i · sign(o_i)
+/// ⟨q_unit, o_unit⟩ ≈ q_dot_xb / o_dot              (paper eq.)
+/// ⟨q, o⟩          ≈ ||q|| · ||o|| · q_dot_xb / o_dot
+///                  = ||o|| · Σ_i q_i · sign(o_i) / (o_dot · √D)
 /// ```
-fn mean_abs(rotated: &[f32]) -> f32 {
-    let sum: f32 = rotated.iter().map(|x| x.abs()).sum();
-    sum / (rotated.len() as f32)
-}
-
-/// Asymmetric RaBitQ inner-product estimator with a Cauchy-Schwarz
-/// bound. Given query `q` (rotated, full precision) and candidate
-/// code `[sign_bytes | ||c|| | α_c]`, compute:
+///
+/// The ε-concentration bound (see ADR-045 Stage 1 §"Error bound"):
 ///
 /// ```text
-/// ⟨q, c⟩ ≈ α_c · Σ_i q_i · sign(c_i)
-/// residual_c = c - α_c · sign(c),    ||residual_c||² = ||c||² − α_c² · D
-/// |⟨q, c⟩ − estimate| ≤ ||q|| · ||residual_c||.
+/// ε²(o) ≈ (1 − o_dot²) / (D · o_dot²)
+/// |⟨q, o⟩ − estimate| ≤ C · ||q|| · ||o|| · ε(o)       with C ≈ 2.5
 /// ```
+///
+/// The bound inflates when `o_dot` is small — exactly the vectors
+/// whose sign approximation is weakest. Stage 3 uses the
+/// distribution of this bound to size candidate pools.
 fn estimate_ip_impl(
     query_rotated: &[f32],
     query_norm: f32,
@@ -449,28 +476,40 @@ fn estimate_ip_impl(
             .try_into()
             .expect("norm slice is always 4 bytes"),
     );
-    let candidate_alpha = f32::from_le_bytes(
+    let candidate_o_dot = f32::from_le_bytes(
         code[sign_bytes + RABITQ_NORM_LEN..sign_bytes + RABITQ_SCALAR_LEN]
             .try_into()
-            .expect("alpha slice is always 4 bytes"),
+            .expect("o_dot slice is always 4 bytes"),
     );
 
-    let mut asymmetric_ip = 0.0_f32;
+    // Σ q_i · sign(o_i) in the rotated basis.
+    let mut sum_q_sign_o = 0.0_f32;
     for index in 0..dimensions {
         let byte = code[index / 8];
         let bit = (byte >> (index % 8)) & 1;
         let sign = if bit == 1 { 1.0_f32 } else { -1.0_f32 };
-        asymmetric_ip += query_rotated[index] * sign;
+        sum_q_sign_o += query_rotated[index] * sign;
     }
-    let estimate = candidate_alpha * asymmetric_ip;
 
-    // Residual norm of the binary approximation to `c`:
-    //   ||c||² − α_c² · D. Clamp at zero for numerical safety.
-    let residual_sq =
-        (candidate_norm * candidate_norm - candidate_alpha * candidate_alpha * dimensions as f32)
-            .max(0.0);
-    let residual_norm = residual_sq.sqrt();
-    let bound = query_norm * residual_norm;
+    let sqrt_d = (dimensions as f32).sqrt();
+    // Guard against degenerate o_dot (all-zero vector, etc.). Any
+    // o_dot below this floor is functionally "the estimator cannot
+    // speak about this vector"; we return the trivial zero estimate
+    // with an infinite bound so Stage 3 treats it as unscorable.
+    const O_DOT_FLOOR: f32 = 1e-6;
+    if candidate_o_dot.abs() < O_DOT_FLOOR || !candidate_o_dot.is_finite() {
+        return DistanceEstimate {
+            estimate: 0.0,
+            bound: f32::INFINITY,
+        };
+    }
+    let estimate = candidate_norm * sum_q_sign_o / (candidate_o_dot * sqrt_d);
+
+    // ε²(o) = (1 − o_dot²) / (D · o_dot²). Clamp at zero in case
+    // of numerical drift above 1.
+    let o_dot_sq = candidate_o_dot * candidate_o_dot;
+    let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (dimensions as f32 * o_dot_sq);
+    let bound = RABITQ_BOUND_CONFIDENCE * query_norm * candidate_norm * epsilon_sq.sqrt();
 
     DistanceEstimate { estimate, bound }
 }
@@ -545,11 +584,11 @@ mod tests {
 
     #[test]
     fn estimator_bound_dominates_error_on_random_vectors() {
-        // Unbiased-estimator sanity check: the Cauchy-Schwarz bound
-        // must be an upper envelope on the realized error, in
-        // expectation and at the tail. Five deterministic seeds
-        // provide a reproducible fixture without pulling in a full
-        // rand dep on top of what the crate already imports.
+        // The ε-concentration bound is probabilistic at ~99%
+        // confidence; over five deterministic Gaussian seeds the
+        // realized error must stay within `bound + numerical
+        // slack` on every one. Test flakes would indicate either
+        // a bug or a too-aggressive RABITQ_BOUND_CONFIDENCE.
         struct Identity {
             dim: usize,
         }
