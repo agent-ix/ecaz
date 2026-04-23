@@ -3949,6 +3949,169 @@ fn live_foreign_blocker_heap_tid(
     }
 }
 
+fn refresh_retained_parallel_owned_output_blocker(
+    opaque: &TqScanOpaque,
+    retained: RetainedParallelOwnedOutputBlocker,
+) -> Option<RetainedParallelOwnedOutputBlocker> {
+    if opaque.parallel_scan_state.is_null() {
+        return Some(retained);
+    }
+
+    match retained.blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            let expected_slot = retained.blocker.slot_index?;
+            let selected = unsafe {
+                super::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan selected-pending blocker refresh read failed: {err}"
+                )
+            });
+            if let Some(selected) = selected {
+                if selected.coordinator.selected_result_slot_index == Some(expected_slot)
+                    && selected.selected_result_slot.runtime.element_tid
+                        == retained.blocker.element_tid
+                {
+                    return Some(RetainedParallelOwnedOutputBlocker {
+                        blocker: super::parallel::EcParallelOwnedOutputBlocker {
+                            kind:
+                                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                            slot_index: Some(expected_slot),
+                            generation: selected.coordinator.result_publish_generation,
+                            element_tid: retained.blocker.element_tid,
+                        },
+                        element_tid: retained.element_tid,
+                    });
+                }
+            }
+
+            let blocker_element_tid =
+                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+            if blocker_element_tid == page::ItemPointer::INVALID {
+                return None;
+            }
+
+            let admitted_head = unsafe {
+                super::parallel::read_parallel_scan_admitted_head_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan selected-to-admitted blocker refresh read failed: {err}"
+                )
+            });
+            if let Some(admitted_head) = admitted_head {
+                let admitted = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan selected-to-admitted blocker refresh result read failed: {err}"
+                    )
+                });
+                if item_pointer_from_parallel_item_pointer(admitted.element_tid)
+                    == blocker_element_tid
+                {
+                    return Some(RetainedParallelOwnedOutputBlocker {
+                        blocker: super::parallel::EcParallelOwnedOutputBlocker {
+                            kind:
+                                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                            slot_index: admitted.source_slot_index,
+                            generation: admitted_head.coordinator.admitted_result_generation,
+                            element_tid: retained.blocker.element_tid,
+                        },
+                        element_tid: retained.element_tid,
+                    });
+                }
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    expected_slot,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan selected-to-hidden blocker refresh read failed: {err}"
+                )
+            })?;
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then_some(retained)
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            let admitted = unsafe {
+                super::parallel::read_parallel_scan_admitted_head_snapshot(
+                    opaque.parallel_scan_state,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan admitted-head blocker refresh read failed: {err}"
+                )
+            });
+            if let Some(admitted) = admitted {
+                let admitted_result = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan admitted-head blocker refresh result read failed: {err}"
+                    )
+                });
+                if item_pointer_from_parallel_item_pointer(admitted_result.element_tid)
+                    == item_pointer_from_parallel_item_pointer(retained.blocker.element_tid)
+                {
+                    return Some(RetainedParallelOwnedOutputBlocker {
+                        blocker: super::parallel::EcParallelOwnedOutputBlocker {
+                            kind:
+                                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                            slot_index: admitted_result.source_slot_index,
+                            generation: admitted.coordinator.admitted_result_generation,
+                            element_tid: retained.blocker.element_tid,
+                        },
+                        element_tid: retained.element_tid,
+                    });
+                }
+            }
+
+            let expected_slot = retained.blocker.slot_index?;
+            let blocker_element_tid =
+                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+            if blocker_element_tid == page::ItemPointer::INVALID {
+                return None;
+            }
+
+            let hidden = unsafe {
+                super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    expected_slot,
+                )
+            }
+            .unwrap_or_else(|err| {
+                pgrx::error!(
+                    "ec_hnsw parallel scan admitted-to-hidden blocker refresh read failed: {err}"
+                )
+            })?;
+            (item_pointer_from_parallel_item_pointer(hidden.runtime.element_tid)
+                == blocker_element_tid)
+                .then_some(retained)
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => None,
+    }
+}
+
 fn retained_parallel_owned_output_blocker_is_live(
     opaque: &TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
@@ -4258,18 +4421,6 @@ unsafe fn resolve_local_only_parallel_scan_duplicate(
                 LocalOnlyParallelScanDisposition::NoChange
             };
         };
-
-        if !active_result_state_ref(opaque).current().has_element()
-            || active_result_state_ref(opaque).pending_count() == 0
-        {
-            active_result_state_mut(opaque).clear_current();
-            opaque.parallel_local_only_output_active = false;
-            opaque.parallel_owned_output_blocker = None;
-            opaque.retained_parallel_owned_output_blocker = None;
-            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
-            return LocalOnlyParallelScanDisposition::Exhausted;
-        }
-
         let blocker_element_tid =
             item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
         if blocker_element_tid != page::ItemPointer::INVALID
@@ -4282,8 +4433,9 @@ unsafe fn resolve_local_only_parallel_scan_duplicate(
             sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
             return LocalOnlyParallelScanDisposition::Exhausted;
         }
-
-        if !retained_parallel_owned_output_blocker_is_live(opaque, retained.blocker) {
+        let Some(refreshed_retained) =
+            refresh_retained_parallel_owned_output_blocker(opaque, retained)
+        else {
             opaque.retained_parallel_owned_output_blocker = None;
             publish_parallel_scan_worker_slot_snapshot(opaque);
             return if changed {
@@ -4291,6 +4443,22 @@ unsafe fn resolve_local_only_parallel_scan_duplicate(
             } else {
                 LocalOnlyParallelScanDisposition::NoChange
             };
+        };
+        if refreshed_retained != retained {
+            opaque.retained_parallel_owned_output_blocker = Some(refreshed_retained);
+            publish_parallel_scan_worker_slot_snapshot(opaque);
+        }
+        let retained = refreshed_retained;
+
+        if !active_result_state_ref(opaque).current().has_element()
+            || active_result_state_ref(opaque).pending_count() == 0
+        {
+            active_result_state_mut(opaque).clear_current();
+            opaque.parallel_local_only_output_active = false;
+            opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            return LocalOnlyParallelScanDisposition::Exhausted;
         }
 
         if !active_parallel_output_duplicates_live_foreign_heap_tid(opaque) {
@@ -4810,6 +4978,10 @@ fn take_next_deferred_parallel_blocked_output(
         let mut deferred = opaque
             .deferred_parallel_blocked_results
             .remove(selected_idx);
+        if let Some(retained) = deferred.retained_blocker {
+            deferred.retained_blocker =
+                refresh_retained_parallel_owned_output_blocker(opaque, retained);
+        }
         if !opaque.parallel_scan_state.is_null()
             && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
             && deferred.state.current().has_element()
@@ -4828,12 +5000,6 @@ fn take_next_deferred_parallel_blocked_output(
         if deferred.retained_blocker.is_some() {
             if should_drop_deferred_parallel_blocked_output(&deferred) {
                 continue;
-            }
-            if let Some(retained_blocker) = deferred.retained_blocker {
-                if !retained_parallel_owned_output_blocker_is_live(opaque, retained_blocker.blocker)
-                {
-                    deferred.retained_blocker = None;
-                }
             }
             if !allow_local_emit {
                 blocked_fallback.push(deferred);
@@ -4880,10 +5046,9 @@ fn take_next_deferred_parallel_blocked_output(
         };
 
         let mut deferred = blocked_fallback.swap_remove(selected_idx);
-        if let Some(retained_blocker) = deferred.retained_blocker {
-            if !retained_parallel_owned_output_blocker_is_live(opaque, retained_blocker.blocker) {
-                deferred.retained_blocker = None;
-            }
+        if let Some(retained) = deferred.retained_blocker {
+            deferred.retained_blocker =
+                refresh_retained_parallel_owned_output_blocker(opaque, retained);
         }
         if deferred.retained_blocker.is_none()
             && !opaque.parallel_scan_state.is_null()
@@ -12259,6 +12424,284 @@ mod tests {
             deferred_parallel_blocked_output_preference_score(&owner, &deferred),
             Some(-10.0),
             "a retained admitted-head blocker should keep using the hidden foreign owner's score after that row moves into a hidden local-only slot"
+        );
+    }
+
+    #[test]
+    fn resolve_local_only_parallel_scan_duplicate_refreshes_selected_blocker_generation() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(300, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(301, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        foreign.result_state.set_current_with_details(
+            tid(300, 1),
+            -11.0,
+            Some(-10.5),
+            Some(2),
+            Some(-11.5),
+        );
+        foreign.result_state.store_pending(&[tid(304, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected_after = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back after republish")
+        .expect("foreign worker should keep the shared selected pending output after republish");
+
+        owner.result_state.set_current_with_details(
+            tid(302, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner.result_state.store_pending(&[tid(303, 1)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: selected.coordinator.selected_result_slot_index,
+                generation: selected.coordinator.result_publish_generation,
+                element_tid: selected.selected_result_slot.runtime.element_tid,
+            },
+            element_tid: tid(302, 1),
+        });
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        assert_eq!(
+            unsafe { resolve_local_only_parallel_scan_duplicate(&mut owner) },
+            LocalOnlyParallelScanDisposition::NoChange,
+            "a unique hidden local-only row should stay staged while its blocker metadata refreshes to the newer selected generation"
+        );
+        let retained = owner
+            .retained_parallel_owned_output_blocker
+            .expect("the still-live blocker should remain retained");
+        assert_eq!(
+            retained.blocker.kind,
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            "republishing the same foreign selected row should keep the blocker kind on selected-pending"
+        );
+        assert_eq!(
+            retained.blocker.generation, selected_after.coordinator.result_publish_generation,
+            "the refreshed retained blocker should carry the current selected-pending generation"
+        );
+
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                owner.parallel_scan_state,
+                owner.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_SELECTED_PENDING,
+            "worker snapshots should keep the selected-pending blocker kind when the same row simply republishes"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation,
+            selected_after.coordinator.result_publish_generation,
+            "worker snapshots should publish the refreshed selected-pending blocker generation"
+        );
+    }
+
+    #[test]
+    fn resolve_local_only_parallel_scan_duplicate_refreshes_selected_blocker_into_admitted_head() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(320, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(321, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        let _admitted = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                owner.parallel_scan_state,
+                1,
+            )
+        }
+        .expect("selected pending output should admit")
+        .expect("foreign selected output should enter the admitted window");
+        let admitted_head = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_head_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("admitted head snapshot should read back")
+        .expect("foreign row should populate the admitted head");
+
+        foreign.result_state.clear();
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        assert!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                    owner.parallel_scan_state,
+                )
+            }
+            .expect("parallel selected snapshot should still read back after foreign clear")
+            .is_none(),
+            "clearing the foreign worker result state should remove the selected-pending fast path while the admitted head stays live"
+        );
+
+        owner.result_state.set_current_with_details(
+            tid(322, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner.result_state.store_pending(&[tid(323, 1)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: selected.coordinator.selected_result_slot_index,
+                generation: selected.coordinator.result_publish_generation,
+                element_tid: selected.selected_result_slot.runtime.element_tid,
+            },
+            element_tid: tid(322, 1),
+        });
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        assert_eq!(
+            unsafe { resolve_local_only_parallel_scan_duplicate(&mut owner) },
+            LocalOnlyParallelScanDisposition::NoChange,
+            "a unique hidden local-only row should stay staged while its retained blocker refreshes into the admitted head"
+        );
+        let retained = owner
+            .retained_parallel_owned_output_blocker
+            .expect("the still-live admitted head should remain retained");
+        assert_eq!(
+            retained.blocker.kind,
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+            "once the same foreign row leaves selected-pending but remains admitted, the retained blocker should refresh into admitted-head"
+        );
+        assert_eq!(
+            retained.blocker.generation, admitted_head.coordinator.admitted_result_generation,
+            "the refreshed retained blocker should carry the admitted-head generation"
+        );
+
+        let worker_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_worker_slot_snapshot(
+                owner.parallel_scan_state,
+                owner.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("parallel worker slot snapshot should read back");
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_kind,
+            crate::am::ec_hnsw::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_FOREIGN_ADMITTED_HEAD,
+            "worker snapshots should publish the refreshed admitted-head blocker kind"
+        );
+        assert_eq!(
+            worker_snapshot.runtime.owned_output_blocker_generation,
+            admitted_head.coordinator.admitted_result_generation,
+            "worker snapshots should publish the refreshed admitted-head blocker generation"
         );
     }
 

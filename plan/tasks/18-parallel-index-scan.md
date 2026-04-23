@@ -577,6 +577,12 @@ See ADR-040 for the full shape. Summary:
   same worker slot. Hidden and deferred rows now keep tracking that same row
   through generation churn instead of treating it as fresh local work.
 
+- **Retained blocker metadata now refreshes in place.** Hidden local-only and
+  deferred blocked rows no longer keep stale blocker kind/generation metadata
+  once the same foreign owner row republishes or leaves selected-pending for
+  admitted head. The retained blocker record and published worker snapshot now
+  refresh to the current shared owner state before the row falls back again.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
