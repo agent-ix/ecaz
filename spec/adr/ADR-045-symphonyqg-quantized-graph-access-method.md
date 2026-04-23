@@ -267,27 +267,29 @@ path.
 Symphony's §3.1.1 quantizes **per-vertex residuals** rather than
 absolute embeddings — this is what closes the 1-bit recall gap
 from ~0.90 (absolute encoding, slice-10 verdict) to ~0.99 (per-
-vertex centering, Symphony's published recall). The stage-2 AM
-must expose a centered-encode + centered-score path on
-`RaBitQQuantizer`. The §3.1 decomposition (equations 5–6) is the
-reference construction:
+vertex centering, Symphony's published recall). The §3.1
+decomposition (equations 5–6) is the reference construction:
 
 ```
 ⟨x̄, P⁻¹q⟩ = (1/||q_r − c||) · (⟨x̄, P⁻¹q_r⟩ − ⟨x̄, P⁻¹c⟩)
 ```
 
-API shape to add (proposed, task-27 may refine):
+**Status:** landed as task-25 slice 15. `RaBitQQuantizer` exposes
+four inherent methods that task 27 / Symphony Stage 2 consume:
 
-- `RaBitQQuantizer::encode_code_centered(v, c)` — encode `v − c`
-  normalized.
-- `RaBitQQuantizer::prepare_center_scalars(c)` — returns the
-  per-vertex `⟨x̄, P⁻¹c⟩` scalar the AM stores alongside each
-  vertex.
-- `RaBitQQuantizer::prepare_scorer_centered(q)` — returns a
-  query-side prepared object whose LUT is independent of any
-  center.
-- `CenteredScorer::score_at(code, center_scalars, &c)` —
-  combines at visit time.
+- `prepare_center(center) -> CenterContext` — one-time per-vertex
+  rotation, cached in memory.
+- `encode_code_centered(v, center) -> Box<[u8]>` — encodes `v`
+  as the unit-normalized rotated residual against `center`. Code
+  layout at q=1 (Symphony's config): `[signs][||v−c||][o_dot][⟨x̄, c_tilde⟩]`,
+  same byte length as absolute. Asserts `bits_per_dim = 1`.
+- `prepare_scorer_centered(query) -> CenteredScorer` — one-time
+  per-query rotation; the returned scorer is center-agnostic.
+- `CenteredScorer::score_at(code, center) -> DistanceEstimate` —
+  per-vertex-visit; returns estimate + ε-bound on the unit-
+  residual inner product. AM combines with `||q − c||` (computed
+  inside score_at) and the stored `||v − c||` via paper eq (2)
+  to recover L2 distance.
 
 The existing `Quantizer::encode_code` / `QueryScorer::score` trait
 path (c = 0 implicit) is unchanged and remains the primary API
@@ -295,6 +297,12 @@ for DiskANN in-memory tier, ADR-031 prefilter successor, and
 offline evaluation. The centered path lives as inherent methods
 because its three-argument scoring shape does not fit a unary
 trait.
+
+Out-of-scope follow-ups (separate slices if needed):
+- FastScan / signed-POPCNT kernel for the per-neighbor
+  `⟨x̄, q_tilde⟩` hot loop. Slice 15 ships a scalar reference.
+- `bits_per_dim > 1` centered path. Symphony does not need it;
+  add when a non-Symphony consumer requests centered q>1.
 
 ## References
 

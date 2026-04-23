@@ -412,6 +412,285 @@ impl RaBitQQuantizer {
             code,
         )
     }
+
+    // ---------------------------------------------------------------
+    // Centered API — Symphony Stage 2 (task 27) prerequisite.
+    //
+    // Symphony paper §3.1.1 stores the RaBitQ code of each
+    // graph-neighbor's residual *relative to the visiting vertex*,
+    // not the neighbor's absolute embedding. This closes the recall
+    // gap at 1 bit/dim because residuals have a much smaller dynamic
+    // range than unit-sphere embeddings. The centered methods below
+    // expose exactly that seam; the existing c=0 trait path
+    // (`encode_code` / `prepare_scorer`) remains untouched for non-
+    // Symphony consumers.
+    //
+    // Restricted to `bits_per_dim = 1`. Symphony exclusively uses
+    // q=1; generalizing to q>1 centered is a follow-up if/when a
+    // non-Symphony consumer wants it.
+    // ---------------------------------------------------------------
+
+    /// Precompute the rotation of `center` once per vertex at index-
+    /// build time. The returned [`CenterContext`] is what both
+    /// [`Self::encode_code_centered`] (for each of that vertex's
+    /// neighbors) and [`CenteredScorer::score_at`] (at each
+    /// beam-search visit) consume.
+    pub fn prepare_center(&self, center: &[f32]) -> CenterContext {
+        assert_eq!(
+            center.len(),
+            self.dimensions,
+            "center length mismatch: got {}, expected {}",
+            center.len(),
+            self.dimensions,
+        );
+        let rotated = self.rotated(center);
+        CenterContext {
+            rotated,
+            raw: center.to_vec(),
+        }
+    }
+
+    /// Encode `v` as the unit-normalized rotated residual against
+    /// `center`. Code layout at `bits = 1`:
+    ///
+    /// ```text
+    /// [sign bits: ⌈D/8⌉ B][||v − c|| : 4 B][o_dot : 4 B][center_dot : 4 B]
+    /// ```
+    ///
+    /// where `o_dot = ⟨unit_residual_rotated, x̄⟩` as in the absolute
+    /// path, and `center_dot = ⟨x̄, c_rotated⟩ / √D` — the scalar
+    /// that Symphony's equation (6) decomposition needs to amortize
+    /// per-query / per-center work.
+    pub fn encode_code_centered(&self, v: &[f32], center: &CenterContext) -> Box<[u8]> {
+        assert_eq!(
+            self.bits_per_dim, 1,
+            "encode_code_centered is only supported at bits_per_dim = 1 (Symphony's configuration)",
+        );
+        assert_eq!(
+            v.len(),
+            self.dimensions,
+            "input length mismatch: got {}, expected {}",
+            v.len(),
+            self.dimensions,
+        );
+        assert_eq!(
+            center.rotated.len(),
+            self.dimensions,
+            "center context dimensions mismatch",
+        );
+
+        // Compute the rotated residual in one rotation (rotation is
+        // linear, so r_tilde = rotate(v) − c_rotated).
+        let v_rotated = self.rotated(v);
+        let mut residual_rotated = Vec::with_capacity(self.dimensions);
+        for i in 0..self.dimensions {
+            residual_rotated.push(v_rotated[i] - center.rotated[i]);
+        }
+
+        let residual_mag = l2_norm(&residual_rotated);
+        let sqrt_d = (self.dimensions as f32).sqrt();
+
+        let packed_bytes = self.packed_bytes();
+        let mut out = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
+
+        let mut sum_abs = 0.0_f32;
+        let mut sum_center_sign = 0.0_f32;
+        for (i, &r_i) in residual_rotated.iter().enumerate() {
+            let level = if r_i >= 0.0 { 1_u32 } else { 0_u32 };
+            write_level(&mut out, i, 1, level);
+            sum_abs += r_i.abs();
+            // sign as ±1 for the center-dot accumulator.
+            let sign = if level == 1 { 1.0_f32 } else { -1.0_f32 };
+            sum_center_sign += center.rotated[i] * sign;
+        }
+
+        let inv_denom = if residual_mag > 0.0 {
+            1.0 / (residual_mag * sqrt_d)
+        } else {
+            0.0
+        };
+        let o_dot = sum_abs * inv_denom;
+        // ⟨x̄, c_tilde⟩ = (1/√D) · Σ c_tilde_i · sign(r_i), since
+        // x̄ has elements ±1/√D and we accumulated with ±1 weights.
+        let center_dot = sum_center_sign / sqrt_d;
+
+        let s = packed_bytes;
+        out[s..s + RABITQ_NORM_LEN].copy_from_slice(&residual_mag.to_le_bytes());
+        out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+            .copy_from_slice(&o_dot.to_le_bytes());
+        out[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .copy_from_slice(&center_dot.to_le_bytes());
+        out.into_boxed_slice()
+    }
+
+    /// Prepare a query-side scorer for the centered path. The
+    /// returned `CenteredScorer` can score codes encoded against
+    /// any center — the center-dependent arithmetic lives in
+    /// [`CenteredScorer::score_at`] and reuses one rotated-query
+    /// LUT across every vertex visited.
+    pub fn prepare_scorer_centered(&self, query: &[f32]) -> CenteredScorer {
+        assert_eq!(
+            self.bits_per_dim, 1,
+            "prepare_scorer_centered requires bits_per_dim = 1",
+        );
+        assert_eq!(
+            query.len(),
+            self.dimensions,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.dimensions,
+        );
+        let rotated = self.rotated(query);
+        CenteredScorer {
+            query_rotated: rotated,
+            query_raw: query.to_vec(),
+            dimensions: self.dimensions,
+        }
+    }
+
+    /// Read `||v − center||` from a centered code produced by
+    /// [`Self::encode_code_centered`]. Exposed so the AM can
+    /// combine the stored residual magnitude with the per-visit
+    /// query-residual magnitude via paper eq. (2) without re-
+    /// parsing the code.
+    pub fn centered_residual_magnitude(&self, code: &[u8]) -> f32 {
+        let s = self.packed_bytes();
+        f32::from_le_bytes(
+            code[s..s + RABITQ_NORM_LEN]
+                .try_into()
+                .expect("residual_mag slice is always 4 bytes"),
+        )
+    }
+}
+
+/// Per-vertex precomputed state for Symphony's centered RaBitQ
+/// path. Built once per vertex at index-build time via
+/// [`RaBitQQuantizer::prepare_center`]; consumed by
+/// [`RaBitQQuantizer::encode_code_centered`] (to encode each of
+/// that vertex's neighbors) and by
+/// [`CenteredScorer::score_at`] (at every beam-search visit to
+/// this vertex).
+///
+/// Stores both the rotated and raw center so [`CenteredScorer::score_at`]
+/// can compute `||q_r − c||` at visit time without the AM
+/// re-supplying the raw center vector.
+pub struct CenterContext {
+    rotated: Vec<f32>,
+    raw: Vec<f32>,
+}
+
+impl CenterContext {
+    /// The raw center vector.
+    pub fn raw(&self) -> &[f32] {
+        &self.raw
+    }
+}
+
+/// Prepared query state for the centered path. Holds the rotated
+/// and raw query; `score_at` combines these with a per-vertex
+/// [`CenterContext`] via paper equation (6) to estimate the
+/// unit-residual inner product.
+pub struct CenteredScorer {
+    query_rotated: Vec<f32>,
+    query_raw: Vec<f32>,
+    dimensions: usize,
+}
+
+impl CenteredScorer {
+    /// Estimate `⟨(q − c)/||q − c||, (v − c)/||v − c||⟩` from a
+    /// code produced by
+    /// [`RaBitQQuantizer::encode_code_centered(v, c)`] and the
+    /// same `center` context. Returns `DistanceEstimate` on the
+    /// unit-residual inner product; the AM combines with
+    /// `||q − c||` and the stored `||v − c||` (via
+    /// [`RaBitQQuantizer::centered_residual_magnitude`]) per paper
+    /// eq. (2) to recover L2 distance.
+    pub fn score_at(&self, code: &[u8], center: &CenterContext) -> DistanceEstimate {
+        assert_eq!(
+            center.rotated.len(),
+            self.dimensions,
+            "center context dimensions mismatch",
+        );
+        let packed_bytes = self.dimensions.div_ceil(8);
+        assert!(
+            code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
+            "centered code too short: got {}, expected at least {}",
+            code.len(),
+            packed_bytes + RABITQ_SCALAR_LEN,
+        );
+        let s = packed_bytes;
+        let residual_mag = f32::from_le_bytes(
+            code[s..s + RABITQ_NORM_LEN]
+                .try_into()
+                .expect("residual_mag slice is always 4 bytes"),
+        );
+        let o_dot = f32::from_le_bytes(
+            code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
+                .try_into()
+                .expect("o_dot slice is always 4 bytes"),
+        );
+        let center_dot = f32::from_le_bytes(
+            code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+                .try_into()
+                .expect("center_dot slice is always 4 bytes"),
+        );
+
+        // ⟨x̄, q_tilde⟩ = (1/√D) · Σ q_tilde_i · sign(r_i). The
+        // per-neighbor hot loop in Stage 3 will replace this with
+        // FastScan / signed POPCNT kernels; scalar form here is
+        // the correctness reference.
+        let mut sum_q_sign = 0.0_f32;
+        for i in 0..self.dimensions {
+            let byte = code[i / 8];
+            let bit = (byte >> (i % 8)) & 1;
+            let sign = if bit == 1 { 1.0_f32 } else { -1.0_f32 };
+            sum_q_sign += self.query_rotated[i] * sign;
+        }
+        let sqrt_d = (self.dimensions as f32).sqrt();
+        let query_dot_code = sum_q_sign / sqrt_d;
+
+        // ||q_r − c||. Rotation preserves L2 so we can use either
+        // raw or rotated vectors; rotated keeps everything in one
+        // frame, raw saves a rotation. Use raw.
+        let mut query_residual_sq = 0.0_f32;
+        for i in 0..self.dimensions {
+            let d = self.query_raw[i] - center.raw[i];
+            query_residual_sq += d * d;
+        }
+        let query_residual_mag = query_residual_sq.sqrt();
+
+        // Paper eq (6):
+        //   ⟨x̄, q_tilde_unit⟩ = (query_dot_code − center_dot) / ||q_r − c||
+        //
+        // RaBitQ estimator (residual unit vectors):
+        //   ⟨q_unit_res, o_unit_res⟩ ≈ ⟨x̄, q_tilde_unit⟩ / o_dot
+        const O_DOT_FLOOR: f32 = 1e-6;
+        const QR_FLOOR: f32 = 1e-6;
+        if o_dot.abs() < O_DOT_FLOOR
+            || !o_dot.is_finite()
+            || query_residual_mag < QR_FLOOR
+            || residual_mag <= 0.0
+        {
+            return DistanceEstimate {
+                estimate: 0.0,
+                bound: f32::INFINITY,
+            };
+        }
+        let x_dot_q_unit = (query_dot_code - center_dot) / query_residual_mag;
+        let estimate = x_dot_q_unit / o_dot;
+
+        // ε-concentration bound in the unit-residual frame; both
+        // residuals are unit vectors so the ||·|| factors from the
+        // absolute path collapse to 1.
+        let o_dot_sq = o_dot * o_dot;
+        let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (self.dimensions as f32 * o_dot_sq);
+        let bound = RABITQ_BOUND_CONFIDENCE * epsilon_sq.sqrt();
+
+        // Silence unused warnings on state kept for AM tooling.
+        let _ = residual_mag;
+
+        DistanceEstimate { estimate, bound }
+    }
 }
 
 /// Prepared estimator state for one query. Separate from
@@ -950,6 +1229,132 @@ mod tests {
         let r4 = SrhtRotation::new(dim, prod);
         assert!(r4.prod().is_some());
         assert_eq!(r4.seed(), None);
+    }
+
+    #[test]
+    fn centered_estimator_is_exact_on_sign_aligned_residual() {
+        // Sign-aligned residual (all ±α) has o_dot = 1, so the
+        // estimator collapses to exact on the unit-residual IP.
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        let dim = 64;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+
+        let center = vec![0.5_f32; dim];
+        // Residual `v - center` has coords ±1 (sign-aligned) for
+        // `v[i] = center[i] ± 1`.
+        let mut v = center.clone();
+        for (i, x) in v.iter_mut().enumerate() {
+            *x += if i % 3 == 0 { -1.0 } else { 1.0 };
+        }
+        let ctx = q.prepare_center(&center);
+        let code = q.encode_code_centered(&v, &ctx);
+
+        // Query: same as v → unit IP of q_residual with v_residual = 1.
+        let scorer = q.prepare_scorer_centered(&v);
+        let est = scorer.score_at(&code, &ctx);
+        assert!(
+            (est.estimate - 1.0).abs() < 1e-4,
+            "self-centered unit IP should be 1.0, got {}",
+            est.estimate
+        );
+        assert!(
+            est.bound < 1e-4,
+            "bound collapses on sign-aligned residual, got {}",
+            est.bound
+        );
+
+        // Residual magnitude stored = √dim (each coord is ±1).
+        let expected_mag = (dim as f32).sqrt();
+        let stored_mag = q.centered_residual_magnitude(&code);
+        assert!((stored_mag - expected_mag).abs() < 1e-3);
+    }
+
+    #[test]
+    fn centered_estimator_bound_dominates_error_on_random_vectors() {
+        // Same seeds as the absolute-path test; confirm the
+        // ε-bound (now on unit-residual IP) envelopes realized
+        // error.
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        let dim = 256;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+
+        let seeds = [1u64, 7, 42, 128, 9001];
+        for seed in seeds {
+            let center = deterministic_gaussian(dim, seed.wrapping_mul(17));
+            let v = deterministic_gaussian(dim, seed);
+            let query = deterministic_gaussian(dim, seed.wrapping_add(1));
+
+            let ctx = q.prepare_center(&center);
+            let code = q.encode_code_centered(&v, &ctx);
+            let scorer = q.prepare_scorer_centered(&query);
+            let est = scorer.score_at(&code, &ctx);
+
+            // Truth: unit-residual IP.
+            let v_res: Vec<f32> = v.iter().zip(&center).map(|(a, b)| a - b).collect();
+            let q_res: Vec<f32> = query.iter().zip(&center).map(|(a, b)| a - b).collect();
+            let v_mag: f32 = v_res.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let q_mag: f32 = q_res.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let raw_ip: f32 = v_res.iter().zip(&q_res).map(|(a, b)| a * b).sum();
+            let truth = raw_ip / (v_mag * q_mag);
+
+            let err = (est.estimate - truth).abs();
+            assert!(
+                err <= est.bound + 1e-3,
+                "centered bound violated for seed={}: err={} bound={}",
+                seed,
+                err,
+                est.bound
+            );
+        }
+    }
+
+    #[test]
+    fn centered_api_rejects_qbit_bits() {
+        // Symphony's centered path is q=1 only; q=2/4/8 paths are
+        // explicitly rejected to prevent silent misuse.
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        let dim = 16;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::with_bits(rotation, 4).unwrap();
+        let center = vec![0.0_f32; dim];
+        let ctx = q.prepare_center(&center);
+        let v = vec![0.1_f32; dim];
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            q.encode_code_centered(&v, &ctx);
+        }));
+        assert!(panicked.is_err(), "q>1 centered encode should panic");
     }
 
     #[test]
