@@ -515,6 +515,11 @@ See ADR-040 for the full shape. Summary:
   drains through its normal emit path instead of counting as blocked local
   fallback.
 
+- **Stale blocked rows re-enter deferred preference early.** Once retained
+  blocker metadata is dead, deferred ordering now treats that row as ready
+  again, so it can outrank worse active or hidden local-only work before the
+  scan waits until drain time to discover the blocker is gone.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
