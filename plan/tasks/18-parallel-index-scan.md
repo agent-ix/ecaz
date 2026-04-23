@@ -499,6 +499,11 @@ See ADR-040 for the full shape. Summary:
   on the staged shared path while the final ownership-transfer contract is
   still deferred.
 
+- **Restash can hand priority back to deferred work immediately.** After that
+  restash, graph and linear wakeup paths now re-check the preferred deferred
+  seam before continuing fresh local work, so a better ready deferred row can
+  emit right away instead of waiting for another full scan turn.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

@@ -5963,6 +5963,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
     }
 
     if restash_local_only_parallel_blocked_output(opaque) {
+        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+            return true;
+        }
         let opaque_ptr = opaque as *mut TqScanOpaque;
         let refreshed = unsafe {
             graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
@@ -6020,6 +6023,9 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     }
 
     if restash_local_only_parallel_blocked_output(opaque) {
+        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+            return true;
+        }
         return unsafe {
             produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
         };
@@ -10385,6 +10391,90 @@ mod tests {
             owner.fallback_result_state.current().element_tid(),
             tid(122, 1),
             "ignoring a blocker-free hidden row should leave the active fallback result state intact"
+        );
+    }
+
+    #[test]
+    fn restashed_local_only_row_allows_ready_deferred_output_to_emit_first() {
+        let mut owner = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::GraphTraversal,
+            ..Default::default()
+        };
+
+        owner.result_state.set_current_with_details(
+            tid(124, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(125, 1), tid(125, 2)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind:
+                    crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 12,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            },
+            element_tid: tid(124, 1),
+        });
+
+        let mut ready = ScanResultState::default();
+        ready.set_current_with_details(tid(126, 1), -10.0, Some(-9.5), Some(4), Some(-10.5));
+        ready.store_pending(&[tid(127, 1)]);
+        owner
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: ready,
+                retained_blocker: None,
+            });
+
+        assert!(
+            restash_local_only_parallel_blocked_output(&mut owner),
+            "the hidden blocked local-only row should restash before the scan decides whether a ready deferred row can go first"
+        );
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut owner),
+            Some(PendingScanOutput {
+                heap_tid: tid(127, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(4),
+                comparison_score: Some(-10.5),
+            }),
+            "once the blocked hidden row is restashed, a better ready deferred row should be able to emit before the scan returns to fresh local work"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "the restashed blocked local-only row should remain in the deferred stash after the ready deferred row emits"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(124, 1),
+            "the restashed blocked local-only row should remain staged for later shared retry"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0].retained_blocker,
+            Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind:
+                        crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 12,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                },
+                element_tid: tid(124, 1),
+            }),
+            "emitting the ready deferred row should not disturb the blocker metadata on the restashed hidden row"
         );
     }
 
