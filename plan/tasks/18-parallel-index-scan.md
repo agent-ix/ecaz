@@ -551,6 +551,13 @@ See ADR-040 for the full shape. Summary:
   while `published_result_slots`, staged-heap selection, and publish
   generations stay unchanged.
 
+- **Hidden local-only wakeups always retry shared ownership first.** A hidden
+  local-only row no longer refuses the shared wakeup path just because stale or
+  live retained blocker metadata is still present. The wakeup now republishes
+  and rechecks ownership first, which lets it either hand off the foreign row,
+  re-enter the shared path, or only then fall back again if the blocker really
+  is still live.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

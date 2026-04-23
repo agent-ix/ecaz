@@ -4363,9 +4363,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
 unsafe fn try_take_republished_local_only_parallel_output(
     opaque: &mut TqScanOpaque,
 ) -> ParallelScanOutputState {
-    if !opaque.parallel_local_only_output_active
-        || opaque.retained_parallel_owned_output_blocker.is_some()
-    {
+    if !opaque.parallel_local_only_output_active {
         return ParallelScanOutputState::Empty;
     }
 
@@ -8092,6 +8090,199 @@ mod tests {
             owner.result_state.pending_index(),
             1,
             "republishing the stale hidden row should advance the local duplicate cursor"
+        );
+    }
+
+    #[test]
+    fn try_take_republished_local_only_parallel_output_checks_live_retained_blocker() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+
+        foreign.result_state.set_current_with_details(
+            tid(190, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(191, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let selected = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected pending snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        let blocker = crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+            kind:
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+            slot_index: selected.coordinator.selected_result_slot_index,
+            generation: selected.coordinator.result_publish_generation,
+            element_tid: selected.selected_result_slot.runtime.element_tid,
+        };
+
+        owner.result_state.set_current_with_details(
+            tid(200, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner.result_state.store_pending(&[tid(201, 1)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker,
+            element_tid: tid(200, 1),
+        });
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        assert_eq!(
+            unsafe { try_take_republished_local_only_parallel_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(191, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "a hidden local-only row with a still-live retained blocker should retry the shared seam and be able to hand off the foreign selected output instead of short-circuiting to Empty"
+        );
+        assert_eq!(
+            owner.result_state.current().element_tid(),
+            tid(200, 1),
+            "draining the foreign handoff should leave the hidden local row staged for later progress"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            0,
+            "draining the foreign handoff should not advance the hidden local duplicate cursor"
+        );
+        assert_eq!(
+            owner.parallel_owned_output_blocker,
+            None,
+            "a successful shared handoff retry should clear the active blocker metadata"
+        );
+    }
+
+    #[test]
+    fn try_take_republished_local_only_parallel_output_ignores_stale_retained_blocker_gate() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+
+        owner.result_state.set_current_with_details(
+            tid(286, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(287, 1), tid(287, 2)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind:
+                    crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 12,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            },
+            element_tid: tid(286, 1),
+        });
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        assert_eq!(
+            unsafe { try_take_republished_local_only_parallel_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(287, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(6),
+                comparison_score: Some(-8.5),
+            }),
+            "stale retained blocker metadata should no longer prevent a hidden local-only row from retrying the shared seam"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "a successful shared retry should clear the local-only fallback flag even when stale blocker metadata was still present"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            1,
+            "retrying through a stale retained blocker should still advance the local duplicate cursor"
         );
     }
 
