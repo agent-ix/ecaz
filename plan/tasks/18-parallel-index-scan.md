@@ -504,6 +504,11 @@ See ADR-040 for the full shape. Summary:
   seam before continuing fresh local work, so a better ready deferred row can
   emit right away instead of waiting for another full scan turn.
 
+- **KeepLocalEmit stash now reopens deferred priority too.** The same immediate
+  deferred-priority check now runs when an active blocked row is first stashed
+  from the `KeepLocalEmit` branch, so a better ready deferred row can go first
+  before the scan resumes fresh graph or linear work.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

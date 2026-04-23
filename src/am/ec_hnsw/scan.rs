@@ -5918,6 +5918,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
                         if !stash_active_parallel_blocked_output(opaque) {
                             break;
                         }
+                        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+                            return true;
+                        }
                         let opaque_ptr = opaque as *mut TqScanOpaque;
                         if !unsafe {
                             graph_traversal_cursor(opaque)
@@ -6070,6 +6073,9 @@ unsafe fn produce_next_linear_fallback_heap_tid(
                     BlockedParallelScanDisposition::KeepLocalEmit => {
                         if !stash_active_parallel_blocked_output(opaque) {
                             continue;
+                        }
+                        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+                            return true;
                         }
                         continue;
                     }
@@ -10475,6 +10481,89 @@ mod tests {
                 element_tid: tid(124, 1),
             }),
             "emitting the ready deferred row should not disturb the blocker metadata on the restashed hidden row"
+        );
+    }
+
+    #[test]
+    fn stashed_blocked_active_row_allows_ready_deferred_output_to_emit_first() {
+        let mut owner = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+
+        owner.fallback_result_state.set_current_with_details(
+            tid(128, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .fallback_result_state
+            .store_pending(&[tid(129, 1), tid(129, 2)]);
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind:
+                    crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 14,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            },
+            element_tid: tid(128, 1),
+        });
+
+        let mut ready = ScanResultState::default();
+        ready.set_current_with_details(tid(130, 1), -10.0, Some(-9.5), Some(4), Some(-10.5));
+        ready.store_pending(&[tid(131, 1)]);
+        owner
+            .deferred_parallel_blocked_results
+            .push(DeferredParallelBlockedOutput {
+                source_phase: ScanExecutionPhase::GraphTraversal,
+                state: ready,
+                retained_blocker: None,
+            });
+
+        assert!(
+            stash_active_parallel_blocked_output(&mut owner),
+            "a blocked active row should move into the deferred stash when the scan hits KeepLocalEmit"
+        );
+        assert_eq!(
+            take_preferred_deferred_parallel_blocked_output(&mut owner),
+            Some(PendingScanOutput {
+                heap_tid: tid(131, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(4),
+                comparison_score: Some(-10.5),
+            }),
+            "once the blocked active row is stashed, a better ready deferred row should be able to emit before the scan returns to fresh local work"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "the stashed blocked active row should remain deferred after the ready deferred row emits"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(128, 1),
+            "the stashed blocked active row should stay in the deferred stash for later shared retry"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0].retained_blocker,
+            Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind:
+                        crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 14,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                },
+                element_tid: tid(128, 1),
+            }),
+            "emitting the ready deferred row should not disturb the blocker metadata on the stashed active row"
         );
     }
 
