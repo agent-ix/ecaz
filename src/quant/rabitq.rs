@@ -55,8 +55,7 @@ pub const RABITQ_UNIT_DOT_LEN: usize = 4;
 /// lets the estimator reuse one formula across `q`.
 pub const RABITQ_XNORM_LEN: usize = 4;
 /// Total scalar tail on each code: `||o||` + `o_dot` + `||x_dec||`.
-pub const RABITQ_SCALAR_LEN: usize =
-    RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN + RABITQ_XNORM_LEN;
+pub const RABITQ_SCALAR_LEN: usize = RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN + RABITQ_XNORM_LEN;
 
 /// Valid settings for `bits_per_dim`. Restricted to byte-aligned
 /// values so bit packing stays a small-integer lookup; q=3/5/6/7
@@ -268,11 +267,7 @@ impl RaBitQQuantizer {
     /// SRHT rotation (no `ProdQuantizer` dependency). Recommended
     /// for prod call sites where the seed is recorded in the
     /// index metadata so different indexes get independent rotations.
-    pub fn with_seeded_srht_bits(
-        dimensions: usize,
-        seed: u64,
-        bits: u8,
-    ) -> Result<Self, String> {
+    pub fn with_seeded_srht_bits(dimensions: usize, seed: u64, bits: u8) -> Result<Self, String> {
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
         Self::with_bits(rotation, bits)
     }
@@ -343,7 +338,11 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
 
         let x_dec_norm = x_dec_norm_sq.sqrt();
         let denom = norm * x_dec_norm;
-        let o_dot = if denom > 0.0 { inner_o_xdec / denom } else { 0.0 };
+        let o_dot = if denom > 0.0 {
+            inner_o_xdec / denom
+        } else {
+            0.0
+        };
 
         let s = packed_bytes;
         out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());
@@ -482,10 +481,11 @@ impl RaBitQQuantizer {
         // Compute the rotated residual in one rotation (rotation is
         // linear, so r_tilde = rotate(v) − c_rotated).
         let v_rotated = self.rotated(v);
-        let mut residual_rotated = Vec::with_capacity(self.dimensions);
-        for i in 0..self.dimensions {
-            residual_rotated.push(v_rotated[i] - center.rotated[i]);
-        }
+        let residual_rotated = v_rotated
+            .iter()
+            .zip(center.rotated.iter())
+            .map(|(v_i, c_i)| v_i - c_i)
+            .collect::<Vec<_>>();
 
         let residual_mag = l2_norm(&residual_rotated);
         let sqrt_d = (self.dimensions as f32).sqrt();
@@ -804,19 +804,14 @@ pub(crate) fn sign_words_from_packed_4bit(
 
 /// Hamming-based similarity used by the ADR-031 prefilter:
 /// `dim - 2 * hamming(q, c)` so higher = closer.
-pub(crate) fn hamming_similarity(
-    query_words: &[u64],
-    candidate_words: &[u64],
-    dim: usize,
-) -> f32 {
+pub(crate) fn hamming_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
     let hamming_distance = query_words
         .iter()
         .zip(candidate_words.iter())
         .map(|(query, candidate)| (query ^ candidate).count_ones())
         .sum::<u32>();
     let dim_i32 = i32::try_from(dim).expect("dimensions should fit in i32");
-    let distance_i32 =
-        i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
+    let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
     (dim_i32 - (2 * distance_i32)) as f32
 }
 
@@ -1027,10 +1022,10 @@ fn estimate_ip_impl(
 
     // Σ_i q_i · dequant(level_i) in the rotated basis.
     let mut sum_q_dequant = 0.0_f32;
-    for i in 0..dimensions {
+    for (i, &query_coord) in query_rotated.iter().enumerate().take(dimensions) {
         let level = read_level(code, i, bits);
         let dequant = dequant_level(level, bits, sqrt_d);
-        sum_q_dequant += query_rotated[i] * dequant;
+        sum_q_dequant += query_coord * dequant;
     }
 
     // Guard degenerate cases.
@@ -1491,7 +1486,9 @@ mod tests {
         let dim = 16;
         let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
         let q = RaBitQQuantizer::new(rotation);
-        let v: Vec<f32> = (0..dim).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let v: Vec<f32> = (0..dim)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
         let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &v);
         // First sign byte: bits 0,2,4,6 set → 0b01010101 = 0x55
         assert_eq!(code[0], 0x55);

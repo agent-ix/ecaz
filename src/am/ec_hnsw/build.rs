@@ -611,8 +611,10 @@ pub(super) fn stage_v2_grouped_build_payload(
     search_code: Vec<u8>,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V2GroupedBuildPayload {
-    let binary_words =
-        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
+    let binary_words = crate::quant::rabitq::derive_persisted_sidecar_words(
+        persisted_binary_quantizer,
+        &tuple.code,
+    );
 
     V2GroupedBuildPayload {
         hot: page::TqGroupedHotTuple {
@@ -638,8 +640,10 @@ pub(super) fn stage_v3_turbo_hot_build_payload(
     reranktid: page::ItemPointer,
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V3TurboHotBuildPayload {
-    let binary_words =
-        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
+    let binary_words = crate::quant::rabitq::derive_persisted_sidecar_words(
+        persisted_binary_quantizer,
+        &tuple.code,
+    );
 
     V3TurboHotBuildPayload {
         hot: page::TqTurboHotTuple {
