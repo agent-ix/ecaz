@@ -509,6 +509,12 @@ See ADR-040 for the full shape. Summary:
   from the `KeepLocalEmit` branch, so a better ready deferred row can go first
   before the scan resumes fresh graph or linear work.
 
+- **Stale retained blockers clear before fallback emit.** Deferred and
+  local-only rows no longer treat dead foreign blocker generations as live
+  fallback state. Once the foreign selected/admitted blocker disappears, the row
+  drains through its normal emit path instead of counting as blocked local
+  fallback.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
