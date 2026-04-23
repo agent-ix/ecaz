@@ -4449,6 +4449,16 @@ fn stash_active_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
     true
 }
 
+fn restash_local_only_parallel_blocked_output(opaque: &mut TqScanOpaque) -> bool {
+    if !opaque.parallel_local_only_output_active
+        || opaque.retained_parallel_owned_output_blocker.is_none()
+    {
+        return false;
+    }
+
+    stash_active_parallel_blocked_output(opaque)
+}
+
 fn restore_deferred_parallel_blocked_outputs(
     opaque: &mut TqScanOpaque,
     deferred_rows: impl IntoIterator<Item = DeferredParallelBlockedOutput>,
@@ -5952,6 +5962,17 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         | LocalOnlyParallelScanDisposition::NoChange => {}
     }
 
+    if restash_local_only_parallel_blocked_output(opaque) {
+        let opaque_ptr = opaque as *mut TqScanOpaque;
+        let refreshed = unsafe {
+            graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
+        };
+        if refreshed {
+            return unsafe { produce_next_graph_traversal_heap_tid(scan, index_relation, opaque) };
+        }
+        return false;
+    }
+
     let emitted = graph_traversal_cursor(opaque)
         .emit_prefetched_output()
         .map(|output| {
@@ -5996,6 +6017,12 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         LocalOnlyParallelScanDisposition::Exhausted => {}
         LocalOnlyParallelScanDisposition::RetryLocalEmit
         | LocalOnlyParallelScanDisposition::NoChange => {}
+    }
+
+    if restash_local_only_parallel_blocked_output(opaque) {
+        return unsafe {
+            produce_next_linear_fallback_heap_tid(scan, index_relation, opaque, code_len)
+        };
     }
 
     if linear_fallback_cursor(opaque)
@@ -10251,6 +10278,113 @@ mod tests {
         assert_eq!(
             owner.retained_parallel_owned_output_blocker, None,
             "dropping an obsolete hidden local-only row should clear the retained blocker"
+        );
+    }
+
+    #[test]
+    fn restash_local_only_parallel_blocked_output_moves_hidden_row_into_deferred_stash() {
+        let mut owner = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::GraphTraversal,
+            ..Default::default()
+        };
+
+        owner.result_state.set_current_with_details(
+            tid(120, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(121, 1), tid(121, 2)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind:
+                    crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 12,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+            },
+            element_tid: tid(120, 1),
+        });
+
+        assert!(
+            restash_local_only_parallel_blocked_output(&mut owner),
+            "a still-blocked hidden local-only row should move back into the deferred stash before it locally emits again"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "restashing the hidden local-only row should clear the local-only flag"
+        );
+        assert!(
+            !owner.result_state.current().has_element(),
+            "restashing the hidden local-only row should clear the active graph result state"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "restashing should retain the hidden row in the deferred blocked-output stash"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0]
+                .state
+                .current()
+                .element_tid(),
+            tid(120, 1),
+            "the deferred stash should keep the hidden row's element identity"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0].retained_blocker,
+            Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind:
+                        crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: Some(1),
+                    generation: 12,
+                    element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
+                },
+                element_tid: tid(120, 1),
+            }),
+            "restashing should preserve the retained blocker metadata on the hidden row"
+        );
+    }
+
+    #[test]
+    fn restash_local_only_parallel_blocked_output_ignores_hidden_row_without_blocker() {
+        let mut owner = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+
+        owner.fallback_result_state.set_current_with_details(
+            tid(122, 1),
+            -7.0,
+            Some(-6.5),
+            Some(7),
+            Some(-7.5),
+        );
+        owner.fallback_result_state.store_pending(&[tid(123, 1)]);
+        owner.parallel_local_only_output_active = true;
+
+        assert!(
+            !restash_local_only_parallel_blocked_output(&mut owner),
+            "a hidden local-only row without blocker metadata should stay in place instead of moving into the deferred blocked-output stash"
+        );
+        assert!(
+            owner.parallel_local_only_output_active,
+            "ignoring a blocker-free hidden row should leave the local-only flag unchanged"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            0,
+            "ignoring a blocker-free hidden row should not create a deferred stash entry"
+        );
+        assert_eq!(
+            owner.fallback_result_state.current().element_tid(),
+            tid(122, 1),
+            "ignoring a blocker-free hidden row should leave the active fallback result state intact"
         );
     }
 

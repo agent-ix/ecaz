@@ -492,6 +492,13 @@ See ADR-040 for the full shape. Summary:
   first, so ready deferred work still drains under the staged coordinator
   contract before the branch uses the last-resort local fallback.
 
+- **Still-blocked local-only rows restash before re-emit.** When a hidden
+  local-only row wakes up and is still blocked by the same live foreign owner,
+  the scan now moves it back into the deferred blocked-output stash instead of
+  immediately returning to local-only emit. That keeps more blocked unique rows
+  on the staged shared path while the final ownership-transfer contract is
+  still deferred.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
