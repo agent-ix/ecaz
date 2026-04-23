@@ -10147,6 +10147,105 @@ mod tests {
     }
 
     #[test]
+    fn try_take_republished_local_only_parallel_output_advances_after_foreign_partial_hidden_drain()
+    {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        owner.result_state.set_current_with_details(
+            tid(220, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(221, 1), tid(221, 2)]);
+        owner.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        foreign.result_state.set_current_with_details(
+            tid(222, 1),
+            -6.0,
+            Some(-5.5),
+            Some(7),
+            Some(-6.5),
+        );
+        foreign.result_state.store_pending(&[tid(223, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut foreign) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(221, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "the foreign worker should be able to drain the first hidden owner duplicate through the shared handoff path"
+        );
+
+        assert_eq!(
+            unsafe { try_take_republished_local_only_parallel_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(221, 2),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(4),
+                comparison_score: Some(-10.5),
+            }),
+            "after a foreign worker drains the first hidden duplicate, the owner wakeup should advance to the next duplicate instead of reviving the consumed one"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "re-entering shared drain after the foreign partial hidden drain should clear the local-only wakeup flag"
+        );
+        assert!(
+            !owner.result_state.current().has_element(),
+            "after the owner wakes on the second duplicate, the local row should be exhausted rather than remain staged"
+        );
+    }
+
+    #[test]
     fn try_take_parallel_scan_deferred_handoff_output_restores_linear_fallback_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
