@@ -18,7 +18,7 @@ verdict discussion).
 
 Branch: `task25-rabitq-stage1-phase0` (slice 11 builds on `abd5c71`).
 
-Artifacts: `run-dbpedia-10k-rerank-100.txt` — verbatim harness
+Artifacts: `artifacts/run-dbpedia-10k-rerank-100.txt` — verbatim harness
 output from the K'=100 run.
 
 ## Why this matters

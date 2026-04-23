@@ -110,18 +110,45 @@ from the prefilter design. Summary:
   estimator's error on the real seams. The tail of this distribution is what
   Stage 3 will use to size the safe candidate pool.
 
-**Decision gate (ADR-045 research gate):** RaBitQ recall@10 within **1pp of
-exact** at the bit budget required to match PQ4 storage on both the 50k and
-1M seams.
+**Decision gate (ADR-045 research gate, superseded for Symphony):**
+Originally defined as RaBitQ recall@10 within **1pp of exact** at the bit
+budget required to match PQ4 storage on both the 50k and 1M seams, using
+absolute (non-centered) 1-bit encoding.
 
-- **Pass** → publish the recall study as a review packet, unblock task 26's
-  successor "Symphony Stage 2" (quantized-graph build).
-- **Marginal** (within 1–2pp, promising on one seam only) → keep the module
-  as a non-rerank-eliminating quantizer under ADR-032; do not commit to
-  Stages 2–3 yet; return to OPQ (task 20) to close the gap via a learned
-  rotation.
-- **Fail** (>2pp gap at PQ4 storage parity) → shelve Stages 2–3 of ADR-045,
-  keep the module as the ADR-031 prefilter successor, record the null result.
+Reading the Symphony paper (§3.1.1, §3.1.2) during implementation flipped
+this gate's relevance: Symphony does **not** use absolute RaBitQ encoding.
+It quantizes per-vertex residuals `(n − v) / ||n − v||` and exploits
+multi-visit beam search to absorb estimator error. The absolute-encoding
+1pp gate is therefore not the right blocker for starting Stage 2.
+
+Actual outcomes recorded in review packets:
+
+- **Absolute, 1 bit/dim, no rerank** (slice 10, packet 20009):
+  recall@10 = 0.8975 on DBpedia-10k (10.25 pp gap). FAIL by the
+  original rubric. **This configuration is not what Symphony uses**;
+  the result stands as a characterisation of standalone 1-bit RaBitQ
+  only.
+- **Absolute, 1 bit/dim, rerank K'=100** (slice 11, packet 20010):
+  recall@10 = 1.0000 on DBpedia-10k. PASS for rerank-pipeline
+  consumers (DiskANN in-memory tier, ADR-031 successor).
+- **Absolute, q-bit sweep, no rerank** (slice 12, packet 20011):
+  recall climbs 0.8975 → 0.9865 at q ∈ {1, 2, 4, 8}. MARGINAL at
+  q = 8. Off Symphony's critical path.
+- **Symphony (centered, 1 bit/dim, multi-visit beam)**: gate lives
+  at task 27's end-to-end test, not here. Task 25 is responsible
+  for exposing the centered API primitives (slice 15); the recall
+  gate itself is Stage-2 / Stage-3 territory.
+
+Decision:
+
+- Task 27 (Symphony Stages 2, 3) is **unblocked** by task 25 closing.
+  The centered API (slice 15) is the actual Stage-2 prerequisite; it
+  landed and is covered by unit tests. Do not re-run the absolute-
+  encoding 1pp gate as a task-27 pre-start condition.
+- `src/quant/rabitq.rs` ships and remains usable by non-Symphony
+  consumers via the absolute-path traits and the `--rerank-k` flag.
+- Higher-bit quantization (Extended RaBitQ) stays parked per ADR-045
+  "Open follow-ups"; Symphony does not need it.
 
 ### Phase 3 — quantizer-seam integration (gated on pass)
 

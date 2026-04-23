@@ -1,5 +1,12 @@
 # Review Request: Task 25 Slice 6 — Task 27 Handoff Contract (RaBitQ Stage-1 API Freeze)
 
+> **SUPERSEDED** by `review/20015-task25-task27-handoff-contract-v2/request.md`.
+> The API described below (single-scalar `α_c` estimator, no centered
+> path) was replaced during slices 9, 12, 13, and 15. Task 27 consumes
+> the v2 contract. This packet is kept only for historical context; do
+> not use its signatures as ground truth.
+
+
 Scope: documentation only. No code changes in this slice. This
 packet freezes the public API surface that task 27 (Symphony
 Stages 2 & 3) will consume from `src/quant/rabitq.rs` and its

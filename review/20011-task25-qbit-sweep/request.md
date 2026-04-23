@@ -40,7 +40,7 @@ in the encoding section and "match PQ4 storage" in the gate).
 
 Branch: `task25-rabitq-stage1-phase0` (slice 12 builds on `a707395`).
 
-Artifact: `sweep-dbpedia-10k.txt` — verbatim output of a q ∈ {1, 2,
+Artifact: `artifacts/sweep-dbpedia-10k.txt` — verbatim output of a q ∈ {1, 2,
 4, 8} sweep on DBpedia-10k.
 
 ## Results (DBpedia-10k, no rerank, paper-faithful estimator)
@@ -151,7 +151,7 @@ future readers see why the "cleaner-looking" α form is wrong.
 - `cargo test --lib quant::rabitq` — 10 pass (7 retained + 3 new
   q-bit tests).
 - `cargo build --release -p ecaz-cli` clean.
-- Sweep run recorded in `sweep-dbpedia-10k.txt`, ~80 s wall total
+- Sweep run recorded in `artifacts/sweep-dbpedia-10k.txt`, ~80 s wall total
   for four bit settings.
 
 ## What this slice does NOT do

@@ -9,7 +9,7 @@ Task: `plan/tasks/25-rabitq-quantizer.md`, Phase 2 decision gate.
 Branch: `task25-rabitq-stage1-phase0` (slice 8 builds on `327e003`).
 
 Artifacts in this packet:
-- `run-dbpedia-10k.txt` — verbatim harness output.
+- `artifacts/run-dbpedia-10k.txt` — verbatim harness output.
 
 ## Verdict
 
@@ -32,7 +32,7 @@ Canonical TSVs pre-staged under
     --dim 1536 --top-k 10
 ```
 
-Wall time ~19 s on this box. Output saved as `run-dbpedia-10k.txt`.
+Wall time ~19 s on this box. Output saved as `artifacts/run-dbpedia-10k.txt`.
 
 ## Numbers
 

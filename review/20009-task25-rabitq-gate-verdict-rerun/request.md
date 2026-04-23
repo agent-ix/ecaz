@@ -10,7 +10,7 @@ Task: `plan/tasks/25-rabitq-quantizer.md`, Phase 2 decision gate
 Branch: `task25-rabitq-stage1-phase0` (slice 10 builds on `e49d9b8`).
 
 Artifacts in this packet:
-- `run-dbpedia-10k-paper-faithful.txt` — verbatim harness output.
+- `artifacts/run-dbpedia-10k-paper-faithful.txt` — verbatim harness output.
 - Amendment to `review/20005-task25-task27-handoff-contract/request.md`
   embedded at the end of this packet (to be folded into the
   contract once slice 10 is reviewed).

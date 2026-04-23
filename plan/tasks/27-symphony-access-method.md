@@ -1,8 +1,16 @@
 # Task 27: SymphonyQG Access Method — ADR-045 Stages 2 and 3
 
-Status: proposed — **gated on task 25's recall study passing** (ADR-045 Stage 1).
-Do not start implementation until RaBitQ clears the 1pp-of-exact gate on the
-50k and 1M real seams.
+Status: proposed — **unblocked by task 25**. Start now.
+
+The original 1pp-of-exact absolute-encoding gate has been superseded;
+see `plan/tasks/25-rabitq-quantizer.md` under "Decision gate" for the
+reasoning. In short: Symphony does not use absolute-encoded RaBitQ, so
+the absolute-path recall verdict is not the right blocker. The actual
+Stage-2 prerequisite from the quantizer side was the centered-encode +
+score API, which landed in task 25 slice 15
+(`review/20014-task25-centered-api/`). Symphony's own recall gate lives
+at the end of Phase 2 of this task — an end-to-end test, not a
+quantizer-module test.
 
 Executes **ADR-045 Stages 2 and 3**. Sibling to task 25 (which executes Stage 1).
 
@@ -171,11 +179,17 @@ See ADR-045 §"Stage 2" and §"Stage 3." Summary:
 
 ## Dependencies
 
-- **Hard blocker:** task 25 gate passed (RaBitQ recall@10 within 1pp
-  of exact at PQ4-parity storage on 50k and 1M seams). If the gate
-  fails, this task shelves.
-- **Hard blocker:** task 25 Phase 3 API freeze (rotation, scorer,
-  error bound).
+- **Hard blocker (met):** task 25 shipped the centered-encode + score
+  API that Symphony §3.1.1 / eq. (5)–(6) require
+  (`review/20014-task25-centered-api/`). The absolute-encoding 1pp
+  recall gate has been retired for the reasons recorded in task 25
+  ("Decision gate" section); it was never the right gate for Symphony.
+- **Hard blocker (met):** task 25 Phase 3 API freeze
+  (`review/20005-task25-task27-handoff-contract/`, superseded by the
+  amended contract recorded in task 25 slice 16 after reviewer
+  feedback on the centered-API packet). Covers rotation seam,
+  absolute encoder + scorer, error-bound estimator, centered encode
+  + score, and seeded SRHT.
 - **Soft dependency:** task 26 (parallel index build). If it lands
   first, symphony builds inherit parallelism at no cost; if not,
   the symphony build ships single-threaded and gets parallelism on
