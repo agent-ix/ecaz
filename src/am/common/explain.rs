@@ -68,10 +68,12 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_blocked_foreign_admitted_head: u32,
     pub stats_parallel_blocked_admission_window: u32,
     pub stats_parallel_deferred_local_emits: u32,
+    pub stats_parallel_deferred_local_emits_foreign_selected_pending: u32,
+    pub stats_parallel_deferred_local_emits_foreign_admitted_head: u32,
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 11] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 13] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -123,6 +125,18 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 11] = [
         counter_type: "u32",
         increments_when:
             "a deferred blocked row is still locally emitted because no shared handoff-ready deferred row remains",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_deferred_local_emits_foreign_selected_pending",
+        counter_type: "u32",
+        increments_when:
+            "a deferred blocked row is still locally emitted while blocked by a foreign selected pending output",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_deferred_local_emits_foreign_admitted_head",
+        counter_type: "u32",
+        increments_when:
+            "a deferred blocked row is still locally emitted while blocked by a foreign admitted head",
     },
     ExplainCounterDefinition {
         counter_name: "stats_quantizer_cache_hit",
@@ -198,6 +212,14 @@ impl TqExplainCounters {
         self.stats_parallel_deferred_local_emits += 1;
     }
 
+    pub(crate) fn record_parallel_deferred_local_emit_foreign_selected_pending(&mut self) {
+        self.stats_parallel_deferred_local_emits_foreign_selected_pending += 1;
+    }
+
+    pub(crate) fn record_parallel_deferred_local_emit_foreign_admitted_head(&mut self) {
+        self.stats_parallel_deferred_local_emits_foreign_admitted_head += 1;
+    }
+
     pub(crate) fn record_quantizer_cache_hit(&mut self) {
         self.stats_quantizer_cache_hit = true;
     }
@@ -206,7 +228,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 11] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 13] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -251,6 +273,18 @@ impl TqExplainCounters {
             ExplainProperty {
                 property_name: "Parallel Deferred Local Emits",
                 value: ExplainPropertyValue::Integer(self.stats_parallel_deferred_local_emits),
+            },
+            ExplainProperty {
+                property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_deferred_local_emits_foreign_selected_pending,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Deferred Local Emits: Foreign Head",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_deferred_local_emits_foreign_admitted_head,
+                ),
             },
             ExplainProperty {
                 property_name: "Quantizer Cache Hit",
@@ -506,6 +540,20 @@ mod tests {
                         "a deferred blocked row is still locally emitted because no shared handoff-ready deferred row remains",
                 },
                 ExplainCounterDefinition {
+                    counter_name:
+                        "stats_parallel_deferred_local_emits_foreign_selected_pending",
+                    counter_type: "u32",
+                    increments_when:
+                        "a deferred blocked row is still locally emitted while blocked by a foreign selected pending output",
+                },
+                ExplainCounterDefinition {
+                    counter_name:
+                        "stats_parallel_deferred_local_emits_foreign_admitted_head",
+                    counter_type: "u32",
+                    increments_when:
+                        "a deferred blocked row is still locally emitted while blocked by a foreign admitted head",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_quantizer_cache_hit",
                     counter_type: "bool",
                     increments_when: "ProdQuantizer was reused from cache",
@@ -540,6 +588,8 @@ mod tests {
         counters.record_parallel_blocked_foreign_admitted_head();
         counters.record_parallel_blocked_admission_window();
         counters.record_parallel_deferred_local_emit();
+        counters.record_parallel_deferred_local_emit_foreign_selected_pending();
+        counters.record_parallel_deferred_local_emit_foreign_admitted_head();
         counters.record_quantizer_cache_hit();
 
         assert_eq!(
@@ -555,6 +605,8 @@ mod tests {
                 stats_parallel_blocked_foreign_admitted_head: 1,
                 stats_parallel_blocked_admission_window: 1,
                 stats_parallel_deferred_local_emits: 1,
+                stats_parallel_deferred_local_emits_foreign_selected_pending: 1,
+                stats_parallel_deferred_local_emits_foreign_admitted_head: 1,
                 stats_quantizer_cache_hit: true,
             }
         );
@@ -573,6 +625,8 @@ mod tests {
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
             stats_parallel_deferred_local_emits: 29,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 31,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 37,
             stats_quantizer_cache_hit: true,
         };
 
@@ -594,6 +648,8 @@ mod tests {
             stats_parallel_blocked_foreign_admitted_head: 19,
             stats_parallel_blocked_admission_window: 23,
             stats_parallel_deferred_local_emits: 29,
+            stats_parallel_deferred_local_emits_foreign_selected_pending: 31,
+            stats_parallel_deferred_local_emits_foreign_admitted_head: 37,
             stats_quantizer_cache_hit: true,
         };
 
@@ -639,6 +695,14 @@ mod tests {
                 ExplainProperty {
                     property_name: "Parallel Deferred Local Emits",
                     value: ExplainPropertyValue::Integer(29),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Selected",
+                    value: ExplainPropertyValue::Integer(31),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Deferred Local Emits: Foreign Head",
+                    value: ExplainPropertyValue::Integer(37),
                 },
                 ExplainProperty {
                     property_name: "Quantizer Cache Hit",

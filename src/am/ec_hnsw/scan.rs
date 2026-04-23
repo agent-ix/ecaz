@@ -4468,6 +4468,21 @@ fn take_next_deferred_parallel_blocked_output(
         if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
             blocked_fallback.push(deferred);
         }
+        if let Some(retained_blocker) = deferred.retained_blocker {
+            match retained_blocker.blocker.kind {
+                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+                    opaque
+                        .explain_counters
+                        .record_parallel_deferred_local_emit_foreign_selected_pending();
+                }
+                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+                    opaque
+                        .explain_counters
+                        .record_parallel_deferred_local_emit_foreign_admitted_head();
+                }
+                super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {}
+            }
+        }
         opaque
             .explain_counters
             .record_parallel_deferred_local_emit();
@@ -9630,6 +9645,20 @@ mod tests {
             opaque.explain_counters.stats_parallel_deferred_local_emits,
             1,
             "forcing the last still-blocked deferred row through a local emit should be visible in EXPLAIN counters"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_deferred_local_emits_foreign_admitted_head,
+            1,
+            "the blocker-specific deferred local-emit counter should record foreign admitted-head fallback"
+        );
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_deferred_local_emits_foreign_selected_pending,
+            0,
+            "the selected-pending-specific fallback counter should stay untouched for an admitted-head blocker"
         );
     }
 

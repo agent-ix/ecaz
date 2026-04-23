@@ -427,6 +427,11 @@ See ADR-040 for the full shape. Summary:
   PG18 explain output instead of staying hidden behind ordinary heap-tid
   returned counts.
 
+- **Deferred local-emit blocker breakdown.** The same EXPLAIN surface now also
+  splits that last-resort deferred local emit by foreign-selected versus
+  foreign-admitted blockers, so the remaining ownership gap is measurable by
+  blocker kind instead of only as one aggregate fallback count.
+
 - **Deferred duplicate suppression against live foreign output.** Before that
   last-resort deferred local emit drains, the staged path now checks whether a
   still-live foreign selected/admitted output already owns the same next heap
