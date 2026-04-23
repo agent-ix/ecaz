@@ -233,6 +233,69 @@ index. None are Stage 1 blockers — SRHT-with-padding is good
 enough to publish the recall-gate verdict on. Record as
 `review/` packet when investigated.
 
+### Higher-bit quantization (Extended RaBitQ)
+
+Stage 1 lands 1-bit-per-dim RaBitQ, matching what Symphony uses
+(confirmed from the Symphony paper §2.2 eq. 3). Task-25 slice 12
+added a pragmatic q ∈ {1, 2, 4, 8} extension to `RaBitQQuantizer`
+so non-Symphony consumers (DiskANN in-memory tier, general
+prefilter, offline eval) can dial the recall/storage tradeoff.
+The slice-12 q-bit implementation is not paper-faithful to
+**Extended RaBitQ** (Gao et al., SIGMOD 2025, arXiv:2409.09913 —
+`~/dev_bak/papers/extended-rabitq-2025-sigmod-arxiv-2409.09913.pdf`):
+
+1. **Scalar quantizer.** Slice 12 uses uniform binning on
+   `±2σ`; Extended RaBitQ uses a Lloyd-Max-like codebook
+   optimized for the rotated-to-Gaussian distribution. Lloyd-Max
+   closes part of the gap but is not bit-identical to the paper's
+   construction.
+2. **Error bound.** Slice 12 carries the q=1 bound formula at
+   q>1 — correct as an upper envelope but looser than the paper's
+   q-aware bound.
+3. **Bit-level scoring.** Extended RaBitQ designs its codebook
+   so scoring can still reduce to bit-level POPCNT-family kernels.
+   Slice 12 scores via per-dim f32 multiply + add; correct, not
+   as fast.
+
+Criteria for re-opening: a consumer (not Symphony) demands PASS-
+grade recall at PQ4-parity storage and the slice-12 `q=4` result
+(FAIL at 2.1 pp) proves insufficient. Not on Symphony's critical
+path.
+
+### Per-center RaBitQ API (Symphony Stage 2 prerequisite)
+
+Symphony's §3.1.1 quantizes **per-vertex residuals** rather than
+absolute embeddings — this is what closes the 1-bit recall gap
+from ~0.90 (absolute encoding, slice-10 verdict) to ~0.99 (per-
+vertex centering, Symphony's published recall). The stage-2 AM
+must expose a centered-encode + centered-score path on
+`RaBitQQuantizer`. The §3.1 decomposition (equations 5–6) is the
+reference construction:
+
+```
+⟨x̄, P⁻¹q⟩ = (1/||q_r − c||) · (⟨x̄, P⁻¹q_r⟩ − ⟨x̄, P⁻¹c⟩)
+```
+
+API shape to add (proposed, task-27 may refine):
+
+- `RaBitQQuantizer::encode_code_centered(v, c)` — encode `v − c`
+  normalized.
+- `RaBitQQuantizer::prepare_center_scalars(c)` — returns the
+  per-vertex `⟨x̄, P⁻¹c⟩` scalar the AM stores alongside each
+  vertex.
+- `RaBitQQuantizer::prepare_scorer_centered(q)` — returns a
+  query-side prepared object whose LUT is independent of any
+  center.
+- `CenteredScorer::score_at(code, center_scalars, &c)` —
+  combines at visit time.
+
+The existing `Quantizer::encode_code` / `QueryScorer::score` trait
+path (c = 0 implicit) is unchanged and remains the primary API
+for DiskANN in-memory tier, ADR-031 prefilter successor, and
+offline evaluation. The centered path lives as inherent methods
+because its three-argument scoring shape does not fit a unary
+trait.
+
 ## References
 
 - Gou, Gao, Xu, "SymphonyQG: Towards Symphonious Integration of
