@@ -5381,6 +5381,13 @@ fn mark_emitted_element(opaque: &mut TqScanOpaque, element_tid: page::ItemPointe
     unsafe { &mut *opaque.emitted_result_tids }.insert(element_tid);
 }
 
+fn mark_active_result_element_emitted(opaque: &mut TqScanOpaque) {
+    mark_emitted_element(
+        opaque,
+        active_result_state_ref(opaque).current().element_tid(),
+    );
+}
+
 fn emitted_contains_element(opaque: &TqScanOpaque, element_tid: page::ItemPointer) -> bool {
     if opaque.emitted_result_tids.is_null() || element_tid == page::ItemPointer::INVALID {
         return false;
@@ -6128,6 +6135,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
 ) -> bool {
     match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
         LocalOnlyParallelScanDisposition::EmitShared(output) => {
+            mark_active_result_element_emitted(opaque);
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             return true;
@@ -6139,6 +6147,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
 
     match unsafe { try_take_republished_local_only_parallel_output(opaque) } {
         ParallelScanOutputState::Emitted(output) => {
+            mark_active_result_element_emitted(opaque);
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             return true;
@@ -6198,7 +6207,7 @@ unsafe fn produce_next_linear_fallback_heap_tid(
     if linear_fallback_cursor(opaque)
         .emit_pending_output()
         .map(|output| {
-            mark_emitted_element(opaque, opaque.fallback_result_state.current().element_tid());
+            mark_active_result_element_emitted(opaque);
             record_parallel_local_only_emit_counters(opaque);
             emit_scan_output(scan, opaque, output);
             true
@@ -12278,6 +12287,22 @@ mod tests {
         assert!(
             staged_or_emitted_contains_element(&opaque, tid(60, 1)),
             "elements hidden in the deferred blocked-output stash should still count as staged"
+        );
+    }
+
+    #[test]
+    fn mark_active_result_element_emitted_marks_linear_fallback_current_element() {
+        let mut opaque = TqScanOpaque {
+            execution_phase: ScanExecutionPhase::LinearFallback,
+            ..Default::default()
+        };
+        opaque.fallback_result_state.set_current(tid(210, 1), -5.0);
+
+        mark_active_result_element_emitted(&mut opaque);
+
+        assert!(
+            staged_or_emitted_contains_element(&opaque, tid(210, 1)),
+            "marking the active result should record the current linear-fallback element as emitted"
         );
     }
 
