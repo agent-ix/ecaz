@@ -520,6 +520,12 @@ See ADR-040 for the full shape. Summary:
   again, so it can outrank worse active or hidden local-only work before the
   scan waits until drain time to discover the blocker is gone.
 
+- **Stale deferred blockers re-enter the shared seam during drain too.** If a
+  retained blocker dies during the deferred `allow_local_emit` pass, that row
+  now gets one more shared next-output retry before the branch falls back to a
+  direct local emit. That keeps stale-blocker rows on the staged shared path
+  even late in deferred drain.
+
 - **Stale hidden local-only rows retry shared handoff first.** When a hidden
   local-only row wakes up after its retained blocker has gone stale, the graph
   and linear wakeup paths now retry the shared next-output seam before any

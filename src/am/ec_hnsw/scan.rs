@@ -4641,6 +4641,22 @@ fn take_next_deferred_parallel_blocked_output(
                 deferred.retained_blocker = None;
             }
         }
+        if deferred.retained_blocker.is_none()
+            && !opaque.parallel_scan_state.is_null()
+            && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+            && deferred.state.current().has_element()
+            && deferred.state.pending_count() != 0
+        {
+            if let Some(output) =
+                unsafe { try_take_parallel_scan_deferred_handoff_output(opaque, &mut deferred) }
+            {
+                if deferred.state.current().has_element() && deferred.state.pending_count() != 0 {
+                    blocked_fallback.push(deferred);
+                }
+                restore_deferred_parallel_blocked_outputs(opaque, blocked_fallback);
+                return Some(output);
+            }
+        }
         if deferred_parallel_blocked_output_duplicates_live_foreign_heap_tid(opaque, &deferred) {
             let _ = deferred.state.take_pending_output();
             if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
@@ -10216,7 +10232,7 @@ mod tests {
 
         let mut blocked = ScanResultState::default();
         blocked.set_current(tid(166, 1), -9.0);
-        blocked.store_pending(&[tid(167, 1)]);
+        blocked.store_pending(&[tid(167, 1), tid(167, 2)]);
         opaque
             .deferred_parallel_blocked_results
             .push(DeferredParallelBlockedOutput {
@@ -10236,6 +10252,13 @@ mod tests {
                 }),
             });
 
+        let coordinator_before = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+
         assert_eq!(
             take_next_deferred_parallel_blocked_output(&mut opaque, true),
             Some(PendingScanOutput {
@@ -10251,6 +10274,33 @@ mod tests {
             opaque.explain_counters.stats_parallel_deferred_local_emits,
             0,
             "once the retained blocker is stale, draining the deferred row should no longer count as deferred local fallback"
+        );
+        let coordinator_after = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                opaque.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert!(
+            coordinator_after.result_publish_generation > coordinator_before.result_publish_generation,
+            "a stale deferred blocker should retry the shared seam before falling back to a direct local emit"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results.len(),
+            1,
+            "shared retry should keep the row deferred when another heap tid remains"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results[0]
+                .state
+                .pending_index(),
+            1,
+            "shared retry should advance the deferred row's pending cursor through the shared seam"
+        );
+        assert_eq!(
+            opaque.deferred_parallel_blocked_results[0].retained_blocker,
+            None,
+            "once a stale blocker clears, the remaining deferred row should stay ready for the next shared retry"
         );
     }
 
