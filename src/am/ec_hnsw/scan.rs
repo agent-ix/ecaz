@@ -4348,6 +4348,18 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     ParallelScanOutputState::Emitted(output)
 }
 
+unsafe fn try_take_republished_local_only_parallel_output(
+    opaque: &mut TqScanOpaque,
+) -> ParallelScanOutputState {
+    if !opaque.parallel_local_only_output_active
+        || opaque.retained_parallel_owned_output_blocker.is_some()
+    {
+        return ParallelScanOutputState::Empty;
+    }
+
+    unsafe { try_take_parallel_scan_next_output(opaque) }
+}
+
 unsafe fn emit_materialized_parallel_scan_output(
     opaque: &mut TqScanOpaque,
     selected: SelectedScanResult,
@@ -6007,6 +6019,64 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         | LocalOnlyParallelScanDisposition::NoChange => {}
     }
 
+    match unsafe { try_take_republished_local_only_parallel_output(opaque) } {
+        ParallelScanOutputState::Emitted(output) => {
+            mark_emitted_element(opaque, opaque.result_state.current().element_tid());
+            emit_scan_output(scan, opaque, output);
+            opaque.explain_counters.record_heap_tid_returned();
+            if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
+                let opaque_ptr = opaque as *mut TqScanOpaque;
+                unsafe {
+                    graph_traversal_cursor(opaque)
+                        .ensure_prefetched_output(index_relation, opaque_ptr);
+                }
+            }
+            return true;
+        }
+        ParallelScanOutputState::Blocked(blocker) => {
+            match blocked_parallel_scan_disposition(opaque, blocker) {
+                BlockedParallelScanDisposition::DropAndContinue => {
+                    discard_active_parallel_scan_output(opaque);
+                    let opaque_ptr = opaque as *mut TqScanOpaque;
+                    let refreshed = unsafe {
+                        graph_traversal_cursor(opaque)
+                            .ensure_prefetched_output(index_relation, opaque_ptr)
+                    };
+                    if refreshed {
+                        return unsafe {
+                            produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+                        };
+                    }
+                    return false;
+                }
+                BlockedParallelScanDisposition::RetryShared => {
+                    return unsafe {
+                        produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+                    };
+                }
+                BlockedParallelScanDisposition::KeepLocalEmit => {
+                    if restash_local_only_parallel_blocked_output(opaque) {
+                        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+                            return true;
+                        }
+                        let opaque_ptr = opaque as *mut TqScanOpaque;
+                        let refreshed = unsafe {
+                            graph_traversal_cursor(opaque)
+                                .ensure_prefetched_output(index_relation, opaque_ptr)
+                        };
+                        if refreshed {
+                            return unsafe {
+                                produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+                            };
+                        }
+                        return false;
+                    }
+                }
+            }
+        }
+        ParallelScanOutputState::Empty => {}
+    }
+
     if restash_local_only_parallel_blocked_output(opaque) {
         if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
             return true;
@@ -6065,6 +6135,55 @@ unsafe fn produce_next_linear_fallback_heap_tid(
         LocalOnlyParallelScanDisposition::Exhausted => {}
         LocalOnlyParallelScanDisposition::RetryLocalEmit
         | LocalOnlyParallelScanDisposition::NoChange => {}
+    }
+
+    match unsafe { try_take_republished_local_only_parallel_output(opaque) } {
+        ParallelScanOutputState::Emitted(output) => {
+            emit_scan_output(scan, opaque, output);
+            opaque.explain_counters.record_heap_tid_returned();
+            return true;
+        }
+        ParallelScanOutputState::Blocked(blocker) => {
+            match blocked_parallel_scan_disposition(opaque, blocker) {
+                BlockedParallelScanDisposition::DropAndContinue => {
+                    discard_active_parallel_scan_output(opaque);
+                    return unsafe {
+                        produce_next_linear_fallback_heap_tid(
+                            scan,
+                            index_relation,
+                            opaque,
+                            code_len,
+                        )
+                    };
+                }
+                BlockedParallelScanDisposition::RetryShared => {
+                    return unsafe {
+                        produce_next_linear_fallback_heap_tid(
+                            scan,
+                            index_relation,
+                            opaque,
+                            code_len,
+                        )
+                    };
+                }
+                BlockedParallelScanDisposition::KeepLocalEmit => {
+                    if restash_local_only_parallel_blocked_output(opaque) {
+                        if try_emit_preferred_deferred_parallel_blocked_output(scan, opaque) {
+                            return true;
+                        }
+                        return unsafe {
+                            produce_next_linear_fallback_heap_tid(
+                                scan,
+                                index_relation,
+                                opaque,
+                                code_len,
+                            )
+                        };
+                    }
+                }
+            }
+        }
+        ParallelScanOutputState::Empty => {}
     }
 
     if restash_local_only_parallel_blocked_output(opaque) {
@@ -7713,6 +7832,88 @@ mod tests {
                 offset_number: 2,
             },
             "after the shared retry consumes the first heap tid, the owner slot should republish the next remaining duplicate"
+        );
+    }
+
+    #[test]
+    fn try_take_republished_local_only_parallel_output_retries_stale_hidden_row() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 1,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+
+        owner.result_state.set_current_with_details(
+            tid(186, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(187, 1), tid(187, 2)]);
+        owner.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        let coordinator_snapshot = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel coordinator snapshot should read back");
+        assert_eq!(
+            coordinator_snapshot.published_result_slots, 0,
+            "a hidden local-only row should stay unpublished before the explicit stale-blocker retry"
+        );
+
+        assert_eq!(
+            unsafe { try_take_republished_local_only_parallel_output(&mut owner) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(187, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(6),
+                comparison_score: Some(-8.5),
+            }),
+            "a stale hidden local-only row should retry through the shared path before any direct local emit"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "a successful stale-blocker republish should clear the hidden local-only flag"
+        );
+        assert_eq!(
+            owner.result_state.pending_index(),
+            1,
+            "republishing the stale hidden row should advance the local duplicate cursor"
         );
     }
 

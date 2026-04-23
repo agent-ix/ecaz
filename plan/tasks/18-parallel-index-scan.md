@@ -520,6 +520,12 @@ See ADR-040 for the full shape. Summary:
   again, so it can outrank worse active or hidden local-only work before the
   scan waits until drain time to discover the blocker is gone.
 
+- **Stale hidden local-only rows retry shared handoff first.** When a hidden
+  local-only row wakes up after its retained blocker has gone stale, the graph
+  and linear wakeup paths now retry the shared next-output seam before any
+  direct local emit. That keeps a cleared blocker on the coordinator path
+  instead of immediately dropping back into another local-only wakeup emit.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
