@@ -1,6 +1,6 @@
 use pgrx::{pg_guard, pg_sys, AllocatedByRust, PgBox};
 
-use super::{build, insert, scan, vacuum};
+use super::{build, insert, options, scan, vacuum};
 
 fn build_symphony_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     let mut amroutine =
@@ -45,7 +45,7 @@ fn build_symphony_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     {
         amroutine.amgettreeheight = None;
     }
-    amroutine.amoptions = None;
+    amroutine.amoptions = Some(options::symphony_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
     amroutine.amvalidate = Some(symphony_amvalidate);
