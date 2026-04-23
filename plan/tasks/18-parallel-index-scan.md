@@ -605,6 +605,13 @@ See ADR-040 for the full shape. Summary:
   next wakeup. Hidden-owner wakeup now reconciles hidden-slot progress first so
   foreign-consumed rows clear instead of resurrecting duplicate output.
 
+- **Hidden local-only duplicate suppression now republishes before handoff
+  returns.** If a hidden owner row suppresses its own first duplicate because a
+  foreign blocker already owns that heap TID, the hidden DSM slot now advances
+  to the next local heap TID before the foreign handoff output returns. That
+  keeps the shared hidden slot aligned with the owner's local duplicate cursor
+  instead of leaving the consumed duplicate staged in DSM.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

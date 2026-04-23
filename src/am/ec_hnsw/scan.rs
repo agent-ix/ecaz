@@ -4757,11 +4757,18 @@ unsafe fn try_take_parallel_scan_handoff_output(
         super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {}
     }
 
+    let preserve_hidden_local_only = opaque.parallel_local_only_output_active;
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
-    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+    opaque.parallel_local_only_output_active =
+        preserve_hidden_local_only && active_result_state_ref(opaque).current().has_element();
+    if opaque.parallel_local_only_output_active {
+        publish_parallel_scan_worker_slot_snapshot(opaque);
+    } else {
+        sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+    }
     Some(output)
 }
 
@@ -11981,6 +11988,19 @@ mod tests {
             owner.result_state.current().element_tid(),
             tid(98, 1),
             "foreign handoff from local-only retry should leave the local row staged for later progress"
+        );
+        let hidden = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                owner.parallel_scan_state,
+                owner.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("hidden local-only snapshot should read back")
+        .expect("owner hidden slot should stay staged after suppressing the duplicate");
+        assert_eq!(
+            item_pointer_from_parallel_item_pointer(hidden.runtime.heap_tid),
+            tid(98, 2),
+            "after the local duplicate is suppressed, the hidden shared slot should advance to the next local heap tid instead of leaving the consumed duplicate published"
         );
         assert!(
             emitted_contains_element(&owner, tid(96, 1)),
