@@ -54,26 +54,93 @@ pub struct BinarySignNoQjl4BitQuery {
     pub words: Vec<u64>,
 }
 
-/// One RaBitQ quantizer instance. Owns the rotation state and
-/// per-vector encoding parameters. The rotation is held as an `Arc`
-/// so AM build and scan paths can share one instance.
+/// Rotation front-end seam.
+///
+/// A `Rotation` turns a raw D-dimensional vector into a rotated
+/// D-dimensional vector whose sign bits RaBitQ will pack. The trait
+/// exists so ADR-036 OPQ (task 20) or a learned rotation can replace
+/// SRHT without touching the encoder, the scorer, or the estimator.
+/// `Send + Sync + 'static` so the rotation can be shared via `Arc`
+/// between build and scan paths.
+pub trait Rotation: Send + Sync {
+    /// Rotated output dimensionality. Must equal the input
+    /// dimensionality — RaBitQ's code length is `dim/8 + 4` and does
+    /// not carry padding information.
+    fn dimensions(&self) -> usize;
+
+    /// Apply the rotation. Implementations must return exactly
+    /// `dimensions()` coordinates, even if they pad internally.
+    fn apply(&self, v: &[f32]) -> Vec<f32>;
+}
+
+/// SRHT rotation backed by a `ProdQuantizer`'s sign vector. This is
+/// the default `Rotation` during ADR-045 Stage 1; it reuses the
+/// quantizer's existing SRHT state so the canonical RaBitQ encode
+/// and the ADR-031 PQ-derived sidecar land on the same rotated basis.
+pub struct SrhtRotation {
+    dimensions: usize,
+    prod: Arc<ProdQuantizer>,
+}
+
+impl SrhtRotation {
+    pub fn new(dimensions: usize, prod: Arc<ProdQuantizer>) -> Self {
+        assert_eq!(
+            prod.original_dim, dimensions,
+            "SRHT rotation dimensions mismatch: quantizer has {}, asked for {}",
+            prod.original_dim, dimensions,
+        );
+        Self { dimensions, prod }
+    }
+
+    /// Access the underlying `ProdQuantizer`. Used by the ADR-031
+    /// PQ-derived sidecar helpers, which need the codebook state.
+    pub fn prod(&self) -> &Arc<ProdQuantizer> {
+        &self.prod
+    }
+}
+
+impl Rotation for SrhtRotation {
+    fn dimensions(&self) -> usize {
+        self.dimensions
+    }
+
+    fn apply(&self, v: &[f32]) -> Vec<f32> {
+        assert_eq!(
+            v.len(),
+            self.dimensions,
+            "SRHT input length mismatch: got {}, expected {}",
+            v.len(),
+            self.dimensions,
+        );
+        let padded = rotation::srht_padded(v, &self.prod.signs);
+        padded[..self.dimensions].to_vec()
+    }
+}
+
+/// One RaBitQ quantizer instance. Owns the rotation via the
+/// [`Rotation`] trait object seam and the per-vector encoding
+/// parameters. Build and scan paths share one `Arc<RaBitQQuantizer>`.
 pub struct RaBitQQuantizer {
     dimensions: usize,
-    /// Rotation seam — slice 3 replaces this with a first-class
-    /// `Rotation` trait. For slice 2 we reuse `ProdQuantizer`'s SRHT
-    /// signs so the canonical RaBitQ encode (direct rotate +
-    /// sign-extract) shares the same rotation as the ADR-031
-    /// PQ-derived sidecar path.
-    rotation: Arc<ProdQuantizer>,
+    rotation: Arc<dyn Rotation>,
 }
 
 impl RaBitQQuantizer {
-    pub fn new(dimensions: usize, rotation: Arc<ProdQuantizer>) -> Self {
+    pub fn new(rotation: Arc<dyn Rotation>) -> Self {
+        let dimensions = rotation.dimensions();
         assert!(dimensions > 0, "RaBitQ dimensions must be positive");
         Self {
             dimensions,
             rotation,
         }
+    }
+
+    /// Convenience: build a RaBitQ quantizer with the default SRHT
+    /// rotation sourced from a `ProdQuantizer`. This is the
+    /// ADR-045 Stage 1 entry point.
+    pub fn with_srht(dimensions: usize, prod: Arc<ProdQuantizer>) -> Self {
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
+        Self::new(rotation)
     }
 
     pub fn dimensions(&self) -> usize {
@@ -85,18 +152,10 @@ impl RaBitQQuantizer {
         self.dimensions.div_ceil(8)
     }
 
-    /// Rotate `v` via the shared SRHT signs and collect into a fresh
-    /// buffer trimmed to `dimensions` coordinates.
     fn rotated(&self, v: &[f32]) -> Vec<f32> {
-        assert_eq!(
-            v.len(),
-            self.dimensions,
-            "RaBitQ input length mismatch: got {}, expected {}",
-            v.len(),
-            self.dimensions,
-        );
-        let padded = rotation::srht_padded(v, &self.rotation.signs);
-        padded[..self.dimensions].to_vec()
+        let out = self.rotation.apply(v);
+        debug_assert_eq!(out.len(), self.dimensions);
+        out
     }
 }
 
@@ -341,8 +400,8 @@ mod tests {
 
     #[test]
     fn code_len_matches_dimension() {
-        let rotation = ProdQuantizer::cached(1536, 4, 0);
-        let q = RaBitQQuantizer::new(1536, rotation);
+        let prod = ProdQuantizer::cached(1536, 4, 0);
+        let q = RaBitQQuantizer::with_srht(1536, prod);
         assert_eq!(q.sign_bytes(), 192);
         assert_eq!(
             <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q),
@@ -356,8 +415,8 @@ mod tests {
         // itself. This is a smoke test for slice 2's encode/score
         // round-trip, not a recall claim.
         let dim = 64;
-        let rotation = ProdQuantizer::cached(dim, 4, 0);
-        let q = RaBitQQuantizer::new(dim, rotation);
+        let prod = ProdQuantizer::cached(dim, 4, 0);
+        let q = RaBitQQuantizer::with_srht(dim, prod);
         let mut v = vec![0.0_f32; dim];
         for (i, slot) in v.iter_mut().enumerate() {
             *slot = if i % 2 == 0 { 1.0 } else { -1.0 };
@@ -378,6 +437,31 @@ mod tests {
         let words = sign_words_from_rotated(&rotated);
         // bits 1, 3, 4, 6 set → 0b01011010 = 0x5a
         assert_eq!(words, vec![0x5a]);
+    }
+
+    #[test]
+    fn custom_rotation_plugs_into_seam() {
+        // Identity rotation: demonstrates that Rotation impls
+        // outside the crate can drop into RaBitQQuantizer.
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+
+        let dim = 16;
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q = RaBitQQuantizer::new(rotation);
+        let v: Vec<f32> = (0..dim).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let code = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q, &v);
+        // First sign byte: bits 0,2,4,6 set → 0b01010101 = 0x55
+        assert_eq!(code[0], 0x55);
     }
 
     #[test]
