@@ -6135,7 +6135,6 @@ unsafe fn produce_next_linear_fallback_heap_tid(
 ) -> bool {
     match unsafe { resolve_local_only_parallel_scan_duplicate(opaque) } {
         LocalOnlyParallelScanDisposition::EmitShared(output) => {
-            mark_active_result_element_emitted(opaque);
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             return true;
@@ -6147,7 +6146,6 @@ unsafe fn produce_next_linear_fallback_heap_tid(
 
     match unsafe { try_take_republished_local_only_parallel_output(opaque) } {
         ParallelScanOutputState::Emitted(output) => {
-            mark_active_result_element_emitted(opaque);
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             return true;
@@ -10376,6 +10374,7 @@ mod tests {
         let mut foreign = TqScanOpaque::default();
         bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
         bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+        reset_scan_emitted_state(&mut owner);
 
         foreign.result_state.set_current_with_details(
             tid(96, 1),
@@ -10434,6 +10433,14 @@ mod tests {
             owner.result_state.current().element_tid(),
             tid(98, 1),
             "foreign handoff from local-only retry should leave the local row staged for later progress"
+        );
+        assert!(
+            emitted_contains_element(&owner, tid(96, 1)),
+            "foreign handoff should record the emitted foreign element in emitted-element bookkeeping"
+        );
+        assert!(
+            !emitted_contains_element(&owner, tid(98, 1)),
+            "foreign handoff should not mark the still-staged local owner element as emitted"
         );
     }
 

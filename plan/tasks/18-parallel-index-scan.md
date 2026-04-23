@@ -526,11 +526,11 @@ See ADR-040 for the full shape. Summary:
   direct local emit. That keeps a cleared blocker on the coordinator path
   instead of immediately dropping back into another local-only wakeup emit.
 
-- **Linear shared wakeup emits now keep emitted-element bookkeeping.** The
-  linear-fallback shared wakeup branches now mark their active element as
-  emitted just like the graph path and the later linear emit branches do, so a
-  local-only/shared retry cannot bypass emitted-element tracking when it drains
-  under the staged coordinator path.
+- **Linear active-result emitted bookkeeping now shares one helper.** The
+  linear direct local-only emit path now uses the same active-result emitted
+  helper as the rest of the linear fallback code, while shared handoff paths
+  continue to rely on admitted-result bookkeeping instead of tagging the still-
+  staged local owner row as emitted.
 
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
