@@ -156,6 +156,7 @@ const EC_PARALLEL_RESULT_SLOT_APPROX_SCORE_VALID: u32 = 1 << 2;
 const EC_PARALLEL_RESULT_SLOT_COMPARISON_SCORE_VALID: u32 = 1 << 3;
 const EC_PARALLEL_RESULT_SLOT_APPROX_RANK_VALID: u32 = 1 << 4;
 const EC_PARALLEL_RESULT_SLOT_HEAP_TID_VALID: u32 = 1 << 5;
+const EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY: u32 = 1 << 6;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_IDLE: u32 = 0;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_GRAPH_TRAVERSAL: u32 = 1;
 pub(crate) const EC_PARALLEL_WORKER_PHASE_LINEAR_FALLBACK: u32 = 2;
@@ -1229,6 +1230,16 @@ fn coordinator_result_slot_snapshot_is_live(
         && snapshot.runtime.element_tid.is_valid()
 }
 
+fn coordinator_result_slot_snapshot_is_hidden_local_only(
+    snapshot: &EcParallelCoordinatorResultSlotSnapshot,
+    rescan_epoch: u32,
+) -> bool {
+    snapshot.observed_rescan_epoch == rescan_epoch
+        && snapshot.flags & EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY != 0
+        && snapshot.flags & EC_PARALLEL_RESULT_SLOT_SCORE_VALID != 0
+        && snapshot.runtime.element_tid.is_valid()
+}
+
 unsafe fn coordinator_result_slot_worker_claim_is_live(
     attachment: &ParallelScanAttachment,
     slot_index: u32,
@@ -1806,13 +1817,15 @@ unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
     attachment: &ParallelScanAttachment,
 ) -> Result<u32, &'static str> {
     let mut reaped = 0;
+    let mut published_reaped = 0;
 
     for slot_index in 0..attachment.result_slot_count {
         let slot = unsafe { attachment.result_slot(slot_index) }?;
         let slot_ref = unsafe { &*slot };
         let snapshot = load_coordinator_result_slot_snapshot(slot_ref);
         if snapshot.observed_rescan_epoch != attachment.rescan_epoch
-            || snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0
+            || (snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0
+                && snapshot.flags & EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY == 0)
         {
             continue;
         }
@@ -1820,6 +1833,9 @@ unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
             continue;
         }
 
+        if snapshot.flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
+            published_reaped += 1;
+        }
         reset_result_slot_runtime(slot_ref);
         slot_ref.flags.store(0, Ordering::Release);
         reaped += 1;
@@ -1827,9 +1843,11 @@ unsafe fn reap_dead_parallel_scan_result_slots_with_attachment(
 
     if reaped != 0 {
         let coordinator = unsafe { &*attachment.coordinator };
-        coordinator
-            .published_result_slots
-            .fetch_sub(reaped, Ordering::AcqRel);
+        if published_reaped != 0 {
+            coordinator
+                .published_result_slots
+                .fetch_sub(published_reaped, Ordering::AcqRel);
+        }
         coordinator
             .result_publish_generation
             .fetch_add(reaped, Ordering::AcqRel);
@@ -2443,7 +2461,9 @@ unsafe fn clear_parallel_scan_result_slot_locked(
     }
 
     let flags = result_slot_ref.flags.load(Ordering::Acquire);
-    if flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
+    if flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0
+        && flags & EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY == 0
+    {
         reset_result_slot_runtime(result_slot_ref);
         return Ok(false);
     }
@@ -2452,9 +2472,11 @@ unsafe fn clear_parallel_scan_result_slot_locked(
     reset_result_slot_runtime(result_slot_ref);
     result_slot_ref.flags.store(0, Ordering::Release);
     let coordinator = unsafe { &*attachment.coordinator };
-    coordinator
-        .published_result_slots
-        .fetch_sub(1, Ordering::AcqRel);
+    if flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0 {
+        coordinator
+            .published_result_slots
+            .fetch_sub(1, Ordering::AcqRel);
+    }
     coordinator
         .result_publish_generation
         .fetch_add(1, Ordering::AcqRel);
@@ -2503,11 +2525,12 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
     Ok(false)
 }
 
-pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snapshot_with_flags(
     state: *mut EcParallelScanState,
     slot_index: u32,
     rescan_epoch: u32,
     snapshot: EcParallelCoordinatorResultSlotRuntimeSnapshot,
+    hidden_local_only: bool,
 ) -> Result<bool, &'static str> {
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
     let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
@@ -2572,7 +2595,11 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
         &snapshot.pending_heap_tids,
     );
 
-    let mut flags = EC_PARALLEL_RESULT_SLOT_PUBLISHED;
+    let mut flags = if hidden_local_only {
+        EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY
+    } else {
+        EC_PARALLEL_RESULT_SLOT_PUBLISHED
+    };
     if snapshot.score != 0.0 || snapshot.element_tid.is_valid() {
         flags |= EC_PARALLEL_RESULT_SLOT_SCORE_VALID;
     }
@@ -2591,18 +2618,69 @@ pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snaps
     result_slot_ref.flags.store(flags, Ordering::Release);
 
     let coordinator = unsafe { &*attachment.coordinator };
-    if prior_flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED == 0 {
+    let prior_published = prior_flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0;
+    let next_published = flags & EC_PARALLEL_RESULT_SLOT_PUBLISHED != 0;
+    if !prior_published && next_published {
         coordinator
             .published_result_slots
             .fetch_add(1, Ordering::AcqRel);
+    } else if prior_published && !next_published {
+        coordinator
+            .published_result_slots
+            .fetch_sub(1, Ordering::AcqRel);
     }
-    coordinator
-        .result_publish_generation
-        .fetch_add(1, Ordering::AcqRel);
-    unsafe { upsert_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
-    unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
-    refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    if next_published {
+        coordinator
+            .result_publish_generation
+            .fetch_add(1, Ordering::AcqRel);
+        unsafe { upsert_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
+        unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+        refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    } else if prior_published {
+        coordinator
+            .result_publish_generation
+            .fetch_add(1, Ordering::AcqRel);
+        unsafe { detach_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
+        unsafe { reap_parallel_scan_dead_root_slots_with_attachment(&attachment) }?;
+        refresh_coordinator_selected_fast_paths_locked(&attachment)?;
+    } else {
+        unsafe { detach_parallel_scan_heap_entry_with_attachment(&attachment, slot_index) }?;
+    }
     Ok(true)
+}
+
+pub(crate) unsafe fn publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    rescan_epoch: u32,
+    snapshot: EcParallelCoordinatorResultSlotRuntimeSnapshot,
+) -> Result<bool, &'static str> {
+    unsafe {
+        publish_parallel_scan_coordinator_result_slot_runtime_snapshot_with_flags(
+            state,
+            slot_index,
+            rescan_epoch,
+            snapshot,
+            false,
+        )
+    }
+}
+
+pub(crate) unsafe fn publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    rescan_epoch: u32,
+    snapshot: EcParallelCoordinatorResultSlotRuntimeSnapshot,
+) -> Result<bool, &'static str> {
+    unsafe {
+        publish_parallel_scan_coordinator_result_slot_runtime_snapshot_with_flags(
+            state,
+            slot_index,
+            rescan_epoch,
+            snapshot,
+            true,
+        )
+    }
 }
 
 pub(crate) unsafe fn clear_parallel_scan_coordinator_result_slot_runtime_snapshot(
@@ -3891,6 +3969,106 @@ mod tests {
                 root_slot_index: Some(slot_index),
             },
             "publishing a first result slot should seed the shared heap root from the owning slot"
+        );
+    }
+
+    #[test]
+    fn publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot_keeps_slot_unpublished(
+    ) {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("claim should succeed before publishing");
+        let runtime = EcParallelCoordinatorResultSlotRuntimeSnapshot {
+            element_tid: EcParallelItemPointer {
+                block_number: 52,
+                offset_number: 7,
+            },
+            heap_tid: EcParallelItemPointer {
+                block_number: 99,
+                offset_number: 3,
+            },
+            score: -7.5,
+            approx_score: None,
+            comparison_score: None,
+            approx_rank_base: None,
+            pending_count: 2,
+            pending_index: 0,
+            pending_heap_tids: pending_heap_tids([
+                EcParallelItemPointer {
+                    block_number: 99,
+                    offset_number: 3,
+                },
+                EcParallelItemPointer {
+                    block_number: 99,
+                    offset_number: 4,
+                },
+            ]),
+        };
+
+        assert!(
+            unsafe {
+                publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    attachment.state,
+                    slot_index,
+                    attachment.rescan_epoch,
+                    runtime,
+                )
+            }
+            .expect("hidden publish should succeed"),
+            "publishing a hidden slot should update the shared result-slot runtime"
+        );
+        assert_eq!(
+            unsafe {
+                read_parallel_scan_coordinator_result_slot_snapshot(attachment.state, slot_index)
+            }
+            .expect("coordinator result-slot snapshot should read back"),
+            EcParallelCoordinatorResultSlotSnapshot {
+                flags: EC_PARALLEL_RESULT_SLOT_HIDDEN_LOCAL_ONLY
+                    | EC_PARALLEL_RESULT_SLOT_SCORE_VALID
+                    | EC_PARALLEL_RESULT_SLOT_HEAP_TID_VALID,
+                slot_index,
+                observed_rescan_epoch: attachment.rescan_epoch,
+                runtime,
+            },
+            "hidden result-slot publish should preserve runtime state without marking the slot published"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_snapshot(attachment.state) }
+                .expect("coordinator snapshot should read back"),
+            EcParallelCoordinatorSnapshot {
+                flags: 0,
+                claimed_worker_slots: 1,
+                published_result_slots: 0,
+                result_publish_generation: 0,
+                selected_result_slot_index: None,
+                selected_result_score: None,
+                selected_pending_output: None,
+                admitted_result_count: 0,
+                admitted_result_generation: 0,
+                admitted_worst_score: None,
+            },
+            "hidden result-slot publish should stay out of coordinator selection and published counts"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_coordinator_heap_snapshot(attachment.state) }
+                .expect("coordinator heap snapshot should read back"),
+            EcParallelCoordinatorHeapSnapshot {
+                live_entry_count: 0,
+                entry_capacity: TEST_WORKER_SLOT_COUNT,
+                heap_generation: 0,
+                root_slot_index: None,
+            },
+            "hidden result-slot publish should not seed a live coordinator heap entry"
         );
     }
 

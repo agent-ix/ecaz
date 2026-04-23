@@ -1202,7 +1202,7 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
     }
 
     let current_result = active_result_state.current();
-    if current_result.has_element() && !opaque.parallel_local_only_output_active {
+    if current_result.has_element() {
         let pending_heap_tids = std::array::from_fn(|index| {
             active_result_state
                 .pending_heap_tids()
@@ -1240,14 +1240,26 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
             pending_heap_tids,
         };
 
-        match unsafe {
-            super::parallel::publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
-                opaque.parallel_scan_state,
-                opaque.parallel_scan_worker_slot_index,
-                opaque.parallel_scan_rescan_epoch,
-                result_snapshot,
-            )
-        } {
+        let publish_result = if opaque.parallel_local_only_output_active {
+            unsafe {
+                super::parallel::publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    opaque.parallel_scan_state,
+                    opaque.parallel_scan_worker_slot_index,
+                    opaque.parallel_scan_rescan_epoch,
+                    result_snapshot,
+                )
+            }
+        } else {
+            unsafe {
+                super::parallel::publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                    opaque.parallel_scan_state,
+                    opaque.parallel_scan_worker_slot_index,
+                    opaque.parallel_scan_rescan_epoch,
+                    result_snapshot,
+                )
+            }
+        };
+        match publish_result {
             Ok(_) => {}
             Err(err) => {
                 pgrx::error!("ec_hnsw parallel scan coordinator-result publish failed: {err}")
@@ -7619,13 +7631,20 @@ mod tests {
         }
         .expect("parallel coordinator result-slot snapshot should read back");
         assert_eq!(
-            result_snapshot.flags, 0,
-            "local-only fallback should leave the coordinator result slot cleared"
+            result_snapshot.runtime.element_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 30,
+                offset_number: 1,
+            },
+            "local-only fallback should keep the hidden element tid staged in the result slot for future ownership transfer"
         );
         assert_eq!(
-            result_snapshot.runtime.element_tid,
-            crate::am::ec_hnsw::parallel::EcParallelItemPointer::INVALID,
-            "cleared local-only coordinator slots should not expose a staged element tid"
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 31,
+                offset_number: 1,
+            },
+            "local-only fallback should keep the hidden next heap tid staged even while the slot stays unpublished"
         );
     }
 
@@ -7733,8 +7752,20 @@ mod tests {
         }
         .expect("parallel coordinator result-slot snapshot should read back");
         assert_eq!(
-            result_snapshot.flags, 0,
-            "hidden linear wakeup emits should continue hiding the coordinator result slot"
+            result_snapshot.runtime.element_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 300,
+                offset_number: 1,
+            },
+            "hidden linear wakeup emits should keep the local-only element staged in the hidden result slot"
+        );
+        assert_eq!(
+            result_snapshot.runtime.heap_tid,
+            crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                block_number: 301,
+                offset_number: 2,
+            },
+            "hidden linear wakeup emits should advance the hidden result-slot heap tid along with the local duplicate cursor"
         );
     }
 

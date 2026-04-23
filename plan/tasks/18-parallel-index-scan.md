@@ -544,6 +544,13 @@ See ADR-040 for the full shape. Summary:
   state stays aligned even while the coordinator slot remains intentionally
   cleared.
 
+- **Hidden local-only rows stay staged in DSM.** When a local-only row must be
+  hidden from coordinator selection, the worker now keeps its runtime snapshot
+  in the shared result slot under a hidden flag instead of clearing the slot
+  outright. That preserves shared row state for later ownership-transfer work
+  while `published_result_slots`, staged-heap selection, and publish
+  generations stay unchanged.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
