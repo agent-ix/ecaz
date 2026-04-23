@@ -61,6 +61,12 @@ pub struct FeasibilityArgs {
     #[arg(long, default_value_t = 0)]
     pub query_limit: usize,
 
+    /// Bits per rotated coordinate. Valid: 1, 2, 4, 8. Larger
+    /// values give tighter recall at higher storage cost. At
+    /// `bits = 1` the code matches RaBitQ's canonical binary form.
+    #[arg(long, default_value_t = 1)]
+    pub bits: u8,
+
     /// Rerank candidate pool size `K'`. `0` disables reranking
     /// (pure estimator ranking, Symphony Stage-3 style). When
     /// `K' > top_k`, the estimator selects the top `K'` candidates
@@ -112,12 +118,16 @@ pub async fn run(args: FeasibilityArgs) -> Result<()> {
 
 fn run_rabitq(args: FeasibilityArgs, corpus: Vec<Vec<f32>>, queries: Vec<Vec<f32>>) -> Result<()> {
     let prod = ProdQuantizer::cached(args.dim, 4, args.seed);
-    let rabitq = Arc::new(RaBitQQuantizer::with_srht(args.dim, prod));
+    let rabitq = Arc::new(
+        RaBitQQuantizer::with_srht_bits(args.dim, prod, args.bits)
+            .map_err(|e| eyre!("invalid --bits: {}", e))?,
+    );
     let rabitq_code_bytes = <RaBitQQuantizer as Quantizer>::code_len(rabitq.as_ref());
     let pq4_code_bytes = ecaz::bench_api::payload_len(args.dim, 4) - 4;
     println!(
-        "# storage: RaBitQ code {} B, PQ4 code {} B (parity ratio {:.2}x)",
+        "# storage: RaBitQ code {} B (bits/dim={}), PQ4 code {} B (parity ratio {:.2}x)",
         rabitq_code_bytes,
+        args.bits,
         pq4_code_bytes,
         pq4_code_bytes as f32 / rabitq_code_bytes as f32,
     );

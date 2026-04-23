@@ -44,13 +44,31 @@ use crate::quant::rotation;
 
 /// Bytes per vector holding the rotated L2 norm `||o||`.
 pub const RABITQ_NORM_LEN: usize = 4;
-/// Bytes per vector holding `o_dot = ⟨o_unit, sign(o)/√D⟩` — the
-/// cosine between the unit-normalized rotated vector and its
-/// normalized sign vector. Consumed by the paper-faithful RaBitQ
-/// estimator; replaces the slice-4 `α_c = mean(|c_i|)` scalar.
+/// Bytes per vector holding `o_dot = ⟨o_unit, x_dec / ||x_dec||⟩` —
+/// the cosine between the unit-normalized rotated vector and the
+/// unit-normalized dequantized form. Reduces to
+/// `⟨o_unit, sign(o)/√D⟩` at `bits_per_dim = 1`.
 pub const RABITQ_UNIT_DOT_LEN: usize = 4;
-/// Total scalar tail on each code: `||o||` plus `o_dot`.
-pub const RABITQ_SCALAR_LEN: usize = RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN;
+/// Bytes per vector holding `||x_dec||` — the L2 norm of the
+/// dequantized level vector. At `bits_per_dim = 1` this is always
+/// `√D`; storing it uniformly keeps the layout bits-agnostic and
+/// lets the estimator reuse one formula across `q`.
+pub const RABITQ_XNORM_LEN: usize = 4;
+/// Total scalar tail on each code: `||o||` + `o_dot` + `||x_dec||`.
+pub const RABITQ_SCALAR_LEN: usize =
+    RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN + RABITQ_XNORM_LEN;
+
+/// Valid settings for `bits_per_dim`. Restricted to byte-aligned
+/// values so bit packing stays a small-integer lookup; q=3/5/6/7
+/// are a follow-up slice (arbitrary bit-level packing, same
+/// scalar tail).
+pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
+
+/// Clip radius used when scalar-quantizing at `bits_per_dim > 1`.
+/// Rotated unit-vector coordinates have std ≈ `1/√D`; scaling by
+/// `√D` puts them roughly in `N(0, 1)`. Clipping at 2σ covers
+/// ~95% of the mass and keeps quantization levels well-utilized.
+const RABITQ_QUANT_CLIP: f32 = 2.0;
 
 /// Confidence coefficient on the ε-concentration bound returned in
 /// `DistanceEstimate.bound`. `2.5` ≈ 99% one-sided confidence under
@@ -133,37 +151,79 @@ impl Rotation for SrhtRotation {
 
 /// One RaBitQ quantizer instance. Owns the rotation via the
 /// [`Rotation`] trait object seam and the per-vector encoding
-/// parameters. Build and scan paths share one `Arc<RaBitQQuantizer>`.
+/// parameters (dimensions, bits-per-dim). Build and scan paths
+/// share one `Arc<RaBitQQuantizer>`.
 pub struct RaBitQQuantizer {
     dimensions: usize,
     rotation: Arc<dyn Rotation>,
+    bits_per_dim: u8,
 }
 
 impl RaBitQQuantizer {
+    /// Construct a default 1 bit/dim quantizer (ADR-045 Stage 1
+    /// canonical configuration).
     pub fn new(rotation: Arc<dyn Rotation>) -> Self {
+        Self::with_bits(rotation, 1).expect("1 bit/dim is always supported")
+    }
+
+    /// Construct at a specific `bits_per_dim`. Valid values live
+    /// in [`RABITQ_SUPPORTED_BITS`]; returns `Err` otherwise. At
+    /// `bits = 1` the encoding is bit-identical to the paper's
+    /// binary RaBitQ; at `bits ≥ 2` each coordinate gets a signed
+    /// q-bit scalar-quantized level with clipping at
+    /// ±[`RABITQ_QUANT_CLIP`]·σ (σ = 1/√D on the unit sphere).
+    pub fn with_bits(rotation: Arc<dyn Rotation>, bits: u8) -> Result<Self, String> {
+        if !RABITQ_SUPPORTED_BITS.contains(&bits) {
+            return Err(format!(
+                "RaBitQ bits_per_dim must be one of {:?}, got {}",
+                RABITQ_SUPPORTED_BITS, bits,
+            ));
+        }
         let dimensions = rotation.dimensions();
         assert!(dimensions > 0, "RaBitQ dimensions must be positive");
-        Self {
+        Ok(Self {
             dimensions,
             rotation,
-        }
+            bits_per_dim: bits,
+        })
     }
 
     /// Convenience: build a RaBitQ quantizer with the default SRHT
-    /// rotation sourced from a `ProdQuantizer`. This is the
-    /// ADR-045 Stage 1 entry point.
+    /// rotation sourced from a `ProdQuantizer` and `bits = 1`.
     pub fn with_srht(dimensions: usize, prod: Arc<ProdQuantizer>) -> Self {
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
         Self::new(rotation)
+    }
+
+    /// Like [`Self::with_srht`] but at a specific `bits_per_dim`.
+    pub fn with_srht_bits(
+        dimensions: usize,
+        prod: Arc<ProdQuantizer>,
+        bits: u8,
+    ) -> Result<Self, String> {
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
+        Self::with_bits(rotation, bits)
     }
 
     pub fn dimensions(&self) -> usize {
         self.dimensions
     }
 
-    /// Byte length of the sign-bit portion of a code (pre-norm).
+    pub fn bits_per_dim(&self) -> u8 {
+        self.bits_per_dim
+    }
+
+    /// Number of bytes in the packed-levels portion of a code.
+    /// At `bits = 1` this is `⌈D/8⌉`; generalizes as `⌈D·bits/8⌉`.
+    pub fn packed_bytes(&self) -> usize {
+        (self.dimensions * self.bits_per_dim as usize).div_ceil(8)
+    }
+
+    /// Retained for slice-1 / slice-2 call-site compatibility —
+    /// returns [`Self::packed_bytes`] since the canonical
+    /// `bits = 1` shape has one sign bit per dim.
     pub fn sign_bytes(&self) -> usize {
-        self.dimensions.div_ceil(8)
+        self.packed_bytes()
     }
 
     fn rotated(&self, v: &[f32]) -> Vec<f32> {
@@ -174,39 +234,56 @@ impl RaBitQQuantizer {
 }
 
 impl crate::quant::Quantizer for RaBitQQuantizer {
-    /// Canonical RaBitQ encode (paper-faithful): rotate, take the
-    /// sign bit of each rotated coordinate into a `dim/8`-byte
-    /// payload, then append two f32 scalars — the L2 norm `||o||`
-    /// and `o_dot = ⟨o_unit, sign(o)/√D⟩`.
+    /// RaBitQ encode. Rotate the input, quantize each rotated
+    /// coordinate to a signed `bits_per_dim`-bit level, pack the
+    /// levels LSB-first, then append three f32 scalars: `||o||`,
+    /// `o_dot = ⟨o_unit, x_dec/||x_dec||⟩`, and `||x_dec||`.
     ///
-    /// `o_dot` is the cosine between the unit-normalized rotated
-    /// vector and its normalized sign vector. It is what lets the
-    /// paper's estimator cancel the variance introduced by the
-    /// binary approximation — a vector with `o_dot` close to 1 is
-    /// well-represented by its sign bits; one near `1/√D` is not.
+    /// At `bits = 1` this collapses to the paper's binary form:
+    /// levels are {-1, +1}, `||x_dec|| = √D`, `o_dot = Σ|o_i| /
+    /// (||o||·√D)`. At higher bits, each coordinate holds richer
+    /// information; the estimator formula is unified across bits
+    /// via the stored `||x_dec||`.
     fn encode_code(&self, v: &[f32]) -> Box<[u8]> {
         let rotated = self.rotated(v);
-        let mut out = vec![0_u8; self.sign_bytes() + RABITQ_SCALAR_LEN];
-        for (index, &value) in rotated.iter().enumerate() {
-            if value >= 0.0 {
-                out[index / 8] |= 1_u8 << (index % 8);
-            }
-        }
-        let norm = l2_norm(&rotated);
-        // o_dot = Σ|o_i| / (||o|| · √D). Derivation:
-        //   o_unit = o / ||o||
-        //   x̄_b   = sign(o) / √D
-        //   ⟨o_unit, x̄_b⟩ = Σ (o_i / ||o||) · (sign(o_i) / √D)
-        //                 = (1 / (||o|| · √D)) · Σ |o_i|
-        let sum_abs: f32 = rotated.iter().map(|x| x.abs()).sum();
-        let denom = norm * (self.dimensions as f32).sqrt();
-        let o_dot = if denom > 0.0 { sum_abs / denom } else { 0.0 };
+        let packed_bytes = self.packed_bytes();
+        let mut out = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
 
-        let scalars_start = self.sign_bytes();
-        out[scalars_start..scalars_start + RABITQ_NORM_LEN]
-            .copy_from_slice(&norm.to_le_bytes());
-        out[scalars_start + RABITQ_NORM_LEN..scalars_start + RABITQ_SCALAR_LEN]
+        let norm = l2_norm(&rotated);
+        let inv_norm = if norm > 0.0 { 1.0 / norm } else { 0.0 };
+        let sqrt_d = (self.dimensions as f32).sqrt();
+
+        // Compute dequantized levels in-line with the packing loop
+        // so we can also accumulate ⟨o, x_dec⟩ and ||x_dec||² as we
+        // go — one pass, no intermediate Vec.
+        let mut inner_o_xdec = 0.0_f32;
+        let mut x_dec_norm_sq = 0.0_f32;
+
+        let bits = self.bits_per_dim as usize;
+        let levels = 1_u32 << bits;
+
+        for (i, &o_i) in rotated.iter().enumerate() {
+            let (level_idx, dequant_i) = quantize_level(o_i * inv_norm, bits, sqrt_d);
+            write_level(&mut out, i, bits, level_idx);
+            inner_o_xdec += o_i * dequant_i;
+            x_dec_norm_sq += dequant_i * dequant_i;
+        }
+
+        let x_dec_norm = x_dec_norm_sq.sqrt();
+        let denom = norm * x_dec_norm;
+        let o_dot = if denom > 0.0 { inner_o_xdec / denom } else { 0.0 };
+
+        let s = packed_bytes;
+        out[s..s + RABITQ_NORM_LEN].copy_from_slice(&norm.to_le_bytes());
+        out[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
             .copy_from_slice(&o_dot.to_le_bytes());
+        out[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .copy_from_slice(&x_dec_norm.to_le_bytes());
+
+        // Suppress unused warning for the `levels` binding at q=1
+        // where the binary fast path inside quantize_level ignores it.
+        let _ = levels;
+
         out.into_boxed_slice()
     }
 
@@ -220,11 +297,12 @@ impl crate::quant::Quantizer for RaBitQQuantizer {
             query_rotated: rotated,
             query_norm: norm,
             dimensions: self.dimensions,
+            bits_per_dim: self.bits_per_dim,
         })
     }
 
     fn code_len(&self) -> usize {
-        self.sign_bytes() + RABITQ_SCALAR_LEN
+        self.packed_bytes() + RABITQ_SCALAR_LEN
     }
 
     fn wire_format_version(&self) -> u32 {
@@ -249,12 +327,16 @@ impl RaBitQQuantizer {
 
     /// Paper-faithful RaBitQ inner-product estimate between
     /// `prepared` and a code, plus an ε-concentration bound at
-    /// ~99% confidence (see [`RABITQ_BOUND_CONFIDENCE`]).
+    /// ~99% confidence (see [`RABITQ_BOUND_CONFIDENCE`]). The
+    /// formula is unified across `bits_per_dim`; the bound
+    /// formula remains the q=1 Gaussian-tail form and is
+    /// conservative (loose) at q>1.
     pub fn estimate_ip(&self, prepared: &PreparedEstimator, code: &[u8]) -> DistanceEstimate {
         estimate_ip_impl(
             &prepared.query_rotated,
             prepared.query_norm,
             self.dimensions,
+            self.bits_per_dim,
             code,
         )
     }
@@ -287,11 +369,19 @@ pub struct RaBitQScorer {
     query_rotated: Vec<f32>,
     query_norm: f32,
     dimensions: usize,
+    bits_per_dim: u8,
 }
 
 impl crate::quant::QueryScorer for RaBitQScorer {
     fn score(&self, code: &[u8]) -> f32 {
-        estimate_ip_impl(&self.query_rotated, self.query_norm, self.dimensions, code).estimate
+        estimate_ip_impl(
+            &self.query_rotated,
+            self.query_norm,
+            self.dimensions,
+            self.bits_per_dim,
+            code,
+        )
+        .estimate
     }
 }
 
@@ -433,80 +523,189 @@ fn l2_norm(rotated: &[f32]) -> f32 {
     rotated.iter().map(|x| x * x).sum::<f32>().sqrt()
 }
 
+/// Quantize one unit-vector coordinate `o_hat_i = o_i / ||o||` to
+/// a `bits`-bit signed level. Returns `(level_index, dequant_value)`:
+/// the level index is what gets packed into the code; the dequant
+/// value is the reconstruction used by the encoder to compute
+/// `⟨o, x_dec⟩` and `||x_dec||` in-line.
+///
+/// At `bits = 1` the behavior is exactly the slice-9 binary form:
+/// non-negative → level 1 (dequant +1), negative → level 0 (-1),
+/// independent of magnitude and of `sqrt_d`.
+///
+/// At `bits ≥ 2`: multiply by `sqrt_d` to put the coordinate
+/// distribution on `N(0, 1)` (coord std of a unit vector is
+/// `1/√D`), clip to `[-C, +C]` with `C = RABITQ_QUANT_CLIP`, then
+/// bin uniformly into `2^bits` cells. The level stored is the
+/// unsigned bin index `0..2^bits - 1`; the dequantized value is
+/// the bin center mapped back to the unit-vector scale.
+fn quantize_level(o_hat_i: f32, bits: usize, sqrt_d: f32) -> (u32, f32) {
+    if bits == 1 {
+        if o_hat_i >= 0.0 {
+            (1, 1.0)
+        } else {
+            (0, -1.0)
+        }
+    } else {
+        let levels = 1_u32 << bits;
+        let c = RABITQ_QUANT_CLIP;
+        let scaled = o_hat_i * sqrt_d;
+        let t = ((scaled + c) / (2.0 * c)).clamp(0.0, 1.0);
+        let level = ((t * levels as f32) as u32).min(levels - 1);
+        // Bin center, mapped back to unit-vector scale.
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;
+        let dequant = center_scaled / sqrt_d;
+        (level, dequant)
+    }
+}
+
+/// Inverse of [`quantize_level`]: given a stored level index and
+/// `bits`, return the dequantized coordinate value.
+fn dequant_level(level: u32, bits: usize, sqrt_d: f32) -> f32 {
+    if bits == 1 {
+        if level == 1 {
+            1.0
+        } else {
+            -1.0
+        }
+    } else {
+        let levels = 1_u32 << bits;
+        let c = RABITQ_QUANT_CLIP;
+        let center_scaled = (level as f32 + 0.5) / levels as f32 * 2.0 * c - c;
+        center_scaled / sqrt_d
+    }
+}
+
+/// Write a `bits`-wide level index at coordinate position `i` into
+/// the LSB-first packed buffer `out`. Restricted to `bits ∈ {1, 2,
+/// 4, 8}` so the bit offset is always byte-aligned within each
+/// coord.
+fn write_level(out: &mut [u8], i: usize, bits: usize, level: u32) {
+    match bits {
+        1 => {
+            if level == 1 {
+                out[i / 8] |= 1_u8 << (i % 8);
+            }
+        }
+        2 => {
+            let byte = i / 4;
+            let shift = (i % 4) * 2;
+            out[byte] |= ((level as u8) & 0x03) << shift;
+        }
+        4 => {
+            let byte = i / 2;
+            let shift = (i % 2) * 4;
+            out[byte] |= ((level as u8) & 0x0F) << shift;
+        }
+        8 => {
+            out[i] = level as u8;
+        }
+        _ => unreachable!("unsupported bits_per_dim: {}", bits),
+    }
+}
+
+/// Inverse of [`write_level`].
+fn read_level(code: &[u8], i: usize, bits: usize) -> u32 {
+    match bits {
+        1 => ((code[i / 8] >> (i % 8)) & 1) as u32,
+        2 => ((code[i / 4] >> ((i % 4) * 2)) & 0x03) as u32,
+        4 => ((code[i / 2] >> ((i % 2) * 4)) & 0x0F) as u32,
+        8 => code[i] as u32,
+        _ => unreachable!("unsupported bits_per_dim: {}", bits),
+    }
+}
+
 /// Paper-faithful RaBitQ inner-product estimator with an
 /// ε-concentration error bound.
 ///
-/// Given query `q` (rotated, full precision, norm `||q||`) and
-/// candidate code `[sign_bytes | ||o|| | o_dot]`:
+/// The candidate code holds a `bits_per_dim`-bit level per
+/// coordinate plus three scalars: `||o||`, `o_dot = ⟨o_unit,
+/// x_dec/||x_dec||⟩`, and `||x_dec||`. Given query `q` (rotated,
+/// full precision, norm `||q||`):
 ///
 /// ```text
-/// q_dot_xb = ⟨q_unit, x̄_b⟩
-///          = (1 / (||q|| · √D)) · Σ_i q_i · sign(o_i)
-/// ⟨q_unit, o_unit⟩ ≈ q_dot_xb / o_dot              (paper eq.)
-/// ⟨q, o⟩          ≈ ||q|| · ||o|| · q_dot_xb / o_dot
-///                  = ||o|| · Σ_i q_i · sign(o_i) / (o_dot · √D)
+/// α      = ||o|| · o_dot / ||x_dec||          (least-squares α of o ≈ α·x_dec)
+/// ⟨q, o⟩ ≈ α · Σ_i q_i · dequant(level_i)
 /// ```
 ///
-/// The ε-concentration bound (see ADR-045 Stage 1 §"Error bound"):
+/// At `bits = 1`, `||x_dec|| = √D` and `dequant = sign(o)`, so the
+/// formula collapses to the slice-9 binary form:
+/// `||o|| · Σ q_i · sign(o_i) / (o_dot · √D)`.
+///
+/// ε-concentration bound (paper's binary form; conservative at
+/// `bits > 1`, tracked as an open question in the slice-12 packet):
 ///
 /// ```text
 /// ε²(o) ≈ (1 − o_dot²) / (D · o_dot²)
-/// |⟨q, o⟩ − estimate| ≤ C · ||q|| · ||o|| · ε(o)       with C ≈ 2.5
+/// |⟨q, o⟩ − estimate| ≤ C · ||q|| · ||o|| · ε(o)
 /// ```
-///
-/// The bound inflates when `o_dot` is small — exactly the vectors
-/// whose sign approximation is weakest. Stage 3 uses the
-/// distribution of this bound to size candidate pools.
 fn estimate_ip_impl(
     query_rotated: &[f32],
     query_norm: f32,
     dimensions: usize,
+    bits_per_dim: u8,
     code: &[u8],
 ) -> DistanceEstimate {
     debug_assert_eq!(query_rotated.len(), dimensions);
-    let sign_bytes = dimensions.div_ceil(8);
+    let bits = bits_per_dim as usize;
+    let packed_bytes = (dimensions * bits).div_ceil(8);
     assert!(
-        code.len() >= sign_bytes + RABITQ_SCALAR_LEN,
+        code.len() >= packed_bytes + RABITQ_SCALAR_LEN,
         "RaBitQ code too short: got {}, expected at least {}",
         code.len(),
-        sign_bytes + RABITQ_SCALAR_LEN,
+        packed_bytes + RABITQ_SCALAR_LEN,
     );
+    let s = packed_bytes;
     let candidate_norm = f32::from_le_bytes(
-        code[sign_bytes..sign_bytes + RABITQ_NORM_LEN]
+        code[s..s + RABITQ_NORM_LEN]
             .try_into()
             .expect("norm slice is always 4 bytes"),
     );
     let candidate_o_dot = f32::from_le_bytes(
-        code[sign_bytes + RABITQ_NORM_LEN..sign_bytes + RABITQ_SCALAR_LEN]
+        code[s + RABITQ_NORM_LEN..s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN]
             .try_into()
             .expect("o_dot slice is always 4 bytes"),
     );
-
-    // Σ q_i · sign(o_i) in the rotated basis.
-    let mut sum_q_sign_o = 0.0_f32;
-    for index in 0..dimensions {
-        let byte = code[index / 8];
-        let bit = (byte >> (index % 8)) & 1;
-        let sign = if bit == 1 { 1.0_f32 } else { -1.0_f32 };
-        sum_q_sign_o += query_rotated[index] * sign;
-    }
+    let candidate_x_norm = f32::from_le_bytes(
+        code[s + RABITQ_NORM_LEN + RABITQ_UNIT_DOT_LEN..s + RABITQ_SCALAR_LEN]
+            .try_into()
+            .expect("x_norm slice is always 4 bytes"),
+    );
 
     let sqrt_d = (dimensions as f32).sqrt();
-    // Guard against degenerate o_dot (all-zero vector, etc.). Any
-    // o_dot below this floor is functionally "the estimator cannot
-    // speak about this vector"; we return the trivial zero estimate
-    // with an infinite bound so Stage 3 treats it as unscorable.
+
+    // Σ_i q_i · dequant(level_i) in the rotated basis.
+    let mut sum_q_dequant = 0.0_f32;
+    for i in 0..dimensions {
+        let level = read_level(code, i, bits);
+        let dequant = dequant_level(level, bits, sqrt_d);
+        sum_q_dequant += query_rotated[i] * dequant;
+    }
+
+    // Guard degenerate cases.
     const O_DOT_FLOOR: f32 = 1e-6;
-    if candidate_o_dot.abs() < O_DOT_FLOOR || !candidate_o_dot.is_finite() {
+    if candidate_o_dot.abs() < O_DOT_FLOOR
+        || !candidate_o_dot.is_finite()
+        || candidate_x_norm <= 0.0
+        || !candidate_x_norm.is_finite()
+    {
         return DistanceEstimate {
             estimate: 0.0,
             bound: f32::INFINITY,
         };
     }
-    let estimate = candidate_norm * sum_q_sign_o / (candidate_o_dot * sqrt_d);
 
-    // ε²(o) = (1 − o_dot²) / (D · o_dot²). Clamp at zero in case
-    // of numerical drift above 1.
+    // Paper's asymmetric estimator. Derivation:
+    //   ⟨q_unit, o_unit⟩ ≈ ⟨q_unit, x̄⟩ / o_dot
+    //     where x̄ = x_dec / ||x_dec||
+    //   ⟨q, o⟩ = ||q|| · ||o|| · ⟨q_unit, o_unit⟩
+    //         ≈ ||o|| · ⟨q, x̄⟩ / o_dot
+    //         = ||o|| · ⟨q, x_dec⟩ / (o_dot · ||x_dec||)
+    // The α form (estimate = α · ⟨q, x_dec⟩ with α = ||o||·o_dot/||x_dec||)
+    // is the least-squares fit of o ≈ α·x_dec; it preserves ranking but
+    // under-scales by 1/o_dot² and breaks absolute error.
+    let estimate = candidate_norm * sum_q_dequant / (candidate_o_dot * candidate_x_norm);
+
     let o_dot_sq = candidate_o_dot * candidate_o_dot;
     let epsilon_sq = ((1.0 - o_dot_sq).max(0.0)) / (dimensions as f32 * o_dot_sq);
     let bound = RABITQ_BOUND_CONFIDENCE * query_norm * candidate_norm * epsilon_sq.sqrt();
@@ -580,6 +779,97 @@ mod tests {
             "bound should collapse to zero for sign-aligned vector, got {}",
             est.bound
         );
+    }
+
+    #[test]
+    fn qbit_encoder_reduces_error_vs_binary() {
+        // At higher bits-per-dim, the estimator error on random
+        // Gaussian candidates should be strictly smaller (on average)
+        // than at bits = 1. Five seeds, compare mean |err|.
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        let dim = 256;
+        let seeds = [1u64, 7, 42, 128, 9001];
+
+        let rotation_bin: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q_bin = RaBitQQuantizer::with_bits(rotation_bin, 1).unwrap();
+        let rotation_q4: Arc<dyn Rotation> = Arc::new(Identity { dim });
+        let q_q4 = RaBitQQuantizer::with_bits(rotation_q4, 4).unwrap();
+
+        let mut err_bin = 0.0_f32;
+        let mut err_q4 = 0.0_f32;
+        for seed in seeds {
+            let c = deterministic_gaussian(dim, seed);
+            let query = deterministic_gaussian(dim, seed.wrapping_add(1));
+            let truth: f32 = query.iter().zip(c.iter()).map(|(a, b)| a * b).sum();
+
+            let code_bin = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q_bin, &c);
+            let prep_bin = q_bin.prepare_estimator(&query);
+            err_bin += (q_bin.estimate_ip(&prep_bin, &code_bin).estimate - truth).abs();
+
+            let code_q4 = <RaBitQQuantizer as crate::quant::Quantizer>::encode_code(&q_q4, &c);
+            let prep_q4 = q_q4.prepare_estimator(&query);
+            err_q4 += (q_q4.estimate_ip(&prep_q4, &code_q4).estimate - truth).abs();
+        }
+        assert!(
+            err_q4 < err_bin,
+            "q=4 should reduce error vs q=1, got err_bin={} err_q4={}",
+            err_bin,
+            err_q4,
+        );
+    }
+
+    #[test]
+    fn qbit_code_len_scales_with_bits() {
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        for bits in [1u8, 2, 4, 8] {
+            let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim: 1536 });
+            let q = RaBitQQuantizer::with_bits(rotation, bits).unwrap();
+            let expected_packed = (1536 * bits as usize).div_ceil(8);
+            assert_eq!(q.packed_bytes(), expected_packed, "bits={}", bits);
+            assert_eq!(
+                <RaBitQQuantizer as crate::quant::Quantizer>::code_len(&q),
+                expected_packed + RABITQ_SCALAR_LEN,
+                "bits={}",
+                bits,
+            );
+        }
+    }
+
+    #[test]
+    fn qbit_rejects_unsupported_bits() {
+        struct Identity {
+            dim: usize,
+        }
+        impl Rotation for Identity {
+            fn dimensions(&self) -> usize {
+                self.dim
+            }
+            fn apply(&self, v: &[f32]) -> Vec<f32> {
+                v.to_vec()
+            }
+        }
+        let rotation: Arc<dyn Rotation> = Arc::new(Identity { dim: 16 });
+        assert!(RaBitQQuantizer::with_bits(rotation, 3).is_err());
     }
 
     #[test]

@@ -81,7 +81,8 @@ pub mod bench_api {
     // RaBitQ (ADR-045 Stage 1)
     pub use crate::quant::rabitq::{
         DistanceEstimate, PreparedEstimator, RaBitQQuantizer, Rotation, SrhtRotation,
-        RABITQ_BOUND_CONFIDENCE, RABITQ_NORM_LEN, RABITQ_SCALAR_LEN, RABITQ_UNIT_DOT_LEN,
+        RABITQ_BOUND_CONFIDENCE, RABITQ_NORM_LEN, RABITQ_SCALAR_LEN, RABITQ_SUPPORTED_BITS,
+        RABITQ_UNIT_DOT_LEN, RABITQ_XNORM_LEN,
     };
     pub use crate::quant::{Quantizer, QueryScorer};
 
