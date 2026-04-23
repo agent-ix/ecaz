@@ -4030,6 +4030,19 @@ unsafe fn resolve_local_only_parallel_scan_duplicate(
             return LocalOnlyParallelScanDisposition::Exhausted;
         }
 
+        let blocker_element_tid =
+            item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+        if blocker_element_tid != page::ItemPointer::INVALID
+            && blocker_element_tid == active_result_state_ref(opaque).current().element_tid()
+        {
+            active_result_state_mut(opaque).clear();
+            opaque.parallel_local_only_output_active = false;
+            opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
+            sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            return LocalOnlyParallelScanDisposition::Exhausted;
+        }
+
         if !active_parallel_output_duplicates_live_foreign_heap_tid(opaque) {
             return if changed {
                 LocalOnlyParallelScanDisposition::RetryLocalEmit
@@ -10104,6 +10117,91 @@ mod tests {
         assert!(
             !owner.parallel_local_only_output_active,
             "exhausting the last duplicate should clear local-only fallback state"
+        );
+    }
+
+    #[test]
+    fn resolve_local_only_parallel_scan_duplicate_drops_same_element_foreign_owner() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 320],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+
+        owner.result_state.set_current_with_details(
+            tid(110, 1),
+            -8.0,
+            Some(-7.5),
+            Some(6),
+            Some(-8.5),
+        );
+        owner
+            .result_state
+            .store_pending(&[tid(111, 1), tid(111, 2)]);
+        owner.parallel_local_only_output_active = true;
+        owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
+            blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                slot_index: Some(1),
+                generation: 12,
+                element_tid: crate::am::ec_hnsw::parallel::EcParallelItemPointer {
+                    block_number: 110,
+                    offset_number: 1,
+                },
+            },
+            element_tid: tid(110, 1),
+        });
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        assert_eq!(
+            unsafe { resolve_local_only_parallel_scan_duplicate(&mut owner) },
+            LocalOnlyParallelScanDisposition::Exhausted,
+            "a hidden local-only row should drop entirely once a foreign owner already holds the same element"
+        );
+        assert!(
+            !owner.result_state.current().has_element(),
+            "dropping an obsolete hidden local-only row should clear the local current element"
+        );
+        assert_eq!(
+            owner.result_state.pending_count(),
+            0,
+            "dropping an obsolete hidden local-only row should clear its pending heap tids"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "dropping an obsolete hidden local-only row should clear local-only fallback state"
+        );
+        assert_eq!(
+            owner.retained_parallel_owned_output_blocker, None,
+            "dropping an obsolete hidden local-only row should clear the retained blocker"
         );
     }
 
