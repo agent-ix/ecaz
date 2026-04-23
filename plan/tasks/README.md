@@ -52,6 +52,9 @@ These pre-lane task files are retained only for historical context under
 22. `22-additive-residual-quantization.md` — executes ADR-037: **evaluate-gated** feasibility study of AQ / RVQ as PqFastScan successor; three decision gates, shelf-on-fail OK
 23. `23-lsq-codebook-refinement.md` — executes ADR-038: drop-in k-means replacement, +2–5% recall, no wire format change, low priority fill-in
 24. `24-post-native-build-storage-and-lever4-followons.md` — post-ADR-042 follow-up: reopen ADR-044 on a stable native builder, carry forward the `EXTENDED` / `MAIN` build-collapse bug, and close the lever-4 `ef_search` matrix before any persisted-default decision
+25. `25-rabitq-quantizer.md` — executes ADR-045 Stage 1: standalone RaBitQ quantizer + offline recall study; **research gate** for SymphonyQG Stages 2–3; shelvable as a clean null result if recall fails
+26. `26-parallel-index-build.md` — parallel `CREATE INDEX` / `REINDEX` for `ec_hnsw` (propagating to `ec_diskann`); shares DSM/slot primitives with task 18, so Phase 2+ is gated on task 18 merge; ADR TBD
+27. `27-symphony-access-method.md` — executes ADR-045 Stages 2–3: `symphony` AM with quantization-aware pruning + out-degree padding (Stage 2), then no-rerank query path (Stage 3); **gated on task 25's RaBitQ recall study passing**
 
 ## Coordination rules
 
