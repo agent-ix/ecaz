@@ -619,6 +619,24 @@ See ADR-040 for the full shape. Summary:
   through the same hidden-blocker path, and the original owner clears the stale
   deferred stash entry on its next retry if another worker already drained it.
 
+- **Cross-worker duplicate suppression now keys on heap TIDs, not just
+  elements.** Worker snapshots now publish the last emitted heap TID so
+  duplicate suppression only drops the exact heap row another worker just
+  drained. Hidden-owner wakeup can still advance to a later duplicate for the
+  same element instead of suppressing the whole element as stale.
+
+- **The staged `n=2` PG18 round-robin gate is now live.** Debug helpers can now
+  bind two scans to the same parallel DSM allocation and alternate
+  `amgettuple` calls against both workers, capturing per-worker streams,
+  snapshots, and visited/emitted sets. The PG18 regression asserts that the
+  combined `n=2` stream stays byte-identical to the serial ordered scan.
+
+- **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
+  tail diversification experiment was backed out because it truncated the real
+  `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
+  same bootstrap candidate ordering and rely on the shared merge/drain seam,
+  not per-worker seed partitioning, to decide which worker emits first.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

@@ -104,6 +104,8 @@ pub(crate) struct EcParallelWorkerSlot {
     scheduler_frontier_len: AtomicU32,
     visited_count: AtomicU32,
     emitted_count: AtomicU32,
+    last_emitted_element_block_number: AtomicU32,
+    last_emitted_element_offset_number: AtomicU32,
     active_result_pending_count: AtomicU32,
     active_result_has_current: AtomicU32,
     owned_output_blocker_kind: AtomicU32,
@@ -367,6 +369,7 @@ pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) scheduler_frontier_len: u32,
     pub(crate) visited_count: u32,
     pub(crate) emitted_count: u32,
+    pub(crate) last_emitted_heap_tid: EcParallelItemPointer,
     pub(crate) active_result_pending_count: u32,
     pub(crate) active_result_has_current: bool,
     pub(crate) owned_output_blocker_kind: u32,
@@ -384,6 +387,7 @@ impl EcParallelWorkerSlotRuntimeSnapshot {
             scheduler_frontier_len: 0,
             visited_count: 0,
             emitted_count: 0,
+            last_emitted_heap_tid: EcParallelItemPointer::INVALID,
             active_result_pending_count: 0,
             active_result_has_current: false,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
@@ -857,6 +861,12 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
                 scheduler_frontier_len: AtomicU32::new(0),
                 visited_count: AtomicU32::new(0),
                 emitted_count: AtomicU32::new(0),
+                last_emitted_element_block_number: AtomicU32::new(
+                    EcParallelItemPointer::INVALID.block_number,
+                ),
+                last_emitted_element_offset_number: AtomicU32::new(u32::from(
+                    EcParallelItemPointer::INVALID.offset_number,
+                )),
                 active_result_pending_count: AtomicU32::new(0),
                 active_result_has_current: AtomicU32::new(0),
                 owned_output_blocker_kind: AtomicU32::new(EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE),
@@ -914,6 +924,11 @@ fn reset_worker_slot_runtime(slot: &EcParallelWorkerSlot) {
         .store(runtime.visited_count, Ordering::Release);
     slot.emitted_count
         .store(runtime.emitted_count, Ordering::Release);
+    store_parallel_item_pointer(
+        &slot.last_emitted_element_block_number,
+        &slot.last_emitted_element_offset_number,
+        runtime.last_emitted_heap_tid,
+    );
     slot.active_result_pending_count
         .store(runtime.active_result_pending_count, Ordering::Release);
     slot.active_result_has_current.store(
@@ -1047,6 +1062,10 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
             scheduler_frontier_len: slot.scheduler_frontier_len.load(Ordering::Acquire),
             visited_count: slot.visited_count.load(Ordering::Acquire),
             emitted_count: slot.emitted_count.load(Ordering::Acquire),
+            last_emitted_heap_tid: load_parallel_item_pointer(
+                &slot.last_emitted_element_block_number,
+                &slot.last_emitted_element_offset_number,
+            ),
             active_result_pending_count: slot.active_result_pending_count.load(Ordering::Acquire),
             active_result_has_current: slot.active_result_has_current.load(Ordering::Acquire) != 0,
             owned_output_blocker_kind: slot.owned_output_blocker_kind.load(Ordering::Acquire),
@@ -2731,6 +2750,11 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
     slot_ref
         .emitted_count
         .store(snapshot.emitted_count, Ordering::Release);
+    store_parallel_item_pointer(
+        &slot_ref.last_emitted_element_block_number,
+        &slot_ref.last_emitted_element_offset_number,
+        snapshot.last_emitted_heap_tid,
+    );
     slot_ref
         .active_result_pending_count
         .store(snapshot.active_result_pending_count, Ordering::Release);
@@ -5987,6 +6011,7 @@ mod tests {
             scheduler_frontier_len: 8,
             visited_count: 13,
             emitted_count: 3,
+            last_emitted_heap_tid: EcParallelItemPointer::INVALID,
             active_result_pending_count: 2,
             active_result_has_current: true,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
@@ -6262,6 +6287,7 @@ mod tests {
                         scheduler_frontier_len: 4,
                         visited_count: 7,
                         emitted_count: 1,
+                        last_emitted_heap_tid: EcParallelItemPointer::INVALID,
                         active_result_pending_count: 1,
                         active_result_has_current: true,
                         owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
