@@ -78,6 +78,13 @@ pub mod bench_api {
     // QJL
     pub use crate::quant::qjl::{decode_mse_only, qjl_project};
 
+    // RaBitQ (ADR-045 Stage 1)
+    pub use crate::quant::rabitq::{
+        DistanceEstimate, PreparedEstimator, RaBitQQuantizer, Rotation, SrhtRotation,
+        RABITQ_ALPHA_LEN, RABITQ_NORM_LEN, RABITQ_SCALAR_LEN,
+    };
+    pub use crate::quant::{Quantizer, QueryScorer};
+
     // Page codec
     pub use crate::am::page::{
         neighbor_slots, neighbor_tuple_encoded_len, CurrentFormatMetadata, MetadataPage,
