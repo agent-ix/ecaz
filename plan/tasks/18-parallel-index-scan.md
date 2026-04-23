@@ -599,6 +599,12 @@ See ADR-040 for the full shape. Summary:
   row now blocks the owner directly so the existing hidden-slot handoff path
   can drain it before the owner advances.
 
+- **Hidden-owner wakeups now reconcile foreign drains first.** If another
+  worker already drains a hidden local-only owner row through the shared hidden
+  handoff path, the original owner no longer republishes that stale row on its
+  next wakeup. Hidden-owner wakeup now reconciles hidden-slot progress first so
+  foreign-consumed rows clear instead of resurrecting duplicate output.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

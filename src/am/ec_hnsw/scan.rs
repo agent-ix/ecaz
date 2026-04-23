@@ -3547,6 +3547,89 @@ fn reconcile_parallel_owner_progress_from_shared_slot(opaque: &mut TqScanOpaque)
     false
 }
 
+fn reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque: &mut TqScanOpaque) -> bool {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+        || !opaque.parallel_local_only_output_active
+    {
+        return false;
+    }
+
+    let current = active_result_state_ref(opaque).current();
+    if !current.has_element() {
+        return false;
+    }
+
+    let current_element = parallel_item_pointer(current.element_tid());
+    let hidden_slot = unsafe {
+        super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel hidden owner-slot read failed: {err}"));
+
+    let Some(shared_slot) = hidden_slot else {
+        let result_state = active_result_state_mut(opaque);
+        if result_state.current().has_element() {
+            result_state.clear();
+            opaque.parallel_local_only_output_active = false;
+            opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
+            return true;
+        }
+        return false;
+    };
+
+    if shared_slot.runtime.element_tid != current_element {
+        let result_state = active_result_state_mut(opaque);
+        if result_state.current().has_element() {
+            result_state.clear();
+            opaque.parallel_local_only_output_active = false;
+            opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
+            return true;
+        }
+        return false;
+    }
+
+    let shared_pending_count = usize::try_from(shared_slot.runtime.pending_count)
+        .expect("shared pending count should fit in usize");
+    let local_pending_count = usize::from(active_result_state_ref(opaque).pending_count());
+    let shared_pending_index = usize::try_from(shared_slot.runtime.pending_index)
+        .expect("shared pending index should fit in usize");
+    let local_pending_index = usize::from(active_result_state_ref(opaque).pending_index());
+
+    let shared_pending_heap_tids = &shared_slot.runtime.pending_heap_tids
+        [..shared_pending_count.min(page::HEAPTID_INLINE_CAPACITY)];
+    let local_pending_heap_tids = active_result_state_ref(opaque).pending_heap_tids();
+
+    if shared_pending_count == local_pending_count
+        && shared_pending_heap_tids
+            .iter()
+            .copied()
+            .map(item_pointer_from_parallel_item_pointer)
+            .eq(local_pending_heap_tids.iter().copied())
+        && shared_pending_index > local_pending_index
+    {
+        let result_state = active_result_state_mut(opaque);
+        while usize::from(result_state.pending_index()) < shared_pending_index {
+            if result_state.take_pending_output().is_none() {
+                break;
+            }
+        }
+        if result_state.pending_count() == 0 {
+            result_state.clear_current();
+            opaque.parallel_local_only_output_active = false;
+        }
+        opaque.parallel_owned_output_blocker = None;
+        opaque.retained_parallel_owned_output_blocker = None;
+        return true;
+    }
+
+    false
+}
+
 fn blocked_parallel_scan_disposition(
     opaque: &mut TqScanOpaque,
     blocker: super::parallel::EcParallelOwnedOutputBlocker,
@@ -4697,6 +4780,14 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     }
 
     let waking_local_only_output = opaque.parallel_local_only_output_active;
+    if waking_local_only_output {
+        // Hidden local-only rows are expected to remain staged in the worker's
+        // hidden DSM slot while they wait to re-enter shared drain. If another
+        // worker already consumed that hidden row, reconcile that hidden-slot
+        // progress before we republish the local cursor and accidentally
+        // resurrect stale output.
+        reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque);
+    }
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     if waking_local_only_output {
@@ -9961,6 +10052,97 @@ mod tests {
                 .stats_parallel_handoffs_foreign_selected_pending,
             1,
             "draining a better foreign hidden row should count as a foreign-selected handoff"
+        );
+    }
+
+    #[test]
+    fn try_take_republished_local_only_parallel_output_clears_hidden_row_drained_by_foreign_worker()
+    {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 256],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        owner.result_state.set_current_with_details(
+            tid(210, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        owner.result_state.store_pending(&[tid(211, 1)]);
+        owner.parallel_local_only_output_active = true;
+        publish_parallel_scan_worker_slot_snapshot(&owner);
+
+        foreign.result_state.set_current_with_details(
+            tid(212, 1),
+            -6.0,
+            Some(-5.5),
+            Some(7),
+            Some(-6.5),
+        );
+        foreign.result_state.store_pending(&[tid(213, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut foreign) },
+            ParallelScanOutputState::Emitted(PendingScanOutput {
+                heap_tid: tid(211, 1),
+                score: -10.0,
+                approx_score: Some(-9.5),
+                approx_rank: Some(3),
+                comparison_score: Some(-10.5),
+            }),
+            "the foreign worker should be able to drain the owner's better hidden row through the shared handoff path"
+        );
+
+        assert_eq!(
+            unsafe { try_take_republished_local_only_parallel_output(&mut owner) },
+            ParallelScanOutputState::Empty,
+            "once another worker drains the hidden owner row, the owner's wakeup path should clear it instead of republishing stale output"
+        );
+        assert!(
+            !owner.result_state.current().has_element(),
+            "a hidden owner row drained by a foreign worker should clear the owner's stale local result state"
+        );
+        assert!(
+            !owner.parallel_local_only_output_active,
+            "a hidden owner row drained by a foreign worker should clear the local-only wakeup flag"
         );
     }
 
