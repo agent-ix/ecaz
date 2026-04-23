@@ -583,6 +583,11 @@ See ADR-040 for the full shape. Summary:
   admitted head. The retained blocker record and published worker snapshot now
   refresh to the current shared owner state before the row falls back again.
 
+- **Hidden owner rows now re-enter the owned shared seam.** A worker's own
+  hidden local-only DSM slot no longer looks empty to the owned-output read/take
+  helpers. Hidden rows can now report ready and drain back through the owned
+  shared admission/take path instead of only waking into direct local fallback.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

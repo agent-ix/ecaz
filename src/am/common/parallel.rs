@@ -3240,16 +3240,24 @@ pub(crate) unsafe fn read_parallel_scan_owned_output_state(
 
     let slot = unsafe { attachment.result_slot(owner_slot_index) }?;
     let owner_slot = load_coordinator_result_slot_snapshot(unsafe { &*slot });
+    let owner_slot_is_hidden =
+        coordinator_result_slot_snapshot_is_hidden_local_only(&owner_slot, attachment.rescan_epoch)
+            && unsafe {
+                coordinator_result_slot_worker_claim_is_live(&attachment, owner_slot_index)
+            };
     if !unsafe {
         coordinator_result_slot_snapshot_is_live_with_attachment(&attachment, &owner_slot)
-    } {
+    } && !owner_slot_is_hidden
+    {
         return Ok(EcParallelOwnedOutputState::Empty);
     }
     let Some(owner_pending_output) = coordinator_pending_output_snapshot(&owner_slot) else {
         return Ok(EcParallelOwnedOutputState::Empty);
     };
 
-    if coordinator.selected_result_slot_index != Some(owner_slot_index) {
+    if coordinator.selected_result_slot_index.is_some()
+        && coordinator.selected_result_slot_index != Some(owner_slot_index)
+    {
         let selected_slot = coordinator
             .selected_result_slot_index
             .map(|slot_index| unsafe { attachment.result_slot(slot_index) })
@@ -3323,6 +3331,65 @@ pub(crate) unsafe fn take_parallel_scan_selected_pending_output_snapshot(
     Ok(None)
 }
 
+unsafe fn take_hidden_local_only_pending_output_locked(
+    attachment: &ParallelScanAttachment,
+    slot_index: u32,
+) -> Result<Option<EcParallelCoordinatorPendingOutputSelection>, &'static str> {
+    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    let slot = unsafe { attachment.result_slot(slot_index) }?;
+    let slot_ref = unsafe { &*slot };
+    let selected_result_slot = load_coordinator_result_slot_snapshot(slot_ref);
+    if !coordinator_result_slot_snapshot_is_hidden_local_only(
+        &selected_result_slot,
+        attachment.rescan_epoch,
+    ) || !unsafe { coordinator_result_slot_worker_claim_is_live(attachment, slot_index) }
+    {
+        return Ok(None);
+    }
+
+    let Some(pending_output) = coordinator_pending_output_snapshot(&selected_result_slot) else {
+        let _ = unsafe {
+            clear_parallel_scan_result_slot_locked(
+                attachment,
+                slot_index,
+                attachment.rescan_epoch,
+                false,
+            )
+        }?;
+        return Ok(None);
+    };
+
+    let next_pending_index = selected_result_slot.runtime.pending_index + 1;
+    if next_pending_index < selected_result_slot.runtime.pending_count {
+        slot_ref
+            .pending_index
+            .store(next_pending_index, Ordering::Release);
+        let next_heap_tid =
+            selected_result_slot.runtime.pending_heap_tids[usize::try_from(next_pending_index)
+                .expect("pending heap-tid index should fit in usize")];
+        store_parallel_item_pointer(
+            &slot_ref.heap_block_number,
+            &slot_ref.heap_offset_number,
+            next_heap_tid,
+        );
+    } else {
+        let _ = unsafe {
+            clear_parallel_scan_result_slot_locked(
+                attachment,
+                slot_index,
+                attachment.rescan_epoch,
+                false,
+            )
+        }?;
+    }
+
+    Ok(Some(EcParallelCoordinatorPendingOutputSelection {
+        coordinator,
+        selected_result_slot,
+        pending_output,
+    }))
+}
+
 pub(crate) unsafe fn take_parallel_scan_owned_next_output_snapshot(
     state: *mut EcParallelScanState,
     owner_slot_index: u32,
@@ -3350,7 +3417,7 @@ pub(crate) unsafe fn take_parallel_scan_owned_next_output_snapshot(
         let owned_selected = if coordinator.selected_result_slot_index == Some(owner_slot_index) {
             unsafe { take_selected_pending_output_locked(&attachment, owner_slot_index) }?
         } else {
-            None
+            unsafe { take_hidden_local_only_pending_output_locked(&attachment, owner_slot_index) }?
         };
 
         match (owned_admitted, owned_selected) {
@@ -7467,6 +7534,72 @@ mod tests {
     }
 
     #[test]
+    fn take_parallel_scan_owned_next_output_snapshot_drains_hidden_local_only_owner_slot() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("worker claim should succeed");
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 238,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 239,
+                        offset_number: 2,
+                    },
+                    score: -7.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 239,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("hidden publish should succeed");
+
+        let taken = unsafe {
+            take_parallel_scan_owned_next_output_snapshot(attachment.state, slot_index, 2)
+        }
+        .expect("owned take should succeed")
+        .expect("a hidden local-only owner slot should still drain through the owned shared path");
+        assert_eq!(
+            taken.admitted_result.pending_output.heap_tid,
+            EcParallelItemPointer {
+                block_number: 239,
+                offset_number: 2,
+            },
+            "the owned hidden slot should yield its staged heap tid through the shared take path"
+        );
+        assert_eq!(
+            unsafe { read_parallel_scan_hidden_local_only_result_slot_snapshot(attachment.state, slot_index) }
+                .expect("hidden result-slot snapshot should read back"),
+            None,
+            "draining the last pending output from a hidden slot should clear that hidden runtime state"
+        );
+    }
+
+    #[test]
     fn read_parallel_scan_owned_output_state_reports_ready_for_owned_selected_pending() {
         let mut storage = TestParallelScanStorage::default();
         let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
@@ -7513,6 +7646,59 @@ mod tests {
                 .expect("owned output state read should succeed"),
             EcParallelOwnedOutputState::Ready,
             "an owned selected pending output should report ready before any foreign blocker exists"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_owned_output_state_reports_ready_for_hidden_local_only_owner_slot() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("worker claim should succeed");
+
+        unsafe {
+            publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 242,
+                        offset_number: 1,
+                    },
+                    heap_tid: EcParallelItemPointer {
+                        block_number: 243,
+                        offset_number: 2,
+                    },
+                    score: -5.5,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([EcParallelItemPointer {
+                        block_number: 243,
+                        offset_number: 2,
+                    }]),
+                },
+            )
+        }
+        .expect("hidden publish should succeed");
+
+        assert_eq!(
+            unsafe { read_parallel_scan_owned_output_state(attachment.state, slot_index, 2) }
+                .expect("owned output state read should succeed"),
+            EcParallelOwnedOutputState::Ready,
+            "a hidden local-only owner slot should still report ready for the owning worker"
         );
     }
 
