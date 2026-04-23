@@ -3831,6 +3831,13 @@ fn live_foreign_blocker_heap_tid(
                         selected.pending_output.heap_tid,
                     ));
                 }
+                if selected.coordinator.selected_result_slot_index == Some(expected_slot)
+                    && selected.selected_result_slot.runtime.element_tid == blocker.element_tid
+                {
+                    return Some(item_pointer_from_parallel_item_pointer(
+                        selected.pending_output.heap_tid,
+                    ));
+                }
             }
 
             let blocker_element_tid = item_pointer_from_parallel_item_pointer(blocker.element_tid);
@@ -3895,6 +3902,22 @@ fn live_foreign_blocker_heap_tid(
             });
             if let Some(admitted) = admitted {
                 if admitted.coordinator.admitted_result_generation == blocker.generation {
+                    return Some(item_pointer_from_parallel_item_pointer(
+                        admitted.admitted_head.heap_tid,
+                    ));
+                }
+                let admitted_result = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!("ec_hnsw parallel scan admitted-head result read failed: {err}")
+                });
+                if item_pointer_from_parallel_item_pointer(admitted_result.element_tid)
+                    == item_pointer_from_parallel_item_pointer(blocker.element_tid)
+                {
                     return Some(item_pointer_from_parallel_item_pointer(
                         admitted.admitted_head.heap_tid,
                     ));
@@ -4060,6 +4083,12 @@ fn deferred_parallel_blocked_output_preference_score(
                 {
                     return Some(selected.pending_output.score);
                 }
+                if selected.coordinator.selected_result_slot_index == Some(expected_slot)
+                    && selected.selected_result_slot.runtime.element_tid
+                        == retained.blocker.element_tid
+                {
+                    return Some(selected.pending_output.score);
+                }
             }
 
             let blocker_element_tid =
@@ -4123,6 +4152,22 @@ fn deferred_parallel_blocked_output_preference_score(
             });
             if let Some(admitted) = admitted {
                 if admitted.coordinator.admitted_result_generation == retained.blocker.generation {
+                    return Some(admitted.admitted_head.score);
+                }
+                let admitted_result = unsafe {
+                    super::parallel::read_parallel_scan_admitted_result_snapshot(
+                        opaque.parallel_scan_state,
+                        0,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan admitted-head preference result read failed: {err}"
+                    )
+                });
+                if item_pointer_from_parallel_item_pointer(admitted_result.element_tid)
+                    == item_pointer_from_parallel_item_pointer(retained.blocker.element_tid)
+                {
                     return Some(admitted.admitted_head.score);
                 }
             }
@@ -12214,6 +12259,245 @@ mod tests {
             deferred_parallel_blocked_output_preference_score(&owner, &deferred),
             Some(-10.0),
             "a retained admitted-head blocker should keep using the hidden foreign owner's score after that row moves into a hidden local-only slot"
+        );
+    }
+
+    #[test]
+    fn live_foreign_blocker_heap_tid_tracks_selected_blocker_across_republish_generation() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(280, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(281, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let selected_before = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected pending snapshot should read back")
+        .expect("foreign worker should seed the shared selected pending output");
+
+        foreign.result_state.set_current_with_details(
+            tid(280, 1),
+            -11.0,
+            Some(-10.5),
+            Some(2),
+            Some(-11.5),
+        );
+        foreign.result_state.store_pending(&[tid(282, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let selected_after = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_selected_pending_output_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("parallel selected pending snapshot should read back after republish")
+        .expect("foreign worker should keep the shared selected pending output after republish");
+        assert!(
+            selected_after.coordinator.result_publish_generation
+                > selected_before.coordinator.result_publish_generation,
+            "republishing the same foreign element should still advance the shared publish generation"
+        );
+
+        assert_eq!(
+            live_foreign_blocker_heap_tid(
+                &owner,
+                crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending,
+                    slot_index: selected_before.coordinator.selected_result_slot_index,
+                    generation: selected_before.coordinator.result_publish_generation,
+                    element_tid: selected_before.selected_result_slot.runtime.element_tid,
+                },
+            ),
+            Some(tid(282, 1)),
+            "a retained selected blocker should keep tracking the same foreign row after that row republishes with a newer generation"
+        );
+    }
+
+    #[test]
+    fn deferred_parallel_blocked_output_preference_score_tracks_admitted_blocker_across_readmit_generation(
+    ) {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 512],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut owner_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut foreign_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut owner = TqScanOpaque::default();
+        let mut foreign = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut owner_scan_desc, &mut owner);
+        bind_parallel_scan_state(&mut foreign_scan_desc, &mut foreign);
+
+        foreign.result_state.set_current_with_details(
+            tid(290, 1),
+            -10.0,
+            Some(-9.5),
+            Some(3),
+            Some(-10.5),
+        );
+        foreign.result_state.store_pending(&[tid(291, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+
+        let _admitted_before = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                owner.parallel_scan_state,
+                1,
+            )
+        }
+        .expect("selected pending output should admit")
+        .expect("foreign selected output should enter the admitted window");
+        let admitted_before = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_head_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("admitted head snapshot should read back")
+        .expect("foreign row should populate the admitted head");
+        let admitted_result_before = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_result_snapshot(
+                owner.parallel_scan_state,
+                0,
+            )
+        }
+        .expect("admitted result snapshot should read back");
+
+        foreign.result_state.set_current_with_details(
+            tid(290, 1),
+            -11.0,
+            Some(-10.5),
+            Some(2),
+            Some(-11.5),
+        );
+        foreign.result_state.store_pending(&[tid(292, 1)]);
+        publish_parallel_scan_worker_slot_snapshot(&foreign);
+        let _admitted_after = unsafe {
+            crate::am::ec_hnsw::parallel::admit_parallel_scan_selected_pending_output(
+                owner.parallel_scan_state,
+                1,
+            )
+        }
+        .expect("republished selected output should admit")
+        .expect("republished foreign output should refresh the admitted head");
+        let admitted_after = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_head_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("admitted head snapshot should read back after readmit")
+        .expect("republished foreign row should still populate the admitted head");
+        let admitted_result_after = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admitted_result_snapshot(
+                owner.parallel_scan_state,
+                0,
+            )
+        }
+        .expect("admitted result snapshot should read back after readmit");
+        assert!(
+            admitted_after.coordinator.admitted_result_generation
+                > admitted_before.coordinator.admitted_result_generation,
+            "re-admitting the same foreign element should still advance the admitted generation"
+        );
+        assert_eq!(
+            admitted_result_after.element_tid, admitted_result_before.element_tid,
+            "the admitted head should preserve the same foreign element identity across readmit"
+        );
+
+        let mut blocked = ScanResultState::default();
+        blocked.set_current_with_details(tid(293, 1), -8.0, Some(-7.5), Some(9), Some(-8.5));
+        blocked.store_pending(&[tid(294, 1)]);
+        let deferred = DeferredParallelBlockedOutput {
+            source_phase: ScanExecutionPhase::GraphTraversal,
+            state: blocked,
+            retained_blocker: Some(RetainedParallelOwnedOutputBlocker {
+                blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
+                    kind: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                    slot_index: Some(foreign.parallel_scan_worker_slot_index),
+                    generation: admitted_before.coordinator.admitted_result_generation,
+                    element_tid: admitted_result_before.element_tid,
+                },
+                element_tid: tid(293, 1),
+            }),
+        };
+
+        assert_eq!(
+            deferred_parallel_blocked_output_preference_score(&owner, &deferred),
+            Some(-11.0),
+            "a retained admitted-head blocker should keep using the same foreign row after that row re-admits with a newer generation"
         );
     }
 

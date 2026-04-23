@@ -571,6 +571,12 @@ See ADR-040 for the full shape. Summary:
   local-only DSM slot. Hidden and deferred rows now keep the blocker live and
   keep using the foreign owner's score/heap-tid signal across that transition.
 
+- **Same-row blocker continuity now survives republish/readmit generations.**
+  Retained blockers no longer go falsely stale just because the same foreign
+  owner republishes or re-admits the same row with a newer generation on the
+  same worker slot. Hidden and deferred rows now keep tracking that same row
+  through generation churn instead of treating it as fresh local work.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
