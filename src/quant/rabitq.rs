@@ -105,29 +105,88 @@ pub trait Rotation: Send + Sync {
     fn apply(&self, v: &[f32]) -> Vec<f32>;
 }
 
-/// SRHT rotation backed by a `ProdQuantizer`'s sign vector. This is
-/// the default `Rotation` during ADR-045 Stage 1; it reuses the
-/// quantizer's existing SRHT state so the canonical RaBitQ encode
-/// and the ADR-031 PQ-derived sidecar land on the same rotated basis.
+/// SRHT rotation. Holds its own sign vector so the rotation and
+/// its seed are first-class — independent of any quantizer. A
+/// `ProdQuantizer`-backed constructor remains for the ADR-031
+/// PQ-derived sidecar path that needs to reach into PQ codebook
+/// state through the rotation handle.
+///
+/// Construction choices:
+/// - `SrhtRotation::with_seed(dim, seed)` — the recommended path
+///   for prod code and for the Stage-1 feasibility study. The seed
+///   should live per-index (recorded in the index metadata) so
+///   different indexes on the same box get statistically
+///   independent rotations.
+/// - `SrhtRotation::new(dim, prod)` — derives the sign vector from
+///   an existing `ProdQuantizer`'s `signs`. Kept because the
+///   ADR-031 sidecar codepath reuses PQ codebook state co-located
+///   with the rotation; call `prod()` on the resulting rotation
+///   to recover the quantizer.
+///
+/// Tests across the crate pin the canonical seed at
+/// `DEFAULT_QUANT_SEED = 42` for reproducibility; prod deployments
+/// should pass a fresh seed per index build.
 pub struct SrhtRotation {
     dimensions: usize,
-    prod: Arc<ProdQuantizer>,
+    signs: Arc<Vec<f32>>,
+    prod: Option<Arc<ProdQuantizer>>,
+    seed: Option<u64>,
 }
 
 impl SrhtRotation {
+    /// Construct an SRHT rotation with an explicit seed. The seed
+    /// deterministically generates the sign vector via
+    /// [`rotation::sign_vector`]; quality of the rotation does not
+    /// depend on which specific seed is used, only on its
+    /// independence from the input data.
+    pub fn with_seed(dimensions: usize, seed: u64) -> Self {
+        assert!(dimensions > 0, "SRHT dimensions must be positive");
+        let transform_dim = rotation::effective_transform_dim(dimensions);
+        let signs = Arc::new(rotation::sign_vector(transform_dim, seed));
+        Self {
+            dimensions,
+            signs,
+            prod: None,
+            seed: Some(seed),
+        }
+    }
+
+    /// Construct an SRHT rotation backed by a `ProdQuantizer`'s
+    /// sign vector. Used when the ADR-031 PQ-derived sidecar path
+    /// needs the rotation and the PQ codebook to agree. The signs
+    /// are cloned out so the rotation is self-sufficient if the
+    /// quantizer is later freed — but the [`prod`](Self::prod)
+    /// accessor retains the quantizer reference for callers that
+    /// need the codebook.
     pub fn new(dimensions: usize, prod: Arc<ProdQuantizer>) -> Self {
         assert_eq!(
             prod.original_dim, dimensions,
             "SRHT rotation dimensions mismatch: quantizer has {}, asked for {}",
             prod.original_dim, dimensions,
         );
-        Self { dimensions, prod }
+        let signs = Arc::new(prod.signs.clone());
+        Self {
+            dimensions,
+            signs,
+            prod: Some(prod),
+            seed: None,
+        }
     }
 
-    /// Access the underlying `ProdQuantizer`. Used by the ADR-031
-    /// PQ-derived sidecar helpers, which need the codebook state.
-    pub fn prod(&self) -> &Arc<ProdQuantizer> {
-        &self.prod
+    /// Access the underlying `ProdQuantizer`, when this rotation
+    /// was built via [`Self::new`]. Returns `None` for
+    /// seed-constructed rotations — those do not carry PQ codebook
+    /// state and so cannot feed the ADR-031 sidecar encoder.
+    pub fn prod(&self) -> Option<&Arc<ProdQuantizer>> {
+        self.prod.as_ref()
+    }
+
+    /// Seed used to construct this rotation, when it was built via
+    /// [`Self::with_seed`]. Returns `None` for quantizer-backed
+    /// rotations — those inherit their signs from the
+    /// `ProdQuantizer`'s own seed-derived state.
+    pub fn seed(&self) -> Option<u64> {
+        self.seed
     }
 }
 
@@ -144,7 +203,7 @@ impl Rotation for SrhtRotation {
             v.len(),
             self.dimensions,
         );
-        let padded = rotation::srht_padded(v, &self.prod.signs);
+        let padded = rotation::srht_padded(v, &self.signs);
         padded[..self.dimensions].to_vec()
     }
 }
@@ -202,6 +261,19 @@ impl RaBitQQuantizer {
         bits: u8,
     ) -> Result<Self, String> {
         let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::new(dimensions, prod));
+        Self::with_bits(rotation, bits)
+    }
+
+    /// Convenience: build a RaBitQ quantizer with a freshly-seeded
+    /// SRHT rotation (no `ProdQuantizer` dependency). Recommended
+    /// for prod call sites where the seed is recorded in the
+    /// index metadata so different indexes get independent rotations.
+    pub fn with_seeded_srht_bits(
+        dimensions: usize,
+        seed: u64,
+        bits: u8,
+    ) -> Result<Self, String> {
+        let rotation: Arc<dyn Rotation> = Arc::new(SrhtRotation::with_seed(dimensions, seed));
         Self::with_bits(rotation, bits)
     }
 
@@ -853,6 +925,31 @@ mod tests {
                 bits,
             );
         }
+    }
+
+    #[test]
+    fn srht_seeded_rotation_is_deterministic_and_independent_of_prod() {
+        // Same seed → same rotation output, regardless of whether
+        // we have a ProdQuantizer lying around. Different seeds →
+        // different signs (so different rotations).
+        let dim = 64;
+        let v: Vec<f32> = (0..dim).map(|i| (i as f32) * 0.01 - 0.3).collect();
+
+        let r1 = SrhtRotation::with_seed(dim, 7);
+        let r2 = SrhtRotation::with_seed(dim, 7);
+        assert_eq!(r1.apply(&v), r2.apply(&v));
+        assert_eq!(r1.seed(), Some(7));
+        assert!(r1.prod().is_none());
+
+        let r3 = SrhtRotation::with_seed(dim, 8);
+        assert_ne!(r1.apply(&v), r3.apply(&v));
+
+        // Prod-backed rotation still constructs with the same API
+        // shape as before.
+        let prod = ProdQuantizer::cached(dim, 4, 42);
+        let r4 = SrhtRotation::new(dim, prod);
+        assert!(r4.prod().is_some());
+        assert_eq!(r4.seed(), None);
     }
 
     #[test]
