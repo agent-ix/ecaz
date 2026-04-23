@@ -631,6 +631,12 @@ See ADR-040 for the full shape. Summary:
   snapshots, and visited/emitted sets. The PG18 regression asserts that the
   combined `n=2` stream stays byte-identical to the serial ordered scan.
 
+- **The staged `n=2` duplicate-drain gate is now live too.** A second PG18
+  round-robin regression now uses coalesced duplicate vectors and asserts that
+  the two-worker combined heap-TID stream still matches serial duplicate drain
+  order exactly, so the heap-TID suppression seam is covered end-to-end rather
+  than only by unit tests.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the

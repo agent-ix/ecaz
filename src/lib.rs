@@ -15649,6 +15649,72 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ech_parallel_n2_round_robin_matches_serial_duplicate_drain() {
+        Spi::run(
+            "CREATE TABLE ec_hnsw_two_worker_parallel_dupes (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_two_worker_parallel_dupes VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (2, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (3, ARRAY[0.95, 0.05, 0.45, -0.9]::real[]::ecvector),
+             (4, ARRAY[0.95, 0.05, 0.45, -0.9]::real[]::ecvector),
+             (5, ARRAY[0.0, 1.0, 0.0, 0.0]::real[]::ecvector),
+             (6, ARRAY[-1.0, 0.0, 0.0, 1.0]::real[]::ecvector)",
+        )
+        .expect("fixture insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_two_worker_parallel_dupes_idx ON ec_hnsw_two_worker_parallel_dupes USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_two_worker_parallel_dupes_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+
+        let (serial, serial_summary) =
+            unsafe { am::debug_gettuple_scan_heap_tids_with_scores_details(index_oid, query.clone()) };
+        let (
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            parallel_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        ) = unsafe {
+            am::debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_details(
+                index_oid, query, 2,
+            )
+        };
+
+        assert_eq!(
+            parallel_round_robin, serial,
+            "n=2 round-robin parallel-bound duplicate drain should stay byte-identical to the serial emitted heap-tid and score stream; serial_summary={:?} primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
+            serial_summary,
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        );
+    }
+
+    #[pg_test]
     fn test_ech_parallel_n1_pq_matches_serial() {
         let table_name = "ec_hnsw_single_worker_parallel_pq";
         let index_name = "ec_hnsw_single_worker_parallel_pq_idx";
