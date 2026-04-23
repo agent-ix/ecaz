@@ -444,6 +444,13 @@ See ADR-040 for the full shape. Summary:
   the scan consumes that duplicate immediately, republishes its worker snapshot,
   and retries the shared seam before the row ever enters the deferred stash.
 
+- **Local-only duplicate suppression before wakeup emit.** A hidden
+  `parallel_local_only_output_active` row now runs that same live-foreign
+  duplicate suppression before its wakeup path locally emits again. If the
+  foreign selected/admitted output still owns the same next heap TID, the scan
+  consumes that duplicate first, attempts shared handoff again, and only falls
+  back to local emit for the next unique heap TID.
+
 - **Deferred duplicate skip now reopens shared handoff.** When deferred local
   fallback skips a foreign-owned duplicate heap TID, it now retries the shared
   handoff seam for that row immediately instead of sliding straight toward local
