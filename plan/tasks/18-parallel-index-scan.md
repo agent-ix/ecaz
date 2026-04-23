@@ -612,6 +612,13 @@ See ADR-040 for the full shape. Summary:
   keeps the shared hidden slot aligned with the owner's local duplicate cursor
   instead of leaving the consumed duplicate staged in DSM.
 
+- **Best deferred rows now enter the hidden shared seam too.** When a worker's
+  active row is empty but its deferred stash still holds the best blocked row,
+  that best deferred row now publishes into the hidden coordinator slot instead
+  of staying visible only in the worker snapshot. Foreign workers can take it
+  through the same hidden-blocker path, and the original owner clears the stale
+  deferred stash entry on its next retry if another worker already drained it.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
