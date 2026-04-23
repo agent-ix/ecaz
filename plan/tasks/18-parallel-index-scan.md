@@ -558,6 +558,13 @@ See ADR-040 for the full shape. Summary:
   re-enter the shared path, or only then fall back again if the blocker really
   is still live.
 
+- **Selected blockers stay live when the foreign row becomes admitted head.**
+  A retained `ForeignSelectedPending` blocker no longer goes falsely stale just
+  because that same foreign row moved from the selected fast path into the
+  admitted head. Hidden and deferred rows now keep tracking that foreign owner
+  across the selected-to-admitted transition instead of prematurely treating
+  themselves as ready.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
