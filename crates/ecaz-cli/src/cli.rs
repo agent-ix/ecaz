@@ -73,6 +73,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::dev::DevCommand,
     },
+    /// Offline quantizer feasibility / recall studies (no DB required).
+    Quant {
+        #[command(subcommand)]
+        command: commands::quant::QuantCommand,
+    },
     /// Correctness-under-load harnesses (vacuum concurrency, crash recovery, ...).
     Stress {
         #[command(subcommand)]
@@ -101,6 +106,7 @@ impl Cli {
             Command::Bench { command } => command.run(&db).await,
             Command::Compare { command } => command.run(&db).await,
             Command::Dev { command } => command.run(&db).await,
+            Command::Quant { command } => command.run(&db).await,
             Command::Stress { command } => command.run(&db).await,
         }
     }
