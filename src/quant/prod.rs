@@ -44,10 +44,7 @@ pub struct PreparedTiledLutNoQjl4BitQuery {
     pub tile_size: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct BinarySignNoQjl4BitQuery {
-    pub words: Vec<u64>,
-}
+pub use crate::quant::rabitq::BinarySignNoQjl4BitQuery;
 
 #[derive(Debug)]
 pub struct ProdQuantizer {
@@ -339,7 +336,7 @@ impl ProdQuantizer {
 
         let rotated = rotation::srht_padded(query, &self.signs);
         BinarySignNoQjl4BitQuery {
-            words: binary_sign_words_from_rotated(&rotated[..self.original_dim]),
+            words: crate::quant::rabitq::sign_words_from_rotated(&rotated[..self.original_dim]),
         }
     }
 
@@ -349,10 +346,10 @@ impl ProdQuantizer {
             "binary sign code derivation requires the no-QJL 4-bit lane"
         );
 
-        binary_sign_words_from_packed(
+        crate::quant::rabitq::sign_words_from_packed_4bit(
             code_bytes,
             self.original_dim,
-            &binary_sign_lookup_4bit(&self.codebook),
+            &crate::quant::rabitq::binary_sign_lookup_4bit(&self.codebook),
         )
     }
 
@@ -365,7 +362,11 @@ impl ProdQuantizer {
             self.binary_sign_no_qjl_4bit_supported(),
             "binary sign scoring requires the no-QJL 4-bit lane"
         );
-        binary_sign_similarity(&prepared.words, candidate_words, self.original_dim)
+        crate::quant::rabitq::hamming_similarity(
+            &prepared.words,
+            candidate_words,
+            self.original_dim,
+        )
     }
 
     pub fn score_ip_from_parts_int8_approx_no_qjl_4bit(
@@ -1367,74 +1368,6 @@ fn quantize_codebook_i8_16(codebook: &[f32]) -> ([i8; 16], f32) {
         *slot = ((*value / scale).round().clamp(-127.0, 127.0)) as i8;
     }
     (quantized, scale)
-}
-
-fn binary_sign_lookup_4bit(codebook: &[f32]) -> [u8; 16] {
-    assert_eq!(
-        codebook.len(),
-        16,
-        "binary sign lookup requires a 16-entry 4-bit codebook"
-    );
-
-    let mut signs = [0_u8; 16];
-    for (index, value) in codebook.iter().copied().enumerate() {
-        signs[index] = u8::from(value >= 0.0);
-    }
-    signs
-}
-
-fn binary_sign_words_from_rotated(rotated: &[f32]) -> Vec<u64> {
-    let mut words = vec![0_u64; rotated.len().div_ceil(64)];
-    for (index, value) in rotated.iter().copied().enumerate() {
-        if value >= 0.0 {
-            words[index / 64] |= 1_u64 << (index % 64);
-        }
-    }
-    words
-}
-
-fn binary_sign_words_from_packed(
-    code_bytes: &[u8],
-    dim: usize,
-    sign_lookup: &[u8; 16],
-) -> Vec<u64> {
-    let mut words = vec![0_u64; dim.div_ceil(64)];
-    let mut dim_index = 0usize;
-
-    for &packed in code_bytes {
-        if dim_index >= dim {
-            break;
-        }
-
-        let low_nibble = (packed & 0x0F) as usize;
-        if sign_lookup[low_nibble] != 0 {
-            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
-        }
-        dim_index += 1;
-
-        if dim_index >= dim {
-            break;
-        }
-
-        let high_nibble = (packed >> 4) as usize;
-        if sign_lookup[high_nibble] != 0 {
-            words[dim_index / 64] |= 1_u64 << (dim_index % 64);
-        }
-        dim_index += 1;
-    }
-
-    words
-}
-
-fn binary_sign_similarity(query_words: &[u64], candidate_words: &[u64], dim: usize) -> f32 {
-    let hamming_distance = query_words
-        .iter()
-        .zip(candidate_words.iter())
-        .map(|(query, candidate)| (query ^ candidate).count_ones())
-        .sum::<u32>();
-    let dim_i32 = i32::try_from(dim).expect("dimensions should fit in i32");
-    let distance_i32 = i32::try_from(hamming_distance).expect("hamming distance should fit in i32");
-    (dim_i32 - (2 * distance_i32)) as f32
 }
 
 pub fn payload_len(dim: usize, bits: u8) -> usize {

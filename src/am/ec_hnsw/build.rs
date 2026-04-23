@@ -324,7 +324,7 @@ fn validate_grouped_rerank_source_column_for_empty_build(
 }
 
 fn persisted_binary_sidecar_word_count(dimensions: u16, bits: u8, seed: u64) -> usize {
-    training::persisted_binary_sidecar_word_count(dimensions, bits, seed)
+    crate::quant::rabitq::persisted_sidecar_word_count(dimensions, bits, seed)
 }
 
 pub(super) unsafe fn build_heap_tuple(
@@ -612,7 +612,7 @@ pub(super) fn stage_v2_grouped_build_payload(
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V2GroupedBuildPayload {
     let binary_words =
-        training::derive_persisted_binary_words(persisted_binary_quantizer, &tuple.code);
+        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
 
     V2GroupedBuildPayload {
         hot: page::TqGroupedHotTuple {
@@ -639,7 +639,7 @@ pub(super) fn stage_v3_turbo_hot_build_payload(
     persisted_binary_quantizer: &ProdQuantizer,
 ) -> V3TurboHotBuildPayload {
     let binary_words =
-        training::derive_persisted_binary_words(persisted_binary_quantizer, &tuple.code);
+        crate::quant::rabitq::derive_persisted_sidecar_words(persisted_binary_quantizer, &tuple.code);
 
     V3TurboHotBuildPayload {
         hot: page::TqTurboHotTuple {
