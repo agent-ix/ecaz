@@ -6,9 +6,6 @@ use rand::random;
 use super::{options, page};
 use crate::am::common::metadata;
 
-const POPULATED_BUILD_ERROR: &str =
-    "symphony ambuild for populated relations is not implemented yet";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndexedVectorKind {
     Ecvector,
@@ -22,23 +19,11 @@ struct IndexedVectorAttribute {
     kind: IndexedVectorKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SingletonBuildTuple {
-    heap_tid: page::ItemPointer,
-    dimensions: u16,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BuildInput {
-    Empty,
-    Singleton(SingletonBuildTuple),
-    MultiRow,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct BuildScanResult {
     heap_tuples: f64,
-    input: BuildInput,
+    dimensions: Option<u16>,
+    heap_tids: Vec<page::ItemPointer>,
 }
 
 pub(super) unsafe extern "C-unwind" fn symphony_ambuild(
@@ -51,34 +36,22 @@ pub(super) unsafe extern "C-unwind" fn symphony_ambuild(
             let build_input = scan_heap_for_build_input(heap_relation, index_info);
             let options = options::relation_options(index_relation);
             let mut metadata = initial_metadata(options, random::<u64>());
-            let index_tuples = match build_input.input {
-                BuildInput::Empty => {
-                    metadata::initialize_metadata_page(
-                        index_relation,
-                        &metadata.encode(),
-                        "symphony",
-                    );
-                    0.0
-                }
-                BuildInput::Singleton(tuple) => {
-                    metadata::initialize_metadata_page(
-                        index_relation,
-                        &metadata.encode(),
-                        "symphony",
-                    );
-                    let entry_point =
-                        write_singleton_build(index_relation, pg_sys::BLCKSZ as usize, tuple)
-                            .unwrap_or_else(|err| pgrx::error!("{err}"));
-                    metadata.entry_point = entry_point;
-                    metadata.dimensions = tuple.dimensions;
-                    metadata::initialize_metadata_page(
-                        index_relation,
-                        &metadata.encode(),
-                        "symphony",
-                    );
-                    1.0
-                }
-                BuildInput::MultiRow => pgrx::error!("{POPULATED_BUILD_ERROR}"),
+            metadata::initialize_metadata_page(index_relation, &metadata.encode(), "symphony");
+            let index_tuples = if build_input.heap_tids.is_empty() {
+                0.0
+            } else {
+                let entry_point = write_seed_graph(
+                    index_relation,
+                    pg_sys::BLCKSZ as usize,
+                    &build_input.heap_tids,
+                )
+                .unwrap_or_else(|err| pgrx::error!("{err}"));
+                metadata.entry_point = entry_point;
+                metadata.dimensions = build_input
+                    .dimensions
+                    .expect("non-empty Symphony build should resolve dimensions");
+                metadata::initialize_metadata_page(index_relation, &metadata.encode(), "symphony");
+                build_input.heap_tids.len() as f64
             };
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
@@ -122,33 +95,44 @@ unsafe fn write_initial_metadata(index_relation: pg_sys::Relation) {
     unsafe { metadata::initialize_metadata_page(index_relation, &encoded, "symphony") };
 }
 
-unsafe fn write_singleton_build(
+unsafe fn write_seed_graph(
     index_relation: pg_sys::Relation,
     page_size: usize,
-    tuple: SingletonBuildTuple,
+    heap_tids: &[page::ItemPointer],
 ) -> Result<page::ItemPointer, String> {
-    let (data_pages, entry_point) = singleton_data_pages(page_size, tuple.heap_tid)?;
+    let (data_pages, entry_point) = seed_graph_data_pages(page_size, heap_tids)?;
     unsafe { write_data_pages(index_relation, &data_pages) };
     Ok(entry_point)
 }
 
-fn singleton_data_pages(
+fn seed_graph_data_pages(
     page_size: usize,
-    heap_tid: page::ItemPointer,
+    heap_tids: &[page::ItemPointer],
 ) -> Result<(page::DataPageChain, page::ItemPointer), String> {
+    if heap_tids.is_empty() {
+        return Err("symphony seed graph requires at least one heap tuple".into());
+    }
+
     let mut data_pages = page::DataPageChain::new(page_size);
-    let neighbor_tid = data_pages.insert_symphony_neighbor(&page::SymphonyNeighborTuple {
-        count: 0,
-        tids: Vec::new(),
-        centered_codes: Vec::new(),
-    })?;
-    let entry_point = data_pages.insert_symphony_element(&page::SymphonyElementTuple {
-        level: 0,
-        deleted: false,
-        heaptids: vec![heap_tid],
-        neighbortid: neighbor_tid,
-    })?;
-    Ok((data_pages, entry_point))
+    let mut entry_point = None;
+    for &heap_tid in heap_tids {
+        let neighbor_tid = data_pages.insert_symphony_neighbor(&page::SymphonyNeighborTuple {
+            count: 0,
+            tids: Vec::new(),
+            centered_codes: Vec::new(),
+        })?;
+        let element_tid = data_pages.insert_symphony_element(&page::SymphonyElementTuple {
+            level: 0,
+            deleted: false,
+            heaptids: vec![heap_tid],
+            neighbortid: neighbor_tid,
+        })?;
+        entry_point.get_or_insert(element_tid);
+    }
+    Ok((
+        data_pages,
+        entry_point.expect("non-empty Symphony seed graph should resolve an entry point"),
+    ))
 }
 
 unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &page::DataPageChain) {
@@ -239,30 +223,27 @@ unsafe fn scan_heap_for_build_input(
     }
 
     let mut heap_tuples = 0.0_f64;
-    let mut singleton = None;
-    let result = loop {
+    let mut dimensions = None;
+    let mut heap_tids = Vec::new();
+    loop {
         if !unsafe {
             pg_sys::heap_getnextslot(scan, pg_sys::ScanDirection::ForwardScanDirection, slot)
         } {
-            break singleton
-                .map(BuildInput::Singleton)
-                .unwrap_or(BuildInput::Empty);
+            break;
         }
 
         heap_tuples += 1.0;
-        if singleton.is_some() {
-            break BuildInput::MultiRow;
-        }
-
         let heap_tid = unsafe { decode_slot_tid(slot) };
         let datum =
             unsafe { required_slot_datum(slot, indexed_attribute.attnum, "indexed column") };
-        let dimensions = vector_dimensions_from_datum(datum, indexed_attribute);
-        singleton = Some(SingletonBuildTuple {
-            heap_tid,
-            dimensions,
-        });
-    };
+        let tuple_dimensions = vector_dimensions_from_datum(datum, indexed_attribute);
+        dimensions = Some(
+            merge_build_dimensions(dimensions, tuple_dimensions).unwrap_or_else(|err| {
+                pgrx::error!("symphony ambuild indexed column mismatch: {err}")
+            }),
+        );
+        heap_tids.push(heap_tid);
+    }
 
     unsafe {
         pg_sys::heap_endscan(scan);
@@ -273,7 +254,8 @@ unsafe fn scan_heap_for_build_input(
 
     BuildScanResult {
         heap_tuples,
-        input: result,
+        dimensions,
+        heap_tids,
     }
 }
 
@@ -400,11 +382,21 @@ fn vector_dimensions_from_bytes(bytes: &[u8], kind: IndexedVectorKind) -> Result
     }
 }
 
-#[cfg(any(test, feature = "pg_test"))]
+fn merge_build_dimensions(expected: Option<u16>, actual: u16) -> Result<u16, String> {
+    match expected {
+        Some(expected) if expected != actual => {
+            Err(format!("expected dimension {expected}, got {actual}"))
+        }
+        Some(expected) => Ok(expected),
+        None => Ok(actual),
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{
-        initial_metadata, options, page, singleton_data_pages, vector_dimensions_from_bytes,
-        IndexedVectorKind,
+        initial_metadata, merge_build_dimensions, options, page, seed_graph_data_pages,
+        vector_dimensions_from_bytes, IndexedVectorKind,
     };
     use crate::storage::page::{DEFAULT_PAGE_SIZE, FIRST_DATA_BLOCK_NUMBER};
 
@@ -442,23 +434,65 @@ mod tests {
     }
 
     #[test]
-    fn singleton_data_pages_write_empty_neighbor_and_element() {
+    fn seed_graph_data_pages_write_empty_neighbors_and_elements() {
+        let heap_tids = [tid(7, 9), tid(8, 3), tid(9, 1)];
         let (data_pages, entry_point) =
-            singleton_data_pages(DEFAULT_PAGE_SIZE, tid(7, 9)).expect("singleton data pages");
+            seed_graph_data_pages(DEFAULT_PAGE_SIZE, &heap_tids).expect("seed graph data pages");
 
-        assert_eq!(data_pages.pages().len(), 1);
         assert_eq!(entry_point.block_number, FIRST_DATA_BLOCK_NUMBER);
-        let element = data_pages.read_symphony_element(entry_point).unwrap();
-        assert_eq!(element.level, 0);
-        assert!(!element.deleted);
-        assert_eq!(element.heaptids, vec![tid(7, 9)]);
+        assert_eq!(entry_point.offset_number, 2);
+        assert_eq!(data_pages.pages().len(), 1);
 
-        let neighbor = data_pages
-            .read_symphony_neighbor(element.neighbortid, page::centered_code_len(1))
-            .unwrap();
-        assert_eq!(neighbor.count, 0);
-        assert!(neighbor.tids.is_empty());
-        assert!(neighbor.centered_codes.is_empty());
+        for (index, expected_tid) in heap_tids.into_iter().enumerate() {
+            let element_tid = page::ItemPointer {
+                block_number: FIRST_DATA_BLOCK_NUMBER,
+                offset_number: u16::try_from(index * 2 + 2).expect("offset should fit"),
+            };
+            let neighbor_tid = page::ItemPointer {
+                block_number: FIRST_DATA_BLOCK_NUMBER,
+                offset_number: u16::try_from(index * 2 + 1).expect("offset should fit"),
+            };
+            let element = data_pages.read_symphony_element(element_tid).unwrap();
+            let neighbor = data_pages
+                .read_symphony_neighbor(neighbor_tid, page::centered_code_len(1))
+                .unwrap();
+            assert_eq!(element.level, 0);
+            assert!(!element.deleted);
+            assert_eq!(element.heaptids, vec![expected_tid]);
+            assert_eq!(element.neighbortid, neighbor_tid);
+            assert_eq!(neighbor.count, 0);
+            assert!(neighbor.tids.is_empty());
+            assert!(neighbor.centered_codes.is_empty());
+        }
+    }
+
+    #[test]
+    fn seed_graph_data_pages_overflow_to_new_blocks() {
+        let heap_tids = (0..128)
+            .map(|offset| tid(100 + offset, 1))
+            .collect::<Vec<_>>();
+        let (data_pages, entry_point) =
+            seed_graph_data_pages(DEFAULT_PAGE_SIZE, &heap_tids).expect("seed graph data pages");
+
+        assert_eq!(entry_point.block_number, FIRST_DATA_BLOCK_NUMBER);
+        assert_eq!(entry_point.offset_number, 2);
+        assert!(data_pages.pages().len() > 1);
+    }
+
+    #[test]
+    fn merge_build_dimensions_rejects_mismatch() {
+        assert_eq!(merge_build_dimensions(None, 4).unwrap(), 4);
+        assert_eq!(merge_build_dimensions(Some(4), 4).unwrap(), 4);
+        assert_eq!(
+            merge_build_dimensions(Some(4), 8).unwrap_err(),
+            "expected dimension 4, got 8"
+        );
+    }
+
+    #[test]
+    fn seed_graph_data_pages_require_non_empty_input() {
+        let err = seed_graph_data_pages(DEFAULT_PAGE_SIZE, &[]).unwrap_err();
+        assert!(err.contains("requires at least one heap tuple"));
     }
 
     #[test]
