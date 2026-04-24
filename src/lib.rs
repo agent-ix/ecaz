@@ -15646,6 +15646,20 @@ mod tests {
             primary_emitted,
             secondary_emitted,
         );
+        assert!(
+            !primary_round_robin.is_empty() && !secondary_round_robin.is_empty(),
+            "the staged n=2 round-robin ownership gate should make both workers contribute output on the unique-row fixture; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        );
     }
 
     #[pg_test]
@@ -15701,6 +15715,20 @@ mod tests {
             parallel_round_robin, serial,
             "n=2 round-robin parallel-bound duplicate drain should stay byte-identical to the serial emitted heap-tid and score stream; serial_summary={:?} primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
             serial_summary,
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        );
+        assert!(
+            !primary_round_robin.is_empty() && !secondary_round_robin.is_empty(),
+            "the staged n=2 duplicate-drain gate should make both workers contribute output on the coalesced-duplicate fixture; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,

@@ -634,8 +634,10 @@ See ADR-040 for the full shape. Summary:
 - **The staged `n=2` duplicate-drain gate is now live too.** A second PG18
   round-robin regression now uses coalesced duplicate vectors and asserts that
   the two-worker combined heap-TID stream still matches serial duplicate drain
-  order exactly, so the heap-TID suppression seam is covered end-to-end rather
-  than only by unit tests.
+  order exactly. Both staged `n=2` PG18 gates also now require each worker to
+  contribute output on their fixtures, so a degenerate single-worker pass no
+  longer satisfies the staged ownership checks. The heap-TID suppression seam
+  is therefore covered end-to-end rather than only by unit tests.
 
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
