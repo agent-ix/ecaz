@@ -36,10 +36,27 @@ pub(crate) type DebugParallelRoundRobinStreams = (
 );
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) type DebugSerialScoreStreamDetails = (
-    Vec<(HeapTidCoords, f32)>,
-    (u32, u32, u32, u32, bool),
-);
+#[derive(Debug)]
+pub(crate) struct DebugParallelRoundRobinWorkerDetails {
+    pub(crate) slot_index: u32,
+    pub(crate) stream: Vec<(HeapTidCoords, f32)>,
+    pub(crate) snapshot: super::parallel::EcParallelWorkerSlotSnapshot,
+    pub(crate) hidden_snapshot: Option<super::parallel::EcParallelCoordinatorResultSlotSnapshot>,
+    pub(crate) visited: Vec<HeapTidCoords>,
+    pub(crate) emitted: Vec<HeapTidCoords>,
+    pub(crate) counters: crate::am::common::explain::TqExplainCounters,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+#[derive(Debug)]
+pub(crate) struct DebugParallelRoundRobinDetails {
+    pub(crate) workers: Vec<DebugParallelRoundRobinWorkerDetails>,
+    pub(crate) combined: Vec<(HeapTidCoords, f32)>,
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) type DebugSerialScoreStreamDetails =
+    (Vec<(HeapTidCoords, f32)>, (u32, u32, u32, u32, bool));
 
 #[cfg(any(test, feature = "pg_test"))]
 type DebugCandidateSlot = (bool, HeapTidCoords, f32);
@@ -2210,8 +2227,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_details(
         tids.push((heap_tid, score));
     }
 
-    let runtime_summary =
-        unsafe { debug_runtime_summary(&*(*scan).opaque.cast::<TqScanOpaque>()) };
+    let runtime_summary = unsafe { debug_runtime_summary(&*(*scan).opaque.cast::<TqScanOpaque>()) };
 
     unsafe { debug_end_heap_backed_scan(scan_state) };
     (tids, runtime_summary)
@@ -2259,148 +2275,137 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
     query: Vec<f32>,
     worker_slot_count: u32,
 ) -> DebugParallelRoundRobinStreams {
+    let DebugParallelRoundRobinDetails {
+        mut workers,
+        combined,
+    } = unsafe {
+        debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_many_details(
+            index_oid,
+            query,
+            worker_slot_count,
+        )
+    };
+    if workers.len() < 2 {
+        pgrx::error!("round-robin details require at least two worker scans");
+    }
+    let primary = workers.remove(0);
+    let secondary = workers.remove(0);
+
+    (
+        primary.slot_index,
+        secondary.slot_index,
+        primary.stream,
+        secondary.stream,
+        combined,
+        primary.snapshot,
+        secondary.snapshot,
+        primary.hidden_snapshot,
+        secondary.hidden_snapshot,
+        primary.visited,
+        secondary.visited,
+        primary.emitted,
+        secondary.emitted,
+        primary.counters,
+        secondary.counters,
+    )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_many_details(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    worker_slot_count: u32,
+) -> DebugParallelRoundRobinDetails {
+    if worker_slot_count == 0 {
+        pgrx::error!("round-robin parallel scan details require at least one worker slot");
+    }
+
     let primary_state =
         unsafe { debug_begin_heap_backed_parallel_scan(index_oid, worker_slot_count) };
-    let secondary_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
-    unsafe {
-        (*secondary_state.scan).parallel_scan = primary_state
-            .parallel_scan_allocation
-            .cast::<pg_sys::ParallelIndexScanDescData>();
+    let shared_parallel_scan = unsafe { (*primary_state.scan).parallel_scan };
+    let mut scan_states = vec![primary_state];
+    for _ in 1..worker_slot_count {
+        let secondary_state = unsafe { debug_begin_heap_backed_scan(index_oid) };
+        unsafe {
+            (*secondary_state.scan).parallel_scan = shared_parallel_scan;
+        }
+        scan_states.push(secondary_state);
     }
 
-    let mut primary_orderby = pg_sys::ScanKeyData {
-        sk_argument: pgrx::IntoDatum::into_datum(query.clone())
-            .expect("primary query should convert to datum"),
-        ..Default::default()
-    };
-    let mut secondary_orderby = pg_sys::ScanKeyData {
-        sk_argument: pgrx::IntoDatum::into_datum(query).expect("secondary query should convert to datum"),
-        ..Default::default()
-    };
-    unsafe {
-        ec_hnsw_amrescan(primary_state.scan, ptr::null_mut(), 0, &mut primary_orderby, 1);
-        ec_hnsw_amrescan(
-            secondary_state.scan,
-            ptr::null_mut(),
-            0,
-            &mut secondary_orderby,
-            1,
-        );
+    for state in &scan_states {
+        let mut orderby = pg_sys::ScanKeyData {
+            sk_argument: pgrx::IntoDatum::into_datum(query.clone())
+                .expect("round-robin query should convert to datum"),
+            ..Default::default()
+        };
+        unsafe { ec_hnsw_amrescan(state.scan, ptr::null_mut(), 0, &mut orderby, 1) };
     }
 
-    let primary_slot_index = unsafe {
-        debug_parallel_scan_worker_slot_index(&*(*primary_state.scan).opaque.cast::<TqScanOpaque>())
-    };
-    let secondary_slot_index = unsafe {
-        debug_parallel_scan_worker_slot_index(
-            &*(*secondary_state.scan).opaque.cast::<TqScanOpaque>(),
-        )
-    };
+    let slot_indices = scan_states
+        .iter()
+        .map(|state| unsafe {
+            debug_parallel_scan_worker_slot_index(&*(*state.scan).opaque.cast::<TqScanOpaque>())
+        })
+        .collect::<Vec<_>>();
 
-    let mut primary_active = true;
-    let mut secondary_active = true;
-    let mut tids = Vec::new();
-    let mut primary_tids = Vec::new();
-    let mut secondary_tids = Vec::new();
-    while primary_active || secondary_active {
-        if primary_active {
-            if unsafe { ec_hnsw_amgettuple(primary_state.scan, pg_sys::ScanDirection::ForwardScanDirection) } {
+    let mut active = vec![true; scan_states.len()];
+    let mut combined = Vec::new();
+    let mut worker_streams = vec![Vec::new(); scan_states.len()];
+    while active.iter().any(|is_active| *is_active) {
+        for (worker_index, state) in scan_states.iter().enumerate() {
+            if !active[worker_index] {
+                continue;
+            }
+            if unsafe {
+                ec_hnsw_amgettuple(state.scan, pg_sys::ScanDirection::ForwardScanDirection)
+            } {
                 let heap_tid =
-                    pgrx::itemptr::item_pointer_get_both(unsafe { (*primary_state.scan).xs_heaptid });
-                let score = debug_scan_orderby_score(primary_state.scan).expect(
-                    "round-robin primary parallel scan should publish an order-by score for emitted tuples",
+                    pgrx::itemptr::item_pointer_get_both(unsafe { (*state.scan).xs_heaptid });
+                let score = debug_scan_orderby_score(state.scan).expect(
+                    "round-robin parallel scan should publish an order-by score for emitted tuples",
                 );
-                tids.push((heap_tid, score));
-                primary_tids.push((heap_tid, score));
+                combined.push((heap_tid, score));
+                worker_streams[worker_index].push((heap_tid, score));
             } else {
-                primary_active = false;
-            }
-        }
-        if secondary_active {
-            if unsafe { ec_hnsw_amgettuple(secondary_state.scan, pg_sys::ScanDirection::ForwardScanDirection) } {
-                let heap_tid = pgrx::itemptr::item_pointer_get_both(unsafe {
-                    (*secondary_state.scan).xs_heaptid
-                });
-                let score = debug_scan_orderby_score(secondary_state.scan).expect(
-                    "round-robin secondary parallel scan should publish an order-by score for emitted tuples",
-                );
-                tids.push((heap_tid, score));
-                secondary_tids.push((heap_tid, score));
-            } else {
-                secondary_active = false;
+                active[worker_index] = false;
             }
         }
     }
 
-    let primary_parallel_state = unsafe {
-        debug_parallel_scan_state_ptr(&*(*primary_state.scan).opaque.cast::<TqScanOpaque>())
+    let parallel_state = unsafe {
+        debug_parallel_scan_state_ptr(&*(*scan_states[0].scan).opaque.cast::<TqScanOpaque>())
     };
-    let primary_snapshot = unsafe {
-        super::parallel::read_parallel_scan_worker_slot_snapshot(
-            primary_parallel_state,
-            primary_slot_index,
-        )
+    let mut workers = Vec::with_capacity(scan_states.len());
+    for (worker_index, state) in scan_states.iter().enumerate() {
+        let slot_index = slot_indices[worker_index];
+        let snapshot = unsafe {
+            super::parallel::read_parallel_scan_worker_slot_snapshot(parallel_state, slot_index)
+        }
+        .unwrap_or_else(|err| pgrx::error!("round-robin worker snapshot read failed: {err}"));
+        let hidden_snapshot = unsafe {
+            super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                parallel_state,
+                slot_index,
+            )
+        }
+        .unwrap_or_else(|err| pgrx::error!("round-robin hidden snapshot read failed: {err}"));
+        let opaque = unsafe { &*(*state.scan).opaque.cast::<TqScanOpaque>() };
+        workers.push(DebugParallelRoundRobinWorkerDetails {
+            slot_index,
+            stream: worker_streams[worker_index].clone(),
+            snapshot,
+            hidden_snapshot,
+            visited: debug_sorted_visited_tids(opaque),
+            emitted: debug_sorted_emitted_tids(opaque),
+            counters: opaque.explain_counters,
+        });
     }
-    .unwrap_or_else(|err| {
-        pgrx::error!("primary round-robin worker snapshot read failed: {err}")
-    });
-    let secondary_snapshot = unsafe {
-        super::parallel::read_parallel_scan_worker_slot_snapshot(
-            primary_parallel_state,
-            secondary_slot_index,
-        )
-    }
-    .unwrap_or_else(|err| {
-        pgrx::error!("secondary round-robin worker snapshot read failed: {err}")
-    });
-    let primary_hidden_snapshot = unsafe {
-        super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
-            primary_parallel_state,
-            primary_slot_index,
-        )
-    }
-    .unwrap_or_else(|err| {
-        pgrx::error!("primary round-robin hidden snapshot read failed: {err}")
-    });
-    let secondary_hidden_snapshot = unsafe {
-        super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
-            primary_parallel_state,
-            secondary_slot_index,
-        )
-    }
-    .unwrap_or_else(|err| {
-        pgrx::error!("secondary round-robin hidden snapshot read failed: {err}")
-    });
-    let primary_opaque = unsafe { &*(*primary_state.scan).opaque.cast::<TqScanOpaque>() };
-    let secondary_opaque = unsafe { &*(*secondary_state.scan).opaque.cast::<TqScanOpaque>() };
-    let primary_visited = debug_sorted_visited_tids(primary_opaque);
-    let secondary_visited = debug_sorted_visited_tids(secondary_opaque);
-    let primary_emitted = debug_sorted_emitted_tids(primary_opaque);
-    let secondary_emitted = debug_sorted_emitted_tids(secondary_opaque);
-    let primary_counters = primary_opaque.explain_counters;
-    let secondary_counters = secondary_opaque.explain_counters;
 
-    unsafe {
-        debug_end_heap_backed_scan(secondary_state);
-        debug_end_heap_backed_scan(primary_state);
+    while let Some(state) = scan_states.pop() {
+        unsafe { debug_end_heap_backed_scan(state) };
     }
-    (
-        primary_slot_index,
-        secondary_slot_index,
-        primary_tids,
-        secondary_tids,
-        tids,
-        primary_snapshot,
-        secondary_snapshot,
-        primary_hidden_snapshot,
-        secondary_hidden_snapshot,
-        primary_visited,
-        secondary_visited,
-        primary_emitted,
-        secondary_emitted,
-        primary_counters,
-        secondary_counters,
-    )
+
+    DebugParallelRoundRobinDetails { workers, combined }
 }
 
 #[cfg(any(test, feature = "pg_test"))]

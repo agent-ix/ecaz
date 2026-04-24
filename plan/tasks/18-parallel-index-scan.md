@@ -683,6 +683,14 @@ See ADR-040 for the full shape. Summary:
   same bootstrap candidate ordering and rely on the shared merge/drain seam,
   not per-worker seed partitioning, to decide which worker emits first.
 
+- **Three-worker duplicate handoff suppression is now gated.** The staged
+  round-robin debug harness can bind arbitrary worker counts to one parallel
+  DSM, and the PG18 `n=3` gate proves three workers can drain a shared stream
+  without duplicate heap-TID output, hidden-slot leaks, stranded blocker/active
+  state, or local-only/deferred-local emits. Foreign handoff now suppresses an
+  already-emitted heap TID after advancing the stale source slot, so a later
+  worker cannot leak an obsolete foreign row.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
