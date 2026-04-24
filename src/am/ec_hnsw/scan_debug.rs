@@ -25,6 +25,8 @@ pub(crate) type DebugParallelRoundRobinStreams = (
     Vec<(HeapTidCoords, f32)>,
     super::parallel::EcParallelWorkerSlotSnapshot,
     super::parallel::EcParallelWorkerSlotSnapshot,
+    Option<super::parallel::EcParallelCoordinatorResultSlotSnapshot>,
+    Option<super::parallel::EcParallelCoordinatorResultSlotSnapshot>,
     Vec<HeapTidCoords>,
     Vec<HeapTidCoords>,
     Vec<HeapTidCoords>,
@@ -2349,6 +2351,24 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
     .unwrap_or_else(|err| {
         pgrx::error!("secondary round-robin worker snapshot read failed: {err}")
     });
+    let primary_hidden_snapshot = unsafe {
+        super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+            primary_parallel_state,
+            primary_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("primary round-robin hidden snapshot read failed: {err}")
+    });
+    let secondary_hidden_snapshot = unsafe {
+        super::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+            primary_parallel_state,
+            secondary_slot_index,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("secondary round-robin hidden snapshot read failed: {err}")
+    });
     let primary_opaque = unsafe { &*(*primary_state.scan).opaque.cast::<TqScanOpaque>() };
     let secondary_opaque = unsafe { &*(*secondary_state.scan).opaque.cast::<TqScanOpaque>() };
     let primary_visited = debug_sorted_visited_tids(primary_opaque);
@@ -2368,6 +2388,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
         tids,
         primary_snapshot,
         secondary_snapshot,
+        primary_hidden_snapshot,
+        secondary_hidden_snapshot,
         primary_visited,
         secondary_visited,
         primary_emitted,
@@ -2381,7 +2403,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
     query: Vec<f32>,
     worker_slot_count: u32,
 ) -> Vec<(HeapTidCoords, f32)> {
-    let (_, _, _, _, tids, _, _, _, _, _, _) = unsafe {
+    let (_, _, _, _, tids, _, _, _, _, _, _, _, _) = unsafe {
         debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_details(
             index_oid,
             query,

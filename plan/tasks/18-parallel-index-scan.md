@@ -639,6 +639,13 @@ See ADR-040 for the full shape. Summary:
   longer satisfies the staged ownership checks. The heap-TID suppression seam
   is therefore covered end-to-end rather than only by unit tests.
 
+- **The staged `n=2` diagnostics now capture hidden DSM slots too.** The
+  round-robin debug helper now returns each worker's hidden local-only
+  coordinator slot snapshot alongside the worker runtime snapshot and the local
+  visited/emitted sets, so the next multi-worker ownership failure can show
+  whether a row was still staged in hidden shared state instead of forcing that
+  inference from worker snapshots alone.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
