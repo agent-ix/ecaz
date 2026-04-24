@@ -1,0 +1,27 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running `target/debug/ecaz dev test pg18-parallel-scan`
+[pg18-parallel] install=18.3
+[pg18-parallel] shared_preload_libraries=ecaz
+[pg18-parallel] rows=512 workers=4 limit=16 ef_search=1000
+[pg18-parallel] plan:
+Limit (actual time=14.082..14.404 rows=16.00 loops=1)
+  Buffers: shared hit=2347
+  ->  Index Scan using pg18_parallel_scan_fixture_idx on pg18_parallel_scan_fixture (actual time=14.080..14.400 rows=16.00 loops=1)
+        Order By: (embedding <#> '{0.75,0.25,0.5,-0.5}'::real[])
+        Index Searches: 0
+        Buffers: shared hit=2347
+Planning:
+  Buffers: shared hit=2
+[pg18-parallel] parallel seqscan control plan:
+Gather (actual time=0.457..7.406 rows=512.00 loops=1)
+  Workers Planned: 4
+  Workers Launched: 4
+  Buffers: shared hit=4
+  ->  Parallel Seq Scan on pg18_parallel_scan_fixture (actual time=0.004..0.022 rows=102.40 loops=5)
+        Filter: (id > 0)
+        Buffers: shared hit=4
+Planning:
+  Buffers: shared hit=14
+[pg18-parallel] serial_ids=[177, 379, 472, 473, 378, 172, 93, 280, 57, 366, 258, 176, 82, 71, 459, 284]
+[pg18-parallel] candidate_ids=[177, 379, 472, 473, 378, 172, 93, 280, 57, 366, 258, 176, 82, 71, 459, 284]
+[pg18-parallel] PostgreSQL can launch workers for the fixture, but did not choose a real Parallel Index Scan; use --expect-parallel once AM planner path activation is ready
