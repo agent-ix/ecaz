@@ -671,6 +671,12 @@ See ADR-040 for the full shape. Summary:
   falling back to direct local emit instead of staying on the shared handoff
   path.
 
+- **Deferred rows now prove progress after blocker handoff.** Focused
+  deferred-blocker coverage now verifies both halves of the transfer: a
+  deferred row can first drain the live foreign blocker, then immediately retry
+  and drain its own local heap TID through the shared path without incrementing
+  the deferred local-emit fallback counter.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the

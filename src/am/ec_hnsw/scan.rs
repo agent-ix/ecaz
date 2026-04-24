@@ -1242,7 +1242,9 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
             pending_heap_tids,
         };
 
-        let publish_result = if opaque.parallel_local_only_output_active || !current_result.has_element() {
+        let publish_result = if opaque.parallel_local_only_output_active
+            || !current_result.has_element()
+        {
             unsafe {
                 super::parallel::publish_hidden_parallel_scan_coordinator_result_slot_runtime_snapshot(
                     opaque.parallel_scan_state,
@@ -4046,6 +4048,49 @@ fn refresh_retained_parallel_owned_output_blocker(
     match retained.blocker.kind {
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
             let expected_slot = retained.blocker.slot_index?;
+            let blocker_element_tid =
+                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
+            if blocker_element_tid != page::ItemPointer::INVALID {
+                let admission = unsafe {
+                    super::parallel::read_parallel_scan_admission_snapshot(
+                        opaque.parallel_scan_state,
+                    )
+                }
+                .unwrap_or_else(|err| {
+                    pgrx::error!(
+                        "ec_hnsw parallel scan selected-to-admitted blocker refresh read failed: {err}"
+                    )
+                });
+                if admission.admitted_result_count > 0 {
+                    let admitted = unsafe {
+                        super::parallel::read_parallel_scan_admitted_result_snapshot(
+                            opaque.parallel_scan_state,
+                            0,
+                        )
+                    }
+                    .unwrap_or_else(|err| {
+                        pgrx::error!(
+                            "ec_hnsw parallel scan selected-to-admitted blocker refresh result read failed: {err}"
+                        )
+                    });
+                    if admitted.flags != 0
+                        && item_pointer_from_parallel_item_pointer(admitted.element_tid)
+                            == blocker_element_tid
+                    {
+                        return Some(RetainedParallelOwnedOutputBlocker {
+                            blocker: super::parallel::EcParallelOwnedOutputBlocker {
+                                kind:
+                                    super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+                                slot_index: admitted.source_slot_index,
+                                generation: admission.admitted_result_generation,
+                                element_tid: retained.blocker.element_tid,
+                            },
+                            element_tid: retained.element_tid,
+                        });
+                    }
+                }
+            }
+
             let selected = unsafe {
                 super::parallel::read_parallel_scan_selected_pending_output_snapshot(
                     opaque.parallel_scan_state,
@@ -4074,48 +4119,8 @@ fn refresh_retained_parallel_owned_output_blocker(
                 }
             }
 
-            let blocker_element_tid =
-                item_pointer_from_parallel_item_pointer(retained.blocker.element_tid);
             if blocker_element_tid == page::ItemPointer::INVALID {
                 return None;
-            }
-
-            let admitted_head = unsafe {
-                super::parallel::read_parallel_scan_admitted_head_snapshot(
-                    opaque.parallel_scan_state,
-                )
-            }
-            .unwrap_or_else(|err| {
-                pgrx::error!(
-                    "ec_hnsw parallel scan selected-to-admitted blocker refresh read failed: {err}"
-                )
-            });
-            if let Some(admitted_head) = admitted_head {
-                let admitted = unsafe {
-                    super::parallel::read_parallel_scan_admitted_result_snapshot(
-                        opaque.parallel_scan_state,
-                        0,
-                    )
-                }
-                .unwrap_or_else(|err| {
-                    pgrx::error!(
-                        "ec_hnsw parallel scan selected-to-admitted blocker refresh result read failed: {err}"
-                    )
-                });
-                if item_pointer_from_parallel_item_pointer(admitted.element_tid)
-                    == blocker_element_tid
-                {
-                    return Some(RetainedParallelOwnedOutputBlocker {
-                        blocker: super::parallel::EcParallelOwnedOutputBlocker {
-                            kind:
-                                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
-                            slot_index: admitted.source_slot_index,
-                            generation: admitted_head.coordinator.admitted_result_generation,
-                            element_tid: retained.blocker.element_tid,
-                        },
-                        element_tid: retained.element_tid,
-                    });
-                }
             }
 
             let hidden = unsafe {
@@ -4134,17 +4139,15 @@ fn refresh_retained_parallel_owned_output_blocker(
                 .then_some(retained)
         }
         super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
-            let admitted = unsafe {
-                super::parallel::read_parallel_scan_admitted_head_snapshot(
-                    opaque.parallel_scan_state,
-                )
+            let admission = unsafe {
+                super::parallel::read_parallel_scan_admission_snapshot(opaque.parallel_scan_state)
             }
             .unwrap_or_else(|err| {
                 pgrx::error!(
                     "ec_hnsw parallel scan admitted-head blocker refresh read failed: {err}"
                 )
             });
-            if let Some(admitted) = admitted {
+            if admission.admitted_result_count > 0 {
                 let admitted_result = unsafe {
                     super::parallel::read_parallel_scan_admitted_result_snapshot(
                         opaque.parallel_scan_state,
@@ -4156,15 +4159,16 @@ fn refresh_retained_parallel_owned_output_blocker(
                         "ec_hnsw parallel scan admitted-head blocker refresh result read failed: {err}"
                     )
                 });
-                if item_pointer_from_parallel_item_pointer(admitted_result.element_tid)
-                    == item_pointer_from_parallel_item_pointer(retained.blocker.element_tid)
+                if admitted_result.flags != 0
+                    && item_pointer_from_parallel_item_pointer(admitted_result.element_tid)
+                        == item_pointer_from_parallel_item_pointer(retained.blocker.element_tid)
                 {
                     return Some(RetainedParallelOwnedOutputBlocker {
                         blocker: super::parallel::EcParallelOwnedOutputBlocker {
                             kind:
                                 super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
                             slot_index: admitted_result.source_slot_index,
-                            generation: admitted.coordinator.admitted_result_generation,
+                            generation: admission.admitted_result_generation,
                             element_tid: retained.blocker.element_tid,
                         },
                         element_tid: retained.element_tid,
@@ -4306,6 +4310,32 @@ fn active_parallel_output_heap_tid(opaque: &TqScanOpaque) -> page::ItemPointer {
             (current.heap_tid() != page::ItemPointer::INVALID).then_some(current.heap_tid())
         })
         .unwrap_or(page::ItemPointer::INVALID)
+}
+
+fn skip_pending_outputs_for_heap_tid(
+    result_state: &mut ScanResultState,
+    heap_tid: page::ItemPointer,
+) -> bool {
+    if heap_tid == page::ItemPointer::INVALID {
+        return false;
+    }
+
+    let mut skipped = false;
+    while result_state
+        .pending_heap_tids()
+        .get(usize::from(result_state.pending_index()))
+        .copied()
+        == Some(heap_tid)
+    {
+        let _ = result_state.take_pending_output();
+        skipped = true;
+        if result_state.pending_count() == 0 {
+            result_state.clear_current();
+            break;
+        }
+    }
+
+    skipped
 }
 
 fn active_parallel_output_was_recently_emitted_by_foreign_worker(opaque: &TqScanOpaque) -> bool {
@@ -4852,6 +4882,17 @@ unsafe fn try_take_parallel_scan_handoff_output(
     opaque.parallel_local_only_output_active = false;
     opaque.parallel_owned_output_blocker = None;
     opaque.retained_parallel_owned_output_blocker = None;
+    if matches!(
+        blocker.kind,
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead
+    ) {
+        unsafe {
+            discard_matching_selected_pending_handoff_source(
+                opaque,
+                admitted_result.admitted_result,
+            )
+        };
+    }
     let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
     opaque.parallel_local_only_output_active =
         preserve_hidden_local_only && active_result_state_ref(opaque).current().has_element();
@@ -4861,6 +4902,47 @@ unsafe fn try_take_parallel_scan_handoff_output(
         sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     }
     Some(output)
+}
+
+unsafe fn discard_matching_selected_pending_handoff_source(
+    opaque: &mut TqScanOpaque,
+    admitted_result: super::parallel::EcParallelCoordinatorAdmittedResultSnapshot,
+) {
+    let Some(slot_index) = admitted_result.source_slot_index else {
+        return;
+    };
+    if slot_index == opaque.parallel_scan_worker_slot_index {
+        return;
+    }
+
+    let selected = unsafe {
+        super::parallel::read_parallel_scan_selected_pending_output_snapshot(
+            opaque.parallel_scan_state,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel scan selected cleanup read failed: {err}")
+    });
+    let Some(selected) = selected else {
+        return;
+    };
+    if selected.coordinator.selected_result_slot_index != Some(slot_index)
+        || selected.selected_result_slot.runtime.element_tid != admitted_result.element_tid
+        || selected.pending_output.heap_tid != admitted_result.pending_output.heap_tid
+    {
+        return;
+    }
+
+    let _ = unsafe {
+        super::parallel::take_parallel_scan_foreign_selected_pending_output_snapshot(
+            opaque.parallel_scan_state,
+            slot_index,
+            selected.coordinator.result_publish_generation,
+        )
+    }
+    .unwrap_or_else(|err| {
+        pgrx::error!("ec_hnsw parallel scan selected cleanup take failed: {err}")
+    });
 }
 
 fn parallel_scan_admission_result_limit() -> u32 {
@@ -4917,7 +4999,21 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         super::parallel::EcParallelOwnedOutputState::Empty => {
             return ParallelScanOutputState::Empty;
         }
-        super::parallel::EcParallelOwnedOutputState::Blocked(blocker) => {
+        super::parallel::EcParallelOwnedOutputState::Blocked(mut blocker) => {
+            if let Some(retained) =
+                opaque
+                    .retained_parallel_owned_output_blocker
+                    .filter(|retained| {
+                        retained.element_tid
+                            == active_result_state_ref(opaque).current().element_tid()
+                    })
+            {
+                opaque.retained_parallel_owned_output_blocker =
+                    refresh_retained_parallel_owned_output_blocker(opaque, retained);
+                if let Some(retained) = opaque.retained_parallel_owned_output_blocker {
+                    blocker = retained.blocker;
+                }
+            }
             if let Some(output) = unsafe { try_take_parallel_scan_handoff_output(opaque, blocker) }
             {
                 return ParallelScanOutputState::Emitted(output);
@@ -5007,7 +5103,7 @@ unsafe fn try_take_parallel_scan_deferred_handoff_output(
     opaque.retained_parallel_owned_output_blocker = deferred.retained_blocker;
 
     let output_state = unsafe { try_take_parallel_scan_next_output(opaque) };
-    let remaining_state = *active_result_state_ref_for_phase(opaque, deferred.source_phase);
+    let mut remaining_state = *active_result_state_ref_for_phase(opaque, deferred.source_phase);
     let remaining_retained_blocker = opaque
         .retained_parallel_owned_output_blocker
         .filter(|retained| retained.element_tid == remaining_state.current().element_tid());
@@ -5019,6 +5115,7 @@ unsafe fn try_take_parallel_scan_deferred_handoff_output(
 
     match output_state {
         ParallelScanOutputState::Emitted(output) => {
+            skip_pending_outputs_for_heap_tid(&mut remaining_state, output.heap_tid);
             *deferred = DeferredParallelBlockedOutput {
                 source_phase: deferred.source_phase,
                 state: remaining_state,
@@ -5313,7 +5410,13 @@ fn take_next_deferred_parallel_blocked_output(
             }
         }
         if deferred_parallel_blocked_output_duplicates_live_foreign_heap_tid(opaque, &deferred) {
-            let _ = deferred.state.take_pending_output();
+            let local_heap_tid = deferred
+                .state
+                .pending_heap_tids()
+                .get(usize::from(deferred.state.pending_index()))
+                .copied()
+                .unwrap_or(page::ItemPointer::INVALID);
+            skip_pending_outputs_for_heap_tid(&mut deferred.state, local_heap_tid);
             if deferred.state.pending_count() != 0 && deferred.state.current().has_element() {
                 if let Some(retained_blocker) = deferred.retained_blocker {
                     if let Some(output) = unsafe {
@@ -6710,7 +6813,9 @@ unsafe fn produce_next_graph_traversal_heap_tid(
                 graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
             };
             if refreshed {
-                return unsafe { produce_next_graph_traversal_heap_tid(scan, index_relation, opaque) };
+                return unsafe {
+                    produce_next_graph_traversal_heap_tid(scan, index_relation, opaque)
+                };
             }
             return false;
         }
@@ -12218,7 +12323,9 @@ mod tests {
             Some(6),
             Some(-8.5),
         );
-        owner.result_state.store_pending(&[tid(197, 1), tid(198, 2)]);
+        owner
+            .result_state
+            .store_pending(&[tid(197, 1), tid(198, 2)]);
         owner.parallel_local_only_output_active = true;
         owner.retained_parallel_owned_output_blocker = Some(RetainedParallelOwnedOutputBlocker {
             blocker: crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlocker {
@@ -12907,12 +13014,37 @@ mod tests {
             "retrying the shared handoff after duplicate suppression should leave the remaining local row staged for a later drain"
         );
         assert_eq!(
+            owner.deferred_parallel_blocked_results[0].state.pending_index(),
+            1,
+            "draining the foreign handoff should advance the deferred local duplicate cursor past the matching heap tid"
+        );
+        assert_eq!(
             owner.deferred_parallel_blocked_results[0]
                 .state
                 .current()
                 .element_tid(),
             tid(92, 1),
             "the local deferred row should remain stashed for later ownership resolution after the foreign handoff drains"
+        );
+        assert_eq!(
+            take_next_deferred_parallel_blocked_output(&mut owner, true),
+            Some(PendingScanOutput {
+                heap_tid: tid(92, 2),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(10),
+                comparison_score: Some(-8.5),
+            }),
+            "once the foreign blocker drains, the remaining deferred local row should re-enter the shared path instead of falling back to local emit"
+        );
+        assert_eq!(
+            owner.explain_counters.stats_parallel_deferred_local_emits,
+            0,
+            "draining the remaining deferred local row after a foreign handoff should not count as deferred local fallback"
+        );
+        assert!(
+            owner.deferred_parallel_blocked_results.is_empty(),
+            "the remaining deferred local row should clear after its last heap tid drains through the shared path"
         );
     }
 
@@ -13014,6 +13146,19 @@ mod tests {
                 }),
             });
 
+        let refreshed_blocker = refresh_retained_parallel_owned_output_blocker(
+            &owner,
+            owner.deferred_parallel_blocked_results[0]
+                .retained_blocker
+                .expect("deferred row should retain its foreign blocker"),
+        )
+        .expect("selected blocker should remain live through admission");
+        assert_eq!(
+            refreshed_blocker.blocker.kind,
+            crate::am::ec_hnsw::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead,
+            "retained selected blocker should track the same foreign row after it reaches the admitted window"
+        );
+
         assert_eq!(
             take_next_deferred_parallel_blocked_output(&mut owner, true),
             Some(PendingScanOutput {
@@ -13025,6 +13170,16 @@ mod tests {
             }),
             "a deferred row blocked by selected pending should keep tracking that same foreign row after it becomes the admitted head"
         );
+        let admission_after_handoff = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_admission_snapshot(
+                owner.parallel_scan_state,
+            )
+        }
+        .expect("admission snapshot should read after the foreign handoff");
+        assert_eq!(
+            admission_after_handoff.admitted_result_count, 0,
+            "tracking a selected blocker into the admitted head should drain the admitted copy, not the stale selected slot"
+        );
         assert_eq!(
             owner.deferred_parallel_blocked_results.len(),
             1,
@@ -13034,6 +13189,32 @@ mod tests {
             owner.deferred_parallel_blocked_results[0].state.pending_index(),
             0,
             "draining the foreign admitted head should not advance the deferred local duplicate cursor"
+        );
+        assert_eq!(
+            take_next_deferred_parallel_blocked_output(&mut owner, true),
+            Some(PendingScanOutput {
+                heap_tid: tid(233, 1),
+                score: -8.0,
+                approx_score: Some(-7.5),
+                approx_rank: Some(9),
+                comparison_score: Some(-8.5),
+            }),
+            "once the admitted foreign blocker drains, the local deferred row should retry and emit through the shared path"
+        );
+        assert_eq!(
+            owner.explain_counters.stats_parallel_deferred_local_emits,
+            0,
+            "the local deferred row should not fall back to direct local emit after the foreign blocker drains"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results.len(),
+            1,
+            "the local deferred row should remain staged after the first local heap tid drains because it still has one duplicate"
+        );
+        assert_eq!(
+            owner.deferred_parallel_blocked_results[0].state.pending_index(),
+            1,
+            "the local deferred row should advance its duplicate cursor through shared drain after the foreign blocker clears"
         );
     }
 
@@ -13964,13 +14145,7 @@ mod tests {
         bind_parallel_scan_state(&mut consumer_scan_desc, &mut consumer);
 
         let mut deferred = ScanResultState::default();
-        deferred.set_current_with_details(
-            tid(300, 1),
-            -8.0,
-            Some(-7.5),
-            Some(4),
-            Some(-8.5),
-        );
+        deferred.set_current_with_details(tid(300, 1), -8.0, Some(-7.5), Some(4), Some(-8.5));
         deferred.store_pending(&[tid(301, 1)]);
         owner
             .deferred_parallel_blocked_results
@@ -14047,13 +14222,7 @@ mod tests {
         bind_parallel_scan_state(&mut consumer_scan_desc, &mut consumer);
 
         let mut deferred = ScanResultState::default();
-        deferred.set_current_with_details(
-            tid(310, 1),
-            -8.0,
-            Some(-7.5),
-            Some(4),
-            Some(-8.5),
-        );
+        deferred.set_current_with_details(tid(310, 1), -8.0, Some(-7.5), Some(4), Some(-8.5));
         deferred.store_pending(&[tid(311, 1)]);
         owner
             .deferred_parallel_blocked_results
@@ -14140,13 +14309,7 @@ mod tests {
         bind_parallel_scan_state(&mut consumer_scan_desc, &mut consumer);
 
         let mut deferred = ScanResultState::default();
-        deferred.set_current_with_details(
-            tid(314, 1),
-            -8.0,
-            Some(-7.5),
-            Some(4),
-            Some(-8.5),
-        );
+        deferred.set_current_with_details(tid(314, 1), -8.0, Some(-7.5), Some(4), Some(-8.5));
         deferred.store_pending(&[tid(315, 1)]);
         owner
             .deferred_parallel_blocked_results
