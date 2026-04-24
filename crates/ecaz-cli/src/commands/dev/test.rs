@@ -39,6 +39,10 @@ pub struct PgrxTestArgs {
     #[arg(long, default_value_t = 18)]
     pg: u16,
 
+    /// Environment override passed to spawned test commands, as KEY=VALUE.
+    #[arg(long = "env", value_name = "KEY=VALUE")]
+    env: Vec<String>,
+
     /// Extra arguments passed through to `cargo pgrx test`.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     cargo_args: Vec<String>,
@@ -53,6 +57,10 @@ pub struct Pg18PreloadPgstatArgs {
     /// Override PGRX_HOME.
     #[arg(long)]
     pgrx_home: Option<PathBuf>,
+
+    /// Environment override passed to the PG18 validation server, as KEY=VALUE.
+    #[arg(long = "env", value_name = "KEY=VALUE")]
+    env: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -64,6 +72,10 @@ pub struct Pg18ParallelScanArgs {
     /// Override PGRX_HOME.
     #[arg(long)]
     pgrx_home: Option<PathBuf>,
+
+    /// Environment override passed to the PG18 validation server, as KEY=VALUE.
+    #[arg(long = "env", value_name = "KEY=VALUE")]
+    env: Vec<String>,
 
     /// Planned parallel workers per gather.
     #[arg(long, default_value_t = 4)]
@@ -85,6 +97,14 @@ pub struct Pg18ParallelScanArgs {
     #[arg(long)]
     expect_parallel: bool,
 
+    /// Capture only non-executing planner output for the ordered candidate path.
+    #[arg(long)]
+    planner_only: bool,
+
+    /// Disable leader participation when planning and executing parallel paths.
+    #[arg(long)]
+    disable_parallel_leader_participation: bool,
+
     /// Print planner/catalog diagnostics for PG18 parallel index path activation.
     #[arg(long)]
     diagnose_planner: bool,
@@ -96,6 +116,7 @@ pub struct Pg18ParallelScanArgs {
 
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
     let repo_root = repo_root()?;
+    let env_overrides = parse_env_overrides(&args.env)?;
     let mut command = Command::new("cargo");
     command
         .arg("pgrx")
@@ -106,13 +127,16 @@ async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
+    apply_env_overrides(&mut command, &env_overrides);
     run_status(command).await
 }
 
 async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let env_overrides = parse_env_overrides(&args.env)?;
     let cluster =
-        start_pg18_validation_cluster(&pgrx_home, "pg18-preload-pgstat", args.port).await?;
+        start_pg18_validation_cluster(&pgrx_home, "pg18-preload-pgstat", args.port, &env_overrides)
+            .await?;
     let observer = psql::connect_with(&cluster.base).await?;
     let actor = psql::connect_with(&cluster.base).await?;
 
@@ -192,6 +216,10 @@ LIMIT 1
         cluster.preload_setting
     );
     println!(
+        "[pg18-preload] env={}",
+        format_env_override_keys(&env_overrides)
+    );
+    println!(
         "[pg18-preload] baseline_scans={baseline_scans} baseline_distance_calcs={baseline_distance}"
     );
     println!("[pg18-preload] shared_scans={shared_scans} shared_distance_calcs={shared_distance}");
@@ -214,8 +242,10 @@ async fn run_pg18_parallel_scan(args: Pg18ParallelScanArgs) -> Result<()> {
     }
 
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let env_overrides = parse_env_overrides(&args.env)?;
     let cluster =
-        start_pg18_validation_cluster(&pgrx_home, "pg18-parallel-scan", args.port).await?;
+        start_pg18_validation_cluster(&pgrx_home, "pg18-parallel-scan", args.port, &env_overrides)
+            .await?;
     let mut client = psql::connect_with(&cluster.base).await?;
     let ef_search = args.ef_search.unwrap_or_else(|| {
         i32::from(args.workers)
@@ -271,26 +301,51 @@ SET parallel_setup_cost = 0;
 SET parallel_tuple_cost = 0;
 SET max_parallel_workers = {workers};
 SET max_parallel_workers_per_gather = 0;
+{parallel_leader_participation_setting}
 SET ec_hnsw.ef_search = {ef_search};
 ",
                 workers = args.workers,
                 ef_search = ef_search,
+                parallel_leader_participation_setting = parallel_leader_participation_setting(
+                    args.disable_parallel_leader_participation
+                ),
             )
             .as_str(),
         )
         .await?;
-    let serial_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
+    let serial_ids = if args.planner_only {
+        None
+    } else {
+        Some(pg18_parallel_fixture_ids(&client, args.limit).await?)
+    };
 
     client
         .batch_execute(format!("SET max_parallel_workers_per_gather = {};", args.workers).as_str())
         .await?;
-    let plan = pg18_parallel_fixture_explain_analyze(&client, args.limit).await?;
-    let has_parallel_index_scan = plan.contains("Parallel Index Scan");
-    let has_launched_workers = plan.contains("Workers Launched:");
-    let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
-    let parallel_seqscan_plan = pg18_parallel_fixture_parallel_seqscan_plan(&mut client).await?;
-    let has_parallel_seqscan = parallel_seqscan_plan.contains("Parallel Seq Scan");
-    let planner_diagnostics = if args.diagnose_planner {
+    let plan = if args.planner_only {
+        pg18_parallel_fixture_explain_json(&mut client, args.limit, args.workers).await?
+    } else {
+        pg18_parallel_fixture_explain_analyze(&client, args.limit).await?
+    };
+    let has_parallel_index_scan = if args.planner_only {
+        pg18_plan_json_has_parallel_index_scan(&plan)
+    } else {
+        plan.contains("Parallel Index Scan")
+    };
+    let has_launched_workers = !args.planner_only && plan.contains("Workers Launched:");
+    let candidate_ids = if args.planner_only {
+        None
+    } else {
+        Some(pg18_parallel_fixture_ids(&client, args.limit).await?)
+    };
+    let parallel_seqscan_plan = if args.planner_only {
+        pg18_parallel_fixture_parallel_seqscan_json(&mut client).await?
+    } else {
+        pg18_parallel_fixture_parallel_seqscan_plan(&mut client).await?
+    };
+    let has_parallel_seqscan = parallel_seqscan_plan.contains("Parallel Seq Scan")
+        || parallel_seqscan_plan.contains("\"Node Type\": \"Gather\"");
+    let planner_diagnostics = if args.diagnose_planner || args.planner_only {
         Some(
             pg18_parallel_fixture_planner_diagnostics(&mut client, args.limit, args.workers)
                 .await?,
@@ -307,23 +362,27 @@ SET ec_hnsw.ef_search = {ef_search};
             "expected a Parallel Index Scan plan, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
         );
     }
-    if args.expect_parallel && !has_launched_workers {
+    if args.expect_parallel && !args.planner_only && !has_launched_workers {
         bail!(
             "expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
         );
     }
 
-    if candidate_ids != serial_ids {
-        bail!(
-            "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
-        );
+    if let (Some(candidate_ids), Some(serial_ids)) = (&candidate_ids, &serial_ids) {
+        if candidate_ids != serial_ids {
+            bail!(
+                "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
+            );
+        }
     }
 
     let planner_diagnostics_output = planner_diagnostics
         .as_deref()
         .map(|diagnostics| format!("[pg18-parallel] planner diagnostics:\n{diagnostics}\n"))
         .unwrap_or_default();
-    let final_status = if has_parallel_index_scan && has_launched_workers {
+    let final_status = if args.planner_only && has_parallel_index_scan {
+        "[pg18-parallel] planner-only Parallel Index Scan plan validation passed"
+    } else if has_parallel_index_scan && has_launched_workers {
         "[pg18-parallel] planner-visible Parallel Index Scan validation passed"
     } else if has_parallel_seqscan {
         "[pg18-parallel] PostgreSQL can launch workers for the fixture, but did not choose a real Parallel Index Scan; use --expect-parallel once AM planner path activation is ready"
@@ -333,19 +392,26 @@ SET ec_hnsw.ef_search = {ef_search};
     let output = format!(
         "[pg18-parallel] install={}\n\
          [pg18-parallel] shared_preload_libraries={}\n\
+         [pg18-parallel] env={}\n\
          [pg18-parallel] rows={} workers={} limit={} ef_search={}\n\
+         [pg18-parallel] planner_only={} disable_parallel_leader_participation={}\n\
          [pg18-parallel] plan:\n{plan}\n\
          [pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}\n\
          {planner_diagnostics_output}\
-         [pg18-parallel] serial_ids={serial_ids:?}\n\
-         [pg18-parallel] candidate_ids={candidate_ids:?}\n\
+         [pg18-parallel] serial_ids={}\n\
+         [pg18-parallel] candidate_ids={}\n\
          {final_status}\n",
         cluster.install_version_label,
         cluster.preload_setting,
+        format_env_override_keys(&env_overrides),
         args.rows,
         args.workers,
         args.limit,
         ef_search,
+        args.planner_only,
+        args.disable_parallel_leader_participation,
+        format_optional_ids(serial_ids.as_deref()),
+        format_optional_ids(candidate_ids.as_deref()),
     );
     if let Some(log_output) = &args.log_output {
         if let Some(parent) = log_output.parent() {
@@ -359,6 +425,62 @@ SET ec_hnsw.ef_search = {ef_search};
     }
     print!("{output}");
     Ok(())
+}
+
+fn parse_env_overrides(raw: &[String]) -> Result<Vec<(String, String)>> {
+    raw.iter()
+        .map(|assignment| parse_env_override(assignment))
+        .collect()
+}
+
+fn parse_env_override(raw: &str) -> Result<(String, String)> {
+    let Some((key, value)) = raw.split_once('=') else {
+        bail!("--env must use KEY=VALUE, got {raw:?}");
+    };
+    if key.is_empty() {
+        bail!("--env key must not be empty");
+    }
+    if key.contains('\0') || value.contains('\0') {
+        bail!("--env must not contain NUL bytes");
+    }
+    Ok((key.to_owned(), value.to_owned()))
+}
+
+fn apply_env_overrides(command: &mut Command, env_overrides: &[(String, String)]) {
+    for (key, value) in env_overrides {
+        command.env(key, value);
+    }
+}
+
+fn format_env_override_keys(env_overrides: &[(String, String)]) -> String {
+    if env_overrides.is_empty() {
+        return "[]".to_owned();
+    }
+
+    let keys = env_overrides
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .collect::<Vec<_>>();
+    format!("{keys:?}")
+}
+
+fn parallel_leader_participation_setting(disabled: bool) -> &'static str {
+    if disabled {
+        "SET parallel_leader_participation = off;"
+    } else {
+        ""
+    }
+}
+
+fn pg18_plan_json_has_parallel_index_scan(plan: &str) -> bool {
+    plan.contains("\"Node Type\": \"Gather Merge\"")
+        && plan.contains("\"Index Name\": \"pg18_parallel_scan_fixture_idx\"")
+        && plan.contains("\"Parallel Aware\": true")
+}
+
+fn format_optional_ids(ids: Option<&[i64]>) -> String {
+    ids.map(|ids| format!("{ids:?}"))
+        .unwrap_or_else(|| "not collected (planner-only)".to_owned())
 }
 
 async fn pg18_parallel_fixture_planner_diagnostics(
@@ -430,6 +552,7 @@ WHERE name IN (
   'max_parallel_workers_per_gather',
   'min_parallel_index_scan_size',
   'min_parallel_table_scan_size',
+  'parallel_leader_participation',
   'parallel_setup_cost',
   'parallel_tuple_cost'
 )
@@ -910,6 +1033,7 @@ async fn start_pg18_validation_cluster(
     pgrx_home: &std::path::Path,
     cluster_name: &str,
     port: u16,
+    env_overrides: &[(String, String)],
 ) -> Result<Pg18ValidationCluster> {
     let repo_root = repo_root()?;
     let install = find_pgrx_install(18, pgrx_home)?;
@@ -932,6 +1056,7 @@ async fn start_pg18_validation_cluster(
             .arg("trust")
             .arg("-U")
             .arg("postgres");
+        apply_env_overrides(&mut command, env_overrides);
         run_status(command).await?;
     }
 
@@ -942,7 +1067,8 @@ async fn start_pg18_validation_cluster(
     for offset in 0..10 {
         let candidate = port + offset;
         fs::write(&log_file, "").wrap_err_with(|| format!("resetting {}", log_file.display()))?;
-        let output = Command::new(&pg_ctl)
+        let mut command = Command::new(&pg_ctl);
+        command
             .arg("-D")
             .arg(&data_dir)
             .arg("-l")
@@ -952,7 +1078,9 @@ async fn start_pg18_validation_cluster(
                 "-p {candidate} -c listen_addresses=127.0.0.1 -c shared_preload_libraries=ecaz"
             ))
             .arg("-w")
-            .arg("start")
+            .arg("start");
+        apply_env_overrides(&mut command, env_overrides);
+        let output = command
             .output()
             .await
             .wrap_err("starting PG18 validation cluster")?;
@@ -1125,12 +1253,20 @@ impl PgClusterGuard {
         if !output.status.success() {
             return Ok(());
         }
+        if self.stop_with_mode("fast").await.is_ok() {
+            return Ok(());
+        }
+
+        self.stop_with_mode("immediate").await
+    }
+
+    async fn stop_with_mode(&self, mode: &str) -> Result<()> {
         let mut command = Command::new(&self.pg_ctl);
         command
             .arg("-D")
             .arg(&self.data_dir)
             .arg("-m")
-            .arg("fast")
+            .arg(mode)
             .arg("-w")
             .arg("stop");
         run_status(command).await
