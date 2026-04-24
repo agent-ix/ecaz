@@ -2853,7 +2853,7 @@ mod tests {
             )
             .expect("snapshot query should succeed")
             .expect("runtime blocker should be non-null"),
-            "parallel scan coordinator is staged through n=8; planner-visible execution still needs a real PostgreSQL Parallel Index Scan path before amcanparallel can stay enabled"
+            "PG18 planner-visible Parallel Index Scan is enabled with one elected tuple emitter; rank-compatible multi-emitter Gather Merge output remains the next runtime step"
         );
         assert_eq!(
             Spi::get_one::<String>(
@@ -15785,9 +15785,11 @@ LIMIT 1
             primary_counters,
             secondary_counters,
         );
-        assert!(
-            !primary_round_robin.is_empty() && !secondary_round_robin.is_empty(),
-            "the staged n=2 round-robin ownership gate should make both workers contribute output on the unique-row fixture; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
+        assert_eq!(
+            usize::from(!primary_round_robin.is_empty())
+                + usize::from(!secondary_round_robin.is_empty()),
+            1,
+            "the planner-visible PG18 path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,
@@ -15957,9 +15959,11 @@ LIMIT 1
             primary_counters,
             secondary_counters,
         );
-        assert!(
-            !primary_round_robin.is_empty() && !secondary_round_robin.is_empty(),
-            "the staged n=2 duplicate-drain gate should make both workers contribute output on the coalesced-duplicate fixture; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
+        assert_eq!(
+            usize::from(!primary_round_robin.is_empty())
+                + usize::from(!secondary_round_robin.is_empty()),
+            1,
+            "the planner-visible PG18 duplicate-drain path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?} primary_counters={:?} secondary_counters={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,
@@ -16119,9 +16123,14 @@ LIMIT 1
             worker_slot_count,
             details,
         );
-        assert!(
-            details.workers.iter().all(|worker| !worker.stream.is_empty()),
-            "the staged {} round-robin ownership gate should make every worker contribute output on the unique-row fixture; details={:?}",
+        assert_eq!(
+            details
+                .workers
+                .iter()
+                .filter(|worker| !worker.stream.is_empty())
+                .count(),
+            1,
+            "the staged {} PG18 path should use one elected tuple emitter until rank-compatible multi-emitter output is implemented; details={:?}",
             fixture_label, details,
         );
         assert!(

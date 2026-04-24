@@ -217,6 +217,70 @@ fn choose_best_by_total(current: &mut Option<PathSummary>, candidate: PathSummar
     }
 }
 
+fn parallel_cost_divisor(parallel_workers: i32, leader_participation: bool) -> Option<f64> {
+    if parallel_workers <= 0 {
+        return None;
+    }
+
+    let mut divisor = f64::from(parallel_workers);
+    if leader_participation {
+        let leader_contribution = 1.0 - (0.3 * f64::from(parallel_workers));
+        if leader_contribution > 0.0 {
+            divisor += leader_contribution;
+        }
+    }
+    Some(divisor)
+}
+
+fn discounted_parallel_am_cost(
+    index_total_cost: f64,
+    parallel_workers: i32,
+    leader_participation: bool,
+) -> Option<f64> {
+    if !index_total_cost.is_finite() || index_total_cost <= 0.0 {
+        return None;
+    }
+
+    let divisor = parallel_cost_divisor(parallel_workers, leader_participation)?;
+    if divisor <= 1.0 {
+        return None;
+    }
+
+    Some(index_total_cost / divisor)
+}
+
+unsafe fn discount_partial_ec_hnsw_index_path_cost(index_path: *mut pg_sys::IndexPath) {
+    if index_path.is_null() {
+        return;
+    }
+
+    let path = unsafe { &mut (*index_path).path };
+    if !path.parallel_aware || path.parallel_workers <= 0 {
+        return;
+    }
+
+    let original_index_total_cost = unsafe { (*index_path).indextotalcost };
+    let Some(discounted_index_total_cost) = (unsafe {
+        discounted_parallel_am_cost(
+            original_index_total_cost,
+            path.parallel_workers,
+            pg_sys::parallel_leader_participation,
+        )
+    }) else {
+        return;
+    };
+    let discount = original_index_total_cost - discounted_index_total_cost;
+
+    // `cost_index` cannot parallel-discount AM run cost because the AM cost
+    // callback runs before it assigns `parallel_workers`. The PG18 pathlist
+    // hook sees the completed partial IndexPath before Gather/Gather Merge
+    // paths are generated, so it can correct only the parallel ec_hnsw path.
+    unsafe {
+        (*index_path).indextotalcost = discounted_index_total_cost;
+    }
+    path.total_cost = (path.total_cost - discount).max(path.startup_cost);
+}
+
 unsafe fn count_ec_hnsw_indexes(rel: *mut pg_sys::RelOptInfo) -> (i32, bool) {
     let mut count = 0;
     let mut amcanparallel_seen = false;
@@ -261,6 +325,9 @@ unsafe fn count_paths(list: *mut pg_sys::List, partial: bool, counters: &mut Pat
                 let index_path = path.cast::<pg_sys::IndexPath>();
                 let index_info = unsafe { (*index_path).indexinfo };
                 if unsafe { index_info_is_ec_hnsw(index_info) } {
+                    if partial {
+                        unsafe { discount_partial_ec_hnsw_index_path_cost(index_path) };
+                    }
                     let summary = unsafe { summarize_path(path) };
                     if partial {
                         counters.partial_ec_hnsw_index_path_count += 1;
@@ -388,7 +455,9 @@ pub(crate) unsafe fn register_pg18_planner_hooks() {
 
 #[cfg(test)]
 mod tests {
-    use super::{choose_best_by_total, PathSummary};
+    use super::{
+        choose_best_by_total, discounted_parallel_am_cost, parallel_cost_divisor, PathSummary,
+    };
 
     #[test]
     fn choose_best_by_total_keeps_lowest_total_cost() {
@@ -427,5 +496,27 @@ mod tests {
         assert_eq!(best.parallel_workers, 2);
         assert!(best.parallel_aware);
         assert_eq!(best.pathkeys, 3);
+    }
+
+    #[test]
+    fn parallel_cost_divisor_matches_postgres_leader_formula() {
+        assert_eq!(parallel_cost_divisor(0, true), None);
+        assert_eq!(parallel_cost_divisor(1, true), Some(1.7));
+        assert_eq!(parallel_cost_divisor(2, true), Some(2.4));
+        assert_eq!(parallel_cost_divisor(3, true), Some(3.1));
+        assert_eq!(parallel_cost_divisor(4, true), Some(4.0));
+        assert_eq!(parallel_cost_divisor(4, false), Some(4.0));
+    }
+
+    #[test]
+    fn discounted_parallel_am_cost_divides_index_work() {
+        assert_eq!(discounted_parallel_am_cost(-1.0, 4, true), None);
+        assert_eq!(discounted_parallel_am_cost(f64::INFINITY, 4, true), None);
+        assert_eq!(discounted_parallel_am_cost(1000.0, 0, true), None);
+        assert_eq!(discounted_parallel_am_cost(1000.0, 4, true), Some(250.0));
+
+        let discounted = discounted_parallel_am_cost(1020.0, 2, true)
+            .expect("two workers with leader participation should discount");
+        assert!((discounted - 425.0).abs() < f64::EPSILON);
     }
 }

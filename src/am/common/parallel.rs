@@ -11,7 +11,7 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 13;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 14;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
@@ -33,7 +33,7 @@ pub(crate) struct EcParallelScanState {
     result_slot_count: u32,
     worker_slot_count: u32,
     admitted_result_count: u32,
-    reserved_worker_slots: u32,
+    emitter_slot_index: u32,
     reserved0: u32,
     rescan_epoch: u32,
 }
@@ -456,6 +456,10 @@ static TEST_PARALLEL_SCAN_LWLOCK_TRANCHE_ID: AtomicI32 = AtomicI32::new(1);
 #[cfg(any(test, feature = "pg_test"))]
 static TEST_BACKEND_LOCAL_PARALLEL_SCAN_TARGET: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 
+fn parallel_exec_debug_enabled() -> bool {
+    std::env::var_os("TQVECTOR_DEBUG_PARALLEL_EXEC").is_some()
+}
+
 impl ParallelScanAttachment {
     pub(crate) unsafe fn result_slot(
         &self,
@@ -757,7 +761,7 @@ unsafe fn admitted_results_ptr(
 
 unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
     let state_ref = unsafe { &mut *state };
-    state_ref.reserved_worker_slots = 0;
+    state_ref.emitter_slot_index = EC_PARALLEL_SLOT_INDEX_INVALID;
 
     unsafe {
         *coordinator_ptr(state) = EcParallelCoordinatorState {
@@ -2284,7 +2288,7 @@ fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_c
         result_slot_count: ec_parallel_scan_result_slot_capacity_for(worker_slot_count),
         worker_slot_count,
         admitted_result_count: ec_parallel_scan_admitted_result_capacity_for(worker_slot_count),
-        reserved_worker_slots: 0,
+        emitter_slot_index: EC_PARALLEL_SLOT_INDEX_INVALID,
         reserved0: 0,
         rescan_epoch: 0,
     };
@@ -2294,11 +2298,30 @@ fn initialize_parallel_scan_state(state: &mut EcParallelScanState, worker_slot_c
 unsafe fn validate_parallel_scan_state(
     state: *mut EcParallelScanState,
 ) -> Result<ParallelScanAttachment, &'static str> {
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} validate begin state={:?}",
+            std::process::id(),
+            state
+        );
+    }
     if state.is_null() {
         return Err("AM-private parallel scan state pointer was null");
     }
 
     let state_ref = unsafe { &*state };
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} validate header state={:?} magic={:#x} version={} descriptor_bytes={} worker_slot_count={} epoch={}",
+            std::process::id(),
+            state,
+            state_ref.magic,
+            state_ref.version,
+            state_ref.descriptor_bytes,
+            state_ref.worker_slot_count,
+            state_ref.rescan_epoch
+        );
+    }
     if state_ref.magic != EC_PARALLEL_SCAN_STATE_MAGIC {
         return Err("AM-private parallel scan state magic was not initialized");
     }
@@ -2358,8 +2381,25 @@ unsafe fn validate_parallel_scan_state(
         admitted_result_bytes: state_ref.admitted_result_bytes,
         rescan_epoch: state_ref.rescan_epoch,
     };
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} validate attachment state={:?} coordinator={:?} heap_state={:?} worker_slots={:?}",
+            std::process::id(),
+            attachment.state,
+            attachment.coordinator,
+            attachment.heap_state,
+            attachment.worker_slots
+        );
+    }
     unsafe {
         register_parallel_scan_lwlock_tranche((*attachment.heap_state).mutex.tranche.into());
+    }
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} validate ok state={:?}",
+            std::process::id(),
+            state
+        );
     }
     Ok(attachment)
 }
@@ -2412,6 +2452,14 @@ pub(crate) unsafe fn initialize_parallel_scan_target_with_worker_slots(
     if target.is_null() {
         return Err("AM-private parallel scan target was null");
     }
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} initialize target={:?} worker_slot_count={}",
+            std::process::id(),
+            target,
+            worker_slot_count
+        );
+    }
     unsafe {
         initialize_parallel_scan_state(
             &mut *target.cast::<EcParallelScanState>(),
@@ -2435,6 +2483,15 @@ pub(crate) unsafe fn initialize_parallel_scan_target(
 pub(crate) unsafe fn claim_parallel_scan_worker_slot(
     attachment: &ParallelScanAttachment,
 ) -> Result<u32, &'static str> {
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} claim begin state={:?} epoch={} worker_slot_count={}",
+            std::process::id(),
+            attachment.state,
+            attachment.rescan_epoch,
+            attachment.worker_slot_count
+        );
+    }
     for slot_index in 0..attachment.worker_slot_count {
         let slot = unsafe { attachment.worker_slot(slot_index) }?;
         let slot_ref = unsafe { &*slot };
@@ -2457,11 +2514,45 @@ pub(crate) unsafe fn claim_parallel_scan_worker_slot(
             unsafe { &*attachment.coordinator }
                 .claimed_worker_slots
                 .fetch_add(1, Ordering::AcqRel);
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} claim ok slot_index={}",
+                    std::process::id(),
+                    slot_index
+                );
+            }
             return Ok(slot_index);
         }
     }
 
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} claim exhausted",
+            std::process::id()
+        );
+    }
     Err("parallel worker slot capacity was exhausted")
+}
+
+pub(crate) unsafe fn claim_parallel_scan_emitter_slot(
+    state: *mut EcParallelScanState,
+    slot_index: u32,
+    rescan_epoch: u32,
+) -> Result<bool, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    if slot_index >= attachment.worker_slot_count {
+        return Err("parallel emitter slot index was outside the descriptor capacity");
+    }
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    let state_ref = unsafe { &mut *state };
+    if state_ref.rescan_epoch != rescan_epoch {
+        return Ok(false);
+    }
+
+    if state_ref.emitter_slot_index == EC_PARALLEL_SLOT_INDEX_INVALID {
+        state_ref.emitter_slot_index = slot_index;
+    }
+    Ok(state_ref.emitter_slot_index == slot_index)
 }
 
 unsafe fn clear_parallel_scan_result_slot_with_attachment(
@@ -2539,20 +2630,66 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
     slot_index: u32,
     rescan_epoch: u32,
 ) -> Result<bool, &'static str> {
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} release begin state={:?} slot_index={} epoch={}",
+            std::process::id(),
+            state,
+            slot_index,
+            rescan_epoch
+        );
+    }
     let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} release validated slot_index={} worker_slot_count={} worker_slots={:?}",
+            std::process::id(),
+            slot_index,
+            attachment.worker_slot_count,
+            attachment.worker_slots
+        );
+    }
     let slot = unsafe { attachment.worker_slot(slot_index) }?;
     let slot_ref = unsafe { &*slot };
     if slot_ref.observed_rescan_epoch.load(Ordering::Acquire) != rescan_epoch {
+        if parallel_exec_debug_enabled() {
+            pgrx::log!(
+                "ec_hnsw parallel debug pid={} release skipped stale slot_index={}",
+                std::process::id(),
+                slot_index
+            );
+        }
         return Ok(false);
     }
 
     if slot_ref.flags.load(Ordering::Acquire) != EC_PARALLEL_WORKER_SLOT_CLAIMED {
+        if parallel_exec_debug_enabled() {
+            pgrx::log!(
+                "ec_hnsw parallel debug pid={} release skipped free slot_index={}",
+                std::process::id(),
+                slot_index
+            );
+        }
         return Ok(false);
     }
 
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} release clearing slot_index={}",
+            std::process::id(),
+            slot_index
+        );
+    }
     unsafe {
         clear_parallel_scan_result_slot_with_attachment(&attachment, slot_index, rescan_epoch, true)
     }?;
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} release reset slot_index={}",
+            std::process::id(),
+            slot_index
+        );
+    }
     reset_worker_slot_runtime(slot_ref);
     if slot_ref
         .flags
@@ -2567,9 +2704,23 @@ pub(crate) unsafe fn release_parallel_scan_worker_slot(
         unsafe { &*attachment.coordinator }
             .claimed_worker_slots
             .fetch_sub(1, Ordering::AcqRel);
+        if parallel_exec_debug_enabled() {
+            pgrx::log!(
+                "ec_hnsw parallel debug pid={} release ok slot_index={}",
+                std::process::id(),
+                slot_index
+            );
+        }
         return Ok(true);
     }
 
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} release compare-exchange missed slot_index={}",
+            std::process::id(),
+            slot_index
+        );
+    }
     Ok(false)
 }
 
@@ -3823,6 +3974,14 @@ pub(crate) unsafe fn reset_parallel_scan_state(
         state_ref.rescan_epoch = state_ref.rescan_epoch.wrapping_add(1);
         state_ref.rescan_epoch
     };
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} reset state={:?} epoch={}",
+            std::process::id(),
+            state,
+            rescan_epoch
+        );
+    }
     unsafe { reset_parallel_scan_layout(state) };
     Ok(Some(rescan_epoch))
 }
@@ -4158,6 +4317,73 @@ mod tests {
                 .load(Ordering::Acquire),
             2,
             "coordinator claim count should track the number of live claims"
+        );
+    }
+
+    #[test]
+    fn claim_parallel_scan_emitter_slot_elects_first_claimant_for_epoch() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let first_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("first claim should succeed");
+        let second_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("second claim should succeed");
+
+        assert!(
+            unsafe {
+                claim_parallel_scan_emitter_slot(
+                    attachment.state,
+                    second_slot,
+                    attachment.rescan_epoch,
+                )
+            }
+            .expect("emitter election should succeed"),
+            "first claimant for the shared epoch should become the only tuple emitter"
+        );
+        assert!(
+            !unsafe {
+                claim_parallel_scan_emitter_slot(
+                    attachment.state,
+                    first_slot,
+                    attachment.rescan_epoch,
+                )
+            }
+            .expect("later emitter probes should stay benign"),
+            "later claimants should observe the existing elected emitter"
+        );
+        assert!(
+            !unsafe { claim_parallel_scan_emitter_slot(attachment.state, second_slot, 99) }
+                .expect("stale epoch emitter probes should stay benign"),
+            "stale epochs should not retain emitter authority"
+        );
+
+        unsafe { reset_parallel_scan_state(parallel_scan) }
+            .expect("parallel rescan should succeed")
+            .expect("parallel rescan should see initialized state");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should keep validating")
+            .expect("parallel descriptor should keep exposing AM state");
+        let reset_slot = unsafe { claim_parallel_scan_worker_slot(&attachment) }
+            .expect("claim after reset should succeed");
+        assert!(
+            unsafe {
+                claim_parallel_scan_emitter_slot(
+                    attachment.state,
+                    reset_slot,
+                    attachment.rescan_epoch,
+                )
+            }
+            .expect("post-reset emitter election should succeed"),
+            "rescan should reset emitter election for the new epoch"
         );
     }
 

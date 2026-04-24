@@ -254,8 +254,15 @@ pub(crate) fn estimate_planner_cost(
         };
         let linear_cpu =
             tuple_estimate * constants.cpu_operator_cost * scoring_dimensions * linear_fraction;
-        let startup_cost = graph_cost + graph_cpu;
-        (startup_cost, startup_cost + linear_cost + linear_cpu)
+        // PostgreSQL does not pass `partial_path` into AM cost callbacks and
+        // does not parallel-discount AM startup/run cost in `cost_index`.
+        // Keeping graph traversal in startup cost therefore makes a generated
+        // partial ordered index path carry the same startup cost as the serial
+        // path, which prevents LIMIT queries from choosing Gather Merge over a
+        // parallel-aware index scan. Keep the total work unchanged, but model
+        // graph traversal as scan work so path selection can compare the
+        // parallel path on its lower total cost.
+        (0.0, graph_cost + graph_cpu + linear_cost + linear_cpu)
     };
 
     PlannerCostEstimate {
@@ -433,6 +440,34 @@ mod tests {
     }
 
     #[test]
+    fn planner_cost_model_charges_graph_work_to_run_cost() {
+        let constants = default_constants();
+        let estimate = estimate_planner_cost(
+            PlannerCostInputs {
+                index_pages: 400.0,
+                reltuples: 10_000.0,
+                m: 8,
+                ef_search: 40,
+                dimensions: 1536,
+                tree_height: 3.0,
+            },
+            constants,
+        );
+        let scoring_dimensions = 1536.0 * LUT_CPU_DIMENSION_SCALE;
+        let graph_pages = 3.0 + 40.0;
+        let graph_cost = graph_pages * constants.random_page_cost;
+        let graph_cpu = graph_pages * constants.cpu_operator_cost * scoring_dimensions;
+        let linear_pages = 400.0 - graph_pages;
+        let linear_cost = linear_pages * constants.seq_page_cost;
+        let linear_cpu =
+            10_000.0 * constants.cpu_operator_cost * scoring_dimensions * (linear_pages / 400.0);
+        let expected_total_cost = graph_cost + graph_cpu + linear_cost + linear_cpu;
+
+        assert_eq!(estimate.startup_cost, 0.0);
+        assert_eq!(estimate.total_cost, expected_total_cost);
+    }
+
+    #[test]
     fn planner_cost_model_returns_max_for_empty_index() {
         let estimate = estimate_planner_cost(
             PlannerCostInputs {
@@ -499,9 +534,10 @@ mod tests {
 
         // Observed live real-10k planner crossover on 2026-04-11:
         // the seqscan+sort alternative for LIMIT 10 costs ~1526.10. The
-        // ec_hnsw startup cost needs to stay below that boundary or the
-        // planner abandons the index even though the forced index path is
-        // materially faster than the seqscan fallback.
+        // ec_hnsw AM startup cost stays at zero so PG18 LIMIT planning does
+        // not reject generated partial ordered index paths before comparing
+        // their total cost.
+        assert_eq!(estimate.startup_cost, 0.0);
         assert!(
             estimate.startup_cost < 1526.10,
             "real 10k / 1536-d / ef=200 startup cost must stay below the observed seqscan+sort crossover: {estimate:?}"

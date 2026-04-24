@@ -835,9 +835,59 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_ambeginscan(
             }
 
             (*scan).parallel_scan = ptr::null_mut();
+            allocate_scan_orderby_output(scan);
             (*scan).opaque = PgBox::<TqScanOpaque>::alloc0().into_pg().cast();
             scan
         })
+    }
+}
+
+fn allocate_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    let norderbys = unsafe { (*scan).numberOfOrderBys };
+    if norderbys <= 0 {
+        return;
+    }
+
+    let norderbys = usize::try_from(norderbys).expect("numberOfOrderBys should fit in usize");
+    unsafe {
+        (*scan).xs_orderbyvals = pg_sys::palloc0(std::mem::size_of::<pg_sys::Datum>() * norderbys)
+            .cast::<pg_sys::Datum>();
+        (*scan).xs_orderbynulls =
+            pg_sys::palloc(std::mem::size_of::<bool>() * norderbys).cast::<bool>();
+        for index in 0..norderbys {
+            *(*scan).xs_orderbynulls.add(index) = true;
+        }
+    }
+}
+
+fn reset_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    let norderbys = unsafe { (*scan).numberOfOrderBys };
+    if norderbys <= 0 {
+        return;
+    }
+
+    let norderbys = usize::try_from(norderbys).expect("numberOfOrderBys should fit in usize");
+    unsafe {
+        if (*scan).xs_orderbyvals.is_null() || (*scan).xs_orderbynulls.is_null() {
+            pgrx::error!("ec_hnsw scan descriptor is missing ORDER BY output storage");
+        }
+        for index in 0..norderbys {
+            *(*scan).xs_orderbyvals.add(index) = pg_sys::Datum::from(0);
+            *(*scan).xs_orderbynulls.add(index) = true;
+        }
+    }
+}
+
+fn free_scan_orderby_output(scan: pg_sys::IndexScanDesc) {
+    unsafe {
+        if !(*scan).xs_orderbyvals.is_null() {
+            pg_sys::pfree((*scan).xs_orderbyvals.cast());
+            (*scan).xs_orderbyvals = ptr::null_mut();
+        }
+        if !(*scan).xs_orderbynulls.is_null() {
+            pg_sys::pfree((*scan).xs_orderbynulls.cast());
+            (*scan).xs_orderbynulls = ptr::null_mut();
+        }
     }
 }
 
@@ -911,8 +961,7 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
 
             (*scan).xs_recheck = false;
             (*scan).xs_recheckorderby = false;
-            (*scan).xs_orderbyvals = ptr::null_mut();
-            (*scan).xs_orderbynulls = ptr::null_mut();
+            reset_scan_orderby_output(scan);
 
             let index_options = super::options::relation_options((*scan).indexRelation);
             let opaque = &mut *(*scan).opaque.cast::<TqScanOpaque>();
@@ -1028,6 +1077,11 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amrescan(
             #[cfg(not(any(test, feature = "pg_test")))]
             let reset_elapsed_us = 0;
             record_reset_state_elapsed(opaque, reset_elapsed_us);
+            if non_emitting_parallel_backend_is_exhausted(opaque) {
+                // Elect before the initial graph prefetch so non-emitting PG18 workers
+                // never publish duplicate local candidates into the shared coordinator.
+                return;
+            }
             #[cfg(any(test, feature = "pg_test"))]
             let initialize_started = Instant::now();
             initialize_scan_entry_candidate(
@@ -1309,6 +1363,16 @@ fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
     {
         return;
     }
+    if !should_release_parallel_scan_worker_slot() {
+        if parallel_exec_debug_enabled() {
+            pgrx::log!(
+                "ec_hnsw parallel debug pid={} release skipped pg18 teardown slot_index={}",
+                std::process::id(),
+                opaque.parallel_scan_worker_slot_index
+            );
+        }
+        return;
+    }
 
     match unsafe {
         super::parallel::release_parallel_scan_worker_slot(
@@ -1322,7 +1386,88 @@ fn release_parallel_scan_state(opaque: &mut TqScanOpaque) {
     }
 }
 
+fn should_release_parallel_scan_worker_slot() -> bool {
+    #[cfg(test)]
+    {
+        true
+    }
+    #[cfg(all(not(test), feature = "pg18"))]
+    {
+        false
+    }
+    #[cfg(all(not(test), not(feature = "pg18")))]
+    unsafe {
+        pg_sys::ParallelWorkerNumber >= 0
+    }
+}
+
+fn parallel_scan_is_attached(opaque: &TqScanOpaque) -> bool {
+    !opaque.parallel_scan_state.is_null()
+        && opaque.parallel_scan_worker_slot_index != INVALID_PARALLEL_SCAN_WORKER_SLOT
+}
+
+fn parallel_scan_backend_can_emit_tuples() -> bool {
+    #[cfg(test)]
+    {
+        true
+    }
+    #[cfg(all(not(test), feature = "pg18"))]
+    unsafe {
+        pg_sys::ParallelWorkerNumber >= 0 || pg_sys::parallel_leader_participation
+    }
+    #[cfg(all(not(test), not(feature = "pg18")))]
+    {
+        true
+    }
+}
+
+fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
+    if !parallel_scan_is_attached(opaque) {
+        return true;
+    }
+    if !parallel_scan_backend_can_emit_tuples() {
+        return false;
+    }
+
+    unsafe {
+        super::parallel::claim_parallel_scan_emitter_slot(
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+            opaque.parallel_scan_rescan_epoch,
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan emitter election failed: {err}"))
+}
+
+fn non_emitting_parallel_backend_is_exhausted(opaque: &mut TqScanOpaque) -> bool {
+    if !parallel_scan_is_attached(opaque) || parallel_scan_backend_may_emit_tuples(opaque) {
+        return false;
+    }
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} non-emitter exhausted slot_index={} phase={:?}",
+            std::process::id(),
+            opaque.parallel_scan_worker_slot_index,
+            opaque.execution_phase
+        );
+    }
+    if !opaque.execution_phase.is_exhausted() {
+        mark_scan_exhausted(opaque);
+    }
+    true
+}
+
 fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
+    if parallel_exec_debug_enabled() {
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} clear state={:?} slot_index={} epoch={} phase={:?}",
+            std::process::id(),
+            opaque.parallel_scan_state,
+            opaque.parallel_scan_worker_slot_index,
+            opaque.parallel_scan_rescan_epoch,
+            opaque.execution_phase
+        );
+    }
     release_parallel_scan_state(opaque);
     opaque.parallel_scan_state = ptr::null_mut();
     opaque.parallel_scan_rescan_epoch = 0;
@@ -1333,12 +1478,25 @@ fn clear_parallel_scan_state(opaque: &mut TqScanOpaque) {
     opaque.parallel_local_only_output_active = false;
 }
 
+fn parallel_exec_debug_enabled() -> bool {
+    std::env::var_os("TQVECTOR_DEBUG_PARALLEL_EXEC").is_some()
+}
+
 fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaque) {
     clear_parallel_scan_state(opaque);
     if scan.is_null() {
         return;
     }
 
+    if parallel_exec_debug_enabled() {
+        let parallel_scan = unsafe { (*scan).parallel_scan };
+        pgrx::log!(
+            "ec_hnsw parallel debug pid={} bind begin scan={:?} parallel_scan={:?}",
+            std::process::id(),
+            scan,
+            parallel_scan
+        );
+    }
     match unsafe { super::parallel::parallel_scan_attachment((*scan).parallel_scan) } {
         Ok(Some(attachment)) => {
             let worker_slot_index =
@@ -1354,8 +1512,26 @@ fn bind_parallel_scan_state(scan: pg_sys::IndexScanDesc, opaque: &mut TqScanOpaq
             opaque.retained_parallel_owned_output_blocker = None;
             opaque.parallel_local_only_output_active = false;
             sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} bind ok slot_index={} slot_count={} state={:?} epoch={}",
+                    std::process::id(),
+                    opaque.parallel_scan_worker_slot_index,
+                    opaque.parallel_scan_worker_slot_count,
+                    opaque.parallel_scan_state,
+                    opaque.parallel_scan_rescan_epoch
+                );
+            }
         }
-        Ok(None) => clear_parallel_scan_state(opaque),
+        Ok(None) => {
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} bind no parallel attachment",
+                    std::process::id()
+                );
+            }
+            clear_parallel_scan_state(opaque);
+        }
         Err(err) => pgrx::error!("ec_hnsw parallel scan attach failed: {err}"),
     }
 }
@@ -1920,12 +2096,36 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amgettuple(
             }
 
             let opaque = &mut *opaque_ptr;
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} amgettuple enter slot_index={} phase={:?}",
+                    std::process::id(),
+                    opaque.parallel_scan_worker_slot_index,
+                    opaque.execution_phase
+                );
+            }
             if produce_next_scan_heap_tid(scan, (*scan).indexRelation, opaque, opaque.scan_code_len)
             {
+                if parallel_exec_debug_enabled() {
+                    pgrx::log!(
+                        "ec_hnsw parallel debug pid={} amgettuple produced slot_index={} heap_tid=({}, {})",
+                        std::process::id(),
+                        opaque.parallel_scan_worker_slot_index,
+                        (*scan).xs_heaptid.ip_blkid.bi_hi,
+                        (*scan).xs_heaptid.ip_posid
+                    );
+                }
                 return true;
             }
 
             clear_scan_orderby_output(scan);
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} amgettuple exhausted slot_index={}",
+                    std::process::id(),
+                    opaque.parallel_scan_worker_slot_index
+                );
+            }
             false
         })
     }
@@ -1936,6 +2136,15 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScan
         pgrx::pgrx_extern_c_guard(|| {
             if scan.is_null() {
                 return;
+            }
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} amendscan begin scan={:?} parallel_scan={:?} opaque={:?}",
+                    std::process::id(),
+                    scan,
+                    (*scan).parallel_scan,
+                    (*scan).opaque
+                );
             }
 
             let opaque_ptr = (*scan).opaque;
@@ -1962,6 +2171,14 @@ pub(super) unsafe extern "C-unwind" fn ec_hnsw_amendscan(scan: pg_sys::IndexScan
                 free_grouped_heap_rerank_state(opaque);
                 pg_sys::pfree(opaque_ptr);
                 (*scan).opaque = ptr::null_mut();
+            }
+            free_scan_orderby_output(scan);
+            if parallel_exec_debug_enabled() {
+                pgrx::log!(
+                    "ec_hnsw parallel debug pid={} amendscan end scan={:?}",
+                    std::process::id(),
+                    scan
+                );
             }
         })
     }
@@ -4352,6 +4569,42 @@ fn active_parallel_output_was_recently_emitted_by_foreign_worker(opaque: &TqScan
     foreign_worker_recently_emitted_heap_tid(opaque, active_parallel_output_heap_tid(opaque))
 }
 
+fn locally_recently_emitted_heap_tid(opaque: &TqScanOpaque, heap_tid: page::ItemPointer) -> bool {
+    heap_tid != page::ItemPointer::INVALID
+        && (opaque.last_emitted_heap_tid == heap_tid
+            || opaque.recent_emitted_heap_tids.contains(&heap_tid))
+}
+
+fn active_parallel_output_was_recently_emitted_locally(opaque: &TqScanOpaque) -> bool {
+    if !active_result_state_ref(opaque).current().has_element() {
+        return false;
+    }
+
+    locally_recently_emitted_heap_tid(opaque, active_parallel_output_heap_tid(opaque))
+}
+
+fn discard_recently_emitted_active_parallel_output(opaque: &mut TqScanOpaque) {
+    let heap_tid = active_parallel_output_heap_tid(opaque);
+    {
+        let result_state = active_result_state_mut(opaque);
+        let skipped = skip_pending_outputs_for_heap_tid(result_state, heap_tid);
+        if !skipped {
+            let _ = result_state.take_pending_output();
+            if result_state.pending_count() == 0 {
+                result_state.clear_current();
+            }
+        }
+    }
+    if !active_result_state_ref(opaque).current().has_element()
+        || active_result_state_ref(opaque).pending_count() == 0
+    {
+        opaque.parallel_local_only_output_active = false;
+        opaque.parallel_owned_output_blocker = None;
+        opaque.retained_parallel_owned_output_blocker = None;
+    }
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+}
+
 fn sort_deferred_parallel_blocked_outputs(opaque: &mut TqScanOpaque) {
     opaque
         .deferred_parallel_blocked_results
@@ -5071,6 +5324,10 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         // resurrect stale output.
         reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque);
     }
+    if active_parallel_output_was_recently_emitted_locally(opaque) {
+        discard_recently_emitted_active_parallel_output(opaque);
+        return ParallelScanOutputState::SuppressedDuplicate;
+    }
     if active_parallel_output_was_recently_emitted_by_foreign_worker(opaque) {
         remember_emitted_element_locally(
             opaque,
@@ -5567,6 +5824,10 @@ unsafe fn produce_next_scan_heap_tid(
     opaque: &mut TqScanOpaque,
     code_len: usize,
 ) -> bool {
+    if non_emitting_parallel_backend_is_exhausted(opaque) {
+        return false;
+    }
+
     if should_prefer_deferred_before_local_only_wakeup(opaque)
         && try_emit_preferred_deferred_parallel_blocked_output(scan, opaque)
     {
@@ -8089,6 +8350,69 @@ mod tests {
         assert_eq!(
             opaque.parallel_scan_worker_slot_index, 0,
             "first scan attachment should claim the first shared worker slot"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_next_output_suppresses_recent_local_heap_tid() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 4096],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        reset_scan_emitted_state(&mut opaque);
+        opaque.result_state.set_current(tid(61, 1), -3.0);
+        opaque.result_state.store_pending(&[tid(62, 1), tid(63, 1)]);
+        mark_emitted_output(&mut opaque, tid(61, 1), tid(62, 1));
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut opaque) },
+            ParallelScanOutputState::SuppressedDuplicate,
+            "parallel tuple production should not return the same locally-emitted heap tid twice"
+        );
+        assert_eq!(
+            opaque.result_state.current().element_tid(),
+            tid(61, 1),
+            "suppressing one duplicate heap tid should keep a multi-heap-tid result current"
+        );
+        assert_eq!(
+            opaque.result_state.pending_index(),
+            1,
+            "suppression should advance the pending heap-tid cursor past the duplicate"
+        );
+        assert_eq!(
+            opaque.result_state.pending_heap_tids()[1],
+            tid(63, 1),
+            "the next pending heap tid should remain available for a later emit"
         );
     }
 
