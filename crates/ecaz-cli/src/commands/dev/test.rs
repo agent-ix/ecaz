@@ -357,30 +357,31 @@ SET ec_hnsw.ef_search = {ef_search};
         .as_deref()
         .map(|diagnostics| format!("\n\nplanner diagnostics:\n{diagnostics}"))
         .unwrap_or_default();
-    if args.expect_parallel && !has_parallel_index_scan {
-        bail!(
+    let validation_error = if args.expect_parallel && !has_parallel_index_scan {
+        Some(format!(
             "expected a Parallel Index Scan plan, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
-        );
-    }
-    if args.expect_parallel && !args.planner_only && !has_launched_workers {
-        bail!(
+        ))
+    } else if args.expect_parallel && !args.planner_only && !has_launched_workers {
+        Some(format!(
             "expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
-        );
-    }
-
-    if let (Some(candidate_ids), Some(serial_ids)) = (&candidate_ids, &serial_ids) {
-        if candidate_ids != serial_ids {
-            bail!(
+        ))
+    } else if let (Some(candidate_ids), Some(serial_ids)) = (&candidate_ids, &serial_ids) {
+        (candidate_ids != serial_ids).then(|| {
+            format!(
                 "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
-            );
-        }
-    }
+            )
+        })
+    } else {
+        None
+    };
 
     let planner_diagnostics_output = planner_diagnostics
         .as_deref()
         .map(|diagnostics| format!("[pg18-parallel] planner diagnostics:\n{diagnostics}\n"))
         .unwrap_or_default();
-    let final_status = if args.planner_only && has_parallel_index_scan {
+    let final_status = if validation_error.is_some() {
+        "[pg18-parallel] validation failed"
+    } else if args.planner_only && has_parallel_index_scan {
         "[pg18-parallel] planner-only Parallel Index Scan plan validation passed"
     } else if has_parallel_index_scan && has_launched_workers {
         "[pg18-parallel] planner-visible Parallel Index Scan validation passed"
@@ -424,6 +425,9 @@ SET ec_hnsw.ef_search = {ef_search};
             .wrap_err_with(|| format!("writing {}", log_output.display()))?;
     }
     print!("{output}");
+    if let Some(validation_error) = validation_error {
+        bail!("{validation_error}");
+    }
     Ok(())
 }
 
