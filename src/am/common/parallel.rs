@@ -545,7 +545,7 @@ pub(crate) fn ec_parallel_scan_admitted_result_size() -> pg_sys::Size {
     maxalign(size_of::<EcParallelCoordinatorAdmittedResult>())
 }
 
-fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size {
+pub(crate) fn ec_parallel_scan_descriptor_size_for(worker_slot_count: u32) -> pg_sys::Size {
     let heap_entry_count = ec_parallel_scan_heap_entry_capacity_for(worker_slot_count);
     let heap_entry_bytes = checked_mul_size(
         ec_parallel_scan_heap_entry_size(),

@@ -691,6 +691,13 @@ See ADR-040 for the full shape. Summary:
   already-emitted heap TID after advancing the stale source slot, so a later
   worker cannot leak an obsolete foreign row.
 
+- **Four-worker staged DSM sizing is now covered too.** The generalized
+  round-robin harness now allocates debug DSM from the explicit requested
+  worker count instead of the GUC-derived default capacity, and the PG18 `n=4`
+  gate proves the shared-drain contract still preserves serial order with four
+  participating workers and the same no-stranded-state/no-local-fallback
+  assertions.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs

@@ -529,7 +529,7 @@ fn debug_scan_maxalign(size: pg_sys::Size) -> pg_sys::Size {
 unsafe fn debug_allocate_parallel_scan(worker_slot_count: u32) -> *mut std::ffi::c_void {
     let parallel_scan_bytes =
         debug_scan_maxalign(size_of::<pg_sys::ParallelIndexScanDescData>() as pg_sys::Size);
-    let descriptor_bytes = super::parallel::ec_parallel_scan_descriptor_size();
+    let descriptor_bytes = super::parallel::ec_parallel_scan_descriptor_size_for(worker_slot_count);
     let total_bytes = parallel_scan_bytes
         .checked_add(descriptor_bytes)
         .expect("debug parallel scan allocation should fit in pg_sys::Size");

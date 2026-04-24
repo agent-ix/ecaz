@@ -15957,63 +15957,112 @@ mod tests {
         .expect("index oid should exist");
         let query = vec![1.0, 0.0, 0.5, -1.0];
 
+        assert_parallel_round_robin_many_matches_serial(index_oid, query, 3, "n=3");
+    }
+
+    fn assert_parallel_round_robin_many_matches_serial(
+        index_oid: pg_sys::Oid,
+        query: Vec<f32>,
+        worker_slot_count: u32,
+        fixture_label: &str,
+    ) {
         let (serial, serial_summary) = unsafe {
             am::debug_gettuple_scan_heap_tids_with_scores_details(index_oid, query.clone())
         };
         let details = unsafe {
             am::debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_many_details(
-                index_oid, query, 3,
+                index_oid,
+                query,
+                worker_slot_count,
             )
         };
 
         assert_eq!(
             details.combined, serial,
-            "n=3 round-robin parallel-bound ordered scan should stay byte-identical to the serial emitted heap-tid and score stream; serial_summary={:?} details={:?}",
-            serial_summary, details,
+            "{} round-robin parallel-bound ordered scan should stay byte-identical to the serial emitted heap-tid and score stream; serial_summary={:?} details={:?}",
+            fixture_label, serial_summary, details,
         );
         assert_eq!(
             details.workers.len(),
-            3,
-            "the staged n=3 round-robin gate should bind exactly three workers; details={:?}",
+            worker_slot_count as usize,
+            "the staged {} round-robin gate should bind exactly {} workers; details={:?}",
+            fixture_label,
+            worker_slot_count,
             details,
         );
         assert!(
             details.workers.iter().all(|worker| !worker.stream.is_empty()),
-            "the staged n=3 round-robin ownership gate should make every worker contribute output on the unique-row fixture; details={:?}",
-            details,
+            "the staged {} round-robin ownership gate should make every worker contribute output on the unique-row fixture; details={:?}",
+            fixture_label, details,
         );
         assert!(
             details
                 .workers
                 .iter()
                 .all(|worker| worker.hidden_snapshot.is_none()),
-            "the staged n=3 round-robin gate should not leave hidden local-only DSM rows stranded after drain; details={:?}",
-            details,
+            "the staged {} round-robin gate should not leave hidden local-only DSM rows stranded after drain; details={:?}",
+            fixture_label, details,
         );
         assert!(
             details.workers.iter().all(|worker| {
                 worker.snapshot.runtime.owned_output_blocker_kind
                     == crate::am::common::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE
             }),
-            "the staged n=3 round-robin gate should not leave blocker state stranded after drain; details={:?}",
-            details,
+            "the staged {} round-robin gate should not leave blocker state stranded after drain; details={:?}",
+            fixture_label, details,
         );
         assert!(
             details.workers.iter().all(|worker| {
                 worker.counters.stats_parallel_local_only_emits == 0
                     && worker.counters.stats_parallel_deferred_local_emits == 0
             }),
-            "the staged n=3 round-robin gate should not need local-only fallback emits; details={:?}",
-            details,
+            "the staged {} round-robin gate should not need local-only fallback emits; details={:?}",
+            fixture_label, details,
         );
         assert!(
             details.workers.iter().all(|worker| {
                 !worker.snapshot.runtime.active_result_has_current
                     && worker.snapshot.runtime.active_result_pending_count == 0
             }),
-            "the staged n=3 round-robin gate should not leave active result state stranded after drain; details={:?}",
-            details,
+            "the staged {} round-robin gate should not leave active result state stranded after drain; details={:?}",
+            fixture_label, details,
         );
+    }
+
+    #[pg_test]
+    fn test_ech_parallel_n4_round_robin_matches_serial_scores() {
+        Spi::run(
+            "CREATE TABLE ec_hnsw_four_worker_parallel_scalar (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_four_worker_parallel_scalar VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8]::real[]::ecvector),
+             (3, ARRAY[0.8, 0.2, 0.3, -0.7]::real[]::ecvector),
+             (4, ARRAY[0.0, 1.0, 0.0, 0.0]::real[]::ecvector),
+             (5, ARRAY[-1.0, 0.0, 0.0, 1.0]::real[]::ecvector),
+             (6, ARRAY[0.4, 0.2, 0.9, -0.4]::real[]::ecvector),
+             (7, ARRAY[0.2, 0.4, 0.7, -0.2]::real[]::ecvector),
+             (8, ARRAY[0.7, -0.1, 0.2, -0.9]::real[]::ecvector),
+             (9, ARRAY[0.3, 0.3, 0.8, -0.3]::real[]::ecvector),
+             (10, ARRAY[0.6, 0.0, 0.6, -0.6]::real[]::ecvector)",
+        )
+        .expect("fixture insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_four_worker_parallel_scalar_idx ON ec_hnsw_four_worker_parallel_scalar USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 4, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_four_worker_parallel_scalar_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+
+        assert_parallel_round_robin_many_matches_serial(index_oid, query, 4, "n=4");
     }
 
     #[pg_test]
