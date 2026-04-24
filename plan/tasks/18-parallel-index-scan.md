@@ -658,6 +658,12 @@ See ADR-040 for the full shape. Summary:
   staged pass no longer counts as healthy if it leaves blocked-owner state in
   the worker snapshot after hidden shared state is already empty.
 
+- **The staged `n=2` gates now reject stranded active result state too.** The
+  same two PG18 fixtures now also require both worker snapshots to clear
+  `active_result_has_current` and `active_result_pending_count` once the
+  combined stream drains. A staged pass no longer counts as exhausted if it
+  leaves a current row or pending duplicate cursor behind in worker runtime.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
