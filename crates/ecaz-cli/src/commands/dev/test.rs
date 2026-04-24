@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, eyre, Context, Result};
+use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -35,7 +36,7 @@ impl TestCommand {
 #[derive(Args, Debug)]
 pub struct PgrxTestArgs {
     /// PostgreSQL major version to run.
-    #[arg(long, default_value_t = 17)]
+    #[arg(long, default_value_t = 18)]
     pg: u16,
 
     /// Extra arguments passed through to `cargo pgrx test`.
@@ -83,6 +84,10 @@ pub struct Pg18ParallelScanArgs {
     /// Require PostgreSQL to choose and launch a real Parallel Index Scan.
     #[arg(long)]
     expect_parallel: bool,
+
+    /// Print planner/catalog diagnostics for PG18 parallel index path activation.
+    #[arg(long)]
+    diagnose_planner: bool,
 }
 
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
@@ -281,14 +286,26 @@ SET ec_hnsw.ef_search = {ef_search};
     let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
     let parallel_seqscan_plan = pg18_parallel_fixture_parallel_seqscan_plan(&mut client).await?;
     let has_parallel_seqscan = parallel_seqscan_plan.contains("Parallel Seq Scan");
+    let planner_diagnostics = if args.diagnose_planner {
+        Some(
+            pg18_parallel_fixture_planner_diagnostics(&mut client, args.limit, args.workers)
+                .await?,
+        )
+    } else {
+        None
+    };
+    let diagnostics_for_error = planner_diagnostics
+        .as_deref()
+        .map(|diagnostics| format!("\n\nplanner diagnostics:\n{diagnostics}"))
+        .unwrap_or_default();
     if args.expect_parallel && !has_parallel_index_scan {
         bail!(
-            "expected a Parallel Index Scan plan, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
+            "expected a Parallel Index Scan plan, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
         );
     }
     if args.expect_parallel && !has_launched_workers {
         bail!(
-            "expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
+            "expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}{diagnostics_for_error}"
         );
     }
 
@@ -309,6 +326,9 @@ SET ec_hnsw.ef_search = {ef_search};
     );
     println!("[pg18-parallel] plan:\n{plan}");
     println!("[pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}");
+    if let Some(planner_diagnostics) = planner_diagnostics {
+        println!("[pg18-parallel] planner diagnostics:\n{planner_diagnostics}");
+    }
     println!("[pg18-parallel] serial_ids={serial_ids:?}");
     println!("[pg18-parallel] candidate_ids={candidate_ids:?}");
     if has_parallel_index_scan && has_launched_workers {
@@ -323,6 +343,350 @@ SET ec_hnsw.ef_search = {ef_search};
         );
     }
     Ok(())
+}
+
+async fn pg18_parallel_fixture_planner_diagnostics(
+    client: &mut tokio_postgres::Client,
+    limit: i64,
+    workers: u16,
+) -> Result<String> {
+    let mut diagnostics = String::new();
+    append_pg18_parallel_fixture_settings(client, &mut diagnostics).await?;
+    append_pg18_parallel_fixture_catalog(client, &mut diagnostics).await?;
+
+    let serial_json = pg18_parallel_fixture_explain_json(client, limit, 0).await?;
+    append_section(
+        &mut diagnostics,
+        "serial ordered JSON plan (max_parallel_workers_per_gather=0)",
+        &serial_json,
+    );
+
+    let candidate_json = pg18_parallel_fixture_explain_json(client, limit, workers).await?;
+    append_section(
+        &mut diagnostics,
+        "parallel-candidate ordered JSON plan",
+        &candidate_json,
+    );
+
+    let seqscan_json = pg18_parallel_fixture_parallel_seqscan_json(client).await?;
+    append_section(
+        &mut diagnostics,
+        "parallel seqscan control JSON plan",
+        &seqscan_json,
+    );
+
+    let ordered_seqscan_json =
+        pg18_parallel_fixture_parallel_ordered_seqscan_json(client, limit).await?;
+    append_section(
+        &mut diagnostics,
+        "parallel ordered seqscan control JSON plan",
+        &ordered_seqscan_json,
+    );
+
+    Ok(diagnostics.trim_end().to_owned())
+}
+
+async fn append_pg18_parallel_fixture_settings(
+    client: &tokio_postgres::Client,
+    diagnostics: &mut String,
+) -> Result<()> {
+    let rows = client
+        .query(
+            "
+SELECT name, setting
+FROM pg_settings
+WHERE name IN (
+  'cpu_tuple_cost',
+  'enable_bitmapscan',
+  'enable_gathermerge',
+  'enable_indexonlyscan',
+  'enable_indexscan',
+  'enable_incremental_sort',
+  'enable_seqscan',
+  'enable_sort',
+  'max_parallel_workers',
+  'max_parallel_workers_per_gather',
+  'min_parallel_index_scan_size',
+  'min_parallel_table_scan_size',
+  'parallel_setup_cost',
+  'parallel_tuple_cost'
+)
+ORDER BY name
+",
+            &[],
+        )
+        .await?;
+
+    diagnostics.push_str("settings:\n");
+    for row in rows {
+        let name: String = row.get(0);
+        let setting: String = row.get(1);
+        diagnostics.push_str(&format!("  {name}={setting}\n"));
+    }
+    diagnostics.push('\n');
+    Ok(())
+}
+
+async fn append_pg18_parallel_fixture_catalog(
+    client: &tokio_postgres::Client,
+    diagnostics: &mut String,
+) -> Result<()> {
+    let relation_rows = client
+        .query(
+            "
+SELECT c.relname::text,
+       c.relkind::text,
+       c.relpages::bigint,
+       c.reltuples::double precision,
+       COALESCE(array_to_string(c.reloptions, ','), '') AS reloptions
+FROM pg_class c
+WHERE c.oid IN (
+  'pg18_parallel_scan_fixture'::regclass,
+  'pg18_parallel_scan_fixture_idx'::regclass
+)
+ORDER BY c.relname
+",
+            &[],
+        )
+        .await?;
+    diagnostics.push_str("relations:\n");
+    for row in relation_rows {
+        let relname: String = row.get(0);
+        let relkind: String = row.get(1);
+        let relpages: i64 = row.get(2);
+        let reltuples: f64 = row.get(3);
+        let reloptions: String = row.get(4);
+        diagnostics.push_str(&format!(
+            "  {relname} kind={relkind} relpages={relpages} reltuples={reltuples:.0} reloptions={reloptions}\n"
+        ));
+    }
+    diagnostics.push('\n');
+
+    let operator_rows = client
+        .query(
+            "
+SELECT o.oid::regoperator::text,
+       p.oid::regprocedure::text,
+       CASE p.proparallel
+         WHEN 's' THEN 'safe'
+         WHEN 'r' THEN 'restricted'
+         WHEN 'u' THEN 'unsafe'
+         ELSE p.proparallel::text
+       END AS proparallel,
+       CASE p.provolatile
+         WHEN 'i' THEN 'immutable'
+         WHEN 's' THEN 'stable'
+         WHEN 'v' THEN 'volatile'
+         ELSE p.provolatile::text
+       END AS provolatile
+FROM pg_operator o
+JOIN pg_proc p ON p.oid = o.oprcode
+WHERE o.oprname = '<#>'
+  AND o.oprleft = 'ecvector'::regtype
+  AND o.oprright = 'real[]'::regtype
+",
+            &[],
+        )
+        .await?;
+    diagnostics.push_str("operator:\n");
+    for row in operator_rows {
+        let operator: String = row.get(0);
+        let procedure: String = row.get(1);
+        let proparallel: String = row.get(2);
+        let provolatile: String = row.get(3);
+        diagnostics.push_str(&format!(
+            "  {operator} procedure={procedure} parallel={proparallel} volatility={provolatile}\n"
+        ));
+    }
+    diagnostics.push('\n');
+
+    let opclass_rows = client
+        .query(
+            "
+SELECT opc.opcname::text,
+       am.amname::text,
+       opc.opcintype::regtype::text,
+       opf.opfname::text,
+       pg_index_has_property('pg18_parallel_scan_fixture_idx'::regclass, 'index_scan')::text,
+       pg_index_has_property('pg18_parallel_scan_fixture_idx'::regclass, 'bitmap_scan')::text,
+       pg_index_column_has_property('pg18_parallel_scan_fixture_idx'::regclass, 1, 'distance_orderable')::text
+FROM pg_opclass opc
+JOIN pg_am am ON am.oid = opc.opcmethod
+JOIN pg_opfamily opf ON opf.oid = opc.opcfamily
+WHERE opc.opcname = 'ecvector_ip_ops'
+",
+            &[],
+        )
+        .await?;
+    diagnostics.push_str("opclass:\n");
+    for row in opclass_rows {
+        let opcname: String = row.get(0);
+        let amname: String = row.get(1);
+        let opcintype: String = row.get(2);
+        let opfamily: String = row.get(3);
+        let index_scan: Option<String> = row.get(4);
+        let bitmap_scan: Option<String> = row.get(5);
+        let distance_orderable: Option<String> = row.get(6);
+        diagnostics.push_str(&format!(
+            "  {opcname} am={amname} input={opcintype} opfamily={opfamily} index_scan={} bitmap_scan={} distance_orderable={}\n",
+            index_scan.unwrap_or_else(|| "NULL".to_owned()),
+            bitmap_scan.unwrap_or_else(|| "NULL".to_owned()),
+            distance_orderable.unwrap_or_else(|| "NULL".to_owned()),
+        ));
+    }
+    diagnostics.push('\n');
+
+    let snapshot_rows = client
+        .query(
+            "
+SELECT planner_scan_enabled,
+       ordered_scan_ready,
+       runtime_ordered_scan_ready,
+       planner_cost_model_ready,
+       planner_cost_callback_live,
+       pg18_callback_surface_ready,
+       pg18_diagnostics_surface_ready,
+       pg18_read_stream_surface_ready,
+       effective_ef_search,
+       effective_source,
+       next_runtime_blocker
+FROM ec_hnsw_planner_integration_snapshot('pg18_parallel_scan_fixture_idx'::regclass)
+",
+            &[],
+        )
+        .await?;
+    diagnostics.push_str("ec_hnsw planner snapshot:\n");
+    for row in snapshot_rows {
+        let planner_scan_enabled: bool = row.get(0);
+        let ordered_scan_ready: bool = row.get(1);
+        let runtime_ordered_scan_ready: bool = row.get(2);
+        let planner_cost_model_ready: bool = row.get(3);
+        let planner_cost_callback_live: bool = row.get(4);
+        let pg18_callback_surface_ready: bool = row.get(5);
+        let pg18_diagnostics_surface_ready: bool = row.get(6);
+        let pg18_read_stream_surface_ready: bool = row.get(7);
+        let effective_ef_search: i32 = row.get(8);
+        let effective_source: String = row.get(9);
+        let next_runtime_blocker: String = row.get(10);
+        diagnostics.push_str(&format!(
+            "  planner_scan_enabled={planner_scan_enabled} ordered_scan_ready={ordered_scan_ready} runtime_ordered_scan_ready={runtime_ordered_scan_ready} planner_cost_model_ready={planner_cost_model_ready} planner_cost_callback_live={planner_cost_callback_live}\n"
+        ));
+        diagnostics.push_str(&format!(
+            "  pg18_callback_surface_ready={pg18_callback_surface_ready} pg18_diagnostics_surface_ready={pg18_diagnostics_surface_ready} pg18_read_stream_surface_ready={pg18_read_stream_surface_ready}\n"
+        ));
+        diagnostics.push_str(&format!(
+            "  effective_ef_search={effective_ef_search} effective_source={effective_source}\n"
+        ));
+        diagnostics.push_str(&format!("  next_runtime_blocker={next_runtime_blocker}\n"));
+    }
+    diagnostics.push('\n');
+    Ok(())
+}
+
+async fn pg18_parallel_fixture_explain_json(
+    client: &mut tokio_postgres::Client,
+    limit: i64,
+    max_parallel_workers_per_gather: u16,
+) -> Result<String> {
+    let transaction = client.transaction().await?;
+    transaction
+        .batch_execute(
+            format!(
+                "SET LOCAL max_parallel_workers_per_gather = {max_parallel_workers_per_gather};"
+            )
+            .as_str(),
+        )
+        .await?;
+    let row = transaction
+        .query_one(
+            format!(
+                "
+EXPLAIN (VERBOSE, FORMAT JSON)
+SELECT id
+FROM pg18_parallel_scan_fixture
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT {limit}
+"
+            )
+            .as_str(),
+            &[],
+        )
+        .await?;
+    let plan: Value = row.get(0);
+    transaction.commit().await?;
+    Ok(serde_json::to_string_pretty(&plan)?)
+}
+
+async fn pg18_parallel_fixture_parallel_seqscan_json(
+    client: &mut tokio_postgres::Client,
+) -> Result<String> {
+    let transaction = client.transaction().await?;
+    transaction
+        .batch_execute(
+            "
+SET LOCAL enable_seqscan = on;
+SET LOCAL enable_indexscan = off;
+SET LOCAL enable_indexonlyscan = off;
+SET LOCAL enable_bitmapscan = off;
+",
+        )
+        .await?;
+    let row = transaction
+        .query_one(
+            "
+EXPLAIN (VERBOSE, FORMAT JSON)
+SELECT id
+FROM pg18_parallel_scan_fixture
+WHERE id > 0
+",
+            &[],
+        )
+        .await?;
+    let plan: Value = row.get(0);
+    transaction.commit().await?;
+    Ok(serde_json::to_string_pretty(&plan)?)
+}
+
+async fn pg18_parallel_fixture_parallel_ordered_seqscan_json(
+    client: &mut tokio_postgres::Client,
+    limit: i64,
+) -> Result<String> {
+    let transaction = client.transaction().await?;
+    transaction
+        .batch_execute(
+            "
+SET LOCAL enable_seqscan = on;
+SET LOCAL enable_indexscan = off;
+SET LOCAL enable_indexonlyscan = off;
+SET LOCAL enable_bitmapscan = off;
+",
+        )
+        .await?;
+    let row = transaction
+        .query_one(
+            format!(
+                "
+EXPLAIN (VERBOSE, FORMAT JSON)
+SELECT id
+FROM pg18_parallel_scan_fixture
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT {limit}
+"
+            )
+            .as_str(),
+            &[],
+        )
+        .await?;
+    let plan: Value = row.get(0);
+    transaction.commit().await?;
+    Ok(serde_json::to_string_pretty(&plan)?)
+}
+
+fn append_section(diagnostics: &mut String, label: &str, body: &str) {
+    diagnostics.push_str(label);
+    diagnostics.push_str(":\n");
+    diagnostics.push_str(body);
+    diagnostics.push_str("\n\n");
 }
 
 async fn start_pg18_validation_cluster(

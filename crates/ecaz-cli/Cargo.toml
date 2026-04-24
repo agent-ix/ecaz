@@ -13,7 +13,7 @@ path = "src/main.rs"
 clap = { version = "4", features = ["derive", "cargo", "env"] }
 color-eyre = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "signal"] }
-tokio-postgres = "0.7"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 bytes = "1"
 futures = "0.3"
 indicatif = "0.17"
