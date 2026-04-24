@@ -646,6 +646,12 @@ See ADR-040 for the full shape. Summary:
   whether a row was still staged in hidden shared state instead of forcing that
   inference from worker snapshots alone.
 
+- **The staged `n=2` gates now reject stranded hidden DSM rows.** The unique-row
+  and duplicate-drain PG18 round-robin fixtures now also require both workers'
+  hidden local-only coordinator slot snapshots to be empty once the combined
+  stream drains. A staged pass that preserves serial output but leaves shared
+  hidden rows stranded no longer counts as good enough.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
