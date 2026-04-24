@@ -16066,6 +16066,50 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ech_parallel_n8_round_robin_matches_serial_scores() {
+        Spi::run(
+            "CREATE TABLE ec_hnsw_eight_worker_parallel_scalar (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_eight_worker_parallel_scalar VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (2, ARRAY[0.9, 0.1, 0.4, -0.8]::real[]::ecvector),
+             (3, ARRAY[0.8, 0.2, 0.3, -0.7]::real[]::ecvector),
+             (4, ARRAY[0.0, 1.0, 0.0, 0.0]::real[]::ecvector),
+             (5, ARRAY[-1.0, 0.0, 0.0, 1.0]::real[]::ecvector),
+             (6, ARRAY[0.4, 0.2, 0.9, -0.4]::real[]::ecvector),
+             (7, ARRAY[0.2, 0.4, 0.7, -0.2]::real[]::ecvector),
+             (8, ARRAY[0.7, -0.1, 0.2, -0.9]::real[]::ecvector),
+             (9, ARRAY[0.3, 0.3, 0.8, -0.3]::real[]::ecvector),
+             (10, ARRAY[0.6, 0.0, 0.6, -0.6]::real[]::ecvector),
+             (11, ARRAY[0.5, 0.2, 0.5, -0.5]::real[]::ecvector),
+             (12, ARRAY[0.4, -0.2, 0.4, -0.7]::real[]::ecvector),
+             (13, ARRAY[0.1, 0.6, 0.5, -0.1]::real[]::ecvector),
+             (14, ARRAY[0.2, -0.4, 0.9, -0.6]::real[]::ecvector),
+             (15, ARRAY[0.3, -0.3, 0.3, -0.9]::real[]::ecvector),
+             (16, ARRAY[0.6, 0.3, 0.1, -0.4]::real[]::ecvector)",
+        )
+        .expect("fixture insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_eight_worker_parallel_scalar_idx ON ec_hnsw_eight_worker_parallel_scalar USING ec_hnsw \
+             (embedding ecvector_ip_ops) WITH (m = 6, ef_construction = 64)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = Spi::get_one::<pg_sys::Oid>(
+            "SELECT 'ec_hnsw_eight_worker_parallel_scalar_idx'::regclass::oid",
+        )
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
+        let query = vec![1.0, 0.0, 0.5, -1.0];
+        Spi::run("SET LOCAL ec_hnsw.ef_search = 160")
+            .expect("n=8 coordination gate should use a full-row traversal budget");
+
+        assert_parallel_round_robin_many_matches_serial(index_oid, query, 8, "n=8");
+    }
+
+    #[pg_test]
     fn test_ech_parallel_n1_pq_matches_serial() {
         let table_name = "ec_hnsw_single_worker_parallel_pq";
         let index_name = "ec_hnsw_single_worker_parallel_pq_idx";

@@ -698,6 +698,13 @@ See ADR-040 for the full shape. Summary:
   participating workers and the same no-stranded-state/no-local-fallback
   assertions.
 
+- **Eight-worker staged coordination is now gated under full traversal budget.**
+  The PG18 `n=8` round-robin gate uses an explicit `ef_search=160` override so
+  it stresses shared ownership/drain behavior instead of the intentional
+  per-worker budget split. With that budget, all eight workers participate and
+  the combined shared stream stays byte-identical to serial with no stranded
+  hidden/blocker/active state or local-only/deferred-local emits.
+
 - **Current blocker.** `n=1` parity is live, but real multi-worker output
   ownership transfer is not. The staged shared merge seam still needs a
   concrete worker/consumer contract for genuinely blocked unique outputs
