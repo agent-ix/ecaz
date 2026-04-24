@@ -207,7 +207,7 @@ async fn run_pg18_parallel_scan(args: Pg18ParallelScanArgs) -> Result<()> {
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let cluster =
         start_pg18_validation_cluster(&pgrx_home, "pg18-parallel-scan", args.port).await?;
-    let client = psql::connect_with(&cluster.base).await?;
+    let mut client = psql::connect_with(&cluster.base).await?;
     let ef_search = args.ef_search.unwrap_or_else(|| {
         i32::from(args.workers)
             .saturating_add(1)
@@ -279,7 +279,7 @@ SET ec_hnsw.ef_search = {ef_search};
     let has_parallel_index_scan = plan.contains("Parallel Index Scan");
     let has_launched_workers = plan.contains("Workers Launched:");
     let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
-    let parallel_seqscan_plan = pg18_parallel_fixture_parallel_seqscan_plan(&client).await?;
+    let parallel_seqscan_plan = pg18_parallel_fixture_parallel_seqscan_plan(&mut client).await?;
     let has_parallel_seqscan = parallel_seqscan_plan.contains("Parallel Seq Scan");
     if args.expect_parallel && !has_parallel_index_scan {
         bail!(
@@ -464,19 +464,20 @@ LIMIT {limit}
 }
 
 async fn pg18_parallel_fixture_parallel_seqscan_plan(
-    client: &tokio_postgres::Client,
+    client: &mut tokio_postgres::Client,
 ) -> Result<String> {
-    client
+    let transaction = client.transaction().await?;
+    transaction
         .batch_execute(
             "
-SET enable_seqscan = on;
-SET enable_indexscan = off;
-SET enable_indexonlyscan = off;
-SET enable_bitmapscan = off;
+SET LOCAL enable_seqscan = on;
+SET LOCAL enable_indexscan = off;
+SET LOCAL enable_indexonlyscan = off;
+SET LOCAL enable_bitmapscan = off;
 ",
         )
         .await?;
-    let rows = client
+    let rows = transaction
         .query(
             "
 EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF)
@@ -487,6 +488,7 @@ WHERE id > 0
             &[],
         )
         .await?;
+    transaction.commit().await?;
     Ok(rows
         .into_iter()
         .map(|row| row.get::<_, String>(0))

@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, ContextCompat, Result};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PgrxInstall};
@@ -120,7 +120,7 @@ async fn run_pgvector(args: InstallPgvectorArgs) -> Result<()> {
 fn resolve_install(
     pg: u16,
     explicit_pg_config: Option<PathBuf>,
-    pgrx_home: &PathBuf,
+    pgrx_home: &Path,
 ) -> Result<PgrxInstall> {
     if let Some(pg_config) = explicit_pg_config {
         let root = pg_config
@@ -144,7 +144,7 @@ fn resolve_install(
     find_pgrx_install(pg, pgrx_home)
 }
 
-fn assert_matching_backend(release_artifact: &PathBuf, installed_backend: &PathBuf) -> Result<()> {
+fn assert_matching_backend(release_artifact: &Path, installed_backend: &Path) -> Result<()> {
     if !release_artifact.is_file() {
         bail!(
             "expected release artifact missing: {}",
@@ -170,7 +170,7 @@ fn assert_matching_backend(release_artifact: &PathBuf, installed_backend: &PathB
     Ok(())
 }
 
-fn sha256_hex(path: &PathBuf) -> Result<String> {
+fn sha256_hex(path: &Path) -> Result<String> {
     let bytes = fs::read(path).wrap_err_with(|| format!("reading {}", path.display()))?;
     let mut digest = Sha256::new();
     digest.update(bytes);

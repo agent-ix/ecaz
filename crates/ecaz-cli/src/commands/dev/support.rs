@@ -122,8 +122,8 @@ pub(crate) fn scratch_socket_dir(
 }
 
 pub(crate) fn refresh_debug_helpers_sql() -> Result<PathBuf> {
-    Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
+    Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
         .canonicalize()
-        .wrap_err("resolving bundled scratch debug-helper SQL")?)
+        .wrap_err("resolving bundled scratch debug-helper SQL")
 }

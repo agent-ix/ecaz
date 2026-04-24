@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
 
@@ -182,7 +182,7 @@ async fn run_restart(args: ScratchRestartArgs) -> Result<()> {
     run_status(command).await
 }
 
-async fn stop_existing_postmaster(data_dir: &PathBuf) -> Result<()> {
+async fn stop_existing_postmaster(data_dir: &Path) -> Result<()> {
     let pid_file = data_dir.join("postmaster.pid");
     if !pid_file.is_file() {
         return Ok(());
