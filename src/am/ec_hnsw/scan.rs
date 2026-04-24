@@ -1183,6 +1183,7 @@ fn publish_parallel_scan_worker_slot_snapshot(opaque: &TqScanOpaque) {
         visited_count,
         emitted_count,
         last_emitted_heap_tid: parallel_item_pointer(opaque.last_emitted_heap_tid),
+        recent_emitted_heap_tids: opaque.recent_emitted_heap_tids.map(parallel_item_pointer),
         active_result_pending_count: published_pending_count,
         active_result_has_current: published_has_current,
         owned_output_blocker_kind,
@@ -4292,7 +4293,12 @@ fn foreign_worker_recently_emitted_heap_tid(
         if snapshot.flags == 0 {
             continue;
         }
-        if snapshot.runtime.last_emitted_heap_tid == shared_heap_tid {
+        if snapshot.runtime.last_emitted_heap_tid == shared_heap_tid
+            || snapshot
+                .runtime
+                .recent_emitted_heap_tids
+                .contains(&shared_heap_tid)
+        {
             return true;
         }
     }
@@ -6204,6 +6210,11 @@ fn reset_scan_emitted_state(opaque: &mut TqScanOpaque) {
     } else {
         unsafe { &mut *opaque.emitted_result_tids }.clear();
     }
+    opaque.last_emitted_heap_tid = page::ItemPointer::INVALID;
+    opaque
+        .recent_emitted_heap_tids
+        .fill(page::ItemPointer::INVALID);
+    opaque.recent_emitted_heap_tid_cursor = 0;
 }
 
 fn free_scan_emitted_set(opaque: &mut TqScanOpaque) {
@@ -6227,7 +6238,21 @@ fn mark_emitted_output(
     heap_tid: page::ItemPointer,
 ) {
     opaque.last_emitted_heap_tid = heap_tid;
+    remember_recent_emitted_heap_tid(opaque, heap_tid);
     remember_emitted_element_locally(opaque, element_tid);
+}
+
+fn remember_recent_emitted_heap_tid(opaque: &mut TqScanOpaque, heap_tid: page::ItemPointer) {
+    if heap_tid == page::ItemPointer::INVALID {
+        return;
+    }
+
+    let index = usize::from(opaque.recent_emitted_heap_tid_cursor)
+        % super::parallel::EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY;
+    opaque.recent_emitted_heap_tids[index] = heap_tid;
+    opaque.recent_emitted_heap_tid_cursor =
+        u8::try_from((index + 1) % super::parallel::EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY)
+            .expect("recent emitted cursor should fit in u8");
 }
 
 fn mark_active_result_element_emitted(opaque: &mut TqScanOpaque) {
@@ -7743,6 +7768,9 @@ pub(super) struct TqScanOpaque {
     pub(super) expanded_source_tids: *mut HashSet<page::ItemPointer>,
     pub(super) emitted_result_tids: *mut HashSet<page::ItemPointer>,
     last_emitted_heap_tid: page::ItemPointer,
+    recent_emitted_heap_tids:
+        [page::ItemPointer; super::parallel::EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
+    recent_emitted_heap_tid_cursor: u8,
     pub(super) graph_element_cache: *mut HashMap<page::ItemPointer, Arc<CachedGraphElement>>,
     pub(super) graph_neighbor_cache: *mut HashMap<page::ItemPointer, Arc<graph::GraphNeighbors>>,
     pub(super) score_cache: *mut HashMap<page::ItemPointer, f32>,
@@ -7825,6 +7853,9 @@ impl Default for TqScanOpaque {
             expanded_source_tids: ptr::null_mut(),
             emitted_result_tids: ptr::null_mut(),
             last_emitted_heap_tid: page::ItemPointer::INVALID,
+            recent_emitted_heap_tids: [page::ItemPointer::INVALID;
+                super::parallel::EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
+            recent_emitted_heap_tid_cursor: 0,
             graph_element_cache: ptr::null_mut(),
             graph_neighbor_cache: ptr::null_mut(),
             score_cache: ptr::null_mut(),
@@ -8003,10 +8034,10 @@ mod tests {
     fn bind_parallel_scan_state_captures_shared_rescan_epoch() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 1024],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 1024] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8065,10 +8096,10 @@ mod tests {
     fn clear_parallel_scan_state_releases_claimed_worker_slot() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8132,10 +8163,10 @@ mod tests {
     fn publish_parallel_scan_worker_slot_snapshot_mirrors_scan_runtime_state() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8335,10 +8366,10 @@ mod tests {
     fn publish_parallel_scan_worker_slot_snapshot_hides_local_only_output_from_coordinator() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8452,10 +8483,10 @@ mod tests {
     fn finish_local_only_linear_pending_emit_republishes_hidden_worker_snapshot() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8573,10 +8604,10 @@ mod tests {
     fn publish_parallel_scan_worker_slot_snapshot_uses_best_deferred_blocker() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8686,10 +8717,10 @@ mod tests {
     fn try_take_parallel_scan_next_output_republishes_local_only_row_after_blocker_clears() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8817,10 +8848,10 @@ mod tests {
     fn try_take_republished_local_only_parallel_output_retries_stale_hidden_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -8899,10 +8930,10 @@ mod tests {
     fn try_take_republished_local_only_parallel_output_checks_live_retained_blocker() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -9011,10 +9042,10 @@ mod tests {
     {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -9137,10 +9168,10 @@ mod tests {
     fn try_take_republished_local_only_parallel_output_ignores_stale_retained_blocker_gate() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -9694,10 +9725,10 @@ mod tests {
     fn try_take_parallel_scan_next_output_advances_owned_slot_and_republishes() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -9778,10 +9809,10 @@ mod tests {
     fn try_take_parallel_scan_handoff_output_drains_foreign_admitted_head() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -9915,10 +9946,10 @@ mod tests {
     fn try_take_parallel_scan_handoff_output_drains_foreign_selected_pending() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10029,10 +10060,10 @@ mod tests {
     fn try_take_parallel_scan_handoff_output_suppresses_already_emitted_foreign_heap_tid() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 384],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 384] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10075,6 +10106,8 @@ mod tests {
         reset_scan_emitted_state(&mut local);
 
         mark_emitted_output(&mut emitter, tid(150, 1), tid(160, 1));
+        mark_emitted_output(&mut emitter, tid(151, 1), tid(161, 1));
+        mark_emitted_output(&mut emitter, tid(152, 1), tid(162, 1));
         publish_parallel_scan_worker_slot_snapshot(&emitter);
 
         foreign.result_state.set_current_with_details(
@@ -10149,10 +10182,10 @@ mod tests {
     fn try_take_parallel_scan_handoff_output_drains_foreign_hidden_selected_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10261,10 +10294,10 @@ mod tests {
     fn try_take_parallel_scan_handoff_output_drains_foreign_hidden_admitted_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10392,10 +10425,10 @@ mod tests {
     fn try_take_parallel_scan_next_output_drains_better_foreign_hidden_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10486,10 +10519,10 @@ mod tests {
     {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10577,10 +10610,10 @@ mod tests {
     {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10675,10 +10708,10 @@ mod tests {
     fn try_take_parallel_scan_deferred_handoff_output_restores_linear_fallback_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10798,10 +10831,10 @@ mod tests {
     fn foreign_selected_handoff_republish_advances_to_next_pending_output() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -10937,10 +10970,10 @@ mod tests {
     fn stale_foreign_selected_handoff_does_not_drain_new_selected_slot() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -11053,10 +11086,10 @@ mod tests {
     fn emit_materialized_parallel_scan_output_routes_new_local_row_through_shared_merge() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -11145,10 +11178,10 @@ mod tests {
     fn emit_materialized_parallel_scan_output_handoffs_foreign_selected_pending() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -11323,10 +11356,10 @@ mod tests {
     fn emit_prefetched_parallel_scan_output_routes_prefetched_row_through_shared_merge() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -11407,10 +11440,10 @@ mod tests {
     fn emit_prefetched_parallel_scan_output_handoffs_foreign_selected_pending() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12120,10 +12153,10 @@ mod tests {
     fn take_next_deferred_parallel_blocked_output_clears_stale_blocker_before_emit() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12230,10 +12263,10 @@ mod tests {
     fn take_next_deferred_parallel_blocked_output_skips_live_shared_heap_tid_duplicate() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12311,10 +12344,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_handoffs_live_foreign_duplicate() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12435,10 +12468,10 @@ mod tests {
     fn hidden_owner_row_can_chain_from_duplicate_handoff_into_foreign_hidden_takeover() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 384],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 384] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12563,10 +12596,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_exhausts_last_duplicate() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12662,10 +12695,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_clears_stale_blocker_before_emit() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -12742,10 +12775,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_drops_same_element_foreign_owner() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13101,10 +13134,10 @@ mod tests {
     fn take_next_deferred_parallel_blocked_output_retries_handoff_after_duplicate_skip() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13234,10 +13267,10 @@ mod tests {
     fn take_next_deferred_parallel_blocked_output_tracks_selected_blocker_into_admitted_head() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13404,10 +13437,10 @@ mod tests {
     fn take_next_deferred_parallel_blocked_output_retries_shared_seam_for_ready_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13548,10 +13581,10 @@ mod tests {
     fn live_foreign_blocker_heap_tid_tracks_selected_blocker_into_hidden_local_only_slot() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13627,10 +13660,10 @@ mod tests {
     ) {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13722,10 +13755,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_refreshes_selected_blocker_generation() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -13855,10 +13888,10 @@ mod tests {
     fn resolve_local_only_parallel_scan_duplicate_refreshes_selected_blocker_into_admitted_head() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14000,10 +14033,10 @@ mod tests {
     fn live_foreign_blocker_heap_tid_tracks_selected_blocker_across_republish_generation() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14099,10 +14132,10 @@ mod tests {
     ) {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 512],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 512] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14288,10 +14321,10 @@ mod tests {
     fn try_take_parallel_scan_next_output_can_take_better_foreign_deferred_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 384],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 384] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14365,10 +14398,10 @@ mod tests {
     fn take_preferred_deferred_parallel_blocked_output_clears_foreign_drained_best_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 384],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 384] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14452,10 +14485,10 @@ mod tests {
     fn take_preferred_deferred_parallel_blocked_output_clears_foreign_drained_blocked_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 384],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 384] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14645,10 +14678,10 @@ mod tests {
     fn take_preferred_deferred_parallel_blocked_output_prefers_stale_blocked_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14868,10 +14901,10 @@ mod tests {
     fn should_prefer_deferred_before_local_only_wakeup_prefers_ready_better_deferred_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -14993,10 +15026,10 @@ mod tests {
     fn should_prefer_deferred_before_local_only_wakeup_prefers_stale_blocked_row() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -15089,10 +15122,10 @@ mod tests {
     fn blocked_parallel_scan_disposition_retries_when_owner_slot_progresses() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -15183,10 +15216,10 @@ mod tests {
     fn blocked_parallel_scan_disposition_retries_when_owner_slot_was_fully_drained() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -15276,10 +15309,10 @@ mod tests {
     fn blocked_parallel_scan_disposition_retries_after_consuming_live_foreign_duplicate_heap_tid() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -15376,10 +15409,10 @@ mod tests {
     ) {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 320],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 320] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()
@@ -15581,10 +15614,10 @@ mod tests {
     fn discard_active_parallel_scan_output_clears_fallback_state_and_snapshot() {
         #[repr(C, align(8))]
         struct TestParallelScanStorage {
-            bytes: [u8; 256],
+            bytes: [u8; 4096],
         }
 
-        let mut storage = TestParallelScanStorage { bytes: [0; 256] };
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
         let parallel_scan = storage
             .bytes
             .as_mut_ptr()

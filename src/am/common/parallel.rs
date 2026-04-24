@@ -11,9 +11,10 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 12;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 13;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
+pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -106,6 +107,8 @@ pub(crate) struct EcParallelWorkerSlot {
     emitted_count: AtomicU32,
     last_emitted_element_block_number: AtomicU32,
     last_emitted_element_offset_number: AtomicU32,
+    recent_emitted_heap_block_numbers: [AtomicU32; EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
+    recent_emitted_heap_offset_numbers: [AtomicU32; EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
     active_result_pending_count: AtomicU32,
     active_result_has_current: AtomicU32,
     owned_output_blocker_kind: AtomicU32,
@@ -377,6 +380,8 @@ pub(crate) struct EcParallelWorkerSlotRuntimeSnapshot {
     pub(crate) visited_count: u32,
     pub(crate) emitted_count: u32,
     pub(crate) last_emitted_heap_tid: EcParallelItemPointer,
+    pub(crate) recent_emitted_heap_tids:
+        [EcParallelItemPointer; EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
     pub(crate) active_result_pending_count: u32,
     pub(crate) active_result_has_current: bool,
     pub(crate) owned_output_blocker_kind: u32,
@@ -395,6 +400,8 @@ impl EcParallelWorkerSlotRuntimeSnapshot {
             visited_count: 0,
             emitted_count: 0,
             last_emitted_heap_tid: EcParallelItemPointer::INVALID,
+            recent_emitted_heap_tids: [EcParallelItemPointer::INVALID;
+                EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
             active_result_pending_count: 0,
             active_result_has_current: false,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
@@ -874,6 +881,12 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
                 last_emitted_element_offset_number: AtomicU32::new(u32::from(
                     EcParallelItemPointer::INVALID.offset_number,
                 )),
+                recent_emitted_heap_block_numbers: std::array::from_fn(|_| {
+                    AtomicU32::new(EcParallelItemPointer::INVALID.block_number)
+                }),
+                recent_emitted_heap_offset_numbers: std::array::from_fn(|_| {
+                    AtomicU32::new(u32::from(EcParallelItemPointer::INVALID.offset_number))
+                }),
                 active_result_pending_count: AtomicU32::new(0),
                 active_result_has_current: AtomicU32::new(0),
                 owned_output_blocker_kind: AtomicU32::new(EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE),
@@ -935,6 +948,11 @@ fn reset_worker_slot_runtime(slot: &EcParallelWorkerSlot) {
         &slot.last_emitted_element_block_number,
         &slot.last_emitted_element_offset_number,
         runtime.last_emitted_heap_tid,
+    );
+    store_parallel_item_pointer_array(
+        &slot.recent_emitted_heap_block_numbers,
+        &slot.recent_emitted_heap_offset_numbers,
+        &runtime.recent_emitted_heap_tids,
     );
     slot.active_result_pending_count
         .store(runtime.active_result_pending_count, Ordering::Release);
@@ -1072,6 +1090,10 @@ fn load_worker_slot_snapshot(slot: &EcParallelWorkerSlot) -> EcParallelWorkerSlo
             last_emitted_heap_tid: load_parallel_item_pointer(
                 &slot.last_emitted_element_block_number,
                 &slot.last_emitted_element_offset_number,
+            ),
+            recent_emitted_heap_tids: load_parallel_item_pointer_array(
+                &slot.recent_emitted_heap_block_numbers,
+                &slot.recent_emitted_heap_offset_numbers,
             ),
             active_result_pending_count: slot.active_result_pending_count.load(Ordering::Acquire),
             active_result_has_current: slot.active_result_has_current.load(Ordering::Acquire) != 0,
@@ -2762,6 +2784,11 @@ pub(crate) unsafe fn publish_parallel_scan_worker_slot_runtime_snapshot(
         &slot_ref.last_emitted_element_offset_number,
         snapshot.last_emitted_heap_tid,
     );
+    store_parallel_item_pointer_array(
+        &slot_ref.recent_emitted_heap_block_numbers,
+        &slot_ref.recent_emitted_heap_offset_numbers,
+        &snapshot.recent_emitted_heap_tids,
+    );
     slot_ref
         .active_result_pending_count
         .store(snapshot.active_result_pending_count, Ordering::Release);
@@ -3882,12 +3909,12 @@ mod tests {
 
     #[repr(C, align(8))]
     struct TestParallelScanStorage {
-        bytes: [u8; 1024],
+        bytes: [u8; 8192],
     }
 
     impl Default for TestParallelScanStorage {
         fn default() -> Self {
-            Self { bytes: [0; 1024] }
+            Self { bytes: [0; 8192] }
         }
     }
 
@@ -6074,6 +6101,8 @@ mod tests {
             visited_count: 13,
             emitted_count: 3,
             last_emitted_heap_tid: EcParallelItemPointer::INVALID,
+            recent_emitted_heap_tids: [EcParallelItemPointer::INVALID;
+                EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
             active_result_pending_count: 2,
             active_result_has_current: true,
             owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
@@ -6350,6 +6379,8 @@ mod tests {
                         visited_count: 7,
                         emitted_count: 1,
                         last_emitted_heap_tid: EcParallelItemPointer::INVALID,
+                        recent_emitted_heap_tids: [EcParallelItemPointer::INVALID;
+                            EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY],
                         active_result_pending_count: 1,
                         active_result_has_current: true,
                         owned_output_blocker_kind: EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
