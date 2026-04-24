@@ -4569,6 +4569,31 @@ fn active_parallel_output_was_recently_emitted_by_foreign_worker(opaque: &TqScan
     foreign_worker_recently_emitted_heap_tid(opaque, active_parallel_output_heap_tid(opaque))
 }
 
+fn shared_coordinator_emitted_heap_tid(opaque: &TqScanOpaque, heap_tid: page::ItemPointer) -> bool {
+    if opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+        || heap_tid == page::ItemPointer::INVALID
+    {
+        return false;
+    }
+
+    unsafe {
+        super::parallel::parallel_scan_heap_tid_was_emitted(
+            opaque.parallel_scan_state,
+            parallel_item_pointer(heap_tid),
+        )
+    }
+    .unwrap_or_else(|err| pgrx::error!("ec_hnsw shared emitted heap-tid read failed: {err}"))
+}
+
+fn active_parallel_output_was_emitted_by_shared_coordinator(opaque: &TqScanOpaque) -> bool {
+    if !active_result_state_ref(opaque).current().has_element() {
+        return false;
+    }
+
+    shared_coordinator_emitted_heap_tid(opaque, active_parallel_output_heap_tid(opaque))
+}
+
 fn locally_recently_emitted_heap_tid(opaque: &TqScanOpaque, heap_tid: page::ItemPointer) -> bool {
     heap_tid != page::ItemPointer::INVALID
         && (opaque.last_emitted_heap_tid == heap_tid
@@ -5032,6 +5057,15 @@ fn consume_parallel_scan_admitted_result(
         item_pointer_from_parallel_item_pointer(admitted_result.element_tid),
         item_pointer_from_parallel_item_pointer(admitted_result.pending_output.heap_tid),
     );
+    if !opaque.parallel_scan_state.is_null() {
+        unsafe {
+            super::parallel::remember_parallel_scan_emitted_heap_tid(
+                opaque.parallel_scan_state,
+                admitted_result.pending_output.heap_tid,
+            )
+        }
+        .unwrap_or_else(|err| pgrx::error!("ec_hnsw shared emitted heap-tid record failed: {err}"));
+    }
 
     if admitted_result.source_slot_index == Some(opaque.parallel_scan_worker_slot_index) {
         let element_tid = item_pointer_from_parallel_item_pointer(admitted_result.element_tid);
@@ -5142,7 +5176,9 @@ unsafe fn try_take_parallel_scan_handoff_output_state(
     let output = pending_scan_output_from_parallel_pending_output(
         admitted_result.admitted_result.pending_output,
     );
-    if foreign_worker_recently_emitted_heap_tid(opaque, output.heap_tid) {
+    if foreign_worker_recently_emitted_heap_tid(opaque, output.heap_tid)
+        || shared_coordinator_emitted_heap_tid(opaque, output.heap_tid)
+    {
         remember_emitted_element_locally(
             opaque,
             item_pointer_from_parallel_item_pointer(admitted_result.admitted_result.element_tid),
@@ -5334,6 +5370,14 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
             active_result_state_ref(opaque).current().element_tid(),
         );
         discard_active_parallel_scan_output(opaque);
+        return ParallelScanOutputState::SuppressedDuplicate;
+    }
+    if active_parallel_output_was_emitted_by_shared_coordinator(opaque) {
+        remember_emitted_element_locally(
+            opaque,
+            active_result_state_ref(opaque).current().element_tid(),
+        );
+        discard_recently_emitted_active_parallel_output(opaque);
         return ParallelScanOutputState::SuppressedDuplicate;
     }
     opaque.parallel_local_only_output_active = false;
@@ -8413,6 +8457,78 @@ mod tests {
             opaque.result_state.pending_heap_tids()[1],
             tid(63, 1),
             "the next pending heap tid should remain available for a later emit"
+        );
+    }
+
+    #[test]
+    fn try_take_parallel_scan_next_output_suppresses_shared_emitted_heap_tid() {
+        #[repr(C, align(8))]
+        struct TestParallelScanStorage {
+            bytes: [u8; 4096],
+        }
+
+        let mut storage = TestParallelScanStorage { bytes: [0; 4096] };
+        let parallel_scan = storage
+            .bytes
+            .as_mut_ptr()
+            .cast::<pg_sys::ParallelIndexScanDescData>();
+        #[cfg(feature = "pg17")]
+        unsafe {
+            (*parallel_scan).ps_offset = 64;
+        }
+        #[cfg(feature = "pg18")]
+        unsafe {
+            (*parallel_scan).ps_offset_am = 64;
+        }
+
+        let target = unsafe { storage.bytes.as_mut_ptr().add(64) }.cast::<std::ffi::c_void>();
+        unsafe {
+            crate::am::ec_hnsw::parallel::initialize_parallel_scan_target_with_worker_slots(
+                target, 2,
+            )
+        }
+        .expect("parallel scan target should initialize");
+
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        reset_scan_emitted_state(&mut opaque);
+        opaque.result_state.set_current(tid(64, 1), -3.0);
+        opaque.result_state.store_pending(&[tid(65, 1), tid(66, 1)]);
+        unsafe {
+            crate::am::ec_hnsw::parallel::remember_parallel_scan_emitted_heap_tid(
+                opaque.parallel_scan_state,
+                parallel_item_pointer(tid(65, 1)),
+            )
+        }
+        .expect("shared emitted history write should succeed");
+
+        assert_eq!(
+            unsafe { try_take_parallel_scan_next_output(&mut opaque) },
+            ParallelScanOutputState::SuppressedDuplicate,
+            "parallel tuple production should suppress a heap tid already recorded in shared emitted history"
+        );
+        assert!(
+            emitted_contains_element(&opaque, tid(64, 1)),
+            "shared duplicate suppression should remember the local element as emitted"
+        );
+        assert_eq!(
+            opaque.result_state.current().element_tid(),
+            tid(64, 1),
+            "suppressing one shared duplicate heap tid should keep a multi-heap-tid result current"
+        );
+        assert_eq!(
+            opaque.result_state.pending_index(),
+            1,
+            "shared duplicate suppression should advance the pending heap-tid cursor"
+        );
+        assert_eq!(
+            opaque.result_state.pending_heap_tids()[1],
+            tid(66, 1),
+            "the next pending heap tid should remain available after shared duplicate suppression"
         );
     }
 

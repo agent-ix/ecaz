@@ -11,10 +11,12 @@ use pgrx::pg_sys;
 use crate::storage::page;
 
 const EC_PARALLEL_SCAN_STATE_MAGIC: u32 = u32::from_le_bytes(*b"ECPR");
-const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 14;
+const EC_PARALLEL_SCAN_STATE_VERSION: u16 = 15;
 const EC_PARALLEL_HEAP_ENTRY_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_SLOT_INDEX_INVALID: u32 = u32::MAX;
 pub(crate) const EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY: usize = 32;
+const EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY: usize =
+    EC_PARALLEL_RECENT_EMITTED_HEAP_TID_CAPACITY;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -61,6 +63,9 @@ pub(crate) struct EcParallelCoordinatorState {
     pub(crate) admitted_head_approx_score_bits: AtomicU32,
     pub(crate) admitted_head_comparison_score_bits: AtomicU32,
     pub(crate) admitted_head_approx_rank_bits: AtomicU32,
+    emitted_heap_tid_cursor: AtomicU32,
+    emitted_heap_block_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
+    emitted_heap_offset_numbers: [AtomicU32; EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY],
 }
 
 #[repr(C)]
@@ -791,6 +796,13 @@ unsafe fn reset_parallel_scan_layout(state: *mut EcParallelScanState) {
             admitted_head_approx_score_bits: AtomicU32::new(0),
             admitted_head_comparison_score_bits: AtomicU32::new(0),
             admitted_head_approx_rank_bits: AtomicU32::new(0),
+            emitted_heap_tid_cursor: AtomicU32::new(0),
+            emitted_heap_block_numbers: std::array::from_fn(|_| {
+                AtomicU32::new(EcParallelItemPointer::INVALID.block_number)
+            }),
+            emitted_heap_offset_numbers: std::array::from_fn(|_| {
+                AtomicU32::new(u32::from(EcParallelItemPointer::INVALID.offset_number))
+            }),
         };
     }
 
@@ -1048,6 +1060,43 @@ fn load_parallel_item_pointer_array<const N: usize>(
     std::array::from_fn(|index| {
         load_parallel_item_pointer(&block_numbers[index], &offset_numbers[index])
     })
+}
+
+fn coordinator_emitted_heap_tid_exists(
+    coordinator: &EcParallelCoordinatorState,
+    heap_tid: EcParallelItemPointer,
+) -> bool {
+    if !heap_tid.is_valid() {
+        return false;
+    }
+
+    (0..EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY).any(|index| {
+        load_parallel_item_pointer(
+            &coordinator.emitted_heap_block_numbers[index],
+            &coordinator.emitted_heap_offset_numbers[index],
+        ) == heap_tid
+    })
+}
+
+fn remember_coordinator_emitted_heap_tid(
+    coordinator: &EcParallelCoordinatorState,
+    heap_tid: EcParallelItemPointer,
+) {
+    if !heap_tid.is_valid() {
+        return;
+    }
+
+    let cursor = coordinator
+        .emitted_heap_tid_cursor
+        .fetch_add(1, Ordering::AcqRel);
+    let index = usize::try_from(cursor)
+        .expect("coordinator emitted heap-tid cursor should fit in usize")
+        % EC_PARALLEL_COORDINATOR_EMITTED_HEAP_TID_CAPACITY;
+    store_parallel_item_pointer(
+        &coordinator.emitted_heap_block_numbers[index],
+        &coordinator.emitted_heap_offset_numbers[index],
+        heap_tid,
+    );
 }
 
 fn reset_result_slot_runtime(slot: &EcParallelCoordinatorResultSlot) {
@@ -1988,6 +2037,10 @@ unsafe fn admit_pending_output_locked(
     }
 
     let coordinator = unsafe { &*attachment.coordinator };
+    if coordinator_emitted_heap_tid_exists(coordinator, selected.pending_output.heap_tid) {
+        return Ok(false);
+    }
+
     let mut count = coordinator
         .admitted_result_count
         .load(Ordering::Acquire)
@@ -2995,6 +3048,28 @@ pub(crate) unsafe fn read_parallel_scan_admission_snapshot(
     Ok(load_admission_snapshot(unsafe { &*attachment.coordinator }))
 }
 
+pub(crate) unsafe fn remember_parallel_scan_emitted_heap_tid(
+    state: *mut EcParallelScanState,
+    heap_tid: EcParallelItemPointer,
+) -> Result<(), &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    remember_coordinator_emitted_heap_tid(unsafe { &*attachment.coordinator }, heap_tid);
+    Ok(())
+}
+
+pub(crate) unsafe fn parallel_scan_heap_tid_was_emitted(
+    state: *mut EcParallelScanState,
+    heap_tid: EcParallelItemPointer,
+) -> Result<bool, &'static str> {
+    let attachment = unsafe { validate_parallel_scan_state(state) }?;
+    let _coordinator_lock = unsafe { acquire_parallel_scan_coordinator_lock(&attachment) };
+    Ok(coordinator_emitted_heap_tid_exists(
+        unsafe { &*attachment.coordinator },
+        heap_tid,
+    ))
+}
+
 pub(crate) unsafe fn read_parallel_scan_admitted_result_snapshot(
     state: *mut EcParallelScanState,
     result_index: u32,
@@ -3261,7 +3336,10 @@ pub(crate) unsafe fn read_parallel_scan_selected_pending_output_admission_probe(
             admitted_worst_score: coordinator.admitted_worst_score,
         };
 
-        let mut duplicate = false;
+        let mut duplicate = coordinator_emitted_heap_tid_exists(
+            unsafe { &*attachment.coordinator },
+            selected.pending_output.heap_tid,
+        );
         let mut tail_snapshot = None;
         let mut admitted_window_valid = true;
         for result_index in 0..admission_count {
@@ -3402,7 +3480,12 @@ unsafe fn pending_output_would_admit_locked(
         return Ok(false);
     }
 
-    let coordinator = load_coordinator_snapshot(unsafe { &*attachment.coordinator });
+    let coordinator_ref = unsafe { &*attachment.coordinator };
+    if coordinator_emitted_heap_tid_exists(coordinator_ref, selected.pending_output.heap_tid) {
+        return Ok(false);
+    }
+
+    let coordinator = load_coordinator_snapshot(coordinator_ref);
     let admission_count = coordinator.admitted_result_count.min(effective_limit);
     for result_index in 0..admission_count {
         let result = unsafe { attachment.admitted_result(result_index) }?;
@@ -5167,6 +5250,123 @@ mod tests {
         assert!(
             probe.would_admit,
             "probe should say the selected pending output would admit while the window is below capacity"
+        );
+    }
+
+    #[test]
+    fn remember_parallel_scan_emitted_heap_tid_records_and_rescan_clears() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let heap_tid = EcParallelItemPointer {
+            block_number: 166,
+            offset_number: 2,
+        };
+
+        assert!(
+            !unsafe { parallel_scan_heap_tid_was_emitted(attachment.state, heap_tid) }
+                .expect("emitted history read should succeed"),
+            "fresh coordinator state should not report the heap tid as emitted"
+        );
+        unsafe { remember_parallel_scan_emitted_heap_tid(attachment.state, heap_tid) }
+            .expect("emitted history write should succeed");
+        assert!(
+            unsafe { parallel_scan_heap_tid_was_emitted(attachment.state, heap_tid) }
+                .expect("emitted history read should succeed after write"),
+            "coordinator emitted history should surface a recorded heap tid"
+        );
+
+        assert_eq!(
+            unsafe { reset_parallel_scan_state(parallel_scan) }
+                .expect("parallel rescan should succeed"),
+            Some(1),
+            "rescan should advance the shared epoch"
+        );
+        assert!(
+            !unsafe { parallel_scan_heap_tid_was_emitted(attachment.state, heap_tid) }
+                .expect("emitted history read should succeed after rescan"),
+            "rescan should clear coordinator emitted history"
+        );
+    }
+
+    #[test]
+    fn read_parallel_scan_selected_pending_output_admission_probe_rejects_emitted_heap_tid() {
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = unsafe { test_parallel_scan_desc(&mut storage) };
+        let target = unsafe { test_parallel_scan_target(&mut storage) };
+
+        unsafe {
+            initialize_parallel_scan_target_with_worker_slots(target, TEST_WORKER_SLOT_COUNT)
+        }
+        .expect("parallel target should init");
+        let attachment = unsafe { parallel_scan_attachment(parallel_scan) }
+            .expect("parallel descriptor should validate")
+            .expect("parallel descriptor should expose AM state");
+        let slot_index =
+            unsafe { claim_parallel_scan_worker_slot(&attachment) }.expect("claim should succeed");
+        let heap_tid = EcParallelItemPointer {
+            block_number: 167,
+            offset_number: 2,
+        };
+
+        unsafe {
+            publish_parallel_scan_coordinator_result_slot_runtime_snapshot(
+                attachment.state,
+                slot_index,
+                attachment.rescan_epoch,
+                EcParallelCoordinatorResultSlotRuntimeSnapshot {
+                    element_tid: EcParallelItemPointer {
+                        block_number: 167,
+                        offset_number: 1,
+                    },
+                    heap_tid,
+                    score: -8.0,
+                    approx_score: None,
+                    comparison_score: None,
+                    approx_rank_base: None,
+                    pending_count: 1,
+                    pending_index: 0,
+                    pending_heap_tids: pending_heap_tids([heap_tid]),
+                },
+            )
+        }
+        .expect("publish should succeed");
+        unsafe { remember_parallel_scan_emitted_heap_tid(attachment.state, heap_tid) }
+            .expect("emitted history write should succeed");
+
+        let probe = unsafe {
+            read_parallel_scan_selected_pending_output_admission_probe(attachment.state, 2)
+        }
+        .expect("admission probe should succeed")
+        .expect("admission probe should surface the selected pending output");
+
+        assert_eq!(
+            probe.admission,
+            EcParallelCoordinatorAdmissionSnapshot {
+                admitted_result_count: 0,
+                admitted_result_generation: 0,
+                admitted_worst_score: None,
+            },
+            "emitted-history duplicate rejection should not require a populated admitted window"
+        );
+        assert!(
+            !probe.would_admit,
+            "probe should reject a selected pending output whose heap TID already left the shared emit path"
+        );
+        assert_eq!(
+            unsafe { admit_parallel_scan_selected_pending_output(attachment.state, 2) }
+                .expect("admission should succeed")
+                .map(|selection| selection.admitted),
+            Some(false),
+            "admission should also reject heap tids already present in coordinator emitted history"
         );
     }
 
