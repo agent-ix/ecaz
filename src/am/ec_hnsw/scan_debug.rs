@@ -31,6 +31,8 @@ pub(crate) type DebugParallelRoundRobinStreams = (
     Vec<HeapTidCoords>,
     Vec<HeapTidCoords>,
     Vec<HeapTidCoords>,
+    crate::am::common::explain::TqExplainCounters,
+    crate::am::common::explain::TqExplainCounters,
 );
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -2375,6 +2377,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
     let secondary_visited = debug_sorted_visited_tids(secondary_opaque);
     let primary_emitted = debug_sorted_emitted_tids(primary_opaque);
     let secondary_emitted = debug_sorted_emitted_tids(secondary_opaque);
+    let primary_counters = primary_opaque.explain_counters;
+    let secondary_counters = secondary_opaque.explain_counters;
 
     unsafe {
         debug_end_heap_backed_scan(secondary_state);
@@ -2394,6 +2398,8 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
         secondary_visited,
         primary_emitted,
         secondary_emitted,
+        primary_counters,
+        secondary_counters,
     )
 }
 
@@ -2403,7 +2409,7 @@ pub(crate) unsafe fn debug_gettuple_scan_heap_tids_with_scores_parallel_round_ro
     query: Vec<f32>,
     worker_slot_count: u32,
 ) -> Vec<(HeapTidCoords, f32)> {
-    let (_, _, _, _, tids, _, _, _, _, _, _, _, _) = unsafe {
+    let (_, _, _, _, tids, _, _, _, _, _, _, _, _, _, _) = unsafe {
         debug_gettuple_scan_heap_tids_with_scores_parallel_round_robin_details(
             index_oid,
             query,

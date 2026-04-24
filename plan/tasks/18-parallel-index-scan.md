@@ -664,6 +664,13 @@ See ADR-040 for the full shape. Summary:
   combined stream drains. A staged pass no longer counts as exhausted if it
   leaves a current row or pending duplicate cursor behind in worker runtime.
 
+- **The staged `n=2` gates now reject local-only fallback emits too.** The same
+  two PG18 fixtures now also require both workers' explain counters to keep
+  `Parallel Local-only Emits` and `Parallel Deferred Local Emits` at zero. A
+  staged pass no longer counts as healthy if it only preserves final order by
+  falling back to direct local emit instead of staying on the shared handoff
+  path.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
