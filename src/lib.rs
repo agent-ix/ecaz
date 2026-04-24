@@ -15682,6 +15682,25 @@ mod tests {
             primary_emitted,
             secondary_emitted,
         );
+        assert!(
+            primary_snapshot.runtime.owned_output_blocker_kind
+                == crate::am::common::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE
+                && secondary_snapshot.runtime.owned_output_blocker_kind
+                    == crate::am::common::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            "the staged n=2 round-robin ownership gate should not leave blocker state stranded after the unique-row fixture drains; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_hidden_snapshot,
+            secondary_hidden_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        );
     }
 
     #[pg_test]
@@ -15771,6 +15790,25 @@ mod tests {
         assert!(
             primary_hidden_snapshot.is_none() && secondary_hidden_snapshot.is_none(),
             "the staged n=2 duplicate-drain gate should not leave hidden local-only DSM rows stranded after the coalesced-duplicate fixture drains; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
+            primary_slot_index,
+            secondary_slot_index,
+            primary_round_robin,
+            secondary_round_robin,
+            primary_snapshot,
+            secondary_snapshot,
+            primary_hidden_snapshot,
+            secondary_hidden_snapshot,
+            primary_visited,
+            secondary_visited,
+            primary_emitted,
+            secondary_emitted,
+        );
+        assert!(
+            primary_snapshot.runtime.owned_output_blocker_kind
+                == crate::am::common::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE
+                && secondary_snapshot.runtime.owned_output_blocker_kind
+                    == crate::am::common::parallel::EC_PARALLEL_OWNED_OUTPUT_BLOCKER_NONE,
+            "the staged n=2 duplicate-drain gate should not leave blocker state stranded after the coalesced-duplicate fixture drains; primary_slot={:?} secondary_slot={:?} primary={:?} secondary={:?} primary_snapshot={:?} secondary_snapshot={:?} primary_hidden_snapshot={:?} secondary_hidden_snapshot={:?} primary_visited={:?} secondary_visited={:?} primary_emitted={:?} secondary_emitted={:?}",
             primary_slot_index,
             secondary_slot_index,
             primary_round_robin,

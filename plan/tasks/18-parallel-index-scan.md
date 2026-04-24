@@ -652,6 +652,12 @@ See ADR-040 for the full shape. Summary:
   stream drains. A staged pass that preserves serial output but leaves shared
   hidden rows stranded no longer counts as good enough.
 
+- **The staged `n=2` gates now reject stranded blocker metadata too.** The same
+  unique-row and duplicate-drain PG18 fixtures now also require both workers'
+  runtime blocker-kind fields to be clear once the combined stream drains. A
+  staged pass no longer counts as healthy if it leaves blocked-owner state in
+  the worker snapshot after hidden shared state is already empty.
+
 - **Parallel bootstrap seeds now stay in shared order.** The earlier per-worker
   tail diversification experiment was backed out because it truncated the real
   `n=2` round-robin stream to the shared prefix. Parallel workers now keep the
