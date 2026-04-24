@@ -88,6 +88,10 @@ pub struct Pg18ParallelScanArgs {
     /// Print planner/catalog diagnostics for PG18 parallel index path activation.
     #[arg(long)]
     diagnose_planner: bool,
+
+    /// Write the emitted PG18 parallel-scan diagnostic output to this path.
+    #[arg(long)]
+    log_output: Option<PathBuf>,
 }
 
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
@@ -315,33 +319,45 @@ SET ec_hnsw.ef_search = {ef_search};
         );
     }
 
-    println!("[pg18-parallel] install={}", cluster.install_version_label);
-    println!(
-        "[pg18-parallel] shared_preload_libraries={}",
-        cluster.preload_setting
-    );
-    println!(
-        "[pg18-parallel] rows={} workers={} limit={} ef_search={}",
-        args.rows, args.workers, args.limit, ef_search
-    );
-    println!("[pg18-parallel] plan:\n{plan}");
-    println!("[pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}");
-    if let Some(planner_diagnostics) = planner_diagnostics {
-        println!("[pg18-parallel] planner diagnostics:\n{planner_diagnostics}");
-    }
-    println!("[pg18-parallel] serial_ids={serial_ids:?}");
-    println!("[pg18-parallel] candidate_ids={candidate_ids:?}");
-    if has_parallel_index_scan && has_launched_workers {
-        println!("[pg18-parallel] planner-visible Parallel Index Scan validation passed");
+    let planner_diagnostics_output = planner_diagnostics
+        .as_deref()
+        .map(|diagnostics| format!("[pg18-parallel] planner diagnostics:\n{diagnostics}\n"))
+        .unwrap_or_default();
+    let final_status = if has_parallel_index_scan && has_launched_workers {
+        "[pg18-parallel] planner-visible Parallel Index Scan validation passed"
     } else if has_parallel_seqscan {
-        println!(
-            "[pg18-parallel] PostgreSQL can launch workers for the fixture, but did not choose a real Parallel Index Scan; use --expect-parallel once AM planner path activation is ready"
-        );
+        "[pg18-parallel] PostgreSQL can launch workers for the fixture, but did not choose a real Parallel Index Scan; use --expect-parallel once AM planner path activation is ready"
     } else {
-        println!(
-            "[pg18-parallel] PostgreSQL did not choose a real Parallel Index Scan or the parallel seqscan control path; inspect worker availability before using --expect-parallel"
-        );
+        "[pg18-parallel] PostgreSQL did not choose a real Parallel Index Scan or the parallel seqscan control path; inspect worker availability before using --expect-parallel"
+    };
+    let output = format!(
+        "[pg18-parallel] install={}\n\
+         [pg18-parallel] shared_preload_libraries={}\n\
+         [pg18-parallel] rows={} workers={} limit={} ef_search={}\n\
+         [pg18-parallel] plan:\n{plan}\n\
+         [pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}\n\
+         {planner_diagnostics_output}\
+         [pg18-parallel] serial_ids={serial_ids:?}\n\
+         [pg18-parallel] candidate_ids={candidate_ids:?}\n\
+         {final_status}\n",
+        cluster.install_version_label,
+        cluster.preload_setting,
+        args.rows,
+        args.workers,
+        args.limit,
+        ef_search,
+    );
+    if let Some(log_output) = &args.log_output {
+        if let Some(parent) = log_output.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)
+                    .wrap_err_with(|| format!("creating {}", parent.display()))?;
+            }
+        }
+        fs::write(log_output, &output)
+            .wrap_err_with(|| format!("writing {}", log_output.display()))?;
     }
+    print!("{output}");
     Ok(())
 }
 
