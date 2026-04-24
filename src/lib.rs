@@ -41,6 +41,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
     #[cfg(feature = "pg18")]
     unsafe {
         am::explain::register_pg18_explain_hooks();
+        am::planner::register_pg18_planner_hooks();
         am::stats::register_pg18_stats();
     }
 }
@@ -769,6 +770,70 @@ fn ec_hnsw_planner_integration_snapshot(
         snapshot.planner_gate_reason.to_owned(),
         snapshot.next_runtime_blocker.to_owned(),
         snapshot.next_pg18_blocker.to_owned(),
+    ))
+}
+
+#[cfg(feature = "pg18")]
+#[pg_extern]
+fn ec_hnsw_reset_planner_path_snapshot() -> bool {
+    am::planner::reset_planner_pathlist_snapshot();
+    true
+}
+
+#[cfg(feature = "pg18")]
+#[pg_extern]
+#[allow(clippy::type_complexity)]
+fn ec_hnsw_planner_path_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(hook_registered, bool),
+        name!(observed, bool),
+        name!(relid, i32),
+        name!(consider_parallel, bool),
+        name!(rel_parallel_workers, i32),
+        name!(ec_hnsw_index_count, i32),
+        name!(amcanparallel_seen, bool),
+        name!(path_count, i32),
+        name!(index_path_count, i32),
+        name!(ec_hnsw_index_path_count, i32),
+        name!(partial_path_count, i32),
+        name!(partial_index_path_count, i32),
+        name!(partial_ec_hnsw_index_path_count, i32),
+        name!(best_plain_ec_hnsw_startup_cost, Option<f64>),
+        name!(best_plain_ec_hnsw_total_cost, Option<f64>),
+        name!(best_plain_ec_hnsw_parallel_workers, Option<i32>),
+        name!(best_plain_ec_hnsw_pathkeys, Option<i32>),
+        name!(best_partial_ec_hnsw_startup_cost, Option<f64>),
+        name!(best_partial_ec_hnsw_total_cost, Option<f64>),
+        name!(best_partial_ec_hnsw_parallel_workers, Option<i32>),
+        name!(best_partial_ec_hnsw_parallel_aware, Option<bool>),
+        name!(best_partial_ec_hnsw_pathkeys, Option<i32>),
+    ),
+> {
+    let snapshot = am::planner::planner_pathlist_snapshot();
+    TableIterator::once((
+        snapshot.hook_registered,
+        snapshot.observed,
+        i32::try_from(snapshot.relid).expect("planner relid should fit in i32"),
+        snapshot.consider_parallel,
+        snapshot.rel_parallel_workers,
+        snapshot.ec_hnsw_index_count,
+        snapshot.amcanparallel_seen,
+        snapshot.path_count,
+        snapshot.index_path_count,
+        snapshot.ec_hnsw_index_path_count,
+        snapshot.partial_path_count,
+        snapshot.partial_index_path_count,
+        snapshot.partial_ec_hnsw_index_path_count,
+        snapshot.best_plain_ec_hnsw_startup_cost,
+        snapshot.best_plain_ec_hnsw_total_cost,
+        snapshot.best_plain_ec_hnsw_parallel_workers,
+        snapshot.best_plain_ec_hnsw_pathkeys,
+        snapshot.best_partial_ec_hnsw_startup_cost,
+        snapshot.best_partial_ec_hnsw_total_cost,
+        snapshot.best_partial_ec_hnsw_parallel_workers,
+        snapshot.best_partial_ec_hnsw_parallel_aware,
+        snapshot.best_partial_ec_hnsw_pathkeys,
     ))
 }
 
@@ -2801,6 +2866,70 @@ mod tests {
             } else {
                 "custom pgstat kind registration remains gated outside this build"
             }
+        );
+    }
+
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_planner_path_snapshot_records_ec_hnsw_paths() {
+        Spi::run("CREATE TABLE ec_hnsw_planner_path_snapshot_test (id bigint, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_hnsw_planner_path_snapshot_test VALUES
+             (1, ARRAY[1.0, 0.0, 0.5, -1.0]::real[]::ecvector),
+             (2, ARRAY[0.0, 1.0, 0.25, -0.5]::real[]::ecvector)",
+        )
+        .expect("fixture insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_planner_path_snapshot_idx ON ec_hnsw_planner_path_snapshot_test USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("ANALYZE ec_hnsw_planner_path_snapshot_test").expect("analyze should succeed");
+        Spi::run(
+            "
+SET enable_seqscan = off;
+SET min_parallel_index_scan_size = 0;
+SET max_parallel_workers_per_gather = 4;
+SELECT ec_hnsw_reset_planner_path_snapshot();
+EXPLAIN SELECT id
+FROM ec_hnsw_planner_path_snapshot_test
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT 1
+",
+        )
+        .expect("planner path snapshot fixture should explain");
+
+        assert!(Spi::get_one::<bool>(
+            "SELECT hook_registered FROM ec_hnsw_planner_path_snapshot()"
+        )
+        .expect("snapshot query should succeed")
+        .expect("hook registration flag should be non-null"));
+        assert!(
+            Spi::get_one::<bool>("SELECT observed FROM ec_hnsw_planner_path_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("observation flag should be non-null")
+        );
+        assert_eq!(
+            Spi::get_one::<i32>("SELECT ec_hnsw_index_count FROM ec_hnsw_planner_path_snapshot()")
+                .expect("snapshot query should succeed")
+                .expect("index count should be non-null"),
+            1
+        );
+        assert!(
+            Spi::get_one::<i32>(
+                "SELECT ec_hnsw_index_path_count FROM ec_hnsw_planner_path_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("index path count should be non-null")
+                >= 1
+        );
+        assert!(
+            Spi::get_one::<f64>(
+                "SELECT best_plain_ec_hnsw_total_cost FROM ec_hnsw_planner_path_snapshot()",
+            )
+            .expect("snapshot query should succeed")
+            .expect("plain ec_hnsw path cost should be non-null")
+                > 0.0
         );
     }
 

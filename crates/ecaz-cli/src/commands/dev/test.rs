@@ -377,11 +377,17 @@ async fn pg18_parallel_fixture_planner_diagnostics(
         &serial_json,
     );
 
-    let candidate_json = pg18_parallel_fixture_explain_json(client, limit, workers).await?;
+    let (candidate_json, planner_pathlist_snapshot) =
+        pg18_parallel_fixture_explain_json_with_pathlist_snapshot(client, limit, workers).await?;
     append_section(
         &mut diagnostics,
         "parallel-candidate ordered JSON plan",
         &candidate_json,
+    );
+    append_section(
+        &mut diagnostics,
+        "PG18 planner pathlist snapshot after parallel-candidate ordered plan",
+        &planner_pathlist_snapshot,
     );
 
     let seqscan_json = pg18_parallel_fixture_parallel_seqscan_json(client).await?;
@@ -703,6 +709,129 @@ LIMIT {limit}
     let plan: Value = row.get(0);
     transaction.commit().await?;
     Ok(serde_json::to_string_pretty(&plan)?)
+}
+
+async fn pg18_parallel_fixture_explain_json_with_pathlist_snapshot(
+    client: &mut tokio_postgres::Client,
+    limit: i64,
+    max_parallel_workers_per_gather: u16,
+) -> Result<(String, String)> {
+    client
+        .batch_execute("SELECT ec_hnsw_reset_planner_path_snapshot();")
+        .await?;
+    let plan =
+        pg18_parallel_fixture_explain_json(client, limit, max_parallel_workers_per_gather).await?;
+    let pathlist_snapshot = pg18_parallel_fixture_pathlist_snapshot(client).await?;
+    Ok((plan, pathlist_snapshot))
+}
+
+async fn pg18_parallel_fixture_pathlist_snapshot(
+    client: &tokio_postgres::Client,
+) -> Result<String> {
+    let rows = client
+        .query(
+            "
+SELECT hook_registered,
+       observed,
+       relid,
+       consider_parallel,
+       rel_parallel_workers,
+       ec_hnsw_index_count,
+       amcanparallel_seen,
+       path_count,
+       index_path_count,
+       ec_hnsw_index_path_count,
+       partial_path_count,
+       partial_index_path_count,
+       partial_ec_hnsw_index_path_count,
+       best_plain_ec_hnsw_startup_cost,
+       best_plain_ec_hnsw_total_cost,
+       best_plain_ec_hnsw_parallel_workers,
+       best_plain_ec_hnsw_pathkeys,
+       best_partial_ec_hnsw_startup_cost,
+       best_partial_ec_hnsw_total_cost,
+       best_partial_ec_hnsw_parallel_workers,
+       best_partial_ec_hnsw_parallel_aware,
+       best_partial_ec_hnsw_pathkeys
+FROM ec_hnsw_planner_path_snapshot()
+",
+            &[],
+        )
+        .await?;
+
+    let mut snapshot = String::new();
+    for row in rows {
+        let hook_registered: bool = row.get(0);
+        let observed: bool = row.get(1);
+        let relid: i32 = row.get(2);
+        let consider_parallel: bool = row.get(3);
+        let rel_parallel_workers: i32 = row.get(4);
+        let ec_hnsw_index_count: i32 = row.get(5);
+        let amcanparallel_seen: bool = row.get(6);
+        let path_count: i32 = row.get(7);
+        let index_path_count: i32 = row.get(8);
+        let ec_hnsw_index_path_count: i32 = row.get(9);
+        let partial_path_count: i32 = row.get(10);
+        let partial_index_path_count: i32 = row.get(11);
+        let partial_ec_hnsw_index_path_count: i32 = row.get(12);
+        let best_plain_ec_hnsw_startup_cost: Option<f64> = row.get(13);
+        let best_plain_ec_hnsw_total_cost: Option<f64> = row.get(14);
+        let best_plain_ec_hnsw_parallel_workers: Option<i32> = row.get(15);
+        let best_plain_ec_hnsw_pathkeys: Option<i32> = row.get(16);
+        let best_partial_ec_hnsw_startup_cost: Option<f64> = row.get(17);
+        let best_partial_ec_hnsw_total_cost: Option<f64> = row.get(18);
+        let best_partial_ec_hnsw_parallel_workers: Option<i32> = row.get(19);
+        let best_partial_ec_hnsw_parallel_aware: Option<bool> = row.get(20);
+        let best_partial_ec_hnsw_pathkeys: Option<i32> = row.get(21);
+
+        snapshot.push_str(&format!(
+            "  hook_registered={hook_registered} observed={observed} relid={relid} consider_parallel={consider_parallel} rel_parallel_workers={rel_parallel_workers}\n"
+        ));
+        snapshot.push_str(&format!(
+            "  ec_hnsw_index_count={ec_hnsw_index_count} amcanparallel_seen={amcanparallel_seen}\n"
+        ));
+        snapshot.push_str(&format!(
+            "  path_count={path_count} index_path_count={index_path_count} ec_hnsw_index_path_count={ec_hnsw_index_path_count}\n"
+        ));
+        snapshot.push_str(&format!(
+            "  partial_path_count={partial_path_count} partial_index_path_count={partial_index_path_count} partial_ec_hnsw_index_path_count={partial_ec_hnsw_index_path_count}\n"
+        ));
+        snapshot.push_str(&format!(
+            "  best_plain_ec_hnsw startup_cost={} total_cost={} parallel_workers={} pathkeys={}\n",
+            format_optional_cost(best_plain_ec_hnsw_startup_cost),
+            format_optional_cost(best_plain_ec_hnsw_total_cost),
+            format_optional_i32(best_plain_ec_hnsw_parallel_workers),
+            format_optional_i32(best_plain_ec_hnsw_pathkeys),
+        ));
+        snapshot.push_str(&format!(
+            "  best_partial_ec_hnsw startup_cost={} total_cost={} parallel_workers={} parallel_aware={} pathkeys={}\n",
+            format_optional_cost(best_partial_ec_hnsw_startup_cost),
+            format_optional_cost(best_partial_ec_hnsw_total_cost),
+            format_optional_i32(best_partial_ec_hnsw_parallel_workers),
+            format_optional_bool(best_partial_ec_hnsw_parallel_aware),
+            format_optional_i32(best_partial_ec_hnsw_pathkeys),
+        ));
+    }
+
+    Ok(snapshot.trim_end().to_owned())
+}
+
+fn format_optional_cost(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.3}"))
+        .unwrap_or_else(|| "NULL".to_owned())
+}
+
+fn format_optional_i32(value: Option<i32>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "NULL".to_owned())
+}
+
+fn format_optional_bool(value: Option<bool>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "NULL".to_owned())
 }
 
 async fn pg18_parallel_fixture_parallel_seqscan_json(

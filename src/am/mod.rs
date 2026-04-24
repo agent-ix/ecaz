@@ -3,6 +3,10 @@
 pub(crate) mod common;
 mod ec_hnsw;
 
+#[cfg(feature = "pg18")]
+#[allow(unused_imports)]
+pub(crate) use self::common::planner;
+
 #[allow(unused_imports)]
 pub(crate) use self::common::{cost, explain, stats, stream};
 #[allow(unused_imports)]
