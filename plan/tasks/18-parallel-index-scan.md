@@ -710,10 +710,12 @@ See ADR-040 for the full shape. Summary:
   transaction scope in a repo-local PG18 cluster, creates a committed
   fixture, applies parallel-friendly planner GUCs, and compares serial vs
   parallel-enabled ordered IDs under a default full-traversal-sized budget.
-  The current live result still plans a serial `Index Scan`; the earlier
-  `debug_parallel_query` experiment only wrapped that serial path in
-  `Gather Single Copy`, so `amcanparallel` remains false until the planner
-  can produce a real PostgreSQL `Parallel Index Scan` path. Pass
+  The command also runs a forced parallel seqscan control on the same fixture.
+  The current live result can launch workers for that control path, but the
+  ordered `ec_hnsw` access path still plans as a serial `Index Scan`; the
+  earlier `debug_parallel_query` experiment only wrapped that serial path in
+  `Gather Single Copy`. `amcanparallel` remains false until the AM planner
+  path can win as a real PostgreSQL `Parallel Index Scan`. Pass
   `--expect-parallel` once that path is ready to turn the diagnostic into the
   live executor gate.
 

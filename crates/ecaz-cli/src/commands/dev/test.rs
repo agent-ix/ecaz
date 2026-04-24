@@ -278,17 +278,23 @@ SET ec_hnsw.ef_search = {ef_search};
     let plan = pg18_parallel_fixture_explain_analyze(&client, args.limit).await?;
     let has_parallel_index_scan = plan.contains("Parallel Index Scan");
     let has_launched_workers = plan.contains("Workers Launched:");
+    let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
+    let parallel_seqscan_plan = pg18_parallel_fixture_parallel_seqscan_plan(&client).await?;
+    let has_parallel_seqscan = parallel_seqscan_plan.contains("Parallel Seq Scan");
     if args.expect_parallel && !has_parallel_index_scan {
-        bail!("expected a Parallel Index Scan plan, got:\n{plan}");
+        bail!(
+            "expected a Parallel Index Scan plan, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
+        );
     }
     if args.expect_parallel && !has_launched_workers {
-        bail!("expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}");
+        bail!(
+            "expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
+        );
     }
 
-    let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
     if candidate_ids != serial_ids {
         bail!(
-            "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}"
+            "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}\n\nparallel seqscan control plan:\n{parallel_seqscan_plan}"
         );
     }
 
@@ -302,13 +308,18 @@ SET ec_hnsw.ef_search = {ef_search};
         args.rows, args.workers, args.limit, ef_search
     );
     println!("[pg18-parallel] plan:\n{plan}");
+    println!("[pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}");
     println!("[pg18-parallel] serial_ids={serial_ids:?}");
     println!("[pg18-parallel] candidate_ids={candidate_ids:?}");
     if has_parallel_index_scan && has_launched_workers {
         println!("[pg18-parallel] planner-visible Parallel Index Scan validation passed");
+    } else if has_parallel_seqscan {
+        println!(
+            "[pg18-parallel] PostgreSQL can launch workers for the fixture, but did not choose a real Parallel Index Scan; use --expect-parallel once AM planner path activation is ready"
+        );
     } else {
         println!(
-            "[pg18-parallel] PostgreSQL did not choose a real Parallel Index Scan; use --expect-parallel once planner path activation is ready"
+            "[pg18-parallel] PostgreSQL did not choose a real Parallel Index Scan or the parallel seqscan control path; inspect worker availability before using --expect-parallel"
         );
     }
     Ok(())
@@ -442,6 +453,37 @@ LIMIT {limit}
 "
             )
             .as_str(),
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+async fn pg18_parallel_fixture_parallel_seqscan_plan(
+    client: &tokio_postgres::Client,
+) -> Result<String> {
+    client
+        .batch_execute(
+            "
+SET enable_seqscan = on;
+SET enable_indexscan = off;
+SET enable_indexonlyscan = off;
+SET enable_bitmapscan = off;
+",
+        )
+        .await?;
+    let rows = client
+        .query(
+            "
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF)
+SELECT id
+FROM pg18_parallel_scan_fixture
+WHERE id > 0
+",
             &[],
         )
         .await?;
