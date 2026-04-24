@@ -5002,6 +5002,53 @@ fn parallel_scan_admission_result_limit() -> u32 {
     u32::MAX
 }
 
+unsafe fn handle_parallel_scan_owned_output_blocker(
+    opaque: &mut TqScanOpaque,
+    mut blocker: super::parallel::EcParallelOwnedOutputBlocker,
+) -> ParallelScanOutputState {
+    if let Some(retained) = opaque
+        .retained_parallel_owned_output_blocker
+        .filter(|retained| {
+            retained.element_tid == active_result_state_ref(opaque).current().element_tid()
+        })
+    {
+        opaque.retained_parallel_owned_output_blocker =
+            refresh_retained_parallel_owned_output_blocker(opaque, retained);
+        if let Some(retained) = opaque.retained_parallel_owned_output_blocker {
+            blocker = retained.blocker;
+        }
+    }
+    match unsafe { try_take_parallel_scan_handoff_output_state(opaque, blocker) } {
+        ParallelScanOutputState::Emitted(output) => {
+            return ParallelScanOutputState::Emitted(output);
+        }
+        ParallelScanOutputState::SuppressedDuplicate => {
+            return ParallelScanOutputState::SuppressedDuplicate;
+        }
+        ParallelScanOutputState::Empty | ParallelScanOutputState::Blocked(_) => {}
+    }
+    match blocker.kind {
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
+            opaque
+                .explain_counters
+                .record_parallel_blocked_foreign_selected_pending();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
+            opaque
+                .explain_counters
+                .record_parallel_blocked_foreign_admitted_head();
+        }
+        super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
+            opaque
+                .explain_counters
+                .record_parallel_blocked_admission_window();
+        }
+    }
+    opaque.parallel_owned_output_blocker = Some(blocker);
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+    ParallelScanOutputState::Blocked(blocker)
+}
+
 unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> ParallelScanOutputState {
     if opaque.parallel_scan_state.is_null()
         || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
@@ -5038,7 +5085,7 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
         sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
     }
     match unsafe {
-        super::parallel::read_parallel_scan_owned_output_state(
+        super::parallel::take_parallel_scan_owned_ready_output_snapshot(
             opaque.parallel_scan_state,
             opaque.parallel_scan_worker_slot_index,
             parallel_scan_admission_result_limit(),
@@ -5046,74 +5093,20 @@ unsafe fn try_take_parallel_scan_next_output(opaque: &mut TqScanOpaque) -> Paral
     }
     .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan readiness read failed: {err}"))
     {
-        super::parallel::EcParallelOwnedOutputState::Empty => {
-            return ParallelScanOutputState::Empty;
-        }
-        super::parallel::EcParallelOwnedOutputState::Blocked(mut blocker) => {
-            if let Some(retained) =
-                opaque
-                    .retained_parallel_owned_output_blocker
-                    .filter(|retained| {
-                        retained.element_tid
-                            == active_result_state_ref(opaque).current().element_tid()
-                    })
-            {
-                opaque.retained_parallel_owned_output_blocker =
-                    refresh_retained_parallel_owned_output_blocker(opaque, retained);
-                if let Some(retained) = opaque.retained_parallel_owned_output_blocker {
-                    blocker = retained.blocker;
-                }
-            }
-            match unsafe { try_take_parallel_scan_handoff_output_state(opaque, blocker) } {
-                ParallelScanOutputState::Emitted(output) => {
-                    return ParallelScanOutputState::Emitted(output);
-                }
-                ParallelScanOutputState::SuppressedDuplicate => {
-                    return ParallelScanOutputState::SuppressedDuplicate;
-                }
-                ParallelScanOutputState::Empty | ParallelScanOutputState::Blocked(_) => {}
-            }
-            match blocker.kind {
-                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignSelectedPending => {
-                    opaque
-                        .explain_counters
-                        .record_parallel_blocked_foreign_selected_pending();
-                }
-                super::parallel::EcParallelOwnedOutputBlockerKind::ForeignAdmittedHead => {
-                    opaque
-                        .explain_counters
-                        .record_parallel_blocked_foreign_admitted_head();
-                }
-                super::parallel::EcParallelOwnedOutputBlockerKind::AdmissionWindow => {
-                    opaque
-                        .explain_counters
-                        .record_parallel_blocked_admission_window();
-                }
-            }
-            opaque.parallel_owned_output_blocker = Some(blocker);
+        super::parallel::EcParallelOwnedOutputTakeState::Empty => ParallelScanOutputState::Empty,
+        super::parallel::EcParallelOwnedOutputTakeState::Blocked(blocker) => unsafe {
+            handle_parallel_scan_owned_output_blocker(opaque, blocker)
+        },
+        super::parallel::EcParallelOwnedOutputTakeState::Ready(admitted_result) => {
+            opaque.parallel_local_only_output_active = false;
+            opaque.parallel_owned_output_blocker = None;
+            opaque.retained_parallel_owned_output_blocker = None;
+            let output =
+                consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
             sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
-            return ParallelScanOutputState::Blocked(blocker);
+            ParallelScanOutputState::Emitted(output)
         }
-        super::parallel::EcParallelOwnedOutputState::Ready => {}
     }
-
-    let admitted_result = unsafe {
-        super::parallel::take_parallel_scan_owned_next_output_snapshot(
-            opaque.parallel_scan_state,
-            opaque.parallel_scan_worker_slot_index,
-            parallel_scan_admission_result_limit(),
-        )
-    }
-    .unwrap_or_else(|err| pgrx::error!("ec_hnsw parallel scan next-output take failed: {err}"))
-    .unwrap_or_else(|| {
-        pgrx::error!("ec_hnsw parallel scan ready state produced no owned output to take")
-    });
-    opaque.parallel_local_only_output_active = false;
-    opaque.parallel_owned_output_blocker = None;
-    opaque.retained_parallel_owned_output_blocker = None;
-    let output = consume_parallel_scan_admitted_result(opaque, admitted_result.admitted_result);
-    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
-    ParallelScanOutputState::Emitted(output)
 }
 
 unsafe fn try_take_republished_local_only_parallel_output(
