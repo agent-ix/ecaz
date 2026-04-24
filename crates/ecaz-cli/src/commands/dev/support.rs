@@ -7,6 +7,7 @@ use tokio::process::Command;
 
 pub(crate) const SCRATCH_DEFAULT_PORT: u16 = 28817;
 pub(crate) const PG18_PRELOAD_DEFAULT_PORT: u16 = 28818;
+pub(crate) const PG18_PARALLEL_SCAN_DEFAULT_PORT: u16 = 28819;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PgrxInstall {

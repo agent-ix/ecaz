@@ -705,11 +705,17 @@ See ADR-040 for the full shape. Summary:
   the combined shared stream stays byte-identical to serial with no stranded
   hidden/blocker/active state or local-only/deferred-local emits.
 
-- **Current blocker.** `n=1` parity is live, but real multi-worker output
-  ownership transfer is not. The staged shared merge seam still needs a
-  concrete worker/consumer contract for genuinely blocked unique outputs
-  before `amcanparallel` can flip on without duplicate or out-of-owner output
-  hazards.
+- **PG18 live planner preflight is now CLI-owned.** The reusable
+  `ecaz dev test pg18-parallel-scan` command runs outside pg_test
+  transaction scope in a repo-local PG18 cluster, creates a committed
+  fixture, applies parallel-friendly planner GUCs, and compares serial vs
+  parallel-enabled ordered IDs under a default full-traversal-sized budget.
+  The current live result still plans a serial `Index Scan`; the earlier
+  `debug_parallel_query` experiment only wrapped that serial path in
+  `Gather Single Copy`, so `amcanparallel` remains false until the planner
+  can produce a real PostgreSQL `Parallel Index Scan` path. Pass
+  `--expect-parallel` once that path is ready to turn the diagnostic into the
+  live executor gate.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings

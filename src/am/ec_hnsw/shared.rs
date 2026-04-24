@@ -792,7 +792,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
         next_runtime_blocker:
-            "parallel scan still needs a real ownership-transfer contract for genuinely blocked unique outputs before amcanparallel can turn on",
+            "parallel scan coordinator is staged through n=8; planner-visible execution still needs a real PostgreSQL Parallel Index Scan path before amcanparallel can stay enabled",
         next_pg18_blocker: if diagnostics.pg18_pgstat_kind_ready {
             "no merged PG18 blocker remains on main"
         } else {

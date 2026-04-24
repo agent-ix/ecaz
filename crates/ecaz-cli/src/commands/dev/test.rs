@@ -8,7 +8,8 @@ use tokio::process::Command;
 use crate::psql;
 
 use super::support::{
-    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PG18_PRELOAD_DEFAULT_PORT,
+    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PG18_PARALLEL_SCAN_DEFAULT_PORT,
+    PG18_PRELOAD_DEFAULT_PORT,
 };
 
 #[derive(Subcommand, Debug)]
@@ -17,6 +18,8 @@ pub enum TestCommand {
     Pgrx(PgrxTestArgs),
     /// Start a repo-local PG18 cluster with preload enabled and validate shared pgstat visibility.
     Pg18PreloadPgstat(Pg18PreloadPgstatArgs),
+    /// Start a repo-local PG18 cluster and diagnose planner-visible parallel scan readiness.
+    Pg18ParallelScan(Pg18ParallelScanArgs),
 }
 
 impl TestCommand {
@@ -24,6 +27,7 @@ impl TestCommand {
         match self {
             TestCommand::Pgrx(args) => run_pgrx(args).await,
             TestCommand::Pg18PreloadPgstat(args) => run_pg18_preload_pgstat(args).await,
+            TestCommand::Pg18ParallelScan(args) => run_pg18_parallel_scan(args).await,
         }
     }
 }
@@ -50,6 +54,37 @@ pub struct Pg18PreloadPgstatArgs {
     pgrx_home: Option<PathBuf>,
 }
 
+#[derive(Args, Debug)]
+pub struct Pg18ParallelScanArgs {
+    /// Starting port for the repo-local cluster. The command will try this port and the next 9.
+    #[arg(long, default_value_t = PG18_PARALLEL_SCAN_DEFAULT_PORT)]
+    port: u16,
+
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+
+    /// Planned parallel workers per gather.
+    #[arg(long, default_value_t = 4)]
+    workers: u16,
+
+    /// Fixture row count.
+    #[arg(long, default_value_t = 512)]
+    rows: i32,
+
+    /// Query LIMIT for serial/parallel comparison.
+    #[arg(long, default_value_t = 16)]
+    limit: i64,
+
+    /// ef_search override. Defaults to a full-traversal budget for the fixture size.
+    #[arg(long)]
+    ef_search: Option<i32>,
+
+    /// Require PostgreSQL to choose and launch a real Parallel Index Scan.
+    #[arg(long)]
+    expect_parallel: bool,
+}
+
 async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
     let repo_root = repo_root()?;
     let mut command = Command::new("cargo");
@@ -66,83 +101,11 @@ async fn run_pgrx(args: PgrxTestArgs) -> Result<()> {
 }
 
 async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
-    let repo_root = repo_root()?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
-    let install = find_pgrx_install(18, &pgrx_home)?;
-    assert_preload_install_ready(&install)?;
-
-    let cluster_root = repo_root.join("target/pg18-preload-pgstat");
-    let data_dir = cluster_root.join("data");
-    let log_file = cluster_root.join("postgres.log");
-    fs::create_dir_all(&cluster_root)
-        .wrap_err_with(|| format!("creating {}", cluster_root.display()))?;
-
-    let initdb = install.bin_dir.join("initdb");
-    let pg_ctl = install.bin_dir.join("pg_ctl");
-    if !data_dir.join("PG_VERSION").is_file() {
-        let mut command = Command::new(&initdb);
-        command
-            .arg("-D")
-            .arg(&data_dir)
-            .arg("-A")
-            .arg("trust")
-            .arg("-U")
-            .arg("postgres");
-        run_status(command).await?;
-    }
-
-    let cluster = PgClusterGuard::new(pg_ctl.clone(), data_dir.clone());
-    cluster.stop().await?;
-
-    let mut selected_port = None;
-    for offset in 0..10 {
-        let candidate = args.port + offset;
-        fs::write(&log_file, "").wrap_err_with(|| format!("resetting {}", log_file.display()))?;
-        let output = Command::new(&pg_ctl)
-            .arg("-D")
-            .arg(&data_dir)
-            .arg("-l")
-            .arg(&log_file)
-            .arg("-o")
-            .arg(format!(
-                "-p {candidate} -c listen_addresses=127.0.0.1 -c shared_preload_libraries=ecaz"
-            ))
-            .arg("-w")
-            .arg("start")
-            .output()
-            .await
-            .wrap_err("starting PG18 preload validation cluster")?;
-        if output.status.success() {
-            selected_port = Some(candidate);
-            break;
-        }
-        let log = fs::read_to_string(&log_file).unwrap_or_default();
-        if !log.contains("Address already in use") {
-            bail!(
-                "pg_ctl start failed on port {}: {}{}",
-                candidate,
-                String::from_utf8_lossy(&output.stderr),
-                log
-            );
-        }
-    }
-    let selected_port = selected_port
-        .ok_or_else(|| eyre!("could not find a free local port starting at {}", args.port))?;
-
-    let base = psql::ConnectParams {
-        database: "postgres".into(),
-        host: Some("127.0.0.1".into()),
-        port: Some(selected_port),
-        user: Some("postgres".into()),
-        password: None,
-    };
-    let observer = psql::connect_with(&base).await?;
-    let actor = psql::connect_with(&base).await?;
-
-    let preload_setting = single_text(&observer, "SHOW shared_preload_libraries").await?;
-    if !preload_setting.contains("ecaz") {
-        bail!("shared_preload_libraries should include ecaz, got {preload_setting}");
-    }
+    let cluster =
+        start_pg18_validation_cluster(&pgrx_home, "pg18-preload-pgstat", args.port).await?;
+    let observer = psql::connect_with(&cluster.base).await?;
+    let actor = psql::connect_with(&cluster.base).await?;
 
     observer
         .batch_execute(
@@ -214,8 +177,11 @@ LIMIT 1
         bail!("observer backend should see shared distance calculations increase");
     }
 
-    println!("[pg18-preload] install={}", install.version_label);
-    println!("[pg18-preload] shared_preload_libraries={preload_setting}");
+    println!("[pg18-preload] install={}", cluster.install_version_label);
+    println!(
+        "[pg18-preload] shared_preload_libraries={}",
+        cluster.preload_setting
+    );
     println!(
         "[pg18-preload] baseline_scans={baseline_scans} baseline_distance_calcs={baseline_distance}"
     );
@@ -224,7 +190,269 @@ LIMIT 1
     Ok(())
 }
 
-fn assert_preload_install_ready(install: &super::support::PgrxInstall) -> Result<()> {
+async fn run_pg18_parallel_scan(args: Pg18ParallelScanArgs) -> Result<()> {
+    if args.workers == 0 {
+        bail!("--workers must be at least 1");
+    }
+    if args.rows < 1 {
+        bail!("--rows must be at least 1");
+    }
+    if args.limit < 1 {
+        bail!("--limit must be at least 1");
+    }
+    if args.limit > i64::from(args.rows) {
+        bail!("--limit must be less than or equal to --rows");
+    }
+
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let cluster =
+        start_pg18_validation_cluster(&pgrx_home, "pg18-parallel-scan", args.port).await?;
+    let client = psql::connect_with(&cluster.base).await?;
+    let ef_search = args.ef_search.unwrap_or_else(|| {
+        i32::from(args.workers)
+            .saturating_add(1)
+            .saturating_mul(args.rows)
+            .saturating_mul(2)
+            .max(args.rows)
+            .min(1000)
+    });
+    if !(1..=1000).contains(&ef_search) {
+        bail!("--ef-search must be between 1 and 1000");
+    }
+
+    client
+        .batch_execute(
+            format!(
+                "
+DROP TABLE IF EXISTS pg18_parallel_scan_fixture CASCADE;
+DROP EXTENSION IF EXISTS ecaz CASCADE;
+CREATE EXTENSION ecaz;
+CREATE TABLE pg18_parallel_scan_fixture (id bigint primary key, embedding ecvector);
+INSERT INTO pg18_parallel_scan_fixture
+SELECT g::bigint,
+       ARRAY[
+         ((g % 97)::real / 97.0),
+         (((g * 3) % 89)::real / 89.0),
+         (((g * 7) % 83)::real / 83.0),
+         (-(((g * 11) % 79)::real) / 79.0)
+       ]::real[]::ecvector
+FROM generate_series(1, {rows}) AS g;
+ALTER TABLE pg18_parallel_scan_fixture SET (parallel_workers = {workers});
+CREATE INDEX pg18_parallel_scan_fixture_idx
+ON pg18_parallel_scan_fixture USING ec_hnsw (embedding ecvector_ip_ops)
+WITH (m = 8, ef_construction = 80);
+ANALYZE pg18_parallel_scan_fixture;
+",
+                rows = args.rows,
+                workers = args.workers,
+            )
+            .as_str(),
+        )
+        .await?;
+
+    client
+        .batch_execute(
+            format!(
+                "
+SET enable_seqscan = off;
+SET enable_bitmapscan = off;
+SET min_parallel_index_scan_size = 0;
+SET min_parallel_table_scan_size = 0;
+SET parallel_setup_cost = 0;
+SET parallel_tuple_cost = 0;
+SET max_parallel_workers = {workers};
+SET max_parallel_workers_per_gather = 0;
+SET ec_hnsw.ef_search = {ef_search};
+",
+                workers = args.workers,
+                ef_search = ef_search,
+            )
+            .as_str(),
+        )
+        .await?;
+    let serial_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
+
+    client
+        .batch_execute(format!("SET max_parallel_workers_per_gather = {};", args.workers).as_str())
+        .await?;
+    let plan = pg18_parallel_fixture_explain_analyze(&client, args.limit).await?;
+    let has_parallel_index_scan = plan.contains("Parallel Index Scan");
+    let has_launched_workers = plan.contains("Workers Launched:");
+    if args.expect_parallel && !has_parallel_index_scan {
+        bail!("expected a Parallel Index Scan plan, got:\n{plan}");
+    }
+    if args.expect_parallel && !has_launched_workers {
+        bail!("expected EXPLAIN ANALYZE to launch parallel workers, got:\n{plan}");
+    }
+
+    let candidate_ids = pg18_parallel_fixture_ids(&client, args.limit).await?;
+    if candidate_ids != serial_ids {
+        bail!(
+            "parallel-enabled ordered IDs diverged from serial\nserial={serial_ids:?}\ncandidate={candidate_ids:?}\nplan:\n{plan}"
+        );
+    }
+
+    println!("[pg18-parallel] install={}", cluster.install_version_label);
+    println!(
+        "[pg18-parallel] shared_preload_libraries={}",
+        cluster.preload_setting
+    );
+    println!(
+        "[pg18-parallel] rows={} workers={} limit={} ef_search={}",
+        args.rows, args.workers, args.limit, ef_search
+    );
+    println!("[pg18-parallel] plan:\n{plan}");
+    println!("[pg18-parallel] serial_ids={serial_ids:?}");
+    println!("[pg18-parallel] candidate_ids={candidate_ids:?}");
+    if has_parallel_index_scan && has_launched_workers {
+        println!("[pg18-parallel] planner-visible Parallel Index Scan validation passed");
+    } else {
+        println!(
+            "[pg18-parallel] PostgreSQL did not choose a real Parallel Index Scan; use --expect-parallel once planner path activation is ready"
+        );
+    }
+    Ok(())
+}
+
+async fn start_pg18_validation_cluster(
+    pgrx_home: &std::path::Path,
+    cluster_name: &str,
+    port: u16,
+) -> Result<Pg18ValidationCluster> {
+    let repo_root = repo_root()?;
+    let install = find_pgrx_install(18, pgrx_home)?;
+    assert_pg18_install_ready(&install)?;
+
+    let cluster_root = repo_root.join("target").join(cluster_name);
+    let data_dir = cluster_root.join("data");
+    let log_file = cluster_root.join("postgres.log");
+    fs::create_dir_all(&cluster_root)
+        .wrap_err_with(|| format!("creating {}", cluster_root.display()))?;
+
+    let initdb = install.bin_dir.join("initdb");
+    let pg_ctl = install.bin_dir.join("pg_ctl");
+    if !data_dir.join("PG_VERSION").is_file() {
+        let mut command = Command::new(&initdb);
+        command
+            .arg("-D")
+            .arg(&data_dir)
+            .arg("-A")
+            .arg("trust")
+            .arg("-U")
+            .arg("postgres");
+        run_status(command).await?;
+    }
+
+    let cluster = PgClusterGuard::new(pg_ctl.clone(), data_dir.clone());
+    cluster.stop().await?;
+
+    let mut selected_port = None;
+    for offset in 0..10 {
+        let candidate = port + offset;
+        fs::write(&log_file, "").wrap_err_with(|| format!("resetting {}", log_file.display()))?;
+        let output = Command::new(&pg_ctl)
+            .arg("-D")
+            .arg(&data_dir)
+            .arg("-l")
+            .arg(&log_file)
+            .arg("-o")
+            .arg(format!(
+                "-p {candidate} -c listen_addresses=127.0.0.1 -c shared_preload_libraries=ecaz"
+            ))
+            .arg("-w")
+            .arg("start")
+            .output()
+            .await
+            .wrap_err("starting PG18 validation cluster")?;
+        if output.status.success() {
+            selected_port = Some(candidate);
+            break;
+        }
+        let log = fs::read_to_string(&log_file).unwrap_or_default();
+        if !log.contains("Address already in use") {
+            bail!(
+                "pg_ctl start failed on port {}: {}{}",
+                candidate,
+                String::from_utf8_lossy(&output.stderr),
+                log
+            );
+        }
+    }
+    let selected_port = selected_port
+        .ok_or_else(|| eyre!("could not find a free local port starting at {port}"))?;
+
+    let base = psql::ConnectParams {
+        database: "postgres".into(),
+        host: Some("127.0.0.1".into()),
+        port: Some(selected_port),
+        user: Some("postgres".into()),
+        password: None,
+    };
+    let observer = psql::connect_with(&base).await?;
+    let preload_setting = single_text(&observer, "SHOW shared_preload_libraries").await?;
+    if !preload_setting.contains("ecaz") {
+        bail!("shared_preload_libraries should include ecaz, got {preload_setting}");
+    }
+
+    Ok(Pg18ValidationCluster {
+        install_version_label: install.version_label,
+        base,
+        preload_setting,
+        _guard: cluster,
+    })
+}
+
+async fn pg18_parallel_fixture_ids(
+    client: &tokio_postgres::Client,
+    limit: i64,
+) -> Result<Vec<i64>> {
+    let rows = client
+        .query(
+            format!(
+                "
+SELECT id
+FROM pg18_parallel_scan_fixture
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT {limit}
+"
+            )
+            .as_str(),
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<_, i64>(0))
+        .collect::<Vec<_>>())
+}
+
+async fn pg18_parallel_fixture_explain_analyze(
+    client: &tokio_postgres::Client,
+    limit: i64,
+) -> Result<String> {
+    let rows = client
+        .query(
+            format!(
+                "
+EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF)
+SELECT id
+FROM pg18_parallel_scan_fixture
+ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+LIMIT {limit}
+"
+            )
+            .as_str(),
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn assert_pg18_install_ready(install: &super::support::PgrxInstall) -> Result<()> {
     let control_file = install.root.join("share/postgresql/extension/ecaz.control");
     let library_file = install.root.join("lib/postgresql/ecaz.so");
     if !control_file.is_file() || !library_file.is_file() {
@@ -234,6 +462,13 @@ fn assert_preload_install_ready(install: &super::support::PgrxInstall) -> Result
         );
     }
     Ok(())
+}
+
+struct Pg18ValidationCluster {
+    install_version_label: String,
+    base: psql::ConnectParams,
+    preload_setting: String,
+    _guard: PgClusterGuard,
 }
 
 async fn single_text(client: &tokio_postgres::Client, sql: &str) -> Result<String> {

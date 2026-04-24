@@ -27,9 +27,9 @@ fn build_ec_hnsw_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amstorage = false;
     amroutine.amclusterable = false;
     amroutine.ampredlocks = false;
-    // The callback surface is wired, but planner-visible parallel scans stay
-    // disabled until Task 18 lands the shared coordinator and worker-local
-    // traversal semantics.
+    // The callback surface and staged coordinator are wired through n=8, but
+    // planner-visible execution stays disabled until PG18 validation produces
+    // a real Parallel Index Scan path instead of a serial plan.
     amroutine.amcanparallel = false;
     amroutine.amcanbuildparallel = false;
     amroutine.amcaninclude = false;
