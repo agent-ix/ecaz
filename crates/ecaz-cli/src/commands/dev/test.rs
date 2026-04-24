@@ -596,6 +596,78 @@ FROM ec_hnsw_planner_integration_snapshot('pg18_parallel_scan_fixture_idx'::regc
         diagnostics.push_str(&format!("  next_runtime_blocker={next_runtime_blocker}\n"));
     }
     diagnostics.push('\n');
+
+    let cost_rows = client
+        .query(
+            "
+SELECT relation_ef_search,
+       session_ef_search,
+       effective_ef_search,
+       effective_source,
+       m,
+       dimensions,
+       max_level,
+       resolved_tree_height,
+       tree_height_source,
+       pg18_tree_height_callback_ready,
+       index_pages,
+       reltuples,
+       random_page_cost,
+       seq_page_cost,
+       cpu_operator_cost,
+       modeled_startup_cost,
+       modeled_total_cost,
+       modeled_selectivity,
+       modeled_correlation
+FROM ec_hnsw_index_cost_snapshot('pg18_parallel_scan_fixture_idx'::regclass)
+",
+            &[],
+        )
+        .await?;
+    diagnostics.push_str("ec_hnsw cost snapshot:\n");
+    for row in cost_rows {
+        let relation_ef_search: i32 = row.get(0);
+        let session_ef_search: Option<i32> = row.get(1);
+        let effective_ef_search: i32 = row.get(2);
+        let effective_source: String = row.get(3);
+        let m: i32 = row.get(4);
+        let dimensions: i32 = row.get(5);
+        let max_level: i32 = row.get(6);
+        let resolved_tree_height: f64 = row.get(7);
+        let tree_height_source: String = row.get(8);
+        let pg18_tree_height_callback_ready: bool = row.get(9);
+        let index_pages: f64 = row.get(10);
+        let reltuples: f64 = row.get(11);
+        let random_page_cost: f64 = row.get(12);
+        let seq_page_cost: f64 = row.get(13);
+        let cpu_operator_cost: f64 = row.get(14);
+        let modeled_startup_cost: f64 = row.get(15);
+        let modeled_total_cost: f64 = row.get(16);
+        let modeled_selectivity: f64 = row.get(17);
+        let modeled_correlation: f64 = row.get(18);
+        let modeled_run_cost = modeled_total_cost - modeled_startup_cost;
+        let startup_fraction = if modeled_total_cost.is_finite() && modeled_total_cost > 0.0 {
+            modeled_startup_cost / modeled_total_cost
+        } else {
+            0.0
+        };
+        let session_ef_search = session_ef_search
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "NULL".to_owned());
+        diagnostics.push_str(&format!(
+            "  effective_ef_search={effective_ef_search} effective_source={effective_source} relation_ef_search={relation_ef_search} session_ef_search={session_ef_search} m={m} dimensions={dimensions} max_level={max_level}\n"
+        ));
+        diagnostics.push_str(&format!(
+            "  index_pages={index_pages:.0} reltuples={reltuples:.0} resolved_tree_height={resolved_tree_height:.3} tree_height_source={tree_height_source} pg18_tree_height_callback_ready={pg18_tree_height_callback_ready}\n"
+        ));
+        diagnostics.push_str(&format!(
+            "  cost_constants random_page_cost={random_page_cost:.3} seq_page_cost={seq_page_cost:.3} cpu_operator_cost={cpu_operator_cost:.6}\n"
+        ));
+        diagnostics.push_str(&format!(
+            "  modeled_startup_cost={modeled_startup_cost:.3} modeled_total_cost={modeled_total_cost:.3} modeled_run_cost={modeled_run_cost:.3} startup_fraction={startup_fraction:.6} modeled_selectivity={modeled_selectivity:.3} modeled_correlation={modeled_correlation:.3}\n"
+        ));
+    }
+    diagnostics.push('\n');
     Ok(())
 }
 
