@@ -1,0 +1,471 @@
+[pg18-parallel] install=18.3
+[pg18-parallel] shared_preload_libraries=ecaz
+[pg18-parallel] env=[]
+[pg18-parallel] rows=50000 workers=4 dimensions=16 randomized_embeddings=true limit=100 ef_search=500
+[pg18-parallel] planner_only=false disable_parallel_leader_participation=false
+[pg18-parallel] plan:
+Limit (actual time=14.465..15.493 rows=100.00 loops=1)
+  Buffers: shared hit=8421
+  InitPlan 1
+    ->  Sort (actual time=0.036..0.037 rows=16.00 loops=1)
+          Sort Key: dims.d
+          Sort Method: quicksort  Memory: 25kB
+          ->  Function Scan on generate_series dims (actual time=0.015..0.017 rows=16.00 loops=1)
+  ->  Gather Merge (actual time=14.464..15.480 rows=100.00 loops=1)
+        Workers Planned: 4
+        Workers Launched: 4
+        Buffers: shared hit=8421
+        ->  Parallel Index Scan using pg18_parallel_scan_fixture_idx on pg18_parallel_scan_fixture (actual time=5.934..6.105 rows=20.00 loops=5)
+              Order By: (embedding <#> (InitPlan 1).col1)
+              Index Searches: 0
+              Buffers: shared hit=8421
+              Bootstrap Expansions: 101
+              Bootstrap Pages Read: 101
+              Linear Pages Read: 0
+              Elements Scored: 101
+              Elements Skipped: 0
+              Heap TIDs Returned: 100
+              Parallel Handoffs: Foreign Selected: 0
+              Parallel Handoffs: Foreign Head: 0
+              Parallel Contributor Hidden Publishes: 0
+              Parallel Contributor Publish: Missing Hidden: 0
+              Parallel Contributor Publish: Duplicate Active: 0
+              Parallel Contributor Publish: Handoff Ready: 0
+              Parallel Contributor Publish: Ordered After Visible: 0
+              Parallel Contributor Publish: No Visible Owner: 0
+              Parallel Contributor No Visible Owner Drops: 0
+              Parallel Visible Owner Lookahead Publishes: 0
+              Parallel Contributor Duplicate Retires: 0
+              Parallel Contributor Output Limit Exits: 0
+              Parallel Contributor Poll Limit Exits: 0
+              Parallel Contributor Poll Limit: Missing Hidden: 0
+              Parallel Contributor Poll Limit: Duplicate Active: 0
+              Parallel Contributor Poll Limit: Handoff Ready: 0
+              Parallel Contributor Poll Limit: Ordered After Visible: 0
+              Parallel Contributor Poll Limit: No Visible Owner: 0
+              Parallel Blocked: Foreign Selected: 0
+              Parallel Blocked: Foreign Head: 0
+              Parallel Blocked: Admission Window: 0
+              Parallel Local-only Emits: 0
+              Parallel Local-only Emits: Foreign Selected: 0
+              Parallel Local-only Emits: Foreign Head: 0
+              Parallel Deferred Local Emits: 0
+              Parallel Deferred Local Emits: Foreign Selected: 0
+              Parallel Deferred Local Emits: Foreign Head: 0
+              Quantizer Cache Hit: true
+Planning:
+  Buffers: shared hit=3
+[pg18-parallel] parallel seqscan control plan:
+Gather (actual time=0.211..7.000 rows=50000.00 loops=1)
+  Workers Planned: 4
+  Workers Launched: 4
+  Buffers: shared hit=667
+  ->  Parallel Seq Scan on pg18_parallel_scan_fixture (actual time=0.012..1.331 rows=10000.00 loops=5)
+        Filter: (id > 0)
+        Buffers: shared hit=667
+Planning:
+  Buffers: shared hit=12
+[pg18-parallel] planner diagnostics:
+settings:
+  cpu_tuple_cost=0.01
+  enable_bitmapscan=off
+  enable_gathermerge=on
+  enable_incremental_sort=on
+  enable_indexonlyscan=on
+  enable_indexscan=on
+  enable_seqscan=off
+  enable_sort=on
+  max_parallel_workers=4
+  max_parallel_workers_per_gather=4
+  min_parallel_index_scan_size=0
+  min_parallel_table_scan_size=0
+  parallel_leader_participation=on
+  parallel_setup_cost=0
+  parallel_tuple_cost=0
+
+relations:
+  pg18_parallel_scan_fixture kind=r relpages=667 reltuples=50000 reloptions=parallel_workers=4
+  pg18_parallel_scan_fixture_idx kind=i relpages=1423 reltuples=50000 reloptions=m=8,ef_construction=80
+
+operator:
+  <#>(ecvector,real[]) procedure=ecvector_negative_query_inner_product(ecvector,real[]) parallel=safe volatility=immutable
+
+opclass:
+  ecvector_ip_ops am=ec_hnsw input=ecvector opfamily=ecvector_ip_ops index_scan=true bitmap_scan=false distance_orderable=NULL
+
+ec_hnsw planner snapshot:
+  planner_scan_enabled=true ordered_scan_ready=true runtime_ordered_scan_ready=true planner_cost_model_ready=true planner_cost_callback_live=true
+  pg18_callback_surface_ready=true pg18_diagnostics_surface_ready=true pg18_read_stream_surface_ready=true
+  effective_ef_search=500 effective_source=session
+  next_runtime_blocker=PG18 planner-visible Parallel Index Scan is enabled with one elected visible tuple emitter; next runtime step is shared worker contribution behind that single output stream
+
+ec_hnsw cost snapshot:
+  effective_ef_search=500 effective_source=session relation_ef_search=40 session_ef_search=500 m=8 dimensions=16 max_level=5
+  index_pages=1423 reltuples=50000 resolved_tree_height=5.000 tree_height_source=amgettreeheight_callback pg18_tree_height_callback_ready=true
+  cost_constants random_page_cost=4.000 seq_page_cost=1.000 cpu_operator_cost=0.002500
+  modeled_startup_cost=0.000 modeled_total_cost=3920.824 modeled_run_cost=3920.824 startup_fraction=0.000000 modeled_selectivity=1.000 modeled_correlation=0.000
+
+serial ordered JSON plan (max_parallel_workers_per_gather=0):
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "pg18_parallel_scan_fixture.id",
+        "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 100,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Sort",
+          "Output": [
+            "(((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real)",
+            "dims.d"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "InitPlan",
+          "Plan Rows": 16,
+          "Plan Width": 8,
+          "Plans": [
+            {
+              "Alias": "dims",
+              "Async Capable": false,
+              "Disabled": false,
+              "Function Call": "generate_series(1, 16)",
+              "Function Name": "generate_series",
+              "Node Type": "Function Scan",
+              "Output": [
+                "((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real",
+                "dims.d"
+              ],
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 16,
+              "Plan Width": 8,
+              "Schema": "pg_catalog",
+              "Startup Cost": 0.0,
+              "Total Cost": 0.48
+            }
+          ],
+          "Sort Key": [
+            "dims.d"
+          ],
+          "Startup Cost": 0.8,
+          "Subplan Name": "InitPlan 1",
+          "Total Cost": 0.84
+        },
+        {
+          "Alias": "pg18_parallel_scan_fixture",
+          "Async Capable": false,
+          "Disabled": false,
+          "Index Name": "pg18_parallel_scan_fixture_idx",
+          "Node Type": "Index Scan",
+          "Order By": "(pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1)",
+          "Output": [
+            "pg18_parallel_scan_fixture.id",
+            "(pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1)"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 50000,
+          "Plan Width": 12,
+          "Relation Name": "pg18_parallel_scan_fixture",
+          "Scan Direction": "Forward",
+          "Schema": "public",
+          "Startup Cost": 0.0,
+          "Total Cost": 7213.82
+        }
+      ],
+      "Startup Cost": 0.84,
+      "Total Cost": 15.27
+    }
+  }
+]
+
+parallel-candidate ordered JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "pg18_parallel_scan_fixture.id",
+        "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 100,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Sort",
+          "Output": [
+            "(((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real)",
+            "dims.d"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "InitPlan",
+          "Plan Rows": 16,
+          "Plan Width": 8,
+          "Plans": [
+            {
+              "Alias": "dims",
+              "Async Capable": false,
+              "Disabled": false,
+              "Function Call": "generate_series(1, 16)",
+              "Function Name": "generate_series",
+              "Node Type": "Function Scan",
+              "Output": [
+                "((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real",
+                "dims.d"
+              ],
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 16,
+              "Plan Width": 8,
+              "Schema": "pg_catalog",
+              "Startup Cost": 0.0,
+              "Total Cost": 0.48
+            }
+          ],
+          "Sort Key": [
+            "dims.d"
+          ],
+          "Startup Cost": 0.8,
+          "Subplan Name": "InitPlan 1",
+          "Total Cost": 0.84
+        },
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Gather Merge",
+          "Output": [
+            "pg18_parallel_scan_fixture.id",
+            "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 50000,
+          "Plan Width": 12,
+          "Plans": [
+            {
+              "Alias": "pg18_parallel_scan_fixture",
+              "Async Capable": false,
+              "Disabled": false,
+              "Index Name": "pg18_parallel_scan_fixture_idx",
+              "Node Type": "Index Scan",
+              "Order By": "(pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1)",
+              "Output": [
+                "pg18_parallel_scan_fixture.id",
+                "(pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1)"
+              ],
+              "Parallel Aware": true,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 12500,
+              "Plan Width": 12,
+              "Relation Name": "pg18_parallel_scan_fixture",
+              "Scan Direction": "Forward",
+              "Schema": "public",
+              "Startup Cost": 0.0,
+              "Total Cost": 3804.46
+            }
+          ],
+          "Startup Cost": 0.06,
+          "Total Cost": 4510.0,
+          "Workers Planned": 4
+        }
+      ],
+      "Startup Cost": 0.9,
+      "Total Cost": 9.92
+    }
+  }
+]
+
+PG18 planner pathlist snapshot after parallel-candidate ordered plan:
+  hook_registered=true observed=true relid=1 consider_parallel=true rel_parallel_workers=4
+  ec_hnsw_index_count=1 amcanparallel_seen=true
+  path_count=1 index_path_count=1 ec_hnsw_index_path_count=1
+  partial_path_count=1 partial_index_path_count=1 partial_ec_hnsw_index_path_count=1
+  best_plain_ec_hnsw startup_cost=0.000 total_cost=7088.824 parallel_workers=0 pathkeys=1
+  best_partial_ec_hnsw startup_cost=0.000 total_cost=3773.206 parallel_workers=4 parallel_aware=true pathkeys=1
+
+parallel seqscan control JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Gather",
+      "Output": [
+        "id"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 50000,
+      "Plan Width": 8,
+      "Plans": [
+        {
+          "Alias": "pg18_parallel_scan_fixture",
+          "Async Capable": false,
+          "Disabled": false,
+          "Filter": "(pg18_parallel_scan_fixture.id > 0)",
+          "Node Type": "Seq Scan",
+          "Output": [
+            "id"
+          ],
+          "Parallel Aware": true,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 12500,
+          "Plan Width": 8,
+          "Relation Name": "pg18_parallel_scan_fixture",
+          "Schema": "public",
+          "Startup Cost": 0.0,
+          "Total Cost": 823.25
+        }
+      ],
+      "Single Copy": false,
+      "Startup Cost": 0.0,
+      "Total Cost": 823.25,
+      "Workers Planned": 4
+    }
+  }
+]
+
+parallel ordered seqscan control JSON plan:
+[
+  {
+    "Plan": {
+      "Async Capable": false,
+      "Disabled": false,
+      "Node Type": "Limit",
+      "Output": [
+        "pg18_parallel_scan_fixture.id",
+        "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+      ],
+      "Parallel Aware": false,
+      "Plan Rows": 100,
+      "Plan Width": 12,
+      "Plans": [
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Sort",
+          "Output": [
+            "(((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real)",
+            "dims.d"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "InitPlan",
+          "Plan Rows": 16,
+          "Plan Width": 8,
+          "Plans": [
+            {
+              "Alias": "dims",
+              "Async Capable": false,
+              "Disabled": false,
+              "Function Call": "generate_series(1, 16)",
+              "Function Name": "generate_series",
+              "Node Type": "Function Scan",
+              "Output": [
+                "((((((((dims.d)::bigint * 48271) + 17) % '1000003'::bigint))::double precision / '500001'::double precision) - '1'::double precision))::real",
+                "dims.d"
+              ],
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 16,
+              "Plan Width": 8,
+              "Schema": "pg_catalog",
+              "Startup Cost": 0.0,
+              "Total Cost": 0.48
+            }
+          ],
+          "Sort Key": [
+            "dims.d"
+          ],
+          "Startup Cost": 0.8,
+          "Subplan Name": "InitPlan 1",
+          "Total Cost": 0.84
+        },
+        {
+          "Async Capable": false,
+          "Disabled": false,
+          "Node Type": "Gather Merge",
+          "Output": [
+            "pg18_parallel_scan_fixture.id",
+            "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+          ],
+          "Parallel Aware": false,
+          "Parent Relationship": "Outer",
+          "Plan Rows": 50000,
+          "Plan Width": 12,
+          "Plans": [
+            {
+              "Async Capable": false,
+              "Disabled": false,
+              "Node Type": "Sort",
+              "Output": [
+                "pg18_parallel_scan_fixture.id",
+                "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+              ],
+              "Parallel Aware": false,
+              "Parent Relationship": "Outer",
+              "Plan Rows": 12500,
+              "Plan Width": 12,
+              "Plans": [
+                {
+                  "Alias": "pg18_parallel_scan_fixture",
+                  "Async Capable": false,
+                  "Disabled": false,
+                  "Node Type": "Seq Scan",
+                  "Output": [
+                    "pg18_parallel_scan_fixture.id",
+                    "(pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1)"
+                  ],
+                  "Parallel Aware": true,
+                  "Parent Relationship": "Outer",
+                  "Plan Rows": 12500,
+                  "Plan Width": 12,
+                  "Relation Name": "pg18_parallel_scan_fixture",
+                  "Schema": "public",
+                  "Startup Cost": 0.0,
+                  "Total Cost": 823.25
+                }
+              ],
+              "Sort Key": [
+                "((pg18_parallel_scan_fixture.embedding <#> (InitPlan 1).col1))"
+              ],
+              "Startup Cost": 1300.99,
+              "Total Cost": 1332.24
+            }
+          ],
+          "Startup Cost": 1301.05,
+          "Total Cost": 2037.78,
+          "Workers Planned": 4
+        }
+      ],
+      "Startup Cost": 1301.89,
+      "Total Cost": 1303.37
+    }
+  }
+]
+[pg18-parallel] serial_ids=[8430, 11189, 13948, 41801, 20424, 23183, 32418, 1954, 35177, 38084, 5671, 31608, 44560, 1806, 37936, 47319, 4565, 4713, 16707, 25942, 40695, 40843, 19466, 28701, 7324, 7472, 31460, 43602, 49243, 34367, 25132, 996, 37126, 43454, 49930, 27891, 10231, 16559, 44412, 46361, 11041, 10083, 12990, 1300, 3755, 49120, 48433, 15749, 39885, 18656, 6514, 161, 967, 42644, 22225, 28849, 19318, 9273, 24984, 38, 18508, 28553, 45403, 47171, 22077, 35325, 1777, 12032, 31312, 13800, 2797, 23035, 13138, 48162, 38927, 27743, 5556, 33261, 35029, 47023, 490, 41686, 34071, 43306, 157, 30650, 9935, 21267, 21415, 2916, 35210, 22373, 14791, 34219, 848, 24026, 33409, 36978, 46213, 48972]
+[pg18-parallel] candidate_ids=[8430, 11189, 13948, 41801, 20424, 23183, 32418, 1954, 35177, 38084, 5671, 31608, 44560, 1806, 37936, 47319, 4565, 4713, 16707, 25942, 40695, 40843, 19466, 28701, 7324, 7472, 31460, 43602, 49243, 34367, 25132, 996, 37126, 43454, 49930, 27891, 10231, 16559, 44412, 46361, 11041, 10083, 12990, 1300, 3755, 49120, 48433, 15749, 39885, 18656, 6514, 161, 967, 42644, 22225, 28849, 19318, 9273, 24984, 38, 18508, 28553, 45403, 47171, 22077, 35325, 1777, 12032, 31312, 13800, 2797, 23035, 13138, 48162, 38927, 27743, 5556, 33261, 35029, 47023, 490, 41686, 34071, 43306, 157, 30650, 9935, 21267, 21415, 2916, 35210, 22373, 14791, 34219, 848, 24026, 33409, 36978, 46213, 48972]
+[pg18-parallel] candidate_duplicate_ids=[]
+[pg18-parallel] candidate_missing_serial_ids=[]
+[pg18-parallel] candidate_extra_ids=[]
+[pg18-parallel] serial_projected_orderby_scores=[(8430, -6.256920338), (11189, -6.035248756), (13948, -5.813578129), (41801, -6.052045345), (20424, -5.904039383), (23183, -5.682368755), (32418, -5.358074665), (1954, -5.711195469), (35177, -5.453475475), (38084, -5.615927219), (5671, -6.409495354), (31608, -5.401477814), (44560, -6.092555046), (1806, -5.327073574), (37936, -5.231804371), (47319, -5.870883942), (4565, -5.105401993), (4713, -5.751704216), (16707, -5.591907501), (25942, -5.584684372), (40695, -5.010133266), (40843, -5.656435013), (19466, -5.370235920), (28701, -5.363014221), (7324, -4.883731842), (7472, -5.530033112), (31460, -5.141343117), (43602, -5.434764385), (49243, -4.248579502), (34367, -5.179806232), (25132, -5.187028885), (996, -5.053404808), (37126, -4.958135605), (43454, -4.912450790), (49930, -5.002911568), (27891, -4.965358257), (10231, -5.308362484), (16559, -4.876509666), (44412, -5.129182339), (46361, -5.213092804), (11041, -5.002780437), (10083, -4.662060738), (12990, -5.086691380), (1300, -3.560517788), (3755, -5.093913078), (49120, -4.991422653), (48433, -4.182198048), (15749, -4.865020275), (39885, -4.998644829), (18656, -4.972579479), (6514, -4.872242928), (161, -3.914950609), (967, -3.664731503), (42644, -4.776973724), (22225, -5.148565292), (28849, -5.167885303), (19318, -4.654839039), (9273, -4.650570869), (24984, -4.926893711), (38, -4.657793522), (18508, -4.643349171), (28553, -4.647616863), (45403, -4.555302620), (47171, -4.907510757), (22077, -4.433167934), (35325, -5.382334232), (1777, -3.731112957), (12032, -4.428900719), (31312, -4.425946236), (13800, -4.781108856), (2797, -4.436122417), (23035, -4.773887157), (13138, -4.960658073), (48162, -4.333631039), (38927, -4.340853691), (27743, -4.705223083), (5556, -4.214451790), (33261, -4.261880875), (35029, -4.544994354), (47023, -4.316101074), (490, -3.494136333), (41686, -4.119182587), (34071, -4.204275131), (43306, -4.197052956), (157, -3.598350525), (30650, -4.743687153), (9935, -4.070651531), (21267, -4.421678066), (21415, -4.750908852), (2916, -3.376679420), (35210, -3.904733419), (22373, -4.953436375), (14791, -4.207230091), (34219, -4.919672489), (848, -4.793270588), (24026, -4.200007439), (33409, -4.522016048), (36978, -4.698001385), (46213, -4.690779686), (48972, -4.469108105)]
+[pg18-parallel] candidate_projected_orderby_scores=[(8430, -6.256920338), (11189, -6.035248756), (13948, -5.813578129), (41801, -6.052045345), (20424, -5.904039383), (23183, -5.682368755), (32418, -5.358074665), (1954, -5.711195469), (35177, -5.453475475), (38084, -5.615927219), (5671, -6.409495354), (31608, -5.401477814), (44560, -6.092555046), (1806, -5.327073574), (37936, -5.231804371), (47319, -5.870883942), (4565, -5.105401993), (4713, -5.751704216), (16707, -5.591907501), (25942, -5.584684372), (40695, -5.010133266), (40843, -5.656435013), (19466, -5.370235920), (28701, -5.363014221), (7324, -4.883731842), (7472, -5.530033112), (31460, -5.141343117), (43602, -5.434764385), (49243, -4.248579502), (34367, -5.179806232), (25132, -5.187028885), (996, -5.053404808), (37126, -4.958135605), (43454, -4.912450790), (49930, -5.002911568), (27891, -4.965358257), (10231, -5.308362484), (16559, -4.876509666), (44412, -5.129182339), (46361, -5.213092804), (11041, -5.002780437), (10083, -4.662060738), (12990, -5.086691380), (1300, -3.560517788), (3755, -5.093913078), (49120, -4.991422653), (48433, -4.182198048), (15749, -4.865020275), (39885, -4.998644829), (18656, -4.972579479), (6514, -4.872242928), (161, -3.914950609), (967, -3.664731503), (42644, -4.776973724), (22225, -5.148565292), (28849, -5.167885303), (19318, -4.654839039), (9273, -4.650570869), (24984, -4.926893711), (38, -4.657793522), (18508, -4.643349171), (28553, -4.647616863), (45403, -4.555302620), (47171, -4.907510757), (22077, -4.433167934), (35325, -5.382334232), (1777, -3.731112957), (12032, -4.428900719), (31312, -4.425946236), (13800, -4.781108856), (2797, -4.436122417), (23035, -4.773887157), (13138, -4.960658073), (48162, -4.333631039), (38927, -4.340853691), (27743, -4.705223083), (5556, -4.214451790), (33261, -4.261880875), (35029, -4.544994354), (47023, -4.316101074), (490, -3.494136333), (41686, -4.119182587), (34071, -4.204275131), (43306, -4.197052956), (157, -3.598350525), (30650, -4.743687153), (9935, -4.070651531), (21267, -4.421678066), (21415, -4.750908852), (2916, -3.376679420), (35210, -3.904733419), (22373, -4.953436375), (14791, -4.207230091), (34219, -4.919672489), (848, -4.793270588), (24026, -4.200007439), (33409, -4.522016048), (36978, -4.698001385), (46213, -4.690779686), (48972, -4.469108105)]
+[pg18-parallel] serial_projected_orderby_score_adjacent_inversions=[13948(-5.813578129) before 41801(-6.052045345), 32418(-5.358074665) before 1954(-5.711195469), 35177(-5.453475475) before 38084(-5.615927219), 38084(-5.615927219) before 5671(-6.409495354), 31608(-5.401477814) before 44560(-6.092555046), 37936(-5.231804371) before 47319(-5.870883942), 4565(-5.105401993) before 4713(-5.751704216), 40695(-5.010133266) before 40843(-5.656435013), 7324(-4.883731842) before 7472(-5.530033112), 31460(-5.141343117) before 43602(-5.434764385), 49243(-4.248579502) before 34367(-5.179806232), 34367(-5.179806232) before 25132(-5.187028885), 43454(-4.912450790) before 49930(-5.002911568), 27891(-4.965358257) before 10231(-5.308362484), 16559(-4.876509666) before 44412(-5.129182339), 44412(-5.129182339) before 46361(-5.213092804), 10083(-4.662060738) before 12990(-5.086691380), 1300(-3.560517788) before 3755(-5.093913078), 48433(-4.182198048) before 15749(-4.865020275), 15749(-4.865020275) before 39885(-4.998644829), 967(-3.664731503) before 42644(-4.776973724), 42644(-4.776973724) before 22225(-5.148565292), 22225(-5.148565292) before 28849(-5.167885303), 9273(-4.650570869) before 24984(-4.926893711), 18508(-4.643349171) before 28553(-4.647616863), 45403(-4.555302620) before 47171(-4.907510757), 22077(-4.433167934) before 35325(-5.382334232), 1777(-3.731112957) before 12032(-4.428900719), 31312(-4.425946236) before 13800(-4.781108856), 2797(-4.436122417) before 23035(-4.773887157), 23035(-4.773887157) before 13138(-4.960658073), 48162(-4.333631039) before 38927(-4.340853691), 38927(-4.340853691) before 27743(-4.705223083), 5556(-4.214451790) before 33261(-4.261880875), 33261(-4.261880875) before 35029(-4.544994354), 490(-3.494136333) before 41686(-4.119182587), 41686(-4.119182587) before 34071(-4.204275131), 157(-3.598350525) before 30650(-4.743687153), 9935(-4.070651531) before 21267(-4.421678066), 21267(-4.421678066) before 21415(-4.750908852), 2916(-3.376679420) before 35210(-3.904733419), 35210(-3.904733419) before 22373(-4.953436375), 14791(-4.207230091) before 34219(-4.919672489), 24026(-4.200007439) before 33409(-4.522016048), 33409(-4.522016048) before 36978(-4.698001385)]
+[pg18-parallel] candidate_projected_orderby_score_adjacent_inversions=[13948(-5.813578129) before 41801(-6.052045345), 32418(-5.358074665) before 1954(-5.711195469), 35177(-5.453475475) before 38084(-5.615927219), 38084(-5.615927219) before 5671(-6.409495354), 31608(-5.401477814) before 44560(-6.092555046), 37936(-5.231804371) before 47319(-5.870883942), 4565(-5.105401993) before 4713(-5.751704216), 40695(-5.010133266) before 40843(-5.656435013), 7324(-4.883731842) before 7472(-5.530033112), 31460(-5.141343117) before 43602(-5.434764385), 49243(-4.248579502) before 34367(-5.179806232), 34367(-5.179806232) before 25132(-5.187028885), 43454(-4.912450790) before 49930(-5.002911568), 27891(-4.965358257) before 10231(-5.308362484), 16559(-4.876509666) before 44412(-5.129182339), 44412(-5.129182339) before 46361(-5.213092804), 10083(-4.662060738) before 12990(-5.086691380), 1300(-3.560517788) before 3755(-5.093913078), 48433(-4.182198048) before 15749(-4.865020275), 15749(-4.865020275) before 39885(-4.998644829), 967(-3.664731503) before 42644(-4.776973724), 42644(-4.776973724) before 22225(-5.148565292), 22225(-5.148565292) before 28849(-5.167885303), 9273(-4.650570869) before 24984(-4.926893711), 18508(-4.643349171) before 28553(-4.647616863), 45403(-4.555302620) before 47171(-4.907510757), 22077(-4.433167934) before 35325(-5.382334232), 1777(-3.731112957) before 12032(-4.428900719), 31312(-4.425946236) before 13800(-4.781108856), 2797(-4.436122417) before 23035(-4.773887157), 23035(-4.773887157) before 13138(-4.960658073), 48162(-4.333631039) before 38927(-4.340853691), 38927(-4.340853691) before 27743(-4.705223083), 5556(-4.214451790) before 33261(-4.261880875), 33261(-4.261880875) before 35029(-4.544994354), 490(-3.494136333) before 41686(-4.119182587), 41686(-4.119182587) before 34071(-4.204275131), 157(-3.598350525) before 30650(-4.743687153), 9935(-4.070651531) before 21267(-4.421678066), 21267(-4.421678066) before 21415(-4.750908852), 2916(-3.376679420) before 35210(-3.904733419), 35210(-3.904733419) before 22373(-4.953436375), 14791(-4.207230091) before 34219(-4.919672489), 24026(-4.200007439) before 33409(-4.522016048), 33409(-4.522016048) before 36978(-4.698001385)]
+[pg18-parallel] serial_exact_scores=[(8430, -6.256920338), (11189, -6.035248756), (13948, -5.813578129), (41801, -6.052045345), (20424, -5.904039383), (23183, -5.682368755), (32418, -5.358074665), (1954, -5.711195469), (35177, -5.453475475), (38084, -5.615927219), (5671, -6.409495354), (31608, -5.401477814), (44560, -6.092555046), (1806, -5.327073574), (37936, -5.231804371), (47319, -5.870883942), (4565, -5.105401993), (4713, -5.751704216), (16707, -5.591907501), (25942, -5.584684372), (40695, -5.010133266), (40843, -5.656435013), (19466, -5.370235920), (28701, -5.363014221), (7324, -4.883731842), (7472, -5.530033112), (31460, -5.141343117), (43602, -5.434764385), (49243, -4.248579502), (34367, -5.179806232), (25132, -5.187028885), (996, -5.053404808), (37126, -4.958135605), (43454, -4.912450790), (49930, -5.002911568), (27891, -4.965358257), (10231, -5.308362484), (16559, -4.876509666), (44412, -5.129182339), (46361, -5.213092804), (11041, -5.002780437), (10083, -4.662060738), (12990, -5.086691380), (1300, -3.560517788), (3755, -5.093913078), (49120, -4.991422653), (48433, -4.182198048), (15749, -4.865020275), (39885, -4.998644829), (18656, -4.972579479), (6514, -4.872242928), (161, -3.914950609), (967, -3.664731503), (42644, -4.776973724), (22225, -5.148565292), (28849, -5.167885303), (19318, -4.654839039), (9273, -4.650570869), (24984, -4.926893711), (38, -4.657793522), (18508, -4.643349171), (28553, -4.647616863), (45403, -4.555302620), (47171, -4.907510757), (22077, -4.433167934), (35325, -5.382334232), (1777, -3.731112957), (12032, -4.428900719), (31312, -4.425946236), (13800, -4.781108856), (2797, -4.436122417), (23035, -4.773887157), (13138, -4.960658073), (48162, -4.333631039), (38927, -4.340853691), (27743, -4.705223083), (5556, -4.214451790), (33261, -4.261880875), (35029, -4.544994354), (47023, -4.316101074), (490, -3.494136333), (41686, -4.119182587), (34071, -4.204275131), (43306, -4.197052956), (157, -3.598350525), (30650, -4.743687153), (9935, -4.070651531), (21267, -4.421678066), (21415, -4.750908852), (2916, -3.376679420), (35210, -3.904733419), (22373, -4.953436375), (14791, -4.207230091), (34219, -4.919672489), (848, -4.793270588), (24026, -4.200007439), (33409, -4.522016048), (36978, -4.698001385), (46213, -4.690779686), (48972, -4.469108105)]
+[pg18-parallel] candidate_exact_scores=[(8430, -6.256920338), (11189, -6.035248756), (13948, -5.813578129), (41801, -6.052045345), (20424, -5.904039383), (23183, -5.682368755), (32418, -5.358074665), (1954, -5.711195469), (35177, -5.453475475), (38084, -5.615927219), (5671, -6.409495354), (31608, -5.401477814), (44560, -6.092555046), (1806, -5.327073574), (37936, -5.231804371), (47319, -5.870883942), (4565, -5.105401993), (4713, -5.751704216), (16707, -5.591907501), (25942, -5.584684372), (40695, -5.010133266), (40843, -5.656435013), (19466, -5.370235920), (28701, -5.363014221), (7324, -4.883731842), (7472, -5.530033112), (31460, -5.141343117), (43602, -5.434764385), (49243, -4.248579502), (34367, -5.179806232), (25132, -5.187028885), (996, -5.053404808), (37126, -4.958135605), (43454, -4.912450790), (49930, -5.002911568), (27891, -4.965358257), (10231, -5.308362484), (16559, -4.876509666), (44412, -5.129182339), (46361, -5.213092804), (11041, -5.002780437), (10083, -4.662060738), (12990, -5.086691380), (1300, -3.560517788), (3755, -5.093913078), (49120, -4.991422653), (48433, -4.182198048), (15749, -4.865020275), (39885, -4.998644829), (18656, -4.972579479), (6514, -4.872242928), (161, -3.914950609), (967, -3.664731503), (42644, -4.776973724), (22225, -5.148565292), (28849, -5.167885303), (19318, -4.654839039), (9273, -4.650570869), (24984, -4.926893711), (38, -4.657793522), (18508, -4.643349171), (28553, -4.647616863), (45403, -4.555302620), (47171, -4.907510757), (22077, -4.433167934), (35325, -5.382334232), (1777, -3.731112957), (12032, -4.428900719), (31312, -4.425946236), (13800, -4.781108856), (2797, -4.436122417), (23035, -4.773887157), (13138, -4.960658073), (48162, -4.333631039), (38927, -4.340853691), (27743, -4.705223083), (5556, -4.214451790), (33261, -4.261880875), (35029, -4.544994354), (47023, -4.316101074), (490, -3.494136333), (41686, -4.119182587), (34071, -4.204275131), (43306, -4.197052956), (157, -3.598350525), (30650, -4.743687153), (9935, -4.070651531), (21267, -4.421678066), (21415, -4.750908852), (2916, -3.376679420), (35210, -3.904733419), (22373, -4.953436375), (14791, -4.207230091), (34219, -4.919672489), (848, -4.793270588), (24026, -4.200007439), (33409, -4.522016048), (36978, -4.698001385), (46213, -4.690779686), (48972, -4.469108105)]
+[pg18-parallel] serial_exact_score_adjacent_inversions=[13948(-5.813578129) before 41801(-6.052045345), 32418(-5.358074665) before 1954(-5.711195469), 35177(-5.453475475) before 38084(-5.615927219), 38084(-5.615927219) before 5671(-6.409495354), 31608(-5.401477814) before 44560(-6.092555046), 37936(-5.231804371) before 47319(-5.870883942), 4565(-5.105401993) before 4713(-5.751704216), 40695(-5.010133266) before 40843(-5.656435013), 7324(-4.883731842) before 7472(-5.530033112), 31460(-5.141343117) before 43602(-5.434764385), 49243(-4.248579502) before 34367(-5.179806232), 34367(-5.179806232) before 25132(-5.187028885), 43454(-4.912450790) before 49930(-5.002911568), 27891(-4.965358257) before 10231(-5.308362484), 16559(-4.876509666) before 44412(-5.129182339), 44412(-5.129182339) before 46361(-5.213092804), 10083(-4.662060738) before 12990(-5.086691380), 1300(-3.560517788) before 3755(-5.093913078), 48433(-4.182198048) before 15749(-4.865020275), 15749(-4.865020275) before 39885(-4.998644829), 967(-3.664731503) before 42644(-4.776973724), 42644(-4.776973724) before 22225(-5.148565292), 22225(-5.148565292) before 28849(-5.167885303), 9273(-4.650570869) before 24984(-4.926893711), 18508(-4.643349171) before 28553(-4.647616863), 45403(-4.555302620) before 47171(-4.907510757), 22077(-4.433167934) before 35325(-5.382334232), 1777(-3.731112957) before 12032(-4.428900719), 31312(-4.425946236) before 13800(-4.781108856), 2797(-4.436122417) before 23035(-4.773887157), 23035(-4.773887157) before 13138(-4.960658073), 48162(-4.333631039) before 38927(-4.340853691), 38927(-4.340853691) before 27743(-4.705223083), 5556(-4.214451790) before 33261(-4.261880875), 33261(-4.261880875) before 35029(-4.544994354), 490(-3.494136333) before 41686(-4.119182587), 41686(-4.119182587) before 34071(-4.204275131), 157(-3.598350525) before 30650(-4.743687153), 9935(-4.070651531) before 21267(-4.421678066), 21267(-4.421678066) before 21415(-4.750908852), 2916(-3.376679420) before 35210(-3.904733419), 35210(-3.904733419) before 22373(-4.953436375), 14791(-4.207230091) before 34219(-4.919672489), 24026(-4.200007439) before 33409(-4.522016048), 33409(-4.522016048) before 36978(-4.698001385)]
+[pg18-parallel] candidate_exact_score_adjacent_inversions=[13948(-5.813578129) before 41801(-6.052045345), 32418(-5.358074665) before 1954(-5.711195469), 35177(-5.453475475) before 38084(-5.615927219), 38084(-5.615927219) before 5671(-6.409495354), 31608(-5.401477814) before 44560(-6.092555046), 37936(-5.231804371) before 47319(-5.870883942), 4565(-5.105401993) before 4713(-5.751704216), 40695(-5.010133266) before 40843(-5.656435013), 7324(-4.883731842) before 7472(-5.530033112), 31460(-5.141343117) before 43602(-5.434764385), 49243(-4.248579502) before 34367(-5.179806232), 34367(-5.179806232) before 25132(-5.187028885), 43454(-4.912450790) before 49930(-5.002911568), 27891(-4.965358257) before 10231(-5.308362484), 16559(-4.876509666) before 44412(-5.129182339), 44412(-5.129182339) before 46361(-5.213092804), 10083(-4.662060738) before 12990(-5.086691380), 1300(-3.560517788) before 3755(-5.093913078), 48433(-4.182198048) before 15749(-4.865020275), 15749(-4.865020275) before 39885(-4.998644829), 967(-3.664731503) before 42644(-4.776973724), 42644(-4.776973724) before 22225(-5.148565292), 22225(-5.148565292) before 28849(-5.167885303), 9273(-4.650570869) before 24984(-4.926893711), 18508(-4.643349171) before 28553(-4.647616863), 45403(-4.555302620) before 47171(-4.907510757), 22077(-4.433167934) before 35325(-5.382334232), 1777(-3.731112957) before 12032(-4.428900719), 31312(-4.425946236) before 13800(-4.781108856), 2797(-4.436122417) before 23035(-4.773887157), 23035(-4.773887157) before 13138(-4.960658073), 48162(-4.333631039) before 38927(-4.340853691), 38927(-4.340853691) before 27743(-4.705223083), 5556(-4.214451790) before 33261(-4.261880875), 33261(-4.261880875) before 35029(-4.544994354), 490(-3.494136333) before 41686(-4.119182587), 41686(-4.119182587) before 34071(-4.204275131), 157(-3.598350525) before 30650(-4.743687153), 9935(-4.070651531) before 21267(-4.421678066), 21267(-4.421678066) before 21415(-4.750908852), 2916(-3.376679420) before 35210(-3.904733419), 35210(-3.904733419) before 22373(-4.953436375), 14791(-4.207230091) before 34219(-4.919672489), 24026(-4.200007439) before 33409(-4.522016048), 33409(-4.522016048) before 36978(-4.698001385)]
+[pg18-parallel] planner-visible Parallel Index Scan validation passed
