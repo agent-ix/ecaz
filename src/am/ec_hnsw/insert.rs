@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, ptr};
+use std::{cmp::Ordering, collections::HashMap, ptr};
 
 use pgrx::pg_sys;
 
@@ -1942,6 +1942,7 @@ unsafe fn bootstrap_empty_pq_fastscan_flush_output(
         page_size: pg_sys::BLCKSZ as usize,
         scanned_tuples: tuple.heap_tids.len(),
         heap_tuples: vec![tuple.clone()],
+        tuple_index_by_payload: HashMap::new(),
         dimensions: Some(tuple.dimensions),
         bits: Some(tuple.bits),
         seed: Some(tuple.seed),

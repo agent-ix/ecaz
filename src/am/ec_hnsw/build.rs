@@ -58,6 +58,21 @@ pub(super) struct BuildTuple {
     pub(super) source_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct BuildTupleDedupKey {
+    gamma_bits: u32,
+    code: Vec<u8>,
+}
+
+impl BuildTupleDedupKey {
+    fn from_tuple(tuple: &BuildTuple) -> Self {
+        Self {
+            gamma_bits: tuple.gamma.to_bits(),
+            code: tuple.code.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct BuildState {
     pub(super) options: options::TqHnswOptions,
@@ -65,6 +80,7 @@ pub(super) struct BuildState {
     pub(super) page_size: usize,
     pub(super) scanned_tuples: usize,
     pub(super) heap_tuples: Vec<BuildTuple>,
+    pub(super) tuple_index_by_payload: HashMap<BuildTupleDedupKey, usize>,
     pub(super) dimensions: Option<u16>,
     pub(super) bits: Option<u8>,
     pub(super) seed: Option<u64>,
@@ -292,6 +308,7 @@ impl BuildState {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 0,
             heap_tuples: Vec::new(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: None,
             bits: None,
             seed: None,
@@ -391,9 +408,12 @@ impl BuildState {
             _ => unreachable!("shape tracking must be initialized together"),
         }
 
-        if let Some(existing) = self.heap_tuples.iter_mut().find(|existing| {
-            existing.gamma.to_bits() == tuple.gamma.to_bits() && existing.code == tuple.code
-        }) {
+        let dedup_key = BuildTupleDedupKey::from_tuple(&tuple);
+        if let Some(existing_idx) = self.tuple_index_by_payload.get(&dedup_key).copied() {
+            let existing = self
+                .heap_tuples
+                .get_mut(existing_idx)
+                .expect("build tuple dedup index should point at an existing tuple");
             if existing.heap_tids.len() + tuple.heap_tids.len() > page::HEAPTID_INLINE_CAPACITY {
                 pgrx::error!(
                     "ec_hnsw ambuild supports at most {} duplicate heap tids per encoded vector",
@@ -432,7 +452,9 @@ impl BuildState {
             return;
         }
 
+        let tuple_idx = self.heap_tuples.len();
         self.heap_tuples.push(tuple);
+        self.tuple_index_by_payload.insert(dedup_key, tuple_idx);
     }
 }
 
@@ -2103,6 +2125,87 @@ mod tests {
     }
 
     #[test]
+    fn build_state_push_indexes_payloads_for_duplicate_coalescing() {
+        let mut state = BuildState {
+            options: options::TqHnswOptions {
+                m: 8,
+                ef_construction: 64,
+                ef_search: 40,
+                build_source_column: Some("source".to_owned()),
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Ecvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 0,
+            heap_tuples: Vec::new(),
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: None,
+            bits: None,
+            seed: None,
+        };
+
+        state.push(BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            }],
+            dimensions: 2,
+            bits: 4,
+            seed: 42,
+            gamma: 0.25,
+            code: vec![0xAA, 0xBB],
+            source_vector: Some(vec![1.0, 0.0]),
+            source_count: 1,
+        });
+        state.push(BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 2,
+            }],
+            dimensions: 2,
+            bits: 4,
+            seed: 42,
+            gamma: 0.25,
+            code: vec![0xAA, 0xBB],
+            source_vector: Some(vec![0.0, 1.0]),
+            source_count: 1,
+        });
+        state.push(BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 3,
+            }],
+            dimensions: 2,
+            bits: 4,
+            seed: 42,
+            gamma: 0.25,
+            code: vec![0xAA, 0xBC],
+            source_vector: Some(vec![0.0, 1.0]),
+            source_count: 1,
+        });
+
+        assert_eq!(state.scanned_tuples, 3);
+        assert_eq!(state.heap_tuples.len(), 2);
+        assert_eq!(state.tuple_index_by_payload.len(), 2);
+        assert_eq!(
+            state.heap_tuples[0].heap_tids,
+            vec![
+                page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 1,
+                },
+                page::ItemPointer {
+                    block_number: 1,
+                    offset_number: 2,
+                },
+            ]
+        );
+        assert_eq!(state.heap_tuples[0].source_vector, Some(vec![0.5, 0.5]));
+        assert_eq!(state.heap_tuples[0].source_count, 2);
+    }
+
+    #[test]
     fn initial_metadata_uses_grouped_format_for_pq_fastscan_indexes() {
         let state = BuildState {
             options: options::TqHnswOptions {
@@ -2117,6 +2220,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 0,
             heap_tuples: Vec::new(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: None,
             bits: None,
             seed: None,
@@ -2192,6 +2296,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(8),
             bits: Some(bits),
             seed: Some(seed),
@@ -2262,6 +2367,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(4),
             bits: Some(bits),
             seed: Some(seed),
@@ -2315,6 +2421,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -2389,6 +2496,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(4),
             bits: Some(bits),
             seed: Some(seed),
@@ -2458,6 +2566,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: 3,
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(4),
             bits: Some(bits),
             seed: Some(seed),
@@ -2526,6 +2635,7 @@ mod tests {
                     source_count: 1,
                 },
             ],
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(2),
             bits: Some(bits),
             seed: Some(seed),
@@ -2681,6 +2791,7 @@ mod tests {
                     source_count: 1,
                 },
             ],
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(2),
             bits: Some(bits),
             seed: Some(seed),
@@ -2815,6 +2926,7 @@ mod tests {
                     source_count: 1,
                 },
             ],
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(2),
             bits: Some(bits),
             seed: Some(seed),
@@ -3006,6 +3118,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(1536),
             bits: Some(bits),
             seed: Some(seed),
@@ -3086,6 +3199,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3130,6 +3244,7 @@ mod tests {
                     source_count: 0,
                 })
                 .collect(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3176,6 +3291,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3238,6 +3354,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples.clone(),
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3305,6 +3422,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3383,6 +3501,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3466,6 +3585,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(16),
             bits: Some(bits),
             seed: Some(seed),
@@ -3525,6 +3645,7 @@ mod tests {
             page_size: pg_sys::BLCKSZ as usize,
             scanned_tuples: tuples.len(),
             heap_tuples: tuples,
+            tuple_index_by_payload: HashMap::new(),
             dimensions: Some(8),
             bits: Some(bits),
             seed: Some(seed),
