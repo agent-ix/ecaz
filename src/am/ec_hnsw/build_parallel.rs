@@ -201,6 +201,57 @@ impl EcHnswConcurrentDsmNodeLayoutPlan {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct EcHnswConcurrentDsmCodeCorpus {
+    pub(super) node_count: u32,
+    pub(super) code_len: u32,
+    pub(super) bytes: Vec<u8>,
+}
+
+#[allow(dead_code)]
+impl EcHnswConcurrentDsmCodeCorpus {
+    pub(super) fn from_tuples(tuples: &[build::BuildTuple]) -> Self {
+        let node_count = checked_graph_u32(tuples.len(), "concurrent DSM code corpus nodes");
+        let code_len = tuples
+            .first()
+            .map_or(0_usize, |tuple| tuple.code.len());
+        let total_code_bytes = code_len
+            .checked_mul(tuples.len())
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM code corpus byte count overflow"));
+        let mut bytes = Vec::with_capacity(total_code_bytes);
+
+        for tuple in tuples {
+            if tuple.code.len() != code_len {
+                pgrx::error!("concurrent DSM code corpus requires fixed-width codes");
+            }
+            bytes.extend_from_slice(&tuple.code);
+        }
+
+        Self {
+            node_count,
+            code_len: checked_graph_u32(code_len, "concurrent DSM code corpus code length"),
+            bytes,
+        }
+    }
+
+    pub(super) fn code_for_node(&self, node_idx: usize) -> &[u8] {
+        if node_idx >= self.node_count as usize {
+            pgrx::error!("concurrent DSM code corpus node index out of bounds");
+        }
+        let code_len = self.code_len as usize;
+        let start = node_idx
+            .checked_mul(code_len)
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM code corpus offset overflow"));
+        let end = start
+            .checked_add(code_len)
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM code corpus offset overflow"));
+        self.bytes
+            .get(start..end)
+            .unwrap_or_else(|| pgrx::error!("concurrent DSM code corpus slice out of bounds"))
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct EcHnswConcurrentDsmGraphLayout {
     pub(super) node_count: u32,
@@ -1125,6 +1176,41 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_dsm_code_corpus_packs_fixed_width_codes() {
+        let tuples = vec![
+            build_tuple_with_code(vec![1, 2, 3]),
+            build_tuple_with_code(vec![4, 5, 6]),
+        ];
+        let corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&tuples);
+
+        assert_eq!(corpus.node_count, 2);
+        assert_eq!(corpus.code_len, 3);
+        assert_eq!(corpus.bytes, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(corpus.code_for_node(0), &[1, 2, 3]);
+        assert_eq!(corpus.code_for_node(1), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn concurrent_dsm_code_corpus_handles_empty_input() {
+        let corpus = EcHnswConcurrentDsmCodeCorpus::from_tuples(&[]);
+
+        assert_eq!(corpus.node_count, 0);
+        assert_eq!(corpus.code_len, 0);
+        assert!(corpus.bytes.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_code_corpus_rejects_variable_width_codes() {
+        let tuples = vec![
+            build_tuple_with_code(vec![1, 2, 3]),
+            build_tuple_with_code(vec![4, 5]),
+        ];
+
+        let _ = EcHnswConcurrentDsmCodeCorpus::from_tuples(&tuples);
+    }
+
+    #[test]
     fn concurrent_dsm_graph_layout_sums_slots_and_aligns_sections() {
         let levels = build::NativeBuildLevels::from_levels(vec![0, 2]);
         let layout = EcHnswConcurrentDsmGraphLayout::for_levels(&levels, 2, 6);
@@ -1162,6 +1248,22 @@ mod tests {
             layout.total_bytes,
             bufferalign(size_of::<EcHnswConcurrentDsmGraphHeader>() as pg_sys::Size)
         );
+    }
+
+    fn build_tuple_with_code(code: Vec<u8>) -> build::BuildTuple {
+        build::BuildTuple {
+            heap_tids: vec![page::ItemPointer {
+                block_number: 1,
+                offset_number: 1,
+            }],
+            dimensions: 4,
+            bits: 4,
+            seed: 42,
+            gamma: 1.0,
+            code,
+            source_vector: None,
+            source_count: 0,
+        }
     }
 
     #[test]
