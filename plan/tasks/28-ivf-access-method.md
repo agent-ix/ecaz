@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 3 training helpers underway.
+Status: in progress - Phase 3 heap-scan sample collection underway.
 
 Working branch: `task28-ivf`
 
@@ -133,7 +133,7 @@ yet.
 
 ### Phase 3 - training and build
 
-- [ ] **Training sample.** Heap-scan sample collection with deterministic
+- [x] **Training sample.** Heap-scan sample collection with deterministic
   seed, type validation, NULL rejection, and dimension checks.
 - [x] **K-means trainer.** Implement bounded-iteration k-means with stable
   empty-cluster handling and tests for deterministic output.
@@ -149,6 +149,13 @@ deterministic sample-index selection, auto-`nlists` resolution, finite
 non-zero vector normalization, bounded spherical k-means, stable empty-cluster
 fallback, and centroid assignment by normalized inner product. Heap scan sample
 collection and populated index writes remain future Phase 3 slices.
+
+Phase 3 heap-scan sample checkpoint: populated builds now scan heap tuples
+through the IVF callback, reject NULLs and inconsistent dimensions before
+training, decode `ecvector` source vectors directly, derive approximate
+training vectors for `tqvector`, select deterministic training samples, and
+train centroids before the still-explicit populated-write gate. Posting-list
+writes and metadata updates remain future Phase 3 slices.
 
 ### Phase 4 - scan path
 
