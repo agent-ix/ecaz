@@ -56,11 +56,19 @@ Each review topic is a directory under `review/`:
 ## Checkpoint Rules
 
 - Work in narrow, testable slices.
-- After each code checkpoint, run:
-  - `cargo test`
-  - `cargo pgrx test pg17`
-  - `cargo clippy --all-targets --no-default-features --features pg17 -- -D warnings`
-- Commit each green code checkpoint.
+- Do not run tests by default. Run tests only when a change is risky enough
+  that static review is not sufficient, when PostgreSQL callback behavior must
+  be verified, or when the user explicitly asks for tests.
+- The primary validation target is PG18. When tests are necessary, prefer the
+  narrowest PG18-focused command that covers the touched behavior, for example:
+  - focused `cargo test ...`
+  - focused or full `cargo pgrx test pg18`
+  - `cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings`
+- PG17 is optional compatibility coverage. Do not run PG17 tests unless the
+  user explicitly requests PG17 validation or the change is specifically
+  PG17-facing.
+- Commit each reviewed code checkpoint. If tests are skipped under this policy,
+  state that clearly in the commit/review context.
 - After a checkpoint, add or update the matching review request in `review/` and commit that review-packet update separately.
 - Push committed checkpoints and review-packet updates to the remote immediately after committing. Feedback that exists only locally is invisible to other agents.
 
