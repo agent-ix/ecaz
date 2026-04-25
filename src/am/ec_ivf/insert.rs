@@ -3,6 +3,20 @@ use pgrx::pg_sys;
 use super::{build, options, page, training};
 use crate::storage::page::ItemPointer;
 
+const EMPTY_BOOTSTRAP_LOCK_MODE: pg_sys::LOCKMODE =
+    pg_sys::ShareUpdateExclusiveLock as pg_sys::LOCKMODE;
+
+struct RelationLockGuard {
+    relid: pg_sys::Oid,
+    lockmode: pg_sys::LOCKMODE,
+}
+
+impl Drop for RelationLockGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::UnlockRelationOid(self.relid, self.lockmode) };
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
     index_relation: pg_sys::Relation,
     values: *mut pg_sys::Datum,
@@ -16,75 +30,100 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let metadata = page::read_metadata_page(index_relation);
-            metadata
-                .storage_format
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            metadata
-                .rerank
-                .validate_v1_supported()
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
+            validate_metadata_runtime_options(&metadata).unwrap_or_else(|e| pgrx::error!("{e}"));
 
             let indexed_vector_kind =
                 build::resolve_indexed_vector_kind(heap_relation, index_info, "aminsert");
             let heap_tid = build::decode_heap_tid(heap_tid, "aminsert");
-            let tuple = build::build_index_tuple(
-                values,
-                isnull,
-                heap_tid,
-                indexed_vector_kind,
-                "aminsert",
-            );
-            if metadata.dimensions == 0 {
-                bootstrap_empty_index(index_relation, &metadata, tuple)
-                    .unwrap_or_else(|e| pgrx::error!("ec_ivf empty-index insert failed: {e}"));
-                return true;
-            }
-            validate_insert_tuple(&metadata, &tuple)
-                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert found invalid tuple: {e}"));
+            let tuple =
+                build::build_index_tuple(values, isnull, heap_tid, indexed_vector_kind, "aminsert");
 
-            let model = load_centroid_model(index_relation, &metadata)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-            let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
-                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert centroid assignment failed: {e}"));
-            let (directory_tid, directory) =
-                load_directory_entry(index_relation, &metadata, list_id)
-                    .unwrap_or_else(|e| pgrx::error!("{e}"));
-            ensure_heap_tid_absent(index_relation, &metadata, tuple.heap_tid)
-                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert found duplicate heap tid: {e}"));
-
-            let posting = page::IvfPostingTuple {
-                list_id: u32::try_from(list_id)
-                    .unwrap_or_else(|_| pgrx::error!("ec_ivf assigned list id exceeds u32")),
-                deleted: false,
-                heaptids: vec![tuple.heap_tid],
-                gamma: tuple.gamma,
-                rerank_tid: ItemPointer::INVALID,
-                payload: tuple.payload,
+            let result = if metadata.dimensions == 0 {
+                insert_with_empty_bootstrap_lock(index_relation, tuple)
+            } else {
+                insert_into_trained_index(index_relation, &metadata, tuple)
             };
-            let tail_block = live_insert_tail_block(&directory)
-                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert found invalid directory: {e}"));
-            let posting_tid = page::append_ivf_posting(index_relation, tail_block, &posting)
-                .unwrap_or_else(|e| pgrx::error!("{e}"));
-
-            page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
-                if latest_directory.list_id != posting.list_id {
-                    return Err(format!(
-                        "ec_ivf directory order mismatch during insert: got list {}, expected {}",
-                        latest_directory.list_id, posting.list_id
-                    ));
-                }
-                apply_directory_insert_stats(latest_directory, posting_tid)
-            })
-            .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert stats update failed: {e}"));
-            page::update_metadata_page(index_relation, |metadata| {
-                apply_metadata_insert_stats(metadata)
-            })
-            .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert metadata update failed: {e}"));
+            result.unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert failed: {e}"));
 
             true
         })
     }
+}
+
+fn validate_metadata_runtime_options(metadata: &page::MetadataPage) -> Result<(), String> {
+    metadata.storage_format.validate_v1_supported()?;
+    metadata.rerank.validate_v1_supported()
+}
+
+unsafe fn lock_empty_bootstrap_relation(index_relation: pg_sys::Relation) -> RelationLockGuard {
+    let relid = unsafe { (*index_relation).rd_id };
+    unsafe { pg_sys::LockRelationOid(relid, EMPTY_BOOTSTRAP_LOCK_MODE) };
+    RelationLockGuard {
+        relid,
+        lockmode: EMPTY_BOOTSTRAP_LOCK_MODE,
+    }
+}
+
+unsafe fn insert_with_empty_bootstrap_lock(
+    index_relation: pg_sys::Relation,
+    tuple: build::BuildTuple,
+) -> Result<(), String> {
+    let guard = unsafe { lock_empty_bootstrap_relation(index_relation) };
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    validate_metadata_runtime_options(&metadata)?;
+    if metadata.dimensions == 0 {
+        return unsafe { bootstrap_empty_index(index_relation, &metadata, tuple) };
+    }
+    drop(guard);
+    unsafe { insert_into_trained_index(index_relation, &metadata, tuple) }
+}
+
+unsafe fn insert_into_trained_index(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    tuple: build::BuildTuple,
+) -> Result<(), String> {
+    validate_metadata_runtime_options(metadata)?;
+    validate_insert_tuple(metadata, &tuple)
+        .map_err(|e| format!("ec_ivf aminsert found invalid tuple: {e}"))?;
+
+    let model = unsafe { load_centroid_model(index_relation, metadata) }?;
+    let list_id = training::assign_vector_to_centroid(&tuple.source_vector, &model)
+        .map_err(|e| format!("ec_ivf aminsert centroid assignment failed: {e}"))?;
+    let (directory_tid, directory) =
+        unsafe { load_directory_entry(index_relation, metadata, list_id) }?;
+    unsafe { ensure_heap_tid_absent(index_relation, metadata, tuple.heap_tid) }
+        .map_err(|e| format!("ec_ivf aminsert found duplicate heap tid: {e}"))?;
+
+    let posting = page::IvfPostingTuple {
+        list_id: u32::try_from(list_id)
+            .map_err(|_| "ec_ivf assigned list id exceeds u32".to_owned())?,
+        deleted: false,
+        heaptids: vec![tuple.heap_tid],
+        gamma: tuple.gamma,
+        rerank_tid: ItemPointer::INVALID,
+        payload: tuple.payload,
+    };
+    let tail_block = live_insert_tail_block(&directory)
+        .map_err(|e| format!("ec_ivf aminsert found invalid directory: {e}"))?;
+    let posting_tid = unsafe { page::append_ivf_posting(index_relation, tail_block, &posting) }?;
+
+    unsafe {
+        page::update_ivf_list_directory(index_relation, directory_tid, |latest_directory| {
+            if latest_directory.list_id != posting.list_id {
+                return Err(format!(
+                    "ec_ivf directory order mismatch during insert: got list {}, expected {}",
+                    latest_directory.list_id, posting.list_id
+                ));
+            }
+            apply_directory_insert_stats(latest_directory, posting_tid)
+        })
+    }
+    .map_err(|e| format!("ec_ivf aminsert stats update failed: {e}"))?;
+    unsafe { page::update_metadata_page(index_relation, apply_metadata_insert_stats) }
+        .map_err(|e| format!("ec_ivf aminsert metadata update failed: {e}"))?;
+
+    Ok(())
 }
 
 unsafe fn ensure_heap_tid_absent(

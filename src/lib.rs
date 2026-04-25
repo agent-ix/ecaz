@@ -3198,6 +3198,101 @@ mod tests {
         assert!(ivf_ids.contains(&2));
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_ec_ivf_concurrent_empty_bootstrap_reachable() {
+        const TABLE_NAME: &str = "ec_ivf_concurrent_empty_bootstrap_insert";
+        const INDEX_NAME: &str = "ec_ivf_concurrent_empty_bootstrap_insert_idx";
+        const BARRIER_KEY: i64 = 280_503;
+
+        let connection = pg_test_psql_connection();
+        run_psql_script(
+            &connection,
+            "ec_ivf empty-bootstrap concurrent insert setup",
+            &format!(
+                "DROP TABLE IF EXISTS {TABLE_NAME};
+                 CREATE TABLE {TABLE_NAME} (id bigint primary key, embedding ecvector);
+                 CREATE INDEX {INDEX_NAME} ON {TABLE_NAME} USING ec_ivf
+                   (embedding ecvector_ip_ops)
+                   WITH (nlists = 2, nprobe = 2, training_sample_rows = 2, seed = 41);",
+            ),
+        );
+
+        Spi::run(&format!("SELECT pg_advisory_lock({BARRIER_KEY})"))
+            .expect("barrier lock should be acquired");
+        let worker_sql = |id: i64, vector: &str| {
+            format!(
+                "SET lock_timeout = '10s';
+                 SET statement_timeout = '30s';
+                 SELECT pg_advisory_lock_shared({BARRIER_KEY});
+                 INSERT INTO {TABLE_NAME} VALUES ({id}, '{vector}'::ecvector);
+                 SELECT pg_advisory_unlock_shared({BARRIER_KEY});"
+            )
+        };
+        let workers = vec![
+            (
+                "empty-bootstrap worker 1",
+                spawn_psql_script(
+                    &connection,
+                    "empty-bootstrap worker 1",
+                    &worker_sql(1, "[1.0,0.0]"),
+                ),
+            ),
+            (
+                "empty-bootstrap worker 2",
+                spawn_psql_script(
+                    &connection,
+                    "empty-bootstrap worker 2",
+                    &worker_sql(2, "[0.0,1.0]"),
+                ),
+            ),
+        ];
+        std::thread::sleep(Duration::from_millis(750));
+        Spi::run(&format!("SELECT pg_advisory_unlock({BARRIER_KEY})"))
+            .expect("barrier lock should be released");
+
+        for (label, worker) in workers {
+            let output = worker
+                .wait_with_output()
+                .unwrap_or_else(|e| panic!("{label} wait failed: {e}"));
+            assert_psql_success(label, output);
+        }
+
+        let heap_count = Spi::get_one::<i64>(&format!("SELECT count(*) FROM {TABLE_NAME}"))
+            .expect("SPI query should succeed")
+            .expect("heap count should exist");
+        let index_oid = ec_ivf_index_oid(INDEX_NAME);
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let (summary_nlists, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, list0_live, _, list0_inserted) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 0) };
+        let (_, _, list1_live, _, list1_inserted) =
+            unsafe { am::debug_ec_ivf_directory_entry(index_oid, 1) };
+        let ctid_to_id = ctid_id_map(TABLE_NAME);
+        let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.0], &ctid_to_id, 2);
+        let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(heap_count, 2);
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 2);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 2);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert_eq!(summary_nlists, 2);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 1);
+        assert_eq!(list0_live + list1_live, 2);
+        assert_eq!(list0_inserted + list1_inserted, 1);
+        assert_eq!(ivf_ids.len(), 2);
+        assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
+        assert!(ivf_ids.contains(&1));
+        assert!(ivf_ids.contains(&2));
+    }
+
     #[pg_test]
     #[should_panic(expected = "duplicate heap tid")]
     fn test_ec_ivf_insert_rejects_duplicate_heap_tid() {

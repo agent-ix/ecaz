@@ -294,6 +294,15 @@ head/tail range without moving `tail_block` backward. PG18 coverage starts two
 `psql` sessions inserting into a single-list IVF index and verifies per-list
 live/inserted counters plus full-probe reachability for both inserted rows.
 
+Phase 5 empty-bootstrap serialization checkpoint: inserts that observe empty
+IVF metadata now acquire a relation-level `ShareUpdateExclusiveLock`, re-read
+metadata while serialized, and only bootstrap if the index is still empty. If
+another inserter already trained the index, the waiting inserter drops the
+bootstrap lock and routes through the normal trained-index append path. PG18
+coverage starts two `psql` sessions against an empty heap/index and verifies
+heap count, metadata/directory liveness, and full-probe reachability for both
+rows.
+
 ### Phase 6 - vacuum and drift handling
 
 - [x] **No-op callback baseline.** `ambulkdelete` and `amvacuumcleanup`
