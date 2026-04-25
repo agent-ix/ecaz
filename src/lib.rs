@@ -1213,6 +1213,12 @@ mod tests {
             std::env::set_var(key, value);
             Self { key, previous }
         }
+
+        fn remove(key: &'static str) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
     }
 
     impl Drop for ScopedEnvVar {
@@ -2756,6 +2762,8 @@ mod tests {
 
     #[pg_test]
     fn test_ech_planner_integration_snapshot_reports_blockers() {
+        let _lock = env_var_test_lock();
+        let _env = ScopedEnvVar::remove("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC");
         Spi::run(
             "CREATE TABLE ec_hnsw_planner_integration_snapshot (id bigint primary key, embedding ecvector)",
         )
@@ -2866,6 +2874,29 @@ mod tests {
             } else {
                 "custom pgstat kind registration remains gated outside this build"
             }
+        );
+    }
+
+    #[pg_test]
+    fn test_ech_planner_snapshot_reports_multi_emitter_blocker() {
+        let _lock = env_var_test_lock();
+        let _env = ScopedEnvVar::set("TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC", "1");
+        Spi::run(
+            "CREATE TABLE ec_hnsw_planner_integration_snapshot_multi_emitter (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_hnsw_planner_integration_snapshot_multi_emitter_idx ON ec_hnsw_planner_integration_snapshot_multi_emitter USING ec_hnsw (embedding ecvector_ip_ops)",
+        )
+        .expect("index creation should succeed");
+
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT next_runtime_blocker FROM ec_hnsw_planner_integration_snapshot('ec_hnsw_planner_integration_snapshot_multi_emitter_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("runtime blocker should be non-null"),
+            "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge"
         );
     }
 

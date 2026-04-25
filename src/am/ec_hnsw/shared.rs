@@ -764,6 +764,29 @@ pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
     }
 }
 
+#[cfg(any(test, feature = "pg_test"))]
+const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
+    "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
+
+fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
+    #[cfg(any(test, feature = "pg_test"))]
+    {
+        std::env::var_os(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV).is_some()
+    }
+    #[cfg(not(any(test, feature = "pg_test")))]
+    {
+        false
+    }
+}
+
+fn planner_integration_next_runtime_blocker() -> &'static str {
+    if pg18_parallel_multi_emitter_diagnostic_enabled() {
+        "PG18 diagnostic multi-emitter env is enabled; direct multi-emitter output remains rank-incompatible with Gather Merge"
+    } else {
+        "PG18 planner-visible Parallel Index Scan is enabled with one elected tuple emitter; rank-compatible multi-emitter Gather Merge output remains the next runtime step"
+    }
+}
+
 pub(crate) unsafe fn planner_integration_snapshot(
     index_relation: pg_sys::Relation,
 ) -> PlannerIntegrationSnapshot {
@@ -791,8 +814,7 @@ pub(crate) unsafe fn planner_integration_snapshot(
         effective_ef_search: admin.effective_ef_search,
         effective_source: admin.effective_source,
         planner_gate_reason: explain.planner_gate_reason,
-        next_runtime_blocker:
-            "PG18 planner-visible Parallel Index Scan is enabled with one elected tuple emitter; rank-compatible multi-emitter Gather Merge output remains the next runtime step",
+        next_runtime_blocker: planner_integration_next_runtime_blocker(),
         next_pg18_blocker: if diagnostics.pg18_pgstat_kind_ready {
             "no merged PG18 blocker remains on main"
         } else {
