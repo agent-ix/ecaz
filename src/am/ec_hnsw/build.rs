@@ -16,6 +16,7 @@ use crate::storage::wal;
 const PQ_FASTSCAN_TARGET_GROUP_SIZE: usize = 16;
 const PQ_FASTSCAN_DEFAULT_MAX_TRAIN_SIZE: usize = 1024;
 const PQ_FASTSCAN_DEFAULT_KMEANS_ITERS: usize = 8;
+const NATIVE_BUILD_MAX_DECODED_CODE_VALUE_BYTES: usize = 64 * 1024 * 1024;
 
 static LAST_BUILD_REQUESTED_WORKERS: AtomicU64 = AtomicU64::new(0);
 static LAST_BUILD_WORKERS_LAUNCHED: AtomicU64 = AtomicU64::new(0);
@@ -1149,9 +1150,119 @@ impl BuildGraphMetric {
     }
 }
 
+struct BuildGraphScoringWorkspace {
+    metric: BuildGraphMetric,
+    decoded_code_values: Option<NativeBuildDecodedCodeValues>,
+}
+
+impl BuildGraphScoringWorkspace {
+    fn for_state(state: &BuildState) -> Self {
+        let metric = BuildGraphMetric::for_state(state);
+        let decoded_code_values = match metric {
+            BuildGraphMetric::Code {
+                dimensions,
+                bits,
+                seed,
+            } => NativeBuildDecodedCodeValues::try_no_qjl_4bit(state, dimensions, bits, seed),
+            BuildGraphMetric::Source => None,
+        };
+        Self {
+            metric,
+            decoded_code_values,
+        }
+    }
+
+    fn score_between(&self, state: &BuildState, left_idx: usize, right_idx: usize) -> f32 {
+        if let Some(decoded_code_values) = &self.decoded_code_values {
+            return -decoded_code_values.score_between(left_idx, right_idx);
+        }
+        self.metric.score_between(state, left_idx, right_idx)
+    }
+}
+
+struct NativeBuildDecodedCodeValues {
+    dimensions: usize,
+    values: Vec<f32>,
+}
+
+impl NativeBuildDecodedCodeValues {
+    fn try_no_qjl_4bit(state: &BuildState, dimensions: usize, bits: u8, seed: u64) -> Option<Self> {
+        if bits != 4 || crate::quant::rotation::tile_dim(dimensions).is_none() {
+            return None;
+        }
+        let value_count = state.heap_tuples.len().checked_mul(dimensions)?;
+        match value_count.checked_mul(std::mem::size_of::<f32>()) {
+            Some(bytes) if bytes <= NATIVE_BUILD_MAX_DECODED_CODE_VALUE_BYTES => {}
+            _ => return None,
+        }
+
+        let code_len = dimensions.div_ceil(2);
+        if state
+            .heap_tuples
+            .iter()
+            .any(|tuple| tuple.code.len() != code_len)
+        {
+            return None;
+        }
+
+        let quantizer = ProdQuantizer::cached(dimensions, bits, seed);
+        if quantizer.codebook.len() != 16 {
+            return None;
+        }
+
+        let mut values = Vec::with_capacity(value_count);
+        for tuple in &state.heap_tuples {
+            decode_no_qjl_4bit_code_values_into(
+                &tuple.code,
+                dimensions,
+                &quantizer.codebook,
+                &mut values,
+            );
+        }
+        Some(Self { dimensions, values })
+    }
+
+    fn score_between(&self, left_idx: usize, right_idx: usize) -> f32 {
+        let left = self.values_for(left_idx);
+        let right = self.values_for(right_idx);
+        left.iter()
+            .zip(right.iter())
+            .map(|(left, right)| left * right)
+            .sum()
+    }
+
+    fn values_for(&self, node_idx: usize) -> &[f32] {
+        let start = node_idx
+            .checked_mul(self.dimensions)
+            .expect("decoded code value offset should fit in usize");
+        let end = start + self.dimensions;
+        &self.values[start..end]
+    }
+}
+
+fn decode_no_qjl_4bit_code_values_into(
+    code: &[u8],
+    dimensions: usize,
+    codebook: &[f32],
+    out: &mut Vec<f32>,
+) {
+    let start_len = out.len();
+    for &packed in code {
+        if out.len() - start_len >= dimensions {
+            break;
+        }
+        out.push(codebook[(packed & 0x0F) as usize]);
+        if out.len() - start_len >= dimensions {
+            break;
+        }
+        out.push(codebook[(packed >> 4) as usize]);
+    }
+    debug_assert_eq!(out.len() - start_len, dimensions);
+}
+
 struct NativeBuildQueryScorer<'a> {
     state: &'a BuildState,
-    metric: BuildGraphMetric,
+    scoring: &'a BuildGraphScoringWorkspace,
     query_idx: usize,
     cache: &'a mut NativeBuildQueryScoreCache,
 }
@@ -1159,14 +1270,14 @@ struct NativeBuildQueryScorer<'a> {
 impl<'a> NativeBuildQueryScorer<'a> {
     fn new(
         state: &'a BuildState,
-        metric: BuildGraphMetric,
+        scoring: &'a BuildGraphScoringWorkspace,
         query_idx: usize,
         cache: &'a mut NativeBuildQueryScoreCache,
     ) -> Self {
         cache.begin_query();
         Self {
             state,
-            metric,
+            scoring,
             query_idx,
             cache,
         }
@@ -1178,7 +1289,7 @@ impl<'a> NativeBuildQueryScorer<'a> {
         }
 
         let score = self
-            .metric
+            .scoring
             .score_between(self.state, self.query_idx, candidate_idx);
         self.cache.insert(candidate_idx, score);
         score
@@ -1315,16 +1426,20 @@ impl PartialOrd for NativeBuildLayerSearchCandidate {
 
 struct NativeBacklinkTargetScorer<'a> {
     state: &'a BuildState,
-    metric: BuildGraphMetric,
+    scoring: &'a BuildGraphScoringWorkspace,
     target_idx: usize,
     cache: Vec<(usize, f32)>,
 }
 
 impl<'a> NativeBacklinkTargetScorer<'a> {
-    fn new(state: &'a BuildState, metric: BuildGraphMetric, cache_capacity: usize) -> Self {
+    fn new(
+        state: &'a BuildState,
+        scoring: &'a BuildGraphScoringWorkspace,
+        cache_capacity: usize,
+    ) -> Self {
         Self {
             state,
-            metric,
+            scoring,
             target_idx: 0,
             cache: Vec::with_capacity(cache_capacity),
         }
@@ -1344,7 +1459,7 @@ impl<'a> NativeBacklinkTargetScorer<'a> {
             return *score;
         }
         let score = self
-            .metric
+            .scoring
             .score_between(self.state, self.target_idx, candidate_idx);
         self.cache.push((candidate_idx, score));
         score
@@ -1577,7 +1692,8 @@ pub(super) fn build_hnsw_graph(state: &BuildState) -> Vec<HnswBuildNode> {
             state.heap_tuples.len()
         ];
     }
-    build_native_hnsw_graph(state, BuildGraphMetric::for_state(state))
+    let scoring = BuildGraphScoringWorkspace::for_state(state);
+    build_native_hnsw_graph(state, &scoring)
 }
 
 fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
@@ -1636,7 +1752,10 @@ pub(super) fn build_scored_neighbor_graph(state: &BuildState) -> Vec<Vec<usize>>
     graph
 }
 
-fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<HnswBuildNode> {
+fn build_native_hnsw_graph(
+    state: &BuildState,
+    scoring: &BuildGraphScoringWorkspace,
+) -> Vec<HnswBuildNode> {
     let m = usize::try_from(state.options.m).expect("validated m should be non-negative");
     let m_u16 = u16::try_from(state.options.m).expect("validated m should fit into u16");
     let ef_construction = usize::try_from(state.options.ef_construction)
@@ -1668,7 +1787,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
 
         if let Some(current_entry_idx) = entry_idx {
             let mut query_scorer =
-                NativeBuildQueryScorer::new(state, metric, node_idx, &mut query_score_cache);
+                NativeBuildQueryScorer::new(state, scoring, node_idx, &mut query_score_cache);
             let entry_candidate = search::BeamCandidate::new(
                 current_entry_idx,
                 query_scorer.score(current_entry_idx),
@@ -1700,7 +1819,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
                 m,
                 layer0_candidates,
             );
-            add_native_backlinks(&mut nodes, state, metric, node_idx, &selections, m);
+            add_native_backlinks(&mut nodes, state, scoring, node_idx, &selections, m);
         }
 
         nodes.push(node);
@@ -1914,7 +2033,7 @@ fn write_native_layer_forward_candidates(
 fn add_native_backlinks(
     nodes: &mut [NativeBuildNode],
     state: &BuildState,
-    metric: BuildGraphMetric,
+    scoring: &BuildGraphScoringWorkspace,
     new_node_idx: usize,
     selections: &[NativeForwardSelection],
     m: usize,
@@ -1926,11 +2045,8 @@ fn add_native_backlinks(
             .then_with(|| left.layer.cmp(&right.layer))
     });
     pending.dedup();
-    let mut target_scorer = NativeBacklinkTargetScorer::new(
-        state,
-        metric,
-        m.saturating_mul(2).saturating_add(1),
-    );
+    let mut target_scorer =
+        NativeBacklinkTargetScorer::new(state, scoring, m.saturating_mul(2).saturating_add(1));
     let mut current_target_idx = None;
 
     for selection in pending {
@@ -2616,6 +2732,67 @@ mod tests {
     }
 
     #[test]
+    fn decoded_no_qjl_4bit_scores_match_code_metric() {
+        let seed = 42_u64;
+        let bits = 4_u8;
+        let dimensions = crate::quant::rotation::TILED_FWHT_COMPAT_DIM;
+        let heap_tuples = (0..3)
+            .map(|tuple_idx| {
+                let code = (0..dimensions.div_ceil(2))
+                    .map(|byte_idx| {
+                        let low = (byte_idx + tuple_idx) & 0x0F;
+                        let high = ((byte_idx * 3) + tuple_idx * 5) & 0x0F;
+                        (low | (high << 4)) as u8
+                    })
+                    .collect();
+                BuildTuple {
+                    heap_tids: vec![page::ItemPointer {
+                        block_number: 0,
+                        offset_number: tuple_idx as u16 + 1,
+                    }],
+                    dimensions: dimensions as u16,
+                    bits,
+                    seed,
+                    gamma: 0.0,
+                    code,
+                    source_vector: None,
+                    source_count: 1,
+                }
+            })
+            .collect();
+        let state = BuildState {
+            options: options::TqHnswOptions {
+                m: 10,
+                ef_construction: 90,
+                ef_search: 40,
+                build_source_column: None,
+                rerank_source_column: None,
+                storage_format: options::StorageFormat::PqFastScan,
+            },
+            indexed_vector_kind: source::IndexedVectorKind::Tqvector,
+            page_size: pg_sys::BLCKSZ as usize,
+            scanned_tuples: 3,
+            heap_tuples,
+            tuple_index_by_payload: HashMap::new(),
+            dimensions: Some(dimensions as u16),
+            bits: Some(bits),
+            seed: Some(seed),
+        };
+        let metric = BuildGraphMetric::for_state(&state);
+        let scoring = BuildGraphScoringWorkspace::for_state(&state);
+
+        assert!(scoring.decoded_code_values.is_some());
+        for left_idx in 0..state.heap_tuples.len() {
+            for right_idx in 0..state.heap_tuples.len() {
+                assert_eq!(
+                    scoring.score_between(&state, left_idx, right_idx),
+                    metric.score_between(&state, left_idx, right_idx)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn source_scored_entry_point_prefers_raw_vectors() {
         let seed = 42_u64;
         let bits = 4_u8;
@@ -2847,11 +3024,12 @@ mod tests {
                 neighbor_slots: vec![Some(0), None, None, None],
             },
         ];
+        let scoring = BuildGraphScoringWorkspace::for_state(&state);
 
         add_native_backlinks(
             &mut nodes,
             &state,
-            BuildGraphMetric::Source,
+            &scoring,
             2,
             &[NativeForwardSelection {
                 layer: 0,
@@ -2994,11 +3172,12 @@ mod tests {
                 neighbor_slots: vec![Some(0), None, None, None],
             },
         ];
+        let scoring = BuildGraphScoringWorkspace::for_state(&state);
 
         add_native_backlinks(
             &mut nodes,
             &state,
-            BuildGraphMetric::Source,
+            &scoring,
             2,
             &[NativeForwardSelection {
                 layer: 0,
