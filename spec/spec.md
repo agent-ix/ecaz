@@ -474,6 +474,7 @@ src/
 - ADR-020: Embedding dimension operating points: 1024 vs 1536 vs 2048
 - ADR-022: Drop scoring LUT in favor of direct codebook multiply
 - ADR-023: SIMD bit-packing for MSE index decode in scoring hot path
+- ADR-048: IVF as optional access method
 - Weaviate Rotational Quantization: https://weaviate.io/blog/8-bit-rotational-quantization
 - VectorChord RaBitQ: https://blog.vectorchord.ai/vectorchord-store-400k-vectors-for-1-in-postgresql
 - DiskANN paper: https://suhasjs.github.io/files/diskann_neurips19.pdf

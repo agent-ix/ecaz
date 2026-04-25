@@ -1,11 +1,19 @@
 ---
 id: ADR-035
 title: "SPANN as Third Access Method for Billion-Scale"
-status: PROPOSED
+status: DROPPED
 impact: Affects FR-014, NFR-001, ADR-032, ADR-034
 date: 2026-04-18
 ---
 # ADR-035: SPANN as Third Access Method
+
+## 2026-04-25 Status Update
+
+This ADR is no longer on the active roadmap. tqvector will pursue other
+access-method algorithms instead of implementing SPANN. The analysis below
+is retained as historical context for IVF-style posting lists,
+replication, and billion-scale tradeoffs, but it is not an implementation
+plan.
 
 ## Context
 
@@ -36,12 +44,10 @@ FAISS's `IndexIVFPQFastScan` (the routing and scoring parts, without
 SPANN's replication/balancing). There is no Rust port and no
 Postgres-native prior art.
 
-## Decision
+## Historical Decision
 
-tqvector plans **`tqspann`** as a third access method, landing after
-ADR-034's DiskANN track is stable. PqFastScan remains the scoring
-kernel across all three structures — HNSW (ADR-032), DiskANN (ADR-034),
-SPANN (this ADR).
+tqvector previously considered **`tqspann`** as a third access method
+after ADR-034's DiskANN track. That plan is dropped as of 2026-04-25.
 
 ### Per-server ceiling
 

@@ -2,7 +2,7 @@
 id: ADR-041
 title: "Module Structure for Multi-AM, Multi-Quantizer Growth"
 status: PROPOSED
-impact: Affects ADR-032, ADR-033, ADR-034, ADR-035, ADR-036, ADR-037, ADR-038, ADR-039, ADR-040
+impact: Affects ADR-032, ADR-033, ADR-034, ADR-035, ADR-036, ADR-037, ADR-038, ADR-039, ADR-040, ADR-048
 date: 2026-04-18
 ---
 # ADR-041: Module Structure for Multi-AM, Multi-Quantizer Growth
@@ -14,10 +14,10 @@ quantizer formats (TurboQuant, PqFastScan) behind a single access method
 (`ec_hnsw`). The roadmap queued up by ADR-034–ADR-040 substantially widens
 that surface:
 
-- **Three access methods** on the scale ladder: `ec_hnsw` (current, 0–500M),
-  `ec_diskann` (ADR-034, 500M–3B), `tqspann` (ADR-035, 3B+). All three share
-  the same scoring kernel; they differ in graph/IVF structure and on-disk
-  layout.
+- **Multiple access methods** on the scale ladder: `ec_hnsw` (current),
+  `ec_diskann` (ADR-034), `ec_ivf` (ADR-048), and future algorithms. They
+  share quantizer/scoring kernels where practical; they differ in graph,
+  posting-list, or other outer index structure and on-disk layout.
 - **More quantizer families.** OPQ (ADR-036) extends PqFastScan with a
   learned rotation; AQ/RVQ (ADR-037) is a structurally new family with its
   own encoding and scoring kernel; LSQ (ADR-038) is a codebook-refinement
@@ -94,7 +94,7 @@ src/
 │   ├── ec_hnsw/                 build, scan, insert, vacuum, graph,
 │   │                           search, page, options, routine
 │   ├── ec_diskann/              sibling of ec_hnsw
-│   └── tqspann/                deferred
+│   └── ec_ivf/                 IVF posting-list AM
 │
 └── bin/
 ```
@@ -229,8 +229,8 @@ the new structure and only pay for their own incremental work.
   format count grows.
 - **ADR-034 (DiskANN)** — the forcing function for stages 1–3. Adopts
   this ADR's module shape as a prerequisite.
-- **ADR-035 (SPANN), ADR-036 (OPQ), ADR-037 (AQ/RVQ), ADR-038 (LSQ)** —
-  consumers of the shape this ADR lands.
+- **ADR-035 (dropped), ADR-036 (OPQ), ADR-037 (AQ/RVQ), ADR-038 (LSQ),
+  ADR-048 (IVF)** — consumers of the shape this ADR lands.
 - **ADR-039 (ARM SVE)** — stage 4 is the home for its new backend files.
 - **ADR-040 (parallel scan)** — the coordinator this ADR names lives
   in `am/common/parallel.rs`.

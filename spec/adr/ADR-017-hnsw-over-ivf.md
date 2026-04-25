@@ -67,6 +67,15 @@ However, tqvector's partitioned architecture mitigates this:
 
 TurboQuant is orthogonal to the index structure — it is a compression/scoring layer. IVF could be added as a separate access method (`ivf_tqhnsw`) without changing the quantization layer. The current use cases (agent memories, knowledge graphs) are well-served by HNSW.
 
+### 2026-04-25 Amendment
+
+ADR-048 activates IVF as an optional sibling access method named `ec_ivf`.
+This does not change the default: HNSW remains the primary access method
+for heterogeneous, evolving data. The IVF lane exists to measure
+write-amplification, sequential-read, and posting-list tradeoffs behind a
+separate SQL surface, with TurboQuant, PqFastScan, and RaBitQ available as
+posting-list quantizer profiles.
+
 ### WAL Amplification Mitigations
 
 For deployments where WAL volume becomes a concern:

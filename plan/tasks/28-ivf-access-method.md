@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: proposed - planning branch only.
+Status: in progress - Phase 0 design freeze complete; Phase 1 scaffold next.
 
 Working branch: `task28-ivf`
 
@@ -12,11 +12,11 @@ centroids, assign each vector to one posting list, scan the nearest
 `nprobe` lists, and return ordered results through the normal PostgreSQL
 index scan path.
 
-This task intentionally does not start with SPANN-style replication or
-balanced hierarchical routing. Those are larger mechanisms from ADR-035
-and should remain follow-ons until a simple IVF baseline proves useful.
+This task intentionally does not start with multi-list replication or
+balanced hierarchical routing. Those are larger mechanisms that should get
+their own ADR only if a simple IVF baseline proves useful.
 
-Working SQL name: `ec_ivf`, unless the ADR refresh picks a better name.
+SQL name: `ec_ivf`.
 
 ## Why Now
 
@@ -46,7 +46,10 @@ giving us a concrete way to measure these tradeoffs.
 - **Storage.** Metadata stores dimension, quantizer shape, `nlists`,
   training seed/version, per-list counts, and list head/tail block refs.
   Posting-list pages store candidate codes plus heap TIDs using existing
-  storage/WAL primitives where possible.
+  storage/WAL primitives where possible. IVF is a posting-list AM over the
+  existing TurboQuant, PqFastScan, and RaBitQ quantizer profiles; PqFastScan
+  is expected to be the dense-list hot path, but each profile gets its own
+  recall and latency gates.
 - **Scan.** `amrescan` prepares the query, scores centroids, selects
   `nprobe` lists, scans those lists, scores candidates, and emits the
   best results through the existing ordered-scan contract.
@@ -62,20 +65,27 @@ giving us a concrete way to measure these tradeoffs.
 
 ### Phase 0 - design freeze and ADR refresh
 
-- [ ] **ADR-017 refresh.** Amend or supersede ADR-017 so IVF is no longer
+- [x] **ADR-017 refresh.** Amend or supersede ADR-017 so IVF is no longer
   only a deferred option. Preserve HNSW as the default unless measurements
   justify changing the default.
-- [ ] **Name and SQL contract.** Decide final AM name and operator-class
+- [x] **Name and SQL contract.** Decide final AM name and operator-class
   naming. Prefer PostgreSQL AM-scoped reuse where valid; otherwise use
   explicit `*_ivf_ip_ops` names.
-- [ ] **Metric contract.** Decide and document centroid scoring for inner
+- [x] **Metric contract.** Decide and document centroid scoring for inner
   product. This must be settled before training code lands.
-- [ ] **Reloptions and GUCs.** Define `nlists`, `nprobe`, training sample
+- [x] **Reloptions and GUCs.** Define `nlists`, `nprobe`, training sample
   size, seed, and rerank/source options. Pick defaults with a small-table
   path that cannot fail awkwardly.
-- [ ] **Acceptance gates.** Define baseline gates for recall, latency,
+- [x] **Acceptance gates.** Define baseline gates for recall, latency,
   storage, live-insert WAL volume, and vacuum behavior against `ec_hnsw`
   and exact scan.
+
+Phase 0 decisions are recorded in ADR-048. Summary: `ec_ivf` is opt-in,
+HNSW remains default, centroid training uses spherical k-means for the
+inner-product router, `storage_format` selects `turboquant`, `pq_fastscan`,
+`rabitq`, or `auto`, `ec_ivf.nprobe` overrides the reloption when set, and
+full-probe `nprobe = nlists` must match exact indexed-row scoring for any
+profile/rerank mode that claims exact final scoring.
 
 ### Phase 1 - AM scaffold
 
@@ -200,7 +210,7 @@ giving us a concrete way to measure these tradeoffs.
 
 ## Defers
 
-- SPANN-style multi-list replication and balanced hierarchical k-means.
+- Multi-list replication and balanced hierarchical k-means.
 - Online centroid retraining or tuple reassignment outside REINDEX.
 - Multi-metric support beyond the current inner-product operator surface.
 - Making IVF the default index type.
@@ -209,7 +219,7 @@ giving us a concrete way to measure these tradeoffs.
 
 ## Initial Review Packet
 
-Create the first review packet after Phase 0 with:
+Create the first review packet after Phase 0 under the 30000 range with:
 
 - final SQL naming decision
 - ADR-017 refresh or replacement
