@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 posting-list scan next.
+Status: in progress - Phase 4 posting-list candidate materialization underway.
 
 Working branch: `task28-ivf`
 
@@ -200,6 +200,13 @@ ORDER BY `real[]`, records query state, prepares the default quantizer scorer,
 loads persisted centroids, scores every centroid by inner product, resolves
 effective `nprobe`, and stores the selected probe-list IDs for the upcoming
 posting-list scan path. Empty indexes retain no prepared scorer or probe lists.
+
+Phase 4 posting-candidate checkpoint: selected lists are now read from their
+directory block ranges, posting tuples are decoded and filtered by list ID,
+candidates are scored with the prepared default quantizer query, duplicate heap
+TIDs are suppressed, and the scan opaque stores score-ordered candidates for
+the upcoming result-emission slice. This does not yet implement bounded top-k
+state or tuple emission.
 
 ### Phase 5 - live insert
 

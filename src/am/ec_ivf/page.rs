@@ -657,6 +657,103 @@ pub(super) unsafe fn read_ivf_list_directory_and_next(
     Ok((directory, next_physical_tuple_tid(tid, line_pointer_count)?))
 }
 
+pub(super) unsafe fn read_ivf_postings_for_list_blocks(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    head_block: BlockRef,
+    tail_block: BlockRef,
+    payload_len: usize,
+) -> Result<Vec<IvfPostingTuple>, String> {
+    if head_block == BlockRef::INVALID && tail_block == BlockRef::INVALID {
+        return Ok(Vec::new());
+    }
+    if head_block == BlockRef::INVALID || tail_block == BlockRef::INVALID {
+        return Err(format!("ec_ivf list {list_id} has partial posting block refs"));
+    }
+    if head_block.block_number > tail_block.block_number {
+        return Err(format!(
+            "ec_ivf list {list_id} posting block range is inverted"
+        ));
+    }
+
+    let mut postings = Vec::new();
+    for block_number in head_block.block_number..=tail_block.block_number {
+        unsafe {
+            read_ivf_postings_for_list_block(
+                index_relation,
+                list_id,
+                block_number,
+                payload_len,
+                &mut postings,
+            )?
+        };
+    }
+    Ok(postings)
+}
+
+unsafe fn read_ivf_postings_for_list_block(
+    index_relation: pg_sys::Relation,
+    list_id: u32,
+    block_number: pg_sys::BlockNumber,
+    payload_len: usize,
+    postings: &mut Vec<IvfPostingTuple>,
+) -> Result<(), String> {
+    let buffer = unsafe {
+        pg_sys::ReadBufferExtended(
+            index_relation,
+            pg_sys::ForkNumber::MAIN_FORKNUM,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            ptr::null_mut(),
+        )
+    };
+    if !unsafe { pg_sys::BufferIsValid(buffer) } {
+        return Err(format!(
+            "ec_ivf failed to open posting-list block {block_number}"
+        ));
+    }
+
+    unsafe { pg_sys::LockBuffer(buffer, pg_sys::BUFFER_LOCK_SHARE as i32) };
+    let page_ptr = unsafe { pg_sys::BufferGetPage(buffer) }.cast::<u8>();
+    let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+    let line_pointer_count = page_line_pointer_count(page_ptr);
+    for offset in 1..=line_pointer_count {
+        let item_id = unsafe { &*page_item_id(page_ptr, offset) };
+        if item_id.lp_flags() == 0 {
+            continue;
+        }
+
+        let tuple_offset = item_id.lp_off() as usize;
+        let tuple_len = item_id.lp_len() as usize;
+        if tuple_offset + tuple_len > page_size {
+            unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+            return Err(format!(
+                "ec_ivf posting tuple bounds exceed block {block_number}"
+            ));
+        }
+
+        let tuple_bytes =
+            unsafe { std::slice::from_raw_parts(page_ptr.add(tuple_offset), tuple_len) };
+        if tuple_bytes.first().copied() != Some(IVF_POSTING_TAG) {
+            continue;
+        }
+
+        let posting = match IvfPostingTuple::decode(tuple_bytes, payload_len) {
+            Ok(posting) => posting,
+            Err(err) => {
+                unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+                return Err(err);
+            }
+        };
+        if posting.list_id == list_id {
+            postings.push(posting);
+        }
+    }
+
+    unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    Ok(())
+}
+
 unsafe fn read_page_tuple<T, DecodeFn>(
     index_relation: pg_sys::Relation,
     tuple_tid: ItemPointer,

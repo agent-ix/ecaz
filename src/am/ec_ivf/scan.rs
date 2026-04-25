@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, PgBox};
@@ -20,11 +21,19 @@ struct EcIvfScanOpaque {
     centroid_score_count: u32,
     selected_lists: *mut u32,
     selected_list_count: u32,
+    posting_candidates: *mut EcIvfScoredCandidate,
+    posting_candidate_count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct EcIvfCentroidScore {
     list_id: u32,
+    score: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EcIvfScoredCandidate {
+    heap_tid: ItemPointer,
     score: f32,
 }
 
@@ -127,8 +136,16 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                     load_centroid_scores((*scan).indexRelation, &metadata, &query)
                         .unwrap_or_else(|e| pgrx::error!("{e}"));
                 let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
+                let posting_candidates = materialize_probe_candidates(
+                    (*scan).indexRelation,
+                    &metadata,
+                    opaque,
+                    &selected_lists,
+                )
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
                 store_centroid_scores(opaque, &centroid_scores);
                 store_selected_lists(opaque, &selected_lists);
+                store_posting_candidates(opaque, &posting_candidates);
             };
         })
     }
@@ -276,12 +293,41 @@ unsafe fn free_selected_lists(opaque: &mut EcIvfScanOpaque) {
     opaque.selected_list_count = 0;
 }
 
+unsafe fn store_posting_candidates(
+    opaque: &mut EcIvfScanOpaque,
+    candidates: &[EcIvfScoredCandidate],
+) {
+    free_posting_candidates(opaque);
+    if candidates.is_empty() {
+        return;
+    }
+
+    let bytes = std::mem::size_of_val(candidates);
+    let candidate_ptr = unsafe { pg_sys::palloc(bytes) }.cast::<EcIvfScoredCandidate>();
+    if candidate_ptr.is_null() {
+        pgrx::error!("ec_ivf failed to allocate posting candidate state");
+    }
+    unsafe { ptr::copy_nonoverlapping(candidates.as_ptr(), candidate_ptr, candidates.len()) };
+    opaque.posting_candidate_count =
+        u32::try_from(candidates.len()).expect("posting candidate count should fit in u32");
+    opaque.posting_candidates = candidate_ptr;
+}
+
+unsafe fn free_posting_candidates(opaque: &mut EcIvfScanOpaque) {
+    if !opaque.posting_candidates.is_null() {
+        unsafe { pg_sys::pfree(opaque.posting_candidates.cast()) };
+        opaque.posting_candidates = ptr::null_mut();
+    }
+    opaque.posting_candidate_count = 0;
+}
+
 unsafe fn free_scan_query_prep(opaque: &mut EcIvfScanOpaque) {
     unsafe { free_scan_query(opaque) };
     free_scan_prepared_query(opaque);
     unsafe {
         free_centroid_scores(opaque);
         free_selected_lists(opaque);
+        free_posting_candidates(opaque);
     }
     opaque.scan_dimensions = 0;
     opaque.scan_nlists = 0;
@@ -368,6 +414,95 @@ fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
         .take(nprobe as usize)
         .map(|score| score.list_id)
         .collect()
+}
+
+unsafe fn materialize_probe_candidates(
+    index_relation: pg_sys::Relation,
+    metadata: &super::page::MetadataPage,
+    opaque: &EcIvfScanOpaque,
+    selected_lists: &[u32],
+) -> Result<Vec<EcIvfScoredCandidate>, String> {
+    if selected_lists.is_empty() {
+        return Ok(Vec::new());
+    }
+    if opaque.prepared_query.is_null() {
+        return Err("ec_ivf posting-list scan requires a prepared query".to_owned());
+    }
+
+    let directories = unsafe { load_directory_entries(index_relation, metadata)? };
+    let prepared_query = unsafe { &*opaque.prepared_query };
+    let quantizer = ProdQuantizer::cached(
+        metadata.dimensions as usize,
+        crate::DEFAULT_QUANT_BITS,
+        crate::DEFAULT_QUANT_SEED,
+    );
+    let payload_len = crate::payload_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let mut seen_heap_tids = HashSet::new();
+    let mut candidates = Vec::new();
+    for list_id in selected_lists {
+        let directory = directories
+            .get(*list_id as usize)
+            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        let postings = unsafe {
+            super::page::read_ivf_postings_for_list_blocks(
+                index_relation,
+                *list_id,
+                directory.head_block,
+                directory.tail_block,
+                payload_len,
+            )?
+        };
+        for posting in postings {
+            if posting.deleted {
+                continue;
+            }
+            let score =
+                -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
+            for heap_tid in posting.heaptids {
+                if seen_heap_tids.insert(heap_tid) {
+                    candidates.push(EcIvfScoredCandidate { heap_tid, score });
+                }
+            }
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        left.score.total_cmp(&right.score).then_with(|| {
+            left.heap_tid
+                .block_number
+                .cmp(&right.heap_tid.block_number)
+                .then_with(|| left.heap_tid.offset_number.cmp(&right.heap_tid.offset_number))
+        })
+    });
+    Ok(candidates)
+}
+
+unsafe fn load_directory_entries(
+    index_relation: pg_sys::Relation,
+    metadata: &super::page::MetadataPage,
+) -> Result<Vec<super::page::IvfListDirectoryTuple>, String> {
+    if metadata.nlists == 0 {
+        return Ok(Vec::new());
+    }
+    if metadata.directory_head == ItemPointer::INVALID {
+        return Err("ec_ivf metadata has lists but no directory head".to_owned());
+    }
+
+    let mut next_tid = metadata.directory_head;
+    let mut directories = Vec::with_capacity(metadata.nlists as usize);
+    for expected_list_id in 0..metadata.nlists {
+        let (directory, following_tid) =
+            unsafe { super::page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
+        if directory.list_id != expected_list_id {
+            return Err(format!(
+                "ec_ivf directory order mismatch: got list {}, expected {}",
+                directory.list_id, expected_list_id
+            ));
+        }
+        directories.push(directory);
+        next_tid = following_tid;
+    }
+    Ok(directories)
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -494,7 +629,20 @@ pub(crate) unsafe fn debug_ec_ivf_gettuple_after_rescan_result(index_oid: pg_sys
 pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-) -> (bool, u16, Vec<f32>, u16, u32, u32, bool, usize, usize, u32, Vec<u32>) {
+) -> (
+    bool,
+    u16,
+    Vec<f32>,
+    u16,
+    u32,
+    u32,
+    bool,
+    usize,
+    usize,
+    u32,
+    u32,
+    Vec<u32>,
+) {
     let index_relation =
         unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
     let scan = unsafe { ec_ivf_ambeginscan(index_relation, 0, 1) };
@@ -525,6 +673,7 @@ pub(crate) unsafe fn debug_ec_ivf_rescan_query_prep(
             unsafe { (*opaque.prepared_query).sq.len() }
         },
         opaque.centroid_score_count,
+        opaque.posting_candidate_count,
         debug_selected_lists(opaque),
     );
 

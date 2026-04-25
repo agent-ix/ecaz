@@ -2320,6 +2320,7 @@ mod tests {
             prepared_lut_len,
             prepared_sq_len,
             centroid_score_count,
+            posting_candidate_count,
             selected_lists,
         ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
 
@@ -2333,6 +2334,7 @@ mod tests {
         assert_eq!(prepared_lut_len, 0);
         assert_eq!(prepared_sq_len, 0);
         assert_eq!(centroid_score_count, 0);
+        assert_eq!(posting_candidate_count, 0);
         assert!(selected_lists.is_empty());
     }
 
@@ -2366,6 +2368,7 @@ mod tests {
             prepared_lut_len,
             prepared_sq_len,
             centroid_score_count,
+            posting_candidate_count,
             selected_lists,
         ) = unsafe { am::debug_ec_ivf_rescan_query_prep(index_oid, vec![1.0, 0.0]) };
         let unique_lists = selected_lists.iter().copied().collect::<HashSet<_>>();
@@ -2380,6 +2383,7 @@ mod tests {
         assert!(prepared_lut_len > 0);
         assert!(prepared_sq_len > 0);
         assert_eq!(centroid_score_count, 3);
+        assert_eq!(posting_candidate_count, 2);
         assert_eq!(selected_lists.len(), 2);
         assert_eq!(unique_lists.len(), selected_lists.len());
         assert!(selected_lists.iter().all(|list_id| *list_id < scan_nlists));
