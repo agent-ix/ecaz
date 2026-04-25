@@ -1,0 +1,93 @@
+Timing is on.
+=== pg18 native neighbor flatten 50k timing fixture ===
+          started_at           |                                            postgres_version                                             | server_version | max_worker_processes
+-------------------------------+---------------------------------------------------------------------------------------------------------+----------------+----------------------
+ 2026-04-25 13:21:42.145117-07 | PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit | 18.3           | 8
+(1 row)
+
+Time: 1.054 ms
+DROP TABLE
+Time: 0.323 ms
+DROP EXTENSION
+Time: 72.122 ms
+CREATE EXTENSION
+Time: 47.592 ms
+CREATE TABLE
+Time: 6.411 ms
+=== load 50000 rows x 64 dims ===
+INSERT 0 50000
+Time: 1467.559 ms (00:01.468)
+VACUUM
+Time: 44.809 ms
+ fixture_rows
+--------------
+        50000
+(1 row)
+
+Time: 4.287 ms
+ relpages | reltuples
+----------+-----------
+     1852 |     50000
+(1 row)
+
+Time: 2.430 ms
+SET
+Time: 0.224 ms
+SET
+Time: 0.138 ms
+=== serial create index 50k ===
+SET
+Time: 0.170 ms
+ALTER TABLE
+Time: 1.540 ms
+DROP INDEX
+Time: 0.219 ms
+CREATE INDEX
+Time: 29432.464 ms (00:29.432)
+   round    | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ serial_50k |                 0 |                0 |       50000 |        49982 |        1344187 |                 0 |                 0 |                     0 |       28037282 | 27560080 |   261799 |   200027
+(1 row)
+
+Time: 0.894 ms
+ serial_50k_index_bytes
+------------------------
+               11624448
+(1 row)
+
+Time: 0.802 ms
+DROP INDEX
+Time: 5.155 ms
+CHECKPOINT
+Time: 56.217 ms
+=== parallel create index 50k ===
+SET
+Time: 0.295 ms
+ALTER TABLE
+Time: 1.384 ms
+DROP INDEX
+Time: 0.346 ms
+CREATE INDEX
+Time: 28119.478 ms (00:28.119)
+    round     | requested_workers | workers_launched | heap_tuples | index_tuples | heap_ingest_us | parallel_begin_us | parallel_drain_us | parallel_sort_push_us | flush_total_us | graph_us | stage_us | write_us
+--------------+-------------------+------------------+-------------+--------------+----------------+-------------------+-------------------+-----------------------+----------------+----------+----------+----------
+ parallel_50k |                 4 |                4 |       50000 |        49982 |         656217 |              2994 |            478669 |                174548 |       27432908 | 27029382 |   255759 |   133604
+(1 row)
+
+Time: 0.636 ms
+ parallel_50k_index_bytes
+--------------------------
+                 11624448
+(1 row)
+
+Time: 0.648 ms
+         finished_at
+------------------------------
+ 2026-04-25 13:22:41.33254-07
+(1 row)
+
+Time: 0.272 ms
+psql:review/631-c1-native-neighbor-flatten-measurement/artifacts/pg18_native_neighbor_flatten_50k_timing.sql:10: NOTICE:  table "ec_hnsw_native_neighbor_flatten_50k_measure" does not exist, skipping
+psql:review/631-c1-native-neighbor-flatten-measurement/artifacts/pg18_native_neighbor_flatten_50k_timing.sql:11: NOTICE:  drop cascades to column embedding of table ec_hnsw_native_source_score_workspace_50k_measure
+psql:review/631-c1-native-neighbor-flatten-measurement/artifacts/pg18_native_neighbor_flatten_50k_timing.sql:47: NOTICE:  index "ec_hnsw_native_neighbor_flatten_50k_measure_idx" does not exist, skipping
+psql:review/631-c1-native-neighbor-flatten-measurement/artifacts/pg18_native_neighbor_flatten_50k_timing.sql:61: NOTICE:  index "ec_hnsw_native_neighbor_flatten_50k_measure_idx" does not exist, skipping
