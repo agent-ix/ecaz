@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 rerank mode next.
+Status: in progress - Phase 4 recall tests next.
 
 Working branch: `task28-ivf`
 
@@ -190,7 +190,7 @@ persisted build shape because populated scan routing starts in Phase 4.
 - [x] **Result emission.** Reuse the ordered tuple production lifecycle:
   forward-only scan, order-by score output, exhaustion clearing, and rescan
   reset behavior.
-- [ ] **Rerank mode.** Decide whether v1 always reranks from heap/source
+- [x] **Rerank mode.** Decide whether v1 always reranks from heap/source
   data or starts compressed-only with a reloption-controlled exact tail.
 - [ ] **Recall tests.** Add small deterministic oracle tests and a real
   corpus recall smoke that compares exact scan, `ec_hnsw`, and `ec_ivf`.
@@ -219,6 +219,11 @@ deduplicates heap TIDs by keeping each heap row's best score, feeds candidates
 through a bounded top-k heap, and emits the retained candidates in deterministic
 ORDER BY score / heap TID order. The bound currently resolves to the selected
 lists' live tuple count because PostgreSQL does not pass a LIMIT to `amrescan`.
+
+Phase 4 rerank-mode checkpoint: IVF v1 now makes compressed-only scoring
+explicit. `rerank = 'auto'` resolves to persisted `off`, `rerank = 'off'` is
+accepted, and heap/source rerank modes are rejected with explicit errors until
+the required source/rerank storage contracts are implemented.
 
 ### Phase 5 - live insert
 

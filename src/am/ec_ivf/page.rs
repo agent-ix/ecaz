@@ -59,7 +59,7 @@ impl MetadataPage {
             training_version: 0,
             seed: u64::try_from(options.seed).expect("validated seed should fit in u64"),
             storage_format: options.storage_format,
-            rerank: options.rerank,
+            rerank: options.rerank.v1_effective(),
             centroid_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
             total_live_tuples: 0,

@@ -104,6 +104,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
+            options
+                .rerank
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             page::initialize_metadata_page(index_relation, page::MetadataPage::empty(options));
 
             let indexed_vector_kind = resolve_indexed_vector_kind(heap_relation, index_info);
@@ -555,6 +559,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuildempty(index_relation: pg_sy
     unsafe {
         pgrx::pgrx_extern_c_guard(|| {
             let options = options::relation_options(index_relation);
+            options
+                .rerank
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             let metadata = page::MetadataPage::empty(options);
             page::initialize_metadata_page(index_relation, metadata);
         })

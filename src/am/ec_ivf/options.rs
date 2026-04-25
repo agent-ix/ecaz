@@ -70,6 +70,32 @@ impl RerankMode {
             )),
         }
     }
+
+    pub(super) fn reloption_name(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Off => "off",
+            Self::HeapF32 => "heap_f32",
+            Self::SourceColumn => "source_column",
+        }
+    }
+
+    pub(super) fn v1_effective(self) -> Self {
+        match self {
+            Self::Auto => Self::Off,
+            other => other,
+        }
+    }
+
+    pub(super) fn validate_v1_supported(self) -> Result<(), String> {
+        match self {
+            Self::Auto | Self::Off => Ok(()),
+            Self::HeapF32 | Self::SourceColumn => Err(format!(
+                "ec_ivf rerank mode {} is not supported yet; use rerank = 'off' or rerank = 'auto'",
+                self.reloption_name()
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

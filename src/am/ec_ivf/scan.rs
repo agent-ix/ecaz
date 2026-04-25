@@ -170,6 +170,10 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             }
 
             let metadata = super::page::read_metadata_page((*scan).indexRelation);
+            metadata
+                .rerank
+                .validate_v1_supported()
+                .unwrap_or_else(|e| pgrx::error!("{e}"));
             if metadata.dimensions != 0 && query.len() != metadata.dimensions as usize {
                 pgrx::error!(
                     "ec_ivf scan query dimension mismatch: index dim {}, query dim {}",
@@ -899,6 +903,15 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
         metadata.training_sample_rows,
         metadata.seed,
     )
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_rerank_mode(index_oid: pg_sys::Oid) -> &'static str {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    metadata.rerank.reloption_name()
 }
 
 #[cfg(any(test, feature = "pg_test"))]

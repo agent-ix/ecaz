@@ -2428,6 +2428,36 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_auto_rerank_resolves_to_off_metadata() {
+        Spi::run("CREATE TABLE ec_ivf_auto_rerank (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_auto_rerank_idx ON ec_ivf_auto_rerank USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (rerank = 'auto')",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_auto_rerank_idx");
+        let rerank_mode = unsafe { am::debug_ec_ivf_rerank_mode(index_oid) };
+
+        assert_eq!(rerank_mode, "off");
+    }
+
+    #[pg_test]
+    #[should_panic(expected = "ec_ivf rerank mode heap_f32 is not supported yet")]
+    fn test_ec_ivf_heap_f32_rerank_mode_is_explicitly_unsupported() {
+        Spi::run("CREATE TABLE ec_ivf_heap_f32_rerank (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_heap_f32_rerank_idx ON ec_ivf_heap_f32_rerank USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (rerank = 'heap_f32')",
+        )
+        .expect("index creation should fail");
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");
