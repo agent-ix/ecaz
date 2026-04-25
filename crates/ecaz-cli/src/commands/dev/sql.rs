@@ -5,12 +5,15 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use super::support::{find_pgrx_install, resolve_pgrx_home, run_status, scratch_socket_dir};
+use super::support::{
+    default_pgrx_port, find_pgrx_install, pgrx_socket_dir, resolve_pgrx_home, run_status,
+    DEFAULT_PG_MAJOR,
+};
 
 #[derive(Args, Debug)]
 pub struct SqlArgs {
     /// PostgreSQL major version from the local pgrx install.
-    #[arg(long, default_value_t = 18)]
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
     pg: u16,
 
     /// Target database. Defaults to the global `--database`.
@@ -61,7 +64,7 @@ pub async fn run(database: &str, args: SqlArgs) -> Result<()> {
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(args.pg, &pgrx_home)?;
     let port = args.port.unwrap_or_else(|| default_pgrx_port(args.pg));
-    let socket_dir = scratch_socket_dir(args.socket_dir.as_ref(), &pgrx_home, port)?;
+    let socket_dir = pgrx_socket_dir(args.socket_dir.as_ref(), &pgrx_home, port)?;
     let mut command = Command::new(install.bin_dir.join("psql"));
     command
         .arg("-h")
@@ -93,12 +96,6 @@ pub async fn run(database: &str, args: SqlArgs) -> Result<()> {
         command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
         run_status(command).await
     }
-}
-
-fn default_pgrx_port(pg: u16) -> u16 {
-    28800_u16
-        .checked_add(pg)
-        .expect("supported PostgreSQL major versions fit in a pgrx dev port")
 }
 
 fn parse_env_assignment(assignment: &str) -> Result<(&str, &str)> {

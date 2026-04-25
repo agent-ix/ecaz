@@ -65,8 +65,9 @@ ecaz
 │   └── pgvector    # side-by-side recall + latency vs pgvector
 ├── dev
 │   ├── install     # local ecaz/pgvector install helpers
-│   ├── scratch     # scratch cluster restart/sql/refresh helpers
-│   └── test        # pgrx and preload-aware PG18 validation lanes
+│   ├── scratch     # pgrx scratch cluster restart/sql/refresh helpers
+│   ├── sql         # version-aware pgrx SQL runner with packet-local logging
+│   └── test        # pgrx and preload-aware validation lanes
 └── stress
     └── vacuum      # concurrent insert/delete/VACUUM invariant harness
 ```
@@ -158,8 +159,9 @@ Neither is needed today.
 
 ```sh
 cargo test -p ecaz-cli
-cargo pgrx test pg17
 cargo pgrx test pg18
+ecaz dev test pgrx
+ecaz dev test pgrx --pg 17
 ecaz dev test pg18-preload-pgstat
 ```
 

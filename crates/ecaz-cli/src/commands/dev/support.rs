@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-pub(crate) const SCRATCH_DEFAULT_PORT: u16 = 28817;
+pub(crate) const DEFAULT_PG_MAJOR: u16 = 18;
 pub(crate) const PG18_PRELOAD_DEFAULT_PORT: u16 = 28818;
 
 #[derive(Debug, Clone)]
@@ -70,6 +70,12 @@ pub(crate) fn find_pgrx_install(major: u16, pgrx_home: &Path) -> Result<PgrxInst
     })
 }
 
+pub(crate) fn default_pgrx_port(major: u16) -> u16 {
+    28800_u16
+        .checked_add(major)
+        .expect("supported PostgreSQL major versions fit in a pgrx dev port")
+}
+
 fn compare_version_labels(lhs: &str, rhs: &str) -> Ordering {
     let lhs_parts = lhs
         .split('.')
@@ -94,7 +100,7 @@ pub(crate) async fn run_status(mut command: Command) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn scratch_socket_dir(
+pub(crate) fn pgrx_socket_dir(
     explicit: Option<&PathBuf>,
     pgrx_home: &Path,
     port: u16,
@@ -115,7 +121,7 @@ pub(crate) fn scratch_socket_dir(
         return Ok(socket_dir);
     }
     Err(eyre!(
-        "expected scratch socket at {}; pass --socket-dir or --host explicitly if the cluster lives elsewhere",
+        "expected pgrx socket at {}; pass --socket-dir or --host explicitly if the cluster lives elsewhere",
         socket_path.display()
     ))
 }

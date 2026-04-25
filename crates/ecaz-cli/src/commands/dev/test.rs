@@ -8,7 +8,8 @@ use tokio::process::Command;
 use crate::psql;
 
 use super::support::{
-    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PG18_PRELOAD_DEFAULT_PORT,
+    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
+    PG18_PRELOAD_DEFAULT_PORT,
 };
 
 #[derive(Subcommand, Debug)]
@@ -31,7 +32,7 @@ impl TestCommand {
 #[derive(Args, Debug)]
 pub struct PgrxTestArgs {
     /// PostgreSQL major version to run.
-    #[arg(long, default_value_t = 17)]
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
     pg: u16,
 
     /// Extra arguments passed through to `cargo pgrx test`.

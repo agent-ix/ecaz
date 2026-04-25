@@ -6,15 +6,15 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::support::{
-    default_pgrx_home, find_pgrx_install, refresh_debug_helpers_sql, repo_root, resolve_pgrx_home,
-    run_status, scratch_socket_dir, SCRATCH_DEFAULT_PORT,
+    default_pgrx_home, default_pgrx_port, find_pgrx_install, pgrx_socket_dir,
+    refresh_debug_helpers_sql, repo_root, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
 };
 
 #[derive(Subcommand, Debug)]
 pub enum ScratchCommand {
-    /// Restart the pg17 scratch cluster with the requested runtime environment.
+    /// Restart a local pgrx scratch cluster with the requested runtime environment.
     Restart(ScratchRestartArgs),
-    /// Run psql against the pg17 scratch cluster.
+    /// Run psql against a local pgrx scratch cluster.
     Sql(ScratchSqlArgs),
     /// Refresh the bundled ADR-030 scratch debug SQL wrappers in the target database.
     RefreshDebugHelpers(ScratchRefreshDebugHelpersArgs),
@@ -32,6 +32,10 @@ impl ScratchCommand {
 
 #[derive(Args, Debug)]
 pub struct ScratchRestartArgs {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
     #[arg(long, default_value_t = 64)]
     window: u32,
 
@@ -64,6 +68,10 @@ pub struct ScratchRestartArgs {
 
 #[derive(Args, Debug)]
 pub struct ScratchSqlArgs {
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+
     /// Target database. Defaults to the global `--database`.
     #[arg(long)]
     db: Option<String>,
@@ -72,9 +80,9 @@ pub struct ScratchSqlArgs {
     #[arg(long)]
     socket_dir: Option<PathBuf>,
 
-    /// Scratch-cluster port.
-    #[arg(long, default_value_t = SCRATCH_DEFAULT_PORT)]
-    port: u16,
+    /// Scratch-cluster port. Defaults to the pgrx convention, e.g. 28818 for PG18.
+    #[arg(long)]
+    port: Option<u16>,
 
     /// Emit raw psql output instead of aligned-off, tuples-only TSV.
     #[arg(long)]
@@ -103,11 +111,12 @@ pub struct ScratchRefreshDebugHelpersArgs {
 async fn run_restart(args: ScratchRestartArgs) -> Result<()> {
     let repo_root = repo_root()?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
-    let data_dir = pgrx_home.join("data-17");
+    let data_dir = pgrx_home.join(format!("data-{}", args.pg));
     stop_existing_postmaster(&data_dir).await?;
 
     println!("[scratch] repo={}", repo_root.display());
     println!("[scratch] pgrx_home={}", pgrx_home.display());
+    println!("[scratch] pg={}", args.pg);
     println!("[scratch] window={}", args.window);
     println!("[scratch] grouped_score_mode={}", args.grouped_score_mode);
     println!("[scratch] rerank_mode={}", args.rerank_mode);
@@ -141,7 +150,7 @@ async fn run_restart(args: ScratchRestartArgs) -> Result<()> {
     command
         .arg("pgrx")
         .arg("start")
-        .arg("pg17")
+        .arg(format!("pg{}", args.pg))
         .current_dir(&repo_root)
         .env("PGRX_HOME", &pgrx_home)
         .env("TQVECTOR_PQ_FASTSCAN_SCAN_WINDOW", args.window.to_string())
@@ -213,14 +222,15 @@ async fn run_sql(database: &str, args: ScratchSqlArgs) -> Result<()> {
         bail!("--sql and --file are mutually exclusive");
     }
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
-    let install = find_pgrx_install(17, &pgrx_home)?;
-    let socket_dir = scratch_socket_dir(args.socket_dir.as_ref(), &pgrx_home, args.port)?;
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    let port = args.port.unwrap_or_else(|| default_pgrx_port(args.pg));
+    let socket_dir = pgrx_socket_dir(args.socket_dir.as_ref(), &pgrx_home, port)?;
     let mut command = Command::new(install.bin_dir.join("psql"));
     command
         .arg("-h")
         .arg(socket_dir)
         .arg("-p")
-        .arg(args.port.to_string())
+        .arg(port.to_string())
         .arg("-d")
         .arg(args.db.unwrap_or_else(|| database.to_string()))
         .arg("-v")
@@ -245,9 +255,10 @@ async fn run_refresh(args: ScratchRefreshDebugHelpersArgs) -> Result<()> {
     run_sql(
         &database,
         ScratchSqlArgs {
+            pg: DEFAULT_PG_MAJOR,
             db: Some(database.clone()),
             socket_dir: None,
-            port: SCRATCH_DEFAULT_PORT,
+            port: None,
             raw: false,
             sql: None,
             file: Some(sql_file),
