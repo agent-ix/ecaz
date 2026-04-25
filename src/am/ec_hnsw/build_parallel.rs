@@ -47,6 +47,8 @@ pub(super) enum EcHnswBuildTupleSink {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum EcHnswBuildGraphAssembly {
     SerialLeader,
+    #[allow(dead_code)]
+    ConcurrentDsm,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

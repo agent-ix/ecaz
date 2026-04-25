@@ -1518,6 +1518,32 @@ struct NativeBuildNode {
     neighbor_slots: Vec<Option<usize>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NativeBuildLevels {
+    pub(super) levels: Vec<u8>,
+    pub(super) entry_idx: Option<usize>,
+    pub(super) max_level: u8,
+}
+
+impl NativeBuildLevels {
+    fn from_levels(levels: Vec<u8>) -> Self {
+        let mut entry_idx = None;
+        let mut max_level = 0_u8;
+        for (idx, level) in levels.iter().copied().enumerate() {
+            if entry_idx.is_none() || level > max_level {
+                entry_idx = Some(idx);
+                max_level = level;
+            }
+        }
+
+        Self {
+            levels,
+            entry_idx,
+            max_level,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NativeForwardSelection {
     layer: u8,
@@ -1746,6 +1772,29 @@ fn empty_neighbor_slots(level: u8, m: usize) -> Vec<Option<usize>> {
     vec![None; page::neighbor_slots(level, m as u16)]
 }
 
+pub(super) fn precompute_native_build_levels(state: &BuildState, m_u16: u16) -> NativeBuildLevels {
+    debug_assert_eq!(
+        state.page_size,
+        pg_sys::BLCKSZ as usize,
+        "native build level planning currently assumes BLCKSZ-sized pages",
+    );
+    let seed = state.seed.expect("non-empty build should record seed");
+    let levels = state
+        .heap_tuples
+        .iter()
+        .map(|tuple| {
+            insert::choose_insert_level_for_page_size(
+                m_u16,
+                seed,
+                tuple.heap_tids[0],
+                tuple.code.len(),
+                state.page_size,
+            )
+        })
+        .collect();
+    NativeBuildLevels::from_levels(levels)
+}
+
 #[cfg(any(test, feature = "pg_test"))]
 pub(super) fn build_scored_neighbor_graph(state: &BuildState) -> Vec<Vec<usize>> {
     if state.heap_tuples.len() <= 1 || state.options.m <= 0 {
@@ -1811,6 +1860,18 @@ fn build_native_hnsw_graph(
         pg_sys::BLCKSZ as usize,
         "native serial build currently assumes BLCKSZ-sized pages when planning graph levels",
     );
+    let build_levels = precompute_native_build_levels(state, m_u16);
+    debug_assert_eq!(build_levels.levels.len(), state.heap_tuples.len());
+    debug_assert_eq!(
+        build_levels.entry_idx.is_none(),
+        state.heap_tuples.is_empty()
+    );
+    debug_assert!(
+        build_levels
+            .levels
+            .iter()
+            .all(|level| *level <= build_levels.max_level)
+    );
     let mut nodes = Vec::with_capacity(state.heap_tuples.len());
     let mut entry_idx = None;
     let mut max_level = 0_u8;
@@ -1819,13 +1880,7 @@ fn build_native_hnsw_graph(
         NativeBuildLayerSearchScratch::new(state.heap_tuples.len(), ef_construction, m);
 
     for node_idx in 0..state.heap_tuples.len() {
-        let level = insert::choose_insert_level_for_page_size(
-            m_u16,
-            state.seed.expect("non-empty build should record seed"),
-            state.heap_tuples[node_idx].heap_tids[0],
-            state.heap_tuples[node_idx].code.len(),
-            state.page_size,
-        );
+        let level = build_levels.levels[node_idx];
         let mut node = NativeBuildNode {
             level,
             neighbor_slots: empty_neighbor_slots(level, m),
@@ -3068,6 +3123,24 @@ mod tests {
             vec![1, 2],
             "flattening should preserve first-seen layer order while skipping self-links and duplicates",
         );
+    }
+
+    #[test]
+    fn native_build_levels_selects_first_maximum_level_entry() {
+        let levels = NativeBuildLevels::from_levels(vec![1, 3, 2, 3]);
+
+        assert_eq!(levels.entry_idx, Some(1));
+        assert_eq!(levels.max_level, 3);
+        assert_eq!(levels.levels, vec![1, 3, 2, 3]);
+    }
+
+    #[test]
+    fn native_build_levels_handles_empty_input() {
+        let levels = NativeBuildLevels::from_levels(Vec::new());
+
+        assert_eq!(levels.entry_idx, None);
+        assert_eq!(levels.max_level, 0);
+        assert!(levels.levels.is_empty());
     }
 
     #[test]
