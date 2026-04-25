@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 3 build stats next.
+Status: in progress - Phase 3 populated build smoke tests underway.
 
 Working branch: `task28-ivf`
 
@@ -160,8 +160,14 @@ writes and metadata updates remain future Phase 3 slices.
 Phase 3 bulk-assignment checkpoint: populated builds now assign each collected
 row to its nearest trained centroid, stage centroid/posting/directory tuples in
 an in-memory data-page chain, set metadata dimensions/list heads/live totals,
-and count empty lists. On-disk populated writes remain gated until the
-directory update and WAL-safe physical write path lands.
+and count empty lists. At this checkpoint, on-disk populated writes were still
+gated until the directory update and WAL-safe physical write path landed.
+
+Phase 3 populated-write checkpoint: non-empty builds now flush staged centroid,
+posting, and directory data pages with GenericXLog full-image WAL, then rewrite
+metadata with trained dimensions, resolved `nlists`, head pointers, training
+version, and total live tuple count. Scans over populated IVF indexes still
+return no rows until the Phase 4 routing and posting-list scan path lands.
 
 ### Phase 4 - scan path
 

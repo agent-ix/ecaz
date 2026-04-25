@@ -208,3 +208,21 @@ pub(crate) unsafe fn debug_ec_ivf_metadata(index_oid: pg_sys::Oid) -> (u16, u32,
         metadata.seed,
     )
 }
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_build_metadata(
+    index_oid: pg_sys::Oid,
+) -> (u16, u32, u16, u64, bool, bool) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { super::page::read_metadata_page(index_relation) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    (
+        metadata.dimensions,
+        metadata.nlists,
+        metadata.training_version,
+        metadata.total_live_tuples,
+        metadata.centroid_head != crate::storage::page::ItemPointer::INVALID,
+        metadata.directory_head != crate::storage::page::ItemPointer::INVALID,
+    )
+}

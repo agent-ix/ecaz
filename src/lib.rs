@@ -2098,6 +2098,49 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_non_empty_index_build_writes_staged_pages() {
+        Spi::run("CREATE TABLE ec_ivf_non_empty_build (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_non_empty_build VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.9,0.1]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_non_empty_build_idx ON ec_ivf_non_empty_build USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 3, nprobe = 2, training_sample_rows = 3, seed = 11)",
+        )
+        .expect("non-empty index creation should succeed");
+
+        let index_oid =
+            Spi::get_one::<pg_sys::Oid>("SELECT 'ec_ivf_non_empty_build_idx'::regclass::oid")
+                .expect("SPI query should succeed")
+                .expect("index oid should exist");
+        let (dimensions, nlists, training_version, total_live, has_centroids, has_directory) =
+            unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let index_blocks = Spi::get_one::<i64>(
+            "SELECT (pg_relation_size('ec_ivf_non_empty_build_idx') \
+             / current_setting('block_size')::int)::bigint",
+        )
+        .expect("SPI query should succeed")
+        .expect("relation size should exist");
+
+        assert_eq!(dimensions, 2);
+        assert_eq!(nlists, 3);
+        assert_eq!(training_version, 1);
+        assert_eq!(total_live, 3);
+        assert!(has_centroids);
+        assert!(has_directory);
+        assert!(
+            index_blocks >= 2,
+            "non-empty ec_ivf build should write metadata plus data pages"
+        );
+    }
+
+    #[pg_test]
     fn test_ec_ivf_empty_gettuple_returns_false_after_rescan() {
         Spi::run("CREATE TABLE ec_ivf_empty_scan (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

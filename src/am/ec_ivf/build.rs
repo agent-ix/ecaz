@@ -3,9 +3,12 @@ use std::ptr;
 
 use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
-use super::{options, page, training};
+use super::{options, page, training, P_NEW};
 use crate::quant::prod::ProdQuantizer;
-use crate::storage::page::{DataPageChain, ItemPointer};
+use crate::storage::{
+    page::{DataPageChain, ItemPointer},
+    wal,
+};
 
 const DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 const DEFAULT_KMEANS_ITERATIONS: usize = 8;
@@ -115,29 +118,22 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                 (&mut state as *mut BuildState).cast(),
                 ptr::null_mut(),
             );
-            if state.scanned_tuples != 0 {
+            let index_tuples = if state.scanned_tuples == 0 {
+                0.0
+            } else {
                 let model = state
                     .train_model()
                     .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
-                let sample_count = state.training_sample_count();
                 let plan = state
                     .stage_build_plan(&model)
                     .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
-                pgrx::error!(
-                    "ec_ivf populated index writes are not implemented yet; staged {} heap tuples, {} training samples, {} centroids, {} directory entries, {} posting tuples, {} empty lists, and {} data pages",
-                    plan.total_live_tuples(),
-                    sample_count,
-                    plan.centroid_count(),
-                    plan.directory_count(),
-                    plan.posting_count(),
-                    plan.empty_list_count(),
-                    plan.data_page_count()
-                );
-            }
+                flush_build_plan(index_relation, &plan);
+                plan.posting_count() as f64
+            };
 
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             result.heap_tuples = heap_tuples;
-            result.index_tuples = 0.0;
+            result.index_tuples = index_tuples;
             result.into_pg()
         })
     }
@@ -345,6 +341,65 @@ fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -
         return (requested_sample_rows as usize).min(row_count);
     }
     row_count.min(DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
+}
+
+unsafe fn flush_build_plan(index_relation: pg_sys::Relation, plan: &IvfBuildPlan) {
+    let metadata_nlists = usize::try_from(plan.metadata.nlists).expect("u32 nlists should fit");
+    debug_assert_eq!(plan.centroid_count(), metadata_nlists);
+    debug_assert_eq!(plan.directory_count(), metadata_nlists);
+    debug_assert!(plan.empty_list_count() <= metadata_nlists);
+    debug_assert!(plan.data_page_count() > 0);
+    debug_assert_eq!(plan.total_live_tuples(), plan.posting_count() as u64);
+
+    unsafe { write_data_pages(index_relation, &plan.data_pages) };
+    unsafe { page::initialize_metadata_page(index_relation, plan.metadata) };
+}
+
+unsafe fn write_data_pages(index_relation: pg_sys::Relation, data_pages: &DataPageChain) {
+    for staged_page in data_pages.pages() {
+        let buffer = unsafe {
+            pg_sys::ReadBufferExtended(
+                index_relation,
+                pg_sys::ForkNumber::MAIN_FORKNUM,
+                P_NEW,
+                pg_sys::ReadBufferMode::RBM_ZERO_AND_LOCK,
+                ptr::null_mut(),
+            )
+        };
+        if !unsafe { pg_sys::BufferIsValid(buffer) } {
+            pgrx::error!(
+                "ec_ivf failed to allocate data buffer for block {}",
+                staged_page.block_number()
+            );
+        }
+
+        let page_size = unsafe { pg_sys::BufferGetPageSize(buffer) as usize };
+        let mut wal_txn = unsafe { wal::GenericXLogTxn::start(index_relation) };
+        let page_ptr =
+            unsafe { wal_txn.register_buffer(buffer, pg_sys::GENERIC_XLOG_FULL_IMAGE as i32) };
+        unsafe { pg_sys::PageInit(page_ptr, page_size, 0) };
+
+        for tuple in staged_page.tuples() {
+            let offset = unsafe {
+                pg_sys::PageAddItemExtended(
+                    page_ptr,
+                    tuple.as_ptr().cast_mut().cast(),
+                    tuple.len(),
+                    pg_sys::InvalidOffsetNumber,
+                    0,
+                )
+            };
+            if offset == pg_sys::InvalidOffsetNumber {
+                pgrx::error!(
+                    "ec_ivf failed to write tuple to block {}",
+                    staged_page.block_number()
+                );
+            }
+        }
+
+        unsafe { wal_txn.finish() };
+        unsafe { pg_sys::UnlockReleaseBuffer(buffer) };
+    }
 }
 
 fn list_id_u32(list_id: usize) -> Result<u32, String> {
