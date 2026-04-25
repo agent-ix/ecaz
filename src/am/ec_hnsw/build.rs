@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -1200,6 +1200,64 @@ impl NativeBuildQueryScoreCache {
     }
 }
 
+struct NativeBuildLayerSearchScratch {
+    visited: HashSet<usize>,
+    candidate_points: BinaryHeap<Reverse<NativeBuildLayerSearchCandidate>>,
+    result_points: BinaryHeap<NativeBuildLayerSearchCandidate>,
+    successors: Vec<search::BeamCandidate<usize>>,
+}
+
+impl NativeBuildLayerSearchScratch {
+    fn new(ef_construction: usize, m: usize) -> Self {
+        let capacity = ef_construction.saturating_mul(4).max(m.saturating_mul(2));
+        Self {
+            visited: HashSet::with_capacity(capacity),
+            candidate_points: BinaryHeap::with_capacity(ef_construction),
+            result_points: BinaryHeap::with_capacity(ef_construction.saturating_add(1)),
+            successors: Vec::with_capacity(m.saturating_mul(2)),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.visited.clear();
+        self.candidate_points.clear();
+        self.result_points.clear();
+        self.successors.clear();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NativeBuildLayerSearchCandidate {
+    candidate: search::BeamCandidate<usize>,
+    sequence: u64,
+}
+
+impl NativeBuildLayerSearchCandidate {
+    fn new(candidate: search::BeamCandidate<usize>, sequence: u64) -> Self {
+        Self {
+            candidate,
+            sequence,
+        }
+    }
+}
+
+impl Eq for NativeBuildLayerSearchCandidate {}
+
+impl Ord for NativeBuildLayerSearchCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.candidate
+            .score
+            .total_cmp(&other.candidate.score)
+            .then_with(|| self.sequence.cmp(&other.sequence))
+    }
+}
+
+impl PartialOrd for NativeBuildLayerSearchCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 struct NativeBacklinkTargetScorer<'a> {
     state: &'a BuildState,
     metric: BuildGraphMetric,
@@ -1529,6 +1587,7 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
     let mut entry_idx = None;
     let mut max_level = 0_u8;
     let mut query_score_cache = NativeBuildQueryScoreCache::new(state.heap_tuples.len());
+    let mut layer_search_scratch = NativeBuildLayerSearchScratch::new(ef_construction, m);
 
     for node_idx in 0..state.heap_tuples.len() {
         let level = insert::choose_insert_level_for_page_size(
@@ -1559,13 +1618,16 @@ fn build_native_hnsw_graph(state: &BuildState, metric: BuildGraphMetric) -> Vec<
                 max_level,
                 m,
                 ef_construction,
+                &mut layer_search_scratch,
             );
-            let layer0_candidates = graph::search_layer0_result_candidates_with_successors(
+            let layer0_candidates = search_native_layer_result_candidates(
                 ef_construction,
                 layer0_seeds,
-                |source_idx| {
-                    load_native_successor_candidates(&nodes, &mut query_scorer, source_idx, 0, m)
-                },
+                &nodes,
+                &mut query_scorer,
+                0,
+                m,
+                &mut layer_search_scratch,
             );
             write_native_layer_forward_candidates(
                 &mut node.neighbor_slots,
@@ -1610,6 +1672,7 @@ fn populate_native_upper_layer_forward_slots(
     entry_level: u8,
     m: usize,
     ef_construction: usize,
+    scratch: &mut NativeBuildLayerSearchScratch,
 ) -> (
     Vec<NativeForwardSelection>,
     Vec<search::BeamCandidate<usize>>,
@@ -1626,12 +1689,14 @@ fn populate_native_upper_layer_forward_slots(
     // out of scope for this task.
     let mut seeds = vec![entry_candidate];
     for current_layer in (1..=entry_level).rev() {
-        seeds = graph::search_layer0_result_candidates_with_successors(
+        seeds = search_native_layer_result_candidates(
             ef_construction,
             seeds,
-            |source_idx| {
-                load_native_successor_candidates(nodes, query_scorer, source_idx, current_layer, m)
-            },
+            nodes,
+            query_scorer,
+            current_layer,
+            m,
+            scratch,
         );
         if current_layer <= insert_level {
             write_native_layer_forward_candidates(
@@ -1650,31 +1715,113 @@ fn populate_native_upper_layer_forward_slots(
     (selections, seeds)
 }
 
-fn load_native_successor_candidates(
+fn search_native_layer_result_candidates(
+    ef_search: usize,
+    seeds: impl IntoIterator<Item = search::BeamCandidate<usize>>,
+    nodes: &[NativeBuildNode],
+    query_scorer: &mut NativeBuildQueryScorer<'_>,
+    layer: u8,
+    m: usize,
+    scratch: &mut NativeBuildLayerSearchScratch,
+) -> Vec<search::BeamCandidate<usize>> {
+    if ef_search == 0 {
+        return Vec::new();
+    }
+
+    scratch.clear();
+    let mut sequence = 0_u64;
+
+    for seed in seeds {
+        if !scratch.visited.insert(seed.node) {
+            continue;
+        }
+
+        let queued = NativeBuildLayerSearchCandidate::new(seed, sequence);
+        scratch.candidate_points.push(Reverse(queued));
+        scratch.result_points.push(queued);
+        sequence += 1;
+    }
+
+    while let Some(Reverse(candidate)) = scratch.candidate_points.pop() {
+        let Some(worst_result) = scratch.result_points.peek() else {
+            break;
+        };
+
+        if scratch.result_points.len() >= ef_search
+            && candidate.candidate.score > worst_result.candidate.score
+        {
+            break;
+        }
+
+        load_native_successor_candidates_into(
+            nodes,
+            query_scorer,
+            candidate.candidate.node,
+            layer,
+            m,
+            &mut scratch.successors,
+        );
+        for idx in 0..scratch.successors.len() {
+            let neighbor = scratch.successors[idx];
+            if !scratch.visited.insert(neighbor.node) {
+                continue;
+            }
+
+            let should_enqueue = scratch.result_points.len() < ef_search
+                || scratch
+                    .result_points
+                    .peek()
+                    .map(|worst| neighbor.score < worst.candidate.score)
+                    .unwrap_or(true);
+            if !should_enqueue {
+                continue;
+            }
+
+            let queued = NativeBuildLayerSearchCandidate::new(neighbor, sequence);
+            sequence += 1;
+            scratch.candidate_points.push(Reverse(queued));
+            scratch.result_points.push(queued);
+            if scratch.result_points.len() > ef_search {
+                scratch.result_points.pop();
+            }
+        }
+    }
+
+    let mut results = Vec::with_capacity(scratch.result_points.len());
+    while let Some(queued) = scratch.result_points.pop() {
+        results.push(queued.candidate);
+    }
+    results.sort_by(|left, right| left.score.total_cmp(&right.score));
+    results
+}
+
+fn load_native_successor_candidates_into(
     nodes: &[NativeBuildNode],
     query_scorer: &mut NativeBuildQueryScorer<'_>,
     source_idx: usize,
     layer: u8,
     m: usize,
-) -> Vec<search::BeamCandidate<usize>> {
+    out: &mut Vec<search::BeamCandidate<usize>>,
+) {
+    out.clear();
     let Some((start, end)) = graph::layer_slot_bounds(nodes[source_idx].level, m, layer) else {
-        return Vec::new();
+        return;
     };
     debug_assert!(
         end <= nodes[source_idx].neighbor_slots.len(),
         "layer slot bounds should stay within the persisted neighbor slot slice",
     );
 
-    nodes[source_idx].neighbor_slots[start..end]
-        .iter()
-        .filter_map(|neighbor_idx| {
-            let neighbor_idx = (*neighbor_idx)?;
-            Some(search::BeamCandidate::new(
-                neighbor_idx,
-                query_scorer.score(neighbor_idx),
-            ))
-        })
-        .collect()
+    out.reserve(end.saturating_sub(start));
+    for neighbor_idx in &nodes[source_idx].neighbor_slots[start..end] {
+        let Some(neighbor_idx) = *neighbor_idx else {
+            continue;
+        };
+        out.push(search::BeamCandidate::new(
+            neighbor_idx,
+            query_scorer.score(neighbor_idx),
+        ));
+    }
 }
 
 fn write_native_layer_forward_candidates(
