@@ -2784,6 +2784,74 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_empty_vacuum_callbacks_report_noop_stats() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_empty (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "CREATE INDEX ec_ivf_vacuum_empty_idx ON ec_ivf_vacuum_empty USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 4, nprobe = 2)",
+        )
+        .expect("index creation should succeed");
+
+        let index_oid = ec_ivf_index_oid("ec_ivf_vacuum_empty_idx");
+        let index_blocks = ec_ivf_index_blocks("ec_ivf_vacuum_empty_idx");
+        let stats = unsafe { am::debug_ec_ivf_vacuum_stats(index_oid) };
+
+        assert_eq!(stats.num_pages as i64, index_blocks);
+        assert!(
+            !stats.estimated_count,
+            "ec_ivf vacuum stats should report exact metadata counts"
+        );
+        assert_eq!(stats.num_index_tuples, 0.0);
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.pages_newly_deleted, 0);
+        assert_eq!(stats.pages_deleted, 0);
+        assert_eq!(stats.pages_free, 0);
+    }
+
+    #[pg_test]
+    fn test_ec_ivf_vacuum_callbacks_keep_live_count_noop() {
+        Spi::run("CREATE TABLE ec_ivf_vacuum_noop (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_vacuum_noop VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_vacuum_noop",
+            "ec_ivf_vacuum_noop_idx",
+            2,
+            2,
+            2,
+        );
+        Spi::run("DELETE FROM ec_ivf_vacuum_noop WHERE id = 1").expect("delete should succeed");
+
+        let index_blocks = ec_ivf_index_blocks("ec_ivf_vacuum_noop_idx");
+        let stats = unsafe { am::debug_ec_ivf_vacuum_stats(index_oid) };
+        let (_, _, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+
+        assert_eq!(stats.num_pages as i64, index_blocks);
+        assert!(
+            !stats.estimated_count,
+            "ec_ivf vacuum stats should report exact metadata counts"
+        );
+        assert_eq!(stats.num_index_tuples, 2.0);
+        assert_eq!(stats.tuples_removed, 0.0);
+        assert_eq!(stats.pages_newly_deleted, 0);
+        assert_eq!(stats.pages_deleted, 0);
+        assert_eq!(stats.pages_free, 0);
+        assert_eq!(directory_live, 2);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 0);
+        assert_eq!(total_live, 2);
+    }
+
+    #[pg_test]
     fn test_fr020_empty_index_remains_planner_gated() {
         Spi::run("CREATE TABLE ec_hnsw_empty_cost (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

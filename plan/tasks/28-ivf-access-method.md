@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 concurrency coverage next.
+Status: in progress - Phase 6 dead-tuple cleanup next.
 
 Working branch: `task28-ivf`
 
@@ -274,6 +274,8 @@ row. Concurrent insert coverage remains open.
 
 ### Phase 6 - vacuum and drift handling
 
+- [x] **No-op callback baseline.** `ambulkdelete` and `amvacuumcleanup`
+  return stable stats before deletion cleanup lands.
 - [ ] **Dead tuple cleanup.** Remove dead heap TIDs from posting lists and
   mark empty candidate tuples without changing centroid assignments.
 - [ ] **Directory repair.** Keep list counts, head/tail refs, and empty-list
@@ -283,6 +285,11 @@ row. Concurrent insert coverage remains open.
   REINDEX threshold.
 - [ ] **Vacuum safety tests.** Exercise repeated vacuum, insert plus vacuum,
   scan plus vacuum, and post-vacuum recall sanity.
+
+Phase 6 no-op vacuum checkpoint: `ambulkdelete` and `amvacuumcleanup` no
+longer fail for IVF indexes. They return metadata-backed tuple counts and
+relation block counts without mutating posting lists. Dead tuple cleanup,
+directory repair, and drift snapshots remain open.
 
 ### Phase 7 - planner, EXPLAIN, and admin surfaces
 

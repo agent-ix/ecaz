@@ -42,3 +42,6 @@ pub(crate) use self::scan::{
     debug_ec_ivf_rerank_mode,
     debug_ec_ivf_rescan_query_prep,
 };
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::vacuum::debug_ec_ivf_vacuum_stats;
