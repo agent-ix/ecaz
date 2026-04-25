@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
@@ -34,6 +35,75 @@ struct EcIvfCentroidScore {
 struct EcIvfScoredCandidate {
     heap_tid: ItemPointer,
     score: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CandidateHeapEntry {
+    candidate: EcIvfScoredCandidate,
+}
+
+impl PartialEq for CandidateHeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        candidate_cmp(&self.candidate, &other.candidate) == Ordering::Equal
+    }
+}
+
+impl Eq for CandidateHeapEntry {}
+
+impl PartialOrd for CandidateHeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CandidateHeapEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        candidate_cmp(&self.candidate, &other.candidate)
+    }
+}
+
+#[derive(Debug)]
+struct CandidateTopK {
+    limit: usize,
+    retained: BinaryHeap<CandidateHeapEntry>,
+}
+
+impl CandidateTopK {
+    fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            retained: BinaryHeap::with_capacity(limit),
+        }
+    }
+
+    fn push(&mut self, candidate: EcIvfScoredCandidate) {
+        if self.limit == 0 {
+            return;
+        }
+        let entry = CandidateHeapEntry { candidate };
+        if self.retained.len() < self.limit {
+            self.retained.push(entry);
+            return;
+        }
+        if self
+            .retained
+            .peek()
+            .is_some_and(|worst| entry < *worst)
+        {
+            self.retained.pop();
+            self.retained.push(entry);
+        }
+    }
+
+    fn into_sorted_candidates(self) -> Vec<EcIvfScoredCandidate> {
+        let mut candidates = self
+            .retained
+            .into_iter()
+            .map(|entry| entry.candidate)
+            .collect::<Vec<_>>();
+        candidates.sort_by(candidate_cmp);
+        candidates
+    }
 }
 
 pub(super) unsafe extern "C-unwind" fn ec_ivf_ambeginscan(
@@ -463,6 +533,13 @@ fn inner_product(left: &[f32], right: &[f32]) -> f32 {
         .sum()
 }
 
+fn candidate_cmp(left: &EcIvfScoredCandidate, right: &EcIvfScoredCandidate) -> Ordering {
+    left.score
+        .total_cmp(&right.score)
+        .then_with(|| left.heap_tid.block_number.cmp(&right.heap_tid.block_number))
+        .then_with(|| left.heap_tid.offset_number.cmp(&right.heap_tid.offset_number))
+}
+
 fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
     let mut ranked = scores.to_vec();
     ranked.sort_by(|left, right| {
@@ -498,9 +575,9 @@ unsafe fn materialize_probe_candidates(
         crate::DEFAULT_QUANT_BITS,
         crate::DEFAULT_QUANT_SEED,
     );
+    let candidate_bound = selected_list_live_count_bound(&directories, selected_lists)?;
     let payload_len = crate::payload_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
-    let mut seen_heap_tids = HashSet::new();
-    let mut candidates = Vec::new();
+    let mut best_by_heap_tid = HashMap::new();
     for list_id in selected_lists {
         let directory = directories
             .get(*list_id as usize)
@@ -521,22 +598,42 @@ unsafe fn materialize_probe_candidates(
             let score =
                 -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
             for heap_tid in posting.heaptids {
-                if seen_heap_tids.insert(heap_tid) {
-                    candidates.push(EcIvfScoredCandidate { heap_tid, score });
-                }
+                let candidate = EcIvfScoredCandidate { heap_tid, score };
+                best_by_heap_tid
+                    .entry(heap_tid)
+                    .and_modify(|existing| {
+                        if candidate_cmp(&candidate, existing) == Ordering::Less {
+                            *existing = candidate;
+                        }
+                    })
+                    .or_insert(candidate);
             }
         }
     }
 
-    candidates.sort_by(|left, right| {
-        left.score.total_cmp(&right.score).then_with(|| {
-            left.heap_tid
-                .block_number
-                .cmp(&right.heap_tid.block_number)
-                .then_with(|| left.heap_tid.offset_number.cmp(&right.heap_tid.offset_number))
-        })
-    });
-    Ok(candidates)
+    let mut top_k = CandidateTopK::new(candidate_bound);
+    for candidate in best_by_heap_tid.into_values() {
+        top_k.push(candidate);
+    }
+    Ok(top_k.into_sorted_candidates())
+}
+
+fn selected_list_live_count_bound(
+    directories: &[super::page::IvfListDirectoryTuple],
+    selected_lists: &[u32],
+) -> Result<usize, String> {
+    let mut total = 0_usize;
+    for list_id in selected_lists {
+        let directory = directories
+            .get(*list_id as usize)
+            .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        let live_count = usize::try_from(directory.live_count)
+            .map_err(|_| format!("ec_ivf list {list_id} live count exceeds usize"))?;
+        total = total
+            .checked_add(live_count)
+            .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
+    }
+    Ok(total)
 }
 
 unsafe fn load_directory_entries(
@@ -878,4 +975,48 @@ pub(crate) unsafe fn debug_ec_ivf_directory_summary(
         dead_sum,
         inserted_sum,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CandidateTopK, EcIvfScoredCandidate};
+    use crate::storage::page::ItemPointer;
+
+    fn candidate(block_number: u32, offset_number: u16, score: f32) -> EcIvfScoredCandidate {
+        EcIvfScoredCandidate {
+            heap_tid: ItemPointer {
+                block_number,
+                offset_number,
+            },
+            score,
+        }
+    }
+
+    #[test]
+    fn candidate_top_k_keeps_best_scores_in_output_order() {
+        let mut top_k = CandidateTopK::new(2);
+        top_k.push(candidate(1, 1, 3.0));
+        top_k.push(candidate(1, 2, 1.0));
+        top_k.push(candidate(1, 3, 2.0));
+
+        let retained = top_k.into_sorted_candidates();
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].heap_tid.offset_number, 2);
+        assert_eq!(retained[0].score, 1.0);
+        assert_eq!(retained[1].heap_tid.offset_number, 3);
+        assert_eq!(retained[1].score, 2.0);
+    }
+
+    #[test]
+    fn candidate_top_k_uses_heap_tid_as_score_tiebreaker() {
+        let mut top_k = CandidateTopK::new(2);
+        top_k.push(candidate(1, 3, 1.0));
+        top_k.push(candidate(1, 1, 1.0));
+        top_k.push(candidate(1, 2, 1.0));
+
+        let retained = top_k.into_sorted_candidates();
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0].heap_tid.offset_number, 1);
+        assert_eq!(retained[1].heap_tid.offset_number, 2);
+    }
 }

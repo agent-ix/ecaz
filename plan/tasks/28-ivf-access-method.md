@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 4 bounded top-k/rerank next.
+Status: in progress - Phase 4 rerank mode next.
 
 Working branch: `task28-ivf`
 
@@ -185,7 +185,7 @@ persisted build shape because populated scan routing starts in Phase 4.
 - [x] **Query prep.** `amrescan` validates the ORDER BY query, caches the
   prepared scorer, scores all centroids, and stores the selected `nprobe`
   list IDs.
-- [ ] **Posting-list scan.** Read selected lists sequentially, score
+- [x] **Posting-list scan.** Read selected lists sequentially, score
   candidates, deduplicate duplicate heap TIDs, and maintain a top-k heap.
 - [x] **Result emission.** Reuse the ordered tuple production lifecycle:
   forward-only scan, order-by score output, exhaustion clearing, and rescan
@@ -213,6 +213,12 @@ score-ordered IVF candidates, sets `xs_heaptid`, publishes the ORDER BY score,
 clears the score slot on exhaustion, rejects backward scans, and resets through
 the existing `amrescan` state replacement path. The remaining posting-list item
 is still open until candidate materialization becomes bounded top-k state.
+
+Phase 4 bounded-candidate checkpoint: posting-list materialization now
+deduplicates heap TIDs by keeping each heap row's best score, feeds candidates
+through a bounded top-k heap, and emits the retained candidates in deterministic
+ORDER BY score / heap TID order. The bound currently resolves to the selected
+lists' live tuple count because PostgreSQL does not pass a LIMIT to `amrescan`.
 
 ### Phase 5 - live insert
 
