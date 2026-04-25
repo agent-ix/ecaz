@@ -1359,6 +1359,26 @@ fn sync_and_publish_parallel_scan_worker_slot_snapshot(opaque: &mut TqScanOpaque
     publish_parallel_scan_worker_slot_snapshot(opaque);
 }
 
+fn publish_parallel_visible_owner_lookahead_for_contributor_diagnostic(opaque: &mut TqScanOpaque) {
+    if !parallel_scan_contributor_diagnostic_enabled()
+        || opaque.parallel_scan_state.is_null()
+        || opaque.parallel_scan_worker_slot_index == INVALID_PARALLEL_SCAN_WORKER_SLOT
+        || opaque.parallel_local_only_output_active
+    {
+        return;
+    }
+
+    let active = active_result_state_ref(opaque);
+    if !active.current().has_element() || active.pending_count() == 0 {
+        return;
+    }
+
+    opaque
+        .explain_counters
+        .record_parallel_visible_owner_lookahead_publish();
+    sync_and_publish_parallel_scan_worker_slot_snapshot(opaque);
+}
+
 fn resolve_bootstrap_frontier_limit(
     tuning: super::options::ScanTuning,
     parallel_worker_slot_count: u32,
@@ -6325,10 +6345,7 @@ unsafe fn produce_next_scan_heap_tid(
         if opaque.execution_phase.is_graph_traversal()
             && !graph_traversal_cursor(opaque).has_prefetched_output()
         {
-            let opaque_ptr = opaque as *mut TqScanOpaque;
-            unsafe {
-                graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
-            }
+            unsafe { refresh_graph_traversal_lookahead_after_visible_emit(index_relation, opaque) };
         }
         return true;
     }
@@ -6356,6 +6373,24 @@ unsafe fn produce_next_scan_heap_tid(
     }
 
     false
+}
+
+unsafe fn refresh_graph_traversal_lookahead_after_visible_emit(
+    index_relation: pg_sys::Relation,
+    opaque: &mut TqScanOpaque,
+) -> bool {
+    if !opaque.execution_phase.is_graph_traversal() {
+        return false;
+    }
+
+    let opaque_ptr = opaque as *mut TqScanOpaque;
+    let refreshed = unsafe {
+        graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr)
+    };
+    if refreshed {
+        publish_parallel_visible_owner_lookahead_for_contributor_diagnostic(opaque);
+    }
+    refreshed
 }
 
 fn clear_scan_candidate_state(opaque: &mut TqScanOpaque) {
@@ -7542,10 +7577,11 @@ unsafe fn produce_next_graph_traversal_heap_tid(
                 emit_scan_output(scan, opaque, output);
                 opaque.explain_counters.record_heap_tid_returned();
                 if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-                    let opaque_ptr = opaque as *mut TqScanOpaque;
                     unsafe {
-                        graph_traversal_cursor(opaque)
-                            .ensure_prefetched_output(index_relation, opaque_ptr);
+                        refresh_graph_traversal_lookahead_after_visible_emit(
+                            index_relation,
+                            opaque,
+                        );
                     }
                 }
                 return true;
@@ -7601,10 +7637,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-                let opaque_ptr = opaque as *mut TqScanOpaque;
                 unsafe {
-                    graph_traversal_cursor(opaque)
-                        .ensure_prefetched_output(index_relation, opaque_ptr);
+                    refresh_graph_traversal_lookahead_after_visible_emit(index_relation, opaque);
                 }
             }
             return true;
@@ -7630,10 +7664,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
             emit_scan_output(scan, opaque, output);
             opaque.explain_counters.record_heap_tid_returned();
             if graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-                let opaque_ptr = opaque as *mut TqScanOpaque;
                 unsafe {
-                    graph_traversal_cursor(opaque)
-                        .ensure_prefetched_output(index_relation, opaque_ptr);
+                    refresh_graph_traversal_lookahead_after_visible_emit(index_relation, opaque);
                 }
             }
             return true;
@@ -7733,9 +7765,8 @@ unsafe fn produce_next_graph_traversal_heap_tid(
         opaque.explain_counters.record_heap_tid_returned();
     }
     if emitted && graph_traversal_cursor(opaque).needs_prefetch_refresh() {
-        let opaque_ptr = opaque as *mut TqScanOpaque;
         unsafe {
-            graph_traversal_cursor(opaque).ensure_prefetched_output(index_relation, opaque_ptr);
+            refresh_graph_traversal_lookahead_after_visible_emit(index_relation, opaque);
         }
     }
     emitted
@@ -9001,6 +9032,63 @@ mod tests {
         assert!(
             non_emitting_parallel_backend_should_contribute(&second),
             "a non-elected backend should contribute hidden output when the diagnostic env is enabled"
+        );
+    }
+
+    #[test]
+    fn visible_emitter_lookahead_publish_exposes_prefetched_owner_for_contributor_diagnostic() {
+        let _lock = env_var_test_lock();
+        let _multi_emitter_env = ScopedEnvVar::remove(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV);
+        let _contributor_env = ScopedEnvVar::set(PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV, "1");
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut opaque = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut scan_desc, &mut opaque);
+        assert!(
+            parallel_scan_backend_may_emit_tuples(&opaque),
+            "the first attached backend should own visible tuple emission"
+        );
+        opaque
+            .result_state
+            .materialize_from_parts(tid(42, 1), -2.5, &[tid(100, 1)]);
+
+        publish_parallel_visible_owner_lookahead_for_contributor_diagnostic(&mut opaque);
+
+        assert_eq!(
+            opaque
+                .explain_counters
+                .stats_parallel_visible_owner_lookahead_publishes,
+            1,
+            "lookahead publication should be visible in the elected emitter's explain counters"
+        );
+        let published = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_coordinator_result_slot_snapshot(
+                opaque.parallel_scan_state,
+                opaque.parallel_scan_worker_slot_index,
+            )
+        }
+        .expect("visible owner slot should read back");
+        assert_eq!(
+            published.runtime.element_tid,
+            parallel_item_pointer(tid(42, 1)),
+            "lookahead should publish the prefetched owner element"
+        );
+        assert_eq!(published.runtime.score, -2.5);
+        assert_eq!(published.runtime.pending_count, 1);
+        assert!(
+            unsafe {
+                crate::am::ec_hnsw::parallel::read_parallel_scan_hidden_local_only_result_slot_snapshot(
+                    opaque.parallel_scan_state,
+                    opaque.parallel_scan_worker_slot_index,
+                )
+            }
+            .expect("hidden local-only read should succeed")
+            .is_none(),
+            "visible emitter lookahead must publish as the visible owner, not as hidden local-only output"
         );
     }
 
