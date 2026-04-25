@@ -2652,6 +2652,54 @@ mod tests {
     }
 
     #[pg_test]
+    fn test_ec_ivf_insert_reuses_same_list_tail_page() {
+        Spi::run(
+            "CREATE TABLE ec_ivf_same_list_live_insert (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_same_list_live_insert VALUES
+             (0, '[1.0,0.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_same_list_live_insert",
+            "ec_ivf_same_list_live_insert_idx",
+            1,
+            1,
+            1,
+        );
+        let blocks_before = ec_ivf_index_blocks("ec_ivf_same_list_live_insert_idx");
+
+        Spi::run(
+            "INSERT INTO ec_ivf_same_list_live_insert VALUES
+             (1, '[1.0,0.1]'::ecvector),
+             (2, '[1.0,0.2]'::ecvector)",
+        )
+        .expect("same-list live inserts should succeed");
+
+        let blocks_after = ec_ivf_index_blocks("ec_ivf_same_list_live_insert_idx");
+        let (summary_nlists, empty_lists, directory_live, directory_dead, inserted_since_build) =
+            unsafe { am::debug_ec_ivf_directory_summary(index_oid) };
+        let (_, _, _, total_live, _, _) = unsafe { am::debug_ec_ivf_build_metadata(index_oid) };
+        let ctid_to_id = ctid_id_map("ec_ivf_same_list_live_insert");
+        let ivf_ids = ivf_debug_output_ids(index_oid, vec![1.0, 0.2], &ctid_to_id, 3);
+        let unique_ivf_ids = ivf_ids.iter().copied().collect::<HashSet<_>>();
+
+        assert_eq!(blocks_after, blocks_before);
+        assert_eq!(summary_nlists, 1);
+        assert_eq!(empty_lists, 0);
+        assert_eq!(directory_live, 3);
+        assert_eq!(directory_dead, 0);
+        assert_eq!(inserted_since_build, 2);
+        assert_eq!(total_live, 3);
+        assert_eq!(ivf_ids.len(), 3);
+        assert_eq!(unique_ivf_ids.len(), ivf_ids.len());
+        assert!(ivf_ids.contains(&1));
+        assert!(ivf_ids.contains(&2));
+    }
+
+    #[pg_test]
     fn test_ec_ivf_insert_bootstraps_empty_index() {
         Spi::run("CREATE TABLE ec_ivf_empty_live_insert (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

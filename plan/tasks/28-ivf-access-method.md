@@ -241,8 +241,10 @@ packet-local artifacts.
   drift counters.
 - [x] **Empty-index first insert.** Bootstrap centroids, directory entries,
   and first posting when a row is inserted into an empty IVF index.
+- [x] **Same-list tail append.** Cover repeated inserts into one list reusing
+  the current posting tail page and advancing drift counters.
 - [ ] **Concurrency coverage.** Cover concurrent inserts into different
-  lists, same-list tail append, and duplicate heap TID rejection.
+  lists and duplicate heap TID rejection.
 
 Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
 for the existing `ecvector`/`tqvector` tuple decode paths. Inserts validate
@@ -257,6 +259,11 @@ IVF index now stages a single-row build plan from the inserted tuple, preserving
 the persisted reloptions while writing centroids, directory entries, posting
 data, and trained metadata. Duplicate heap-TID handling and concurrent insert
 coverage remain open.
+
+Phase 5 same-list append checkpoint: PG coverage now exercises sequential
+inserts into a single-list IVF index, verifies the tail page is reused for small
+postings, confirms per-list and metadata live counts advance, and checks both
+live-inserted rows remain reachable through scan.
 
 ### Phase 6 - vacuum and drift handling
 
