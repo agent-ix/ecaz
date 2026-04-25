@@ -43,6 +43,10 @@ fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amvacuumcleanup = Some(vacuum::ec_ivf_amvacuumcleanup);
     amroutine.amcanreturn = None;
     amroutine.amcostestimate = Some(cost::ec_ivf_amcostestimate);
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amgettreeheight = Some(cost::ec_ivf_amgettreeheight);
+    }
     amroutine.amoptions = Some(options::ec_ivf_amoptions);
     amroutine.amproperty = None;
     amroutine.ambuildphasename = None;
@@ -55,6 +59,11 @@ fn build_ec_ivf_routine() -> PgBox<pg_sys::IndexAmRoutine, AllocatedByRust> {
     amroutine.amendscan = Some(scan::ec_ivf_amendscan);
     amroutine.ammarkpos = None;
     amroutine.amrestrpos = None;
+    #[cfg(feature = "pg18")]
+    {
+        amroutine.amtranslatestrategy = Some(cost::ec_ivf_amtranslatestrategy);
+        amroutine.amtranslatecmptype = Some(cost::ec_ivf_amtranslatecmptype);
+    }
 
     amroutine
 }

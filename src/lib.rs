@@ -826,6 +826,11 @@ fn ec_ivf_index_cost_snapshot(
         name!(session_nprobe, Option<i32>),
         name!(effective_nprobe, i64),
         name!(effective_nprobe_source, String),
+        name!(resolved_tree_height, f64),
+        name!(tree_height_source, String),
+        name!(pg18_tree_height_callback_ready, bool),
+        name!(ordering_compare_type, String),
+        name!(pg18_strategy_translation_ready, bool),
         name!(average_list_live_count, f64),
         name!(estimated_centroid_scores, i64),
         name!(estimated_selected_lists, i64),
@@ -863,6 +868,11 @@ fn ec_ivf_index_cost_snapshot(
             .map(|value| i32::try_from(value).expect("session nprobe should fit in i32")),
         i64::from(snapshot.effective_nprobe),
         snapshot.effective_nprobe_source.to_owned(),
+        snapshot.resolved_tree_height,
+        snapshot.tree_height_source.to_owned(),
+        snapshot.pg18_tree_height_callback_ready,
+        snapshot.ordering_compare_type.to_owned(),
+        snapshot.pg18_strategy_translation_ready,
         snapshot.average_list_live_count,
         i64::from(snapshot.estimated_centroid_scores),
         i64::from(snapshot.estimated_selected_lists),
@@ -3599,6 +3609,51 @@ mod tests {
             .expect("snapshot query should succeed")
             .expect("effective nprobe source should be non-null"),
             "session"
+        );
+        assert_eq!(
+            Spi::get_one::<f64>(
+                "SELECT resolved_tree_height FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("resolved tree height should be non-null"),
+            0.0,
+            "IVF reports a partitioned scan surface, not a tree height"
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT tree_height_source FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("tree height source should be non-null"),
+            if cfg!(feature = "pg18") {
+                "amgettreeheight_callback"
+            } else {
+                "partitioned_ivf"
+            }
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pg18_tree_height_callback_ready FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("tree height readiness should be non-null"),
+            cfg!(feature = "pg18")
+        );
+        assert_eq!(
+            Spi::get_one::<String>(
+                "SELECT ordering_compare_type FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("ordering compare type should be non-null"),
+            "COMPARE_LT"
+        );
+        assert_eq!(
+            Spi::get_one::<bool>(
+                "SELECT pg18_strategy_translation_ready FROM ec_ivf_index_cost_snapshot('ec_ivf_cost_snapshot_idx'::regclass)",
+            )
+            .expect("snapshot query should succeed")
+            .expect("strategy translation readiness should be non-null"),
+            cfg!(feature = "pg18")
         );
         assert_eq!(
             Spi::get_one::<i64>(

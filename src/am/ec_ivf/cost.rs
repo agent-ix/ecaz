@@ -4,10 +4,12 @@ use pgrx::pg_sys;
 
 use super::{options, page};
 use crate::am::common::cost::{
-    current_planner_cost_constants, PlannerCostConstants, PlannerCostEstimate,
+    current_planner_cost_constants, strategy_translation_snapshot, PlannerCostConstants,
+    PlannerCostEstimate, PlannerTreeHeightInput, StrategyTranslationSnapshot,
 };
 
 const IVF_SCORING_DIMENSION_SCALE: f64 = 0.75;
+const IVF_TREE_HEIGHT: i32 = 0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct IndexCostSnapshot {
@@ -19,6 +21,11 @@ pub(crate) struct IndexCostSnapshot {
     pub session_nprobe: Option<u32>,
     pub effective_nprobe: u32,
     pub effective_nprobe_source: &'static str,
+    pub resolved_tree_height: f64,
+    pub tree_height_source: &'static str,
+    pub pg18_tree_height_callback_ready: bool,
+    pub ordering_compare_type: &'static str,
+    pub pg18_strategy_translation_ready: bool,
     pub average_list_live_count: f64,
     pub estimated_centroid_scores: u32,
     pub estimated_selected_lists: u32,
@@ -67,6 +74,85 @@ pub(crate) unsafe extern "C-unwind" fn ec_ivf_amcostestimate(
     }
 }
 
+pub(crate) fn ivf_tree_height_callback_value() -> i32 {
+    IVF_TREE_HEIGHT
+}
+
+pub(crate) fn resolved_ivf_tree_height_input() -> PlannerTreeHeightInput {
+    PlannerTreeHeightInput {
+        tree_height: f64::from(ivf_tree_height_callback_value()),
+        source: if cfg!(feature = "pg18") {
+            "amgettreeheight_callback"
+        } else {
+            "partitioned_ivf"
+        },
+        pg18_callback_ready: cfg!(feature = "pg18"),
+    }
+}
+
+pub(crate) fn ivf_strategy_translation_snapshot() -> StrategyTranslationSnapshot {
+    strategy_translation_snapshot()
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_ivf_amgettreeheight(_rel: pg_sys::Relation) -> i32 {
+    unsafe { pgrx::pgrx_extern_c_guard(|| ivf_tree_height_callback_value()) }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatestrategy(
+    strategy: pg_sys::StrategyNumber,
+    _opfamily: pg_sys::Oid,
+) -> pg_sys::CompareType::Type {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            match crate::am::common::cost::amtranslatestrategy_callback(i32::from(strategy)) {
+                crate::am::common::cost::PlannerCompareType::Invalid => {
+                    pg_sys::CompareType::COMPARE_INVALID
+                }
+                crate::am::common::cost::PlannerCompareType::Lt => pg_sys::CompareType::COMPARE_LT,
+                crate::am::common::cost::PlannerCompareType::Le => pg_sys::CompareType::COMPARE_LE,
+                crate::am::common::cost::PlannerCompareType::Eq => pg_sys::CompareType::COMPARE_EQ,
+                crate::am::common::cost::PlannerCompareType::Ge => pg_sys::CompareType::COMPARE_GE,
+                crate::am::common::cost::PlannerCompareType::Gt => pg_sys::CompareType::COMPARE_GT,
+                crate::am::common::cost::PlannerCompareType::Ne => pg_sys::CompareType::COMPARE_NE,
+                crate::am::common::cost::PlannerCompareType::Overlap => {
+                    pg_sys::CompareType::COMPARE_OVERLAP
+                }
+                crate::am::common::cost::PlannerCompareType::ContainedBy => {
+                    pg_sys::CompareType::COMPARE_CONTAINED_BY
+                }
+            }
+        })
+    }
+}
+
+#[cfg(feature = "pg18")]
+pub(crate) unsafe extern "C-unwind" fn ec_ivf_amtranslatecmptype(
+    compare_type: pg_sys::CompareType::Type,
+    _opfamily: pg_sys::Oid,
+) -> pg_sys::StrategyNumber {
+    unsafe {
+        pgrx::pgrx_extern_c_guard(|| {
+            crate::am::common::cost::amtranslatecmptype_callback(match compare_type {
+                pg_sys::CompareType::COMPARE_LT => crate::am::common::cost::PlannerCompareType::Lt,
+                pg_sys::CompareType::COMPARE_LE => crate::am::common::cost::PlannerCompareType::Le,
+                pg_sys::CompareType::COMPARE_EQ => crate::am::common::cost::PlannerCompareType::Eq,
+                pg_sys::CompareType::COMPARE_GE => crate::am::common::cost::PlannerCompareType::Ge,
+                pg_sys::CompareType::COMPARE_GT => crate::am::common::cost::PlannerCompareType::Gt,
+                pg_sys::CompareType::COMPARE_NE => crate::am::common::cost::PlannerCompareType::Ne,
+                pg_sys::CompareType::COMPARE_OVERLAP => {
+                    crate::am::common::cost::PlannerCompareType::Overlap
+                }
+                pg_sys::CompareType::COMPARE_CONTAINED_BY => {
+                    crate::am::common::cost::PlannerCompareType::ContainedBy
+                }
+                _ => crate::am::common::cost::PlannerCompareType::Invalid,
+            }) as pg_sys::StrategyNumber
+        })
+    }
+}
+
 pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> IndexCostSnapshot {
     let metadata = unsafe { page::read_metadata_page(index_relation) };
     let block_count = unsafe {
@@ -76,19 +162,25 @@ pub(crate) unsafe fn index_cost_snapshot(index_relation: pg_sys::Relation) -> In
     let reltuples = unsafe { (*(*index_relation).rd_rel).reltuples } as f64;
     let constants = unsafe { current_planner_cost_constants() };
     let nprobe = options::resolve_scan_nprobe(metadata.nlists, metadata.nprobe);
+    let tree_height = resolved_ivf_tree_height_input();
+    let translation = ivf_strategy_translation_snapshot();
     let estimate = estimate_ivf_cost(&metadata, index_pages, reltuples, constants);
     let details = estimate_details(&metadata, index_pages, reltuples);
 
     IndexCostSnapshot {
         planner_scan_enabled: true,
-        planner_gate_reason:
-            "planner scan selection is live: Task 28 IVF cost model active",
+        planner_gate_reason: "planner scan selection is live: Task 28 IVF cost model active",
         dimensions: metadata.dimensions,
         nlists: metadata.nlists,
         relation_nprobe: nprobe.relation_nprobe,
         session_nprobe: nprobe.session_nprobe,
         effective_nprobe: nprobe.effective_nprobe,
         effective_nprobe_source: nprobe.source,
+        resolved_tree_height: tree_height.tree_height,
+        tree_height_source: tree_height.source,
+        pg18_tree_height_callback_ready: tree_height.pg18_callback_ready,
+        ordering_compare_type: translation.ordering_compare_type.as_str(),
+        pg18_strategy_translation_ready: translation.pg18_callback_ready,
         average_list_live_count: details.average_list_live_count,
         estimated_centroid_scores: details.estimated_centroid_scores,
         estimated_selected_lists: details.estimated_selected_lists,
@@ -131,8 +223,9 @@ fn estimate_ivf_cost(
 ) -> PlannerCostEstimate {
     let details = estimate_details(metadata, index_pages, reltuples);
     let scoring_dimensions = f64::from(metadata.dimensions) * IVF_SCORING_DIMENSION_SCALE;
-    let centroid_cpu =
-        f64::from(details.estimated_centroid_scores) * constants.cpu_operator_cost * scoring_dimensions;
+    let centroid_cpu = f64::from(details.estimated_centroid_scores)
+        * constants.cpu_operator_cost
+        * scoring_dimensions;
     let centroid_page_cost = centroid_page_estimate(metadata) * constants.random_page_cost;
     let posting_page_cost = details.estimated_posting_pages * constants.random_page_cost;
     let candidate_cpu = details.estimated_candidate_rows
@@ -205,8 +298,8 @@ fn centroid_page_estimate(metadata: &page::MetadataPage) -> f64 {
     if metadata.nlists == 0 || metadata.dimensions == 0 {
         return 0.0;
     }
-    let centroid_bytes =
-        f64::from(metadata.nlists) * (7.0 + f64::from(metadata.dimensions) * size_of::<f32>() as f64);
+    let centroid_bytes = f64::from(metadata.nlists)
+        * (7.0 + f64::from(metadata.dimensions) * size_of::<f32>() as f64);
     (centroid_bytes / pg_sys::BLCKSZ as f64).ceil().max(1.0)
 }
 

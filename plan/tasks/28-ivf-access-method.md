@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 7 PG18 hooks next.
+Status: in progress - Phase 7 PG18 runtime hooks next.
 
 Working branch: `task28-ivf`
 
@@ -360,6 +360,13 @@ scores, selected lists, posting pages read, candidates scored, rerank rows, and
 filtered duplicates. The shared EXPLAIN hook continues to emit the existing
 HNSW counter group for `ec_hnsw`. PG18 ReadStream/shared-stats hook wiring
 remains open.
+
+Phase 7 PG18 planner-callback checkpoint: PG18 `ec_ivf` now registers
+`amgettreeheight` as a partitioned-index height of zero and registers the
+same `<#>` strategy-translation callbacks used by `ec_hnsw`. The
+`ec_ivf_index_cost_snapshot(regclass)` surface reports tree-height and
+strategy-translation readiness for reviewers. PG18 ReadStream/shared-stats
+runtime wiring remains open.
 
 ### Phase 8 - validation and measurement
 
