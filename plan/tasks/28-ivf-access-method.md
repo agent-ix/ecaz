@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 7 EXPLAIN counters and PG18 hooks next.
+Status: in progress - Phase 7 PG18 hooks next.
 
 Working branch: `task28-ivf`
 
@@ -333,7 +333,7 @@ first IVF baseline; page reclamation remains deferred.
 
 - [x] **Cost model.** Estimate startup and total costs from centroid count,
   `nprobe`, average list size, scoring mode, and rerank mode.
-- [ ] **EXPLAIN counters.** Report centroid scores, selected lists, posting
+- [x] **EXPLAIN counters.** Report centroid scores, selected lists, posting
   pages read, candidates scored, rerank rows, and filtered duplicates.
 - [x] **Admin snapshot.** Add an IVF snapshot function for metadata,
   distribution, drift, and planner inputs.
@@ -353,6 +353,13 @@ storage-profile scoring multipliers, and rerank multipliers from persisted
 metadata plus planner cost constants. `ec_ivf_index_cost_snapshot(regclass)`
 exposes the modeled inputs and outputs for review. EXPLAIN counters and PG18
 hook wiring remain open.
+
+Phase 7 EXPLAIN-counter checkpoint: PG18 `EXPLAIN (ecaz, ANALYZE)` now emits
+`Ecaz Stats` for `ec_ivf` index scans with IVF-specific counters for centroid
+scores, selected lists, posting pages read, candidates scored, rerank rows, and
+filtered duplicates. The shared EXPLAIN hook continues to emit the existing
+HNSW counter group for `ec_hnsw`. PG18 ReadStream/shared-stats hook wiring
+remains open.
 
 ### Phase 8 - validation and measurement
 

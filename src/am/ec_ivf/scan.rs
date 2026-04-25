@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{hash_map::Entry, BinaryHeap, HashMap};
 use std::ptr;
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox};
 
+use crate::am::common::explain::IvfExplainCounters;
 use crate::quant::prod::{PreparedQuery, ProdQuantizer};
 use crate::storage::page::ItemPointer;
 
@@ -23,6 +24,7 @@ struct EcIvfScanOpaque {
     posting_candidates: *mut EcIvfScoredCandidate,
     posting_candidate_count: u32,
     next_candidate_index: u32,
+    explain_counters: IvfExplainCounters,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -197,6 +199,7 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
             }
             let opaque = &mut *opaque_ptr;
             free_scan_query_prep(opaque);
+            opaque.explain_counters.reset();
             opaque.rescan_called = true;
             opaque.scan_dimensions = metadata.dimensions;
             opaque.scan_nlists = metadata.nlists;
@@ -213,6 +216,12 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_amrescan(
                     load_centroid_scores((*scan).indexRelation, &metadata, &query)
                         .unwrap_or_else(|e| pgrx::error!("{e}"));
                 let selected_lists = select_probe_lists(&centroid_scores, opaque.scan_nprobe);
+                opaque
+                    .explain_counters
+                    .record_centroid_scores(centroid_scores.len());
+                opaque
+                    .explain_counters
+                    .record_selected_lists(selected_lists.len());
                 let posting_candidates = materialize_probe_candidates(
                     (*scan).indexRelation,
                     &metadata,
@@ -544,7 +553,7 @@ fn select_probe_lists(scores: &[EcIvfCentroidScore], nprobe: u32) -> Vec<u32> {
 unsafe fn materialize_probe_candidates(
     index_relation: pg_sys::Relation,
     metadata: &super::page::MetadataPage,
-    opaque: &EcIvfScanOpaque,
+    opaque: &mut EcIvfScanOpaque,
     selected_lists: &[u32],
 ) -> Result<Vec<EcIvfScoredCandidate>, String> {
     if selected_lists.is_empty() {
@@ -568,6 +577,9 @@ unsafe fn materialize_probe_candidates(
         let directory = directories
             .get(*list_id as usize)
             .ok_or_else(|| format!("ec_ivf selected list {list_id} is out of range"))?;
+        opaque
+            .explain_counters
+            .record_posting_pages_read(posting_block_count(directory)?);
         let postings = unsafe {
             super::page::read_ivf_postings_for_list_blocks(
                 index_relation,
@@ -584,15 +596,20 @@ unsafe fn materialize_probe_candidates(
             let score =
                 -quantizer.score_ip_from_parts(prepared_query, posting.gamma, &posting.payload);
             for heap_tid in posting.heaptids {
+                opaque.explain_counters.record_candidate_scored();
                 let candidate = EcIvfScoredCandidate { heap_tid, score };
-                best_by_heap_tid
-                    .entry(heap_tid)
-                    .and_modify(|existing| {
+                match best_by_heap_tid.entry(heap_tid) {
+                    Entry::Occupied(mut entry) => {
+                        opaque.explain_counters.record_filtered_duplicate();
+                        let existing = entry.get_mut();
                         if candidate_cmp(&candidate, existing) == Ordering::Less {
                             *existing = candidate;
                         }
-                    })
-                    .or_insert(candidate);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(candidate);
+                    }
+                }
             }
         }
     }
@@ -602,6 +619,31 @@ unsafe fn materialize_probe_candidates(
         top_k.push(candidate);
     }
     Ok(top_k.into_sorted_candidates())
+}
+
+fn posting_block_count(directory: &super::page::IvfListDirectoryTuple) -> Result<u32, String> {
+    match (
+        directory.head_block == super::page::BlockRef::INVALID,
+        directory.tail_block == super::page::BlockRef::INVALID,
+    ) {
+        (true, true) => Ok(0),
+        (false, false) if directory.head_block.block_number <= directory.tail_block.block_number => {
+            directory
+                .tail_block
+                .block_number
+                .checked_sub(directory.head_block.block_number)
+                .and_then(|delta| delta.checked_add(1))
+                .ok_or_else(|| format!("ec_ivf list {} posting block count overflow", directory.list_id))
+        }
+        (false, false) => Err(format!(
+            "ec_ivf list {} head block {} exceeds tail block {}",
+            directory.list_id, directory.head_block.block_number, directory.tail_block.block_number
+        )),
+        _ => Err(format!(
+            "ec_ivf list {} has partial posting block refs",
+            directory.list_id
+        )),
+    }
 }
 
 fn selected_list_live_count_bound(
@@ -620,6 +662,26 @@ fn selected_list_live_count_bound(
             .ok_or_else(|| "ec_ivf selected live count overflow".to_owned())?;
     }
     Ok(total)
+}
+
+pub(crate) unsafe fn explain_counters_from_index_scan_state(
+    index_state: *mut pg_sys::IndexScanState,
+) -> IvfExplainCounters {
+    if index_state.is_null() {
+        return IvfExplainCounters::default();
+    }
+
+    let scan_desc = unsafe { (*index_state).iss_ScanDesc };
+    if scan_desc.is_null() {
+        return IvfExplainCounters::default();
+    }
+
+    let opaque = unsafe { (*scan_desc).opaque };
+    if opaque.is_null() {
+        return IvfExplainCounters::default();
+    }
+
+    unsafe { (*opaque.cast::<EcIvfScanOpaque>()).explain_counters }
 }
 
 unsafe fn load_directory_entries(

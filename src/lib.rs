@@ -4752,6 +4752,68 @@ mod tests {
         Spi::run("RESET enable_seqscan").expect("reset should succeed");
     }
 
+    #[cfg(feature = "pg18")]
+    #[pg_test]
+    fn test_pg18_explain_option_emits_ecaz_stats_group_for_ec_ivf() {
+        Spi::run(
+            "CREATE TABLE pg18_explain_ivf_fixture (id bigint primary key, embedding ecvector)",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO pg18_explain_ivf_fixture VALUES
+             (1, '[1.0,0.0]'::ecvector),
+             (2, '[0.0,1.0]'::ecvector),
+             (3, '[-1.0,0.0]'::ecvector),
+             (4, '[0.0,-1.0]'::ecvector)",
+        )
+        .expect("insert should succeed");
+        Spi::run(
+            "CREATE INDEX pg18_explain_ivf_fixture_idx ON pg18_explain_ivf_fixture USING ec_ivf \
+             (embedding ecvector_ip_ops) \
+             WITH (nlists = 2, nprobe = 2, training_sample_rows = 4)",
+        )
+        .expect("index creation should succeed");
+        Spi::run("SET enable_seqscan = off").expect("set should succeed");
+
+        let plan = Spi::connect(|client| {
+            let rows = client
+                .select(
+                    "EXPLAIN (FORMAT JSON, ecaz, ANALYZE, COSTS OFF)
+                     SELECT id FROM pg18_explain_ivf_fixture
+                     ORDER BY embedding <#> ARRAY[1.0, 0.0]::real[]
+                     LIMIT 2",
+                    None,
+                    &[],
+                )
+                .expect("EXPLAIN should succeed");
+            let mut lines = Vec::new();
+            for row in rows {
+                lines.push(
+                    row.get::<pgrx::datum::JsonString>(1)
+                        .expect("plan row should decode")
+                        .expect("plan row should not be NULL")
+                        .0,
+                );
+            }
+            lines.join("\n")
+        });
+
+        for expected in [
+            "Ecaz Stats",
+            "Centroid Scores",
+            "Selected Lists",
+            "Posting Pages Read",
+            "Candidates Scored",
+            "Filtered Duplicates",
+        ] {
+            if !plan.contains(expected) {
+                panic!("missing {expected} in IVF EXPLAIN plan: {plan:?}");
+            }
+        }
+
+        Spi::run("RESET enable_seqscan").expect("reset should succeed");
+    }
+
     #[pg_test]
     fn test_empty_index_build_initializes_metadata_page() {
         Spi::run("CREATE TABLE ec_hnsw_empty_build (id bigint primary key, embedding ecvector)")

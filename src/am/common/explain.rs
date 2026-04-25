@@ -67,6 +67,16 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct IvfExplainCounters {
+    pub stats_centroid_scores: u32,
+    pub stats_selected_lists: u32,
+    pub stats_posting_pages_read: u32,
+    pub stats_candidates_scored: u32,
+    pub stats_rerank_rows: u32,
+    pub stats_filtered_duplicates: u32,
+}
+
 const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 7] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
@@ -120,7 +130,7 @@ pub(crate) fn explain_counter_definitions() -> &'static [ExplainCounterDefinitio
 pub(crate) fn should_emit_explain_properties(context: ExplainHookContext<'_>) -> bool {
     context.explain_option_enabled
         && context.node_kind == ExplainNodeKind::IndexScan
-        && context.access_method_name == "ec_hnsw"
+        && matches!(context.access_method_name, "ec_hnsw" | "ec_ivf")
 }
 
 pub(crate) fn explain_output_group() -> ExplainOutputGroup {
@@ -198,6 +208,69 @@ impl TqExplainCounters {
     }
 }
 
+impl IvfExplainCounters {
+    pub(crate) fn record_centroid_scores(&mut self, count: usize) {
+        self.stats_centroid_scores = self
+            .stats_centroid_scores
+            .saturating_add(u32::try_from(count).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_selected_lists(&mut self, count: usize) {
+        self.stats_selected_lists = self
+            .stats_selected_lists
+            .saturating_add(u32::try_from(count).unwrap_or(u32::MAX));
+    }
+
+    pub(crate) fn record_posting_pages_read(&mut self, count: u32) {
+        self.stats_posting_pages_read = self.stats_posting_pages_read.saturating_add(count);
+    }
+
+    pub(crate) fn record_candidate_scored(&mut self) {
+        self.stats_candidates_scored = self.stats_candidates_scored.saturating_add(1);
+    }
+
+    pub(crate) fn record_rerank_row(&mut self) {
+        self.stats_rerank_rows = self.stats_rerank_rows.saturating_add(1);
+    }
+
+    pub(crate) fn record_filtered_duplicate(&mut self) {
+        self.stats_filtered_duplicates = self.stats_filtered_duplicates.saturating_add(1);
+    }
+
+    pub(crate) fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 6] {
+        [
+            ExplainProperty {
+                property_name: "Centroid Scores",
+                value: ExplainPropertyValue::Integer(self.stats_centroid_scores),
+            },
+            ExplainProperty {
+                property_name: "Selected Lists",
+                value: ExplainPropertyValue::Integer(self.stats_selected_lists),
+            },
+            ExplainProperty {
+                property_name: "Posting Pages Read",
+                value: ExplainPropertyValue::Integer(self.stats_posting_pages_read),
+            },
+            ExplainProperty {
+                property_name: "Candidates Scored",
+                value: ExplainPropertyValue::Integer(self.stats_candidates_scored),
+            },
+            ExplainProperty {
+                property_name: "Rerank Rows",
+                value: ExplainPropertyValue::Integer(self.stats_rerank_rows),
+            },
+            ExplainProperty {
+                property_name: "Filtered Duplicates",
+                value: ExplainPropertyValue::Integer(self.stats_filtered_duplicates),
+            },
+        ]
+    }
+}
+
 #[cfg(feature = "pg18")]
 static PREVIOUS_EXPLAIN_PER_NODE_HOOK: OnceLock<pg_sys::explain_per_node_hook_type> =
     OnceLock::new();
@@ -256,14 +329,14 @@ unsafe fn explain_access_method_name(index_state: *mut pg_sys::IndexScanState) -
 }
 
 #[cfg(feature = "pg18")]
-unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, counters: TqExplainCounters) {
+unsafe fn emit_explain_properties(es: *mut pg_sys::ExplainState, properties: &[ExplainProperty]) {
     let group = explain_output_group();
     let group_label = CString::new(group.group_label).expect("group label should not contain NUL");
     unsafe {
         pg_sys::ExplainOpenGroup(group_label.as_ptr(), group_label.as_ptr(), true, es);
     }
 
-    for property in counters.explain_properties() {
+    for property in properties {
         let property_name =
             CString::new(property.property_name).expect("property name should not contain NUL");
         unsafe {
@@ -336,9 +409,25 @@ unsafe extern "C-unwind" fn ecaz_explain_per_node_hook(
                     access_method_name: access_method_name.as_str(),
                 };
                 if should_emit_explain_properties(context) {
-                    let counters =
-                        crate::am::ec_hnsw::explain_counters_from_index_scan_state(index_state);
-                    emit_explain_properties(es, counters);
+                    match access_method_name.as_str() {
+                        "ec_hnsw" => {
+                            let counters =
+                                crate::am::ec_hnsw::explain_counters_from_index_scan_state(
+                                    index_state,
+                                );
+                            let properties = counters.explain_properties();
+                            emit_explain_properties(es, &properties);
+                        }
+                        "ec_ivf" => {
+                            let counters =
+                                crate::am::ec_ivf::explain_counters_from_index_scan_state(
+                                    index_state,
+                                );
+                            let properties = counters.explain_properties();
+                            emit_explain_properties(es, &properties);
+                        }
+                        _ => {}
+                    }
                 }
             }
 
@@ -369,7 +458,7 @@ mod tests {
         explain_counter_definitions, explain_option_snapshot, explain_output_group,
         should_emit_explain_properties, ExplainCounterDefinition, ExplainHookContext,
         ExplainNodeKind, ExplainOptionSnapshot, ExplainOutputGroup, ExplainProperty,
-        ExplainPropertyValue, TqExplainCounters,
+        ExplainPropertyValue, IvfExplainCounters, TqExplainCounters,
     };
 
     #[test]
@@ -531,11 +620,83 @@ mod tests {
     }
 
     #[test]
-    fn explain_property_emission_requires_option_index_scan_and_ec_hnsw_access_method() {
+    fn ivf_explain_counters_record_each_staged_statistic() {
+        let mut counters = IvfExplainCounters::default();
+
+        counters.record_centroid_scores(4);
+        counters.record_selected_lists(2);
+        counters.record_posting_pages_read(3);
+        counters.record_candidate_scored();
+        counters.record_candidate_scored();
+        counters.record_rerank_row();
+        counters.record_filtered_duplicate();
+
+        assert_eq!(
+            counters,
+            IvfExplainCounters {
+                stats_centroid_scores: 4,
+                stats_selected_lists: 2,
+                stats_posting_pages_read: 3,
+                stats_candidates_scored: 2,
+                stats_rerank_rows: 1,
+                stats_filtered_duplicates: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn ivf_explain_properties_render_the_current_counter_values() {
+        let counters = IvfExplainCounters {
+            stats_centroid_scores: 4,
+            stats_selected_lists: 2,
+            stats_posting_pages_read: 3,
+            stats_candidates_scored: 5,
+            stats_rerank_rows: 7,
+            stats_filtered_duplicates: 11,
+        };
+
+        assert_eq!(
+            counters.explain_properties(),
+            [
+                ExplainProperty {
+                    property_name: "Centroid Scores",
+                    value: ExplainPropertyValue::Integer(4),
+                },
+                ExplainProperty {
+                    property_name: "Selected Lists",
+                    value: ExplainPropertyValue::Integer(2),
+                },
+                ExplainProperty {
+                    property_name: "Posting Pages Read",
+                    value: ExplainPropertyValue::Integer(3),
+                },
+                ExplainProperty {
+                    property_name: "Candidates Scored",
+                    value: ExplainPropertyValue::Integer(5),
+                },
+                ExplainProperty {
+                    property_name: "Rerank Rows",
+                    value: ExplainPropertyValue::Integer(7),
+                },
+                ExplainProperty {
+                    property_name: "Filtered Duplicates",
+                    value: ExplainPropertyValue::Integer(11),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn explain_property_emission_requires_option_index_scan_and_supported_access_method() {
         assert!(should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: true,
             node_kind: ExplainNodeKind::IndexScan,
             access_method_name: "ec_hnsw",
+        }));
+        assert!(should_emit_explain_properties(ExplainHookContext {
+            explain_option_enabled: true,
+            node_kind: ExplainNodeKind::IndexScan,
+            access_method_name: "ec_ivf",
         }));
         assert!(!should_emit_explain_properties(ExplainHookContext {
             explain_option_enabled: false,
