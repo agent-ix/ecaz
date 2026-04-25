@@ -73,6 +73,8 @@ pub(crate) struct TqExplainCounters {
     pub stats_parallel_contributor_publish_ordered_after_visible: u32,
     pub stats_parallel_contributor_publish_no_visible_owner: u32,
     pub stats_parallel_contributor_no_visible_owner_drops: u32,
+    pub stats_parallel_contributor_duplicate_active_drops: u32,
+    pub stats_parallel_contributor_ordered_after_visible_drops: u32,
     pub stats_parallel_visible_owner_lookahead_publishes: u32,
     pub stats_parallel_contributor_duplicate_retires: u32,
     pub stats_parallel_contributor_output_limit_exits: u32,
@@ -94,7 +96,7 @@ pub(crate) struct TqExplainCounters {
     pub stats_quantizer_cache_hit: bool,
 }
 
-const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 34] = [
+const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 36] = [
     ExplainCounterDefinition {
         counter_name: "stats_bootstrap_expansions",
         counter_type: "u32",
@@ -178,6 +180,18 @@ const EXPLAIN_COUNTER_DEFINITIONS: [ExplainCounterDefinition; 34] = [
         counter_type: "u32",
         increments_when:
             "a non-emitting contributor drops a hidden row after repeatedly finding no visible owner",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_duplicate_active_drops",
+        counter_type: "u32",
+        increments_when:
+            "a non-emitting contributor drops a hidden row after repeatedly finding it duplicates active visible output",
+    },
+    ExplainCounterDefinition {
+        counter_name: "stats_parallel_contributor_ordered_after_visible_drops",
+        counter_type: "u32",
+        increments_when:
+            "a non-emitting contributor drops a hidden row after repeatedly finding it orders after visible output",
     },
     ExplainCounterDefinition {
         counter_name: "stats_parallel_visible_owner_lookahead_publishes",
@@ -378,6 +392,14 @@ impl TqExplainCounters {
         self.stats_parallel_contributor_no_visible_owner_drops += 1;
     }
 
+    pub(crate) fn record_parallel_contributor_duplicate_active_drop(&mut self) {
+        self.stats_parallel_contributor_duplicate_active_drops += 1;
+    }
+
+    pub(crate) fn record_parallel_contributor_ordered_after_visible_drop(&mut self) {
+        self.stats_parallel_contributor_ordered_after_visible_drops += 1;
+    }
+
     pub(crate) fn record_parallel_visible_owner_lookahead_publish(&mut self) {
         self.stats_parallel_visible_owner_lookahead_publishes += 1;
     }
@@ -458,7 +480,7 @@ impl TqExplainCounters {
         *self = Self::default();
     }
 
-    pub(crate) fn explain_properties(self) -> [ExplainProperty; 34] {
+    pub(crate) fn explain_properties(self) -> [ExplainProperty; 36] {
         [
             ExplainProperty {
                 property_name: "Bootstrap Expansions",
@@ -536,6 +558,18 @@ impl TqExplainCounters {
                 property_name: "Parallel Contributor No Visible Owner Drops",
                 value: ExplainPropertyValue::Integer(
                     self.stats_parallel_contributor_no_visible_owner_drops,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Duplicate Active Drops",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_duplicate_active_drops,
+                ),
+            },
+            ExplainProperty {
+                property_name: "Parallel Contributor Ordered After Visible Drops",
+                value: ExplainPropertyValue::Integer(
+                    self.stats_parallel_contributor_ordered_after_visible_drops,
                 ),
             },
             ExplainProperty {
@@ -924,6 +958,18 @@ mod tests {
                         "a non-emitting contributor drops a hidden row after repeatedly finding no visible owner",
                 },
                 ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_duplicate_active_drops",
+                    counter_type: "u32",
+                    increments_when:
+                        "a non-emitting contributor drops a hidden row after repeatedly finding it duplicates active visible output",
+                },
+                ExplainCounterDefinition {
+                    counter_name: "stats_parallel_contributor_ordered_after_visible_drops",
+                    counter_type: "u32",
+                    increments_when:
+                        "a non-emitting contributor drops a hidden row after repeatedly finding it orders after visible output",
+                },
+                ExplainCounterDefinition {
                     counter_name: "stats_parallel_visible_owner_lookahead_publishes",
                     counter_type: "u32",
                     increments_when:
@@ -1076,6 +1122,8 @@ mod tests {
         counters.record_parallel_contributor_publish_ordered_after_visible();
         counters.record_parallel_contributor_publish_no_visible_owner();
         counters.record_parallel_contributor_no_visible_owner_drop();
+        counters.record_parallel_contributor_duplicate_active_drop();
+        counters.record_parallel_contributor_ordered_after_visible_drop();
         counters.record_parallel_visible_owner_lookahead_publish();
         counters.record_parallel_contributor_duplicate_retire();
         counters.record_parallel_contributor_output_limit_exit();
@@ -1114,6 +1162,8 @@ mod tests {
                 stats_parallel_contributor_publish_ordered_after_visible: 1,
                 stats_parallel_contributor_publish_no_visible_owner: 1,
                 stats_parallel_contributor_no_visible_owner_drops: 1,
+                stats_parallel_contributor_duplicate_active_drops: 1,
+                stats_parallel_contributor_ordered_after_visible_drops: 1,
                 stats_parallel_visible_owner_lookahead_publishes: 1,
                 stats_parallel_contributor_duplicate_retires: 1,
                 stats_parallel_contributor_output_limit_exits: 1,
@@ -1155,6 +1205,8 @@ mod tests {
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
             stats_parallel_contributor_no_visible_owner_drops: 44,
+            stats_parallel_contributor_duplicate_active_drops: 45,
+            stats_parallel_contributor_ordered_after_visible_drops: 46,
             stats_parallel_visible_owner_lookahead_publishes: 46,
             stats_parallel_contributor_duplicate_retires: 47,
             stats_parallel_contributor_output_limit_exits: 53,
@@ -1199,6 +1251,8 @@ mod tests {
             stats_parallel_contributor_publish_ordered_after_visible: 41,
             stats_parallel_contributor_publish_no_visible_owner: 43,
             stats_parallel_contributor_no_visible_owner_drops: 44,
+            stats_parallel_contributor_duplicate_active_drops: 45,
+            stats_parallel_contributor_ordered_after_visible_drops: 46,
             stats_parallel_visible_owner_lookahead_publishes: 46,
             stats_parallel_contributor_duplicate_retires: 47,
             stats_parallel_contributor_output_limit_exits: 53,
@@ -1282,6 +1336,14 @@ mod tests {
                 ExplainProperty {
                     property_name: "Parallel Contributor No Visible Owner Drops",
                     value: ExplainPropertyValue::Integer(44),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Duplicate Active Drops",
+                    value: ExplainPropertyValue::Integer(45),
+                },
+                ExplainProperty {
+                    property_name: "Parallel Contributor Ordered After Visible Drops",
+                    value: ExplainPropertyValue::Integer(46),
                 },
                 ExplainProperty {
                     property_name: "Parallel Visible Owner Lookahead Publishes",

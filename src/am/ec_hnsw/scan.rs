@@ -1142,7 +1142,9 @@ const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
 const PARALLEL_CONTRIBUTOR_DIAGNOSTIC_ENV: &str = "TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC";
 const PARALLEL_CONTRIBUTOR_MAX_OUTPUTS: usize = 64;
 const PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT: usize = 100;
+const PARALLEL_CONTRIBUTOR_DUPLICATE_ACTIVE_DROP_POLL_LIMIT: usize = 4;
 const PARALLEL_CONTRIBUTOR_NO_VISIBLE_OWNER_DROP_POLL_LIMIT: usize = 4;
+const PARALLEL_CONTRIBUTOR_ORDERED_AFTER_VISIBLE_DROP_POLL_LIMIT: usize = 4;
 const PARALLEL_CONTRIBUTOR_DRAIN_POLL_SLEEP_US: core::ffi::c_long = 100;
 
 fn saturating_u32_from_usize(value: usize) -> u32 {
@@ -1613,6 +1615,40 @@ fn record_non_emitting_parallel_contributor_no_visible_owner_drop(opaque: &mut T
     }
 }
 
+fn record_non_emitting_parallel_contributor_duplicate_active_drop(opaque: &mut TqScanOpaque) {
+    opaque
+        .explain_counters
+        .record_parallel_contributor_duplicate_active_drop();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_duplicate_active_drop(
+            opaque.parallel_scan_state,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor duplicate-active drop counter failed: {err}")
+        }
+    }
+}
+
+fn record_non_emitting_parallel_contributor_ordered_after_visible_drop(opaque: &mut TqScanOpaque) {
+    opaque
+        .explain_counters
+        .record_parallel_contributor_ordered_after_visible_drop();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_ordered_after_visible_drop(
+            opaque.parallel_scan_state,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!(
+                "ec_hnsw parallel contributor ordered-after-visible drop counter failed: {err}"
+            )
+        }
+    }
+}
+
 fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanOpaque) -> bool {
     if !opaque.parallel_local_only_output_active
         || !active_result_state_ref(opaque).current().has_element()
@@ -1774,6 +1810,18 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .max(shared.no_visible_owner_drops);
     opaque
         .explain_counters
+        .stats_parallel_contributor_duplicate_active_drops = opaque
+        .explain_counters
+        .stats_parallel_contributor_duplicate_active_drops
+        .max(shared.duplicate_active_drops);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_ordered_after_visible_drops = opaque
+        .explain_counters
+        .stats_parallel_contributor_ordered_after_visible_drops
+        .max(shared.ordered_after_visible_drops);
+    opaque
+        .explain_counters
         .stats_parallel_contributor_duplicate_retires = opaque
         .explain_counters
         .stats_parallel_contributor_duplicate_retires
@@ -1835,35 +1883,82 @@ unsafe fn contribute_non_emitting_parallel_backend(
 ) -> bool {
     let mut staged_outputs = 0usize;
     let mut drain_polls = 0usize;
+    let mut duplicate_active_polls = 0usize;
     let mut no_visible_owner_polls = 0usize;
+    let mut ordered_after_visible_polls = 0usize;
 
     loop {
         if opaque.parallel_local_only_output_active {
             if retire_obsolete_non_emitting_parallel_contributor_output(opaque) {
                 drain_polls = 0;
+                duplicate_active_polls = 0;
                 no_visible_owner_polls = 0;
+                ordered_after_visible_polls = 0;
                 continue;
             }
 
             if reconcile_parallel_hidden_owner_progress_from_shared_slot(opaque) {
                 drain_polls = 0;
+                duplicate_active_polls = 0;
                 no_visible_owner_polls = 0;
+                ordered_after_visible_polls = 0;
                 continue;
             }
 
-            if classify_non_emitting_parallel_contributor_hidden_drain(opaque)
-                == super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner
-            {
-                no_visible_owner_polls += 1;
-                if no_visible_owner_polls >= PARALLEL_CONTRIBUTOR_NO_VISIBLE_OWNER_DROP_POLL_LIMIT {
-                    record_non_emitting_parallel_contributor_no_visible_owner_drop(opaque);
-                    discard_active_parallel_scan_output(opaque);
-                    drain_polls = 0;
+            match classify_non_emitting_parallel_contributor_hidden_drain(opaque) {
+                super::parallel::EcParallelContributorHiddenDrainClassification::DuplicateActive => {
+                    duplicate_active_polls += 1;
                     no_visible_owner_polls = 0;
-                    continue;
+                    ordered_after_visible_polls = 0;
+                    if duplicate_active_polls
+                        >= PARALLEL_CONTRIBUTOR_DUPLICATE_ACTIVE_DROP_POLL_LIMIT
+                    {
+                        record_non_emitting_parallel_contributor_duplicate_active_drop(opaque);
+                        discard_active_parallel_scan_output(opaque);
+                        drain_polls = 0;
+                        duplicate_active_polls = 0;
+                        no_visible_owner_polls = 0;
+                        ordered_after_visible_polls = 0;
+                        continue;
+                    }
                 }
-            } else {
-                no_visible_owner_polls = 0;
+                super::parallel::EcParallelContributorHiddenDrainClassification::OrderedAfterVisible => {
+                    duplicate_active_polls = 0;
+                    no_visible_owner_polls = 0;
+                    ordered_after_visible_polls += 1;
+                    if ordered_after_visible_polls
+                        >= PARALLEL_CONTRIBUTOR_ORDERED_AFTER_VISIBLE_DROP_POLL_LIMIT
+                    {
+                        record_non_emitting_parallel_contributor_ordered_after_visible_drop(opaque);
+                        discard_active_parallel_scan_output(opaque);
+                        drain_polls = 0;
+                        duplicate_active_polls = 0;
+                        no_visible_owner_polls = 0;
+                        ordered_after_visible_polls = 0;
+                        continue;
+                    }
+                }
+                super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner => {
+                    duplicate_active_polls = 0;
+                    no_visible_owner_polls += 1;
+                    ordered_after_visible_polls = 0;
+                    if no_visible_owner_polls
+                        >= PARALLEL_CONTRIBUTOR_NO_VISIBLE_OWNER_DROP_POLL_LIMIT
+                    {
+                        record_non_emitting_parallel_contributor_no_visible_owner_drop(opaque);
+                        discard_active_parallel_scan_output(opaque);
+                        drain_polls = 0;
+                        duplicate_active_polls = 0;
+                        no_visible_owner_polls = 0;
+                        ordered_after_visible_polls = 0;
+                        continue;
+                    }
+                }
+                _ => {
+                    duplicate_active_polls = 0;
+                    no_visible_owner_polls = 0;
+                    ordered_after_visible_polls = 0;
+                }
             }
 
             if staged_outputs >= PARALLEL_CONTRIBUTOR_MAX_OUTPUTS {
@@ -1884,9 +1979,15 @@ unsafe fn contribute_non_emitting_parallel_backend(
         if let Some(classification) = stage_non_emitting_parallel_contributor_output(opaque) {
             staged_outputs += 1;
             drain_polls = 0;
+            duplicate_active_polls =
+                usize::from(classification
+                    == super::parallel::EcParallelContributorHiddenDrainClassification::DuplicateActive);
             no_visible_owner_polls =
                 usize::from(classification
                     == super::parallel::EcParallelContributorHiddenDrainClassification::NoVisibleOwner);
+            ordered_after_visible_polls =
+                usize::from(classification
+                    == super::parallel::EcParallelContributorHiddenDrainClassification::OrderedAfterVisible);
             continue;
         }
 
@@ -9218,6 +9319,46 @@ mod tests {
                 .stats_parallel_contributor_no_visible_owner_drops,
             1,
             "the elected emitter should fold shared no-visible-owner drops into explain counters"
+        );
+
+        record_non_emitting_parallel_contributor_duplicate_active_drop(&mut contributor);
+        let shared = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                contributor.parallel_scan_state,
+            )
+        }
+        .expect("shared contributor counters should read");
+        assert_eq!(
+            shared.duplicate_active_drops, 1,
+            "shared duplicate-active drops should be published"
+        );
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_duplicate_active_drops,
+            1,
+            "the elected emitter should fold shared duplicate-active drops into explain counters"
+        );
+
+        record_non_emitting_parallel_contributor_ordered_after_visible_drop(&mut contributor);
+        let shared = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                contributor.parallel_scan_state,
+            )
+        }
+        .expect("shared contributor counters should read");
+        assert_eq!(
+            shared.ordered_after_visible_drops, 1,
+            "shared ordered-after-visible drops should be published"
+        );
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_ordered_after_visible_drops,
+            1,
+            "the elected emitter should fold shared ordered-after-visible drops into explain counters"
         );
 
         unsafe {
