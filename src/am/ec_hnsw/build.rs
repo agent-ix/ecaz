@@ -2196,7 +2196,7 @@ fn add_native_backlinks(
     }
 }
 
-fn flatten_native_neighbor_slots(
+pub(super) fn flatten_native_neighbor_slots(
     origin_id: usize,
     level: u8,
     m: usize,

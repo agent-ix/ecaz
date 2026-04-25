@@ -528,6 +528,51 @@ pub(super) unsafe fn initialize_concurrent_dsm_graph_image(
     parts
 }
 
+#[allow(dead_code)]
+pub(super) unsafe fn concurrent_dsm_graph_to_build_nodes(
+    parts: EcHnswConcurrentDsmGraphParts,
+    layout: EcHnswConcurrentDsmGraphLayout,
+    m: usize,
+) -> Vec<build::HnswBuildNode> {
+    let nodes = unsafe { slice::from_raw_parts(parts.nodes, layout.node_count as usize) };
+    let mut build_nodes = Vec::with_capacity(nodes.len());
+
+    for (node_idx, node) in nodes.iter().enumerate() {
+        if node.insert_state.value != EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY {
+            pgrx::error!("concurrent DSM graph readback saw an uninserted node");
+        }
+
+        let raw_neighbor_slots = unsafe {
+            slice::from_raw_parts(
+                parts
+                    .neighbor_slots
+                    .add(node.neighbor_slot_offset as usize),
+                node.neighbor_slot_count as usize,
+            )
+        };
+        let mut neighbor_slots = Vec::with_capacity(raw_neighbor_slots.len());
+        for neighbor_idx in raw_neighbor_slots.iter().copied() {
+            if neighbor_idx == EC_HNSW_CONCURRENT_DSM_INVALID_NODE_IDX {
+                neighbor_slots.push(None);
+            } else if neighbor_idx >= layout.node_count {
+                pgrx::error!("concurrent DSM graph readback saw out-of-range neighbor index");
+            } else {
+                neighbor_slots.push(Some(neighbor_idx as usize));
+            }
+        }
+
+        let score_neighbors =
+            build::flatten_native_neighbor_slots(node_idx, node.level, m, &neighbor_slots);
+        build_nodes.push(build::HnswBuildNode {
+            level: node.level,
+            neighbor_slots,
+            score_neighbors,
+        });
+    }
+
+    build_nodes
+}
+
 impl EcHnswParallelBuildSharedHeader {
     pub(super) fn new(
         plan: EcHnswParallelBuildPlan,
@@ -1661,6 +1706,114 @@ mod tests {
             assert_eq!(header.max_level, 0);
             assert_eq!(header.total_neighbor_slots, 0);
             assert_eq!(header.code_len, 0);
+        }
+    }
+
+    #[test]
+    fn concurrent_dsm_graph_readback_builds_page_staging_nodes() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+        state.push(build_tuple_with_code(vec![7, 8, 9]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        let node_levels = unsafe {
+            let nodes =
+                slice::from_raw_parts_mut(parts.nodes, plan.graph_layout.node_count as usize);
+            let slots = slice::from_raw_parts_mut(
+                parts.neighbor_slots,
+                plan.graph_layout.total_neighbor_slots as usize,
+            );
+            for node in nodes.iter_mut() {
+                node.insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
+            }
+
+            let node0_start = nodes[0].neighbor_slot_offset as usize;
+            slots[node0_start] = 1;
+            slots[node0_start + 1] = 1;
+            slots[node0_start + 2] = 0;
+            slots[node0_start + 3] = 2;
+
+            let node1_start = nodes[1].neighbor_slot_offset as usize;
+            slots[node1_start] = 0;
+
+            nodes.iter().map(|node| node.level).collect::<Vec<_>>()
+        };
+
+        let build_nodes =
+            unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2) };
+
+        assert_eq!(build_nodes.len(), 3);
+        assert_eq!(build_nodes[0].level, node_levels[0]);
+        assert_eq!(
+            &build_nodes[0].neighbor_slots[0..4],
+            &[Some(1), Some(1), Some(0), Some(2)]
+        );
+        assert_eq!(build_nodes[0].score_neighbors, vec![1, 2]);
+        assert_eq!(build_nodes[1].neighbor_slots[0], Some(0));
+        assert_eq!(build_nodes[1].score_neighbors, vec![0]);
+        assert!(build_nodes[2].neighbor_slots.iter().all(Option::is_none));
+        assert!(build_nodes[2].score_neighbors.is_empty());
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_graph_readback_rejects_uninserted_nodes() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        let _ = unsafe { concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2) };
+    }
+
+    #[test]
+    #[should_panic]
+    fn concurrent_dsm_graph_readback_rejects_out_of_range_neighbor() {
+        let mut state = build_state(None);
+        state.push(build_tuple_with_code(vec![1, 2, 3]));
+        state.push(build_tuple_with_code(vec![4, 5, 6]));
+        let plan = EcHnswConcurrentDsmPreassemblyPlan::for_state(&state);
+        let buffer = AlignedDsmBuffer::new(plan.graph_layout.total_bytes);
+        let parts = unsafe {
+            initialize_concurrent_dsm_graph_image(
+                buffer.as_mut_ptr(),
+                &plan,
+                test_initialize_node_lock,
+            )
+        };
+
+        unsafe {
+            {
+                let nodes =
+                    slice::from_raw_parts_mut(parts.nodes, plan.graph_layout.node_count as usize);
+                let slots = slice::from_raw_parts_mut(
+                    parts.neighbor_slots,
+                    plan.graph_layout.total_neighbor_slots as usize,
+                );
+                for node in nodes.iter_mut() {
+                    node.insert_state.value = EC_HNSW_CONCURRENT_DSM_INSERT_STATE_READY;
+                }
+                slots[nodes[0].neighbor_slot_offset as usize] = plan.graph_layout.node_count;
+            }
+
+            let _ = concurrent_dsm_graph_to_build_nodes(parts, plan.graph_layout, 2);
         }
     }
 
