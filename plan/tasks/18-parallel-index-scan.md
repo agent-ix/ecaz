@@ -82,6 +82,15 @@ See ADR-040 for the full shape. Summary:
 - ADR-040 now records the next production direction: keep one visible tuple
   emitter for `Gather Merge`, and let non-elected workers contribute candidate
   work through the shared coordinator behind that single output stream.
+- Review packet 601 validates the hidden contributor lifecycle behind the
+  elected emitter: the diagnostic contributor path preserves strict serial
+  equivalence, but it still expands/scores the same 17 graph candidates,
+  returns the same 16 heap TIDs, and records zero useful foreign handoffs.
+- The next performance slice must make non-elected worker contribution
+  distinct without letting later exact-smaller rows overtake the serial HNSW
+  prefix. Blind bootstrap tail rotation or partitioning is unsafe under the
+  current score-ordered coordinator because serial HNSW order can contain
+  adjacent exact-score inversions.
 
 ## Subtasks
 
@@ -120,11 +129,17 @@ See ADR-040 for the full shape. Summary:
 
 ### Worker contribution behind one visible emitter
 
-- [ ] **Contributor lifecycle protocol.** Let non-elected workers publish
+- [x] **Diagnostic contributor lifecycle protocol.** Let non-elected workers publish
   useful coordinator state without returning visible tuples to `Gather Merge`.
   A non-emitting `amgettuple` call cannot return `false` until it has completed
   its bounded contribution, because PostgreSQL will treat that worker stream as
-  exhausted.
+  exhausted. The landed diagnostic path validates the hidden-slot lifecycle,
+  but its workers still publish duplicate initial graph cursors.
+- [ ] **Rank-aware distinct contribution.** Diversify non-elected worker work
+  without breaking the one-visible-stream serial-equivalence gate. Under the
+  current coordinator ordering, workers must not blindly rotate or partition
+  the bootstrap tail because exact-score inversions can make later serial-rank
+  rows look globally smaller by the SQL score key.
 - [ ] **Elected-emitter coordinator drain.** Keep the elected backend as the
   only visible output stream while it drains shared coordinator results under
   the current serial-equivalence gate.
@@ -312,11 +327,13 @@ See ADR-040 for the full shape. Summary:
   merge seam instead of bypassing the coordinator on first emit. Prefetched
   graph-traversal rows now do the same at emit time.
 
-- **Worker bootstrap diversification staging.** Parallel-bound scans now use
-  the claimed worker slot plus `scan_seed` to rotate and stride the layer-0
-  bootstrap tail while retaining the shared best seed candidate. Serial and
-  `n=1` paths stay byte-identical because unbound and single-worker scans keep
-  the original ordered bootstrap candidate list.
+- **Historical worker bootstrap diversification staging.** An earlier
+  parallel-bound bootstrap-tail rotation experiment used the claimed worker
+  slot plus `scan_seed` to diversify layer-0 candidates while retaining the
+  shared best seed candidate. It was backed out after staged round-robin tests
+  showed that per-worker seed partitioning could truncate the shared prefix.
+  Parallel workers now keep the same bootstrap candidate ordering and rely on
+  the shared coordinator drain to decide ownership.
 
 - **Capacity-based `ef_search` split staging.** Bound parallel scans now use
   `ec_hnsw.parallel_ef_overlap` (default `0.1`) plus the shared descriptor's
@@ -779,6 +796,16 @@ See ADR-040 for the full shape. Summary:
   inversions. The next performance slice should therefore keep one visible
   emitter and make non-elected workers contribute behind it, rather than trying
   to promote direct multi-emitter `Gather Merge` output.
+
+- **Contributor diagnostic validates lifecycle but not performance.** Packet
+  601 proves that non-elected workers can stay alive long enough to publish
+  hidden coordinator output behind the elected visible emitter while preserving
+  strict serial equivalence. It does not yet improve counters or handoffs:
+  default and diagnostic runs both expand/score 17 graph candidates, return 16
+  heap TIDs, and record zero foreign handoffs. Useful worker contribution now
+  needs rank-aware distinct work, not blind bootstrap tail rotation, because
+  the current coordinator orders by score while serial HNSW rank can have
+  exact-score inversions.
 
 - **No shared visited set.** Cost analysis in ADR-040 shows the cross-
   worker synchronization cost exceeds the ~5–15% redundant-work savings

@@ -108,6 +108,33 @@ protocol is built. The protocol must handle the executor lifecycle explicitly:
 a non-emitting backend that returns `false` from `amgettuple` is done, so it
 cannot rely on later executor calls to publish additional work.
 
+### 2026-04-24 amendment: hidden contributor diagnostic result
+
+The first PG18 contributor diagnostic kept the elected tuple emitter as the
+only visible stream and let non-elected workers publish hidden coordinator
+output under:
+
+```text
+TQVECTOR_PG18_PARALLEL_CONTRIBUTOR_DIAGNOSTIC=1
+```
+
+That path preserved strict serial equivalence on the PG18 fixture, which
+validates the hidden-slot lifecycle and the executor progress rule above.
+It did not improve performance yet: default and contributor diagnostic runs
+both expanded/scored the same 17 graph candidates, returned 16 heap TIDs, and
+reported zero foreign handoffs. The diagnostic run was slower because the
+extra workers currently publish duplicate initial graph cursors and poll for
+work that the elected emitter cannot use.
+
+The next production step is therefore not blind bootstrap tail rotation or
+tail partitioning. The shared coordinator currently orders pending output by
+the SQL score key, while the serial HNSW stream can contain score inversions.
+A worker that starts from a later tail candidate can publish an exact-smaller
+row ahead of an earlier serial-rank row, recreating the same `Gather Merge`
+failure behind the hidden coordinator path. Distinct worker contribution must
+be rank-aware, must prove that hidden rows cannot overtake an unsafe serial
+prefix, or must deliberately change the visible contract to exact-key order.
+
 ### Shared coordinator, independent beams
 
 The leader initializes a shared scan descriptor holding the query
