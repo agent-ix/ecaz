@@ -1,6 +1,7 @@
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -338,6 +339,22 @@ SET ec_hnsw.ef_search = {ef_search};
     } else {
         Some(pg18_parallel_fixture_ids(&client, args.limit).await?)
     };
+    let serial_scores = if args.diagnose_planner {
+        match &serial_ids {
+            Some(ids) => Some(pg18_parallel_fixture_scores_for_ids(&client, ids).await?),
+            None => None,
+        }
+    } else {
+        None
+    };
+    let candidate_scores = if args.diagnose_planner {
+        match &candidate_ids {
+            Some(ids) => Some(pg18_parallel_fixture_scores_for_ids(&client, ids).await?),
+            None => None,
+        }
+    } else {
+        None
+    };
     let parallel_seqscan_plan = if args.planner_only {
         pg18_parallel_fixture_parallel_seqscan_json(&mut client).await?
     } else {
@@ -401,6 +418,9 @@ SET ec_hnsw.ef_search = {ef_search};
          {planner_diagnostics_output}\
          [pg18-parallel] serial_ids={}\n\
          [pg18-parallel] candidate_ids={}\n\
+         [pg18-parallel] serial_exact_scores={}\n\
+         [pg18-parallel] candidate_exact_scores={}\n\
+         [pg18-parallel] serial_exact_score_adjacent_inversions={}\n\
          {final_status}\n",
         cluster.install_version_label,
         cluster.preload_setting,
@@ -413,6 +433,9 @@ SET ec_hnsw.ef_search = {ef_search};
         args.disable_parallel_leader_participation,
         format_optional_ids(serial_ids.as_deref()),
         format_optional_ids(candidate_ids.as_deref()),
+        format_optional_scored_ids(serial_scores.as_deref()),
+        format_optional_scored_ids(candidate_scores.as_deref()),
+        format_optional_score_inversions(serial_scores.as_deref()),
     );
     if let Some(log_output) = &args.log_output {
         if let Some(parent) = log_output.parent() {
@@ -482,9 +505,62 @@ fn pg18_plan_json_has_parallel_index_scan(plan: &str) -> bool {
         && plan.contains("\"Parallel Aware\": true")
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ScoredId {
+    id: i64,
+    score: f32,
+}
+
 fn format_optional_ids(ids: Option<&[i64]>) -> String {
     ids.map(|ids| format!("{ids:?}"))
         .unwrap_or_else(|| "not collected (planner-only)".to_owned())
+}
+
+fn format_optional_scored_ids(scored_ids: Option<&[ScoredId]>) -> String {
+    scored_ids
+        .map(format_scored_ids)
+        .unwrap_or_else(|| "not collected (planner-only or diagnostics disabled)".to_owned())
+}
+
+fn format_scored_ids(scored_ids: &[ScoredId]) -> String {
+    let entries = scored_ids
+        .iter()
+        .map(|scored| format!("({}, {:.9})", scored.id, scored.score))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{entries}]")
+}
+
+fn format_optional_score_inversions(scored_ids: Option<&[ScoredId]>) -> String {
+    let Some(scored_ids) = scored_ids else {
+        return "not collected (planner-only or diagnostics disabled)".to_owned();
+    };
+    let inversions = adjacent_score_inversions(scored_ids);
+    if inversions.is_empty() {
+        return "[]".to_owned();
+    }
+    let entries = inversions
+        .into_iter()
+        .map(|(left, right)| {
+            format!(
+                "{}({:.9}) before {}({:.9})",
+                left.id, left.score, right.id, right.score
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{entries}]")
+}
+
+fn adjacent_score_inversions(scored_ids: &[ScoredId]) -> Vec<(ScoredId, ScoredId)> {
+    scored_ids
+        .windows(2)
+        .filter_map(|pair| {
+            let left = pair[0];
+            let right = pair[1];
+            (right.score < left.score).then_some((left, right))
+        })
+        .collect()
 }
 
 async fn pg18_parallel_fixture_planner_diagnostics(
@@ -1150,6 +1226,38 @@ LIMIT {limit}
         .collect::<Vec<_>>())
 }
 
+async fn pg18_parallel_fixture_scores_for_ids(
+    client: &tokio_postgres::Client,
+    ids: &[i64],
+) -> Result<Vec<ScoredId>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let rows = client
+        .query(
+            "
+SELECT id, embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[] AS score
+FROM pg18_parallel_scan_fixture
+WHERE id = ANY($1::bigint[])
+",
+            &[&ids],
+        )
+        .await?;
+    let scores = rows
+        .into_iter()
+        .map(|row| (row.get::<_, i64>(0), row.get::<_, f32>(1)))
+        .collect::<HashMap<_, _>>();
+    ids.iter()
+        .map(|id| {
+            let score = *scores
+                .get(id)
+                .ok_or_else(|| eyre!("missing exact score for fixture id {id}"))?;
+            Ok(ScoredId { id: *id, score })
+        })
+        .collect()
+}
+
 async fn pg18_parallel_fixture_explain_analyze(
     client: &tokio_postgres::Client,
     limit: i64,
@@ -1292,5 +1400,57 @@ impl Drop for PgClusterGuard {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adjacent_score_inversions_reports_descending_pairs() {
+        let scored = [
+            ScoredId {
+                id: 10,
+                score: -3.0,
+            },
+            ScoredId {
+                id: 11,
+                score: -2.0,
+            },
+            ScoredId {
+                id: 12,
+                score: -2.5,
+            },
+            ScoredId {
+                id: 13,
+                score: -1.0,
+            },
+        ];
+
+        let inversions = adjacent_score_inversions(&scored);
+
+        assert_eq!(inversions.len(), 1);
+        assert_eq!(inversions[0].0.id, 11);
+        assert_eq!(inversions[0].1.id, 12);
+    }
+
+    #[test]
+    fn format_scored_ids_renders_stable_precision() {
+        let scored = [
+            ScoredId {
+                id: 57,
+                score: -1.5430276,
+            },
+            ScoredId {
+                id: 56,
+                score: -1.4150798,
+            },
+        ];
+
+        assert_eq!(
+            format_scored_ids(&scored),
+            "[(57, -1.543027639), (56, -1.415079832)]"
+        );
     }
 }
