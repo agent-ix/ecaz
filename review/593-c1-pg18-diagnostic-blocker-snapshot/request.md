@@ -32,10 +32,20 @@ candidate_ids=[473, 379, 93, 177, 472, 378, 280, 366, 57, 176, 258, 71, 172, 280
 validation failed
 ```
 
+Follow-up diagnostics from commit `1f64c1acda03b5c8d59699f82e66df6038697f05` also record exact SQL `ORDER BY` scores for the serial and candidate IDs. The default elected-emitter path remains serial-equivalent, but the serial HNSW order itself contains adjacent exact-score inversions:
+
+```text
+serial_exact_score_adjacent_inversions=[177(-1.646769881) before 379(-1.742236257), 472(-1.641386509) before 473(-1.769334435), 172(-1.507030725) before 93(-1.649150252), 57(-1.543027639) before 366(-1.578914285), 258(-1.510545969) before 176(-1.518822074), 82(-1.491723895) before 71(-1.584297538), 459(-1.478064418) before 284(-1.587190151)]
+```
+
+That is the concrete `Gather Merge` blocker: if multiple workers expose these serial-order rows on separate streams, `Gather Merge` compares the exact sort key across stream heads and can reorder rows away from the single-emitter serial order.
+
 ## Artifacts
 
 - `artifacts/pg18-parallel-snapshot-blocker-default.log`
 - `artifacts/pg18-parallel-snapshot-blocker-diagnostic.log`
+- `artifacts/pg18-parallel-score-diagnostic-default.log`
+- `artifacts/pg18-parallel-score-diagnostic-multi-emitter.log`
 - `artifacts/manifest.md`
 
 ## Validation
@@ -49,4 +59,9 @@ validation failed
 - `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features 'pg18 pg_test' --no-default-features`
 - `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --log-output target/pg18-parallel-snapshot-blocker-default.log`
 - `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --env TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC=1 --log-output target/pg18-parallel-snapshot-blocker-diagnostic.log` (expected validation failure)
+- `cargo check -p ecaz-cli`
+- `cargo test -p ecaz-cli`
+- `cargo clippy -p ecaz-cli --all-targets -- -D warnings`
+- `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --log-output target/pg18-parallel-score-diagnostic-default.log`
+- `cargo run -p ecaz-cli -- dev test pg18-parallel-scan --expect-parallel --diagnose-planner --env TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC=1 --log-output target/pg18-parallel-score-diagnostic-multi-emitter.log` (expected validation failure)
 - `git diff --check`
