@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 3 heap-scan sample collection underway.
+Status: in progress - Phase 3 build stats next.
 
 Working branch: `task28-ivf`
 
@@ -137,7 +137,7 @@ yet.
   seed, type validation, NULL rejection, and dimension checks.
 - [x] **K-means trainer.** Implement bounded-iteration k-means with stable
   empty-cluster handling and tests for deterministic output.
-- [ ] **Bulk assignment.** Assign every row to one nearest centroid and
+- [x] **Bulk assignment.** Assign every row to one nearest centroid and
   append to the matching posting list.
 - [ ] **Build stats.** Record per-list counts, empty-list count, centroid
   drift inputs, and source/quantizer metadata.
@@ -156,6 +156,12 @@ training, decode `ecvector` source vectors directly, derive approximate
 training vectors for `tqvector`, select deterministic training samples, and
 train centroids before the still-explicit populated-write gate. Posting-list
 writes and metadata updates remain future Phase 3 slices.
+
+Phase 3 bulk-assignment checkpoint: populated builds now assign each collected
+row to its nearest trained centroid, stage centroid/posting/directory tuples in
+an in-memory data-page chain, set metadata dimensions/list heads/live totals,
+and count empty lists. On-disk populated writes remain gated until the
+directory update and WAL-safe physical write path lands.
 
 ### Phase 4 - scan path
 

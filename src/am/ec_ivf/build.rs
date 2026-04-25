@@ -5,7 +5,7 @@ use pgrx::{itemptr::item_pointer_get_both, pg_sys, PgBox, PgTupleDesc};
 
 use super::{options, page, training};
 use crate::quant::prod::ProdQuantizer;
-use crate::storage::page::ItemPointer;
+use crate::storage::page::{DataPageChain, ItemPointer};
 
 const DEFAULT_AUTO_TRAINING_SAMPLE_ROWS: usize = 10_000;
 const DEFAULT_KMEANS_ITERATIONS: usize = 8;
@@ -32,6 +32,47 @@ struct BuildState {
     scanned_tuples: usize,
     heap_tuples: Vec<BuildTuple>,
     dimensions: Option<u16>,
+}
+
+struct IvfBuildPlan {
+    data_pages: DataPageChain,
+    metadata: page::MetadataPage,
+    centroid_tids: Vec<ItemPointer>,
+    directory_tids: Vec<ItemPointer>,
+    posting_tids_by_list: Vec<Vec<ItemPointer>>,
+    directory_entries: Vec<page::IvfListDirectoryTuple>,
+}
+
+impl IvfBuildPlan {
+    fn data_page_count(&self) -> usize {
+        self.data_pages.pages().len()
+    }
+
+    fn centroid_count(&self) -> usize {
+        self.centroid_tids.len()
+    }
+
+    fn directory_count(&self) -> usize {
+        self.directory_tids.len()
+    }
+
+    fn posting_count(&self) -> usize {
+        self.posting_tids_by_list
+            .iter()
+            .map(Vec::len)
+            .sum::<usize>()
+    }
+
+    fn empty_list_count(&self) -> usize {
+        self.directory_entries
+            .iter()
+            .filter(|entry| entry.live_count == 0)
+            .count()
+    }
+
+    fn total_live_tuples(&self) -> u64 {
+        self.metadata.total_live_tuples
+    }
 }
 
 unsafe extern "C-unwind" fn ec_ivf_build_callback(
@@ -79,11 +120,18 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_ambuild(
                     .train_model()
                     .unwrap_or_else(|e| pgrx::error!("ec_ivf centroid training failed: {e}"));
                 let sample_count = state.training_sample_count();
+                let plan = state
+                    .stage_build_plan(&model)
+                    .unwrap_or_else(|e| pgrx::error!("ec_ivf populated index staging failed: {e}"));
                 pgrx::error!(
-                    "ec_ivf populated index writes are not implemented yet; collected {} heap tuples, {} training samples, and {} centroids",
-                    state.scanned_tuples,
+                    "ec_ivf populated index writes are not implemented yet; staged {} heap tuples, {} training samples, {} centroids, {} directory entries, {} posting tuples, {} empty lists, and {} data pages",
+                    plan.total_live_tuples(),
                     sample_count,
-                    model.centroid_count()
+                    plan.centroid_count(),
+                    plan.directory_count(),
+                    plan.posting_count(),
+                    plan.empty_list_count(),
+                    plan.data_page_count()
                 );
             }
 
@@ -184,6 +232,109 @@ impl BuildState {
             DEFAULT_KMEANS_ITERATIONS,
         )
     }
+
+    fn stage_build_plan(
+        &self,
+        model: &training::SphericalKMeansModel,
+    ) -> Result<IvfBuildPlan, String> {
+        let dimensions = self
+            .dimensions
+            .ok_or_else(|| "bulk assignment requires at least one tuple".to_owned())?;
+        if model.dimensions != usize::from(dimensions) {
+            return Err(format!(
+                "model dimensions mismatch: got {}, expected {}",
+                model.dimensions, dimensions
+            ));
+        }
+        if model.centroid_count() == 0 {
+            return Err("bulk assignment requires at least one centroid".into());
+        }
+        if !page::centroid_tuple_fits(model.dimensions, self.page_size) {
+            return Err(format!(
+                "centroid tuple for dim {} does not fit on a page",
+                model.dimensions
+            ));
+        }
+        if !page::list_directory_tuple_fits(self.page_size) {
+            return Err("list directory tuple does not fit on a page".into());
+        }
+
+        let nlists = model.centroid_count();
+        let mut data_pages = DataPageChain::new(self.page_size);
+        let mut centroid_tids = Vec::with_capacity(nlists);
+        for (list_id, centroid) in model.centroids.iter().enumerate() {
+            let centroid = page::IvfCentroidTuple {
+                list_id: list_id_u32(list_id)?,
+                centroid: centroid.clone(),
+            };
+            centroid_tids.push(data_pages.insert_ivf_centroid(&centroid)?);
+        }
+
+        let mut tuple_indices_by_list = vec![Vec::new(); nlists];
+        for (tuple_index, tuple) in self.heap_tuples.iter().enumerate() {
+            let list_id = training::assign_vector_to_centroid(&tuple.source_vector, model)?;
+            tuple_indices_by_list[list_id].push(tuple_index);
+        }
+
+        let mut posting_tids_by_list = vec![Vec::new(); nlists];
+        for (list_id, tuple_indices) in tuple_indices_by_list.iter().enumerate() {
+            for tuple_index in tuple_indices {
+                let tuple = &self.heap_tuples[*tuple_index];
+                let posting = page::IvfPostingTuple {
+                    list_id: list_id_u32(list_id)?,
+                    deleted: false,
+                    heaptids: vec![tuple.heap_tid],
+                    gamma: tuple.gamma,
+                    rerank_tid: ItemPointer::INVALID,
+                    payload: tuple.payload.clone(),
+                };
+                posting_tids_by_list[list_id].push(data_pages.insert_ivf_posting(&posting)?);
+            }
+        }
+
+        let mut directory_entries = Vec::with_capacity(nlists);
+        let mut directory_tids = Vec::with_capacity(nlists);
+        for (list_id, posting_tids) in posting_tids_by_list.iter().enumerate() {
+            let mut directory = page::IvfListDirectoryTuple::empty(list_id_u32(list_id)?);
+            if let (Some(head), Some(tail)) = (posting_tids.first(), posting_tids.last()) {
+                directory.head_block = page::BlockRef {
+                    block_number: head.block_number,
+                };
+                directory.tail_block = page::BlockRef {
+                    block_number: tail.block_number,
+                };
+                directory.live_count = u64::try_from(posting_tids.len())
+                    .map_err(|_| "posting count exceeds u64".to_owned())?;
+            }
+            directory_tids.push(data_pages.insert_ivf_list_directory(directory)?);
+            directory_entries.push(directory);
+        }
+
+        let mut metadata = page::MetadataPage::empty(self.options);
+        metadata.dimensions = dimensions;
+        metadata.nlists =
+            u32::try_from(nlists).map_err(|_| "centroid count exceeds u32".to_owned())?;
+        metadata.training_version = 1;
+        metadata.centroid_head = centroid_tids
+            .first()
+            .copied()
+            .unwrap_or(ItemPointer::INVALID);
+        metadata.directory_head = directory_tids
+            .first()
+            .copied()
+            .unwrap_or(ItemPointer::INVALID);
+        metadata.total_live_tuples = u64::try_from(self.heap_tuples.len())
+            .map_err(|_| "heap tuple count exceeds u64".to_owned())?;
+
+        Ok(IvfBuildPlan {
+            data_pages,
+            metadata,
+            centroid_tids,
+            directory_tids,
+            posting_tids_by_list,
+            directory_entries,
+        })
+    }
 }
 
 fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -> usize {
@@ -194,6 +345,10 @@ fn resolve_training_sample_count(requested_sample_rows: i32, row_count: usize) -
         return (requested_sample_rows as usize).min(row_count);
     }
     row_count.min(DEFAULT_AUTO_TRAINING_SAMPLE_ROWS)
+}
+
+fn list_id_u32(list_id: usize) -> Result<u32, String> {
+    u32::try_from(list_id).map_err(|_| format!("ec_ivf list id {list_id} exceeds u32"))
 }
 
 unsafe fn build_heap_tuple(
@@ -389,6 +544,13 @@ mod tests {
         }
     }
 
+    fn model(centroids: Vec<Vec<f32>>) -> training::SphericalKMeansModel {
+        training::SphericalKMeansModel {
+            dimensions: centroids.first().map_or(0, Vec::len),
+            centroids,
+        }
+    }
+
     #[test]
     fn training_sample_count_respects_auto_explicit_and_empty() {
         assert_eq!(resolve_training_sample_count(0, 0), 0);
@@ -447,5 +609,83 @@ mod tests {
 
         assert_eq!(model.dimensions, 2);
         assert_eq!(model.centroid_count(), 2);
+    }
+
+    #[test]
+    fn build_state_stages_bulk_assignments_by_list() {
+        let mut state = BuildState::new(options(0, 2), IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![0.9, 0.1])).unwrap();
+        state.try_push(tuple(3, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_eq!(plan.posting_count(), 3);
+        assert_eq!(plan.directory_entries[0].live_count, 2);
+        assert_eq!(plan.directory_entries[1].live_count, 1);
+        assert_eq!(plan.total_live_tuples(), 3);
+        assert_eq!(plan.metadata.dimensions, 2);
+        assert_eq!(plan.metadata.nlists, 2);
+
+        let payload_len = state.heap_tuples[0].payload.len();
+        for (list_id, posting_tids) in plan.posting_tids_by_list.iter().enumerate() {
+            for tid in posting_tids {
+                let posting = plan.data_pages.read_ivf_posting(*tid, payload_len).unwrap();
+                assert_eq!(posting.list_id, list_id as u32);
+                assert_eq!(posting.heaptids.len(), 1);
+                assert!(!posting.deleted);
+            }
+        }
+    }
+
+    #[test]
+    fn build_state_stages_empty_lists_with_invalid_directory_refs() {
+        let mut state = BuildState::new(options(0, 3), IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![
+                vec![1.0, 0.0],
+                vec![-1.0, 0.0],
+                vec![0.0, 1.0],
+            ]))
+            .unwrap();
+        let empty_directory = plan.directory_entries[2];
+
+        assert_eq!(plan.empty_list_count(), 1);
+        assert_eq!(empty_directory.live_count, 0);
+        assert_eq!(empty_directory.head_block, page::BlockRef::INVALID);
+        assert_eq!(empty_directory.tail_block, page::BlockRef::INVALID);
+        assert!(plan.posting_tids_by_list[2].is_empty());
+    }
+
+    #[test]
+    fn build_state_stages_readable_centroid_and_directory_heads() {
+        let mut state = BuildState::new(options(0, 2), IndexedVectorKind::Ecvector);
+        state.try_push(tuple(1, vec![1.0, 0.0])).unwrap();
+        state.try_push(tuple(2, vec![-1.0, 0.0])).unwrap();
+
+        let plan = state
+            .stage_build_plan(&model(vec![vec![1.0, 0.0], vec![-1.0, 0.0]]))
+            .unwrap();
+
+        assert_ne!(plan.metadata.centroid_head, ItemPointer::INVALID);
+        assert_ne!(plan.metadata.directory_head, ItemPointer::INVALID);
+        let centroid = plan
+            .data_pages
+            .read_ivf_centroid(plan.metadata.centroid_head, 2)
+            .unwrap();
+        let directory = plan
+            .data_pages
+            .read_ivf_list_directory(plan.metadata.directory_head)
+            .unwrap();
+
+        assert_eq!(centroid.list_id, 0);
+        assert_eq!(centroid.centroid, vec![1.0, 0.0]);
+        assert_eq!(directory.list_id, 0);
+        assert_eq!(directory.live_count, 1);
     }
 }
