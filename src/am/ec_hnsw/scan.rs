@@ -1545,6 +1545,38 @@ fn retire_obsolete_non_emitting_parallel_contributor_output(opaque: &mut TqScanO
     false
 }
 
+fn record_non_emitting_parallel_contributor_output_limit_exit(opaque: &mut TqScanOpaque) {
+    opaque
+        .explain_counters
+        .record_parallel_contributor_output_limit_exit();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_output_limit_exit(
+            opaque.parallel_scan_state,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor output-limit counter failed: {err}")
+        }
+    }
+}
+
+fn record_non_emitting_parallel_contributor_poll_limit_exit(opaque: &mut TqScanOpaque) {
+    opaque
+        .explain_counters
+        .record_parallel_contributor_poll_limit_exit();
+    match unsafe {
+        super::parallel::record_parallel_scan_contributor_poll_limit_exit(
+            opaque.parallel_scan_state,
+        )
+    } {
+        Ok(_) => {}
+        Err(err) => {
+            pgrx::error!("ec_hnsw parallel contributor poll-limit counter failed: {err}")
+        }
+    }
+}
+
 fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut TqScanOpaque) {
     if opaque.parallel_scan_state.is_null() {
         return;
@@ -1568,6 +1600,18 @@ fn refresh_parallel_contributor_explain_counters_from_shared_state(opaque: &mut 
         .explain_counters
         .stats_parallel_contributor_duplicate_retires
         .max(shared.duplicate_retires);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_output_limit_exits = opaque
+        .explain_counters
+        .stats_parallel_contributor_output_limit_exits
+        .max(shared.output_limit_exits);
+    opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_exits = opaque
+        .explain_counters
+        .stats_parallel_contributor_poll_limit_exits
+        .max(shared.poll_limit_exits);
 }
 
 unsafe fn poll_parallel_contributor_interrupts_and_sleep() {
@@ -1596,9 +1640,13 @@ unsafe fn contribute_non_emitting_parallel_backend(
                 continue;
             }
 
-            if staged_outputs >= PARALLEL_CONTRIBUTOR_MAX_OUTPUTS
-                || drain_polls >= PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT
-            {
+            if staged_outputs >= PARALLEL_CONTRIBUTOR_MAX_OUTPUTS {
+                record_non_emitting_parallel_contributor_output_limit_exit(opaque);
+                return false;
+            }
+
+            if drain_polls >= PARALLEL_CONTRIBUTOR_DRAIN_POLL_LIMIT {
+                record_non_emitting_parallel_contributor_poll_limit_exit(opaque);
                 return false;
             }
 
@@ -8859,6 +8907,39 @@ mod tests {
                 .stats_parallel_contributor_duplicate_retires,
             1,
             "the elected emitter should fold shared duplicate retires into explain counters"
+        );
+
+        record_non_emitting_parallel_contributor_output_limit_exit(&mut contributor);
+        record_non_emitting_parallel_contributor_poll_limit_exit(&mut contributor);
+        let shared = unsafe {
+            crate::am::ec_hnsw::parallel::read_parallel_scan_contributor_counters(
+                contributor.parallel_scan_state,
+            )
+        }
+        .expect("shared contributor counters should read");
+        assert_eq!(
+            shared.output_limit_exits, 1,
+            "shared output-limit exits should be published"
+        );
+        assert_eq!(
+            shared.poll_limit_exits, 1,
+            "shared poll-limit exits should be published"
+        );
+
+        refresh_parallel_contributor_explain_counters_from_shared_state(&mut emitter);
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_output_limit_exits,
+            1,
+            "the elected emitter should fold shared output-limit exits into explain counters"
+        );
+        assert_eq!(
+            emitter
+                .explain_counters
+                .stats_parallel_contributor_poll_limit_exits,
+            1,
+            "the elected emitter should fold shared poll-limit exits into explain counters"
         );
     }
 
