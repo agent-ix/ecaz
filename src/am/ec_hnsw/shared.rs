@@ -768,10 +768,13 @@ pub(crate) fn read_stream_snapshot() -> ReadStreamSnapshot {
 const PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV: &str =
     "TQVECTOR_PG18_PARALLEL_MULTI_EMITTER_DIAGNOSTIC";
 
-fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
+pub(crate) fn pg18_parallel_multi_emitter_diagnostic_enabled() -> bool {
     #[cfg(any(test, feature = "pg_test"))]
     {
-        std::env::var_os(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV).is_some()
+        matches!(
+            std::env::var(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV).as_deref(),
+            Ok("1")
+        )
     }
     #[cfg(not(any(test, feature = "pg_test")))]
     {

@@ -1425,14 +1425,7 @@ fn parallel_scan_backend_can_emit_tuples() -> bool {
 }
 
 fn parallel_scan_multi_emitter_diagnostic_enabled() -> bool {
-    #[cfg(any(test, feature = "pg_test"))]
-    {
-        std::env::var_os(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV).is_some()
-    }
-    #[cfg(not(any(test, feature = "pg_test")))]
-    {
-        false
-    }
+    super::shared::pg18_parallel_multi_emitter_diagnostic_enabled()
 }
 
 fn parallel_scan_backend_may_emit_tuples(opaque: &TqScanOpaque) -> bool {
@@ -8491,6 +8484,35 @@ mod tests {
         assert!(
             !parallel_scan_backend_may_emit_tuples(&second),
             "later default emitter probes should remain non-emitting"
+        );
+    }
+
+    #[test]
+    fn parallel_scan_backend_may_emit_tuples_ignores_disabled_diagnostic_env() {
+        let _lock = env_var_test_lock();
+        let _env = ScopedEnvVar::set(PARALLEL_MULTI_EMITTER_DIAGNOSTIC_ENV, "0");
+        let mut storage = TestParallelScanStorage::default();
+        let parallel_scan = initialize_test_parallel_scan_storage(&mut storage, 2);
+        let mut first_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut second_scan_desc = pg_sys::IndexScanDescData {
+            parallel_scan,
+            ..Default::default()
+        };
+        let mut first = TqScanOpaque::default();
+        let mut second = TqScanOpaque::default();
+        bind_parallel_scan_state(&mut first_scan_desc, &mut first);
+        bind_parallel_scan_state(&mut second_scan_desc, &mut second);
+
+        assert!(
+            parallel_scan_backend_may_emit_tuples(&first),
+            "the first backend should still claim the elected emitter slot"
+        );
+        assert!(
+            !parallel_scan_backend_may_emit_tuples(&second),
+            "setting the diagnostic flag to 0 should not bypass emitter election"
         );
     }
 
