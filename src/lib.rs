@@ -2700,6 +2700,35 @@ mod tests {
     }
 
     #[pg_test]
+    #[should_panic(expected = "duplicate heap tid")]
+    fn test_ec_ivf_insert_rejects_duplicate_heap_tid() {
+        Spi::run("CREATE TABLE ec_ivf_duplicate_heap_tid (id bigint primary key, embedding ecvector)")
+            .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_ivf_duplicate_heap_tid VALUES
+             (0, '[1.0,0.0]'::ecvector),
+             (1, '[0.0,1.0]'::ecvector)",
+        )
+        .expect("seed insert should succeed");
+        let index_oid = create_ivf_recall_index(
+            "ec_ivf_duplicate_heap_tid",
+            "ec_ivf_duplicate_heap_tid_idx",
+            2,
+            2,
+            2,
+        );
+        let heap_tid = heap_tid_for_row("ec_ivf_duplicate_heap_tid", 0);
+
+        unsafe {
+            am::debug_ec_ivf_validate_no_duplicate_heap_tid(
+                index_oid,
+                heap_tid.block_number,
+                heap_tid.offset_number,
+            )
+        };
+    }
+
+    #[pg_test]
     fn test_ec_ivf_insert_bootstraps_empty_index() {
         Spi::run("CREATE TABLE ec_ivf_empty_live_insert (id bigint primary key, embedding ecvector)")
             .expect("table creation should succeed");

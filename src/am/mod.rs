@@ -30,6 +30,7 @@ pub(crate) use self::ec_ivf::{
     debug_ec_ivf_metadata,
     debug_ec_ivf_rerank_mode,
     debug_ec_ivf_rescan_query_prep,
+    debug_ec_ivf_validate_no_duplicate_heap_tid,
 };
 
 pub(crate) unsafe fn index_cost_snapshot(

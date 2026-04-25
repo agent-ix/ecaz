@@ -46,6 +46,8 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             let (directory_tid, mut directory) =
                 load_directory_entry(index_relation, &metadata, list_id)
                     .unwrap_or_else(|e| pgrx::error!("{e}"));
+            ensure_heap_tid_absent(index_relation, &metadata, tuple.heap_tid)
+                .unwrap_or_else(|e| pgrx::error!("ec_ivf aminsert found duplicate heap tid: {e}"));
 
             let posting = page::IvfPostingTuple {
                 list_id: u32::try_from(list_id)
@@ -70,6 +72,53 @@ pub(super) unsafe extern "C-unwind" fn ec_ivf_aminsert(
             true
         })
     }
+}
+
+unsafe fn ensure_heap_tid_absent(
+    index_relation: pg_sys::Relation,
+    metadata: &page::MetadataPage,
+    heap_tid: ItemPointer,
+) -> Result<(), String> {
+    if metadata.directory_head == ItemPointer::INVALID {
+        return Err("ec_ivf metadata has live dimensions but no directory head".to_owned());
+    }
+
+    let payload_len = crate::code_len(metadata.dimensions as usize, crate::DEFAULT_QUANT_BITS);
+    let mut next_tid = metadata.directory_head;
+    for expected_list_id in 0..metadata.nlists {
+        let (directory, following_tid) =
+            unsafe { page::read_ivf_list_directory_and_next(index_relation, next_tid)? };
+        if directory.list_id != expected_list_id {
+            return Err(format!(
+                "ec_ivf directory order mismatch: got list {}, expected {}",
+                directory.list_id, expected_list_id
+            ));
+        }
+
+        let postings = unsafe {
+            page::read_ivf_postings_for_list_blocks(
+                index_relation,
+                directory.list_id,
+                directory.head_block,
+                directory.tail_block,
+                payload_len,
+            )?
+        };
+        if postings
+            .iter()
+            .filter(|posting| !posting.deleted)
+            .any(|posting| posting.heaptids.contains(&heap_tid))
+        {
+            return Err(format!(
+                "{}:{} is already present in the index",
+                heap_tid.block_number, heap_tid.offset_number
+            ));
+        }
+
+        next_tid = following_tid;
+    }
+
+    Ok(())
 }
 
 unsafe fn bootstrap_empty_index(
@@ -239,4 +288,22 @@ fn apply_insert_stats(
         .checked_add(1)
         .ok_or_else(|| "metadata inserted-since-build count overflow".to_owned())?;
     Ok(())
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn debug_ec_ivf_validate_no_duplicate_heap_tid(
+    index_oid: pg_sys::Oid,
+    block_number: u32,
+    offset_number: u16,
+) {
+    let index_relation =
+        unsafe { pg_sys::index_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    let metadata = unsafe { page::read_metadata_page(index_relation) };
+    let heap_tid = ItemPointer {
+        block_number,
+        offset_number,
+    };
+    let result = unsafe { ensure_heap_tid_absent(index_relation, &metadata, heap_tid) };
+    unsafe { pg_sys::index_close(index_relation, pg_sys::AccessShareLock as pg_sys::LOCKMODE) };
+    result.unwrap_or_else(|e| pgrx::error!("ec_ivf duplicate heap tid validation failed: {e}"));
 }

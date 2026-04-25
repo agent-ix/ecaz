@@ -1,6 +1,6 @@
 # Task 28: IVF Access Method
 
-Status: in progress - Phase 5 duplicate and concurrency coverage next.
+Status: in progress - Phase 5 concurrency coverage next.
 
 Working branch: `task28-ivf`
 
@@ -243,8 +243,10 @@ packet-local artifacts.
   and first posting when a row is inserted into an empty IVF index.
 - [x] **Same-list tail append.** Cover repeated inserts into one list reusing
   the current posting tail page and advancing drift counters.
+- [x] **Duplicate heap TID rejection.** Reject live inserts whose heap TID is
+  already present in any live IVF posting.
 - [ ] **Concurrency coverage.** Cover concurrent inserts into different
-  lists and duplicate heap TID rejection.
+  lists.
 
 Phase 5 live-insert checkpoint: non-empty IVF indexes now support `aminsert`
 for the existing `ecvector`/`tqvector` tuple decode paths. Inserts validate
@@ -264,6 +266,11 @@ Phase 5 same-list append checkpoint: PG coverage now exercises sequential
 inserts into a single-list IVF index, verifies the tail page is reused for small
 postings, confirms per-list and metadata live counts advance, and checks both
 live-inserted rows remain reachable through scan.
+
+Phase 5 duplicate-heap-TID checkpoint: `aminsert` now scans live postings
+before appending and rejects a heap TID that is already present in the IVF
+index. PG debug coverage exercises the same guard against an existing indexed
+row. Concurrent insert coverage remains open.
 
 ### Phase 6 - vacuum and drift handling
 
