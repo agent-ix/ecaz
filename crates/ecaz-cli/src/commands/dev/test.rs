@@ -86,6 +86,14 @@ pub struct Pg18ParallelScanArgs {
     #[arg(long, default_value_t = 512)]
     rows: i32,
 
+    /// Fixture vector dimensions.
+    #[arg(long, default_value_t = 4)]
+    dimensions: i32,
+
+    /// Use deterministic pseudo-random fixture vectors instead of the default modular 4D shape.
+    #[arg(long)]
+    randomized_embeddings: bool,
+
     /// Query LIMIT for serial/parallel comparison.
     #[arg(long, default_value_t = 16)]
     limit: i64,
@@ -235,6 +243,9 @@ async fn run_pg18_parallel_scan(args: Pg18ParallelScanArgs) -> Result<()> {
     if args.rows < 1 {
         bail!("--rows must be at least 1");
     }
+    if args.dimensions < 1 {
+        bail!("--dimensions must be at least 1");
+    }
     if args.limit < 1 {
         bail!("--limit must be at least 1");
     }
@@ -259,6 +270,9 @@ async fn run_pg18_parallel_scan(args: Pg18ParallelScanArgs) -> Result<()> {
     if !(1..=1000).contains(&ef_search) {
         bail!("--ef-search must be between 1 and 1000");
     }
+    let embedding_sql =
+        pg18_parallel_fixture_embedding_sql(args.dimensions, args.randomized_embeddings);
+    let query_sql = pg18_parallel_fixture_query_sql(args.dimensions, args.randomized_embeddings);
 
     client
         .batch_execute(
@@ -269,13 +283,7 @@ DROP EXTENSION IF EXISTS ecaz CASCADE;
 CREATE EXTENSION ecaz;
 CREATE TABLE pg18_parallel_scan_fixture (id bigint primary key, embedding ecvector);
 INSERT INTO pg18_parallel_scan_fixture
-SELECT g::bigint,
-       ARRAY[
-         ((g % 97)::real / 97.0),
-         (((g * 3) % 89)::real / 89.0),
-         (((g * 7) % 83)::real / 83.0),
-         (-(((g * 11) % 79)::real) / 79.0)
-       ]::real[]::ecvector
+SELECT g::bigint, {embedding_sql}
 FROM generate_series(1, {rows}) AS g;
 ALTER TABLE pg18_parallel_scan_fixture SET (parallel_workers = {workers});
 CREATE INDEX pg18_parallel_scan_fixture_idx
@@ -285,6 +293,7 @@ ANALYZE pg18_parallel_scan_fixture;
 ",
                 rows = args.rows,
                 workers = args.workers,
+                embedding_sql = embedding_sql,
             )
             .as_str(),
         )
@@ -317,7 +326,7 @@ SET ec_hnsw.ef_search = {ef_search};
     let serial_projected_scores = if args.planner_only {
         None
     } else {
-        Some(pg18_parallel_fixture_projected_scores(&client, args.limit).await?)
+        Some(pg18_parallel_fixture_projected_scores(&client, args.limit, &query_sql).await?)
     };
     let serial_ids = serial_projected_scores.as_deref().map(ids_from_scored_ids);
 
@@ -325,9 +334,10 @@ SET ec_hnsw.ef_search = {ef_search};
         .batch_execute(format!("SET max_parallel_workers_per_gather = {};", args.workers).as_str())
         .await?;
     let plan = if args.planner_only {
-        pg18_parallel_fixture_explain_json(&mut client, args.limit, args.workers).await?
+        pg18_parallel_fixture_explain_json(&mut client, args.limit, args.workers, &query_sql)
+            .await?
     } else {
-        pg18_parallel_fixture_explain_analyze(&client, args.limit).await?
+        pg18_parallel_fixture_explain_analyze(&client, args.limit, &query_sql).await?
     };
     let has_parallel_index_scan = if args.planner_only {
         pg18_plan_json_has_parallel_index_scan(&plan)
@@ -338,14 +348,16 @@ SET ec_hnsw.ef_search = {ef_search};
     let candidate_projected_scores = if args.planner_only {
         None
     } else {
-        Some(pg18_parallel_fixture_projected_scores(&client, args.limit).await?)
+        Some(pg18_parallel_fixture_projected_scores(&client, args.limit, &query_sql).await?)
     };
     let candidate_ids = candidate_projected_scores
         .as_deref()
         .map(ids_from_scored_ids);
     let serial_scores = if args.diagnose_planner {
         match &serial_ids {
-            Some(ids) => Some(pg18_parallel_fixture_scores_for_ids(&client, ids).await?),
+            Some(ids) => {
+                Some(pg18_parallel_fixture_scores_for_ids(&client, ids, &query_sql).await?)
+            }
             None => None,
         }
     } else {
@@ -353,7 +365,9 @@ SET ec_hnsw.ef_search = {ef_search};
     };
     let candidate_scores = if args.diagnose_planner {
         match &candidate_ids {
-            Some(ids) => Some(pg18_parallel_fixture_scores_for_ids(&client, ids).await?),
+            Some(ids) => {
+                Some(pg18_parallel_fixture_scores_for_ids(&client, ids, &query_sql).await?)
+            }
             None => None,
         }
     } else {
@@ -381,8 +395,13 @@ SET ec_hnsw.ef_search = {ef_search};
         || parallel_seqscan_plan.contains("\"Node Type\": \"Gather\"");
     let planner_diagnostics = if args.diagnose_planner || args.planner_only {
         Some(
-            pg18_parallel_fixture_planner_diagnostics(&mut client, args.limit, args.workers)
-                .await?,
+            pg18_parallel_fixture_planner_diagnostics(
+                &mut client,
+                args.limit,
+                args.workers,
+                &query_sql,
+            )
+            .await?,
         )
     } else {
         None
@@ -428,7 +447,7 @@ SET ec_hnsw.ef_search = {ef_search};
         "[pg18-parallel] install={}\n\
          [pg18-parallel] shared_preload_libraries={}\n\
          [pg18-parallel] env={}\n\
-         [pg18-parallel] rows={} workers={} limit={} ef_search={}\n\
+         [pg18-parallel] rows={} workers={} dimensions={} randomized_embeddings={} limit={} ef_search={}\n\
          [pg18-parallel] planner_only={} disable_parallel_leader_participation={}\n\
          [pg18-parallel] plan:\n{plan}\n\
          [pg18-parallel] parallel seqscan control plan:\n{parallel_seqscan_plan}\n\
@@ -452,6 +471,8 @@ SET ec_hnsw.ef_search = {ef_search};
         format_env_override_keys(&env_overrides),
         args.rows,
         args.workers,
+        args.dimensions,
+        args.randomized_embeddings,
         args.limit,
         ef_search,
         args.planner_only,
@@ -530,6 +551,54 @@ fn parallel_leader_participation_setting(disabled: bool) -> &'static str {
     } else {
         ""
     }
+}
+
+fn pg18_parallel_fixture_embedding_sql(dimensions: i32, randomized_embeddings: bool) -> String {
+    if dimensions == 4 && !randomized_embeddings {
+        return "ARRAY[
+         ((g % 97)::real / 97.0),
+         (((g * 3) % 89)::real / 89.0),
+         (((g * 7) % 83)::real / 83.0),
+         (-(((g * 11) % 79)::real) / 79.0)
+       ]::real[]::ecvector"
+            .to_owned();
+    }
+
+    if randomized_embeddings {
+        format!(
+            "ARRAY(
+         SELECT (((((g::bigint * (d::bigint * 1103515245 + 12345))
+                    + (d::bigint * 2654435761)) % 2000003)::double precision / 1000001.0) - 1.0)::real
+         FROM generate_series(1, {dimensions}) AS dims(d)
+         ORDER BY d
+       )::real[]::ecvector"
+        )
+    } else {
+        format!(
+            "ARRAY(
+         SELECT (((((g::bigint * (d::bigint * 17 + 3))
+                    + (d::bigint * 29)) % 2003)::double precision / 1001.0) - 1.0)::real
+         FROM generate_series(1, {dimensions}) AS dims(d)
+         ORDER BY d
+       )::real[]::ecvector"
+        )
+    }
+}
+
+fn pg18_parallel_fixture_query_sql(dimensions: i32, randomized_embeddings: bool) -> String {
+    if dimensions == 4 && !randomized_embeddings {
+        return "ARRAY[0.75, 0.25, 0.5, -0.5]::real[]".to_owned();
+    }
+
+    let multiplier = if randomized_embeddings { 48271 } else { 37 };
+    let offset = if randomized_embeddings { 17 } else { 11 };
+    format!(
+        "ARRAY(
+         SELECT (((((d::bigint * {multiplier}) + {offset}) % 1000003)::double precision / 500001.0) - 1.0)::real
+         FROM generate_series(1, {dimensions}) AS dims(d)
+         ORDER BY d
+       )::real[]"
+    )
 }
 
 fn pg18_plan_json_has_parallel_index_scan(plan: &str) -> bool {
@@ -677,12 +746,13 @@ async fn pg18_parallel_fixture_planner_diagnostics(
     client: &mut tokio_postgres::Client,
     limit: i64,
     workers: u16,
+    query_sql: &str,
 ) -> Result<String> {
     let mut diagnostics = String::new();
     append_pg18_parallel_fixture_settings(client, &mut diagnostics).await?;
     append_pg18_parallel_fixture_catalog(client, &mut diagnostics).await?;
 
-    let serial_json = pg18_parallel_fixture_explain_json(client, limit, 0).await?;
+    let serial_json = pg18_parallel_fixture_explain_json(client, limit, 0, query_sql).await?;
     append_section(
         &mut diagnostics,
         "serial ordered JSON plan (max_parallel_workers_per_gather=0)",
@@ -690,7 +760,10 @@ async fn pg18_parallel_fixture_planner_diagnostics(
     );
 
     let (candidate_json, planner_pathlist_snapshot) =
-        pg18_parallel_fixture_explain_json_with_pathlist_snapshot(client, limit, workers).await?;
+        pg18_parallel_fixture_explain_json_with_pathlist_snapshot(
+            client, limit, workers, query_sql,
+        )
+        .await?;
     append_section(
         &mut diagnostics,
         "parallel-candidate ordered JSON plan",
@@ -710,7 +783,7 @@ async fn pg18_parallel_fixture_planner_diagnostics(
     );
 
     let ordered_seqscan_json =
-        pg18_parallel_fixture_parallel_ordered_seqscan_json(client, limit).await?;
+        pg18_parallel_fixture_parallel_ordered_seqscan_json(client, limit, query_sql).await?;
     append_section(
         &mut diagnostics,
         "parallel ordered seqscan control JSON plan",
@@ -994,6 +1067,7 @@ async fn pg18_parallel_fixture_explain_json(
     client: &mut tokio_postgres::Client,
     limit: i64,
     max_parallel_workers_per_gather: u16,
+    query_sql: &str,
 ) -> Result<String> {
     let transaction = client.transaction().await?;
     transaction
@@ -1011,7 +1085,7 @@ async fn pg18_parallel_fixture_explain_json(
 EXPLAIN (VERBOSE, FORMAT JSON)
 SELECT id
 FROM pg18_parallel_scan_fixture
-ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+ORDER BY embedding <#> {query_sql}
 LIMIT {limit}
 "
             )
@@ -1028,12 +1102,18 @@ async fn pg18_parallel_fixture_explain_json_with_pathlist_snapshot(
     client: &mut tokio_postgres::Client,
     limit: i64,
     max_parallel_workers_per_gather: u16,
+    query_sql: &str,
 ) -> Result<(String, String)> {
     client
         .batch_execute("SELECT ec_hnsw_reset_planner_path_snapshot();")
         .await?;
-    let plan =
-        pg18_parallel_fixture_explain_json(client, limit, max_parallel_workers_per_gather).await?;
+    let plan = pg18_parallel_fixture_explain_json(
+        client,
+        limit,
+        max_parallel_workers_per_gather,
+        query_sql,
+    )
+    .await?;
     let pathlist_snapshot = pg18_parallel_fixture_pathlist_snapshot(client).await?;
     Ok((plan, pathlist_snapshot))
 }
@@ -1180,6 +1260,7 @@ WHERE id > 0
 async fn pg18_parallel_fixture_parallel_ordered_seqscan_json(
     client: &mut tokio_postgres::Client,
     limit: i64,
+    query_sql: &str,
 ) -> Result<String> {
     let transaction = client.transaction().await?;
     transaction
@@ -1199,7 +1280,7 @@ SET LOCAL enable_bitmapscan = off;
 EXPLAIN (VERBOSE, FORMAT JSON)
 SELECT id
 FROM pg18_parallel_scan_fixture
-ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+ORDER BY embedding <#> {query_sql}
 LIMIT {limit}
 "
             )
@@ -1315,14 +1396,15 @@ async fn start_pg18_validation_cluster(
 async fn pg18_parallel_fixture_projected_scores(
     client: &tokio_postgres::Client,
     limit: i64,
+    query_sql: &str,
 ) -> Result<Vec<ScoredId>> {
     let rows = client
         .query(
             format!(
                 "
-SELECT id, embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[] AS score
+SELECT id, embedding <#> {query_sql} AS score
 FROM pg18_parallel_scan_fixture
-ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+ORDER BY embedding <#> {query_sql}
 LIMIT {limit}
 "
             )
@@ -1342,6 +1424,7 @@ LIMIT {limit}
 async fn pg18_parallel_fixture_scores_for_ids(
     client: &tokio_postgres::Client,
     ids: &[i64],
+    query_sql: &str,
 ) -> Result<Vec<ScoredId>> {
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -1349,11 +1432,14 @@ async fn pg18_parallel_fixture_scores_for_ids(
 
     let rows = client
         .query(
-            "
-SELECT id, embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[] AS score
+            format!(
+                "
+SELECT id, embedding <#> {query_sql} AS score
 FROM pg18_parallel_scan_fixture
 WHERE id = ANY($1::bigint[])
-",
+"
+            )
+            .as_str(),
             &[&ids],
         )
         .await?;
@@ -1374,8 +1460,9 @@ WHERE id = ANY($1::bigint[])
 async fn pg18_parallel_fixture_explain_analyze(
     client: &tokio_postgres::Client,
     limit: i64,
+    query_sql: &str,
 ) -> Result<String> {
-    let query = pg18_parallel_fixture_explain_analyze_sql(limit);
+    let query = pg18_parallel_fixture_explain_analyze_sql(limit, query_sql);
     let rows = client.query(query.as_str(), &[]).await?;
     Ok(rows
         .into_iter()
@@ -1384,13 +1471,13 @@ async fn pg18_parallel_fixture_explain_analyze(
         .join("\n"))
 }
 
-fn pg18_parallel_fixture_explain_analyze_sql(limit: i64) -> String {
+fn pg18_parallel_fixture_explain_analyze_sql(limit: i64, query_sql: &str) -> String {
     format!(
         "
 EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, ecaz)
 SELECT id
 FROM pg18_parallel_scan_fixture
-ORDER BY embedding <#> ARRAY[0.75, 0.25, 0.5, -0.5]::real[]
+ORDER BY embedding <#> {query_sql}
 LIMIT {limit}
 "
     )
@@ -1521,10 +1608,35 @@ mod tests {
 
     #[test]
     fn pg18_parallel_fixture_explain_analyze_sql_requests_ecaz_stats() {
-        let query = pg18_parallel_fixture_explain_analyze_sql(16);
+        let query = pg18_parallel_fixture_explain_analyze_sql(
+            16,
+            &pg18_parallel_fixture_query_sql(4, false),
+        );
 
         assert!(query.contains("EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, ecaz)"));
         assert!(query.contains("LIMIT 16"));
+        assert!(query.contains("ARRAY[0.75, 0.25, 0.5, -0.5]::real[]"));
+    }
+
+    #[test]
+    fn pg18_parallel_fixture_sql_preserves_default_4d_shape() {
+        let embedding = pg18_parallel_fixture_embedding_sql(4, false);
+        let query = pg18_parallel_fixture_query_sql(4, false);
+
+        assert!(embedding.contains("((g % 97)::real / 97.0)"));
+        assert!(embedding.contains("(-(((g * 11) % 79)::real) / 79.0)"));
+        assert_eq!(query, "ARRAY[0.75, 0.25, 0.5, -0.5]::real[]");
+    }
+
+    #[test]
+    fn pg18_parallel_fixture_sql_supports_randomized_dimensions() {
+        let embedding = pg18_parallel_fixture_embedding_sql(16, true);
+        let query = pg18_parallel_fixture_query_sql(16, true);
+
+        assert!(embedding.contains("generate_series(1, 16)"));
+        assert!(embedding.contains("1103515245"));
+        assert!(query.contains("generate_series(1, 16)"));
+        assert!(query.contains("48271"));
     }
 
     #[test]
